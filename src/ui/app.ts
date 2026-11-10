@@ -1,3 +1,5 @@
+import { mountReversi, type ReversiController } from "./reversi";
+import { modal } from "./dialog";
 import { games } from "../core/catalog";
 import {
   load,
@@ -32,6 +34,7 @@ let state = createGame(),
   timer: ReturnType<typeof setTimeout> | null = null,
   resultTimer: ReturnType<typeof setTimeout> | null = null,
   lockedUntil = 0;
+let reversi: ReversiController | null = null;
 const ai = new AIClient();
 let aiOptions = getAIOptions(),
   difficulty: Difficulty = aiOptions.difficulty,
@@ -77,6 +80,8 @@ function bindHeader() {
   $("settings").onclick = showSettings;
 }
 function clear() {
+  reversi?.dispose();
+  reversi = null;
   sessionGeneration++;
   ai.cancel();
   if (timer) clearTimeout(timer);
@@ -90,16 +95,20 @@ function menu() {
   clear();
   app.innerHTML =
     header() +
-    `<main class="library"><div class="eyebrow">THE WORLD, AT YOUR TABLE</div><h1>함께 앉으면,<br>즐거움이 시작됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p><div class="collection-heading"><h2>게임 컬렉션 <span>01 / 05</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x, i) => `<button class="filter ${i === 0 ? "active" : ""}" data-category="${x}" aria-pressed="${i === 0}">${x}</button>`).join("")}</div></div><div class="collection"><section class="featured" data-category="보드게임"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section><div class="upcoming">${games
+    `<main class="library"><div class="eyebrow">THE WORLD, AT YOUR TABLE</div><h1>함께 앉으면,<br>즐거움이 시작됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p><div class="collection-heading"><h2>게임 컬렉션 <span>02 / 05</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x, i) => `<button class="filter ${i === 0 ? "active" : ""}" data-category="${x}" aria-pressed="${i === 0}">${x}</button>`).join("")}</div></div><div class="collection"><section class="featured" data-category="보드게임"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section><div class="upcoming">${games
       .slice(1)
       .map(
         (g, i) =>
-          `<article class="soon-card" data-category="${g.category}"><div class="game-icon icon-${i}">${g.icon}</div><div><small>NO. 0${i + 2} / ${g.en}</small><h3>${g.name}</h3><span>${g.category}</span></div><button disabled>개발 예정</button></article>`,
+          `<article class="soon-card" data-category="${g.category}"><div class="game-icon icon-${i}">${g.icon}</div><div><small>NO. 0${i + 2} / ${g.en}</small><h3>${g.name}</h3><span>${g.category}</span></div>${g.available ? '<button id="reversi-menu" class="available-button">리버시 플레이</button>' : "<button disabled>개발 예정</button>"}</article>`,
       )
       .join(
         "",
       )}</div></div><footer><span>✦ &nbsp; EVERY GAME TELLS A STORY.</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
   bindHeader();
+  $("reversi-menu").onclick = () => {
+    clear();
+    reversi = mountReversi(app, { header, bindHeader, back: menu, settings });
+  };
   const rememberAI = () => {
     aiOptions = {
       difficulty: $<HTMLSelectElement>("ai-difficulty").value as Difficulty,
@@ -261,7 +270,7 @@ function scheduleAI() {
     snapshot = state;
   timer = setTimeout(async () => {
     if (generation !== sessionGeneration) return;
-    if (document.querySelector("dialog[open]") || view?.moving) {
+    if (document.querySelector("dialog[open]") || !view?.ready || view.moving) {
       scheduleAI();
       return;
     }
@@ -338,28 +347,6 @@ function restart() {
   newMatch();
   game();
 }
-function modal(
-  title: string,
-  body: string,
-  actions: { text: string; action: () => void }[] = [
-    { text: "확인", action: () => {} },
-  ],
-) {
-  document.querySelector("dialog")?.remove();
-  const d = document.createElement("dialog");
-  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>${title}</h2><div class="dialog-body">${body}</div><div class="dialog-actions">${actions.map((a, i) => `<button ${i === actions.length - 1 ? 'class="primary"' : ""}>${a.text}</button>`).join("")}</div>`;
-  document.body.append(d);
-  d.querySelectorAll("button").forEach(
-    (b, i) =>
-      (b.onclick = () => {
-        d.close();
-        d.remove();
-        actions[i].action();
-      }),
-  );
-  d.addEventListener("cancel", () => d.remove());
-  d.showModal();
-}
 function showResult() {
   modal(
     state.winner === "draw"
@@ -392,6 +379,7 @@ function showSettings() {
     sound.enabled = settings.sound;
     setSettings(settings);
     view?.setQuality(settings.quality);
+    reversi?.setSettings(settings);
     d.close();
     d.remove();
   };

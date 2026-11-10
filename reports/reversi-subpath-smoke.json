@@ -1,0 +1,13 @@
+{
+  "base": "/table/",
+  "games": [
+    "gomoku",
+    "reversi"
+  ],
+  "workerPaths": [
+    "/table/assets/worker-CX09v4Fr.js",
+    "/table/assets/worker-C9noMghD.js"
+  ],
+  "errors": [],
+  "httpFailures": []
+}

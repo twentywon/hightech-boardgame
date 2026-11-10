@@ -1,3 +1,8 @@
+import {
+  toWorld as reversiWorld,
+  fromWorld as reversiPoint,
+} from "../games/reversi/coordinates";
+import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
@@ -38,6 +43,17 @@ export class BoardView {
   readonly scene = new T.Scene();
   readonly camera = new T.PerspectiveCamera(38, 1, 0.1, 60);
   private stones = new T.Group();
+  private hints = new T.Group();
+  private discs = new Map<number, T.Mesh>();
+  private discColors = new Int8Array(64);
+  private flips: {
+    mesh: T.Mesh;
+    start: number;
+    from: number;
+    to: number;
+    sounded: boolean;
+  }[] = [];
+  onSettled: () => void = () => {};
   private ray = new T.Raycaster();
   private plane = new T.Plane(new T.Vector3(0, 1, 0), -0.15);
   private ghost: T.Mesh;
@@ -46,6 +62,16 @@ export class BoardView {
   private observer: ResizeObserver;
   private raf = 0;
   private dirty = true;
+  private firstRendered = false;
+  private readyFlag = false;
+  private readyTimer: ReturnType<typeof setTimeout> | null = null;
+  private readySync: WebGLSync | null = null;
+  private disposed = false;
+  private lastWidth = 0;
+  private lastHeight = 0;
+  get ready() {
+    return this.readyFlag;
+  }
   private cameraStart = new T.Vector3();
   private target = new T.Vector3();
   private transitionStart = 0;
@@ -57,12 +83,19 @@ export class BoardView {
   private lastPointer = 0;
   onSelect: (p: Point, confirm: boolean) => void = () => {};
   onContact: () => void = () => {};
+  get animating() {
+    return this.moving || this.falling.length > 0 || this.flips.length > 0;
+  }
+  private world(p: Point) {
+    return this.variant === "reversi" ? reversiWorld(p) : toWorld(p);
+  }
   get moving() {
     return this.transitionStart !== 0;
   }
   constructor(
     readonly host: HTMLElement,
     quality: "high" | "low",
+    private variant: "gomoku" | "reversi" = "gomoku",
   ) {
     this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setPixelRatio(
@@ -73,7 +106,10 @@ export class BoardView {
     this.renderer.setClearColor("#65452f");
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     host.append(this.renderer.domElement);
-    this.renderer.domElement.setAttribute("aria-label", "3D 오목판");
+    this.renderer.domElement.setAttribute(
+      "aria-label",
+      this.variant === "reversi" ? "3D 리버시판" : "3D 오목판",
+    );
     this.scene.add(new T.HemisphereLight("#fff1d2", "#44352b", 2.5));
     const light = new T.DirectionalLight("#fff4dc", 3.5);
     light.position.set(-3, 9, 4);
@@ -93,29 +129,100 @@ export class BoardView {
     table.receiveShadow = true;
     this.scene.add(table);
     const board = new T.Mesh(
-      new T.BoxGeometry(6.55, 0.36, 6.55),
+      new T.BoxGeometry(
+        this.variant === "reversi" ? 6.3 : 6.55,
+        0.36,
+        this.variant === "reversi" ? 6.3 : 6.55,
+      ),
       new T.MeshStandardMaterial({ map: wood(), roughness: 0.52 }),
     );
     board.position.y = -0.03;
     board.castShadow = board.receiveShadow = true;
     this.scene.add(board);
     const positions: number[] = [];
-    for (let i = 0; i < 15; i++) {
-      const v = (i - 7) * 0.42;
-      positions.push(
-        -2.94,
-        0.155,
-        v,
-        2.94,
-        0.155,
-        v,
-        v,
-        0.155,
-        -2.94,
-        v,
-        0.155,
-        2.94,
+    if (this.variant === "reversi") {
+      const felt = new T.Mesh(
+        new T.BoxGeometry(5.82, 0.025, 5.82),
+        new T.MeshStandardMaterial({ color: "#204e43", roughness: 0.94 }),
       );
+      felt.position.y = 0.17;
+      felt.receiveShadow = true;
+      this.scene.add(felt);
+      for (let i = 0; i <= 8; i++) {
+        const v = (i - 4) * 0.72;
+        positions.push(
+          -2.88,
+          0.19,
+          v,
+          2.88,
+          0.19,
+          v,
+          v,
+          0.19,
+          -2.88,
+          v,
+          0.19,
+          2.88,
+        );
+      }
+      for (let i = 0; i < 8; i++) {
+        for (const [label, x, z] of [
+          [String.fromCharCode(65 + i), (i - 3.5) * 0.72, -3.06],
+          [String(i + 1), -3.06, (i - 3.5) * 0.72],
+        ] as const) {
+          const c = document.createElement("canvas");
+          c.width = c.height = 64;
+          const ctx = c.getContext("2d")!;
+          ctx.fillStyle = "#4b3420";
+          ctx.font = "40px Georgia";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(label, 32, 32);
+          const texture = new T.CanvasTexture(c);
+          texture.colorSpace = T.SRGBColorSpace;
+          const labelMesh = new T.Mesh(
+            new T.PlaneGeometry(0.22, 0.22),
+            new T.MeshBasicMaterial({
+              map: texture,
+              transparent: true,
+              depthWrite: false,
+            }),
+          );
+          labelMesh.rotation.x = -Math.PI / 2;
+          labelMesh.position.set(x, 0.157, z);
+          this.scene.add(labelMesh);
+        }
+      }
+    } else {
+      for (let i = 0; i < 15; i++) {
+        const v = (i - 7) * 0.42;
+        positions.push(
+          -2.94,
+          0.155,
+          v,
+          2.94,
+          0.155,
+          v,
+          v,
+          0.155,
+          -2.94,
+          v,
+          0.155,
+          2.94,
+        );
+      }
+      for (const row of [3, 7, 11])
+        for (const col of [3, 7, 11]) {
+          if ((row !== 7 && col === 7) || (row === 7 && col !== 7)) continue;
+          const p = toWorld({ row, col });
+          const dot = new T.Mesh(
+            new T.CircleGeometry(0.043, 20),
+            new T.MeshBasicMaterial({ color: "#594027" }),
+          );
+          dot.rotation.x = -Math.PI / 2;
+          dot.position.set(p.x, 0.16, p.z);
+          this.scene.add(dot);
+        }
     }
     const lines = new T.BufferGeometry();
     lines.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
@@ -123,28 +230,20 @@ export class BoardView {
       new T.LineSegments(
         lines,
         new T.LineBasicMaterial({
-          color: "#594027",
+          color: this.variant === "reversi" ? "#c4b588" : "#594027",
           transparent: true,
-          opacity: 0.78,
+          opacity: this.variant === "reversi" ? 0.4 : 0.78,
         }),
       ),
     );
-    for (const row of [3, 7, 11])
-      for (const col of [3, 7, 11]) {
-        if ((row !== 7 && col === 7) || (row === 7 && col !== 7)) continue;
-        const p = toWorld({ row, col });
-        const dot = new T.Mesh(
-          new T.CircleGeometry(0.043, 20),
-          new T.MeshBasicMaterial({ color: "#594027" }),
-        );
-        dot.rotation.x = -Math.PI / 2;
-        dot.position.set(p.x, 0.16, p.z);
-        this.scene.add(dot);
-      }
-    this.scene.add(this.stones, this.win);
+    this.scene.add(this.stones, this.win, this.hints);
     this.ghost = this.makeStone(1);
-    (this.ghost.material as T.MeshStandardMaterial).transparent = true;
-    (this.ghost.material as T.MeshStandardMaterial).opacity = 0.42;
+    for (const m of Array.isArray(this.ghost.material)
+      ? this.ghost.material
+      : [this.ghost.material]) {
+      m.transparent = true;
+      m.opacity = 0.42;
+    }
     this.ghost.visible = false;
     this.scene.add(this.ghost);
     this.marker = new T.Mesh(
@@ -192,7 +291,8 @@ export class BoardView {
       const animate =
         this.transitionStart !== 0 ||
         this.falling.length > 0 ||
-        this.win.children.length > 0;
+        this.win.children.length > 0 ||
+        this.flips.length > 0;
       if (!this.dirty && !animate) return;
       this.dirty = false;
       if (this.transitionStart) {
@@ -202,14 +302,27 @@ export class BoardView {
         if (t === 1) this.transitionStart = 0;
       }
       this.camera.lookAt(0, 0, 0);
+      const settling = this.falling.length > 0 || this.flips.length > 0;
+      this.flips = this.flips.filter((f) => {
+        const t = Math.max(0, Math.min(1, (time - f.start) / 380)),
+          eased = t * t * (3 - 2 * t);
+        f.mesh.rotation.x = f.from + (f.to - f.from) * eased;
+        f.mesh.position.y = 0.245 + Math.sin(Math.PI * t) * 0.27;
+        if (t >= 0.95 && !f.sounded) {
+          f.sounded = true;
+          this.onContact();
+        }
+        return t < 1;
+      });
       this.falling = this.falling.filter((f) => {
         const t = Math.min(1, (time - f.start) / 280);
         f.mesh.position.y = 0.245 + 0.65 * Math.pow(1 - t, 3);
-        f.mesh.scale.set(
-          0.19,
-          0.095 * (1 + Math.sin(t * Math.PI) * 0.15),
-          0.19,
-        );
+        if (this.variant === "gomoku")
+          f.mesh.scale.set(
+            0.19,
+            0.095 * (1 + Math.sin(t * Math.PI) * 0.15),
+            0.19,
+          );
         if (t > 0.82 && !f.sounded) {
           f.sounded = true;
           this.onContact();
@@ -220,10 +333,54 @@ export class BoardView {
         c.scale.setScalar(1 + Math.sin(time * 0.004) * 0.04);
       });
       this.renderer.render(this.scene, this.camera);
+      if (!this.firstRendered) {
+        this.firstRendered = true;
+        this.waitForInitialGPUFrame();
+      }
+      if (settling && !this.animating) this.onSettled();
     };
     this.raf = requestAnimationFrame(loop);
   }
+  // render() queues GPU work. Poll a fence instead of blocking the UI or starting
+  // search while the first shader/texture uploads are still being processed.
+  private waitForInitialGPUFrame() {
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    if (typeof gl.fenceSync !== "function") {
+      this.readyFlag = true;
+      return;
+    }
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (!sync) {
+      this.readyFlag = true;
+      return;
+    }
+    this.readySync = sync;
+    gl.flush();
+    const poll = () => {
+      if (this.disposed) return;
+      const status = gl.clientWaitSync(sync, 0, 0);
+      if (status === gl.TIMEOUT_EXPIRED) {
+        this.readyTimer = setTimeout(poll, 8);
+        return;
+      }
+      gl.deleteSync(sync);
+      this.readySync = null;
+      this.readyTimer = null;
+      this.readyFlag = true;
+    };
+    this.readyTimer = setTimeout(poll, 0);
+  }
   private makeStone(player: number) {
+    if (this.variant === "reversi") {
+      const mesh = new T.Mesh(new T.CylinderGeometry(0.285, 0.285, 0.105, 40), [
+        new T.MeshStandardMaterial({ color: "#35383a", roughness: 0.35 }),
+        new T.MeshStandardMaterial({ color: "#202226", roughness: 0.26 }),
+        new T.MeshStandardMaterial({ color: "#f6f0e4", roughness: 0.25 }),
+      ]);
+      mesh.rotation.x = player === 1 ? 0 : Math.PI;
+      mesh.castShadow = mesh.receiveShadow = true;
+      return mesh;
+    }
     const mesh = new T.Mesh(
       new T.SphereGeometry(1, 32, 20),
       new T.MeshStandardMaterial({
@@ -236,10 +393,13 @@ export class BoardView {
     mesh.castShadow = mesh.receiveShadow = true;
     return mesh;
   }
-  private resize() {
+  private resize(force = false) {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
-    if (!w || !h) return;
+    if (!w || !h || (!force && w === this.lastWidth && h === this.lastHeight))
+      return;
+    this.lastWidth = w;
+    this.lastHeight = h;
     this.dirty = true;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
@@ -267,7 +427,7 @@ export class BoardView {
     this.renderer.setPixelRatio(
       Math.min(devicePixelRatio, quality === "high" ? 2 : 1),
     );
-    this.resize();
+    this.resize(true);
   }
   private pointer(e: PointerEvent, confirm: boolean) {
     if (this.moving) return;
@@ -281,7 +441,8 @@ export class BoardView {
     );
     const v = new T.Vector3();
     if (!this.ray.ray.intersectPlane(this.plane, v)) return;
-    const p = fromWorld(v.x, v.z);
+    const p =
+      this.variant === "reversi" ? reversiPoint(v.x, v.z) : fromWorld(v.x, v.z);
     if (p) this.onSelect(p, confirm);
     else {
       this.ghost.visible = false;
@@ -292,11 +453,14 @@ export class BoardView {
     this.dirty = true;
     this.ghost.visible = !!p && !this.moving;
     if (p) {
-      const v = toWorld(p);
+      const v = this.world(p);
       this.ghost.position.set(v.x, 0.25, v.z);
-      (this.ghost.material as T.MeshStandardMaterial).color.set(
-        player === 1 ? "#202226" : "#fff9ec",
-      );
+      if (this.variant === "reversi")
+        this.ghost.rotation.x = player === 1 ? 0 : Math.PI;
+      else
+        (this.ghost.material as T.MeshStandardMaterial).color.set(
+          player === 1 ? "#202226" : "#fff9ec",
+        );
     }
   }
   renderState(state: State, animate = true) {
@@ -341,6 +505,65 @@ export class BoardView {
     this.ghost.visible = false;
     if (state.winner) this.setCamera(this.top, true);
   }
+  setHints(points: Point[]) {
+    this.clearGroup(this.hints);
+    this.dirty = true;
+    for (const p of points) {
+      const v = this.world(p),
+        mark = new T.Mesh(
+          new T.RingGeometry(0.06, 0.085, 24),
+          new T.MeshBasicMaterial({
+            color: "#d5c38d",
+            transparent: true,
+            opacity: 0.65,
+            side: T.DoubleSide,
+          }),
+        );
+      mark.rotation.x = -Math.PI / 2;
+      mark.position.set(v.x, 0.195, v.z);
+      this.hints.add(mark);
+    }
+  }
+  renderReversi(state: ReversiState, animate = true) {
+    this.dirty = true;
+    this.flips = [];
+    this.falling = [];
+    this.ghost.visible = false;
+    let order = 0;
+    for (let i = 0; i < 64; i++) {
+      const player = state.board[i];
+      if (!player) continue;
+      let mesh = this.discs.get(i);
+      const p = this.world({ row: Math.floor(i / 8), col: i % 8 });
+      if (!mesh) {
+        mesh = this.makeStone(player);
+        mesh.position.set(p.x, 0.245, p.z);
+        this.discs.set(i, mesh);
+        this.stones.add(mesh);
+        if (animate)
+          this.falling.push({ mesh, start: performance.now(), sounded: false });
+      } else if (this.discColors[i] !== player) {
+        if (animate) {
+          const from = mesh.rotation.x;
+          this.flips.push({
+            mesh,
+            start: performance.now() + Math.min(order++ * 25, 150),
+            from,
+            to: from + Math.PI,
+            sounded: false,
+          });
+        } else mesh.rotation.x = player === 1 ? 0 : Math.PI;
+      }
+      this.discColors[i] = player;
+    }
+    const last = state.moves.at(-1);
+    this.marker.visible = !!last;
+    if (last) {
+      const p = this.world(last);
+      this.marker.position.set(p.x, 0.307, p.z);
+    }
+    if (state.winner) this.setCamera(this.top, true);
+  }
   private clearGroup(group: T.Group) {
     for (const child of [...group.children]) {
       const mesh = child as T.Mesh;
@@ -350,6 +573,13 @@ export class BoardView {
     }
   }
   dispose() {
+    this.disposed = true;
+    if (this.readyTimer) clearTimeout(this.readyTimer);
+    if (this.readySync)
+      (this.renderer.getContext() as WebGL2RenderingContext).deleteSync(
+        this.readySync,
+      );
+    this.readySync = null;
     cancelAnimationFrame(this.raf);
     this.observer.disconnect();
     this.scene.traverse((obj) => {

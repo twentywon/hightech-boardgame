@@ -7,11 +7,11 @@ export const games = [
     available: true,
   },
   {
-    name: "오셀로",
-    en: "OTHELLO",
+    name: "리버시",
+    en: "REVERSI",
     category: "보드게임",
     icon: "◐",
-    available: false,
+    available: true,
   },
   {
     name: "체스",

@@ -8,6 +8,10 @@ export class Sound {
       void this.context.resume().catch(() => {});
     } catch {}
   }
+  dispose() {
+    void this.context?.close().catch(() => {});
+    this.context = null;
+  }
   tap() {
     if (!this.enabled || !this.context) return;
     const c = this.context,

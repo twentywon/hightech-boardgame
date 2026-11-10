@@ -770,3 +770,72 @@ dialog h2 {
   color: #746c5b;
   font-size: 10px;
 }
+.soon-card .available-button {
+  opacity: 1;
+  color: #204e43;
+  border-color: #a7b7a0;
+}
+.reversi-art {
+  background: radial-gradient(ellipse at center, #3f7564, #173f35);
+}
+.reversi-mini {
+  width: 240px;
+  height: 240px;
+  border: 18px solid #775436;
+  border-radius: 6px;
+  background-color: #245447;
+  background-image:
+    linear-gradient(#d4cb9a55 1px, transparent 1px),
+    linear-gradient(90deg, #d4cb9a55 1px, transparent 1px);
+  background-size: 12.5% 12.5%;
+  display: grid;
+  grid-template-columns: repeat(2, 34px);
+  grid-template-rows: repeat(2, 34px);
+  place-content: center;
+  gap: 1px;
+  transform: rotateX(28deg) rotateZ(-15deg);
+  box-shadow: 12px 20px 25px #101e1b77;
+}
+.reversi-mini i {
+  border-radius: 50%;
+  box-shadow: 2px 3px 4px #0006;
+}
+.hint-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 16px 0;
+  min-height: 44px;
+}
+#pass-notice {
+  background: #e9dfbd;
+  color: #65532e;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  border-radius: 5px;
+  margin-top: 10px;
+}
+.reversi-setup {
+  padding-bottom: 40px;
+}
+@media (max-width: 760px) {
+  .game-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 275px;
+  }
+  .game-sidebar .hint-toggle {
+    padding: 8px 0;
+  }
+}
+.game-sidebar #black-count,
+.game-sidebar #white-count {
+  font-size: 22px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #204e43;
+  min-width: 30px;
+  text-align: right;
+}

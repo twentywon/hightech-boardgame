@@ -1,0 +1,208 @@
+{
+  "server": "fresh production build on isolated preview port",
+  "renderer": "Chromium SwiftShader; desktop and Pixel 7 emulation",
+  "latestCases": {
+    "passed": 22,
+    "failed": 0,
+    "skipped": 0
+  },
+  "runs": [
+    {
+      "name": "full",
+      "stats": {
+        "startTime": "2026-11-10T08:09:05.877Z",
+        "duration": 338525.582,
+        "expected": 20,
+        "skipped": 0,
+        "unexpected": 2,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "random-color-recheck",
+      "stats": {
+        "startTime": "2026-11-10T08:16:05.200Z",
+        "duration": 43954.048,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    }
+  ],
+  "cases": [
+    {
+      "project": "desktop",
+      "name": "menu, actual WebGL moves, persistence, camera and restart",
+      "status": "passed",
+      "durationMs": 19481,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "menu, actual WebGL moves, persistence, camera and restart",
+      "status": "passed",
+      "durationMs": 19355,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "AI responds and settings persist",
+      "status": "passed",
+      "durationMs": 8870,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "AI responds and settings persist",
+      "status": "passed",
+      "durationMs": 6889,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "five difficulties, white opening, next-game policy and persisted preferences",
+      "status": "passed",
+      "durationMs": 14696,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "five difficulties, white opening, next-game policy and persisted preferences",
+      "status": "passed",
+      "durationMs": 14728,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "status": "passed",
+      "durationMs": 25566,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "status": "passed",
+      "durationMs": 28375,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "random color is resolved once and retained when resuming",
+      "status": "passed",
+      "durationMs": 9378,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "random color is resolved once and retained when resuming",
+      "status": "passed",
+      "durationMs": 11991,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "AI selection remains usable when storage writes are blocked",
+      "status": "passed",
+      "durationMs": 5215,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "AI selection remains usable when storage writes are blocked",
+      "status": "passed",
+      "durationMs": 9892,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "Reversi actual WebGL mouse/touch flips, save, camera, restart and game selection",
+      "status": "passed",
+      "durationMs": 21619,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "Reversi actual WebGL mouse/touch flips, save, camera, restart and game selection",
+      "status": "passed",
+      "durationMs": 20408,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "Reversi difficulty/color persist independently; changes apply next match",
+      "status": "passed",
+      "durationMs": 15660,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "Reversi difficulty/color persist independently; changes apply next match",
+      "status": "passed",
+      "durationMs": 15681,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "Reversi auto-pass announcement and validated saved history",
+      "status": "passed",
+      "durationMs": 5054,
+      "run": "full"
+    },
+    {
+      "project": "mobile",
+      "name": "Reversi auto-pass announcement and validated saved history",
+      "status": "passed",
+      "durationMs": 7353,
+      "run": "full"
+    },
+    {
+      "project": "desktop",
+      "name": "actual Workers stay responsive and are cancelled when switching both games",
+      "status": "passed",
+      "durationMs": 18819,
+      "run": "full",
+      "frameMeasurement": {
+        "count": 72,
+        "max": 16.80000000000109,
+        "heartbeats": 40,
+        "durationMs": 1200.3999999985099,
+        "visibility": "visible"
+      }
+    },
+    {
+      "project": "mobile",
+      "name": "actual Workers stay responsive and are cancelled when switching both games",
+      "status": "passed",
+      "durationMs": 23698,
+      "run": "full",
+      "frameMeasurement": {
+        "count": 72,
+        "max": 16.700000000000728,
+        "heartbeats": 40,
+        "durationMs": 1200.2999999970198,
+        "visibility": "visible"
+      }
+    },
+    {
+      "project": "desktop",
+      "name": "Reversi random color stays resolved across resume and storage failure is safe",
+      "status": "passed",
+      "durationMs": 19569,
+      "run": "random-color-recheck"
+    },
+    {
+      "project": "mobile",
+      "name": "Reversi random color stays resolved across resume and storage failure is safe",
+      "status": "passed",
+      "durationMs": 18774,
+      "run": "random-color-recheck"
+    }
+  ],
+  "notes": [
+    "Full run: 20 passed; 2 random-color cases failed. After removing global random-number mocking and allowing graphics preparation in the asynchronous opening assertion, the two targeted cases passed. Latest outcome for every scenario is passed.",
+    "Earlier frame measurements exposed first-GPU-frame starvation. A nonblocking GPU fence, duplicate-resize suppression and cooperative Worker search were added; both final platform samples refreshed 72 frames in about 1.2 seconds.",
+    "Recorded cloud samples do not establish real-device FPS, heat or long-duration stability."
+  ]
+}

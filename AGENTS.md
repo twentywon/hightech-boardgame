@@ -8,3 +8,6 @@
 - Preserve pointer confirmation on touch, camera-transition input blocking, and engine resource disposal.
 - Keep unimplemented games visibly disabled. No automatic public deployment or repository visibility changes.
 - Update README and ROADMAP for material changes. Test rule changes with Vitest and input/UI changes with Playwright.
+- Reversi rules live in `src/games/reversi/rules.ts`: use shared legal-move generation for sessions and search, reconstruct automatic passes during replay, and keep Reversi storage keys separate from Gomoku.
+- Browser Reversi AI must drain `searchSteps` cooperatively in its Worker. Mark exact endgames solved only after the full remaining placement depth completes; passes do not consume placement depth.
+- Preserve nonblocking GPU startup readiness and scene/audio cleanup. Reversi AI evaluation: `npm run reversi:evaluate` (40 paired-color games at the documented budget scale plus timing samples).

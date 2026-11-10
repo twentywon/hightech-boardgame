@@ -1,8 +1,4 @@
-import {
-  normalizeAI,
-  type AIOptions,
-  type Difficulty,
-} from "../games/gomoku/ai/difficulty";
+import { normalizeAI, type AIOptions, type Difficulty } from "./ai";
 import type { Player } from "../games/gomoku/rules";
 import { createGame, play, type State } from "../games/gomoku/rules";
 export type Mode = "local" | "ai";
@@ -94,18 +90,18 @@ export function setSettings(s: Settings) {
   }
 }
 
-export function getAIOptions(): AIOptions {
+export function getAIOptions(key = "wtg.ai.v1"): AIOptions {
   try {
-    const data = JSON.parse(localStorage.getItem("wtg.ai.v1") || "null");
+    const data = JSON.parse(localStorage.getItem(key) || "null");
     return normalizeAI(data?.version === 1 ? data : null);
   } catch {
     return normalizeAI(null);
   }
 }
-export function setAIOptions(options: AIOptions): void {
+export function setAIOptions(options: AIOptions, key = "wtg.ai.v1"): void {
   try {
     localStorage.setItem(
-      "wtg.ai.v1",
+      key,
       JSON.stringify({ version: 1, ...normalizeAI(options) }),
     );
   } catch {

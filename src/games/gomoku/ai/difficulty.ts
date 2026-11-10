@@ -1,17 +1,4 @@
-export const difficulties = [
-  "beginner",
-  "easy",
-  "normal",
-  "hard",
-  "expert",
-] as const;
-export type Difficulty = (typeof difficulties)[number];
-export type ColorChoice = "black" | "white" | "random";
-export interface AIOptions {
-  difficulty: Difficulty;
-  color: ColorChoice;
-}
-export const defaultAI: AIOptions = { difficulty: "normal", color: "black" };
+export * from "../../../core/ai";
 export const profiles = {
   beginner: {
     label: "입문",
@@ -59,23 +46,3 @@ export const profiles = {
     table: true,
   },
 } as const;
-export function normalizeAI(value: unknown): AIOptions {
-  const s = value as Partial<AIOptions> | null;
-  return {
-    difficulty:
-      s && difficulties.includes(s.difficulty as Difficulty)
-        ? s.difficulty!
-        : "normal",
-    color:
-      s && ["black", "white", "random"].includes(s.color!) ? s.color! : "black",
-  };
-}
-export function seededRandom(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s += 0x6d2b79f5;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
