@@ -55,8 +55,11 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
   await page.reload();
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await expect(page.locator("#move-count")).toHaveText("1수");
+  const angled = await page.locator("canvas").screenshot();
   await page.getByRole("button", { name: "시점 전환" }).click();
   await page.waitForTimeout(550);
+  const overhead = await page.locator("canvas").screenshot();
+  expect(overhead.equals(angled)).toBe(false);
   await page.getByRole("button", { name: "다시 시작", exact: true }).click();
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
@@ -77,4 +80,179 @@ test("AI responds and settings persist", async ({ page }) => {
   await page.reload();
   await page.getByRole("button", { name: "설정", exact: true }).click();
   await expect(page.getByLabel("착수 효과음")).not.toBeChecked();
+});
+
+test("five difficulties, white opening, next-game policy and persisted preferences", async ({
+  page,
+}, info) => {
+  await page.goto("/");
+  await expect(page.locator("#ai-options")).toBeHidden();
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await expect(page.getByLabel("AI 난이도")).toHaveValue("normal");
+  await expect(page.getByLabel("AI 난이도").locator("option")).toHaveCount(5);
+  await page.getByLabel("AI 난이도").selectOption("hard");
+  await page.getByLabel("플레이어 색상").selectOption("white");
+  await page.screenshot({
+    path: `test-results/${info.project.name}-ai-options.png`,
+    fullPage: true,
+  });
+  await page.reload();
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await expect(page.getByLabel("AI 난이도")).toHaveValue("hard");
+  await expect(page.getByLabel("플레이어 색상")).toHaveValue("white");
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await expect(page.locator(".player").first()).toContainText(
+    "컴퓨터 · 어려움",
+  );
+  await expect(page.locator("#move-count")).toHaveText("1수");
+  await expect(page.locator("#turn")).toContainText("백돌");
+  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await page.getByLabel("AI 난이도").selectOption("beginner");
+  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
+  await expect(page.locator(".player").first()).toContainText(
+    "컴퓨터 · 어려움",
+  );
+  await page.getByRole("button", { name: "다시 시작", exact: true }).click();
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await expect(page.locator(".player").first()).toContainText("컴퓨터 · 입문");
+  await expect(page.locator("#move-count")).toHaveText("1수");
+});
+
+const thinkingSession = {
+  version: 2,
+  mode: "ai",
+  difficulty: "expert",
+  human: 2,
+  moves: [
+    { row: 7, col: 7, player: 1 },
+    { row: 6, col: 7, player: 2 },
+    { row: 8, col: 8, player: 1 },
+    { row: 8, col: 7, player: 2 },
+    { row: 6, col: 6, player: 1 },
+    { row: 9, col: 9, player: 2 },
+    { row: 5, col: 7, player: 1 },
+    { row: 9, col: 6, player: 2 },
+  ],
+};
+test("expert Worker keeps animation frames alive; menu and restart discard old work", async ({
+  page,
+}, info) => {
+  test.setTimeout(60000);
+  const workers: string[] = [];
+  page.on("worker", (worker) => workers.push(worker.url()));
+  await page.goto("/");
+  await page.evaluate(
+    (s) => localStorage.setItem("wtg.session.v1", JSON.stringify(s)),
+    thinkingSession,
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
+  await expect(page.locator("#turn")).toContainText("컴퓨터가 생각 중");
+  await expect
+    .poll(() => workers.length, { timeout: 10000 })
+    .toBeGreaterThan(0);
+  const ticks = await page.evaluate(async () => {
+    const gaps: number[] = [];
+    let last = performance.now(),
+      alive = true;
+    function tick(t: number) {
+      gaps.push(t - last);
+      last = t;
+      if (alive) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+    await new Promise((r) => setTimeout(r, 1600));
+    alive = false;
+    return { count: gaps.length, max: Math.max(...gaps) };
+  });
+  await info.attach("worker-frame-measurement", {
+    body: JSON.stringify(ticks),
+    contentType: "application/json",
+  });
+  expect(workers.length).toBeGreaterThan(0);
+  expect(ticks.count).toBeGreaterThan(5);
+  expect(ticks.max).toBeLessThan(1000);
+  await expect(page.locator("#move-count")).toHaveText("9수", {
+    timeout: 10000,
+  });
+  // Start another expert calculation, then leave for a fresh local game.
+  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await page.evaluate(
+    (s) => localStorage.setItem("wtg.session.v1", JSON.stringify(s)),
+    thinkingSession,
+  );
+  await page.reload();
+  const beforeRestart = workers.length;
+  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
+  await expect
+    .poll(() => workers.length, { timeout: 10000 })
+    .toBeGreaterThan(beforeRestart);
+  await page.getByRole("button", { name: "다시 시작", exact: true }).click();
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await expect(page.locator("#move-count")).toHaveText("0수");
+  await page.waitForTimeout(3400);
+  await expect(page.locator("#move-count")).toHaveText("0수");
+  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await page.evaluate(
+    (s) => localStorage.setItem("wtg.session.v1", JSON.stringify(s)),
+    thinkingSession,
+  );
+  await page.reload();
+  const beforeMenu = workers.length;
+  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
+  await expect
+    .poll(() => workers.length, { timeout: 10000 })
+    .toBeGreaterThan(beforeMenu);
+  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await page.waitForTimeout(3400);
+  await expect(page.locator("#move-count")).toHaveText("0수");
+});
+
+test("random color is resolved once and retained when resuming", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Math.random = () => 0.75;
+  });
+  await page.goto("/");
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await page.getByLabel("플레이어 색상").selectOption("random");
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await expect(page.locator("#move-count")).toHaveText("1수");
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem("wtg.session.v1")!).human,
+    ),
+  ).toBe(2);
+  await page.addInitScript(() => {
+    Math.random = () => 0.1;
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
+  await expect(page.locator(".player").last()).toContainText("나");
+  await expect(page.locator("#move-count")).toHaveText("1수");
+});
+
+test("AI selection remains usable when storage writes are blocked", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new Error("Storage disabled");
+    };
+  });
+  await page.goto("/");
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await page.getByLabel("AI 난이도").selectOption("expert");
+  await page.getByLabel("플레이어 색상").selectOption("white");
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await expect(page.locator(".player").first()).toContainText(
+    "컴퓨터 · 전문가",
+  );
+  await expect(page.locator("#move-count")).toHaveText("1수");
+  await expect(page.locator("#save-status")).toContainText(
+    "저장을 사용할 수 없습니다",
+  );
 });

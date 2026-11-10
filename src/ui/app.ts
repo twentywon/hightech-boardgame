@@ -5,9 +5,22 @@ import {
   getSettings,
   setSettings,
   type Mode,
+  getAIOptions,
+  setAIOptions,
 } from "../core/storage";
-import { createGame, play, type Point } from "../games/gomoku/rules";
-import { chooseMove } from "../games/gomoku/ai";
+import {
+  createGame,
+  play,
+  type Point,
+  type Player,
+} from "../games/gomoku/rules";
+import { AIClient } from "../games/gomoku/ai/client";
+import {
+  profiles,
+  difficulties,
+  type Difficulty,
+  type ColorChoice,
+} from "../games/gomoku/ai/difficulty";
 import { BoardView } from "../engine/board-view";
 import { Sound } from "../engine/sound";
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -19,6 +32,39 @@ let state = createGame(),
   timer: ReturnType<typeof setTimeout> | null = null,
   resultTimer: ReturnType<typeof setTimeout> | null = null,
   lockedUntil = 0;
+const ai = new AIClient();
+let aiOptions = getAIOptions(),
+  difficulty: Difficulty = aiOptions.difficulty,
+  human: Player = 1;
+let sessionGeneration = 0;
+const isAITurn = () => mode === "ai" && state.turn !== human;
+const persist = () => save({ state, mode, difficulty, human });
+function newMatch() {
+  // Keep the current selection even when browser storage is unavailable.
+  difficulty = aiOptions.difficulty;
+  human =
+    aiOptions.color === "white"
+      ? 2
+      : aiOptions.color === "random"
+        ? Math.random() < 0.5
+          ? 1
+          : 2
+        : 1;
+  state = createGame();
+  lockedUntil = 0;
+  persist();
+}
+function difficultyOptions(selected: Difficulty) {
+  return difficulties
+    .map(
+      (d) =>
+        `<option value="${d}" ${d === selected ? "selected" : ""}>${profiles[d].label}</option>`,
+    )
+    .join("");
+}
+function aiForm() {
+  return `<div id="ai-options" class="ai-options" hidden><label>AI 난이도<select id="ai-difficulty">${difficultyOptions(aiOptions.difficulty)}</select></label><label>플레이어 색상<select id="ai-color"><option value="black" ${aiOptions.color === "black" ? "selected" : ""}>흑돌</option><option value="white" ${aiOptions.color === "white" ? "selected" : ""}>백돌</option><option value="random" ${aiOptions.color === "random" ? "selected" : ""}>무작위</option></select></label><small>선택한 설정은 새 대국부터 적용됩니다.</small></div>`;
+}
 const sound = new Sound();
 sound.enabled = settings.sound;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
@@ -31,6 +77,8 @@ function bindHeader() {
   $("settings").onclick = showSettings;
 }
 function clear() {
+  sessionGeneration++;
+  ai.cancel();
   if (timer) clearTimeout(timer);
   if (resultTimer) clearTimeout(resultTimer);
   timer = resultTimer = null;
@@ -42,7 +90,7 @@ function menu() {
   clear();
   app.innerHTML =
     header() +
-    `<main class="library"><div class="eyebrow">THE WORLD, AT YOUR TABLE</div><h1>함께 앉으면,<br>즐거움이 시작됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p><div class="collection-heading"><h2>게임 컬렉션 <span>01 / 05</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x, i) => `<button class="filter ${i === 0 ? "active" : ""}" data-category="${x}" aria-pressed="${i === 0}">${x}</button>`).join("")}</div></div><div class="collection"><section class="featured" data-category="보드게임"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div><button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section><div class="upcoming">${games
+    `<main class="library"><div class="eyebrow">THE WORLD, AT YOUR TABLE</div><h1>함께 앉으면,<br>즐거움이 시작됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p><div class="collection-heading"><h2>게임 컬렉션 <span>01 / 05</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x, i) => `<button class="filter ${i === 0 ? "active" : ""}" data-category="${x}" aria-pressed="${i === 0}">${x}</button>`).join("")}</div></div><div class="collection"><section class="featured" data-category="보드게임"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section><div class="upcoming">${games
       .slice(1)
       .map(
         (g, i) =>
@@ -52,11 +100,27 @@ function menu() {
         "",
       )}</div></div><footer><span>✦ &nbsp; EVERY GAME TELLS A STORY.</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
   bindHeader();
+  const rememberAI = () => {
+    aiOptions = {
+      difficulty: $<HTMLSelectElement>("ai-difficulty").value as Difficulty,
+      color: $<HTMLSelectElement>("ai-color").value as ColorChoice,
+    };
+    setAIOptions(aiOptions);
+  };
+  $("ai-difficulty").onchange = rememberAI;
+  $("ai-color").onchange = rememberAI;
+  document.querySelectorAll<HTMLInputElement>("input[name=mode]").forEach(
+    (input) =>
+      (input.onchange = () => {
+        $("ai-options").hidden =
+          document.querySelector<HTMLInputElement>("input[name=mode]:checked")!
+            .value !== "ai";
+      }),
+  );
   $("start").onclick = () => {
     mode = document.querySelector<HTMLInputElement>("input[name=mode]:checked")!
       .value as Mode;
-    state = createGame();
-    save({ state, mode });
+    newMatch();
     game();
   };
   if (document.getElementById("resume"))
@@ -65,6 +129,8 @@ function menu() {
       if (session) {
         state = session.state;
         mode = session.mode;
+        difficulty = session.difficulty ?? "normal";
+        human = session.human ?? 1;
         game();
       }
     };
@@ -90,7 +156,7 @@ function game() {
   clear();
   app.innerHTML =
     header() +
-    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · 자유룰</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">AT THE TABLE</div><h2>좋은 한 수를<br>생각해 보세요.</h2><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? "나" : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? "컴퓨터 · 초급" : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 위치 선택 후 버튼으로 확정<br>키보드: 방향키로 선택, Enter로 착수</p><span id="save-status" class="save-status"></span></aside></div></main>`;
+    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · 자유룰</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">AT THE TABLE</div><h2>좋은 한 수를<br>생각해 보세요.</h2><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 위치 선택 후 버튼으로 확정<br>키보드: 방향키로 선택, Enter로 착수</p><span id="save-status" class="save-status"></span></aside></div></main>`;
   bindHeader();
   $("back").onclick = menu;
   $("rules").onclick = showRules;
@@ -166,7 +232,7 @@ function canPlay() {
     !view.moving &&
     state.winner === null &&
     performance.now() >= lockedUntil &&
-    !(mode === "ai" && state.turn === 2) &&
+    !isAITurn() &&
     !document.querySelector("dialog[open]")
   );
 }
@@ -180,7 +246,7 @@ function accept(next: typeof state) {
   state = next;
   candidate = null;
   lockedUntil = performance.now() + 320;
-  const saved = save({ state, mode });
+  const saved = persist();
   view?.renderState(state);
   update();
   $("save-status").textContent = saved
@@ -190,37 +256,86 @@ function accept(next: typeof state) {
   else scheduleAI();
 }
 function scheduleAI() {
-  if (mode !== "ai" || state.turn !== 2 || state.winner) return;
-  timer = setTimeout(() => {
+  if (!isAITurn() || state.winner || !view) return;
+  const generation = sessionGeneration,
+    snapshot = state;
+  timer = setTimeout(async () => {
+    if (generation !== sessionGeneration) return;
     if (document.querySelector("dialog[open]") || view?.moving) {
       scheduleAI();
       return;
     }
-    const p = chooseMove(state);
-    if (p) {
-      const next = play(state, p);
-      if (next) accept(next);
+    try {
+      const result = await ai.compute(
+        snapshot,
+        difficulty,
+        1 + snapshot.moves.length * 7919,
+      );
+      if (
+        generation !== sessionGeneration ||
+        state !== snapshot ||
+        !view ||
+        !isAITurn()
+      )
+        return;
+      const submit = () => {
+        if (generation !== sessionGeneration || state !== snapshot || !view)
+          return;
+        if (document.querySelector("dialog[open]") || view.moving) {
+          timer = setTimeout(submit, 100);
+          return;
+        }
+        const next = result.move && play(state, result.move);
+        if (next) accept(next);
+        else showAIError("컴퓨터가 유효한 수를 반환하지 못했습니다.");
+      };
+      submit();
+    } catch (error) {
+      if (
+        generation !== sessionGeneration ||
+        (error as Error).name === "AbortError"
+      )
+        return;
+      showAIError((error as Error).message);
     }
-  }, 650);
+  }, 350);
 }
+function showAIError(message: string) {
+  $("turn").textContent = message;
+  const retry = document.createElement("button");
+  retry.textContent = "AI 다시 시도";
+  retry.onclick = () => {
+    update();
+    scheduleAI();
+  };
+  $("turn").append(retry);
+}
+window.addEventListener("pagehide", () => {
+  sessionGeneration++;
+  ai.cancel();
+  if (timer) clearTimeout(timer);
+  if (resultTimer) clearTimeout(resultTimer);
+});
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted && view) scheduleAI();
+});
+
 function update() {
   if (!document.getElementById("turn")) return;
   $("turn").innerHTML =
-    `<i class="stone ${state.turn === 1 ? "black" : "white"}"></i><span>${state.winner ? (state.winner === "draw" ? "무승부" : `${state.winner === 1 ? "흑" : "백"}돌 승리`) : mode === "ai" && state.turn === 2 ? "컴퓨터가 생각 중…" : `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`}</span>`;
+    `<i class="stone ${state.turn === 1 ? "black" : "white"}"></i><span>${state.winner ? (state.winner === "draw" ? "무승부" : `${state.winner === 1 ? "흑" : "백"}돌 승리`) : isAITurn() ? "컴퓨터가 생각 중…" : `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`}</span>`;
   $("move-count").textContent = `${state.moves.length}수`;
   $<HTMLButtonElement>("confirm").disabled =
     !candidate ||
     !!state.winner ||
-    (mode === "ai" && state.turn === 2) ||
+    isAITurn() ||
     !!(candidate && state.board[candidate.row][candidate.col]);
   $("confirm").textContent = candidate
     ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}에 착수 확정`
     : "위치를 선택하세요";
 }
 function restart() {
-  state = createGame();
-  lockedUntil = 0;
-  save({ state, mode });
+  newMatch();
   game();
 }
 function modal(

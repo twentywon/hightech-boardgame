@@ -45,6 +45,7 @@ export class BoardView {
   private win: T.Group = new T.Group();
   private observer: ResizeObserver;
   private raf = 0;
+  private dirty = true;
   private cameraStart = new T.Vector3();
   private target = new T.Vector3();
   private transitionStart = 0;
@@ -181,10 +182,19 @@ export class BoardView {
       this.pointerDown = false;
     });
     canvas.addEventListener("pointerleave", (event) => {
-      if (event.pointerType === "mouse" && !this.pointerDown) this.ghost.visible = false;
+      if (event.pointerType === "mouse" && !this.pointerDown) {
+        this.ghost.visible = false;
+        this.dirty = true;
+      }
     });
     const loop = (time: number) => {
       this.raf = requestAnimationFrame(loop);
+      const animate =
+        this.transitionStart !== 0 ||
+        this.falling.length > 0 ||
+        this.win.children.length > 0;
+      if (!this.dirty && !animate) return;
+      this.dirty = false;
       if (this.transitionStart) {
         const t = Math.min(1, (time - this.transitionStart) / 450),
           s = t * t * (3 - 2 * t);
@@ -230,6 +240,7 @@ export class BoardView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
+    this.dirty = true;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -244,6 +255,7 @@ export class BoardView {
     this.target.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance);
   }
   setCamera(top: boolean, zoom = false) {
+    this.dirty = true;
     this.top = top;
     this.zoom = zoom;
     this.cameraStart.copy(this.camera.position);
@@ -271,9 +283,13 @@ export class BoardView {
     if (!this.ray.ray.intersectPlane(this.plane, v)) return;
     const p = fromWorld(v.x, v.z);
     if (p) this.onSelect(p, confirm);
-    else this.ghost.visible = false;
+    else {
+      this.ghost.visible = false;
+      this.dirty = true;
+    }
   }
   preview(p: Point | null, player: number) {
+    this.dirty = true;
     this.ghost.visible = !!p && !this.moving;
     if (p) {
       const v = toWorld(p);
@@ -284,6 +300,7 @@ export class BoardView {
     }
   }
   renderState(state: State, animate = true) {
+    this.dirty = true;
     const old = this.lastCount;
     this.lastCount = state.moves.length;
     this.clearGroup(this.stones);
@@ -336,6 +353,7 @@ export class BoardView {
     cancelAnimationFrame(this.raf);
     this.observer.disconnect();
     this.scene.traverse((obj) => {
+      if (obj instanceof T.DirectionalLight) obj.shadow.dispose();
       if (obj instanceof T.Mesh || obj instanceof T.LineSegments) {
         obj.geometry.dispose();
         const materials = Array.isArray(obj.material)
@@ -348,6 +366,7 @@ export class BoardView {
       }
     });
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 }

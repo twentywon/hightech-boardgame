@@ -740,3 +740,33 @@ dialog h2 {
     transition: none;
   }
 }
+
+.ai-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+  max-width: 360px;
+}
+.ai-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: #514e43;
+}
+.ai-options select {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid #cfc4af;
+  border-radius: 6px;
+  color: #204e43;
+  background: #faf6eb;
+  font: inherit;
+}
+.ai-options small {
+  grid-column: 1 / -1;
+  color: #746c5b;
+  font-size: 10px;
+}

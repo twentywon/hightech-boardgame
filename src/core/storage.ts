@@ -1,3 +1,9 @@
+import {
+  normalizeAI,
+  type AIOptions,
+  type Difficulty,
+} from "../games/gomoku/ai/difficulty";
+import type { Player } from "../games/gomoku/rules";
 import { createGame, play, type State } from "../games/gomoku/rules";
 export type Mode = "local" | "ai";
 export interface Settings {
@@ -9,11 +15,15 @@ export const defaults: Settings = { sound: true, quality: "high", top: false };
 export interface Session {
   state: State;
   mode: Mode;
+  difficulty?: Difficulty;
+  human?: Player;
 }
 const KEY = "wtg.session.v1";
 export function encode(session: Session) {
   return JSON.stringify({
-    version: 1,
+    version: 2,
+    difficulty: session.difficulty,
+    human: session.human,
     mode: session.mode,
     moves: session.state.moves,
   });
@@ -22,7 +32,7 @@ export function decode(raw: string): Session | null {
   try {
     const data = JSON.parse(raw);
     if (
-      data.version !== 1 ||
+      ![1, 2].includes(data.version) ||
       !["local", "ai"].includes(data.mode) ||
       !Array.isArray(data.moves) ||
       data.moves.length > 225
@@ -35,7 +45,16 @@ export function decode(raw: string): Session | null {
       if (!next) return null;
       state = next;
     }
-    return { state, mode: data.mode };
+    return {
+      state,
+      mode: data.mode,
+      ...(data.difficulty !== undefined || data.human !== undefined
+        ? {
+            difficulty: normalizeAI(data).difficulty,
+            human: data.human === 2 ? (2 as const) : (1 as const),
+          }
+        : {}),
+    };
   } catch {
     return null;
   }
@@ -72,5 +91,24 @@ export function setSettings(s: Settings) {
     localStorage.setItem("wtg.settings.v1", JSON.stringify(s));
   } catch {
     /* Storage may be disabled; gameplay remains available. */
+  }
+}
+
+export function getAIOptions(): AIOptions {
+  try {
+    const data = JSON.parse(localStorage.getItem("wtg.ai.v1") || "null");
+    return normalizeAI(data?.version === 1 ? data : null);
+  } catch {
+    return normalizeAI(null);
+  }
+}
+export function setAIOptions(options: AIOptions): void {
+  try {
+    localStorage.setItem(
+      "wtg.ai.v1",
+      JSON.stringify({ version: 1, ...normalizeAI(options) }),
+    );
+  } catch {
+    /* Keep session playable when storage is unavailable. */
   }
 }
