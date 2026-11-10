@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { selectGame } from "./library";
 import { PerspectiveCamera, Vector3 } from "three";
 import { toWorld } from "../../src/games/reversi/coordinates";
 import {
@@ -14,10 +15,9 @@ import {
 } from "../../src/games/reversi/storage";
 import { playout, findPassHistory } from "../reversi-fixtures";
 async function open(page: Page) {
-  await page
-    .getByRole("button", { name: "리버시 플레이", exact: true })
-    .click();
+  await selectGame(page, "리버시");
 }
+
 async function cell(page: Page, row: number, col: number, top = false) {
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
@@ -44,10 +44,10 @@ test("Reversi actual WebGL mouse/touch flips, save, camera, restart and game sel
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "리버시", exact: true }),
+    page.getByRole("button", { name: "리버시 살펴보기", exact: true }),
   ).toBeVisible();
   await open(page);
-  await page.getByRole("button", { name: "리버시 시작", exact: false }).click();
+  await page.getByRole("button", { name: "테이블에 앉기", exact: false }).click();
   await expect(page.locator("#black-count")).toHaveText("2");
   await expect(page.locator("#white-count")).toHaveText("2");
   await expect(page.locator("canvas")).toHaveAttribute(
@@ -99,6 +99,7 @@ test("Reversi actual WebGL mouse/touch flips, save, camera, restart and game sel
   await expect(page.locator("#move-count")).toHaveText("0수");
   await expect(page.locator("#black-count")).toHaveText("2");
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
+  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await expect(page.getByRole("heading", { name: /^오목/ })).toBeVisible();
   await expect(page.locator("canvas")).toHaveAttribute(
@@ -111,6 +112,7 @@ test("Reversi difficulty/color persist independently; changes apply next match",
   page,
 }) => {
   await page.goto("/");
+  await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("AI 난이도").selectOption("expert");
   await page.getByLabel("플레이어 색상").selectOption("white");
@@ -126,7 +128,9 @@ test("Reversi difficulty/color persist independently; changes apply next match",
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await expect(page.getByLabel("AI 난이도")).toHaveValue("easy");
   await expect(page.getByLabel("플레이어 색상")).toHaveValue("white");
-  await page.getByRole("button", { name: "리버시 시작" }).click();
+  const openingWorker = page.waitForEvent("worker", { timeout: 15000 });
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await openingWorker;
   await expect(page.locator("#move-count")).toHaveText("1수", {
     timeout: 15000,
   });
@@ -137,7 +141,9 @@ test("Reversi difficulty/color persist independently; changes apply next match",
   await page.getByRole("button", { name: "리버시 이어하기" }).click();
   await expect(page.locator(".player").first()).toContainText("컴퓨터 · 쉬움");
   await page.getByRole("button", { name: "다시 시작", exact: true }).click();
+  const restartWorker = page.waitForEvent("worker", { timeout: 15000 });
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await restartWorker;
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 어려움",
   );
@@ -197,11 +203,12 @@ test("actual Workers stay responsive and are cancelled when switching both games
   );
   await page.reload();
   const gWorker = page.waitForEvent("worker");
+  await selectGame(page);
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await gWorker;
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
   await open(page);
-  await page.getByRole("button", { name: "리버시 시작" }).click();
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await page.waitForTimeout(3400);
   await expect(page.locator("#move-count")).toHaveText("0수");
   await expect(page.locator("#black-count")).toHaveText("2");
@@ -253,6 +260,7 @@ test("actual Workers stay responsive and are cancelled when switching both games
   expect(ticks.count).toBeGreaterThan(5);
   expect(ticks.max).toBeLessThan(1000);
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
+  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await page.waitForTimeout(3400);
   await expect(page.locator("#move-count")).toHaveText("0수");
@@ -268,7 +276,7 @@ test("Reversi random color stays resolved across resume and storage failure is s
   await open(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("플레이어 색상").selectOption("random");
-  await page.getByRole("button", { name: "리버시 시작" }).click();
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
   const human = await page.evaluate(
     (key) => JSON.parse(localStorage.getItem(key)!).human,
     SESSION_KEY,
@@ -291,7 +299,7 @@ test("Reversi random color stays resolved across resume and storage failure is s
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("AI 난이도").selectOption("expert");
   await page.getByLabel("플레이어 색상").selectOption("white");
-  await page.getByRole("button", { name: "리버시 시작" }).click();
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 전문가",
   );

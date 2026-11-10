@@ -1,18 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
+import { selectGame } from "./library";
 import { PerspectiveCamera, Vector3 } from "three";
 import { playout } from "../reversi-fixtures";
 import { encode, SESSION_KEY } from "../../src/games/reversi/storage";
 
 async function start(page: Page, game: "gomoku" | "reversi", ai = false) {
   await page.goto("/");
-  if (game === "reversi")
-    await page.getByRole("button", { name: "리버시 플레이" }).click();
+  await selectGame(page, game === "gomoku" ? "오목" : "리버시");
   if (ai) {
     await page.getByLabel("컴퓨터 대전", { exact: true }).check();
     await page.getByLabel("플레이어 색상").selectOption("white");
   }
   await page.getByRole("button", {
-    name: game === "gomoku" ? "테이블에 앉기" : "리버시 시작",
+    name: "테이블에 앉기",
   }).click();
 }
 
@@ -92,7 +92,7 @@ for (const game of ["gomoku", "reversi"] as const) {
     }) : encode({ state: reversi, mode: "local", difficulty: "normal", human: 1 });
     await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key, value });
     await page.reload();
-    if (game === "reversi") await page.getByRole("button", { name: "리버시 플레이" }).click();
+    await selectGame(page, game === "gomoku" ? "오목" : "리버시");
     await page.getByRole("button", { name: game === "gomoku" ? "저장한 게임 이어하기" : "리버시 이어하기" }).click();
     await page.locator("canvas").focus();
     // Open settings in the same task as the winning keypress. Software WebGL can

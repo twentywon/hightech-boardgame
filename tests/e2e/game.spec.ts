@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { selectGame } from "./library";
 test("menu, actual WebGL moves, persistence, camera and restart", async ({
   page,
 }, info) => {
@@ -16,6 +17,7 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
     path: `test-results/${info.project.name}-menu.png`,
     fullPage: true,
   });
+  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   const canvas = page.locator("canvas");
   await expect(canvas).toBeVisible();
@@ -53,6 +55,7 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
     ),
   ).toBe(true);
   await page.reload();
+  await selectGame(page);
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await expect(page.locator("#move-count")).toHaveText("1수");
   const angled = await page.locator("canvas").screenshot();
@@ -67,7 +70,9 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
 });
 test("AI responds and settings persist", async ({ page }, info) => {
   await page.goto("/");
+  await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   const canvas = page.locator("canvas");
   await canvas.focus();
@@ -95,7 +100,9 @@ test("five difficulties, white opening, next-game policy and persisted preferenc
   page,
 }, info) => {
   await page.goto("/");
+  await selectGame(page);
   await expect(page.locator("#ai-options")).toBeHidden();
+  await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await expect(page.getByLabel("AI 난이도")).toHaveValue("normal");
   await expect(page.getByLabel("AI 난이도").locator("option")).toHaveCount(5);
@@ -106,24 +113,32 @@ test("five difficulties, white opening, next-game policy and persisted preferenc
     fullPage: true,
   });
   await page.reload();
+  await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await expect(page.getByLabel("AI 난이도")).toHaveValue("hard");
   await expect(page.getByLabel("플레이어 색상")).toHaveValue("white");
+  await selectGame(page);
+  const openingWorker = page.waitForEvent("worker", { timeout: 15000 });
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await openingWorker;
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 어려움",
   );
   await expect(page.locator("#move-count")).toHaveText("1수");
   await expect(page.locator("#turn")).toContainText("백돌");
   await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("AI 난이도").selectOption("beginner");
+  await selectGame(page);
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 어려움",
   );
   await page.getByRole("button", { name: "다시 시작", exact: true }).click();
+  const restartWorker = page.waitForEvent("worker", { timeout: 15000 });
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await restartWorker;
   await expect(page.locator(".player").first()).toContainText("컴퓨터 · 입문");
   await expect(page.locator("#move-count")).toHaveText("1수");
 });
@@ -156,6 +171,7 @@ test("expert Worker keeps animation frames alive; menu and restart discard old w
     thinkingSession,
   );
   await page.reload();
+  await selectGame(page);
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await expect(page.locator("#turn")).toContainText("컴퓨터가 생각 중");
   await expect
@@ -193,6 +209,7 @@ test("expert Worker keeps animation frames alive; menu and restart discard old w
   );
   await page.reload();
   const beforeRestart = workers.length;
+  await selectGame(page);
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await expect
     .poll(() => workers.length, { timeout: 10000 })
@@ -209,11 +226,13 @@ test("expert Worker keeps animation frames alive; menu and restart discard old w
   );
   await page.reload();
   const beforeMenu = workers.length;
+  await selectGame(page);
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await expect
     .poll(() => workers.length, { timeout: 10000 })
     .toBeGreaterThan(beforeMenu);
   await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await page.waitForTimeout(3400);
   await expect(page.locator("#move-count")).toHaveText("0수");
@@ -223,8 +242,10 @@ test("random color is resolved once and retained when resuming", async ({
   page,
 }) => {
   await page.goto("/");
+  await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("플레이어 색상").selectOption("random");
+  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   // Do not stub global Math.random: Three.js uses it for resource identifiers.
   const human = await page.evaluate(
@@ -235,6 +256,7 @@ test("random color is resolved once and retained when resuming", async ({
     human === 2 ? "1수" : "0수", { timeout: 15000 },
   );
   await page.reload();
+  await selectGame(page);
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
   await expect(page.locator(".player").nth(human - 1)).toContainText("나");
   await expect(page.locator("#move-count")).toHaveText(human === 2 ? "1수" : "0수");
@@ -249,9 +271,11 @@ test("AI selection remains usable when storage writes are blocked", async ({
     };
   });
   await page.goto("/");
+  await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("AI 난이도").selectOption("expert");
   await page.getByLabel("플레이어 색상").selectOption("white");
+  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 전문가",

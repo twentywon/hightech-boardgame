@@ -1,4 +1,5 @@
 import { mountReversi, type ReversiController } from "./reversi";
+import { getOptions as getReversiOptions, setOptions as setReversiOptions } from "../games/reversi/storage";
 import { modal } from "./dialog";
 import { games } from "../core/catalog";
 import {
@@ -36,6 +37,7 @@ let state = createGame(),
   lockedUntil = 0;
 let reversi: ReversiController | null = null;
 const ai = new AIClient();
+let reversiOptions = getReversiOptions();
 let aiOptions = getAIOptions(),
   difficulty: Difficulty = aiOptions.difficulty,
   human: Player = 1;
@@ -77,7 +79,7 @@ function header() {
   return `<header><button class="brand" id="home" aria-label="World Table Games 홈"><span class="brand-mark">W<span>✦</span></span><span>WORLD TABLE GAMES<small>PLAY A LITTLE. CONNECT A LOT.</small></span></button><button class="icon-button" id="settings" aria-label="설정">⚙</button></header>`;
 }
 function bindHeader() {
-  $("home").onclick = menu;
+  $("home").onclick = () => menu();
   $("settings").onclick = showSettings;
 }
 function clear() {
@@ -93,49 +95,54 @@ function clear() {
   candidate = null;
   aiError = "";
 }
-function menu() {
+type GameSelection = "gomoku" | "reversi" | null;
+function gomokuSetup() {
+  return `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
+}
+function menu(selected: GameSelection = null, category = "전체") {
   clear();
-  app.innerHTML =
-    header() +
-    `<main class="library"><div class="eyebrow">THE WORLD, AT YOUR TABLE</div><h1>함께 앉으면,<br>즐거움이 시작됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p><div class="collection-heading"><h2>게임 컬렉션 <span>02 / 05</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x, i) => `<button class="filter ${i === 0 ? "active" : ""}" data-category="${x}" aria-pressed="${i === 0}">${x}</button>`).join("")}</div></div><div class="collection"><section class="featured" data-category="보드게임"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section><div class="upcoming">${games
-      .slice(1)
-      .map(
-        (g, i) =>
-          `<article class="soon-card" data-category="${g.category}"><div class="game-icon icon-${i}">${g.icon}</div><div><small>NO. 0${i + 2} / ${g.en}</small><h3>${g.name}</h3><span>${g.category}</span></div>${g.available ? '<button id="reversi-menu" class="available-button">리버시 플레이</button>' : "<button disabled>개발 예정</button>"}</article>`,
-      )
-      .join(
-        "",
-      )}</div></div><footer><span>✦ &nbsp; EVERY GAME TELLS A STORY.</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
+  app.innerHTML = header() +
+    `<main class="library"><div class="eyebrow">THE WORLD, AT YOUR TABLE</div><h1>함께 앉으면,<br>즐거움이 시작됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p><div class="collection-heading"><h2>게임 컬렉션 <span>02 / 05</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-pressed="${x === category}">${x}</button>`).join("")}</div></div><div class="collection game-list">${games.map((g, i) => {
+      const id = g.en.toLowerCase().replaceAll(" ", "-"), expanded = selected === id;
+      return `<article class="game-entry ${expanded ? "expanded" : ""}" data-game="${id}" data-category="${g.category}" ${category !== "전체" && category !== g.category ? "hidden" : ""}><button class="game-card" id="select-game-${i}" ${g.available ? `aria-label="${g.name} 살펴보기" aria-expanded="${expanded}" ${expanded ? 'aria-controls="game-detail"' : ""}` : `disabled aria-label="${g.name} 개발 예정"`}><span class="game-icon icon-${i}" aria-hidden="true">${g.icon}</span><span class="card-copy"><small>NO. 0${i + 1} / ${g.en}</small><span class="card-title">${g.name}</span><span class="card-category">${g.category}</span></span><span class="card-action">${g.available ? `${expanded ? "접기" : "살펴보기"} <span aria-hidden="true">${expanded ? "−" : "+"}</span>` : "개발 예정"}</span></button>${expanded ? `<div id="game-detail" class="game-detail" role="region" aria-label="${g.name} 대국 설정">${id === "gomoku" ? gomokuSetup() : ""}</div>` : ""}</article>`;
+    }).join("")}</div><footer><span>✦ &nbsp; EVERY GAME TELLS A STORY.</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
   bindHeader();
-  $("reversi-menu").onclick = () => {
-    clear();
-    reversi = mountReversi(app, { header, bindHeader, back: menu, settings });
-  };
-  const rememberAI = () => {
-    aiOptions = {
-      difficulty: $<HTMLSelectElement>("ai-difficulty").value as Difficulty,
-      color: $<HTMLSelectElement>("ai-color").value as ColorChoice,
+  document.querySelectorAll<HTMLButtonElement>(".game-card:not(:disabled)").forEach((button) => {
+    button.onclick = () => {
+      const id = button.closest<HTMLElement>(".game-entry")!.dataset.game as Exclude<GameSelection, null>;
+      menu(selected === id ? null : id, category);
+      document.getElementById(button.id)?.focus({ preventScroll: true });
     };
-    setAIOptions(aiOptions);
-  };
-  $("ai-difficulty").onchange = rememberAI;
-  $("ai-color").onchange = rememberAI;
-  document.querySelectorAll<HTMLInputElement>("input[name=mode]").forEach(
-    (input) =>
+  });
+  if (selected === "reversi") {
+    reversi = mountReversi(app, {
+      header, bindHeader, back: () => menu(), settings,
+      setupHost: $("game-detail"), configure: () => menu("reversi"),
+      preferences: reversiOptions,
+      remember: (options) => { reversiOptions = options; setReversiOptions(options); },
+    });
+  }
+  if (selected === "gomoku") {
+    const rememberAI = () => {
+      aiOptions = {
+        difficulty: $<HTMLSelectElement>("ai-difficulty").value as Difficulty,
+        color: $<HTMLSelectElement>("ai-color").value as ColorChoice,
+      };
+      setAIOptions(aiOptions);
+    };
+    $("ai-difficulty").onchange = rememberAI;
+    $("ai-color").onchange = rememberAI;
+    document.querySelectorAll<HTMLInputElement>("input[name=mode]").forEach((input) =>
       (input.onchange = () => {
-        $("ai-options").hidden =
-          document.querySelector<HTMLInputElement>("input[name=mode]:checked")!
-            .value !== "ai";
+        $("ai-options").hidden = document.querySelector<HTMLInputElement>("input[name=mode]:checked")!.value !== "ai";
       }),
-  );
-  $("start").onclick = () => {
-    mode = document.querySelector<HTMLInputElement>("input[name=mode]:checked")!
-      .value as Mode;
-    newMatch();
-    game();
-  };
-  if (document.getElementById("resume"))
-    $("resume").onclick = () => {
+    );
+    $("start").onclick = () => {
+      mode = document.querySelector<HTMLInputElement>("input[name=mode]:checked")!.value as Mode;
+      newMatch();
+      game();
+    };
+    if (document.getElementById("resume")) $("resume").onclick = () => {
       const session = load();
       if (session) {
         state = session.state;
@@ -145,22 +152,18 @@ function menu() {
         game();
       }
     };
-  document.querySelectorAll<HTMLButtonElement>(".filter").forEach(
-    (b) =>
-      (b.onclick = () => {
-        document.querySelectorAll(".filter").forEach((x) => {
-          x.classList.toggle("active", x === b);
-          x.setAttribute("aria-pressed", String(x === b));
-        });
-        document
-          .querySelectorAll<HTMLElement>(".collection [data-category]")
-          .forEach(
-            (x) =>
-              (x.hidden =
-                b.dataset.category !== "전체" &&
-                x.dataset.category !== b.dataset.category),
-          );
-      }),
+  }
+  document.querySelectorAll<HTMLButtonElement>(".filter").forEach((button) =>
+    (button.onclick = () => {
+      category = button.dataset.category!;
+      document.querySelectorAll(".filter").forEach((x) => {
+        x.classList.toggle("active", x === button);
+        x.setAttribute("aria-pressed", String(x === button));
+      });
+      document.querySelectorAll<HTMLElement>(".game-entry").forEach((entry) =>
+        (entry.hidden = category !== "전체" && entry.dataset.category !== category),
+      );
+    }),
   );
 }
 function game() {
@@ -169,7 +172,7 @@ function game() {
     header() +
     `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · 자유룰</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">AT THE TABLE</div><h2>좋은 한 수를<br>생각해 보세요.</h2><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 위치 선택 후 버튼으로 확정<br>키보드: 방향키로 선택, Enter로 착수</p><span id="save-status" class="save-status"></span></aside></div></main>`;
   bindHeader();
-  $("back").onclick = menu;
+  $("back").onclick = () => menu();
   $("rules").onclick = showRules;
   $("restart").onclick = () =>
     modal("새로운 게임을 시작할까요?", "현재 게임은 새 게임으로 교체됩니다.", [

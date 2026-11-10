@@ -9,12 +9,13 @@ import {
   type Player,
   type Point,
 } from "../games/reversi/rules";
-import { load, save, getOptions, setOptions } from "../games/reversi/storage";
+import { load, save } from "../games/reversi/storage";
 import {
   difficulties,
   difficultyLabels,
   type Difficulty,
   type ColorChoice,
+  type AIOptions,
 } from "../core/ai";
 import { ReversiAIClient } from "../games/reversi/client";
 import { BoardView } from "../engine/board-view";
@@ -26,6 +27,10 @@ interface Navigation {
   bindHeader: () => void;
   back: () => void;
   settings: Settings;
+  setupHost: HTMLElement;
+  configure: () => void;
+  preferences: AIOptions;
+  remember: (options: AIOptions) => void;
 }
 export interface ReversiController {
   dispose(): void;
@@ -38,7 +43,7 @@ export function mountReversi(
   const ai = new ReversiAIClient(),
     sound = new Sound();
   sound.enabled = nav.settings.sound;
-  let preferences = getOptions(),
+  let preferences = nav.preferences,
     state = createGame(),
     mode: Mode = "local",
     difficulty: Difficulty = preferences.difficulty,
@@ -76,9 +81,8 @@ export function mountReversi(
   }
   function setup() {
     stop();
-    root.innerHTML =
-      nav.header() +
-      `<main class="library reversi-setup"><button class="text-button" id="rv-back">← 컬렉션</button><div class="eyebrow">NO. 02 — TURN THE TABLE</div><h1>한 번의 뒤집기,<br>새로운 가능성.</h1><p class="intro">리버시 · Reversi<br>상대 돌을 사이에 두고, 테이블의 흐름을 바꿔보세요.</p><section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>리버시 <span>Reversi</span></h2><p>코너를 지키고, 다음 수를 열어두세요.<br>마지막 순간까지 승부는 바뀔 수 있습니다.</p><div class="game-meta">2인 · 8×8 보드 · 전략</div><div class="mode-select"><label><input type="radio" name="rv-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="rv-mode" value="ai"> 컴퓨터 대전</label></div><div id="rv-options" class="ai-options" hidden><label>AI 난이도<select id="rv-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><label>플레이어 색상<select id="rv-color">${[
+    nav.setupHost.innerHTML =
+      `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>리버시 <span>Reversi</span></h2><p>코너를 지키고, 다음 수를 열어두세요.<br>마지막 순간까지 승부는 바뀔 수 있습니다.</p><div class="game-meta">2인 · 8×8 보드 · 전략</div><div class="mode-select"><label><input type="radio" name="rv-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="rv-mode" value="ai"> 컴퓨터 대전</label></div><div id="rv-options" class="ai-options" hidden><label>AI 난이도<select id="rv-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><label>플레이어 색상<select id="rv-color">${[
         ["black", "흑돌"],
         ["white", "백돌"],
         ["random", "무작위"],
@@ -89,9 +93,7 @@ export function mountReversi(
         )
         .join(
           "",
-        )}</select></label><small>선택한 설정은 다음 새 대국부터 적용됩니다.</small></div><button id="rv-start" class="primary">리버시 시작 <span>↗</span></button>${load() ? '<button id="rv-resume" class="text-button">리버시 이어하기 →</button>' : ""}</div><div class="feature-art reversi-art"><div class="reversi-mini"><i class="white"></i><i class="black"></i><i class="black"></i><i class="white"></i></div><span>THE ART OF REVERSAL</span></div></section></main>`;
-    nav.bindHeader();
-    $("rv-back").onclick = nav.back;
+        )}</select></label><small>선택한 설정은 다음 새 대국부터 적용됩니다.</small></div><button id="rv-start" class="primary">테이블에 앉기 <span>↗</span></button>${load() ? '<button id="rv-resume" class="text-button">리버시 이어하기 →</button>' : ""}</div><div class="feature-art reversi-art" role="img" aria-label="리버시판 미리보기"><div class="reversi-mini"><i class="white"></i><i class="black"></i><i class="black"></i><i class="white"></i></div><span>THE ART OF REVERSAL</span></div></section>`;
     document.querySelectorAll<HTMLInputElement>("input[name=rv-mode]").forEach(
       (input) =>
         (input.onchange = () => {
@@ -106,7 +108,7 @@ export function mountReversi(
         difficulty: $<HTMLSelectElement>("rv-difficulty").value as Difficulty,
         color: $<HTMLSelectElement>("rv-color").value as ColorChoice,
       };
-      setOptions(preferences);
+      nav.remember(preferences);
     };
     $("rv-difficulty").onchange = remember;
     $("rv-color").onchange = remember;
@@ -147,7 +149,7 @@ export function mountReversi(
       `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>리버시 <small>REVERSI</small></h1></div><div class="game-actions"><button id="rv-config">대국 설정</button><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE REVERSI TABLE</span><span>8 × 8 · 흑 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">TURN THE TABLE</div><h2>마지막 한 수까지,<br>가능성은 열려있습니다.</h2><div id="turn" role="status" aria-live="polite"></div><div id="pass-notice" role="status" aria-live="polite" hidden></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "local" ? "플레이어 1" : human === 1 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="black-count">2</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "local" ? "플레이어 2" : human === 2 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="white-count">2</b></div><label class="hint-toggle"><input id="hints" type="checkbox" ${showHints ? "checked" : ""}> 합법 수 안내</label><p class="hint">상대 돌을 사이에 두고 뒤집으세요.<br>마지막에 더 많은 돌을 가진 쪽이 승리합니다.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><p class="input-help">마우스: 클릭하여 착수<br>터치: 선택·드래그 후 확정<br>키보드: 방향키로 선택, Enter로 착수</p><span id="save-status" class="save-status"></span></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
-    $("rv-config").onclick = setup;
+    $("rv-config").onclick = nav.configure;
     $("rules").onclick = rules;
     $("restart").onclick = () =>
       modal(

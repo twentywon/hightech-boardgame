@@ -299,13 +299,22 @@ input {
 .white {
   background: radial-gradient(circle at 32% 25%, #fffef4, #d2d0c7 80%);
 }
-.upcoming {
+.game-list {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
-  margin-top: 18px;
 }
-.soon-card {
+.game-entry {
+  min-width: 0;
+}
+.game-entry.expanded {
+  grid-column: 1 / -1;
+}
+.game-detail {
+  margin-top: 12px;
+}
+.game-card {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 18px;
@@ -313,8 +322,30 @@ input {
   border: 1px solid #ddd7ca;
   border-radius: 9px;
   background: #f9f6ef;
+  text-align: left;
+}
+.game-card[aria-expanded="true"] {
+  border-color: var(--green);
+  background: #e5e9dc;
+}
+.game-card:disabled {
+  opacity: 0.65;
+}
+.card-copy {
+  min-width: 0;
+}
+.card-action {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--green);
+}
+.card-action > span {
+  font-size: 20px;
+  margin-left: 10px;
 }
 .game-icon {
+  flex-shrink: 0;
   width: 64px;
   height: 64px;
   display: grid;
@@ -336,26 +367,20 @@ input {
   background: #ede4d6;
   color: #a28450;
 }
-.soon-card small {
+.game-card small {
   font-size: 8px;
   letter-spacing: 1.8px;
   color: #8c897d;
 }
-.soon-card h3 {
+.card-title {
+  display: block;
   font-size: 17px;
   margin: 8px 0 6px;
   font-weight: 500;
 }
-.soon-card span {
+.card-category {
   font-size: 10px;
   color: #8b877a;
-}
-.soon-card button {
-  margin-left: auto;
-  font-size: 10px;
-  min-height: 28px;
-  padding: 6px 9px;
-  border-radius: 20px;
 }
 footer {
   display: flex;
@@ -635,12 +660,13 @@ dialog h2 {
   .feature-copy .primary {
     width: 100%;
   }
-  .upcoming {
+  .game-list {
     grid-template-columns: 1fr;
     gap: 12px;
   }
-  .soon-card {
-    padding: 18px;
+  .game-card {
+    padding: 18px 14px;
+    gap: 12px;
   }
   .game-icon {
     width: 53px;
@@ -770,11 +796,6 @@ dialog h2 {
   color: #746c5b;
   font-size: 10px;
 }
-.soon-card .available-button {
-  opacity: 1;
-  color: #204e43;
-  border-color: #a7b7a0;
-}
 .reversi-art {
   background: radial-gradient(ellipse at center, #3f7564, #173f35);
 }
@@ -816,9 +837,6 @@ dialog h2 {
   line-height: 1.7;
   border-radius: 5px;
   margin-top: 10px;
-}
-.reversi-setup {
-  padding-bottom: 40px;
 }
 @media (max-width: 760px) {
   .game-actions {
