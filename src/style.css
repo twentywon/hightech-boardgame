@@ -857,3 +857,30 @@ dialog h2 {
   min-width: 30px;
   text-align: right;
 }
+.session-note { display:block; margin-top:14px; color:#746c5b; font-size:11px; line-height:1.7; }
+.chess-art { background:radial-gradient(ellipse at center,#426e5a,#173e34); }
+.chess-mini { display:grid;grid-template-columns:repeat(8,1fr);width:280px;height:280px;border:16px solid #765437;transform:rotateX(28deg) rotateZ(-17deg);box-shadow:14px 22px 30px #102e2380; }
+.chess-mini i { background:#e8dfc6;font:32px Georgia;display:grid;place-items:center;color:#27382e;font-style:normal; }
+.chess-mini i:nth-child(16n+2),.chess-mini i:nth-child(16n+4),.chess-mini i:nth-child(16n+6),.chess-mini i:nth-child(16n+8),.chess-mini i:nth-child(16n+9),.chess-mini i:nth-child(16n+11),.chess-mini i:nth-child(16n+13),.chess-mini i:nth-child(16n+15) { background:#48745f;color:#f4ebd5; }
+.chess-game .game-actions { flex-wrap:wrap;justify-content:flex-end; }
+.chess-game .board-area { align-self:start;width:100%;min-width:0; }
+.chess-confirm-slot { min-height:48px; }
+.chess-glyph { font:36px Georgia;min-width:38px;font-style:normal; }
+.chess-captured { margin:12px 0;font-size:24px; }
+.chess-captured > div { display:flex;align-items:center;gap:10px;min-height:32px; }
+.chess-captured small { font:10px Arial,sans-serif;color:#77715f;white-space:nowrap; }
+.chess-captured span { font-family:Georgia,serif;overflow-wrap:anywhere; }
+.chess-game #chess-claim { width:100%;font-size:12px; }
+.history-title { font-size:12px;font-weight:500;margin:20px 0 10px; }
+.chess-history { list-style:none;padding:0;margin:0;max-height:180px;overflow-y:auto;font-size:12px;font-variant-numeric:tabular-nums;border-top:1px solid #d9d2c4; }
+.chess-history li { display:grid;grid-template-columns:30px 1fr 1fr;gap:8px;padding:9px 4px;border-bottom:1px solid #e0d9ca; }
+.chess-history li span:first-child { color:#8b806a; }
+@media(max-width:760px) {
+  .chess-mini { width:220px;height:220px;border-width:12px; }
+  .chess-mini i { font-size:26px; }
+  .chess-game .game-top { align-items:flex-start;gap:10px; }
+  .chess-game .game-actions { max-width:230px;gap:5px; }
+  .chess-game .game-actions button { padding:8px 10px;font-size:10px; }
+  .chess-captured { font-size:22px; }
+  .chess-game #confirm:not(:disabled) { position:fixed;left:20px;right:20px;bottom:calc(14px + env(safe-area-inset-bottom));width:calc(100% - 40px);z-index:5;box-shadow:0 6px 24px #102e2355; }
+}

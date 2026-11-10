@@ -1,0 +1,31 @@
+{
+  "bytes": 742363,
+  "directFile": {
+    "verified": false,
+    "error": "ERR_BLOCKED_BY_ADMINISTRATOR"
+  },
+  "protocol": "http:",
+  "singleDocumentOnly": true,
+  "games": [
+    {
+      "name": "오목",
+      "moves": 3,
+      "aiOpeningAndReply": true
+    },
+    {
+      "name": "리버시",
+      "moves": 3,
+      "aiOpeningAndReply": true
+    },
+    {
+      "name": "체스",
+      "moves": 3,
+      "aiOpeningAndReply": true
+    }
+  ],
+  "externalRequests": [],
+  "pageErrors": [],
+  "workerStarts": 6,
+  "distinctInlineWorkers": 3,
+  "chessLicenseIncluded": true
+}

@@ -37,6 +37,8 @@ for (const match of html.matchAll(cssTag)) {
   const css = await readFile(resolve(root, match[1]), "utf8");
   html = html.replace(match[0], () => `<style>${css}</style>`);
 }
+const notice = await readFile(resolve(root, "chess-license.txt"), "utf8");
+html = html.replace("</body>", () => `<!-- ${notice.replaceAll("--", "—")} -->\n</body>`);
 const target = resolve(root, "world-table-games.html");
 await writeFile(target, html);
 console.log(

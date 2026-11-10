@@ -6,38 +6,8 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-function wood(dark = false) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = dark ? "#543a28" : "#c89a60";
-  ctx.fillRect(0, 0, 512, 512);
-  let seed = 42;
-  const rand = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  for (let i = 0; i < 1000; i++) {
-    const y = rand() * 512;
-    ctx.strokeStyle = dark
-      ? `rgba(18,9,4,${rand() * 0.13})`
-      : `rgba(77,41,14,${rand() * 0.15})`;
-    ctx.lineWidth = rand() * 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    for (let x = 0; x <= 512; x += 16)
-      ctx.lineTo(
-        x,
-        y + Math.sin(x * 0.012 + y) * 2 + Math.sin(x * 0.032) * 0.8,
-      );
-    ctx.stroke();
-  }
-  const texture = new T.CanvasTexture(canvas);
-  texture.colorSpace = T.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = T.RepeatWrapping;
-  return texture;
-}
+import { wood } from "./scene-utils";
+
 export class BoardView {
   readonly renderer: T.WebGLRenderer;
   readonly scene = new T.Scene();

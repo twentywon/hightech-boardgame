@@ -11,3 +11,6 @@
 - Reversi rules live in `src/games/reversi/rules.ts`: use shared legal-move generation for sessions and search, reconstruct automatic passes during replay, and keep Reversi storage keys separate from Gomoku.
 - Browser Reversi AI must drain `searchSteps` cooperatively in its Worker. Mark exact endgames solved only after the full remaining placement depth completes; passes do not consume placement depth.
 - Preserve nonblocking GPU startup readiness and scene/audio cleanup. Reversi AI evaluation: `npm run reversi:evaluate` (40 paired-color games at the documented budget scale plus timing samples).
+- Chess uses pinned chess.js 1.4.0 through `src/games/chess/rules.ts`. Do not use its automatic threefold/50-move `isGameOver` policy; sessions implement claims separately from fivefold/75-move automatic draws.
+- Chess sessions and preferences live only in memory: no persistence, resume feature, AI-vs-AI league, or Elo estimate. `npm run chess:measure` measures individual positions only.
+- Keep chess repetition context and halfmove clocks in transposition keys, checked quiescence nodes searching evasions, and the chess.js BSD notice in exported artifacts.

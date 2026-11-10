@@ -18,7 +18,7 @@ export const games = [
     en: "CHESS",
     category: "보드게임",
     icon: "♞",
-    available: false,
+    available: true,
   },
   {
     name: "블랙잭",
