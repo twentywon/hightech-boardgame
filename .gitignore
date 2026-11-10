@@ -1,0 +1,7 @@
+# Godot generated caches and local export output
+.godot/
+.import/
+export.cfg
+export_credentials.cfg
+build/
+exports/
