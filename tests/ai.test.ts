@@ -275,6 +275,26 @@ describe("Worker cancellation", () => {
     await rejection;
     expect(worker.terminate).toHaveBeenCalled();
   });
+  it.each([null, undefined, {}, { result: null }])("rejects malformed Worker payload %j and allows a fresh request", async (data) => {
+    const worker = fake(), client = new AIClient(() => worker);
+    const pending = client.compute(complex, "normal");
+    const rejection = expect(pending).rejects.toThrow("응답");
+    expect(() => worker.onmessage!({ data } as MessageEvent)).not.toThrow();
+    await rejection;
+    expect(worker.terminate).toHaveBeenCalled();
+    const retried = client.compute(complex, "easy");
+    const result = search(complex, "easy");
+    worker.onmessage!({ data: { result } } as MessageEvent);
+    expect(await retried).toEqual(result);
+  });
+  it("rejects message deserialization failure without leaving a pending request", async () => {
+    const worker = fake(), client = new AIClient(() => worker);
+    const pending = client.compute(complex, "normal");
+    const rejection = expect(pending).rejects.toThrow("응답");
+    worker.onmessageerror!({} as MessageEvent);
+    await rejection;
+    expect(worker.terminate).toHaveBeenCalled();
+  });
   it("surfaces worker failure and watchdog timeout without blocking fallback", async () => {
     vi.useFakeTimers();
     const worker = fake(),

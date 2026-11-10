@@ -182,6 +182,7 @@ export function mountReversi(
       if (settings.top) view.setCamera(true);
       view.onSelect = (p, confirm) => {
         if (
+          !p ||
           !canPlay() ||
           !legalMoves(state.board, state.turn).some(
             (m) => m.index === indexOf(p),
@@ -367,7 +368,7 @@ export function mountReversi(
   }
   function result() {
     if (!state.winner) return;
-    if (view?.animating) {
+    if (view?.animating || document.querySelector("dialog[open]")) {
       later(result, 100);
       return;
     }

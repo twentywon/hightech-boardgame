@@ -65,13 +65,22 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
   await expect(page.locator("#move-count")).toHaveText("0수");
   expect(errors).toEqual([]);
 });
-test("AI responds and settings persist", async ({ page }) => {
+test("AI responds and settings persist", async ({ page }, info) => {
   await page.goto("/");
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   const canvas = page.locator("canvas");
   await canvas.focus();
+  // Initial software WebGL uploads precede Worker startup. Bound that separately
+  // from the AI response instead of charging both to the default 5s assertion.
+  const began = Date.now();
+  const worker = page.waitForEvent("worker", { timeout: 15000 });
   await page.keyboard.press("Enter");
+  await worker;
+  await info.attach("ai-worker-start-delay", {
+    body: JSON.stringify({ elapsedMs: Date.now() - began }),
+    contentType: "application/json",
+  });
   await expect(page.locator("#move-count")).toHaveText("2수");
   await expect(page.locator("#turn")).toContainText("흑돌");
   await page.getByRole("button", { name: "설정", exact: true }).click();
@@ -213,26 +222,22 @@ test("expert Worker keeps animation frames alive; menu and restart discard old w
 test("random color is resolved once and retained when resuming", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    Math.random = () => 0.75;
-  });
   await page.goto("/");
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("플레이어 색상").selectOption("random");
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
-  await expect(page.locator("#move-count")).toHaveText("1수");
-  expect(
-    await page.evaluate(
-      () => JSON.parse(localStorage.getItem("wtg.session.v1")!).human,
-    ),
-  ).toBe(2);
-  await page.addInitScript(() => {
-    Math.random = () => 0.1;
-  });
+  // Do not stub global Math.random: Three.js uses it for resource identifiers.
+  const human = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("wtg.session.v1")!).human,
+  );
+  expect([1, 2]).toContain(human);
+  await expect(page.locator("#move-count")).toHaveText(
+    human === 2 ? "1수" : "0수", { timeout: 15000 },
+  );
   await page.reload();
   await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect(page.locator(".player").last()).toContainText("나");
-  await expect(page.locator("#move-count")).toHaveText("1수");
+  await expect(page.locator(".player").nth(human - 1)).toContainText("나");
+  await expect(page.locator("#move-count")).toHaveText(human === 2 ? "1수" : "0수");
 });
 
 test("AI selection remains usable when storage writes are blocked", async ({

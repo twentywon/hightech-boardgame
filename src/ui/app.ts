@@ -40,6 +40,7 @@ let aiOptions = getAIOptions(),
   difficulty: Difficulty = aiOptions.difficulty,
   human: Player = 1;
 let sessionGeneration = 0;
+let aiError = "";
 const isAITurn = () => mode === "ai" && state.turn !== human;
 const persist = () => save({ state, mode, difficulty, human });
 function newMatch() {
@@ -90,6 +91,7 @@ function clear() {
   view?.dispose();
   view = null;
   candidate = null;
+  aiError = "";
 }
 function menu() {
   clear();
@@ -189,7 +191,7 @@ function game() {
     view = new BoardView($("board"), settings.quality);
     view.onContact = () => sound.tap();
     view.onSelect = (p, confirm) => {
-      if (!canPlay() || state.board[p.row][p.col]) {
+      if (!p || !canPlay() || state.board[p.row][p.col]) {
         view?.preview(null, state.turn);
         candidate = null;
         update();
@@ -228,6 +230,8 @@ function game() {
       }
     });
   } catch {
+    view?.dispose();
+    view = null;
     $("board").innerHTML =
       '<div class="webgl-error"><h2>3D 화면을 시작할 수 없습니다</h2><p>WebGL을 지원하는 최신 브라우저에서 하드웨어 가속을 켜고 다시 시도해 주세요.</p></div>';
   }
@@ -253,6 +257,7 @@ function place(p: Point) {
 }
 function accept(next: typeof state) {
   state = next;
+  aiError = "";
   candidate = null;
   lockedUntil = performance.now() + 320;
   const saved = persist();
@@ -310,14 +315,8 @@ function scheduleAI() {
   }, 350);
 }
 function showAIError(message: string) {
-  $("turn").textContent = message;
-  const retry = document.createElement("button");
-  retry.textContent = "AI 다시 시도";
-  retry.onclick = () => {
-    update();
-    scheduleAI();
-  };
-  $("turn").append(retry);
+  aiError = message;
+  update();
 }
 window.addEventListener("pagehide", () => {
   sessionGeneration++;
@@ -333,6 +332,17 @@ function update() {
   if (!document.getElementById("turn")) return;
   $("turn").innerHTML =
     `<i class="stone ${state.turn === 1 ? "black" : "white"}"></i><span>${state.winner ? (state.winner === "draw" ? "무승부" : `${state.winner === 1 ? "흑" : "백"}돌 승리`) : isAITurn() ? "컴퓨터가 생각 중…" : `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`}</span>`;
+  if (aiError && !state.winner) {
+    $("turn").textContent = aiError;
+    const retry = document.createElement("button");
+    retry.textContent = "AI 다시 시도";
+    retry.onclick = () => {
+      aiError = "";
+      update();
+      scheduleAI();
+    };
+    $("turn").append(retry);
+  }
   $("move-count").textContent = `${state.moves.length}수`;
   $<HTMLButtonElement>("confirm").disabled =
     !candidate ||
@@ -348,6 +358,11 @@ function restart() {
   game();
 }
 function showResult() {
+  if (!state.winner || !view) return;
+  if (view.animating || document.querySelector("dialog[open]")) {
+    resultTimer = setTimeout(showResult, 100);
+    return;
+  }
   modal(
     state.winner === "draw"
       ? "멋진 승부, 무승부!"

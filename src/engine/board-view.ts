@@ -79,9 +79,10 @@ export class BoardView {
   private zoom = false;
   private falling: { mesh: T.Mesh; start: number; sounded: boolean }[] = [];
   private lastCount = -1;
-  private pointerDown = false;
+  private activePointer: number | null = null;
+  private selectionPointerType = "";
   private lastPointer = 0;
-  onSelect: (p: Point, confirm: boolean) => void = () => {};
+  onSelect: (p: Point | null, confirm: boolean) => void = () => {};
   onContact: () => void = () => {};
   get animating() {
     return this.moving || this.falling.length > 0 || this.flips.length > 0;
@@ -260,15 +261,26 @@ export class BoardView {
     this.camera.lookAt(0, 0, 0);
     const canvas = this.renderer.domElement;
     canvas.addEventListener("pointerdown", (e) => {
-      this.pointerDown = true;
+      if (!e.isPrimary || e.button !== 0 || this.activePointer !== null) return;
+      this.activePointer = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
       this.pointer(e, false);
     });
     canvas.addEventListener("pointermove", (e) => {
-      if (e.pointerType === "mouse" || this.pointerDown) this.pointer(e, false);
+      if (!e.isPrimary) return;
+      if (
+        this.activePointer === e.pointerId ||
+        (this.activePointer === null &&
+          e.pointerType === "mouse" &&
+          e.buttons === 0)
+      )
+        this.pointer(e, false);
     });
     canvas.addEventListener("pointerup", (e) => {
-      this.pointerDown = false;
+      if (this.activePointer !== e.pointerId || e.button !== 0) return;
+      this.activePointer = null;
+      if (canvas.hasPointerCapture(e.pointerId))
+        canvas.releasePointerCapture(e.pointerId);
       if (
         e.pointerType === "mouse" &&
         performance.now() - this.lastPointer > 320
@@ -277,17 +289,28 @@ export class BoardView {
         this.pointer(e, true);
       }
     });
-    canvas.addEventListener("pointercancel", () => {
-      this.pointerDown = false;
-    });
+    const cancelPointer = (e: PointerEvent) => {
+      if (this.activePointer !== e.pointerId) return;
+      this.activePointer = null;
+      if (canvas.hasPointerCapture(e.pointerId))
+        canvas.releasePointerCapture(e.pointerId);
+      this.clearSelection();
+    };
+    canvas.addEventListener("pointercancel", cancelPointer);
+    canvas.addEventListener("lostpointercapture", cancelPointer);
     canvas.addEventListener("pointerleave", (event) => {
-      if (event.pointerType === "mouse" && !this.pointerDown) {
-        this.ghost.visible = false;
-        this.dirty = true;
-      }
+      // A touch selection remains pending while the user reaches the confirm
+      // button, including on devices that also emit mouse leave events.
+      if (
+        event.pointerType === "mouse" &&
+        this.activePointer === null &&
+        this.selectionPointerType === "mouse"
+      )
+        this.clearSelection();
     });
     const loop = (time: number) => {
       this.raf = requestAnimationFrame(loop);
+      const settling = this.animating;
       const animate =
         this.transitionStart !== 0 ||
         this.falling.length > 0 ||
@@ -302,7 +325,6 @@ export class BoardView {
         if (t === 1) this.transitionStart = 0;
       }
       this.camera.lookAt(0, 0, 0);
-      const settling = this.falling.length > 0 || this.flips.length > 0;
       this.flips = this.flips.filter((f) => {
         const t = Math.max(0, Math.min(1, (time - f.start) / 380)),
           eased = t * t * (3 - 2 * t);
@@ -430,7 +452,7 @@ export class BoardView {
     this.resize(true);
   }
   private pointer(e: PointerEvent, confirm: boolean) {
-    if (this.moving) return;
+    if (this.disposed || this.moving) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(
       new T.Vector2(
@@ -440,16 +462,35 @@ export class BoardView {
       this.camera,
     );
     const v = new T.Vector3();
-    if (!this.ray.ray.intersectPlane(this.plane, v)) return;
+    if (!this.ray.ray.intersectPlane(this.plane, v)) {
+      this.clearSelection();
+      return;
+    }
     const p =
       this.variant === "reversi" ? reversiPoint(v.x, v.z) : fromWorld(v.x, v.z);
-    if (p) this.onSelect(p, confirm);
-    else {
-      this.ghost.visible = false;
-      this.dirty = true;
+    if (p) {
+      this.selectionPointerType = e.pointerType;
+      this.onSelect(p, confirm);
     }
+    else this.clearSelection();
+  }
+  private clearSelection() {
+    if (this.disposed) return;
+    this.selectionPointerType = "";
+    this.preview(null, 1);
+    this.onSelect(null, false);
   }
   preview(p: Point | null, player: number) {
+    if (this.disposed) return;
+    // Clearing an already hidden preview must not queue another GPU frame,
+    // especially while the initial board uploads or the AI is searching.
+    if (!p) {
+      if (this.ghost.visible) {
+        this.ghost.visible = false;
+        this.dirty = true;
+      }
+      return;
+    }
     this.dirty = true;
     this.ghost.visible = !!p && !this.moving;
     if (p) {

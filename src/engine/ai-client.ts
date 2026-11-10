@@ -2,6 +2,7 @@ import type { Difficulty } from "../core/ai";
 export interface WorkerPort {
   onmessage: ((event: MessageEvent) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
+  onmessageerror?: ((event: MessageEvent) => void) | null;
   postMessage(data: unknown): void;
   terminate(): void;
 }
@@ -28,7 +29,9 @@ export class WorkerClient<S, R> {
     const generation = this.generation;
     return new Promise((resolve, reject) => {
       this.reject = reject;
+      let settled = false;
       const finish = () => {
+        settled = true;
         this.worker?.terminate();
         this.worker = null;
         this.reject = null;
@@ -39,13 +42,22 @@ export class WorkerClient<S, R> {
         const worker = this.factory();
         this.worker = worker;
         worker.onmessage = (event) => {
-          if (generation !== this.generation) return;
+          if (settled || generation !== this.generation) return;
           finish();
-          if (event.data.error) reject(new Error(event.data.error));
+          if (!event.data || typeof event.data !== "object")
+            reject(new Error("AI 응답을 읽을 수 없습니다. 다시 시도해 주세요."));
+          else if (event.data.error) reject(new Error(event.data.error));
+          else if (event.data.result == null)
+            reject(new Error("AI 응답을 읽을 수 없습니다. 다시 시도해 주세요."));
           else resolve(event.data.result);
         };
+        worker.onmessageerror = () => {
+          if (settled || generation !== this.generation) return;
+          finish();
+          reject(new Error("AI 응답을 읽을 수 없습니다. 다시 시도해 주세요."));
+        };
         worker.onerror = () => {
-          if (generation !== this.generation) return;
+          if (settled || generation !== this.generation) return;
           finish();
           reject(
             new Error(
