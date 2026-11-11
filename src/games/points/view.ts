@@ -28,6 +28,8 @@ export interface BoardSpec {
 }
 export interface BoardModel {
   owners: (0 | 1 | null)[];
+  /** Points whose piece stands taller. */
+  crowned?: boolean[];
   /** Changes with every move; `effect` is what that move did. */
   moveId: number;
   effect: Effect | null;
@@ -261,11 +263,18 @@ export class PointBoardView {
     return mesh;
   }
   /** Puts every piece exactly where `owners` says, without animation. */
-  private rebuild(owners: (0 | 1 | null)[]) {
+  private rebuild(owners: (0 | 1 | null)[], crowned?: boolean[]) {
     this.pieces.clear();
     this.meshes.clear();
     owners.forEach((owner, point) => {
-      if (owner !== null) this.meshes.set(point, this.spawn(point, owner));
+      if (owner === null) return;
+      const mesh = this.spawn(point, owner);
+      // A crowned piece is two pieces high.
+      if (crowned?.[point]) {
+        mesh.scale.y = 2;
+        mesh.position.y = this.height;
+      }
+      this.meshes.set(point, mesh);
     });
   }
   /**
@@ -281,12 +290,12 @@ export class PointBoardView {
     this.dirty = true;
     this.tweens = [];
     if (!animate || this.reducedMotion || !before || !effect || model.moveId === before.moveId) {
-      this.rebuild(model.owners);
+      this.rebuild(model.owners, model.crowned);
       this.drawMarks();
       this.onSettled();
       return;
     }
-    this.rebuild(before.owners);
+    this.rebuild(before.owners, before.crowned);
     this.rings.clear();
     const now = performance.now(),
       side = model.owners[effect.to] ?? 0,
@@ -395,7 +404,7 @@ export class PointBoardView {
     });
     if (!this.tweens.length && this.model) {
       // Whatever was acted out, the board now shows the model itself.
-      this.rebuild(this.model.owners);
+      this.rebuild(this.model.owners, this.model.crowned);
       this.drawMarks();
       this.onSettled();
     }

@@ -25,8 +25,15 @@ export interface PointGame<S> {
   create(variant: string): S;
   /** Every legal move of the player to move; empty once the game is over. */
   moves(state: S): Move[];
-  /** The state after `move`, or null when it is not legal. Never changes `state`. */
-  play(state: S, move: Move): S | null;
+  /**
+   * The state after `move`, or null when it is not legal. Never changes
+   * `state`. Games of chance draw from `random`.
+   */
+  play(state: S, move: Move, random?: () => number): S | null;
+  /** Points whose piece stands taller (a crowned checker). */
+  crowned?(state: S): boolean[];
+  /** The moves worth searching, when that is fewer than every legal one. */
+  candidates?(state: S): Move[];
   turn(state: S): 0 | 1;
   winner(state: S): Winner;
   /** Who holds each point. */

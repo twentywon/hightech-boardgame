@@ -2,7 +2,8 @@ import { mirrorStatus } from "./banner";
 import { modal } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
 import type { Move, PointGame } from "../games/points/types";
-import { PointBoardView, type BoardSpec } from "../games/points/view";
+import { PointBoardView, type BoardSpec, type Marks } from "../games/points/view";
+import { cryptoRandom } from "../core/random";
 import { Sound } from "../engine/sound";
 import type { Settings } from "../core/storage";
 
@@ -11,10 +12,32 @@ export interface PointOptions {
   variant: string;
   level: Level;
 }
+/** What the screen needs from a board, whichever way it is drawn. */
+export interface PointView<S> {
+  readonly renderer: { domElement: HTMLCanvasElement };
+  readonly animating: boolean;
+  onContact: () => void;
+  onSettled: () => void;
+  onPick: (point: number) => void;
+  sync(state: S, animate?: boolean): void;
+  setMarks(marks: Marks): void;
+  setQuality(quality: "high" | "low"): void;
+  dispose(): void;
+}
 /** Everything that differs between two games played on the points of a board. */
 export interface PointConfig<S> {
   game: PointGame<S>;
-  board: (variant: string) => BoardSpec;
+  /** The board as pieces on points; games with a `view` of their own leave it out. */
+  board?: (variant: string) => BoardSpec;
+  /** Colours of the two sides and the points the keyboard walks, for a game with its own `view`. */
+  colors?: [string, string];
+  keyPoints?: (state: S) => { x: number; z: number }[];
+  /** A board drawn its own way instead of as pieces on points. */
+  view?: (host: HTMLElement, quality: "high" | "low", variant: string) => PointView<S>;
+  /** A button that plays the only legal move, such as a roll of the die. */
+  action?: string;
+  /** How the game is operated, when it is not by picking a piece and a destination. */
+  help?: string;
   name: string;
   english: string;
   number: string;
@@ -64,8 +87,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     // What the panel describes: the last state whose pieces have come to rest.
     shown = state,
     past: S[] = [],
-    spec: BoardSpec = config.board(variant),
-    view: PointBoardView | null = null,
+    spec: BoardSpec | null = config.board?.(variant) ?? null,
+    view: PointView<S> | null = null,
     disposed = false,
     generation = 0,
     lockedUntil = 0,
@@ -122,7 +145,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     variant = preferences.variant;
     level = preferences.level;
     state = shown = game.create(variant);
-    spec = config.board(variant);
+    spec = config.board?.(variant) ?? null;
     past = [];
     chosen = {};
     cursor = null;
@@ -132,14 +155,14 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     sound.unlock();
     screen();
   }
-  const model = (s: S) => ({ owners: game.owners(s), moveId: game.ply(s), effect: game.effect(s) });
+  const model = (s: S) => ({ owners: game.owners(s), crowned: game.crowned?.(s), moveId: game.ply(s), effect: game.effect(s) });
   function screen() {
     stop();
     const side = (p: number) =>
-      `<li id="pg-side-${p}"><i class="yut-dot" style="background:${spec.colors[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
+      `<li id="pg-side-${p}"><i class="yut-dot" style="background:${(spec?.colors ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls"><button id="pg-undo">무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
@@ -150,8 +173,31 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       ]);
     $("pg-again").onclick = start;
     $("pg-undo").onclick = undo;
+    if (config.action) $("pg-action").onclick = () => pick(game.moves(state)[0]?.to ?? -1);
     try {
-      view = new PointBoardView($("board"), settings.quality, spec);
+      if (config.view) view = config.view($("board"), settings.quality, variant);
+      else {
+        const board = new PointBoardView($("board"), settings.quality, spec!);
+        view = {
+          renderer: board.renderer,
+          get animating() {
+            return board.animating;
+          },
+          set onContact(fn: () => void) {
+            board.onContact = fn;
+          },
+          set onSettled(fn: () => void) {
+            board.onSettled = fn;
+          },
+          set onPick(fn: (point: number) => void) {
+            board.onPick = fn;
+          },
+          sync: (s, animate) => board.sync(model(s), animate),
+          setMarks: (marks) => board.setMarks(marks),
+          setQuality: (quality) => board.setQuality(quality),
+          dispose: () => board.dispose(),
+        } as PointView<S>;
+      }
       view.onContact = () => sound.tap();
       view.onSettled = present;
       view.onPick = pick;
@@ -159,7 +205,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       canvas.tabIndex = 0;
       canvas.setAttribute("aria-label", `${config.name} 판`);
       canvas.addEventListener("keydown", key);
-      view.sync(model(state), false);
+      view.sync(state, false);
     } catch {
       view?.dispose();
       view = null;
@@ -177,7 +223,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function apply(next: S) {
     state = next;
     chosen = {};
-    if (view) view.sync(model(state));
+    if (view) view.sync(state);
     else present();
     update();
   }
@@ -215,7 +261,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       update();
       return;
     }
-    const next = game.play(state, move);
+    const next = game.play(state, move, cryptoRandom);
     if (!next) return;
     sound.unlock();
     past.push(state);
@@ -234,12 +280,14 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       if (cursor !== null) pick(cursor);
     } else if (steps[e.key]) {
       e.preventDefault();
-      const here = spec.points[cursor ?? 0],
+      const points = spec?.points ?? config.keyPoints?.(state) ?? [];
+      if (!points.length) return;
+      const here = points[cursor ?? 0],
         [dx, dz] = steps[e.key];
       let best = cursor ?? 0,
         cost = Infinity;
       if (cursor !== null)
-        spec.points.forEach((p, i) => {
+        points.forEach((p, i) => {
           const along = (p.x - here.x) * dx + (p.z - here.z) * dz,
             across = Math.abs((p.x - here.x) * dz) + Math.abs((p.z - here.z) * dx);
           // The nearest point lying mostly in that direction.
@@ -261,7 +309,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     state = shown = back;
     chosen = {};
     announced = false;
-    if (view) view.sync(model(state), false);
+    if (view) view.sync(state, false);
     else present();
   }
   function computer() {
@@ -271,7 +319,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     update();
     later(() => {
       const move = current === generation && computerTurn() ? choose(game, state, LEVELS[level].budget, LEVELS[level].depth, undefined, LEVELS[level].slip) : null,
-        next = move && game.play(state, move);
+        next = move && game.play(state, move, cryptoRandom);
       thinking = false;
       if (current !== generation || !next) {
         update();
@@ -323,6 +371,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       $(`pg-side-${p}`).classList.toggle("active", !done && turn === p);
     }
     $<HTMLButtonElement>("pg-undo").disabled = waiting || !past.length;
+    if (config.action) $<HTMLButtonElement>("pg-action").disabled = waiting || bot || done;
     $("pg-note").textContent = "";
     view?.setMarks({
       movable:
@@ -359,7 +408,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   const show = (e: PageTransitionEvent) => {
     if (e.persisted && document.getElementById("pg-undo")) {
       lockedUntil = 0;
-      if (view) view.sync(model(state), false);
+      if (view) view.sync(state, false);
       present();
     }
   };

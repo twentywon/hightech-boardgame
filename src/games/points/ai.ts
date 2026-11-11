@@ -25,6 +25,7 @@ export function choose<S>(
 ): Move | null {
   const legal = game.moves(state);
   if (!legal.length) return null;
+  if (legal.length === 1) return legal[0];
   if (slip > 0 && random() < slip) return legal[Math.floor(random() * legal.length)];
   const me = game.turn(state),
     deadline = now() + budget;
@@ -39,7 +40,7 @@ export function choose<S>(
       return 0;
     }
     let best = -Infinity;
-    for (const m of game.moves(s)) {
+    for (const m of game.candidates?.(s) ?? game.moves(s)) {
       const next = game.play(s, m)!,
         // The same side may move again in games where a turn can be kept.
         value = game.turn(next) === side ? search(next, depth - 1, alpha, beta) : -search(next, depth - 1, -beta, -alpha);
@@ -51,7 +52,7 @@ export function choose<S>(
     return best;
   };
   let choice = legal[0],
-    order = legal;
+    order = game.candidates?.(state) ?? legal;
   for (let depth = 1; depth <= maxDepth; depth++) {
     let best = -Infinity,
       pick = order[0];
