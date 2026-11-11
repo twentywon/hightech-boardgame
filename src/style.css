@@ -918,3 +918,24 @@ dialog h2 {
 @media (max-width: 760px) {
   .game-layout #board { height: min(100vw, 550px, var(--available-board-height, calc(100svh - 240px))); }
 }
+
+/* During a game the table is the subject: a slimmer header and title row
+   leave more of the screen height for the board. */
+#app:has(> .game-layout) > header { height: 60px; }
+#app:has(> .game-layout) > header .brand small { display: none; }
+#app:has(> .game-layout) > header .brand-mark { transform: scale(0.8); }
+.game-layout { padding-top: 10px; }
+.game-layout .game-top { margin-bottom: 8px; }
+.game-layout #board {
+  height: min(82vw, 1000px, var(--available-board-height, calc(100svh - 150px)));
+}
+@media (min-width: 761px) {
+  .game-top > div:first-child { display: flex; align-items: center; gap: 18px; }
+  .game-top h1 { margin: 0; }
+}
+@media (max-width: 760px) {
+  #app:has(> .game-layout) > header { height: 52px; }
+  .game-layout #board {
+    height: min(100vw, 620px, var(--available-board-height, calc(100svh - 150px)));
+  }
+}

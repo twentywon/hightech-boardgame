@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { SUBJECTS, cameraDistance } from "../../src/engine/camera";
 import { selectGame } from "./library";
 import { PerspectiveCamera, Vector3 } from "three";
 import { playout } from "../reversi-fixtures";
@@ -19,7 +20,7 @@ async function start(page: Page, game: "gomoku" | "reversi", ai = false) {
 async function opening(page: Page, game: "gomoku" | "reversi") {
   const box = (await page.locator("canvas").boundingBox())!;
   const aspect = box.width / box.height;
-  const distance = Math.max(11.7, 12.8 / Math.min(aspect, 1)) * 0.9;
+  const distance = cameraDistance(aspect, false, SUBJECTS[game]);
   const angle = 55 * Math.PI / 180;
   const camera = new PerspectiveCamera(38, aspect, 0.1, 60);
   camera.position.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance);

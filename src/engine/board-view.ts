@@ -7,6 +7,7 @@ import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
 import { wood, disposeScene, afterGPUFrame } from "./scene-utils";
+import { FOV, OVERHEAD, SUBJECTS, TILT, cameraDistance } from "./camera";
 
 const GOMOKU_BOARD = 6.55;
 /** Column letters and row numbers drawn in the Gomoku board margin. */
@@ -40,7 +41,7 @@ function gomokuLabels() {
 export class BoardView {
   readonly renderer: T.WebGLRenderer;
   readonly scene = new T.Scene();
-  readonly camera = new T.PerspectiveCamera(38, 1, 0.1, 60);
+  readonly camera = new T.PerspectiveCamera(FOV, 1, 0.1, 60);
   private stones = new T.Group();
   private hints = new T.Group();
   private labels: T.Mesh | null = null;
@@ -256,12 +257,16 @@ export class BoardView {
     );
     this.scene.add(this.stones, this.win, this.hints);
     this.ghost = this.makeStone(1);
-    for (const m of Array.isArray(this.ghost.material)
-      ? this.ghost.material
-      : [this.ghost.material]) {
-      m.transparent = true;
-      m.opacity = 0.42;
-    }
+    // The preview owns translucent copies; stones keep the shared materials.
+    const translucent = (m: T.Material) => {
+      const copy = m.clone();
+      copy.transparent = true;
+      copy.opacity = 0.42;
+      return copy;
+    };
+    this.ghost.material = Array.isArray(this.ghost.material)
+      ? this.ghost.material.map(translucent)
+      : translucent(this.ghost.material);
     this.ghost.visible = false;
     this.scene.add(this.ghost);
     this.marker = new T.Mesh(
@@ -388,25 +393,74 @@ export class BoardView {
     });
   }
 
+  private shared: {
+    stone: T.BufferGeometry;
+    stoneMaterial: T.Material | T.Material[] | null;
+    white: T.Material | null;
+    ring: Map<string, { geometry: T.BufferGeometry; material: T.Material }>;
+  } | null = null;
+  /**
+   * Geometry and materials every stone, disc and marker of this view shares.
+   * One GPU buffer and shader program per kind instead of one per mesh.
+   */
+  private get assets() {
+    if (!this.shared) {
+      const reversi = this.variant === "reversi";
+      this.shared = {
+        stone: reversi
+          ? new T.CylinderGeometry(0.285, 0.285, 0.105, 40)
+          : new T.SphereGeometry(1, 32, 20),
+        stoneMaterial: reversi
+          ? [
+              new T.MeshStandardMaterial({ color: "#35383a", roughness: 0.35 }),
+              new T.MeshStandardMaterial({ color: "#202226", roughness: 0.26 }),
+              new T.MeshStandardMaterial({ color: "#f6f0e4", roughness: 0.25 }),
+            ]
+          : new T.MeshStandardMaterial({
+              color: "#202226",
+              roughness: 0.24,
+              metalness: 0.04,
+            }),
+        white: reversi
+          ? null
+          : new T.MeshStandardMaterial({
+              color: "#f6f0e4",
+              roughness: 0.2,
+              metalness: 0.04,
+            }),
+        ring: new Map(),
+      };
+    }
+    return this.shared;
+  }
+  private ring(inner: number, outer: number, segments: number, color: string, opacity = 1) {
+    const key = `${inner}|${outer}|${color}|${opacity}`;
+    let entry = this.assets.ring.get(key);
+    if (!entry) {
+      entry = {
+        geometry: new T.RingGeometry(inner, outer, segments),
+        material: new T.MeshBasicMaterial({
+          color,
+          side: T.DoubleSide,
+          transparent: opacity < 1,
+          opacity,
+        }),
+      };
+      this.assets.ring.set(key, entry);
+    }
+    const mesh = new T.Mesh(entry.geometry, entry.material);
+    mesh.rotation.x = -Math.PI / 2;
+    return mesh;
+  }
   private makeStone(player: number) {
+    const { stone, stoneMaterial, white } = this.assets;
     if (this.variant === "reversi") {
-      const mesh = new T.Mesh(new T.CylinderGeometry(0.285, 0.285, 0.105, 40), [
-        new T.MeshStandardMaterial({ color: "#35383a", roughness: 0.35 }),
-        new T.MeshStandardMaterial({ color: "#202226", roughness: 0.26 }),
-        new T.MeshStandardMaterial({ color: "#f6f0e4", roughness: 0.25 }),
-      ]);
+      const mesh = new T.Mesh(stone, stoneMaterial!);
       mesh.rotation.x = player === 1 ? 0 : Math.PI;
       mesh.castShadow = mesh.receiveShadow = true;
       return mesh;
     }
-    const mesh = new T.Mesh(
-      new T.SphereGeometry(1, 32, 20),
-      new T.MeshStandardMaterial({
-        color: player === 1 ? "#202226" : "#f6f0e4",
-        roughness: player === 1 ? 0.24 : 0.2,
-        metalness: 0.04,
-      }),
-    );
+    const mesh = new T.Mesh(stone, player === 1 ? stoneMaterial! : white!);
     mesh.scale.set(0.19, 0.095, 0.19);
     mesh.castShadow = mesh.receiveShadow = true;
     return mesh;
@@ -426,10 +480,10 @@ export class BoardView {
     if (!this.moving) this.camera.position.copy(this.target);
   }
   private setTarget() {
-    const aspect = this.camera.aspect;
     const distance =
-      Math.max(11.7, 12.8 / Math.min(aspect, 1)) * 0.9 * (this.zoom ? 0.94 : 1);
-    const angle = this.top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
+      cameraDistance(this.camera.aspect, this.top, SUBJECTS[this.variant]) *
+      (this.zoom ? 0.97 : 1);
+    const angle = this.top ? OVERHEAD : TILT;
     this.target.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance);
   }
   setCamera(top: boolean, zoom = false) {
@@ -530,10 +584,9 @@ export class BoardView {
       if (before.row !== next.row || before.col !== next.col || before.player !== next.player) break;
       prefix++;
     }
-    for (const stone of this.stones.children.slice(prefix)) {
-      disposeScene(stone);
+    // Stones share their geometry and materials, so removal frees nothing.
+    for (const stone of this.stones.children.slice(prefix))
       this.stones.remove(stone);
-    }
     // Finish any interrupted animation before rebuilding the animation queue.
     for (const stone of this.stones.children) {
       stone.position.y = 0.245;
@@ -557,11 +610,7 @@ export class BoardView {
     }
     for (const p of state.line) {
       const v = toWorld(p),
-        ring = new T.Mesh(
-          new T.RingGeometry(0.205, 0.23, 40),
-          new T.MeshBasicMaterial({ color: "#f5d38b", side: T.DoubleSide }),
-        );
-      ring.rotation.x = -Math.PI / 2;
+        ring = this.ring(0.205, 0.23, 40, "#f5d38b");
       ring.position.set(v.x, 0.17, v.z);
       this.win.add(ring);
     }
@@ -573,16 +622,7 @@ export class BoardView {
     this.dirty = true;
     for (const p of points) {
       const v = this.world(p),
-        mark = new T.Mesh(
-          new T.RingGeometry(0.06, 0.085, 24),
-          new T.MeshBasicMaterial({
-            color: "#d5c38d",
-            transparent: true,
-            opacity: 0.65,
-            side: T.DoubleSide,
-          }),
-        );
-      mark.rotation.x = -Math.PI / 2;
+        mark = this.ring(0.06, 0.085, 24, "#d5c38d", 0.65);
       mark.position.set(v.x, 0.195, v.z);
       this.hints.add(mark);
     }
@@ -627,13 +667,9 @@ export class BoardView {
     }
     if (state.winner) this.setCamera(this.top, true);
   }
+  /** Empties a group of markers; their shared assets live until dispose. */
   private clearGroup(group: T.Group) {
-    for (const child of [...group.children]) {
-      const mesh = child as T.Mesh;
-      mesh.geometry.dispose();
-      (mesh.material as T.Material).dispose();
-      group.remove(child);
-    }
+    group.clear();
   }
   dispose() {
     if (this.disposed) return;
@@ -642,6 +678,17 @@ export class BoardView {
     cancelAnimationFrame(this.raf);
     this.observer.disconnect();
     disposeScene(this.scene);
+    if (this.shared) {
+      // Shared assets may not be attached to any mesh at this moment.
+      const { stone, stoneMaterial, white, ring } = this.shared;
+      stone.dispose();
+      for (const m of [stoneMaterial, white].flat()) m?.dispose();
+      ring.forEach((r) => {
+        r.geometry.dispose();
+        r.material.dispose();
+      });
+      this.shared = null;
+    }
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.renderer.domElement.remove();

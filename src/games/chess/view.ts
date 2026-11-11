@@ -2,6 +2,7 @@ import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
 import { wood, disposeScene, afterGPUFrame } from "../../engine/scene-utils";
 import { toWorld, fromWorld, squares } from "./coordinates";
+import { FOV, OVERHEAD, SUBJECTS, TILT, cameraDistance } from "../../engine/camera";
 interface Token {
   mesh: T.Group;
   type: PieceSymbol;
@@ -10,7 +11,7 @@ interface Token {
 export class ChessView {
   readonly renderer: T.WebGLRenderer;
   readonly scene = new T.Scene();
-  readonly camera = new T.PerspectiveCamera(38, 1, 0.1, 80);
+  readonly camera = new T.PerspectiveCamera(FOV, 1, 0.1, 80);
   onSelect: (square: Square | null, confirm: boolean) => void = () => {};
   onCancel: () => void = () => {};
   onSettled: () => void = () => {};
@@ -507,8 +508,8 @@ export class ChessView {
     this.onSelect(fromWorld(point.x, point.z), confirm);
   }
   private target() {
-    const distance = Math.max(13, 13.4 / Math.min(this.camera.aspect, 1)) * 0.9,
-      a = this.top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
+    const distance = cameraDistance(this.camera.aspect, this.top, SUBJECTS.chess),
+      a = this.top ? OVERHEAD : TILT;
     this.cameraTarget.set(
       0,
       Math.sin(a) * distance,

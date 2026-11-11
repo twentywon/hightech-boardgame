@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { selectGame } from "./library";
 import { PerspectiveCamera, Vector3 } from "three";
 import { toWorld } from "../../src/games/reversi/coordinates";
+import { SUBJECTS, cameraDistance } from "../../src/engine/camera";
 import {
   counts,
   legalMoves,
@@ -21,7 +22,7 @@ async function open(page: Page) {
 async function cell(page: Page, row: number, col: number, top = false) {
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
-    d = Math.max(11.7, 12.8 / Math.min(aspect, 1)) * 0.9,
+    d = cameraDistance(aspect, top, SUBJECTS.reversi),
     a = top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
   const camera = new PerspectiveCamera(38, aspect, 0.1, 60);
   camera.position.set(0, Math.sin(a) * d, Math.cos(a) * d);

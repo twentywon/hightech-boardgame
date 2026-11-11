@@ -3,6 +3,7 @@ import { PerspectiveCamera, Vector3 } from "three";
 import type { Square } from "chess.js";
 import { selectGame } from "./library";
 import { toWorld } from "../../src/games/chess/coordinates";
+import { SUBJECTS, cameraDistance } from "../../src/engine/camera";
 async function ready(page: Page) {
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", {
     timeout: 20000,
@@ -22,9 +23,9 @@ async function start(page: Page) {
 async function cell(page: Page, s: Square) {
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
-    d = Math.max(13, 13.4 / Math.min(aspect, 1)) * 0.9;
-  const top =
-      (await page.locator("#board").getAttribute("data-top")) === "true",
+    top = (await page.locator("#board").getAttribute("data-top")) === "true",
+    d = cameraDistance(aspect, top, SUBJECTS.chess);
+  const
     black = (await page.locator("#board").getAttribute("data-facing")) === "b",
     a = top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
   const c = new PerspectiveCamera(38, aspect, 0.1, 80);
