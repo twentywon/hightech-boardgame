@@ -25,7 +25,7 @@ export const games = [
     en: "BLACKJACK",
     category: "카드게임",
     icon: "♠",
-    available: false,
+    available: true,
   },
   {
     name: "요트 다이스",

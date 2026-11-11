@@ -6,12 +6,14 @@ import {
   SUBJECTS,
   TILT,
   cameraDistance,
+  type Subject,
 } from "../src/engine/camera";
 
 function bounds(aspect: number, top: boolean, game: keyof typeof SUBJECTS, scale = 1) {
-  const s = SUBJECTS[game],
+  const s: Subject = SUBJECTS[game],
+    depth = s.halfZ ?? s.half,
     d = cameraDistance(aspect, top, s) * scale,
-    a = top ? OVERHEAD : TILT,
+    a = top ? OVERHEAD : (s.tilt ?? TILT),
     camera = new PerspectiveCamera(FOV, aspect, 0.1, 200);
   camera.position.set(0, Math.sin(a) * d, Math.cos(a) * d);
   camera.lookAt(0, s.lookY, 0);
@@ -20,7 +22,7 @@ function bounds(aspect: number, top: boolean, game: keyof typeof SUBJECTS, scale
     up = -1,
     down = 1;
   for (const cx of [-s.half, s.half])
-    for (const cz of [-s.half, s.half])
+    for (const cz of [-depth, depth])
       for (const cy of [0, s.height]) {
         const v = new Vector3(cx, cy, cz).project(camera);
         x = Math.max(x, Math.abs(v.x));
