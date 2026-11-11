@@ -1,4 +1,4 @@
-Playing card images in Seven-Card Stud
+Playing card images in Blackjack and Seven-Card Stud
 
 The fifty-two card faces are reduced-size renderings of the SVG files
 "English pattern <rank> of <suit>.svg" from Wikimedia Commons, by Dmitry Fomin
@@ -6,4 +6,5 @@ The fifty-two card faces are reduced-size renderings of the SVG files
 Domain Dedication, https://creativecommons.org/publicdomain/zero/1.0/
 
 Source: https://commons.wikimedia.org/wiki/Category:English_pattern_playing_cards
-Changes: rendered at 250 px width on a white ground and re-encoded as WebP.
+Changes: rendered at 250 px width on a white ground and re-encoded as WebP;
+in the games the faces are drawn with a paper tone multiplied over them.

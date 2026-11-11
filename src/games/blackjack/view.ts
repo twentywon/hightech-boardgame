@@ -1,3 +1,4 @@
+import { CARD, drawBack, drawFace } from "../cards/faces";
 import * as T from "three";
 import { afterGPUFrame, aim } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
@@ -26,8 +27,8 @@ export interface TableModel {
   stake: number;
 }
 
-const CARD_W = 1,
-  CARD_H = 1.4,
+const CARD_W = CARD.width,
+  CARD_H = CARD.height,
   CARD_T = 0.012;
 const SUIT_GLYPH = { S: "♠", H: "♥", D: "♦", C: "♣" } as const;
 const TONE_COLOR: Record<Tone, string> = {
@@ -71,61 +72,17 @@ function roundRect(
   ctx.closePath();
 }
 function faceTexture(card: Card | null) {
-  const { c, ctx } = canvas(300, 420);
-  ctx.fillStyle = "#fbf8f0";
-  ctx.fillRect(0, 0, 300, 420);
-  ctx.strokeStyle = "#cfc8b8";
-  ctx.lineWidth = 6;
-  roundRect(ctx, 5, 5, 290, 410, 20);
-  ctx.stroke();
-  if (card) {
-    const red = card.suit === "H" || card.suit === "D";
-    ctx.fillStyle = red ? "#c8321f" : "#16181a";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const index = () => {
-      ctx.font = `700 ${card.rank === "10" ? 76 : 88}px "Helvetica Neue", Arial, sans-serif`;
-      ctx.fillText(card.rank, 58, 66);
-      ctx.font = '70px "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif';
-      ctx.fillText(SUIT_GLYPH[card.suit], 58, 146);
-    };
-    index();
-    ctx.save();
-    ctx.translate(300, 420);
-    ctx.rotate(Math.PI);
-    index();
-    ctx.restore();
-    ctx.font = '170px "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif';
-    ctx.fillText(SUIT_GLYPH[card.suit], 168, 222);
+  const { c, ctx } = canvas(...CARD.pixels);
+  if (card) drawFace(ctx, c.width, c.height, card.rank + card.suit);
+  else {
+    ctx.fillStyle = "#dcd5c4";
+    ctx.fillRect(0, 0, c.width, c.height);
   }
   return texture(c);
 }
 function backTexture() {
-  const { c, ctx } = canvas(300, 420);
-  ctx.fillStyle = "#f4efe2";
-  ctx.fillRect(0, 0, 300, 420);
-  ctx.fillStyle = "#1f4a40";
-  roundRect(ctx, 16, 16, 268, 388, 14);
-  ctx.fill();
-  ctx.strokeStyle = "#d9b96a";
-  ctx.lineWidth = 2;
-  for (let i = -420; i < 720; i += 28) {
-    ctx.beginPath();
-    ctx.moveTo(i, 16);
-    ctx.lineTo(i + 420, 404);
-    ctx.moveTo(i + 420, 16);
-    ctx.lineTo(i, 404);
-    ctx.stroke();
-  }
-  ctx.fillStyle = "#f4efe2";
-  ctx.fillRect(0, 0, 300, 16);
-  ctx.fillRect(0, 404, 300, 16);
-  ctx.fillRect(0, 0, 16, 420);
-  ctx.fillRect(284, 0, 16, 420);
-  ctx.strokeStyle = "#d9b96a";
-  ctx.lineWidth = 4;
-  roundRect(ctx, 26, 26, 248, 368, 10);
-  ctx.stroke();
+  const { c, ctx } = canvas(...CARD.pixels);
+  drawBack(ctx, c.width, c.height);
   return texture(c);
 }
 function plaqueTexture(text: string, tone: Tone) {

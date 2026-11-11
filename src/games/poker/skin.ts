@@ -1,89 +1,15 @@
-import { roundRect, type CardSkin } from "../cards/table-view";
+import type { CardSkin } from "../cards/table-view";
+import { CARD, drawBack, drawFace } from "../cards/faces";
 import type { BettingConfig } from "../../ui/betting-game";
 import { poker } from "./game";
 import { ANTE, START_CHIPS, type State } from "./rules";
 
-// The card pictures, inlined so the game still needs no network requests.
-const pictures = new Map<string, HTMLImageElement>();
-const sources = import.meta.glob<string>("./cards/*.webp", {
-  query: "?inline",
-  import: "default",
-  eager: true,
-});
-// Decoded once when the app loads, long before a table is opened.
-if (typeof Image !== "undefined")
-  for (const [path, url] of Object.entries(sources)) {
-    const image = new Image();
-    image.src = url;
-    pictures.set(path.match(/(\w+)\.webp$/)![1], image);
-  }
-const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
-const SYMBOL = '"Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif';
-/**
- * English-pattern cards from Wikimedia Commons (see public/cards-license.txt);
- * a plain drawn face stands in for a picture that has not decoded.
- */
+/** The shared deck (see `../cards/faces.ts`). */
 export const pokerSkin: CardSkin = {
-  width: 1,
-  height: 1.5,
-  pixels: [280, 420],
+  ...CARD,
   lines: ["세븐 포커", "일곱 장 가운데 다섯 장으로 겨룹니다"],
-  back(ctx, w, h) {
-    ctx.fillStyle = "#f4efe2";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "#22355c";
-    roundRect(ctx, 16, 16, w - 32, h - 32, 14);
-    ctx.fill();
-    ctx.strokeStyle = "#d9b96a";
-    ctx.lineWidth = 2;
-    for (let i = -h; i < w + h; i += 28) {
-      ctx.beginPath();
-      ctx.moveTo(i, 16);
-      ctx.lineTo(i + h, h - 16);
-      ctx.moveTo(i + h, 16);
-      ctx.lineTo(i, h - 16);
-      ctx.stroke();
-    }
-    ctx.fillStyle = "#f4efe2";
-    ctx.fillRect(0, 0, w, 16);
-    ctx.fillRect(0, h - 16, w, 16);
-    ctx.fillRect(0, 0, 16, h);
-    ctx.fillRect(w - 16, 0, 16, h);
-  },
-  face(ctx, w, h, key) {
-    const suit = key.slice(-1),
-      rank = key.slice(0, -1);
-    const image = pictures.get(key);
-    if (image?.complete && image.naturalWidth) {
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, w, h);
-      ctx.drawImage(image, 0, 0, w, h);
-      return;
-    }
-    ctx.fillStyle = "#fbf8f0";
-    ctx.fillRect(0, 0, w, h);
-    ctx.strokeStyle = "#cfc8b8";
-    ctx.lineWidth = 6;
-    roundRect(ctx, 5, 5, w - 10, h - 10, 20);
-    ctx.stroke();
-    ctx.fillStyle = suit === "H" || suit === "D" ? "#c8321f" : "#16181a";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const index = () => {
-      ctx.font = `700 ${rank === "10" ? 76 : 88}px "Helvetica Neue", Arial, sans-serif`;
-      ctx.fillText(rank, 58, 66);
-      ctx.font = `70px ${SYMBOL}`;
-      ctx.fillText(GLYPH[suit], 58, 146);
-    };
-    index();
-    ctx.save();
-    ctx.translate(w, h);
-    ctx.rotate(Math.PI);
-    index();
-    ctx.restore();
-    ctx.font = `170px ${SYMBOL}`;
-    ctx.fillText(GLYPH[suit], 168, 222);
-  },
+  back: drawBack,
+  face: drawFace,
 };
 export const pokerConfig: BettingConfig<State> = {
   game: poker,
