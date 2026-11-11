@@ -67,8 +67,8 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(3);
-  await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(2);
+  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(4);
+  await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(1);
   await selectGame(page, "체스");
   await expect(
     page.getByRole("heading", { name: /함께 앉으면/ }),
