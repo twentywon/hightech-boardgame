@@ -195,6 +195,19 @@ h1 {
   line-height: 1.9;
   color: #716c5f;
 }
+.stats {
+  font-size: 11px;
+  color: #577763;
+}
+.assist {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.assist button {
+  flex: 1;
+  font-size: 12px;
+}
 .game-meta {
   font-size: 10px;
   color: #827b6a;

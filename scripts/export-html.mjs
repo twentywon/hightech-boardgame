@@ -22,6 +22,18 @@ for (const match of code.matchAll(loader)) {
 }
 if (!workers.size) throw new Error("No recognized AI Worker loaders found");
 code = code.replace(loader, (_, name) => workers.get(name).variable);
+// A page opened from disk (file://) has an opaque origin, where browsers refuse
+// to load a module Worker from a blob URL. The bundled Workers are
+// self-contained, so start them as classic Workers, which do load there.
+for (const [name, worker] of workers)
+  if (/(^|[;}\n])\s*(import|export)[\s{*"'`(]|import\.meta/.test(worker.code))
+    throw new Error(`Worker ${name} still uses module syntax`);
+const moduleWorker =
+  /new Worker\((__WTG_INLINE_WORKER_\d+__),\{type:[`'"]module[`'"]\}\)/g;
+const started = code.match(moduleWorker)?.length ?? 0;
+code = code.replace(moduleWorker, "new Worker($1)");
+if (!started || /__WTG_INLINE_WORKER_\d+__,\{/.test(code))
+  throw new Error("Unrecognized Worker constructor options");
 if (code.includes("import.meta.url"))
   throw new Error("Unresolved module-relative resources");
 const prefix = [...workers.values()]

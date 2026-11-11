@@ -74,3 +74,15 @@ export function play(state: State, p: Point): State | null {
         : null,
   };
 }
+/** Returns the state with the last `count` moves removed, rebuilt by legal replay. */
+export function undo(state: State, count = 1): State | null {
+  if (!Number.isInteger(count) || count < 1 || count > state.moves.length)
+    return null;
+  let next = createGame();
+  for (const move of state.moves.slice(0, state.moves.length - count)) {
+    const replayed = play(next, move);
+    if (!replayed) return null;
+    next = replayed;
+  }
+  return next;
+}

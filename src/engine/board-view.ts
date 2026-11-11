@@ -4,16 +4,47 @@ import {
 } from "../games/reversi/coordinates";
 import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
-import { fromWorld, toWorld } from "../games/gomoku/coordinates";
+import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
 import { wood, disposeScene, afterGPUFrame } from "./scene-utils";
 
+const GOMOKU_BOARD = 6.55;
+/** Column letters and row numbers drawn in the Gomoku board margin. */
+function gomokuLabels() {
+  const size = 1024,
+    canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!,
+    scale = size / GOMOKU_BOARD,
+    half = GOMOKU_BOARD / 2,
+    edge = half - (half - 7 * SPACING) / 2;
+  ctx.fillStyle = "rgba(74,50,28,0.85)";
+  ctx.font = `600 ${Math.round(0.15 * scale)}px Georgia, serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (let i = 0; i < 15; i++) {
+    const v = (i - 7) * SPACING;
+    for (const side of [-edge, edge]) {
+      ctx.fillText(
+        String.fromCharCode(65 + i),
+        (v + half) * scale,
+        (side + half) * scale,
+      );
+      ctx.fillText(String(i + 1), (side + half) * scale, (v + half) * scale);
+    }
+  }
+  const texture = new T.CanvasTexture(canvas);
+  texture.colorSpace = T.SRGBColorSpace;
+  return texture;
+}
 export class BoardView {
   readonly renderer: T.WebGLRenderer;
   readonly scene = new T.Scene();
   readonly camera = new T.PerspectiveCamera(38, 1, 0.1, 60);
   private stones = new T.Group();
   private hints = new T.Group();
+  private labels: T.Mesh | null = null;
+  private suggestion: T.Mesh | null = null;
   private discs = new Map<number, T.Mesh>();
   private discColors = new Int8Array(64);
   private flips: {
@@ -165,6 +196,22 @@ export class BoardView {
         }
       }
     } else {
+      const map = gomokuLabels();
+      map.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      this.labels = new T.Mesh(
+        new T.PlaneGeometry(GOMOKU_BOARD, GOMOKU_BOARD),
+        new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false }),
+      );
+      this.labels.rotation.x = -Math.PI / 2;
+      this.labels.position.y = 0.153;
+      this.scene.add(this.labels);
+      this.suggestion = new T.Mesh(
+        new T.RingGeometry(0.13, 0.175, 40),
+        new T.MeshBasicMaterial({ color: "#2f8f6f", side: T.DoubleSide }),
+      );
+      this.suggestion.rotation.x = -Math.PI / 2;
+      this.suggestion.visible = false;
+      this.scene.add(this.suggestion);
       for (let i = 0; i < 15; i++) {
         const v = (i - 7) * 0.42;
         positions.push(
@@ -453,8 +500,26 @@ export class BoardView {
         );
     }
   }
+  /** Shows or hides the Gomoku coordinate labels. */
+  setLabels(visible: boolean) {
+    if (!this.labels || this.disposed) return;
+    this.labels.visible = visible;
+    this.dirty = true;
+  }
+  /** Marks one recommended Gomoku intersection, or clears the mark. */
+  suggest(p: Point | null) {
+    if (!this.suggestion || this.disposed) return;
+    if (!p && !this.suggestion.visible) return;
+    this.suggestion.visible = !!p;
+    if (p) {
+      const v = toWorld(p);
+      this.suggestion.position.set(v.x, 0.158, v.z);
+    }
+    this.dirty = true;
+  }
   renderState(state: State, animate = true) {
     this.dirty = true;
+    if (this.suggestion) this.suggestion.visible = false;
     const old = this.lastCount;
     this.lastCount = state.moves.length;
     // Reuse the unchanged prefix. Also handle resets or replacement histories,

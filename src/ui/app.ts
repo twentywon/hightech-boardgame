@@ -11,10 +11,14 @@ import {
   type Mode,
   getAIOptions,
   setAIOptions,
+  getStats,
+  addResult,
+  type Record as Tally,
 } from "../core/storage";
 import {
   createGame,
   play,
+  undo,
   type Point,
   type Player,
 } from "../games/gomoku/rules";
@@ -41,6 +45,11 @@ let reversi: ReversiController | null = null;
 let chess: ChessController | null = null;
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
+// Hints run in their own Worker so they never cancel the opponent's search.
+const hintAI = new AIClient();
+const HINT_LEVEL: Difficulty = "hard";
+let hinting = false;
+const tally = (t: Tally) => `${t.win}승 ${t.loss}패 ${t.draw}무`;
 let reversiOptions = getReversiOptions();
 let aiOptions = getAIOptions(),
   difficulty: Difficulty = aiOptions.difficulty,
@@ -73,7 +82,7 @@ function difficultyOptions(selected: Difficulty) {
     .join("");
 }
 function aiForm() {
-  return `<div id="ai-options" class="ai-options" hidden><label>AI 난이도<select id="ai-difficulty">${difficultyOptions(aiOptions.difficulty)}</select></label><label>플레이어 색상<select id="ai-color"><option value="black" ${aiOptions.color === "black" ? "selected" : ""}>흑돌</option><option value="white" ${aiOptions.color === "white" ? "selected" : ""}>백돌</option><option value="random" ${aiOptions.color === "random" ? "selected" : ""}>무작위</option></select></label><small>선택한 설정은 새 대국부터 적용됩니다.</small></div>`;
+  return `<div id="ai-options" class="ai-options" hidden><label>AI 난이도<select id="ai-difficulty">${difficultyOptions(aiOptions.difficulty)}</select></label><label>플레이어 색상<select id="ai-color"><option value="black" ${aiOptions.color === "black" ? "selected" : ""}>흑돌</option><option value="white" ${aiOptions.color === "white" ? "selected" : ""}>백돌</option><option value="random" ${aiOptions.color === "random" ? "selected" : ""}>무작위</option></select></label><small>선택한 설정은 새 대국부터 적용됩니다.</small><small id="ai-stats" class="stats"></small></div>`;
 }
 const sound = new Sound();
 sound.enabled = settings.sound;
@@ -93,6 +102,7 @@ function clear() {
   reversi = null;
   sessionGeneration++;
   ai.cancel();
+  cancelHint();
   if (timer) clearTimeout(timer);
   if (resultTimer) clearTimeout(resultTimer);
   timer = resultTimer = null;
@@ -144,7 +154,15 @@ function menu(selected: GameSelection = null, category = "전체") {
       };
       setAIOptions(aiOptions);
     };
-    $("ai-difficulty").onchange = rememberAI;
+    const showStats = () => {
+      const d = $<HTMLSelectElement>("ai-difficulty").value as Difficulty;
+      $("ai-stats").textContent = `${profiles[d].label} 전적 · ${tally(getStats()[d])}`;
+    };
+    showStats();
+    $("ai-difficulty").onchange = () => {
+      rememberAI();
+      showStats();
+    };
     $("ai-color").onchange = rememberAI;
     document.querySelectorAll<HTMLInputElement>("input[name=mode]").forEach((input) =>
       (input.onchange = () => {
@@ -184,7 +202,7 @@ function game() {
   clear();
   app.innerHTML =
     header() +
-    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · 자유룰</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">AT THE TABLE</div><h2>좋은 한 수를<br>생각해 보세요.</h2><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 위치 선택 후 버튼으로 확정<br>키보드: 방향키로 선택, Enter로 착수</p><span id="save-status" class="save-status"></span></aside></div></main>`;
+    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · 자유룰</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">AT THE TABLE</div><h2>좋은 한 수를<br>생각해 보세요.</h2><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 위치 선택 후 버튼으로 확정<br>키보드: 방향키로 선택, Enter로 착수</p><span id="save-status" class="save-status"></span></aside></div></main>`;
   bindHeader();
   $("back").onclick = () => menu();
   $("rules").onclick = showRules;
@@ -204,6 +222,8 @@ function game() {
   $("confirm").onclick = () => {
     if (candidate) place(candidate);
   };
+  $("undo").onclick = takeBack;
+  $("hint").onclick = showHint;
   try {
     view = new BoardView($("board"), settings.quality);
     view.onContact = () => sound.tap();
@@ -219,6 +239,7 @@ function game() {
       update();
       if (confirm) place(p);
     };
+    view.setLabels(settings.labels);
     view.renderState(state, false);
     if (settings.top) view.setCamera(true);
     const canvas = view.renderer.domElement;
@@ -279,6 +300,12 @@ function accept(next: typeof state) {
   state = next;
   aiError = "";
   candidate = null;
+  cancelHint();
+  if (state.winner && mode === "ai")
+    addResult(
+      difficulty,
+      state.winner === "draw" ? "draw" : state.winner === human ? "win" : "loss",
+    );
   lockedUntil = performance.now() + 320;
   const saved = persist();
   view?.renderState(state);
@@ -290,6 +317,70 @@ function accept(next: typeof state) {
     resultPending = true;
     resultTimer = setTimeout(showResult, 850);
   } else scheduleAI();
+}
+/** How many moves one press of 무르기 takes back; 0 when it is unavailable. */
+function undoCount() {
+  if (state.winner || !state.moves.length) return 0;
+  if (mode === "local") return 1;
+  // Against the computer, return to the person's own previous turn.
+  if (isAITurn()) return state.moves.at(-1)!.player === human ? 1 : 0;
+  return state.moves.length >= 2 ? 2 : 0;
+}
+function takeBack() {
+  const count = undoCount();
+  if (!count || !view || view.moving || document.querySelector("dialog[open]"))
+    return;
+  const previous = undo(state, count);
+  if (!previous) return;
+  // Drop any search for the abandoned position before replacing the state.
+  ai.cancel();
+  cancelHint();
+  if (timer) clearTimeout(timer);
+  timer = null;
+  state = previous;
+  aiError = "";
+  candidate = null;
+  lockedUntil = performance.now() + 200;
+  const saved = persist();
+  view.renderState(state, false);
+  update();
+  $("save-status").textContent = saved
+    ? "✓ 이 기기에 자동 저장됨"
+    : "저장을 사용할 수 없습니다";
+  scheduleAI();
+}
+function cancelHint() {
+  hintAI.cancel();
+  hinting = false;
+  view?.suggest(null);
+}
+async function showHint() {
+  if (!canPlay() || hinting) return;
+  const snapshot = state,
+    generation = sessionGeneration;
+  hinting = true;
+  update();
+  try {
+    const result = await hintAI.compute(
+      snapshot,
+      HINT_LEVEL,
+      1 + snapshot.moves.length * 104729,
+    );
+    if (generation !== sessionGeneration || state !== snapshot || !view) return;
+    hinting = false;
+    if (result.move && !state.board[result.move.row][result.move.col]) {
+      candidate = result.move;
+      view.preview(candidate, state.turn);
+      view.suggest(candidate);
+    }
+    update();
+  } catch (error) {
+    if (generation !== sessionGeneration || state !== snapshot) return;
+    hinting = false;
+    update();
+    if ((error as Error).name !== "AbortError")
+      $("save-status").textContent = "힌트를 계산하지 못했습니다";
+  }
 }
 function scheduleAI() {
   if (!isAITurn() || state.winner || !view) return;
@@ -343,6 +434,7 @@ function showAIError(message: string) {
 window.addEventListener("pagehide", (event) => {
   sessionGeneration++;
   ai.cancel();
+  cancelHint();
   if (timer) clearTimeout(timer);
   if (resultTimer) clearTimeout(resultTimer);
   timer = resultTimer = null;
@@ -383,6 +475,10 @@ function update() {
   $("confirm").textContent = candidate
     ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}에 착수 확정`
     : "위치를 선택하세요";
+  $<HTMLButtonElement>("undo").disabled = !undoCount();
+  $<HTMLButtonElement>("hint").disabled =
+    hinting || !!state.winner || isAITurn() || !view;
+  $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";
 }
 function restart() {
   newMatch();
@@ -396,11 +492,14 @@ function showResult() {
     return;
   }
   resultPending = false;
+  if (mode === "ai" && state.winner !== "draw" && state.winner !== human)
+    sound.lose();
+  else sound.win();
   modal(
     state.winner === "draw"
       ? "멋진 승부, 무승부!"
       : `${state.winner === 1 ? "흑돌" : "백돌"}이 승리했습니다!`,
-    `<p>${state.moves.length}수의 이야기가 완성되었습니다.<br>테이블에서 한 판 더 만나볼까요?</p>`,
+    `<p>${state.moves.length}수의 이야기가 완성되었습니다.<br>테이블에서 한 판 더 만나볼까요?</p>${mode === "ai" ? `<p class="stats">${profiles[difficulty].label} 전적 · ${tally(getStats()[difficulty])}</p>` : ""}`,
     [
       { text: "게임판 보기", action: () => {} },
       { text: "다시 플레이", action: restart },
@@ -410,13 +509,13 @@ function showResult() {
 function showRules() {
   modal(
     "다섯 개를 연결하세요",
-    `<ol><li>흑돌이 먼저 시작합니다. 빈 교차점에 번갈아 돌을 놓으세요.</li><li>가로·세로·대각선으로 5개 이상 연결하면 승리합니다.</li><li>금수 없는 자유룰입니다. 모든 자리가 차면 무승부입니다.</li></ol><p><b>처음이라면</b> 중앙에서 시작해 보세요. 내 돌을 연결하면서 상대의 열린 네 개를 막는 것이 중요합니다.</p><p>PC는 클릭, 모바일은 터치·드래그로 위치를 고른 다음 <b>착수 확정</b>을 누르세요. 시점 전환 중에는 착수할 수 없습니다.</p>`,
+    `<ol><li>흑돌이 먼저 시작합니다. 빈 교차점에 번갈아 돌을 놓으세요.</li><li>가로·세로·대각선으로 5개 이상 연결하면 승리합니다.</li><li>금수 없는 자유룰입니다. 모든 자리가 차면 무승부입니다.</li></ol><p><b>처음이라면</b> 중앙에서 시작해 보세요. 내 돌을 연결하면서 상대의 열린 네 개를 막는 것이 중요합니다.</p><p>PC는 클릭, 모바일은 터치·드래그로 위치를 고른 다음 <b>착수 확정</b>을 누르세요. 시점 전환 중에는 착수할 수 없습니다.</p><p><b>무르기</b>는 직전 수를 되돌립니다. 컴퓨터 대전에서는 내 차례로 돌아갑니다. <b>힌트</b>는 추천 자리를 초록 고리로 표시합니다. 대국이 끝난 뒤에는 무를 수 없습니다.</p>`,
   );
 }
 function showSettings() {
   modal(
     "나만의 테이블",
-    `<label class="setting">착수 효과음<input id="sound-setting" type="checkbox" ${settings.sound ? "checked" : ""}></label><label class="setting">렌더링 품질<select id="quality-setting"><option value="high" ${settings.quality === "high" ? "selected" : ""}>높음 (최대 2×)</option><option value="low" ${settings.quality === "low" ? "selected" : ""}>절전 (1×)</option></select></label>`,
+    `<label class="setting">착수 효과음<input id="sound-setting" type="checkbox" ${settings.sound ? "checked" : ""}></label><label class="setting">렌더링 품질<select id="quality-setting"><option value="high" ${settings.quality === "high" ? "selected" : ""}>높음 (최대 2×)</option><option value="low" ${settings.quality === "low" ? "selected" : ""}>절전 (1×)</option></select></label><label class="setting">오목판 좌표 표시<input id="labels-setting" type="checkbox" ${settings.labels ? "checked" : ""}></label>`,
     [{ text: "설정 저장", action: () => {} }],
   );
   const d = document.querySelector("dialog")!;
@@ -424,8 +523,10 @@ function showSettings() {
     settings.sound = $<HTMLInputElement>("sound-setting").checked;
     settings.quality = $<HTMLSelectElement>("quality-setting").value as
       "high" | "low";
+    settings.labels = $<HTMLInputElement>("labels-setting").checked;
     sound.enabled = settings.sound;
     setSettings(settings);
+    view?.setLabels(settings.labels);
     view?.setQuality(settings.quality);
     reversi?.setSettings(settings);
     chess?.setSettings(settings);
