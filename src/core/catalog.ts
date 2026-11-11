@@ -48,4 +48,11 @@ export const games = [
     icon: "♣",
     available: true,
   },
+  {
+    name: "장기",
+    en: "JANGGI",
+    category: "보드게임",
+    icon: "楚",
+    available: true,
+  },
 ];

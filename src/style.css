@@ -1828,3 +1828,52 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
 @media (max-width: 760px) {
   .pk-mini { transform: scale(0.8) rotateX(32deg) rotateZ(-6deg); }
 }
+
+/* ───────────────────────── Janggi ───────────────────────── */
+.jg-glyph {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: #f3e7c9;
+  font: 700 22px/1 "Noto Serif CJK KR", "Noto Serif KR", "AppleMyungjo", "Batang", serif;
+  font-style: normal;
+}
+.jg-glyph.cho { color: #1f6a4b; }
+.jg-glyph.han { color: #b3271b; }
+.jg-sidebar .player b { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+.jg-sidebar .yd-result { margin: 10px 0; }
+.janggi-art { background: radial-gradient(ellipse at 45% 40%, #9a7954, #614733); }
+.jg-mini {
+  display: grid;
+  grid-template-columns: repeat(9, 30px);
+  grid-template-rows: repeat(4, 34px);
+  padding: 18px 20px;
+  border-radius: 6px;
+  background: #c89a60;
+  box-shadow: 1px 3px #8c6239, 3px 7px #8c6239, 18px 34px 36px #261b1b90;
+  transform: rotateX(38deg) rotateZ(-12deg);
+}
+.jg-mini i { position: relative; border-top: 1px solid #5d422c99; border-left: 1px solid #5d422c99; }
+.jg-mini b {
+  position: absolute;
+  left: -13px;
+  top: -13px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: #f3e7c9;
+  font: 700 14px/1 "Noto Serif CJK KR", "Noto Serif KR", "AppleMyungjo", "Batang", serif;
+  box-shadow: 1px 3px 3px #38251588;
+}
+.jg-mini b.big { left: -17px; top: -17px; width: 34px; height: 34px; font-size: 18px; }
+.jg-mini b.cho { color: #1f6a4b; }
+.jg-mini b.han { color: #b3271b; }
+@media (max-width: 760px) {
+  .jg-mini { transform: scale(0.82) rotateX(38deg) rotateZ(-12deg); }
+}

@@ -33,6 +33,8 @@ export const SUBJECTS = {
   // The same table for games with only a few cards per seat.
   cardsCompact: { half: 4.3, halfZ: 3.6, height: 0.3, lookY: 0, tilt: 1.1 },
   cardsCompactSquare: { half: 3.3, halfZ: 3.7, height: 0.3, lookY: 0, tilt: 1.1 },
+  // Janggi: nine files by ten ranks of intersections.
+  janggi: { half: 3.45, halfZ: 3.8, height: 0.45, lookY: 0 },
 } as const satisfies Record<string, Subject>;
 
 // Share of the canvas the board may fill. The top and bottom keep room for
