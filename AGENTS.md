@@ -14,6 +14,6 @@
 - Chess uses pinned chess.js 1.4.0 through `src/games/chess/rules.ts`. Do not use its automatic threefold/50-move `isGameOver` policy; sessions implement claims separately from fivefold/75-move automatic draws.
 - Chess sessions and preferences live only in memory: no persistence, resume feature, AI-vs-AI league, or Elo estimate. `npm run chess:measure` measures individual positions only.
 - Keep chess repetition context and halfmove clocks in transposition keys, checked quiescence nodes searching evasions, and the chess.js BSD notice in exported artifacts.
-- Gomoku undo rebuilds the state through `undo` in `rules.ts` (legal replay); cancel the opponent and hint Workers before replacing the state. Results against the computer are counted once, in `accept`, never on resume.
+- Every game's undo rebuilds the state through `undo` in its `rules.ts` (legal replay; Reversi reconstructs passes, chess replays from `initialFen`); cancel the opponent and hint Workers before replacing the state. Results against the computer are counted once, in `accept`, never on resume.
 - `scripts/export-html.mjs` starts the embedded Workers as classic Workers so the single HTML works from `file://`; it must fail loudly if a Worker bundle keeps module syntax.
 - Camera distance comes only from `cameraDistance` in `src/engine/camera.ts`; views and e2e click helpers must both use it. Stones, discs and marker rings share per-view geometry/materials (`BoardView.assets`): never dispose them when removing a mesh, only in `dispose`.

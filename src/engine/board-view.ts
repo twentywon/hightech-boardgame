@@ -206,13 +206,6 @@ export class BoardView {
       this.labels.rotation.x = -Math.PI / 2;
       this.labels.position.y = 0.153;
       this.scene.add(this.labels);
-      this.suggestion = new T.Mesh(
-        new T.RingGeometry(0.13, 0.175, 40),
-        new T.MeshBasicMaterial({ color: "#2f8f6f", side: T.DoubleSide }),
-      );
-      this.suggestion.rotation.x = -Math.PI / 2;
-      this.suggestion.visible = false;
-      this.scene.add(this.suggestion);
       for (let i = 0; i < 15; i++) {
         const v = (i - 7) * 0.42;
         positions.push(
@@ -256,6 +249,18 @@ export class BoardView {
       ),
     );
     this.scene.add(this.stones, this.win, this.hints);
+    this.suggestion = new T.Mesh(
+      this.variant === "reversi"
+        ? new T.RingGeometry(0.2, 0.26, 40)
+        : new T.RingGeometry(0.13, 0.175, 40),
+      new T.MeshBasicMaterial({
+        color: this.variant === "reversi" ? "#f2d27a" : "#2f8f6f",
+        side: T.DoubleSide,
+      }),
+    );
+    this.suggestion.rotation.x = -Math.PI / 2;
+    this.suggestion.visible = false;
+    this.scene.add(this.suggestion);
     this.ghost = this.makeStone(1);
     // The preview owns translucent copies; stones keep the shared materials.
     const translucent = (m: T.Material) => {
@@ -560,14 +565,18 @@ export class BoardView {
     this.labels.visible = visible;
     this.dirty = true;
   }
-  /** Marks one recommended Gomoku intersection, or clears the mark. */
+  /** Marks one recommended intersection or square, or clears the mark. */
   suggest(p: Point | null) {
     if (!this.suggestion || this.disposed) return;
     if (!p && !this.suggestion.visible) return;
     this.suggestion.visible = !!p;
     if (p) {
-      const v = toWorld(p);
-      this.suggestion.position.set(v.x, 0.158, v.z);
+      const v = this.world(p);
+      this.suggestion.position.set(
+        v.x,
+        this.variant === "reversi" ? 0.2 : 0.158,
+        v.z,
+      );
     }
     this.dirty = true;
   }
@@ -632,6 +641,14 @@ export class BoardView {
     this.flips = [];
     this.falling = [];
     this.ghost.visible = false;
+    if (this.suggestion) this.suggestion.visible = false;
+    // A take-back empties squares: drop discs the state no longer has.
+    for (const [i, mesh] of this.discs)
+      if (!state.board[i]) {
+        this.stones.remove(mesh);
+        this.discs.delete(i);
+        this.discColors[i] = 0;
+      }
     let order = 0;
     for (let i = 0; i < 64; i++) {
       const player = state.board[i];

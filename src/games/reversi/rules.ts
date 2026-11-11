@@ -163,3 +163,19 @@ export function play(state: State, p: Point): State | null {
     lastPassed: null,
   });
 }
+/**
+ * Returns the state with the last `count` placements removed, rebuilt by legal
+ * replay so automatic passes before the remaining moves are reconstructed.
+ */
+export function undo(state: State, count = 1): State | null {
+  if (!Number.isInteger(count) || count < 1 || count > state.moves.length)
+    return null;
+  let next = createGame();
+  for (const move of state.moves.slice(0, state.moves.length - count)) {
+    if (move.player !== next.turn) return null;
+    const replayed = play(next, move);
+    if (!replayed) return null;
+    next = replayed;
+  }
+  return next;
+}

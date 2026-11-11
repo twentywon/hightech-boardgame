@@ -12,6 +12,7 @@ import {
   play,
   action,
   claimDraw,
+  undo,
   claimReasons,
   other,
   type State,
@@ -131,9 +132,17 @@ export function mountChess(
     if (!cache.has(key)) cache.set(key, claimReasons(state, intended));
     return cache.get(key)!;
   }
+  // Hints use their own Worker so they never cancel the opponent's search.
+  const hintAI = new ChessAIClient();
+  let hinting = false;
+  function cancelHint() {
+    hintAI.cancel();
+    hinting = false;
+  }
   function pause() {
     generation++;
     ai.cancel();
+    cancelHint();
     timers.forEach(clearTimeout);
     timers.clear();
     computing = false;
@@ -228,7 +237,7 @@ export function mountChess(
     resultPending = false;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout chess-game"><div class="game-top"><div><button id="back" class="text-button">← 컬렉션</button><h1>체스 <small>CHESS</small></h1></div><div class="game-actions"><button id="chess-config">대국 설정</button><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="chess-flip">보드 방향 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE CHESS TABLE</span><span>8 × 8 · 백 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">THINK AHEAD</div><h2>한 수 앞에서,<br>더 먼 가능성으로.</h2><div id="turn" role="status" aria-live="polite"></div>${(["w", "b"] as const).map((c) => `<div class="player"><i class="chess-glyph">${glyphs[c].k}</i><span>${c === "w" ? "백" : "흑"}<small>${mode === "local" ? `플레이어 ${c === "w" ? 1 : 2}` : human === c ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span></div>`).join("")}<div id="chess-captured" class="chess-captured"></div><div class="chess-confirm-slot"><button id="confirm" class="primary" disabled>기물을 선택하세요</button></div><button id="chess-clear" class="text-button">선택 취소</button><button id="chess-claim" disabled>무승부 청구</button><p id="chess-claim-info" class="input-help"></p><p class="input-help">마우스: 기물 선택 후 도착 칸 클릭<br>터치: 기물·도착 칸 선택 후 이동 확정<br>키보드: 방향키·Enter, Escape 취소<br>예정 수 청구: 기물 선택 후 방향키로 도착 칸 미리보기</p><h3 class="history-title">이동 기록</h3><ol id="chess-history" class="chess-history" aria-label="SAN 이동 기록"></ol></aside></div></main>`;
+      `<main class="game-layout chess-game"><div class="game-top"><div><button id="back" class="text-button">← 컬렉션</button><h1>체스 <small>CHESS</small></h1></div><div class="game-actions"><button id="chess-config">대국 설정</button><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="chess-flip">보드 방향 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE CHESS TABLE</span><span>8 × 8 · 백 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">THINK AHEAD</div><h2>한 수 앞에서,<br>더 먼 가능성으로.</h2><div id="turn" role="status" aria-live="polite"></div>${(["w", "b"] as const).map((c) => `<div class="player"><i class="chess-glyph">${glyphs[c].k}</i><span>${c === "w" ? "백" : "흑"}<small>${mode === "local" ? `플레이어 ${c === "w" ? 1 : 2}` : human === c ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span></div>`).join("")}<div id="chess-captured" class="chess-captured"></div><div class="chess-confirm-slot"><button id="confirm" class="primary" disabled>기물을 선택하세요</button></div><button id="chess-clear" class="text-button">선택 취소</button><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><button id="chess-claim" disabled>무승부 청구</button><p id="chess-claim-info" class="input-help"></p><p class="input-help">마우스: 기물 선택 후 도착 칸 클릭<br>터치: 기물·도착 칸 선택 후 이동 확정<br>키보드: 방향키·Enter, Escape 취소<br>예정 수 청구: 기물 선택 후 방향키로 도착 칸 미리보기</p><h3 class="history-title">이동 기록</h3><ol id="chess-history" class="chess-history" aria-label="SAN 이동 기록"></ol></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
@@ -258,6 +267,8 @@ export function mountChess(
     $("confirm").onclick = confirm;
     $("chess-clear").onclick = clearSelection;
     $("chess-claim").onclick = claim;
+    $("undo").onclick = takeBack;
+    $("hint").onclick = showHint;
     try {
       view = new ChessView($("board"), settings.quality, facing);
       view.onSelect = select;
@@ -396,10 +407,71 @@ export function mountChess(
       accept(next);
     }
   }
+  /** How many moves one press of 무르기 takes back; 0 when it is unavailable. */
+  function undoCount() {
+    if (state.outcome || !state.moves.length) return 0;
+    if (mode === "local" || aiTurn()) return 1;
+    // Against the computer, return to the person's own previous turn.
+    return state.moves.length >= 2 ? 2 : 0;
+  }
+  function takeBack() {
+    const count = undoCount();
+    if (
+      !count ||
+      !view ||
+      view.animating ||
+      promoting ||
+      hidden ||
+      document.querySelector("dialog[open]")
+    )
+      return;
+    const previous = undo(state, count);
+    if (!previous) return;
+    // Drop searches and pending replies for the abandoned position.
+    pause();
+    state = previous;
+    selected = target = cursor = null;
+    aiError = "";
+    view.render(engine());
+    update();
+    schedule();
+  }
+  async function showHint() {
+    if (!canPlay() || hinting) return;
+    const position = state,
+      current = generation;
+    hinting = true;
+    update();
+    try {
+      const r = await hintAI.compute(
+        position,
+        "hard",
+        3 + position.moves.length * 104729,
+      );
+      if (disposed || current !== generation || state !== position || !view)
+        return;
+      hinting = false;
+      const move = r.move;
+      if (
+        move &&
+        availableMoves(move.from).some((m) => m.to === move.to)
+      ) {
+        // Propose the move as an ordinary selection; the person confirms it.
+        selected = move.from;
+        target = cursor = move.to;
+      }
+      update();
+    } catch (e) {
+      if (disposed || current !== generation || state !== position) return;
+      hinting = false;
+      update();
+    }
+  }
   function accept(next: State) {
     state = next;
     selected = target = cursor = null;
     aiError = "";
+    cancelHint();
     const game = engine(),
       last = snapshot().moves.at(-1);
     view?.render(game, last);
@@ -468,6 +540,10 @@ export function mountChess(
       : selected
         ? "도착 칸을 선택하세요"
         : "기물을 선택하세요";
+    $<HTMLButtonElement>("undo").disabled = !undoCount();
+    $<HTMLButtonElement>("hint").disabled =
+      hinting || !!state.outcome || aiTurn() || !view;
+    $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";
     const currentClaim = claims(),
       planned = currentClaim.length
         ? []
@@ -624,7 +700,7 @@ export function mountChess(
   function rules() {
     dialog(
       "킹을 지키고, 체크메이트하세요",
-      `<ol><li>백이 먼저 시작합니다. 자기 기물을 선택하고 합법적인 도착 칸으로 이동하세요.</li><li>자기 킹이 공격받는 체크를 반드시 해소해야 합니다. 킹을 잡는 대신 체크메이트로 승리합니다.</li><li>캐슬링은 킹·룩의 이동 이력과 공격받는 칸을 검사합니다. 앙파상은 직전 두 칸 전진한 폰에만 가능합니다.</li><li>마지막 줄에 도착한 폰은 퀸·룩·비숍·나이트로 프로모션합니다.</li><li>스테일메이트와 지원하는 기물 부족은 무승부입니다. 3회 반복·50수는 청구 버튼, 5회 반복·75수는 자동 종료입니다.</li></ol><p>도착 칸을 선택하면 그 예정 수로 가능한 무승부 청구도 안내합니다. 새로고침하면 대국과 체스 설정이 초기화됩니다.</p>`,
+      `<ol><li>백이 먼저 시작합니다. 자기 기물을 선택하고 합법적인 도착 칸으로 이동하세요.</li><li>자기 킹이 공격받는 체크를 반드시 해소해야 합니다. 킹을 잡는 대신 체크메이트로 승리합니다.</li><li>캐슬링은 킹·룩의 이동 이력과 공격받는 칸을 검사합니다. 앙파상은 직전 두 칸 전진한 폰에만 가능합니다.</li><li>마지막 줄에 도착한 폰은 퀸·룩·비숍·나이트로 프로모션합니다.</li><li>스테일메이트와 지원하는 기물 부족은 무승부입니다. 3회 반복·50수는 청구 버튼, 5회 반복·75수는 자동 종료입니다.</li></ol><p>도착 칸을 선택하면 그 예정 수로 가능한 무승부 청구도 안내합니다. 새로고침하면 대국과 체스 설정이 초기화됩니다.</p><p><b>무르기</b>는 직전 수를 되돌립니다. 컴퓨터 대전에서는 내 차례로 돌아갑니다. <b>힌트</b>는 추천 수를 기물과 도착 칸 선택으로 보여 주며, 이동은 직접 확정합니다. 대국이 끝난 뒤에는 무를 수 없습니다.</p>`,
     );
   }
   const hide = (e: PageTransitionEvent) => {

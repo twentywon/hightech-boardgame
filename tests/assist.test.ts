@@ -86,3 +86,87 @@ describe("Results against the computer", () => {
     expect(getSettings().labels).toBe(false);
   });
 });
+import * as R from "../src/games/reversi/rules";
+import * as C from "../src/games/chess/rules";
+import { findPassHistory } from "./reversi-fixtures";
+
+describe("Reversi undo", () => {
+  it("restores flipped discs, counts and the turn", () => {
+    let s = R.createGame();
+    const first = R.point(R.legalMoves(s.board, s.turn)[0].index);
+    s = R.play(s, first)!;
+    const second = R.point(R.legalMoves(s.board, s.turn)[0].index);
+    const two = R.play(s, second)!;
+    const back = R.undo(two)!;
+    expect([...back.board]).toEqual([...s.board]);
+    expect(back.turn).toBe(s.turn);
+    expect(back.moves).toEqual(s.moves);
+    const start = R.undo(two, 2)!;
+    expect([...start.board]).toEqual([...R.createGame().board]);
+    expect(R.counts(start.board)).toMatchObject({ black: 2, white: 2 });
+    expect(two.moves).toHaveLength(2);
+  });
+  it("reconstructs automatic passes when undoing across them", () => {
+    const history = findPassHistory().moves;
+    let s = R.createGame();
+    const states = [s];
+    for (const m of history) {
+      s = R.play(s, m)!;
+      states.push(s);
+    }
+    expect(s.passes.length).toBeGreaterThan(0);
+    for (let count = 1; count <= history.length; count++) {
+      const back = R.undo(s, count)!,
+        expected = states[history.length - count];
+      expect([...back.board]).toEqual([...expected.board]);
+      expect(back.turn).toBe(expected.turn);
+      expect(back.passes).toEqual(expected.passes);
+      expect(back.lastPassed).toBe(expected.lastPassed);
+    }
+  });
+  it("rejects counts beyond the history", () => {
+    const s = R.play(R.createGame(), R.point(R.legalMoves(R.createGame().board, 1)[0].index))!;
+    for (const n of [0, 2, -1, 1.5]) expect(R.undo(s, n)).toBeNull();
+    expect(R.undo(R.createGame())).toBeNull();
+  });
+});
+describe("Chess undo", () => {
+  const line = (moves: [string, string][]) => {
+    let s = C.createGame();
+    for (const [from, to] of moves)
+      s = C.play(s, { from: from as C.Square, to: to as C.Square })!;
+    return s;
+  };
+  it("takes back moves, captures and the side to move", () => {
+    const s = line([
+      ["e2", "e4"],
+      ["d7", "d5"],
+      ["e4", "d5"],
+    ]);
+    expect(C.captures(s).w).toEqual(["p"]);
+    const back = C.undo(s)!;
+    expect(back.moves).toHaveLength(2);
+    expect(back.fen).toBe(line([["e2", "e4"], ["d7", "d5"]]).fen);
+    expect(C.captures(back).w).toEqual([]);
+    expect(C.undo(s, 3)).toEqual(C.createGame());
+    expect(s.moves).toHaveLength(3);
+  });
+  it("reopens a checkmated game", () => {
+    const mate = line([
+      ["f2", "f3"],
+      ["e7", "e5"],
+      ["g2", "g4"],
+      ["d8", "h4"],
+    ]);
+    expect(mate.outcome).toEqual({ winner: "b", reason: "체크메이트" });
+    const back = C.undo(mate)!;
+    expect(back.outcome).toBeNull();
+    expect(C.legalMoves(back).length).toBeGreaterThan(0);
+  });
+  it("keeps a custom starting position and rejects bad counts", () => {
+    const fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1";
+    const s = C.play(C.createGame(fen), { from: "e2", to: "e4" })!;
+    expect(C.undo(s)!.fen).toBe(C.createGame(fen).fen);
+    for (const n of [0, 2, -1, 1.5]) expect(C.undo(s, n)).toBeNull();
+  });
+});
