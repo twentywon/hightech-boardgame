@@ -12,6 +12,7 @@ import { hexConfig } from "../games/hex/config";
 import { mancalaConfig } from "../games/mancala/config";
 import { snakesConfig } from "../games/snakes/config";
 import type { PointConfig } from "./point-game";
+import { thumb } from "./thumbs";
 import { mountSpider, type SpiderController, type SpiderOptions } from "./spider";
 import { mountTour, type TourController, type TourOptions } from "./tour";
 import {
@@ -219,7 +220,7 @@ function menu(selected: GameSelection = null, category = "전체") {
   app.innerHTML = header() +
     `<main class="library"><section class="hero"><div class="hero-copy"><div class="eyebrow">The world, at your table</div><h1>함께 앉으면,<br>즐거움이 <em>시작</em>됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p></div></section><div class="collection-heading"><h2>게임 컬렉션 <span>${String(games.filter(g => g.available).length).padStart(2,"0")} / ${String(games.length).padStart(2,"0")}</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-label="${x}" aria-pressed="${x === category}">${x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.category === x).length}</span></button>`).join("")}</div></div><div class="rail-wrap"><button class="rail-arrow prev" aria-label="이전 게임 보기">‹</button><div class="collection game-list" id="game-rail">${games.map((g, i) => {
       const id = g.en.toLowerCase().replaceAll(" ", "-"), expanded = selected === id;
-      return `<article class="game-entry ${expanded ? "expanded" : ""}" data-game="${id}" data-category="${g.category}" ${category !== "전체" && category !== g.category ? "hidden" : ""}><button class="game-card" id="select-game-${i}" ${g.available ? `aria-label="${g.name} 살펴보기" aria-expanded="${expanded}" ${expanded ? 'aria-controls="game-detail"' : ""}` : `disabled aria-label="${g.name} 개발 예정"`}><span class="card-index" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span><span class="game-icon icon-${i}" aria-hidden="true">${g.icon}</span><span class="card-copy"><span class="card-title">${g.name}</span><small>${g.en}</small></span><span class="card-category">${g.available ? g.category : "개발 예정"}</span></button></article>`;
+      return `<article class="game-entry ${expanded ? "expanded" : ""}" data-game="${id}" data-category="${g.category}" ${category !== "전체" && category !== g.category ? "hidden" : ""}><button class="game-card" id="select-game-${i}" ${g.available ? `aria-label="${g.name} 살펴보기" aria-expanded="${expanded}" ${expanded ? 'aria-controls="game-detail"' : ""}` : `disabled aria-label="${g.name} 개발 예정"`}><span class="card-index" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span><span class="game-icon icon-${i}${thumb(id) ? " shot" : ""}" aria-hidden="true">${thumb(id) ? `<img src="${thumb(id)}" alt="" loading="lazy">` : g.icon}</span><span class="card-copy"><span class="card-title">${g.name}</span><small>${g.en}</small></span><span class="card-category">${g.available ? g.category : "개발 예정"}</span></button></article>`;
     }).join("")}</div><button class="rail-arrow next" aria-label="다음 게임 보기">›</button></div>${(() => {
       const chosen = games.find((g) => g.en.toLowerCase().replaceAll(" ", "-") === selected);
       return chosen
@@ -395,6 +396,13 @@ function menu(selected: GameSelection = null, category = "전체") {
         game();
       }
     };
+  }
+  // The setup panel shows the game's own table in place of drawn art.
+  const art = document.querySelector<HTMLElement>(".game-stage .feature-art"),
+    shot = selected && thumb(selected);
+  if (art && shot) {
+    art.classList.add("shot");
+    art.innerHTML = `<img src="${shot}" alt="">`;
   }
   document.querySelectorAll<HTMLButtonElement>(".filter").forEach((button) =>
     (button.onclick = () => {
