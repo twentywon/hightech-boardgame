@@ -18,7 +18,8 @@ export interface CardView {
 /** A choice seat 0 must make before play continues. */
 export interface Prompt {
   title: string;
-  options: { label: string; value: number }[];
+  /** `cards` are the ids of seat 0's cards that stand for the option on the table. */
+  options: { label: string; value: number; cards?: number[] }[];
 }
 export interface SeatView {
   name: string;

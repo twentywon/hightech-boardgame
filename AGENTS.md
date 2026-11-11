@@ -27,5 +27,7 @@
 - Janggi rules live in `src/games/janggi/rules.ts` (board as a 90-character string; passes are legal moves). Its search runs in a Worker through `JanggiAIClient`; the tree uses pseudo-legal moves with king capture as the win and must keep considering the pass.
 - Yacht dice, seotda and seven-card stud play their computer seats at the fixed "normal" level; do not add a difficulty control or a yacht hint back without being asked. The engines keep the five profiles for tests.
 - A card seat 0 must uncover by hand is marked `peek` by the game; the table screen withholds its text and the hand name until `peeked`, in the DOM as well as on the felt. Folded hands stay at their seat with `face: null`.
-- Local two-player board games turn the table to the player to move (`setFacing` / `setCamera(..., delay)` with `orbit`); e2e click helpers must read `data-flipped` or `data-facing`. Keyboard arrows are relative to the viewer.
+- Local two-player chess and janggi turn the table to the player to move (`setCamera(..., delay)` with `orbit`); e2e click helpers must read `data-facing`. Gomoku and Reversi never turn: do not add it back without being asked. Keyboard arrows are relative to the viewer.
+- Choices in betting games carry the card ids they stand for (`Prompt.options[].cards`); the table offers those cards and the deck through `CardTableView.setChoices`, and a tap must go through the same `act` path as the button. Seat 0's `secret` cards are drawn shaded.
+- Pointer-to-ray conversion is `aim` in `src/engine/scene-utils.ts`; do not copy it into a view.
 - Recorded sounds under `src/engine/sounds/` are CC0 (Kenney); keep `public/sound-license.txt` and the synthesised fallback.

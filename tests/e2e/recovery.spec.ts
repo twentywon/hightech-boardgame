@@ -23,9 +23,7 @@ async function opening(page: Page, game: "gomoku" | "reversi") {
   const distance = cameraDistance(aspect, false, SUBJECTS[game]);
   const angle = 55 * Math.PI / 180;
   const camera = new PerspectiveCamera(38, aspect, 0.1, 60);
-  // In a local game the table is turned to the player to move.
-  const flipped = (await page.locator("#board").getAttribute("data-flipped")) === "true";
-  camera.position.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance * (flipped ? -1 : 1));
+  camera.position.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance);
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld();
   const v = (game === "gomoku" ? new Vector3(0, .15, 0) : new Vector3(-.36, .15, -1.08)).project(camera);

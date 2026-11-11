@@ -1,4 +1,14 @@
 import * as T from "three";
+const ndc = new T.Vector2();
+/** Points `ray` from the camera through the pointer's place on the canvas. */
+export function aim(ray: T.Raycaster, e: PointerEvent, canvas: HTMLCanvasElement, camera: T.Camera) {
+  const rect = canvas.getBoundingClientRect();
+  ndc.set(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    (-(e.clientY - rect.top) / rect.height) * 2 + 1,
+  );
+  ray.setFromCamera(ndc, camera);
+}
 export function disposeScene(scene: T.Object3D) {
   const geometries = new Set<T.BufferGeometry>(),
     materials = new Set<T.Material>(),

@@ -34,9 +34,7 @@ test("local undo takes back one stone at a time and is saved", async ({ page }) 
   const undo = page.getByRole("button", { name: "무르기", exact: true });
   await expect(undo).toBeDisabled();
   await enter(page, "1수");
-  // White sits across the table: the view has turned, so right is now G.
-  await expect(page.locator("#board")).toHaveAttribute("data-flipped", "true");
-  await aim(page, "ArrowRight", "G8");
+  await aim(page, "ArrowRight", "I8");
   await enter(page, "2수");
   await undo.click();
   await expect(count(page)).toHaveText("1수");
@@ -251,36 +249,16 @@ test("Chess undo and hint: take back a move, then play the suggested move", asyn
   expect(errors).toEqual([]);
 });
 
-test("local two-player tables turn half way round to the player to move", async ({ page }) => {
+test("local chess and janggi turn to the player to move; gomoku and reversi stay put", async ({ page }) => {
   test.setTimeout(120000);
   const board = page.locator("#board");
   const calm = () => expect(board).toHaveAttribute("data-animating", "false", { timeout: 15000 });
-  // Gomoku: white sees the table from the far side, black gets it back.
+  // Gomoku: the board stays where it is, so "up" still means row 9 for white.
   await page.goto("/");
   await sit(page);
-  await expect(board).toHaveAttribute("data-flipped", "false");
   await enter(page, "1수");
-  await expect(board).toHaveAttribute("data-flipped", "true");
   await aim(page, "ArrowUp", "H9");
   await enter(page, "2수");
-  await expect(board).toHaveAttribute("data-flipped", "false");
-  // A take-back turns the table back to the player whose move it undid.
-  await page.getByRole("button", { name: "무르기", exact: true }).click();
-  await expect(count(page)).toHaveText("1수");
-  await expect(board).toHaveAttribute("data-flipped", "true");
-  // Against the computer the table never turns.
-  await page.getByRole("button", { name: "World Table Games 홈" }).click();
-  await sit(page, true);
-  await enter(page, "1수");
-  await expect(count(page)).toHaveText("2수", { timeout: 20000 });
-  await expect(board).toHaveAttribute("data-flipped", "false");
-  // Reversi.
-  await page.getByRole("button", { name: "World Table Games 홈" }).click();
-  await selectGame(page, "리버시");
-  await page.getByRole("button", { name: "테이블에 앉기" }).click();
-  await page.locator("canvas").focus();
-  await enter(page, "1수");
-  await expect(board).toHaveAttribute("data-flipped", "true");
   // Chess: after White's move the board faces Black.
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
   await selectGame(page, "체스");

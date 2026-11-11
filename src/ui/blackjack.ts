@@ -144,6 +144,13 @@ export function mountBlackjack(
       view = new BlackjackView($("board"), settings.quality);
       view.onContact = () => sound.card();
       view.onSettled = present;
+      // The shoe stands for the button that draws the next card.
+      view.onShoe = () => {
+        const next = ["bj-deal", "bj-hit", "bj-next"]
+          .map((id) => $(id) as HTMLButtonElement)
+          .find((b) => b.offsetParent !== null && !b.hidden);
+        if (next && !next.disabled) next.click();
+      };
       view.sync(model(state), false);
     } catch {
       view?.dispose();

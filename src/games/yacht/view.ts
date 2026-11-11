@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 
 /** What the tray shows. Faces are 1–6, or 0 for dice waiting to be rolled. */
@@ -227,14 +227,7 @@ export class YachtView {
     const canvas = this.renderer.domElement;
     canvas.addEventListener("pointerup", (e) => {
       if (this.disposed || this.animating || (e.pointerType === "mouse" && e.button !== 0)) return;
-      const rect = canvas.getBoundingClientRect();
-      this.ray.setFromCamera(
-        new T.Vector2(
-          ((e.clientX - rect.left) / rect.width) * 2 - 1,
-          (-(e.clientY - rect.top) / rect.height) * 2 + 1,
-        ),
-        this.camera,
-      );
+      aim(this.ray, e, canvas, this.camera);
       const hit = this.ray.intersectObjects(this.dice)[0];
       if (hit) this.onPick(this.dice.indexOf(hit.object as T.Mesh));
     });

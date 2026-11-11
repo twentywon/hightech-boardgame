@@ -1412,6 +1412,13 @@ dialog h2 {
 dialog .dialog-body { font-size: 14px; line-height: 1.75; color: var(--ink-soft); }
 dialog .dialog-body b { color: var(--ink); }
 dialog .dialog-body li { margin: 8px 0; }
+/* Long rules scroll inside the dialog; its title and buttons stay in view. */
+dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+dialog .dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+dialog .dialog-body h3 { margin: 18px 0 6px; font-size: 13px; letter-spacing: 0.04em; color: var(--ink); }
+dialog .piece-moves { display: grid; grid-template-columns: max-content 1fr; gap: 0; margin: 0; border-top: 1px solid var(--line); }
+dialog .piece-moves dt, dialog .piece-moves dd { margin: 0; padding: 8px 0; border-bottom: 1px solid var(--line); }
+dialog .piece-moves dt { padding-right: 16px; font-weight: 700; color: var(--ink); white-space: nowrap; }
 dialog .dialog-actions { gap: 8px; flex-wrap: wrap; margin-top: 24px; }
 dialog .dialog-actions button {
   min-height: 46px;

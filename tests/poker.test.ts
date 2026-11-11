@@ -169,9 +169,9 @@ describe("Seven-card stud rounds", () => {
     expect(poker.prompt(dealt)).toEqual({
       title: "상대에게 공개할 카드를 고르세요",
       options: [
-        { label: "2♠ 공개", value: 0 },
-        { label: "5♥ 공개", value: 1 },
-        { label: "K♦ 공개", value: 2 },
+        { label: "2♠ 공개", value: 0, cards: [0] },
+        { label: "5♥ 공개", value: 1, cards: [3] },
+        { label: "K♦ 공개", value: 2, cards: [6] },
       ],
     });
     let s = P.choose(dealt, 2)!;

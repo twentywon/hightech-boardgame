@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame } from "../../engine/scene-utils";
+import { afterGPUFrame, aim } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { TableView, Tone } from "./game";
 
@@ -226,7 +226,11 @@ export class CardTableView {
   private cancelReady: (() => void) | null = null;
   private layout = LAYOUTS.wide;
   private model: TableView = { seats: [], pot: 0 };
-  private cards = new Map<number, { mesh: T.Mesh; faceUp: boolean; cover: T.Mesh | null }>();
+  private cards = new Map<number, { mesh: T.Mesh; faceUp: boolean; dim: boolean; cover: T.Mesh | null }>();
+  private choices = new Set<number>();
+  private picked = new Set<number>();
+  private deckOpen = false;
+  private tap: { id: number | null; pointer: number; x: number; y: number } | null = null;
   private coverGeometry: T.PlaneGeometry;
   private drag: { id: number; cover: T.Mesh; pointer: number; from: number } | null = null;
   private slides: { cover: T.Mesh; start: number; from: number; to: number; done?: () => void }[] = [];
@@ -259,6 +263,10 @@ export class CardTableView {
   onSettled: () => void = () => {};
   /** The person slid the cover off the card with this id. */
   onPeek: (id: number) => void = () => {};
+  /** The person tapped one of the cards offered by `setChoices`. */
+  onCard: (id: number) => void = () => {};
+  /** The person tapped the deck while `setChoices` offered it. */
+  onDeck: () => void = () => {};
   /** Chips started moving across the table. */
   onChips: () => void = () => {};
   get animating() {
@@ -375,13 +383,21 @@ export class CardTableView {
     };
     this.raf = requestAnimationFrame(loop);
   }
-  private setFace(mesh: T.Mesh, key: string | null) {
+  /** `dim` shades a card of seat 0 that the other seats cannot see. */
+  private setFace(mesh: T.Mesh, key: string | null, dim = false) {
     let material = this.blank;
     if (key) {
+      const name = dim ? `${key}|dim` : key;
       material =
-        this.faces.get(key) ??
-        this.paint((ctx, w, h) => this.skin.face(ctx, w, h, key));
-      this.faces.set(key, material);
+        this.faces.get(name) ??
+        this.paint((ctx, w, h) => {
+          this.skin.face(ctx, w, h, key);
+          if (dim) {
+            ctx.fillStyle = "rgba(18, 22, 30, 0.3)";
+            ctx.fillRect(0, 0, w, h);
+          }
+        });
+      this.faces.set(name, material);
     }
     (mesh.material as T.Material[])[2] = material;
   }
@@ -443,7 +459,7 @@ export class CardTableView {
     this.finish();
     const targets = new Map<
       number,
-      { face: string | null; at: T.Vector3; scale: number; covered: boolean }
+      { face: string | null; at: T.Vector3; scale: number; covered: boolean; dim: boolean }
     >();
     model.seats.forEach((seat, s) => {
       const { x, z, width, scale } = this.row(s),
@@ -454,7 +470,13 @@ export class CardTableView {
           face: card.face,
           scale,
           covered: !!card.covered,
-          at: new T.Vector3(x + (i - (seat.cards.length - 1) / 2) * gap, 0.02 + i * 0.006, z),
+          dim: !!card.secret && !!card.face,
+          // A card picked for a choice is pushed up the table a little.
+          at: new T.Vector3(
+            x + (i - (seat.cards.length - 1) / 2) * gap,
+            0.02 + i * 0.006,
+            z - (s === 0 && this.picked.has(card.id) ? 0.3 : 0),
+          ),
         }),
       );
     });
@@ -469,7 +491,7 @@ export class CardTableView {
         else this.tween(entry.mesh, now, 260, discard, entry.mesh.rotation.z, Math.PI, 0.15, false, leave);
       }
     let order = 0;
-    for (const [id, { face, at, scale, covered }] of [...targets.entries()].sort(
+    for (const [id, { face, at, scale, covered, dim }] of [...targets.entries()].sort(
       ([a], [b]) => a - b,
     )) {
       const existing = this.cards.get(id);
@@ -488,9 +510,9 @@ export class CardTableView {
         // A covered card travels face up under its cover, so it never flips.
         mesh.rotation.z = covered ? 0 : Math.PI;
         mesh.scale.set(scale, 1, scale);
-        this.setFace(mesh, face);
+        this.setFace(mesh, face, dim);
         this.scene.add(mesh);
-        const entry = { mesh, faceUp: !!face, cover: null };
+        const entry = { mesh, faceUp: !!face, dim, cover: null };
         this.cards.set(id, entry);
         this.setCover(id, entry, covered, true);
         this.tween(mesh, now + order++ * 130, 300, at, mesh.rotation.z, face ? 0 : Math.PI, 0.55, true);
@@ -498,7 +520,8 @@ export class CardTableView {
         existing.mesh.scale.set(scale, 1, scale);
         if (face && !existing.faceUp) {
           existing.faceUp = true;
-          this.setFace(existing.mesh, face);
+          existing.dim = dim;
+          this.setFace(existing.mesh, face, dim);
           this.tween(existing.mesh, now + order++ * 130, 340, at, Math.PI, 0, 0.5, true);
         } else if (!face && existing.faceUp) {
           // Folded: the card is turned face down where it lies.
@@ -506,7 +529,12 @@ export class CardTableView {
           this.tween(existing.mesh, now + order++ * 60, 300, at, 0, Math.PI, 0.4, false, () =>
             this.setFace(existing.mesh, null),
           );
-        } else if (existing.mesh.position.distanceToSquared(at) > 1e-6) {
+        } else {
+          if (face && existing.dim !== dim) {
+            existing.dim = dim;
+            this.setFace(existing.mesh, face, dim);
+          }
+          if (existing.mesh.position.distanceToSquared(at) <= 1e-6) continue;
           const flip = existing.mesh.rotation.z;
           this.tween(existing.mesh, now, 220, at, flip, flip, 0.08, false);
         }
@@ -566,23 +594,29 @@ export class CardTableView {
   private bindCovers() {
     const canvas = this.renderer.domElement;
     const spot = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      this.ray.setFromCamera(
-        new T.Vector2(
-          ((e.clientX - rect.left) / rect.width) * 2 - 1,
-          (-(e.clientY - rect.top) / rect.height) * 2 + 1,
-        ),
-        this.camera,
-      );
+      aim(this.ray, e, canvas, this.camera);
       const hit = new T.Vector3();
       return this.ray.ray.intersectPlane(this.plane, hit) ? hit : null;
+    };
+    /** The offered card or deck under the pointer: a card id, null for the deck. */
+    const offered = (e: PointerEvent): number | null | undefined => {
+      if (!spot(e)) return undefined;
+      for (const id of this.choices) {
+        const card = this.cards.get(id);
+        if (card && this.ray.intersectObject(card.mesh, false).length) return id;
+      }
+      return this.deckOpen && this.ray.intersectObject(this.deck, false).length ? null : undefined;
     };
     canvas.addEventListener("pointerdown", (e) => {
       if (this.disposed || this.drag || (e.pointerType === "mouse" && e.button !== 0)) return;
       const covers = [...this.cards.values()].flatMap((c) => (c.cover ? [c.cover] : []));
-      if (!covers.length || !spot(e)) return;
+      if (!spot(e)) return;
       const hit = this.ray.intersectObjects(covers)[0];
-      if (!hit) return;
+      if (!hit) {
+        const id = offered(e);
+        this.tap = id === undefined ? null : { id, pointer: e.pointerId, x: e.clientX, y: e.clientY };
+        return;
+      }
       const cover = hit.object as T.Mesh,
         at = spot(e)!;
       this.slides = this.slides.filter((s) => s.cover !== cover);
@@ -591,6 +625,8 @@ export class CardTableView {
       e.preventDefault();
     });
     canvas.addEventListener("pointermove", (e) => {
+      if (!this.drag && e.pointerType === "mouse")
+        canvas.style.cursor = offered(e) === undefined ? "" : "pointer";
       if (!this.drag || this.drag.pointer !== e.pointerId) return;
       const at = spot(e);
       if (!at) return;
@@ -598,6 +634,20 @@ export class CardTableView {
       this.dirty = true;
     });
     const release = (e: PointerEvent) => {
+      const tap = this.tap;
+      if (tap?.pointer === e.pointerId) {
+        this.tap = null;
+        // A tap, not a drag: the pointer came up where it went down.
+        if (
+          e.type === "pointerup" &&
+          Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 12 &&
+          offered(e) === tap.id
+        ) {
+          if (tap.id === null) this.onDeck();
+          else this.onCard(tap.id);
+        }
+        return;
+      }
       if (!this.drag || this.drag.pointer !== e.pointerId) return;
       const { id, cover } = this.drag;
       this.drag = null;
@@ -608,6 +658,19 @@ export class CardTableView {
     };
     canvas.addEventListener("pointerup", release);
     canvas.addEventListener("pointercancel", release);
+  }
+  /**
+   * Offers seat 0's cards `ids` (and the deck) to be tapped; `picked` are the
+   * ones already chosen, which lie a little further up the table.
+   */
+  setChoices(ids: number[], picked: number[], deck: boolean) {
+    if (this.disposed) return;
+    this.choices = new Set(ids);
+    this.deckOpen = deck;
+    if (!ids.length && !deck) this.renderer.domElement.style.cursor = "";
+    if (picked.length === this.picked.size && picked.every((id) => this.picked.has(id))) return;
+    this.picked = new Set(picked);
+    this.sync(this.model);
   }
   /** Where a seat's chips enter and leave the table. */
   private chipSpot(seat: number) {

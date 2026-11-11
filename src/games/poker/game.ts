@@ -54,7 +54,7 @@ export const poker: BettingGame<State> = {
     s.phase === "choosing"
       ? {
           title: "상대에게 공개할 카드를 고르세요",
-          options: s.hands[0].map((c, i) => ({ label: `${cardText(c)} 공개`, value: i })),
+          options: s.hands[0].map((c, i) => ({ label: `${cardText(c)} 공개`, value: i, cards: [c.id] })),
         }
       : null,
   phase: (s) => s.phase,

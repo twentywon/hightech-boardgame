@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
-import { wood, disposeScene, afterGPUFrame } from "../../engine/scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim } from "../../engine/scene-utils";
 import { toWorld, fromWorld, squares } from "./coordinates";
 import {
   FOV,
@@ -493,21 +493,13 @@ export class ChessView {
       this.marks.add(m);
     }
   }
+  private ray = new T.Raycaster();
+  private plane = new T.Plane(new T.Vector3(0, 1, 0), -0.21);
   private pick(e: PointerEvent, confirm: boolean) {
     if (this.disposed || this.animating) return;
-    const rect = this.renderer.domElement.getBoundingClientRect(),
-      ray = new T.Raycaster();
-    ray.setFromCamera(
-      new T.Vector2(
-        ((e.clientX - rect.left) / rect.width) * 2 - 1,
-        (-(e.clientY - rect.top) / rect.height) * 2 + 1,
-      ),
-      this.camera,
-    );
+    aim(this.ray, e, this.renderer.domElement, this.camera);
     const point = new T.Vector3();
-    if (
-      !ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -0.21), point)
-    ) {
+    if (!this.ray.ray.intersectPlane(this.plane, point)) {
       this.onSelect(null, confirm);
       return;
     }

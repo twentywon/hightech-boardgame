@@ -219,13 +219,26 @@ test("three-card seotda: show one, bet, uncover the third by sliding, pick two, 
   await page.getByLabel("상대 수").selectOption("1");
   await button(page, /테이블에 앉기/).click();
   await settled(page);
-  await button(page, "패 받기").click();
+  const desktop = info.project.name !== "mobile",
+    tap = async (x: number, z: number) => {
+      const at = await onTable(page, x, z);
+      await page.mouse.click(at.x, at.y);
+    };
+  if (desktop) {
+    // The deck on the table deals as the button does (it lies at one of two spots).
+    await page.locator("canvas").scrollIntoViewIfNeeded();
+    await tap(3.4, 0.1);
+    await tap(2.5, 0.1);
+  } else await button(page, "패 받기").click();
+  await expect(page.locator("#bg-between")).toBeHidden();
   await settled(page);
   // Two cards: choose the one the table may see.
   await expect(turn(page)).toContainText("상대에게 공개할 패를 고르세요");
   await expect(prompt(page)).toHaveText(["3광 공개", "8광 공개"]);
   await expect(page.locator("#bg-call")).toBeHidden();
-  await button(page, "8광 공개").click();
+  // On the table, the second of my two cards is the 8광.
+  if (desktop) await tap(0.4725, 1.85);
+  else await button(page, "8광 공개").click();
   await myTurn(page);
   await expect(turn(page)).toContainText("첫 베팅");
   await expect(seat(page, 0).locator(".bj-card.secret")).toHaveText(["3광"]);
@@ -270,7 +283,13 @@ test("three-card seotda: show one, bet, uncover the third by sliding, pick two, 
   await expect(turn(page)).toContainText("족보로 쓸 두 장을 고르세요");
   await expect(prompt(page)).toHaveText(["3광 · 8광 — 38광땡", "3광 · 10 — 3끗", "8광 · 10 — 8끗"]);
   await page.screenshot({ path: `test-results/${info.project.name}-seotda-pick.png`, fullPage: true });
-  await button(page, "3광 · 8광 — 38광땡").click();
+  if (desktop) {
+    // Tapping two cards on the table takes the pair they make.
+    await tap(-0.945, 1.85);
+    await expect(prompt(page)).toHaveCount(3);
+    await settled(page);
+    await tap(0, 1.55);
+  } else await button(page, "3광 · 8광 — 38광땡").click();
   await expect(seat(page, 0)).toContainText("38광땡");
   await playOut(page);
   expect(Number((await page.locator("#bg-chips").textContent())!.replace(/,/g, ""))).toBeGreaterThan(1000);

@@ -196,7 +196,6 @@ export function mountReversi(
       view.onSettled = update;
       view.renderReversi(state, false);
       if (settings.top) view.setCamera(true);
-      view.setFacing(flipped(), false);
       view.onSelect = (p, confirm) => {
         if (
           !p ||
@@ -229,12 +228,10 @@ export function mountReversi(
         };
         if (dirs[e.key]) {
           e.preventDefault();
-          // From the far side of the table the arrows point the other way.
-          const [r, c] = dirs[e.key],
-            sign = flipped() ? -1 : 1;
+          const [r, c] = dirs[e.key];
           candidate = {
-            row: Math.max(0, Math.min(7, p.row + r * sign)),
-            col: Math.max(0, Math.min(7, p.col + c * sign)),
+            row: Math.max(0, Math.min(7, p.row + r)),
+            col: Math.max(0, Math.min(7, p.col + c)),
           };
           view?.preview(isLegal(candidate) ? candidate : null, state.turn);
           update();
@@ -368,12 +365,8 @@ export function mountReversi(
       later(result, 900);
     } else schedule();
   }
-  /** Two players at one screen: white sees the table from the far side. */
-  const flipped = () => mode === "local" && state.turn === 2;
   function update() {
     if (disposed || !document.getElementById("black-count")) return;
-    if (!state.winner) view?.setFacing(flipped());
-    $("board").dataset.flipped = String(flipped());
     const c = counts(state.board);
     $("black-count").textContent = String(c.black);
     $("white-count").textContent = String(c.white);

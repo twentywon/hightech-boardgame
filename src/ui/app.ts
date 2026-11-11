@@ -318,7 +318,6 @@ function game() {
     view.setLabels(settings.labels);
     view.renderState(state, false);
     if (settings.top) view.setCamera(true);
-    view.setFacing(flipped(), false);
     const canvas = view.renderer.domElement;
     canvas.tabIndex = 0;
     canvas.addEventListener("keydown", (e) => {
@@ -332,12 +331,10 @@ function game() {
       };
       if (directions[e.key]) {
         e.preventDefault();
-        // From the far side of the table the arrows point the other way.
-        const [r, c] = directions[e.key],
-          sign = flipped() ? -1 : 1;
+        const [r, c] = directions[e.key];
         candidate = {
-          row: Math.max(0, Math.min(14, p.row + r * sign)),
-          col: Math.max(0, Math.min(14, p.col + c * sign)),
+          row: Math.max(0, Math.min(14, p.row + r)),
+          col: Math.max(0, Math.min(14, p.col + c)),
         };
         view?.preview(candidate, state.turn);
         update();
@@ -537,12 +534,8 @@ window.addEventListener("pageshow", (event) => {
   }
 });
 
-/** Two players at one screen: white sees the table from the far side. */
-const flipped = () => mode === "local" && state.turn === 2;
 function update() {
   if (!document.getElementById("turn")) return;
-  if (!state.winner) view?.setFacing(flipped());
-  $("board").dataset.flipped = String(flipped());
   $("turn").innerHTML =
     `<i class="stone ${state.turn === 1 ? "black" : "white"}"></i><span>${state.winner ? (state.winner === "draw" ? "무승부" : `${state.winner === 1 ? "흑" : "백"}돌 승리`) : isAITurn() ? "컴퓨터가 생각 중…" : `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`}</span>`;
   if (aiError && !state.winner) {

@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame } from "../../engine/scene-utils";
+import { afterGPUFrame, aim } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { Card } from "./shoe";
 
@@ -307,6 +307,8 @@ export class BlackjackView {
     matchMedia("(prefers-reduced-motion: reduce)").matches;
   /** A card touched the felt. */
   onContact: () => void = () => {};
+  /** The person tapped the shoe. */
+  onShoe: () => void = () => {};
   /** Every animation finished and the plaques show the current model. */
   onSettled: () => void = () => {};
   get animating() {
@@ -394,6 +396,29 @@ export class BlackjackView {
     ]);
     this.shoe.castShadow = true;
     this.scene.add(this.shoe, this.plaques, this.chips, this.rings);
+    // A tap on the shoe asks for the next card.
+    const canvas = this.renderer.domElement,
+      ray = new T.Raycaster();
+    const onShoe = (e: PointerEvent) => {
+      aim(ray, e, canvas, this.camera);
+      return ray.intersectObject(this.shoe, false).length > 0;
+    };
+    let down: { pointer: number; x: number; y: number } | null = null;
+    canvas.addEventListener("pointerdown", (e) => {
+      down =
+        !this.disposed && (e.pointerType !== "mouse" || e.button === 0) && onShoe(e)
+          ? { pointer: e.pointerId, x: e.clientX, y: e.clientY }
+          : null;
+    });
+    canvas.addEventListener("pointerup", (e) => {
+      const tap = down;
+      down = null;
+      if (tap?.pointer === e.pointerId && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < 12 && onShoe(e))
+        this.onShoe();
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse") canvas.style.cursor = onShoe(e) ? "pointer" : "";
+    });
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.resize();

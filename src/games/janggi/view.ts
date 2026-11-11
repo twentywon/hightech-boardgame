@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, disposeScene, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, disposeScene, wood } from "../../engine/scene-utils";
 import {
   FOV,
   OVERHEAD,
@@ -40,8 +40,14 @@ function pieceTexture(piece: string) {
   ctx.fillRect(0, 0, 160, 160);
   ctx.strokeStyle = color;
   ctx.lineWidth = 7;
+  // An octagonal rim that follows the edge of the piece.
+  ctx.lineJoin = "miter";
   ctx.beginPath();
-  ctx.arc(80, 80, 62, 0, Math.PI * 2);
+  for (let i = 0; i < 8; i++) {
+    const a = Math.PI / 8 + (i * Math.PI) / 4;
+    ctx.lineTo(80 + Math.cos(a) * 66, 80 + Math.sin(a) * 66);
+  }
+  ctx.closePath();
   ctx.stroke();
   ctx.fillStyle = color;
   ctx.textAlign = "center";
@@ -88,7 +94,7 @@ export class JanggiView {
   private meshes: (T.Mesh | null)[] = Array(FILES * RANKS).fill(null);
   private shown = "";
   private tweens: Tween[] = [];
-  private geometries = new Map<string, T.CylinderGeometry>();
+  private geometries = new Map<string, T.BufferGeometry>();
   private tops = new Map<string, T.MeshStandardMaterial>();
   private side = new T.MeshStandardMaterial({ color: "#e2d2a8", roughness: 0.6 });
   private markKey = "";
@@ -181,14 +187,7 @@ export class JanggiView {
     this.scene.add(this.pieces, this.marks);
     const pick = (e: PointerEvent, confirm: boolean) => {
       if (this.disposed || this.cameraAt) return;
-      const rect = canvas.getBoundingClientRect();
-      this.ray.setFromCamera(
-        new T.Vector2(
-          ((e.clientX - rect.left) / rect.width) * 2 - 1,
-          (-(e.clientY - rect.top) / rect.height) * 2 + 1,
-        ),
-        this.camera,
-      );
+      aim(this.ray, e, canvas, this.camera);
       const hit = new T.Vector3();
       this.onSelect(
         this.ray.ray.intersectPlane(this.plane, hit) ? fromWorld(hit.x, hit.z) : null,
@@ -307,7 +306,11 @@ export class JanggiView {
     const kind = kindOf(piece);
     let geometry = this.geometries.get(kind);
     if (!geometry) {
-      geometry = new T.CylinderGeometry(RADIUS[kind], RADIUS[kind] * 1.06, 0.2, 8);
+      // A crisp octagonal prism: a flat edge faces the player and every face
+      // is shaded on its own, so the eight corners read clearly.
+      const r = RADIUS[kind] * 1.05;
+      geometry = new T.CylinderGeometry(r * 0.95, r, 0.2, 8, 1, false, Math.PI / 8).toNonIndexed();
+      geometry.computeVertexNormals();
       this.geometries.set(kind, geometry);
     }
     let top = this.tops.get(piece);

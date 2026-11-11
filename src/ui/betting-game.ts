@@ -78,7 +78,9 @@ export function mountBettingGame<S>(
     thinking = false,
     soundedRound = -1,
     // Cards dealt face down to seat 0 that the person has uncovered.
-    peeked = new Set<number>();
+    peeked = new Set<number>(),
+    // Cards tapped on the table toward a choice that needs more than one.
+    picked: number[] = [];
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as E;
@@ -153,6 +155,10 @@ export function mountBettingGame<S>(
       view.onContact = () => sound.card();
       view.onSettled = present;
       view.onPeek = peek;
+      view.onCard = pick;
+      view.onDeck = () => {
+        if (!$("bg-deal").hidden && !$("bg-between").hidden) $("bg-deal").click();
+      };
       view.onChips = () => sound.chips();
       view.sync(table(state), false);
     } catch {
@@ -206,7 +212,21 @@ export function mountBettingGame<S>(
     else present();
     update();
   }
+  /** A card tapped on the table: the option made of the tapped cards is taken. */
+  function pick(id: number) {
+    const options = (game.phase(state) === "choosing" && !busy() && game.prompt(state)?.options) || [];
+    if (!options.some((o) => o.cards?.includes(id))) return;
+    picked = picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id];
+    const size = Math.max(...options.map((o) => o.cards?.length ?? 0));
+    if (picked.length > size) picked = [id];
+    const chosen = options.find(
+      (o) => o.cards?.length === picked.length && o.cards.every((c) => picked.includes(c)),
+    );
+    if (chosen) act((s) => game.choose(s, chosen.value), true);
+    else update();
+  }
   function apply(next: State) {
+    picked = [];
     if (game.round(next) !== game.round(state)) peeked.clear();
     state = next;
     if (view) view.sync(table(state));
@@ -347,6 +367,13 @@ export function mountBettingGame<S>(
         .map((o) => `<button data-value="${o.value}">${o.label}</button>`)
         .join("");
     }
+    const offered = prompt && !waiting ? prompt.options.flatMap((o) => o.cards ?? []) : [];
+    if (!prompt) picked = [];
+    view?.setChoices(
+      offered,
+      picked,
+      !waiting && (phase === "idle" || phase === "handOver"),
+    );
     $("bg-prompt")
       .querySelectorAll<HTMLButtonElement>("button")
       .forEach((b) => (b.disabled = waiting));

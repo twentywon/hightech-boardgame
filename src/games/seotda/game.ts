@@ -107,13 +107,14 @@ export const seotda: BettingGame<State> = {
     return kind === "show"
       ? {
           title: "상대에게 공개할 패를 고르세요",
-          options: cards.map((c, i) => ({ label: `${cardText(c)} 공개`, value: i })),
+          options: cards.map((c, i) => ({ label: `${cardText(c)} 공개`, value: i, cards: [c.id] })),
         }
       : {
           title: "족보로 쓸 두 장을 고르세요",
           options: PAIRS.map(([a, b], i) => ({
             label: `${cardText(cards[a])} · ${cardText(cards[b])} — ${rank([cards[a], cards[b]]).name}`,
             value: i,
+            cards: [cards[a].id, cards[b].id],
           })),
         };
   },

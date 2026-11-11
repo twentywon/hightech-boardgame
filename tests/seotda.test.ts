@@ -309,8 +309,8 @@ describe("Three-card seotda", () => {
     expect(seotda.prompt(s)).toEqual({
       title: "상대에게 공개할 패를 고르세요",
       options: [
-        { label: "3광 공개", value: 0 },
-        { label: "8광 공개", value: 1 },
+        { label: "3광 공개", value: 0, cards: [0] },
+        { label: "8광 공개", value: 1, cards: [3] },
       ],
     });
     // A computer shows its plain card and hides a picture card; with two
