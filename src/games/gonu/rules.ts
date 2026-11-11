@@ -1,4 +1,5 @@
 import type { Effect, Move, PointGame, Winner } from "../points/types";
+import * as M from "../morris/rules";
 
 /**
  * Gonu: traditional Korean games drawn on the ground. A piece moves one
@@ -11,9 +12,17 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  * - pumpkin (호박고누): three pieces each start in their home row and come out
  *   into the round field; none may go back home or into the other home.
  *   Whoever cannot move loses.
+ * - car (자동차고누): a 4×4 grid with a loop round each corner. A piece steps
+ *   to a neighbouring point, or takes an enemy by running along the looped
+ *   lines through at least one loop, over empty points only.
+ * - cham (참고누): three squares joined at their middles and corners, twelve
+ *   pieces each; three in a row take a piece. It is played by the morris
+ *   rules with the corners joined.
  */
-export type Variant = "well" | "line" | "pumpkin";
-export const VARIANTS: Variant[] = ["well", "line", "pumpkin"];
+export type Variant = "well" | "line" | "pumpkin" | "car" | "cham";
+export const VARIANTS: Variant[] = ["well", "line", "pumpkin", "car", "cham"];
+/** Pieces each side places in cham gonu. */
+export const CHAM_MEN = 12;
 interface Board {
   /** Points joined to each point by a line. */
   near: number[][];
@@ -40,11 +49,21 @@ export const LINES: Record<Variant, [number, number][]> = {
   ]),
   // 0–2 far home, 3 north, 4 east, 5 south, 6 west, 7 centre, 8–10 near home.
   pumpkin: [[0, 1], [1, 2], [1, 3], [3, 4], [4, 5], [5, 6], [6, 3], [7, 3], [7, 4], [7, 5], [7, 6], [5, 9], [8, 9], [9, 10]],
+  car: [],
+  cham: M.CROSSED_MILLS.flatMap(([a, b, c]) => [[a, b], [b, c]] as [number, number][]),
 };
+LINES.car = LINES.line;
+/**
+ * The looped road of car gonu: the two inner rows and columns, joined end to
+ * end by the four corner loops (after every fourth point).
+ */
+export const CIRCUIT = [4, 5, 6, 7, 2, 6, 10, 14, 11, 10, 9, 8, 13, 9, 5, 1];
 const BOARDS: Record<Variant, Board> = {
   well: { near: link(5, LINES.well), start: [[2, 3], [0, 1]], homes: [[], []] },
   line: { near: link(16, LINES.line), start: [[12, 13, 14, 15], [0, 1, 2, 3]], homes: [[], []] },
   pumpkin: { near: link(11, LINES.pumpkin), start: [[8, 9, 10], [0, 1, 2]], homes: [[8, 9, 10], [0, 1, 2]] },
+  car: { near: link(16, LINES.line), start: [[12, 13, 14, 15], [0, 1, 2, 3]], homes: [[], []] },
+  cham: { near: link(24, LINES.cham), start: [[], []], homes: [[], []] },
 };
 /** Moves without a capture after which a game that can go on for ever is drawn. */
 export const QUIET_LIMIT = 80;
@@ -56,10 +75,23 @@ export interface State {
   quiet: number;
   effect: Effect | null;
   winner: Winner;
+  /** Cham gonu is played by the morris rules; the fields above mirror this state. */
+  inner?: M.State;
 }
+const mirror = (inner: M.State): State => ({
+  variant: "cham",
+  board: inner.board,
+  turn: inner.turn,
+  ply: inner.ply,
+  quiet: inner.quiet,
+  effect: inner.effect,
+  winner: inner.winner,
+  inner,
+});
 export function createGame(variant: string = "well"): State {
-  const v = (VARIANTS as string[]).includes(variant) ? (variant as Variant) : "well",
-    { near, start } = BOARDS[v],
+  const v = (VARIANTS as string[]).includes(variant) ? (variant as Variant) : "well";
+  if (v === "cham") return mirror(M.createGame(CHAM_MEN, true));
+  const { near, start } = BOARDS[v],
     board: (0 | 1 | null)[] = near.map(() => null);
   start.forEach((points, player) => points.forEach((p) => (board[p] = player as 0 | 1)));
   return { variant: v, board, turn: 0, ply: 0, quiet: 0, effect: null, winner: null };
@@ -106,10 +138,40 @@ function apply(state: State, from: number, to: number) {
   for (const p of removed) board[p] = null;
   return { board, removed };
 }
+/** Enemy pieces a piece on `from` can reach along the looped road (car gonu). */
+function raids(board: (0 | 1 | null)[], from: number, me: 0 | 1) {
+  const found = new Set<number>();
+  CIRCUIT.forEach((point, start) => {
+    if (point !== from) return;
+    for (const dir of [1, -1]) {
+      let at = start,
+        loops = 0;
+      for (let k = 0; k < CIRCUIT.length; k++) {
+        if (dir === 1 ? at % 4 === 3 : at % 4 === 0) loops++;
+        at = (at + dir + CIRCUIT.length) % CIRCUIT.length;
+        const here = CIRCUIT[at];
+        // The piece's own point counts as empty: it has left it.
+        if (here === from || board[here] === null) continue;
+        if (board[here] !== me && loops > 0) found.add(here);
+        break;
+      }
+    }
+  });
+  return [...found];
+}
 export function moves(state: State): Move[] {
+  if (state.inner) return M.moves(state.inner);
   if (state.winner !== null) return [];
   const me = state.turn,
     them = me === 0 ? 1 : 0;
+  if (state.variant === "car")
+    return state.board.flatMap((owner, from) =>
+      owner === me
+        ? [...BOARDS.car.near[from].filter((to) => state.board[to] === null), ...raids(state.board, from, me)].map(
+            (to) => ({ from, to, extra: -1 }),
+          )
+        : [],
+    );
   return steps(state.variant, state.board, me)
     .filter(([from, to]) => {
       // Well gonu: the opening move may not leave the other side without a move.
@@ -119,6 +181,11 @@ export function moves(state: State): Move[] {
     .map(([from, to]) => ({ from, to, extra: -1 }));
 }
 export function play(state: State, move: Move): State | null {
+  if (state.inner) {
+    const next = M.play(state.inner, move);
+    return next && mirror(next);
+  }
+  if (state.variant === "car") return raid(state, move);
   if (move.extra !== -1 || !moves(state).some((m) => m.from === move.from && m.to === move.to)) return null;
   const me = state.turn,
     them = me === 0 ? 1 : 0,
@@ -140,7 +207,35 @@ export function play(state: State, move: Move): State | null {
           : null,
   };
 }
-export const NAMES: Record<Variant, string> = { well: "우물고누", line: "네줄고누", pumpkin: "호박고누" };
+/** A move of car gonu: a step, or a run through a loop that takes the piece it meets. */
+function raid(state: State, move: Move): State | null {
+  if (move.extra !== -1 || !moves(state).some((m) => m.from === move.from && m.to === move.to)) return null;
+  const me = state.turn,
+    them = me === 0 ? 1 : 0,
+    taking = state.board[move.to] === them,
+    board = state.board.slice();
+  board[move.from] = null;
+  board[move.to] = me;
+  const quiet = taking ? 0 : state.quiet + 1,
+    next: State = {
+      variant: "car",
+      board,
+      turn: them,
+      ply: state.ply + 1,
+      quiet,
+      effect: { kind: taking ? "jump" : "move", from: move.from, to: move.to, converted: [], removed: taking ? [move.to] : [] },
+      winner: null,
+    };
+  next.winner = !board.includes(them) || !moves(next).length ? me : quiet >= QUIET_LIMIT ? "draw" : null;
+  return next;
+}
+export const NAMES: Record<Variant, string> = {
+  well: "우물고누",
+  line: "네줄고누",
+  pumpkin: "호박고누",
+  car: "자동차고누",
+  cham: "참고누",
+};
 export const gonu: PointGame<State> = {
   create: createGame,
   moves,
@@ -151,17 +246,23 @@ export const gonu: PointGame<State> = {
   effect: (s) => s.effect,
   ply: (s) => s.ply,
   evaluate(s, player) {
+    if (s.inner) return M.morris.evaluate(s.inner, player);
     const other = player === 0 ? 1 : 0;
+    if (s.variant === "car") return (count(s, player) - count(s, other)) * 10;
     return (
       (count(s, player) - count(s, other)) * 10 +
       steps(s.variant, s.board, player).length -
       steps(s.variant, s.board, other).length
     );
   },
-  hint: () => "옮길 말을 고르세요.",
-  tally: (s) => [`말 ${count(s, 0)}개`, `말 ${count(s, 1)}개`],
+  hint: (s) => (s.inner ? M.morris.hint(s.inner) : "옮길 말을 고르세요."),
+  tally: (s) => (s.inner ? M.morris.tally(s.inner) : [`말 ${count(s, 0)}개`, `말 ${count(s, 1)}개`]),
   reason: (s) =>
-    s.winner === "draw"
+    s.inner
+      ? M.morris.reason(s.inner)
+      : s.variant === "car" && !s.board.includes(s.turn)
+        ? "말을 모두 잡았습니다."
+        : s.winner === "draw"
       ? `${QUIET_LIMIT}수 동안 승부가 나지 않아 비겼습니다.`
       : s.variant === "line" && count(s, s.turn) <= 1
         ? "말이 하나만 남았습니다."

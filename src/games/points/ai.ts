@@ -1,6 +1,13 @@
 import type { Move, PointGame } from "./types";
 
 const WIN = 1e6;
+export type Level = "easy" | "normal" | "hard";
+/** How long and how deep each level looks, and how often it plays a random move. */
+export const LEVELS: Record<Level, { label: string; budget: number; depth: number; slip: number }> = {
+  easy: { label: "쉬움", budget: 120, depth: 1, slip: 0.3 },
+  normal: { label: "보통", budget: 300, depth: 3, slip: 0 },
+  hard: { label: "어려움", budget: 900, depth: 8, slip: 0 },
+};
 /**
  * The move a computer plays: an alpha-beta search that deepens until `budget`
  * milliseconds have passed or `maxDepth` is reached. `now` is injected so
@@ -12,9 +19,13 @@ export function choose<S>(
   budget = 350,
   maxDepth = 6,
   now: () => number = () => performance.now(),
+  /** Chance of playing any legal move instead of the best one, and its source of chance. */
+  slip = 0,
+  random: () => number = Math.random,
 ): Move | null {
   const legal = game.moves(state);
   if (!legal.length) return null;
+  if (slip > 0 && random() < slip) return legal[Math.floor(random() * legal.length)];
   const me = game.turn(state),
     deadline = now() + budget;
   let out = false;

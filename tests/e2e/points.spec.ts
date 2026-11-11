@@ -12,11 +12,14 @@ const settled = (page: Page) =>
   expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 20000 });
 const turn = (page: Page) => page.locator("#turn");
 const moves = (page: Page) => page.locator("#move-count");
-async function sit(page: Page, game: string, mode: "local" | "ai", variant?: string) {
+async function sit(page: Page, game: string, mode: "local" | "ai", variant?: string, level?: string) {
   await page.goto("/");
   await selectGame(page, game);
   await page.locator(`input[name=pg-mode][value=${mode}]`).check();
-  if (variant) await page.getByLabel("종류").selectOption(variant);
+  // The difficulty belongs to the computer: it is offered only against it.
+  await expect(page.getByLabel("컴퓨터 난이도")).toBeVisible({ visible: mode === "ai" });
+  if (level) await page.getByLabel("컴퓨터 난이도").selectOption(level);
+  if (variant) await page.locator("#pg-variant").selectOption(variant);
   await page.getByRole("button", { name: /앉기/ }).click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await settled(page);
@@ -44,7 +47,7 @@ test("hexa germ war: a neighbouring cell copies, two cells away jumps, neighbour
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const mobile = info.project.name === "mobile",
-    board = hexaBoard(),
+    board = hexaBoard("classic"),
     go = (q: number, r: number) => tap(page, board, cell(q, r), mobile);
   await sit(page, "헥사 세균전", "local");
   await expect(page.locator(".board-hint")).toContainText("파랑 (플레이어 1) 차례");
@@ -145,6 +148,21 @@ test("gonu: three boards in the yard, each with its own rules", async ({ page },
   // The second tap chose the middle piece; it steps out to the south point.
   await tap(page, board, 5, mobile);
   await expect(moves(page)).toHaveText("1수");
+  // Cham gonu: pieces are placed, and the corner line 0-8-16 takes a piece.
+  board = gonuBoard("cham");
+  await sit(page, "고누", "local", "cham");
+  await expect(page.locator(".board-label")).toContainText("참고누");
+  for (const point of [0, 1, 8, 2, 16]) {
+    await tap(page, board, point, mobile);
+    await settled(page);
+  }
+  await expect(turn(page)).toContainText("떼어낼 상대 말을 고르세요");
+  await tap(page, board, 2, mobile);
+  await expect(moves(page)).toHaveText("5수");
+  await expect(page.locator("#pg-count-1")).toHaveText("판 위 1 · 남은 말 10");
+  // A hexa map other than the first: the wall across the middle.
+  await sit(page, "헥사 세균전", "local", "wall");
+  await expect(page.locator(".board-label")).toContainText("맵 · 장벽");
   expect(errors).toEqual([]);
 });
 
@@ -153,13 +171,14 @@ test("point games against the computer: it answers, undo returns to my turn, the
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const mobile = info.project.name === "mobile";
-  const games: [string, string | undefined, BoardSpec, number[]][] = [
-    ["헥사 세균전", undefined, hexaBoard(), [cell(4, 0), cell(3, 0)]],
-    ["나인 멘스 모리스", undefined, morrisBoard(), [0]],
-    ["고누", "line", gonuBoard("line"), [13, 9]],
+  const games: [string, string | undefined, BoardSpec, number[], string, string][] = [
+    ["헥사 세균전", "open", hexaBoard("open"), [cell(4, 0), cell(3, 0)], "easy", "쉬움"],
+    ["나인 멘스 모리스", undefined, morrisBoard(), [0], "hard", "어려움"],
+    ["고누", "car", gonuBoard("car"), [13, 9], "normal", "보통"],
   ];
-  for (const [game, variant, board, taps] of games) {
-    await sit(page, game, "ai", variant);
+  for (const [game, variant, board, taps, level, label] of games) {
+    await sit(page, game, "ai", variant, level);
+    await expect(page.locator("#pg-side-1")).toContainText(`컴퓨터 · ${label}`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const box = (await page.locator("canvas").boundingBox())!;
     expect(box.width).toBeGreaterThan(mobile ? 300 : 600);

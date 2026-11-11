@@ -28,11 +28,12 @@ function playout<S>(game: PointGame<S>, variant: string, seed: number, limit = 2
 }
 
 describe("Hexa germ war", () => {
-  it("lays out 58 cells with three germs each in alternate corners", () => {
+  it("lays out 61 cells, walls off the map's holes and starts with three germs in alternate corners", () => {
     const s = H.createGame();
-    expect(H.CELLS).toHaveLength(58);
+    expect(H.CELLS).toHaveLength(61);
     expect([H.count(s, 0), H.count(s, 1)]).toEqual([3, 3]);
-    expect(H.at(1, 0)).toBe(-1);
+    expect(s.blocked.filter(Boolean)).toHaveLength(3);
+    expect(s.blocked[H.at(1, 0)]).toBe(true);
     expect(s.cells[H.at(4, 0)]).toBe(0);
     expect(s.cells[H.at(4, -4)]).toBe(1);
   });
@@ -78,12 +79,25 @@ describe("Hexa germ war", () => {
     expect(H.count(next, 1)).toBe(0);
     expect(H.moves(next)).toEqual([]);
   });
-  it("always ends with a counted board", () => {
-    for (let seed = 1; seed <= 12; seed++) {
-      const s = playout(H.hexa, "", seed);
-      const [a, b] = [H.count(s, 0), H.count(s, 1)];
-      expect(s.winner).toBe(a === b ? "draw" : a > b ? 0 : 1);
+  it("every map keeps the corners open and ends with a counted board that leaves the holes empty", () => {
+    for (const map of Object.keys(H.MAPS)) {
+      const start = H.createGame(map);
+      expect(start.map).toBe(map);
+      expect(start.blocked.filter(Boolean)).toHaveLength(H.MAPS[map].holes.length);
+      expect(start.cells.some((c, i) => c !== null && start.blocked[i])).toBe(false);
+      for (let seed = 1; seed <= 3; seed++) {
+        const s = playout(H.hexa, map, seed);
+        const [a, b] = [H.count(s, 0), H.count(s, 1)];
+        expect(s.winner).toBe(a === b ? "draw" : a > b ? 0 : 1);
+        expect(s.cells.some((c, i) => c !== null && s.blocked[i])).toBe(false);
+      }
     }
+    expect(H.createGame("nowhere").map).toBe("classic");
+    // A germ cannot enter a hole but may jump across it.
+    const wall = H.createGame("wall");
+    wall.cells[H.at(0, -1)] = 0;
+    expect(H.play(wall, move(H.at(0, -1), H.at(0, 0)))).toBeNull();
+    expect(H.play(wall, move(H.at(0, -1), H.at(0, 1)))).not.toBeNull();
   });
 });
 
@@ -200,12 +214,53 @@ describe("Gonu", () => {
     s = G.play(s, move(5, 7))!;
     expect(G.moves(s).some((m) => [8, 9, 10].includes(m.to))).toBe(false);
   });
+  it("car gonu steps one point and takes only by running through a loop", () => {
+    const s = G.createGame("car");
+    // At the start a piece steps forward; no enemy can be reached through a loop.
+    expect(G.moves(s).map((m) => [m.from, m.to]).sort()).toEqual([[12, 8], [13, 9], [14, 10], [15, 11]].sort());
+    // Black on 13 runs up its column (9, 5, 1 empty), round the top-left loop and meets white on 4.
+    s.board = s.board.map(() => null);
+    s.board[13] = 0;
+    s.board[4] = 1;
+    s.board[3] = 1;
+    expect(G.moves(s).filter((m) => m.from === 13).map((m) => m.to).sort()).toEqual([12, 14, 4, 9].sort((a, b) => String(a).localeCompare(String(b))));
+    const taken = G.play(s, move(13, 4))!;
+    expect([taken.board[13], taken.board[4], G.count(taken, 1)]).toEqual([null, 0, 1]);
+    expect(taken.effect).toMatchObject({ kind: "jump", removed: [4] });
+    // A piece in the way stops the run, and a straight line without a loop takes nothing.
+    s.board[5] = 0;
+    expect(G.moves(s).some((m) => m.from === 13 && m.to === 4)).toBe(false);
+    const line = G.createGame("car");
+    line.board = line.board.map(() => null);
+    line.board[8] = 0;
+    line.board[11] = 1;
+    // Along the row there is no loop; the long way round is open, until 13 is blocked.
+    expect(G.moves(line).some((m) => m.from === 8 && m.to === 11)).toBe(true);
+    line.board[13] = 0;
+    expect(G.moves(line).some((m) => m.from === 8 && m.to === 11)).toBe(false);
+    // Taking the last piece wins.
+    const last = G.createGame("car");
+    last.board = last.board.map(() => null);
+    last.board[13] = 0;
+    last.board[4] = 1;
+    expect(G.play(last, move(13, 4))!.winner).toBe(0);
+  });
+  it("cham gonu places twelve pieces each and counts the corner lines as rows of three", () => {
+    let s = G.createGame("cham");
+    expect(G.gonu.tally(s)).toEqual(["판 위 0 · 남은 말 12", "판 위 0 · 남은 말 12"]);
+    // Corners 0, 8 and 16 lie on one line here, unlike in nine men's morris.
+    for (const to of [0, 1, 8, 2]) s = G.play(s, move(-1, to))!;
+    expect(G.moves(s).filter((m) => m.to === 16).map((m) => m.extra).sort()).toEqual([1, 2]);
+    s = G.play(s, move(-1, 16, 2))!;
+    expect([s.board[2], s.turn, s.ply, s.variant]).toEqual([null, 1, 5, "cham"]);
+    expect(G.play(s, move(0, 7))).toBeNull();
+  });
   it("refuses illegal moves, never changes its input and always ends", () => {
     for (const variant of G.VARIANTS) {
       const s = G.createGame(variant),
         before = frozen(s);
       expect(G.play(s, move(0, 1, 2))).toBeNull();
-      expect(G.play(s, move(4, 4))).toBeNull();
+      expect(G.play(s, move(4, 4, variant === "cham" ? 0 : -1))).toBeNull();
       choose(G.gonu, s, 0, 3, still);
       expect(frozen(s)).toBe(before);
       for (let seed = 1; seed <= 6; seed++) playout(G.gonu, variant, seed);
@@ -214,6 +269,14 @@ describe("Gonu", () => {
 });
 
 describe("The shared computer", () => {
+  it("slips into a random legal move only as often as its level says", () => {
+    const s = G.createGame("line"),
+      best = choose(G.gonu, s, 0, 2, still);
+    // A slip is decided by the first draw; the second picks the move.
+    expect(choose(G.gonu, s, 0, 2, still, 0.3, () => 0.9)).toEqual(best);
+    const draws = [0.1, 0.999];
+    expect(choose(G.gonu, s, 0, 2, still, 0.3, () => draws.shift()!)).toEqual(G.moves(s).at(-1));
+  });
   it("takes a win in one move and blocks one", () => {
     const s = G.createGame("well");
     s.ply = 4;

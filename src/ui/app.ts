@@ -80,9 +80,9 @@ let yut: YutController | null = null;
 let yutOptions: YutOptions = { mode: "ai" };
 let points: PointController | null = null;
 const pointOptions: Record<"hexa-germ-war" | "nine-men's-morris" | "gonu", PointOptions> = {
-  "hexa-germ-war": { mode: "ai", variant: "" },
-  "nine-men's-morris": { mode: "ai", variant: "" },
-  gonu: { mode: "ai", variant: "well" },
+  "hexa-germ-war": { mode: "ai", variant: "classic", level: "normal" },
+  "nine-men's-morris": { mode: "ai", variant: "", level: "normal" },
+  gonu: { mode: "ai", variant: "well", level: "normal" },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();

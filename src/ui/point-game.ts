@@ -1,6 +1,6 @@
 import { mirrorStatus } from "./banner";
 import { modal } from "./dialog";
-import { choose } from "../games/points/ai";
+import { LEVELS, choose, type Level } from "../games/points/ai";
 import type { Move, PointGame } from "../games/points/types";
 import { PointBoardView, type BoardSpec } from "../games/points/view";
 import { Sound } from "../engine/sound";
@@ -9,6 +9,7 @@ import type { Settings } from "../core/storage";
 export interface PointOptions {
   mode: "local" | "ai";
   variant: string;
+  level: Level;
 }
 /** Everything that differs between two games played on the points of a board. */
 export interface PointConfig<S> {
@@ -29,9 +30,11 @@ export interface PointConfig<S> {
   /** Names of the two sides; side 0 moves first. */
   sides: [string, string];
   variants?: { value: string; label: string }[];
+  /** What the variants are called in the setup panel. */
+  variantLabel?: string;
+  /** False to mark only the piece that was picked up, not every piece that can move. */
+  showMovable?: boolean;
   startWord: string;
-  /** Milliseconds the computer may think. */
-  budget?: number;
 }
 interface Navigation {
   header: () => string;
@@ -56,6 +59,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     preferences = { ...nav.preferences },
     mode = preferences.mode,
     variant = preferences.variant,
+    level = preferences.level,
     state = game.create(variant),
     // What the panel describes: the last state whose pieces have come to rest.
     shown = state,
@@ -82,7 +86,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   const over = (s: S = state) => game.winner(s) !== null;
   const computerTurn = (s: S = state) => mode === "ai" && game.turn(s) === 1 && !over(s);
   const who = (player: number) =>
-    mode === "local" ? `${config.sides[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${config.sides[0]})` : `컴퓨터 (${config.sides[1]})`;
+    mode === "local" ? `${config.sides[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${config.sides[0]})` : `컴퓨터 · ${LEVELS[level].label} (${config.sides[1]})`;
   function stop() {
     generation++;
     thinking = false;
@@ -93,14 +97,15 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   function setup() {
     stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select"><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div>${config.variants ? `<div class="ai-options"><label>종류<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label></div>` : ""}<small id="pg-options" class="session-note" hidden>컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button><small class="session-note">대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select"><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button><small class="session-note">대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
     const remember = () => {
       preferences = {
         mode: [...radios].find((r) => r.checked)!.value as PointOptions["mode"],
         variant: document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant,
+        level: $<HTMLSelectElement>("pg-level").value as Level,
       };
-      $("pg-options").hidden = preferences.mode !== "ai";
+      $("pg-options").hidden = $("pg-level-field").hidden = preferences.mode !== "ai";
       nav.remember({ ...preferences });
     };
     radios.forEach((r) => {
@@ -108,12 +113,14 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       r.onchange = remember;
     });
     if (document.getElementById("pg-variant")) $("pg-variant").onchange = remember;
-    $("pg-options").hidden = preferences.mode !== "ai";
+    $("pg-level").onchange = remember;
+    $("pg-options").hidden = $("pg-level-field").hidden = preferences.mode !== "ai";
     $("pg-start").onclick = start;
   }
   function start() {
     mode = preferences.mode;
     variant = preferences.variant;
+    level = preferences.level;
     state = shown = game.create(variant);
     spec = config.board(variant);
     past = [];
@@ -263,7 +270,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const current = generation;
     update();
     later(() => {
-      const move = current === generation && computerTurn() ? choose(game, state, config.budget ?? 350) : null,
+      const move = current === generation && computerTurn() ? choose(game, state, LEVELS[level].budget, LEVELS[level].depth, undefined, LEVELS[level].slip) : null,
         next = move && game.play(state, move);
       thinking = false;
       if (current !== generation || !next) {
@@ -318,7 +325,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $<HTMLButtonElement>("pg-undo").disabled = waiting || !past.length;
     $("pg-note").textContent = "";
     view?.setMarks({
-      movable: next?.field === "from" ? next.points : chosen.from !== undefined && next ? [chosen.from] : [],
+      movable:
+        next?.field === "from" && config.showMovable !== false
+          ? next.points
+          : chosen.from !== undefined && next
+            ? [chosen.from]
+            : [],
       selected: chosen.from ?? null,
       targets: next?.field === "to" ? next.points : [],
       removable: next?.field === "extra" ? next.points : [],
