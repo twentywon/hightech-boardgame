@@ -1887,3 +1887,59 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
 #yd-roll { min-height: 54px; border-radius: 12px; font-size: 15px; font-weight: 600; }
 .bg-prompt button { justify-content: center; text-align: center; }
 .bg-prompt::before { content: attr(aria-label); font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+
+/* ── Yut nori ─────────────────────────────────────────────── */
+.yut-art { background: radial-gradient(ellipse at 45% 40%, #d2b075, #8f6d3f); }
+.yut-mini { position: relative; width: 280px; height: 200px; transform: rotateX(30deg) rotateZ(-8deg); }
+.yut-mini-stick {
+  position: absolute;
+  width: 46px;
+  height: 190px;
+  border-radius: 23px;
+  background: linear-gradient(90deg, #f1dfb4, #e2c98f);
+  box-shadow: 0 8px 0 #6a4326, 0 16px 18px #3d2a1488;
+}
+.yut-mini-stick.s0 { left: 10px; top: 6px; transform: rotate(-10deg); }
+.yut-mini-stick.s1 { left: 80px; top: 0; transform: rotate(5deg); }
+.yut-mini-stick.s2 { left: 150px; top: 8px; transform: rotate(-3deg); background: #6a4326; box-shadow: 0 8px 0 #4a2d18, 0 16px 18px #3d2a1488; }
+.yut-mini-stick.s3 { left: 220px; top: 2px; transform: rotate(9deg); }
+.yut-sides { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.yut-sides li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 14px;
+}
+.yut-sides li.active { border-color: var(--ink); background: #fff8e6; }
+.yut-sides span { grid-column: 2; font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+.yut-dot { width: 16px; height: 16px; border-radius: 50%; grid-row: span 2; }
+.yut-dot.p0 { background: #2f5fa8; }
+.yut-dot.p1 { background: #c23b2b; }
+#yut-throw { min-height: 54px; border-radius: 12px; font-size: 15px; font-weight: 600; }
+.yut-pending { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
+.yut-chip {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 13px;
+  font-weight: 700;
+}
+.yut-moves { display: grid; gap: 6px; }
+.yut-moves button {
+  min-height: 46px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  text-align: left;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+.yut-moves button b { display: inline-block; min-width: 2.6em; color: var(--seal); }
+.yut-moves button.chosen { border-color: var(--ink); background: #fff8e6; }
+@media (max-width: 760px) {
+  .yut-mini { transform: scale(0.8) rotateX(30deg) rotateZ(-8deg); }
+}

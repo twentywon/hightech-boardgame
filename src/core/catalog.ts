@@ -55,4 +55,11 @@ export const games = [
     icon: "楚",
     available: true,
   },
+  {
+    name: "윷놀이",
+    en: "YUT NORI",
+    category: "보드게임",
+    icon: "✕",
+    available: true,
+  },
 ];

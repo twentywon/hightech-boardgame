@@ -35,6 +35,8 @@ export const SUBJECTS = {
   cardsCompactSquare: { half: 3.3, halfZ: 3.7, height: 0.3, lookY: 0, tilt: 1.1 },
   // Janggi: nine files by ten ranks of intersections.
   janggi: { half: 3.45, halfZ: 3.8, height: 0.45, lookY: 0 },
+  // Yut: the mat with the board and the throwing strip, and the porch behind it.
+  yut: { half: 4.3, halfZ: 5.6, height: 0.5, lookY: 0, tilt: 0.98 },
 } as const satisfies Record<string, Subject>;
 
 // Share of the canvas the board may fill. The top and bottom keep room for
