@@ -1143,94 +1143,146 @@ header {
 .library .filter.active span { color: #ffffff99; }
 
 /* Games as an index: one row each, opening in place. */
+/* The collection is a rail of tiles that slides left and right. */
+.library .rail-wrap { position: relative; margin: 0 -6px; }
 .library .game-list {
-  display: block;
+  display: flex;
+  gap: 6px;
+  padding: 18px 6px 26px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scroll-padding: 0 40px;
+  scrollbar-width: none;
   border-top: 1px solid var(--line);
+  overscroll-behavior-x: contain;
 }
-.library .game-entry { border-bottom: 1px solid var(--line); }
-.library .game-entry.expanded { border-bottom-color: var(--ink); }
+.library .game-list::-webkit-scrollbar { display: none; }
+.library .game-entry { flex: 0 0 auto; scroll-snap-align: center; }
+.library .game-entry[hidden] { display: none; }
 .library .game-card {
+  position: relative;
   display: grid;
-  grid-template-columns: 44px 56px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 20px;
-  padding: 18px 8px;
+  justify-items: center;
+  gap: 4px;
+  width: 168px;
+  padding: 14px 10px 18px;
   border: 0;
-  border-radius: 0;
+  border-radius: 18px;
   background: transparent;
   color: var(--ink);
-  transition: padding 0.2s, background 0.2s;
+  text-align: center;
+  transition: transform 0.2s, background 0.2s;
 }
-.library .game-card:hover:not(:disabled) { background: #ebe6d9; padding-left: 16px; padding-right: 16px; }
-.library .game-card[aria-expanded="true"] { background: transparent; }
+.library .game-card:hover:not(:disabled) { background: #ebe6d9; }
+.library .game-card[aria-expanded="true"] { background: transparent; transform: translateY(-6px); }
 .library .game-card:disabled { opacity: 1; color: var(--ink-faint); }
 .card-index {
+  justify-self: start;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
 }
 .library .game-card[aria-expanded="true"] .card-index { color: var(--seal); }
 .library .game-icon,
 .library .game-icon[class] {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  margin: 2px 0 14px;
+  border-radius: 24px;
   background: var(--ink);
   color: var(--paper);
-  font-size: 30px;
+  font-size: 50px;
   line-height: 1;
+  transform: rotate(-4deg);
+  transition: transform 0.2s;
+}
+.library .game-entry:nth-child(even) .game-icon { transform: rotate(3deg); }
+.library .game-card:hover:not(:disabled) .game-icon,
+.library .game-card[aria-expanded="true"] .game-icon { transform: rotate(0) scale(1.06); }
+/* The chosen tile stands on a brushed red ring. */
+.library .game-card[aria-expanded="true"] .game-icon::after {
+  content: "";
+  position: absolute;
+  left: -16px;
+  right: -16px;
+  bottom: -16px;
+  height: 34px;
+  border: 3px solid var(--seal);
+  border-radius: 50%;
+  z-index: -1;
 }
 .library .game-card:disabled .game-icon {
   background: transparent;
   color: var(--ink-faint);
   border: 1px dashed #bdb7a8;
 }
-.library .card-copy { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.library .card-copy { display: grid; justify-items: center; gap: 2px; }
 .library .card-title {
-  display: inline;
   margin: 0;
-  font-size: clamp(22px, 2.6vw, 30px);
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
 .library .game-card small {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 10.5px;
   letter-spacing: 0;
   color: var(--ink-faint);
 }
-.library .card-category { font-size: 13px; color: var(--ink-soft); }
-.library .game-card:disabled .card-category { color: var(--ink-faint); }
-.library .card-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 108px;
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-.library .card-action > span {
+.library .card-category { font-size: 12px; color: var(--ink-soft); }
+.library .game-card:disabled .card-category { color: var(--ink-faint); font-family: var(--mono); font-size: 11px; }
+.library .rail-arrow {
+  position: absolute;
+  top: 74px;
+  z-index: 2;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-left: 10px;
-  border: 1px solid var(--ink);
+  width: 44px;
+  height: 44px;
+  padding: 0 0 3px;
+  border: 1.5px solid var(--ink);
   border-radius: 50%;
-  font-size: 17px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 24px;
   line-height: 1;
-  transition: background 0.2s, color 0.2s;
+  box-shadow: 0 6px 16px #16181a22;
+  transition: opacity 0.2s;
 }
-.library .game-card:hover:not(:disabled) .card-action > span,
-.library .game-card[aria-expanded="true"] .card-action > span { background: var(--ink); color: var(--paper); }
-.library .game-card:disabled .card-action {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--ink-faint);
+.library .rail-arrow.prev { left: -8px; }
+.library .rail-arrow.next { right: -8px; }
+.library .rail-arrow:disabled { opacity: 0; pointer-events: none; }
+.library .rail-arrow:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+.library .rail-hint {
+  margin: 0 0 22px;
+  padding: 16px 18px;
+  border: 1px dashed #bdb7a8;
+  border-radius: 14px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  text-align: center;
+}
+/* The setup panel hangs under the rail with a notch at the chosen tile. */
+.library .game-stage { position: relative; margin-top: -8px; }
+.library .game-stage[hidden] { display: none; }
+.library .game-stage::before {
+  content: "";
+  position: absolute;
+  left: var(--notch, 50%);
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  background: var(--surface);
+  border-left: 1.5px solid var(--ink);
+  border-top: 1.5px solid var(--ink);
+  transform: rotate(45deg);
+  z-index: 1;
+  transition: left 0.2s;
 }
 
 /* Setup panel inside an open row */
@@ -1459,15 +1511,10 @@ dialog .stats { font-family: var(--mono); font-size: 12px; color: var(--ink-soft
   .hero-facts dd { font-size: 22px; }
   .hero-facts dd span { display: block; margin: 2px 0 0; font-size: 11px; }
   .library .collection-heading { display: flex; }
-  .library .game-card { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 14px; padding: 14px 4px; }
-  .library .game-card:hover:not(:disabled) { padding-left: 4px; padding-right: 4px; }
-  .card-index, .library .card-category { display: none; }
-  .library .game-icon, .library .game-icon[class] { width: 48px; height: 48px; border-radius: 12px; font-size: 26px; }
-  .library .card-copy { display: block; }
-  .library .card-title { display: block; font-size: 21px; margin-bottom: 2px; }
-  .library .card-action { min-width: 0; font-size: 0; }
-  .library .card-action > span { margin-left: 0; font-size: 17px; }
-  .library .game-card:disabled .card-action { font-size: 11px; }
+  .library .game-card { width: 128px; padding: 10px 6px 14px; }
+  .library .game-icon, .library .game-icon[class] { width: 76px; height: 76px; border-radius: 20px; font-size: 40px; }
+  .library .card-title { font-size: 17px; }
+  .library .rail-arrow { display: none; }
   .library .featured { grid-template-columns: 1fr; }
   .library .feature-art { border-left: 0; border-bottom: 1.5px solid var(--ink); min-height: 250px; }
   .library .feature-copy .primary { width: 100%; }
@@ -1476,7 +1523,7 @@ dialog .stats { font-family: var(--mono); font-size: 12px; color: var(--ink-soft
   dialog .dialog-actions button { flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .library .game-card, .brand-mark i, .library .feature-copy .primary span { transition: none; }
+  .library .game-card, .library .game-icon, .library .game-stage::before, .brand-mark i, .library .feature-copy .primary span { transition: none; }
 }
 /* Let systems without a heavy Korean face embolden the platform headings. */
 header, .library, dialog { font-synthesis: weight; }

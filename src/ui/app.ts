@@ -167,15 +167,71 @@ type GameSelection =
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
 }
+/** Where the game rail was scrolled to, kept across redraws of the collection. */
+let railScroll = 0;
 function menu(selected: GameSelection = null, category = "전체") {
   clear();
   const playable = String(games.filter((g) => g.available).length).padStart(2, "0");
   app.innerHTML = header() +
-    `<main class="library"><section class="hero"><div class="hero-copy"><div class="eyebrow">The world, at your table</div><h1>함께 앉으면,<br>즐거움이 <em>시작</em>됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p></div><dl class="hero-facts"><div><dt>지금 플레이</dt><dd>${playable}<span>/ ${games.length}</span></dd></div><div><dt>컴퓨터 난이도</dt><dd>${difficulties.length}<span>단계</span></dd></div><div><dt>설치 · 가입</dt><dd>0<span>필요 없음</span></dd></div></dl></section><div class="collection-heading"><h2>게임 컬렉션 <span>${String(games.filter(g => g.available).length).padStart(2,"0")} / ${String(games.length).padStart(2,"0")}</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-label="${x}" aria-pressed="${x === category}">${x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.category === x).length}</span></button>`).join("")}</div></div><div class="collection game-list">${games.map((g, i) => {
+    `<main class="library"><section class="hero"><div class="hero-copy"><div class="eyebrow">The world, at your table</div><h1>함께 앉으면,<br>즐거움이 <em>시작</em>됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p></div><dl class="hero-facts"><div><dt>지금 플레이</dt><dd>${playable}<span>/ ${games.length}</span></dd></div><div><dt>컴퓨터 난이도</dt><dd>${difficulties.length}<span>단계</span></dd></div><div><dt>설치 · 가입</dt><dd>0<span>필요 없음</span></dd></div></dl></section><div class="collection-heading"><h2>게임 컬렉션 <span>${String(games.filter(g => g.available).length).padStart(2,"0")} / ${String(games.length).padStart(2,"0")}</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-label="${x}" aria-pressed="${x === category}">${x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.category === x).length}</span></button>`).join("")}</div></div><div class="rail-wrap"><button class="rail-arrow prev" aria-label="이전 게임 보기">‹</button><div class="collection game-list" id="game-rail">${games.map((g, i) => {
       const id = g.en.toLowerCase().replaceAll(" ", "-"), expanded = selected === id;
-      return `<article class="game-entry ${expanded ? "expanded" : ""}" data-game="${id}" data-category="${g.category}" ${category !== "전체" && category !== g.category ? "hidden" : ""}><button class="game-card" id="select-game-${i}" ${g.available ? `aria-label="${g.name} 살펴보기" aria-expanded="${expanded}" ${expanded ? 'aria-controls="game-detail"' : ""}` : `disabled aria-label="${g.name} 개발 예정"`}><span class="card-index" aria-hidden="true">0${i + 1}</span><span class="game-icon icon-${i}" aria-hidden="true">${g.icon}</span><span class="card-copy"><span class="card-title">${g.name}</span><small>${g.en}</small></span><span class="card-category">${g.category}</span><span class="card-action">${g.available ? `${expanded ? "접기" : "살펴보기"} <span aria-hidden="true">${expanded ? "−" : "+"}</span>` : "개발 예정"}</span></button>${expanded ? `<div id="game-detail" class="game-detail" role="region" aria-label="${g.name} 대국 설정">${id === "gomoku" ? gomokuSetup() : ""}</div>` : ""}</article>`;
-    }).join("")}</div><footer><span>World Table Games</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
+      return `<article class="game-entry ${expanded ? "expanded" : ""}" data-game="${id}" data-category="${g.category}" ${category !== "전체" && category !== g.category ? "hidden" : ""}><button class="game-card" id="select-game-${i}" ${g.available ? `aria-label="${g.name} 살펴보기" aria-expanded="${expanded}" ${expanded ? 'aria-controls="game-detail"' : ""}` : `disabled aria-label="${g.name} 개발 예정"`}><span class="card-index" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span><span class="game-icon icon-${i}" aria-hidden="true">${g.icon}</span><span class="card-copy"><span class="card-title">${g.name}</span><small>${g.en}</small></span><span class="card-category">${g.available ? g.category : "개발 예정"}</span></button></article>`;
+    }).join("")}</div><button class="rail-arrow next" aria-label="다음 게임 보기">›</button></div>${(() => {
+      const chosen = games.find((g) => g.en.toLowerCase().replaceAll(" ", "-") === selected);
+      return chosen
+        ? `<div class="game-stage" data-category="${chosen.category}" ${category !== "전체" && category !== chosen.category ? "hidden" : ""}><div id="game-detail" class="game-detail" role="region" aria-label="${chosen.name} 대국 설정">${selected === "gomoku" ? gomokuSetup() : ""}</div></div>`
+        : `<p class="rail-hint">게임을 누르면 설명과 시작 버튼이 아래에 펼쳐집니다. 좌우로 넘겨 다른 게임을 살펴보세요.</p>`;
+    })()}<footer><span>World Table Games</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
   bindHeader();
+  const rail = $("game-rail"),
+    calm = matchMedia("(prefers-reduced-motion: reduce)").matches,
+    tiles = () => [...rail.querySelectorAll<HTMLButtonElement>(".game-entry:not([hidden]) .game-card")];
+  /** Brings a tile to the middle of the rail. */
+  const centre = (tile: HTMLElement, smooth = true) =>
+    rail.scrollTo({
+      left: tile.offsetLeft - (rail.clientWidth - tile.offsetWidth) / 2,
+      behavior: smooth && !calm ? "smooth" : "auto",
+    });
+  /** Points the setup panel's notch at the chosen tile and dims arrows at the ends. */
+  const [prev, next] = [...document.querySelectorAll<HTMLButtonElement>(".rail-arrow")];
+  const trim = () => {
+    // The observer may still fire once after the collection has been left.
+    if (!rail.isConnected) return;
+    const stage = document.querySelector<HTMLElement>(".game-stage"),
+      chosen = rail.querySelector<HTMLElement>(".game-entry.expanded");
+    if (stage && chosen) {
+      const x = chosen.getBoundingClientRect().left + chosen.offsetWidth / 2 - stage.getBoundingClientRect().left;
+      stage.style.setProperty("--notch", `${Math.max(28, Math.min(stage.clientWidth - 28, x))}px`);
+    }
+    prev.disabled = rail.scrollLeft < 2;
+    next.disabled = rail.scrollLeft + rail.clientWidth > rail.scrollWidth - 2;
+  };
+  // The rail stays where it was across a redraw, then glides to the chosen game.
+  rail.scrollLeft = railScroll;
+  const chosenTile = rail.querySelector<HTMLElement>(".game-entry.expanded");
+  if (chosenTile) centre(chosenTile);
+  rail.onscroll = () => {
+    railScroll = rail.scrollLeft;
+    trim();
+  };
+  new ResizeObserver(trim).observe(rail);
+  trim();
+  document.querySelectorAll<HTMLButtonElement>(".rail-arrow").forEach((arrow) => {
+    arrow.onclick = () =>
+      rail.scrollBy({
+        left: (arrow.classList.contains("next") ? 1 : -1) * Math.max(180, rail.clientWidth * 0.7),
+        behavior: calm ? "auto" : "smooth",
+      });
+  });
+  rail.onkeydown = (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const all = tiles(),
+      next = all[all.indexOf(document.activeElement as HTMLButtonElement) + (e.key === "ArrowRight" ? 1 : -1)];
+    if (!next) return;
+    e.preventDefault();
+    next.focus({ preventScroll: true });
+    centre(next.parentElement!);
+  };
   document.querySelectorAll<HTMLButtonElement>(".game-card:not(:disabled)").forEach((button) => {
     button.onclick = () => {
       const id = button.closest<HTMLElement>(".game-entry")!.dataset.game as Exclude<GameSelection, null>;
@@ -281,9 +337,11 @@ function menu(selected: GameSelection = null, category = "전체") {
         x.classList.toggle("active", x === button);
         x.setAttribute("aria-pressed", String(x === button));
       });
-      document.querySelectorAll<HTMLElement>(".game-entry").forEach((entry) =>
+      document.querySelectorAll<HTMLElement>(".game-entry, .game-stage").forEach((entry) =>
         (entry.hidden = category !== "전체" && entry.dataset.category !== category),
       );
+      rail.scrollLeft = 0;
+      trim();
     }),
   );
 }
