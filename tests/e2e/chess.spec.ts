@@ -22,7 +22,7 @@ async function start(page: Page) {
 async function cell(page: Page, s: Square) {
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
-    d = Math.max(13, 13.4 / Math.min(aspect, 1));
+    d = Math.max(13, 13.4 / Math.min(aspect, 1)) * 0.9;
   const top =
       (await page.locator("#board").getAttribute("data-top")) === "true",
     black = (await page.locator("#board").getAttribute("data-facing")) === "b",
@@ -286,4 +286,11 @@ test("chess planned-move repetition claim ends the game without executing the de
   await expect(page.locator("#turn")).toContainText("무승부");
   await expect(page.locator("#move-count")).toHaveText("7수");
   await expect(page.getByRole("button", { name: "게임판 보기" })).toBeVisible();
+  await page.getByRole("button", { name: "게임판 보기" }).click();
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  });
+  await page.waitForTimeout(300);
+  await expect(page.locator("dialog")).toHaveCount(0);
 });

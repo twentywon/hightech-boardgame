@@ -171,7 +171,7 @@ export function mountChess(
     nav.remember({ ...preferences });
   }
   function setup() {
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 03 — THINK AHEAD</span><h2>체스 <span>Chess</span></h2><p>한 수 앞에서, 더 먼 가능성으로.<br>여섯 가지 기물로 나만의 전략을 펼쳐보세요.</p><div class="game-meta">2인 · 8×8 보드 · 백 선공</div><div class="mode-select"><label><input type="radio" name="chess-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="chess-mode" value="ai"> 컴퓨터 대전</label></div><div id="chess-options" hidden>${optionsForm("chess")}</div><button id="chess-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art chess-art" role="img" aria-label="체스판 미리보기"><div class="chess-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 ? "♞" : i === 35 ? "♔" : i === 44 ? "♟" : ""}</i>`).join("")}</div><span>EVERY MOVE OPENS A WORLD</span></div></section>`;
+    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 03 — THINK AHEAD</span><h2>체스 <span>Chess</span></h2><p>한 수 앞에서, 더 먼 가능성으로.<br>여섯 가지 기물로 나만의 전략을 펼쳐보세요.</p><div class="game-meta">2인 · 8×8 보드 · 백 선공</div><div class="mode-select"><label><input type="radio" name="chess-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="chess-mode" value="ai"> 컴퓨터 대전</label></div><div id="chess-options" hidden>${optionsForm("chess")}</div><button id="chess-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art chess-art" role="img" aria-label="체스판 미리보기"><div class="chess-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 ? "♞︎" : i === 35 ? "♔︎" : i === 44 ? "♟︎" : ""}</i>`).join("")}</div><span>EVERY MOVE OPENS A WORLD</span></div></section>`;
     document
       .querySelectorAll<HTMLInputElement>("input[name=chess-mode]")
       .forEach(
@@ -221,7 +221,11 @@ export function mountChess(
     ownDialog = document.querySelector("dialog");
     return ownDialog!;
   }
+  let renderedHistory: State | null = null;
+  let resultPending = false;
   function screen() {
+    renderedHistory = null;
+    resultPending = false;
     root.innerHTML =
       nav.header() +
       `<main class="game-layout chess-game"><div class="game-top"><div><button id="back" class="text-button">← 컬렉션</button><h1>체스 <small>CHESS</small></h1></div><div class="game-actions"><button id="chess-config">대국 설정</button><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="chess-flip">보드 방향 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE CHESS TABLE</span><span>8 × 8 · 백 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">THINK AHEAD</div><h2>한 수 앞에서,<br>더 먼 가능성으로.</h2><div id="turn" role="status" aria-live="polite"></div>${(["w", "b"] as const).map((c) => `<div class="player"><i class="chess-glyph">${glyphs[c].k}</i><span>${c === "w" ? "백" : "흑"}<small>${mode === "local" ? `플레이어 ${c === "w" ? 1 : 2}` : human === c ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span></div>`).join("")}<div id="chess-captured" class="chess-captured"></div><div class="chess-confirm-slot"><button id="confirm" class="primary" disabled>기물을 선택하세요</button></div><button id="chess-clear" class="text-button">선택 취소</button><button id="chess-claim" disabled>무승부 청구</button><p id="chess-claim-info" class="input-help"></p><p class="input-help">마우스: 기물 선택 후 도착 칸 클릭<br>터치: 기물·도착 칸 선택 후 이동 확정<br>키보드: 방향키·Enter, Escape 취소<br>예정 수 청구: 기물 선택 후 방향키로 도착 칸 미리보기</p><h3 class="history-title">이동 기록</h3><ol id="chess-history" class="chess-history" aria-label="SAN 이동 기록"></ol></aside></div></main>`;
@@ -400,8 +404,10 @@ export function mountChess(
       last = snapshot().moves.at(-1);
     view?.render(game, last);
     update();
-    if (state.outcome) later(result, 600);
-    else schedule();
+    if (state.outcome) {
+      resultPending = true;
+      later(result, 600);
+    } else schedule();
   }
   function claim() {
     if (!canPlay()) return;
@@ -414,6 +420,7 @@ export function mountChess(
     if (next) {
       state = next;
       clearSelection();
+      resultPending = true;
       later(result, 100);
     }
   }
@@ -472,18 +479,21 @@ export function mountChess(
       : planned.length
         ? `${[...new Set(planned)].join(" · ")} — 선택한 예정 수를 선언하여 청구`
         : "3회 반복·50수는 청구, 5회 반복·75수는 자동 무승부입니다.";
-    const captured = snapshot().captured;
-    $("chess-captured").innerHTML = (["w", "b"] as Color[])
-      .map(
-        (c) =>
-          `<div><small>${c === "w" ? "백" : "흑"}이 잡은 기물</small><span>${captured[c].map((p) => glyphs[other(c)][p]).join(" ") || "—"}</span></div>`,
-      )
-      .join("");
-    $("chess-history").innerHTML = Array.from(
-      { length: Math.ceil(moves.length / 2) },
-      (_, i) =>
-        `<li><span>${i + 1}.</span><span>${moves[i * 2].san}</span><span>${moves[i * 2 + 1]?.san ?? ""}</span></li>`,
-    ).join("");
+    if (renderedHistory !== state) {
+      renderedHistory = state;
+      const captured = snapshot().captured;
+      $("chess-captured").innerHTML = (["w", "b"] as Color[])
+        .map(
+          (c) =>
+            `<div><small>${c === "w" ? "백" : "흑"}이 잡은 기물</small><span>${captured[c].map((p) => glyphs[other(c)][p]).join(" ") || "—"}</span></div>`,
+        )
+        .join("");
+      $("chess-history").innerHTML = Array.from(
+        { length: Math.ceil(moves.length / 2) },
+        (_, i) =>
+          `<li><span>${i + 1}.</span><span>${moves[i * 2].san}</span><span>${moves[i * 2 + 1]?.san ?? ""}</span></li>`,
+      ).join("");
+    }
     const king = check
       ? game
           .board()
@@ -545,6 +555,7 @@ export function mountChess(
           if (r.claim) {
             state = next;
             update();
+            resultPending = true;
             later(result, 100);
           } else accept(next);
         };
@@ -578,7 +589,10 @@ export function mountChess(
       d.close();
       d.remove();
     };
+    let resumed = false;
     const resume = () => {
+      if (resumed) return;
+      resumed = true;
       later(() => {
         update();
         if (state.outcome) result();
@@ -590,11 +604,12 @@ export function mountChess(
     update();
   }
   function result() {
-    if (!state.outcome) return;
+    if (!resultPending || !state.outcome) return;
     if (view?.animating || document.querySelector("dialog[open]")) {
       later(result, 100);
       return;
     }
+    resultPending = false;
     dialog(
       state.outcome.winner
         ? `${state.outcome.winner === "w" ? "백" : "흑"}이 승리했습니다!`

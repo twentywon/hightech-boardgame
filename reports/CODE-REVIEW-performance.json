@@ -1,0 +1,61 @@
+{
+  "method": "Single-position beginner search, seed 23, unlimited time, one warmup and five alternating measurements. Chess.move instrumentation included. No AI-vs-AI games; not a strength evaluation.",
+  "samples": [
+    {
+      "position": "opening",
+      "legalMoves": 20,
+      "calls": {
+        "before": 40,
+        "after": 20
+      },
+      "medianMs": {
+        "before": 13.770204000000035,
+        "after": 5.877748999999994
+      },
+      "timings": {
+        "before": [
+          12.177181000000019,
+          16.341227000000003,
+          10.650416000000064,
+          13.770204000000035,
+          21.55816900000002
+        ],
+        "after": [
+          5.877748999999994,
+          5.18941499999994,
+          5.0572329999999965,
+          17.28988300000003,
+          8.85304199999996
+        ]
+      }
+    },
+    {
+      "position": "development",
+      "legalMoves": 33,
+      "calls": {
+        "before": 72,
+        "after": 39
+      },
+      "medianMs": {
+        "before": 21.314490999999975,
+        "after": 11.9992850000001
+      },
+      "timings": {
+        "before": [
+          21.314490999999975,
+          22.106294000000048,
+          15.61422200000004,
+          18.56716899999992,
+          25.277963999999997
+        ],
+        "after": [
+          14.633279000000016,
+          10.979106999999999,
+          10.383980999999949,
+          19.521038999999973,
+          11.9992850000001
+        ]
+      }
+    }
+  ]
+}

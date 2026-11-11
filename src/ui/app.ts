@@ -36,6 +36,7 @@ let state = createGame(),
   timer: ReturnType<typeof setTimeout> | null = null,
   resultTimer: ReturnType<typeof setTimeout> | null = null,
   lockedUntil = 0;
+let resultPending = false;
 let reversi: ReversiController | null = null;
 let chess: ChessController | null = null;
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
@@ -99,6 +100,7 @@ function clear() {
   view = null;
   candidate = null;
   aiError = "";
+  resultPending = false;
 }
 type GameSelection = "gomoku" | "reversi" | "chess" | null;
 function gomokuSetup() {
@@ -252,7 +254,10 @@ function game() {
   }
   update();
   scheduleAI();
-  if (state.winner) showResult();
+  if (state.winner) {
+    resultPending = true;
+    showResult();
+  }
 }
 function canPlay() {
   return (
@@ -281,8 +286,10 @@ function accept(next: typeof state) {
   $("save-status").textContent = saved
     ? "✓ 이 기기에 자동 저장됨"
     : "저장을 사용할 수 없습니다";
-  if (state.winner) resultTimer = setTimeout(showResult, 850);
-  else scheduleAI();
+  if (state.winner) {
+    resultPending = true;
+    resultTimer = setTimeout(showResult, 850);
+  } else scheduleAI();
 }
 function scheduleAI() {
   if (!isAITurn() || state.winner || !view) return;
@@ -333,14 +340,23 @@ function showAIError(message: string) {
   aiError = message;
   update();
 }
-window.addEventListener("pagehide", () => {
+window.addEventListener("pagehide", (event) => {
   sessionGeneration++;
   ai.cancel();
   if (timer) clearTimeout(timer);
   if (resultTimer) clearTimeout(resultTimer);
+  timer = resultTimer = null;
+  if (!event.persisted) {
+    view?.dispose();
+    view = null;
+    sound.dispose();
+  }
 });
 window.addEventListener("pageshow", (event) => {
-  if (event.persisted && view) scheduleAI();
+  if (event.persisted && view) {
+    if (resultPending) showResult();
+    else scheduleAI();
+  }
 });
 
 function update() {
@@ -373,11 +389,13 @@ function restart() {
   game();
 }
 function showResult() {
-  if (!state.winner || !view) return;
+  resultTimer = null;
+  if (!resultPending || !state.winner || !view) return;
   if (view.animating || document.querySelector("dialog[open]")) {
     resultTimer = setTimeout(showResult, 100);
     return;
   }
+  resultPending = false;
   modal(
     state.winner === "draw"
       ? "멋진 승부, 무승부!"

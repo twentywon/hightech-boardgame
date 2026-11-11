@@ -6,7 +6,7 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-import { wood } from "./scene-utils";
+import { wood, disposeScene, afterGPUFrame } from "./scene-utils";
 
 export class BoardView {
   readonly renderer: T.WebGLRenderer;
@@ -34,8 +34,7 @@ export class BoardView {
   private dirty = true;
   private firstRendered = false;
   private readyFlag = false;
-  private readyTimer: ReturnType<typeof setTimeout> | null = null;
-  private readySync: WebGLSync | null = null;
+  private cancelReady: (() => void) | null = null;
   private disposed = false;
   private lastWidth = 0;
   private lastHeight = 0;
@@ -49,6 +48,7 @@ export class BoardView {
   private zoom = false;
   private falling: { mesh: T.Mesh; start: number; sounded: boolean }[] = [];
   private lastCount = -1;
+  private stoneMoves: State["moves"] = [];
   private activePointer: number | null = null;
   private selectionPointerType = "";
   private lastPointer = 0;
@@ -336,32 +336,11 @@ export class BoardView {
   // render() queues GPU work. Poll a fence instead of blocking the UI or starting
   // search while the first shader/texture uploads are still being processed.
   private waitForInitialGPUFrame() {
-    const gl = this.renderer.getContext() as WebGL2RenderingContext;
-    if (typeof gl.fenceSync !== "function") {
+    this.cancelReady = afterGPUFrame(this.renderer, () => {
       this.readyFlag = true;
-      return;
-    }
-    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-    if (!sync) {
-      this.readyFlag = true;
-      return;
-    }
-    this.readySync = sync;
-    gl.flush();
-    const poll = () => {
-      if (this.disposed) return;
-      const status = gl.clientWaitSync(sync, 0, 0);
-      if (status === gl.TIMEOUT_EXPIRED) {
-        this.readyTimer = setTimeout(poll, 8);
-        return;
-      }
-      gl.deleteSync(sync);
-      this.readySync = null;
-      this.readyTimer = null;
-      this.readyFlag = true;
-    };
-    this.readyTimer = setTimeout(poll, 0);
+    });
   }
+
   private makeStone(player: number) {
     if (this.variant === "reversi") {
       const mesh = new T.Mesh(new T.CylinderGeometry(0.285, 0.285, 0.105, 40), [
@@ -402,7 +381,7 @@ export class BoardView {
   private setTarget() {
     const aspect = this.camera.aspect;
     const distance =
-      Math.max(11.7, 12.8 / Math.min(aspect, 1)) * (this.zoom ? 0.94 : 1);
+      Math.max(11.7, 12.8 / Math.min(aspect, 1)) * 0.9 * (this.zoom ? 0.94 : 1);
     const angle = this.top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
     this.target.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance);
   }
@@ -478,25 +457,33 @@ export class BoardView {
     this.dirty = true;
     const old = this.lastCount;
     this.lastCount = state.moves.length;
-    this.clearGroup(this.stones);
+    // Reuse the unchanged prefix. Also handle resets or replacement histories,
+    // rather than assuming that every render appends to this exact game.
+    let prefix = 0;
+    while (prefix < Math.min(this.stoneMoves.length, state.moves.length)) {
+      const before = this.stoneMoves[prefix], next = state.moves[prefix];
+      if (before.row !== next.row || before.col !== next.col || before.player !== next.player) break;
+      prefix++;
+    }
+    for (const stone of this.stones.children.slice(prefix)) {
+      disposeScene(stone);
+      this.stones.remove(stone);
+    }
+    // Finish any interrupted animation before rebuilding the animation queue.
+    for (const stone of this.stones.children) {
+      stone.position.y = 0.245;
+      stone.scale.set(0.19, 0.095, 0.19);
+    }
     this.clearGroup(this.win);
     this.falling = [];
-    state.moves.forEach((m, i) => {
-      const stone = this.makeStone(m.player),
-        p = toWorld(m);
+    state.moves.slice(prefix).forEach((m, offset) => {
+      const stone = this.makeStone(m.player), p = toWorld(m);
       stone.position.set(p.x, 0.245, p.z);
       this.stones.add(stone);
-      if (
-        animate &&
-        state.moves.length === old + 1 &&
-        i === state.moves.length - 1
-      )
-        this.falling.push({
-          mesh: stone,
-          start: performance.now(),
-          sounded: false,
-        });
+      if (animate && state.moves.length === old + 1 && prefix + offset === state.moves.length - 1)
+        this.falling.push({ mesh: stone, start: performance.now(), sounded: false });
     });
+    this.stoneMoves = state.moves.map((m) => ({ ...m }));
     this.marker.visible = state.moves.length > 0;
     const last = state.moves.at(-1);
     if (last) {
@@ -584,28 +571,12 @@ export class BoardView {
     }
   }
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
-    if (this.readyTimer) clearTimeout(this.readyTimer);
-    if (this.readySync)
-      (this.renderer.getContext() as WebGL2RenderingContext).deleteSync(
-        this.readySync,
-      );
-    this.readySync = null;
+    this.cancelReady?.();
     cancelAnimationFrame(this.raf);
     this.observer.disconnect();
-    this.scene.traverse((obj) => {
-      if (obj instanceof T.DirectionalLight) obj.shadow.dispose();
-      if (obj instanceof T.Mesh || obj instanceof T.LineSegments) {
-        obj.geometry.dispose();
-        const materials = Array.isArray(obj.material)
-          ? obj.material
-          : [obj.material];
-        materials.forEach((m) => {
-          if ("map" in m) (m.map as T.Texture | null)?.dispose();
-          m.dispose();
-        });
-      }
-    });
+    disposeScene(this.scene);
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.renderer.domElement.remove();

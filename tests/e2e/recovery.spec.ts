@@ -19,7 +19,7 @@ async function start(page: Page, game: "gomoku" | "reversi", ai = false) {
 async function opening(page: Page, game: "gomoku" | "reversi") {
   const box = (await page.locator("canvas").boundingBox())!;
   const aspect = box.width / box.height;
-  const distance = Math.max(11.7, 12.8 / Math.min(aspect, 1));
+  const distance = Math.max(11.7, 12.8 / Math.min(aspect, 1)) * 0.9;
   const angle = 55 * Math.PI / 180;
   const camera = new PerspectiveCamera(38, aspect, 0.1, 60);
   camera.position.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance);
@@ -80,7 +80,7 @@ for (const game of ["gomoku", "reversi"] as const) {
     await expect(page.locator("#move-count")).toHaveText("1수", { timeout: 15000 });
   });
 
-  test(`${game}: game result waits for open settings instead of discarding edits`, async ({ page }) => {
+  test(`${game}: game result survives page suspension while settings are open`, async ({ page }) => {
     await page.goto("/");
     const reversi = playout(7, 1);
     expect(reversi.winner).toBeNull();
@@ -100,6 +100,8 @@ for (const game of ["gomoku", "reversi"] as const) {
     await page.evaluate(() => {
       document.querySelector("canvas")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       document.querySelector<HTMLButtonElement>("#settings")!.click();
+      window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
     });
     await expect(page.locator("#turn")).toContainText(/승리|무승부/);
     await page.getByLabel("렌더링 품질").selectOption("low");

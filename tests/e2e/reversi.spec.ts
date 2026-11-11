@@ -21,7 +21,7 @@ async function open(page: Page) {
 async function cell(page: Page, row: number, col: number, top = false) {
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
-    d = Math.max(11.7, 12.8 / Math.min(aspect, 1)),
+    d = Math.max(11.7, 12.8 / Math.min(aspect, 1)) * 0.9,
     a = top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
   const camera = new PerspectiveCamera(38, aspect, 0.1, 60);
   camera.position.set(0, Math.sin(a) * d, Math.cos(a) * d);

@@ -507,7 +507,7 @@ export class ChessView {
     this.onSelect(fromWorld(point.x, point.z), confirm);
   }
   private target() {
-    const distance = Math.max(13, 13.4 / Math.min(this.camera.aspect, 1)),
+    const distance = Math.max(13, 13.4 / Math.min(this.camera.aspect, 1)) * 0.9,
       a = this.top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
     this.cameraTarget.set(
       0,

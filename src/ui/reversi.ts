@@ -55,7 +55,8 @@ export function mountReversi(
     generation = 0,
     disposed = false,
     aiError = "",
-    hintKey = "";
+    hintKey = "",
+    resultPending = false;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
@@ -78,6 +79,7 @@ export function mountReversi(
     candidate = null;
     hintKey = "";
     aiError = "";
+    resultPending = false;
   }
   function setup() {
     stop();
@@ -93,7 +95,7 @@ export function mountReversi(
         )
         .join(
           "",
-        )}</select></label><small>선택한 설정은 다음 새 대국부터 적용됩니다.</small></div><button id="rv-start" class="primary">테이블에 앉기 <span>↗</span></button>${load() ? '<button id="rv-resume" class="text-button">리버시 이어하기 →</button>' : ""}</div><div class="feature-art reversi-art" role="img" aria-label="리버시판 미리보기"><div class="reversi-mini"><i class="white"></i><i class="black"></i><i class="black"></i><i class="white"></i></div><span>THE ART OF REVERSAL</span></div></section>`;
+        )}</select></label><small>선택한 설정은 다음 새 대국부터 적용됩니다.</small></div><button id="rv-start" class="primary">테이블에 앉기 <span>↗</span></button>${load() ? '<button id="rv-resume" class="text-button">리버시 이어하기 →</button>' : ""}</div><div class="feature-art reversi-art" role="img" aria-label="리버시판 미리보기"><div class="reversi-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 || i === 36 ? '<b class="white"></b>' : i === 28 || i === 35 ? '<b class="black"></b>' : ""}</i>`).join("")}</div><span>THE ART OF REVERSAL</span></div></section>`;
     document.querySelectorAll<HTMLInputElement>("input[name=rv-mode]").forEach(
       (input) =>
         (input.onchange = () => {
@@ -235,7 +237,10 @@ export function mountReversi(
     sound.enabled = settings.sound;
     update();
     schedule();
-    if (state.winner) later(result, 500);
+    if (state.winner) {
+      resultPending = true;
+      later(result, 500);
+    }
   }
   const isLegal = (p: Point) =>
     legalMoves(state.board, state.turn).some((m) => m.index === indexOf(p));
@@ -266,8 +271,10 @@ export function mountReversi(
     $("save-status").textContent = saved
       ? "✓ 이 기기에 자동 저장됨"
       : "저장을 사용할 수 없습니다";
-    if (state.winner) later(result, 900);
-    else schedule();
+    if (state.winner) {
+      resultPending = true;
+      later(result, 900);
+    } else schedule();
   }
   function update() {
     if (disposed || !document.getElementById("black-count")) return;
@@ -369,11 +376,12 @@ export function mountReversi(
     );
   }
   function result() {
-    if (!state.winner) return;
+    if (!resultPending || !state.winner) return;
     if (view?.animating || document.querySelector("dialog[open]")) {
       later(result, 100);
       return;
     }
+    resultPending = false;
     const c = counts(state.board);
     modal(
       state.winner === "draw"
@@ -386,14 +394,22 @@ export function mountReversi(
       ],
     );
   }
-  const hide = () => {
+  const hide = (e: PageTransitionEvent) => {
     generation++;
     ai.cancel();
     timers.forEach(clearTimeout);
     timers.clear();
+    if (!e.persisted) {
+      view?.dispose();
+      view = null;
+      sound.dispose();
+    }
   };
   const show = (e: PageTransitionEvent) => {
-    if (e.persisted && view) schedule();
+    if (e.persisted && view) {
+      if (resultPending) later(result, 100);
+      else schedule();
+    }
   };
   window.addEventListener("pagehide", hide);
   window.addEventListener("pageshow", show);

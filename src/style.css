@@ -393,15 +393,15 @@ footer {
   letter-spacing: 1.5px;
 }
 .game-layout {
-  max-width: 1500px;
+  max-width: 1680px;
   margin: auto;
-  padding: 24px 4vw;
+  padding: 16px clamp(12px, 2vw, 28px);
 }
 .game-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
 }
 .game-top h1 {
   font-size: 29px;
@@ -422,8 +422,8 @@ footer {
 }
 .table-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 270px;
-  gap: 30px;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 18px;
 }
 .board-area {
   background: #65452f;
@@ -453,7 +453,7 @@ footer {
 }
 #board {
   width: 100%;
-  height: min(69vw, 650px);
+  height: min(76vw, 800px, calc(100svh - 190px));
   min-height: 380px;
 }
 canvas {
@@ -682,7 +682,7 @@ dialog h2 {
     display: block;
   }
   .game-layout {
-    padding: 15px 12px calc(20px + env(safe-area-inset-bottom));
+    padding: 10px 6px calc(16px + env(safe-area-inset-bottom));
   }
   .game-top {
     margin-bottom: 14px;
@@ -810,14 +810,21 @@ dialog h2 {
     linear-gradient(90deg, #d4cb9a55 1px, transparent 1px);
   background-size: 12.5% 12.5%;
   display: grid;
-  grid-template-columns: repeat(2, 34px);
-  grid-template-rows: repeat(2, 34px);
-  place-content: center;
-  gap: 1px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
   transform: rotateX(28deg) rotateZ(-15deg);
   box-shadow: 12px 20px 25px #101e1b77;
 }
 .reversi-mini i {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+}
+.reversi-mini b {
+  display: block;
+  width: 80%;
+  height: 80%;
   border-radius: 50%;
   box-shadow: 2px 3px 4px #0006;
 }
@@ -859,8 +866,8 @@ dialog h2 {
 }
 .session-note { display:block; margin-top:14px; color:#746c5b; font-size:11px; line-height:1.7; }
 .chess-art { background:radial-gradient(ellipse at center,#426e5a,#173e34); }
-.chess-mini { display:grid;grid-template-columns:repeat(8,1fr);width:280px;height:280px;border:16px solid #765437;transform:rotateX(28deg) rotateZ(-17deg);box-shadow:14px 22px 30px #102e2380; }
-.chess-mini i { background:#e8dfc6;font:32px Georgia;display:grid;place-items:center;color:#27382e;font-style:normal; }
+.chess-mini { display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));width:280px;height:280px;border:16px solid #765437;transform:rotateX(28deg) rotateZ(-17deg);box-shadow:14px 22px 30px #102e2380; }
+.chess-mini i { background:#e8dfc6;min-width:0;min-height:0;font:32px/1 Georgia,"DejaVu Sans",serif;display:grid;place-items:center;color:#27382e;font-style:normal; }
 .chess-mini i:nth-child(16n+2),.chess-mini i:nth-child(16n+4),.chess-mini i:nth-child(16n+6),.chess-mini i:nth-child(16n+8),.chess-mini i:nth-child(16n+9),.chess-mini i:nth-child(16n+11),.chess-mini i:nth-child(16n+13),.chess-mini i:nth-child(16n+15) { background:#48745f;color:#f4ebd5; }
 .chess-game .game-actions { flex-wrap:wrap;justify-content:flex-end; }
 .chess-game .board-area { align-self:start;width:100%;min-width:0; }
@@ -883,4 +890,18 @@ dialog h2 {
   .chess-game .game-actions button { padding:8px 10px;font-size:10px; }
   .chess-captured { font-size:22px; }
   .chess-game #confirm:not(:disabled) { position:fixed;left:20px;right:20px;bottom:calc(14px + env(safe-area-inset-bottom));width:calc(100% - 40px);z-index:5;box-shadow:0 6px 24px #102e2355; }
+}
+
+@media (max-width: 760px) {
+  .reversi-mini { width: 180px; height: 180px; border-width: 12px; transform: translateY(-10px) rotateX(28deg) rotateZ(-15deg); }
+}
+
+/* The sidebar may grow independently; it must never stretch the table. */
+.game-layout .board-area { align-self: start; width: 100%; min-width: 0; }
+.game-layout #board {
+  height: min(76vw, 800px, var(--available-board-height, calc(100svh - 240px)));
+  min-height: 0;
+}
+@media (max-width: 760px) {
+  .game-layout #board { height: min(100vw, 550px, var(--available-board-height, calc(100svh - 240px))); }
 }

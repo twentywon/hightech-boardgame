@@ -295,14 +295,9 @@ export function* searchSteps(
     // Every tier recognizes mate in one before heuristic mistakes or tree search.
     for (const m of root) {
       yield* cooperate();
-      push(m);
-      let mate = false;
-      try {
-        mate = game.isCheckmate();
-      } finally {
-        pop();
-      }
-      if (mate) {
+      // Verbose legal moves already contain SAN, including the mate suffix.
+      // Replaying every candidate here duplicates chess.js's mate detection.
+      if (m.san.endsWith("#")) {
         best = action(m);
         stats.score = MATE - 1;
         stats.reason = "mate in one";
