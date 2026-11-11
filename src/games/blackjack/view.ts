@@ -1,6 +1,6 @@
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import * as T from "three";
-import { afterGPUFrame, aim } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { Card } from "./shoe";
 
@@ -124,6 +124,33 @@ function feltTexture() {
   t.repeat.set(24, 24);
   return t;
 }
+/** A casino carpet: dark red with a repeating gold figure. */
+function carpetTexture() {
+  const { c, ctx } = canvas(256, 256);
+  ctx.fillStyle = "#4a1420";
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.strokeStyle = "rgba(214, 170, 88, 0.55)";
+  ctx.lineWidth = 5;
+  for (const [x, y] of [[64, 64], [192, 192]]) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - 46);
+    ctx.lineTo(x + 46, y);
+    ctx.lineTo(x, y + 46);
+    ctx.lineTo(x - 46, y);
+    ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(20, 6, 10, 0.5)";
+  for (const [x, y] of [[192, 64], [64, 192]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, 30, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const t = texture(c);
+  t.wrapS = t.wrapT = T.RepeatWrapping;
+  t.repeat.set(64, 64);
+  return t;
+}
 function markingTexture() {
   const { c, ctx } = canvas(1024, 256);
   ctx.strokeStyle = "rgba(217, 185, 106, 0.55)";
@@ -209,8 +236,8 @@ const LAYOUTS: Record<"wide" | "tall", Layout> = {
     playerZ: 0.9,
     hands: { 1: [0], 2: [-2.15, 2.15] },
     width: { 1: 4.8, 2: 3.7 },
-    shoe: new T.Vector3(3.85, 0.12, -1.6),
-    discard: new T.Vector3(-3.85, 0.02, -1.6),
+    shoe: new T.Vector3(3.65, 0.12, -1.6),
+    discard: new T.Vector3(-3.65, 0.02, -1.6),
     marking: 4.4,
   },
   tall: {
@@ -219,8 +246,8 @@ const LAYOUTS: Record<"wide" | "tall", Layout> = {
     playerZ: 0.9,
     hands: { 1: [0], 2: [-1.4, 1.4] },
     width: { 1: 4.8, 2: 2.6 },
-    shoe: new T.Vector3(2.15, 0.12, -2.75),
-    discard: new T.Vector3(-2.15, 0.02, -2.75),
+    shoe: new T.Vector3(2.02, 0.12, -1.95),
+    discard: new T.Vector3(-2.02, 0.02, -1.95),
     marking: 3.9,
   },
 };
@@ -253,6 +280,7 @@ export class BlackjackView {
   private chipMaterials: T.Material[][] = [];
   private glow: T.Mesh;
   private marking: T.Mesh;
+  private tables!: Record<"wide" | "tall", T.Group>;
   private shoe: T.Mesh;
   private rings = new T.Group();
   private ringGeometry = this.own(new T.RingGeometry(0.4, 0.425, 48));
@@ -286,7 +314,7 @@ export class BlackjackView {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;
-    this.renderer.setClearColor("#184539");
+    this.renderer.setClearColor("#4a1420");
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     host.append(this.renderer.domElement);
     // The table is described in text beside it; the canvas itself is decorative.
@@ -303,13 +331,6 @@ export class BlackjackView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
-    const felt = new T.Mesh(
-      this.own(new T.PlaneGeometry(60, 60)),
-      this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95 })),
-    );
-    felt.rotation.x = -Math.PI / 2;
-    felt.receiveShadow = true;
-    this.scene.add(felt);
     this.marking = new T.Mesh(
       this.own(new T.PlaneGeometry(1, 0.25)),
       this.own(
@@ -342,6 +363,16 @@ export class BlackjackView {
       );
       this.chipMaterials.push([side, flat, flat]);
     }
+    this.tables = { wide: this.buildTable(LAYOUTS.wide, 0.42), tall: this.buildTable(LAYOUTS.tall, 0.3) };
+    this.scene.add(this.tables.wide, this.tables.tall);
+    // The casino floor far below the table.
+    const floor = new T.Mesh(
+      this.own(new T.PlaneGeometry(120, 120)),
+      this.own(new T.MeshStandardMaterial({ map: this.own(carpetTexture()), roughness: 1 })),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -3.4;
+    this.scene.add(floor);
     // The shoe: a short stack the cards are dealt from.
     this.shoe = new T.Mesh(this.own(new T.BoxGeometry(CARD_W + 0.06, 0.22, CARD_H + 0.06)), [
       this.edge,
@@ -402,6 +433,87 @@ export class BlackjackView {
     }
     return material;
   }
+  /**
+   * A casino table for `layout`: felt inside a padded rail that rounds the
+   * player's side, a wooden apron, and the dealer's chip tray on the far edge.
+   */
+  private buildTable(layout: Layout, rail: number) {
+    const table = new T.Group(),
+      hx = layout.subject.half - rail - 0.05,
+      far = -3.62,
+      near = 3.52;
+    // Outlines are drawn in the shape's own plane, where y is -z on the table.
+    const outline = <P extends T.Path>(path: P, grow: number) => {
+      const x = hx + grow,
+        front = near + grow,
+        r = 1.7 + grow;
+      path.moveTo(-x, -far);
+      path.lineTo(x, -far);
+      path.lineTo(x, -(front - r));
+      path.absarc(x - r, -(front - r), r, 0, -Math.PI / 2, true);
+      path.lineTo(-(x - r), -front);
+      path.absarc(-(x - r), -(front - r), r, -Math.PI / 2, Math.PI, true);
+      path.lineTo(-x, -far);
+      return path;
+    };
+    const cloth = this.own(feltTexture());
+    // Shape coordinates are table units: a few repeats per unit.
+    cloth.repeat.set(0.4, 0.4);
+    const felt = new T.Mesh(
+      this.own(new T.ShapeGeometry(outline(new T.Shape(), 0.02), 24)),
+      this.own(new T.MeshStandardMaterial({ map: cloth, roughness: 0.95 })),
+    );
+    felt.rotation.x = -Math.PI / 2;
+    felt.receiveShadow = true;
+    const band = (inner: number, outer: number, depth: number, y: number, material: T.Material) => {
+      const shape = outline(new T.Shape(), outer);
+      shape.holes.push(outline(new T.Path(), inner));
+      const mesh = new T.Mesh(
+        this.own(
+          new T.ExtrudeGeometry(shape, {
+            depth,
+            bevelEnabled: true,
+            bevelSize: 0.05,
+            bevelThickness: 0.05,
+            bevelSegments: 3,
+            curveSegments: 24,
+          }),
+        ),
+        material,
+      );
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = y;
+      mesh.castShadow = mesh.receiveShadow = true;
+      table.add(mesh);
+    };
+    const leather = this.own(new T.MeshStandardMaterial({ color: "#3b2318", roughness: 0.55 })),
+      timber = this.own(new T.MeshStandardMaterial({ map: this.own(wood(true)), roughness: 0.6 })),
+      brass = this.own(new T.MeshStandardMaterial({ color: "#c9a85c", roughness: 0.35, metalness: 0.6 }));
+    // A brass line where the felt meets the padded rail, the rail, and the apron under it.
+    band(-0.03, 0.03, 0.012, 0.0, brass);
+    band(0.03, rail, 0.13, 0.02, leather);
+    band(rail - 0.12, rail + 0.08, 0.7, -0.78, timber);
+    const edge = new T.Mesh(this.own(new T.BoxGeometry((hx + rail) * 2 + 0.16, 0.8, 0.3)), timber);
+    edge.position.set(0, -0.42, far - 0.13);
+    // The dealer's tray: a row of chip stacks lying on their sides.
+    const tray = new T.Mesh(
+      this.own(new T.BoxGeometry(Math.min(3.4, hx * 1.3), 0.1, 0.62)),
+      this.own(new T.MeshStandardMaterial({ color: "#15181b", roughness: 0.4, metalness: 0.5 })),
+    );
+    tray.position.set(0, 0.05, far + 0.4);
+    table.add(felt, edge, tray);
+    const stack = this.own(new T.CylinderGeometry(0.2, 0.2, 0.5, 20)),
+      slots = Math.min(CHIPS.length * 2, 6),
+      pitch = Math.min(3.4, hx * 1.3) / (slots + 0.4);
+    for (let i = 0; i < slots; i++) {
+      const chips = new T.Mesh(stack, this.chipMaterials[i % CHIPS.length][0]);
+      chips.rotation.x = Math.PI / 2;
+      chips.position.set((i - (slots - 1) / 2) * pitch, 0.22, far + 0.4);
+      chips.castShadow = true;
+      table.add(chips);
+    }
+    return table;
+  }
   private setFace(mesh: T.Mesh, card: Card | null) {
     (mesh.material as T.Material[])[2] = card ? this.faceMaterial(card) : this.blank;
   }
@@ -419,6 +531,8 @@ export class BlackjackView {
     this.camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
     this.camera.lookAt(0, 0, 0);
     this.marking.scale.set(this.layout.marking, this.layout.marking, 1);
+    this.tables.wide.visible = this.layout === LAYOUTS.wide;
+    this.tables.tall.visible = this.layout === LAYOUTS.tall;
     this.shoe.position.copy(this.layout.shoe);
     // A new shape moves every target: place the current table without animation.
     this.sync(this.model, false);

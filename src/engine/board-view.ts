@@ -7,6 +7,7 @@ import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
 import { wood, disposeScene, afterGPUFrame, aim } from "./scene-utils";
+import { parkBench } from "./scenery";
 import {
   FOV,
   OVERHEAD,
@@ -132,13 +133,19 @@ export class BoardView {
     light.shadow.camera.bottom = -6;
     light.shadow.normalBias = 0.025;
     this.scene.add(light);
-    const table = new T.Mesh(
-      new T.BoxGeometry(100, 0.2, 100),
-      new T.MeshStandardMaterial({ map: wood(true), roughness: 0.8 }),
-    );
-    table.position.y = -0.34;
-    table.receiveShadow = true;
-    this.scene.add(table);
+    if (this.variant === "gomoku") {
+      // Gomoku is played on a park bench; `dispose` walks the scene for its resources.
+      this.renderer.setClearColor("#5f8a45");
+      parkBench(this.scene, (resource) => resource, -0.24);
+    } else {
+      const table = new T.Mesh(
+        new T.BoxGeometry(100, 0.2, 100),
+        new T.MeshStandardMaterial({ map: wood(true), roughness: 0.8 }),
+      );
+      table.position.y = -0.34;
+      table.receiveShadow = true;
+      this.scene.add(table);
+    }
     const board = new T.Mesh(
       new T.BoxGeometry(
         this.variant === "reversi" ? 6.3 : 6.55,

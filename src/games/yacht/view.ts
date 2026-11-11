@@ -1,6 +1,7 @@
 import * as T from "three";
 import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
+import { cabin } from "../../engine/scenery";
 
 /** What the tray shows. Faces are 1–6, or 0 for dice waiting to be rolled. */
 export interface TrayModel {
@@ -158,7 +159,7 @@ export class YachtView {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;
-    this.renderer.setClearColor("#65452f");
+    this.renderer.setClearColor("#3c4654");
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     host.append(this.renderer.domElement);
     // The dice are also plain buttons beside the tray; the canvas is a shortcut.
@@ -175,16 +176,11 @@ export class YachtView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
-    const table = new T.Mesh(
-      this.own(new T.PlaneGeometry(60, 60)),
-      this.own(new T.MeshStandardMaterial({ map: this.own(wood(true)), roughness: 0.8 })),
-    );
-    table.rotation.x = -Math.PI / 2;
-    table.position.y = -0.12;
-    table.receiveShadow = true;
-    this.scene.add(table);
-    const half = SUBJECTS.yacht.half - 0.25,
-      depth = SUBJECTS.yacht.halfZ - 0.25;
+    // Half sizes of the felt inside the tray's rim.
+    const half = 3.5,
+      depth = 2.75;
+    // The tray sits on the tray table of an aircraft seat.
+    cabin(this.scene, (resource) => this.own(resource), half + 0.25, depth + 0.25, -0.12);
     const felt = new T.Mesh(
       this.own(new T.PlaneGeometry(half * 2, depth * 2)),
       this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95 })),

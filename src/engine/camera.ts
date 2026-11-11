@@ -23,10 +23,11 @@ export const SUBJECTS = {
   chess: { half: 3.525, height: 1.45, lookY: 0.1 },
   // Blackjack lays its cards out wide on landscape screens and tall on
   // portrait ones, and looks down more steeply so card faces stay readable.
-  blackjackWide: { half: 4.6, halfZ: 3.55, height: 0.3, lookY: 0, tilt: 1.1 },
-  blackjackTall: { half: 2.9, halfZ: 3.55, height: 0.3, lookY: 0, tilt: 1.1 },
+  blackjackWide: { half: 4.6, halfZ: 3.95, height: 0.3, lookY: 0, tilt: 1.1 },
+  blackjackTall: { half: 2.9, halfZ: 3.95, height: 0.3, lookY: 0, tilt: 1.1 },
   // Yacht dice: a tray with a row for the roll and a row for dice set aside.
-  yacht: { half: 3.75, halfZ: 3.0, height: 0.9, lookY: 0, tilt: 1.1 },
+  // The subject is wider than the tray so the cabin round it stays in view.
+  yacht: { half: 4.35, halfZ: 3.75, height: 0.9, lookY: 0, tilt: 1.02 },
   // Card tables with several seats: one row of opponents across from seat 0.
   cardsWide: { half: 5.9, halfZ: 3.7, height: 0.3, lookY: 0, tilt: 1.1 },
   cardsSquare: { half: 3.75, halfZ: 3.9, height: 0.3, lookY: 0, tilt: 1.1 },
