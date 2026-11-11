@@ -1,6 +1,19 @@
 import { test, expect } from "@playwright/test";
 import { selectGame } from "./library";
-import { button, handOver, loadShuffles, myTurn, seat, settled, sit, turn } from "./betting-helpers";
+import { PerspectiveCamera, Vector3 } from "three";
+import {
+  button,
+  handOver,
+  loadShuffles,
+  myTurn,
+  playOut,
+  prompt,
+  seat,
+  settled,
+  sit,
+  turn,
+} from "./betting-helpers";
+import { FOV, SUBJECTS, cameraDistance } from "../../src/engine/camera";
 import { stackValues } from "../card-fixtures";
 import { createDeck } from "../../src/games/seotda/rules";
 import { cardText } from "../../src/games/seotda/game";
@@ -60,12 +73,7 @@ test("seotda opens inline; a hand is dealt, bet and shown down with hidden cards
   await page.keyboard.press("Enter");
   await expect(page.locator("#bg-chips")).toHaveText("980");
   // Whatever it answers, keep calling until the hand ends.
-  await expect(async () => {
-    const call = page.locator("#bg-call");
-    if ((await call.isVisible()) && (await call.isEnabled())) await call.click({ timeout: 1000 });
-    await expect(page.locator("#bg-deal")).toBeVisible({ timeout: 1000 });
-  }).toPass({ timeout: 40000 });
-  await handOver(page);
+  await playOut(page);
   const total = async () =>
     Number((await page.locator("#bg-chips").textContent())!.replace(/,/g, "")) +
     Number((await seat(page, 1).locator(".bg-stack").textContent())!.match(/칩 ([\d,]+)/)![1].replace(/,/g, ""));
@@ -77,12 +85,7 @@ test("seotda opens inline; a hand is dealt, bet and shown down with hidden cards
   await button(page, "다음 판").click();
   await settled(page);
   await expect(page.locator("#move-count")).toHaveText("2판");
-  await expect(async () => {
-    const fold = page.locator("#bg-fold");
-    if ((await fold.isVisible()) && (await fold.isEnabled())) await fold.click({ timeout: 1000 });
-    await expect(page.locator("#bg-deal")).toBeVisible({ timeout: 1000 });
-  }).toPass({ timeout: 40000 });
-  await handOver(page);
+  await playOut(page, "fold");
   await expect(seat(page, 0)).toContainText("다이");
   await expect(page.locator("#bg-outcome")).toContainText("나 · 다이");
   expect(await page.content()).not.toContain("9땡");
@@ -102,7 +105,9 @@ test("seotda with three computers: the table plays on without me, and leaving dr
   test.setTimeout(120000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await sit(page, "섯다", 3, "expert");
+  await sit(page, "섯다", 3);
+  // The computer seats have one fixed strength: no level is offered.
+  await expect(page.getByLabel("AI 난이도")).toHaveCount(0);
   await expect(page.locator("#bg-seats li")).toHaveCount(4);
   await button(page, "패 받기").click();
   await settled(page);
@@ -131,7 +136,6 @@ test("seotda with three computers: the table plays on without me, and leaving dr
   // The choices are remembered for this page; the session is new.
   await selectGame(page, "섯다");
   await expect(page.getByLabel("상대 수")).toHaveValue("3");
-  await expect(page.getByLabel("AI 난이도")).toHaveValue("expert");
   await button(page, /테이블에 앉기/).click();
   await settled(page);
   await expect(page.locator("#bg-chips")).toHaveText("1,000");
@@ -184,4 +188,93 @@ test("seotda dialogs wait their turn and the table fits every screen shape", asy
     await expect(seat(page, 0)).toContainText("알리");
     await page.screenshot({ path: `test-results/${info.project.name}-seotda-${size.width}x${size.height}.png` });
   }
+});
+
+/** Screen position of a spot on the table of the compact card layout. */
+async function onTable(page: import("@playwright/test").Page, x: number, z: number) {
+  const box = (await page.locator("canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    subject = aspect < 1.25 ? SUBJECTS.cardsCompactSquare : SUBJECTS.cardsCompact,
+    d = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 80);
+  camera.position.set(0, Math.sin(subject.tilt) * d, Math.cos(subject.tilt) * d);
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+  const v = new Vector3(x, 0.03, z).project(camera);
+  return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+}
+
+test("three-card seotda: show one, bet, uncover the third by sliding, pick two, bet again", async ({
+  page,
+}, info) => {
+  test.setTimeout(120000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  // I hold 3광 8광 and draw 10; the computer holds 1 and 2 and draws 4.
+  await loadShuffles(page, deal(["3광", "1", "8광", "2", "10", "4"]));
+  await page.goto("/");
+  await selectGame(page, "섯다");
+  await expect(page.getByLabel("방식")).toHaveValue("two");
+  await page.getByLabel("방식").selectOption("three");
+  await page.getByLabel("상대 수").selectOption("1");
+  await button(page, /테이블에 앉기/).click();
+  await settled(page);
+  await button(page, "패 받기").click();
+  await settled(page);
+  // Two cards: choose the one the table may see.
+  await expect(turn(page)).toContainText("상대에게 공개할 패를 고르세요");
+  await expect(prompt(page)).toHaveText(["3광 공개", "8광 공개"]);
+  await expect(page.locator("#bg-call")).toBeHidden();
+  await button(page, "8광 공개").click();
+  await myTurn(page);
+  await expect(turn(page)).toContainText("첫 베팅");
+  await expect(seat(page, 0).locator(".bj-card.secret")).toHaveText(["3광"]);
+  // The computer shows one card and hides the other.
+  await expect(seat(page, 1).locator(".bj-card:not(.hidden)")).toHaveCount(1);
+  await expect(seat(page, 1).locator(".bj-card.hidden")).toHaveCount(1);
+  // Check or call until the third card arrives under its cover.
+  await expect(async () => {
+    const call = page.locator("#bg-call");
+    if ((await call.isVisible()) && (await call.isEnabled())) await call.click({ timeout: 1000 });
+    await expect(page.locator("#bg-peek")).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 60000 });
+  await settled(page);
+  await expect(turn(page)).toContainText("세 번째 패를 아래로 밀어 확인하세요");
+  await expect(seat(page, 0).locator(".bj-card.hidden")).toHaveText(["확인 전"]);
+  await expect(prompt(page)).toHaveCount(0);
+  await expect(page.locator("#bg-call")).toBeHidden();
+  await page.screenshot({ path: `test-results/${info.project.name}-seotda-covered.png`, fullPage: true });
+  if (info.project.name === "mobile") await button(page, "세 번째 패 확인").click();
+  else {
+    // The third card lies to the right of my two. A short slide springs back …
+    await page.locator("canvas").scrollIntoViewIfNeeded();
+    const from = await onTable(page, 0.945, 1.85),
+      near = await onTable(page, 0.945, 2.2),
+      far = await onTable(page, 0.945, 3.1);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(near.x, near.y, { steps: 5 });
+    await page.mouse.up();
+    await settled(page);
+    await expect(page.locator("#bg-peek")).toBeVisible();
+    await expect(seat(page, 0).locator(".bj-card.hidden")).toHaveCount(1);
+    // … and a long slide down uncovers the card.
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(far.x, far.y, { steps: 8 });
+    await page.mouse.up();
+  }
+  await expect(page.locator("#bg-peek")).toBeHidden();
+  await expect(seat(page, 0).locator(".bj-card")).toHaveText(["3광", "8광", "10"]);
+  // Pick the two that make the hand.
+  await expect(turn(page)).toContainText("족보로 쓸 두 장을 고르세요");
+  await expect(prompt(page)).toHaveText(["3광 · 8광 — 38광땡", "3광 · 10 — 3끗", "8광 · 10 — 8끗"]);
+  await page.screenshot({ path: `test-results/${info.project.name}-seotda-pick.png`, fullPage: true });
+  await button(page, "3광 · 8광 — 38광땡").click();
+  await expect(seat(page, 0)).toContainText("38광땡");
+  await playOut(page);
+  expect(Number((await page.locator("#bg-chips").textContent())!.replace(/,/g, ""))).toBeGreaterThan(1000);
+  await expect(page.locator("#bg-outcome")).toContainText("나");
+  await expect(page.locator("#bg-pot")).toHaveText("0");
+  expect(errors).toEqual([]);
 });

@@ -122,7 +122,7 @@ export function evaluate(cards: readonly Card[]): Strength {
   return make(0, top(mask, 5));
 }
 
-export type Phase = "idle" | "betting" | "handOver" | "sessionOver";
+export type Phase = "idle" | "choosing" | "betting" | "handOver" | "sessionOver";
 export interface Result {
   /** Seats that took chips. */
   winners: number[];
@@ -224,7 +224,22 @@ function advance(s: State) {
     openStreet(s.betting, opener(s));
   }
 }
-/** Antes, shuffles and deals two cards down and one up to every seat. */
+/** Which of its first three cards a computer seat turns up: one outside a pair, the lowest. */
+function shown(cards: readonly Card[]) {
+  const paired = (i: number) => cards.some((c, j) => j !== i && c.rank === cards[i].rank);
+  let best = 0;
+  for (let i = 1; i < cards.length; i++)
+    if (
+      Number(paired(i)) < Number(paired(best)) ||
+      (paired(i) === paired(best) && value(cards[i]) < value(cards[best]))
+    )
+      best = i;
+  return best;
+}
+/**
+ * Antes, shuffles and deals three cards face down to every seat. Each seat
+ * then turns one of them up; seat 0 chooses its own with `choose`.
+ */
 export function start(state: State, random: Random = cryptoRandom): State | null {
   if (state.phase !== "idle" && state.phase !== "handOver") return null;
   const s = clone(state);
@@ -236,8 +251,24 @@ export function start(state: State, random: Random = cryptoRandom): State | null
   s.hands = s.hands.map(() => []);
   dealRound(s, false);
   dealRound(s, false);
-  dealRound(s, true);
+  dealRound(s, false);
   s.street = 3;
+  for (const seat of contenders(s.betting))
+    if (seat !== 0) s.hands[seat][shown(s.hands[seat])].up = true;
+  if (contenders(s.betting).includes(0)) {
+    s.phase = "choosing";
+    return s;
+  }
+  openStreet(s.betting, opener(s));
+  advance(s);
+  return s;
+}
+/** Seat 0 turns up one of its first three cards (index 0–2); the betting then opens. */
+export function choose(state: State, index: number): State | null {
+  if (state.phase !== "choosing" || !Number.isInteger(index) || index < 0 || index > 2) return null;
+  const s = clone(state);
+  s.hands[0][index] = { ...s.hands[0][index], up: true };
+  s.phase = "betting";
   openStreet(s.betting, opener(s));
   advance(s);
   return s;

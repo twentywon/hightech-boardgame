@@ -1,6 +1,14 @@
 import * as T from "three";
 import { afterGPUFrame, disposeScene, wood } from "../../engine/scene-utils";
-import { FOV, OVERHEAD, SUBJECTS, TILT, cameraDistance } from "../../engine/camera";
+import {
+  FOV,
+  OVERHEAD,
+  SUBJECTS,
+  TILT,
+  TURN_MS,
+  cameraDistance,
+  orbit,
+} from "../../engine/camera";
 import { FILES, RANKS, at, kindOf, sideOf, xOf, yOf, type Move, type Side } from "./rules";
 
 export const SPACING = 0.7;
@@ -89,6 +97,7 @@ export class JanggiView {
   private cameraFrom = new T.Vector3();
   private cameraTo = new T.Vector3();
   private cameraAt = 0;
+  private cameraMs = 450;
   private ray = new T.Raycaster();
   private plane = new T.Plane(new T.Vector3(0, 1, 0), -PIECE_Y);
   private reducedMotion =
@@ -206,9 +215,10 @@ export class JanggiView {
       this.raf = requestAnimationFrame(loop);
       let moved = false;
       if (this.cameraAt) {
-        const p = Math.min(1, (time - this.cameraAt) / 450),
+        // A delayed turn has not begun while the time is still negative.
+        const p = Math.max(0, Math.min(1, (time - this.cameraAt) / this.cameraMs)),
           e = p * p * (3 - 2 * p);
-        this.camera.position.lerpVectors(this.cameraFrom, this.cameraTo, e);
+        orbit(this.camera.position, this.cameraFrom, this.cameraTo, e);
         this.camera.lookAt(0, 0, 0);
         moved = true;
         if (p === 1) {
@@ -266,7 +276,8 @@ export class JanggiView {
     this.dirty = true;
   }
   /** Turns the board to `facing`'s side, or switches to the overhead view. */
-  setCamera(facing: Side, top = this.top) {
+  setCamera(facing: Side, top = this.top, delay = 0) {
+    this.cameraMs = facing === this.facing ? 450 : TURN_MS;
     this.facing = facing;
     this.top = top;
     this.cameraFrom.copy(this.camera.position);
@@ -275,8 +286,14 @@ export class JanggiView {
       this.camera.position.copy(this.cameraTo);
       this.camera.lookAt(0, 0, 0);
       this.dirty = true;
-    } else this.cameraAt = performance.now();
-    for (const mesh of this.meshes) if (mesh) this.orient(mesh);
+    } else this.cameraAt = performance.now() + delay;
+    // The glyphs turn with the table once it has swung half way.
+    const turn = () => {
+      for (const mesh of this.meshes) if (mesh) this.orient(mesh);
+      this.dirty = true;
+    };
+    if (this.cameraAt) setTimeout(() => !this.disposed && turn(), delay + this.cameraMs / 2);
+    else turn();
   }
   setQuality(quality: "high" | "low") {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));

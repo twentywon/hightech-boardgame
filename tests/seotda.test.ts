@@ -213,7 +213,8 @@ describe("Seotda rounds", () => {
     expect(s.betting.seats.map((x) => x.chips)).toEqual([1020, 990, 990]);
     // Opponents' cards stay hidden from seat 0.
     const view = seotda.view(s);
-    expect(view.seats[1].cards).toEqual([]);
+    expect(view.pot).toBe(0);
+    expect(view.seats[1].cards.map((c) => [c.face, c.text])).toEqual([[null, ""], [null, ""]]);
   });
   it("shows down, pays the best hand, and moves the first seat on", () => {
     let s = S.start(S.createSession(2), dealing(["3광", "1", "2", "8광", "1광", "5"]))!;
@@ -289,9 +290,114 @@ describe("Seotda rounds", () => {
     s = S.act(s, "fold")!;
     s = S.act(s, "call")!;
     view = seotda.view(s);
-    expect(view.seats[1]).toMatchObject({ note: "다이", cards: [] });
+    // A folded hand stays at its seat, face down.
+    expect(view.seats[1].note).toBe("다이");
+    expect(view.seats[1].cards.map((c) => [c.face, c.text])).toEqual([[null, ""], [null, ""]]);
     expect(view.seats[2].cards.map((c) => c.text)).toEqual(["2", "5"]);
     expect(view.seats[2].note).toBe("7끗");
+  });
+});
+
+describe("Three-card seotda", () => {
+  // Deal order: every seat's first card, then the second, then (after a bet) the third.
+  const deal3 = ["3광", "1", "2", "8광", "1광", "5", "10", "4", "9"];
+  it("deals two cards and waits for seat 0 to show one", () => {
+    const s = S.start(S.createSession(2, "three"), dealing(deal3))!;
+    expect(s.phase).toBe("choosing");
+    expect(s.betting.turn).toBe(-1);
+    expect(S.choices(s)).toBe("show");
+    expect(seotda.prompt(s)).toEqual({
+      title: "상대에게 공개할 패를 고르세요",
+      options: [
+        { label: "3광 공개", value: 0 },
+        { label: "8광 공개", value: 1 },
+      ],
+    });
+    // A computer shows its plain card and hides a picture card; with two
+    // plain cards it shows the lower month.
+    expect(s.open).toEqual([null, 0, 0]);
+    expect(S.act(s, "call")).toBeNull();
+    for (const bad of [-1, 2, 0.5]) expect(S.choose(s, bad)).toBeNull();
+    const open = S.choose(s, 1)!;
+    expect(open).toMatchObject({ phase: "betting", second: false });
+    expect(open.open[0]).toBe(1);
+    expect(open.betting.turn).toBe(0);
+    const view = seotda.view(open);
+    expect(view.seats[0].cards.map((c) => [c.text, !!c.secret])).toEqual([["3광", true], ["8광", false]]);
+    expect(view.seats[1].cards.map((c) => c.text)).toEqual(["1", ""]);
+    expect(view.seats[2].cards.map((c) => c.text)).toEqual(["2", ""]);
+    expect(JSON.stringify(view.seats.slice(1))).not.toMatch(/1광|1g|"5"|5p/);
+  });
+  it("deals a third card after the first round, to be uncovered and picked from", () => {
+    let s = S.choose(S.start(S.createSession(2, "three"), dealing(deal3))!, 1)!;
+    for (let i = 0; i < 3; i++) s = S.act(s, "call")!;
+    expect(s.hands.map((h) => h.map(cardText))).toEqual([
+      ["3광", "8광", "10"],
+      ["1", "1광", "4"],
+      ["2", "5", "9"],
+    ]);
+    expect(s).toMatchObject({ phase: "choosing", second: true });
+    expect(S.choices(s)).toBe("pick");
+    expect(seotda.view(s).seats[0].cards.map((c) => !!c.peek)).toEqual([false, false, true]);
+    expect(seotda.prompt(s)!.options.map((o) => o.label)).toEqual([
+      "3광 · 8광 — 38광땡",
+      "3광 · 10 — 3끗",
+      "8광 · 10 — 8끗",
+    ]);
+    // The computers already hold their best two.
+    expect(S.handOf(s, 1).map(cardText)).toEqual(["1", "1광"]);
+    expect(S.handOf(s, 2).map(cardText)).toEqual(["2", "5"]);
+    const worse = S.choose(s, 2)!;
+    expect(S.handOf(worse, 0).map(cardText)).toEqual(["8광", "10"]);
+    expect(seotda.view(worse).seats[0].note).toBe("8끗");
+    let done = S.choose(s, 0)!;
+    expect(done).toMatchObject({ phase: "betting", second: true });
+    for (let i = 0; i < 3; i++) done = S.act(done, "call")!;
+    expect(done.phase).toBe("handOver");
+    expect(done.result).toMatchObject({ winners: [0], shown: ["38광땡", "1땡", "7끗"], net: [20, -10, -10] });
+    // Every card of a hand that reached the showdown is opened.
+    expect(seotda.view(done).seats[2].cards.map((c) => c.text)).toEqual(["2", "5", "9"]);
+  });
+  it("picks the strongest pair of three", () => {
+    expect(S.bestPair([card("1"), card("2"), card("9열")])).toEqual([0, 1]);
+    expect(S.bestPair([card("4"), card("7열"), card("7")])).toEqual([1, 2]);
+    expect(S.bestPair([card("3"), card("6"), card("10")])).toEqual([0, 1]);
+  });
+  it("deals no third card to a folded seat and plays on without asking seat 0", () => {
+    let s = S.choose(S.start(S.createSession(2, "three"), dealing(deal3))!, 0)!;
+    s = S.act(s, "fold")!;
+    s = S.act(s, "call")!;
+    s = S.act(s, "call")!;
+    expect(s.hands.map((h) => h.length)).toEqual([2, 3, 3]);
+    expect(s).toMatchObject({ phase: "betting", second: true });
+    expect(seotda.prompt(s)).toBeNull();
+    expect(seotda.view(s).seats[0].cards.every((c) => c.face === null && !c.peek)).toBe(true);
+    while (s.phase === "betting") s = S.act(s, "call")!;
+    expect(s.result!.winners).toEqual([1]);
+  });
+  it("ends at once when the first round leaves one seat", () => {
+    let s = S.choose(S.start(S.createSession(1, "three"), dealing(["3광", "1", "8광", "2"]))!, 0)!;
+    s = S.act(s, "raise")!;
+    s = S.act(s, "fold")!;
+    expect(s.phase).toBe("handOver");
+    expect(s.hands.map((h) => h.length)).toEqual([2, 2]);
+    expect(s.result).toMatchObject({ winners: [0], reason: "모두 다이" });
+  });
+  it("keeps every chip accounted for when the computers play it out", () => {
+    for (let seed = 1; seed <= 25; seed++) {
+      let s = S.start(S.createSession(3, "three"), seededRandom(seed))!,
+        steps = 0;
+      while (s.phase === "betting" || s.phase === "choosing") {
+        const next =
+          s.phase === "choosing"
+            ? S.choose(s, 0)
+            : S.act(s, seotda.decide(s, "normal", seed + steps));
+        expect(next).not.toBeNull();
+        s = next!;
+        expect(++steps).toBeLessThan(60);
+      }
+      expect(s.betting.seats.reduce((sum, x) => sum + x.chips, 0) + (s.result?.rematch ? S.potOf(s) : 0)).toBe(4000);
+    }
   });
 });
 

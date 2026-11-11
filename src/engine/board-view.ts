@@ -7,7 +7,16 @@ import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
 import { wood, disposeScene, afterGPUFrame } from "./scene-utils";
-import { FOV, OVERHEAD, SUBJECTS, TILT, cameraDistance } from "./camera";
+import {
+  FOV,
+  OVERHEAD,
+  SUBJECTS,
+  TILT,
+  TURN_DELAY_MS,
+  TURN_MS,
+  cameraDistance,
+  orbit,
+} from "./camera";
 
 const GOMOKU_BOARD = 6.55;
 /** Column letters and row numbers drawn in the Gomoku board margin. */
@@ -76,6 +85,9 @@ export class BoardView {
   private cameraStart = new T.Vector3();
   private target = new T.Vector3();
   private transitionStart = 0;
+  private transitionMs = 450;
+  /** The table is seen from the far side, for the second local player. */
+  private flipped = false;
   private top = false;
   private zoom = false;
   private falling: { mesh: T.Mesh; start: number; sounded: boolean }[] = [];
@@ -346,9 +358,10 @@ export class BoardView {
       if (!this.dirty && !animate) return;
       this.dirty = false;
       if (this.transitionStart) {
-        const t = Math.min(1, (time - this.transitionStart) / 450),
+        // A delayed turn has not begun while the time is still negative.
+        const t = Math.max(0, Math.min(1, (time - this.transitionStart) / this.transitionMs)),
           s = t * t * (3 - 2 * t);
-        this.camera.position.lerpVectors(this.cameraStart, this.target, s);
+        orbit(this.camera.position, this.cameraStart, this.target, s);
         if (t === 1) this.transitionStart = 0;
       }
       this.camera.lookAt(0, 0, 0);
@@ -489,7 +502,29 @@ export class BoardView {
       cameraDistance(this.camera.aspect, this.top, SUBJECTS[this.variant]) *
       (this.zoom ? 0.97 : 1);
     const angle = this.top ? OVERHEAD : TILT;
-    this.target.set(0, Math.sin(angle) * distance, Math.cos(angle) * distance);
+    this.target.set(
+      0,
+      Math.sin(angle) * distance,
+      Math.cos(angle) * distance * (this.flipped ? -1 : 1),
+    );
+  }
+  /**
+   * Turns the table half way round so the player to move sits in front.
+   * The turn starts after a short pause, once the last stone has landed.
+   */
+  setFacing(flipped: boolean, animate = true) {
+    if (this.disposed || flipped === this.flipped) return;
+    this.flipped = flipped;
+    this.dirty = true;
+    this.cameraStart.copy(this.camera.position);
+    this.setTarget();
+    this.ghost.visible = false;
+    if (!animate || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      this.camera.position.copy(this.target);
+      return;
+    }
+    this.transitionMs = TURN_MS;
+    this.transitionStart = performance.now() + TURN_DELAY_MS;
   }
   setCamera(top: boolean, zoom = false) {
     this.dirty = true;
@@ -497,6 +532,7 @@ export class BoardView {
     this.zoom = zoom;
     this.cameraStart.copy(this.camera.position);
     this.setTarget();
+    this.transitionMs = 450;
     this.transitionStart = performance.now();
     this.ghost.visible = false;
   }

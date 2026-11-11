@@ -1,15 +1,15 @@
 import type { Action } from "../games/cards/betting";
-import type { BettingGame } from "../games/cards/game";
+import type { BettingGame, TableView } from "../games/cards/game";
 import { CardTableView, type CardSkin } from "../games/cards/table-view";
 import { cryptoRandom, type Random } from "../core/random";
-import { difficulties, difficultyLabels, type Difficulty } from "../core/ai";
 import { Sound } from "../engine/sound";
 import { modal } from "./dialog";
 import type { Settings } from "../core/storage";
 
 export interface BettingOptions {
   opponents: number;
-  difficulty: Difficulty;
+  /** Which form of the game to play, when it has more than one. */
+  variant?: string;
 }
 /** Everything that differs between the betting card games. */
 export interface BettingConfig<S> {
@@ -30,6 +30,10 @@ export interface BettingConfig<S> {
   rules: string;
   /** Word for dealing a hand, e.g. "패 받기". */
   dealWord: string;
+  /** Name of the card the person uncovers by hand, e.g. "세 번째 패". */
+  peekWord?: string;
+  /** Forms of the game offered at the table, when there is more than one. */
+  variants?: { value: string; label: string }[];
 }
 interface Navigation {
   header: () => string;
@@ -63,8 +67,8 @@ export function mountBettingGame<S>(
   sound.enabled = nav.settings.sound;
   let settings = nav.settings,
     preferences = { ...nav.preferences },
-    difficulty: Difficulty = preferences.difficulty,
-    state = game.create(preferences.opponents),
+    variant = preferences.variant,
+    state = game.create(preferences.opponents, preferences.variant),
     // What the panel describes: the last state whose cards have landed.
     shown = state,
     view: CardTableView | null = null,
@@ -72,7 +76,9 @@ export function mountBettingGame<S>(
     generation = 0,
     lockedUntil = 0,
     thinking = false,
-    soundedRound = -1;
+    soundedRound = -1,
+    // Cards dealt face down to seat 0 that the person has uncovered.
+    peeked = new Set<number>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as E;
@@ -93,21 +99,24 @@ export function mountBettingGame<S>(
   }
   function setup() {
     stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="ai-options"><label>상대 수<select id="bg-opponents">${[1, 2, 3].map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label><label>AI 난이도<select id="bg-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">가상 칩으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="ai-options"><label>상대 수<select id="bg-opponents">${[1, 2, 3].map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label>${config.variants ? `<label>방식<select id="bg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">가상 칩으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const remember = () => {
       preferences = {
         opponents: Number($<HTMLSelectElement>("bg-opponents").value),
-        difficulty: $<HTMLSelectElement>("bg-difficulty").value as Difficulty,
+        variant: document.getElementById("bg-variant")
+          ? $<HTMLSelectElement>("bg-variant").value
+          : preferences.variant,
       };
       nav.remember({ ...preferences });
     };
     $("bg-opponents").onchange = remember;
-    $("bg-difficulty").onchange = remember;
+    if (document.getElementById("bg-variant")) $("bg-variant").onchange = remember;
     $("bg-start").onclick = start;
   }
   function start() {
-    difficulty = preferences.difficulty;
-    state = shown = game.create(preferences.opponents);
+    variant = preferences.variant;
+    state = shown = game.create(preferences.opponents, variant);
+    peeked.clear();
     soundedRound = -1;
     lockedUntil = 0;
     sound.enabled = settings.sound;
@@ -118,7 +127,7 @@ export function mountBettingGame<S>(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 세션</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-acting" class="bj-controls" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">다이</button></div><div class="bj-row"><button id="bg-raise">하프</button><button id="bg-allin">올인</button></div></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="primary">${config.dealWord}</button><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
+      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 세션</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-peeking" class="bj-controls" hidden><button id="bg-peek" class="primary"></button></div><div id="bg-prompt" class="bj-controls bg-prompt" role="group" hidden></div><div id="bg-acting" class="bj-controls" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">다이</button></div><div class="bj-row"><button id="bg-raise">하프</button><button id="bg-allin">올인</button></div></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="primary">${config.dealWord}</button><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
@@ -134,11 +143,18 @@ export function mountBettingGame<S>(
     $("bg-allin").onclick = play("allIn");
     $("bg-deal").onclick = () => act((s) => game.start(s, random), true);
     $("bg-rebuy").onclick = newSession;
+    $("bg-peek").onclick = () => covered(state).forEach(peek);
+    $("bg-prompt").onclick = (e) => {
+      const chosen = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-value]");
+      if (chosen) act((s) => game.choose(s, Number(chosen.dataset.value)), true);
+    };
     try {
       view = new CardTableView($("board"), settings.quality, config.skin);
-      view.onContact = () => sound.tap();
+      view.onContact = () => sound.card();
       view.onSettled = present;
-      view.sync(game.view(state), false);
+      view.onPeek = peek;
+      view.onChips = () => sound.chips();
+      view.sync(table(state), false);
     } catch {
       view?.dispose();
       view = null;
@@ -152,9 +168,48 @@ export function mountBettingGame<S>(
     state !== shown ||
     performance.now() < lockedUntil ||
     !!document.querySelector("dialog[open]");
+  /** Ids of seat 0's cards that are still under their cover. */
+  const covered = (s: S) =>
+    game
+      .view(s)
+      .seats[0].cards.filter((c) => c.peek && !peeked.has(c.id))
+      .map((c) => c.id);
+  /**
+   * The table as the person may see it now: a card that has not been
+   * uncovered yet carries no text, and the hand it would make is not named.
+   */
+  function table(s: S): TableView {
+    const model = game.view(s),
+      hidden = covered(s);
+    if (!hidden.length) return model;
+    const mine = model.seats[0];
+    return {
+      ...model,
+      seats: [
+        {
+          ...mine,
+          note: "",
+          cards: mine.cards.map((c) =>
+            hidden.includes(c.id) ? { ...c, text: "", covered: true } : c,
+          ),
+        },
+        ...model.seats.slice(1),
+      ],
+    };
+  }
+  /** The person slid the cover off a card, on the table or with the button. */
+  function peek(id: number) {
+    if (peeked.has(id)) return;
+    peeked.add(id);
+    sound.unlock();
+    if (view) view.sync(table(state));
+    else present();
+    update();
+  }
   function apply(next: State) {
+    if (game.round(next) !== game.round(state)) peeked.clear();
     state = next;
-    if (view) view.sync(game.view(state));
+    if (view) view.sync(table(state));
     else present();
     update();
   }
@@ -177,11 +232,11 @@ export function mountBettingGame<S>(
     thinking = false;
     timers.forEach(clearTimeout);
     timers.clear();
-    difficulty = preferences.difficulty;
-    state = game.create(shownSeats());
+    state = game.create(shownSeats(), variant);
     soundedRound = -1;
     lockedUntil = 0;
-    if (view) view.sync(game.view(state), false);
+    peeked.clear();
+    if (view) view.sync(table(state), false);
     else present();
   }
   const shownSeats = () => game.view(state).seats.length - 1;
@@ -199,7 +254,7 @@ export function mountBettingGame<S>(
       }
       const seat = game.turn(state),
         next =
-          game.act(state, game.decide(state, difficulty, 1 + game.round(state) * 31 + seat)) ??
+          game.act(state, game.decide(state, "normal", 1 + game.round(state) * 31 + seat)) ??
           // A refused choice must not stall the table.
           game.act(state, "call") ??
           game.act(state, "fold");
@@ -221,8 +276,12 @@ export function mountBettingGame<S>(
       if (net < 0) sound.lose();
       else if (net > 0) sound.win();
     }
-    if (hadFocus && focused && (focused.offsetParent === null || (focused as HTMLButtonElement).disabled))
-      (phase === "betting" && game.turn(state) === 0
+    if (hadFocus && focused && (focused.offsetParent === null || (focused as HTMLButtonElement).disabled || !focused.isConnected))
+      (covered(state).length
+        ? $("bg-peek")
+        : phase === "choosing"
+          ? $("bg-prompt").querySelector<HTMLElement>("button")
+          : phase === "betting" && game.turn(state) === 0
         ? $("bg-call")
         : phase === "sessionOver"
           ? $("bg-rebuy")
@@ -233,17 +292,20 @@ export function mountBettingGame<S>(
   function update() {
     if (disposed || !document.getElementById("bg-chips")) return;
     const s = shown,
-      table = game.view(s),
+      seats = table(s),
       phase = game.phase(s),
       turn = game.turn(s),
       waiting = busy(),
+      // Nothing can be decided before the covered card has been looked at.
+      sealed = covered(s).length > 0,
       mine = phase === "betting" && turn === 0,
-      choice = mine ? game.options(s) : null,
+      choice = mine && !sealed ? game.options(s) : null,
+      prompt = phase === "choosing" && !sealed ? game.prompt(s) : null,
       result = game.result(s);
     $("board").dataset.animating = String(!!view?.animating || state !== shown);
     $("move-count").textContent = `${game.round(s)}판`;
-    $("bg-chips").textContent = chips(table.seats[0].chips);
-    $("bg-pot").textContent = chips(table.pot);
+    $("bg-chips").textContent = chips(seats.seats[0].chips);
+    $("bg-pot").textContent = chips(seats.pot);
     const status = $("turn");
     status.dataset.phase = phase;
     status.dataset.seat = String(turn);
@@ -258,17 +320,36 @@ export function mountBettingGame<S>(
               : "칩을 모두 잃었습니다. 칩을 다시 받아 새로 시작하세요."
             : phase === "handOver"
               ? (result?.headline ?? "판이 끝났습니다.")
-              : mine
-                ? `내 차례 — ${game.stage(s)}${choice && choice.call > 0 ? ` · 콜 ${chips(choice.call)}` : ""}`
-                : `${table.seats[turn]?.name ?? "상대"} 차례…`;
-    $("bg-seats").innerHTML = table.seats
+              : sealed
+                ? `${config.peekWord ?? "카드"}를 아래로 밀어 확인하세요.`
+                : phase === "choosing"
+                  ? (prompt?.title ?? "")
+                  : mine
+                    ? `내 차례 — ${game.stage(s)}${choice && choice.call > 0 ? ` · 콜 ${chips(choice.call)}` : ""}`
+                    : `${seats.seats[turn]?.name ?? "상대"} 차례…`;
+    $("bg-seats").innerHTML = seats.seats
       .map(
         (seat) =>
-          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${seat.name}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? "다이" : seat.cards.length ? seat.cards.map((c) => (c.face ? `<span class="bj-card${c.secret ? " secret" : ""}"${c.secret ? ' title="상대에게 보이지 않는 카드"' : ""}>${c.text}</span>` : '<span class="bj-card hidden">비공개</span>')).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
+          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${seat.name}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? "다이" : seat.cards.length ? seat.cards.map((c) => (c.face && c.text ? `<span class="bj-card${c.secret ? " secret" : ""}"${c.secret ? ' title="상대에게 보이지 않는 카드"' : ""}>${c.text}</span>` : `<span class="bj-card hidden">${c.covered ? "확인 전" : "비공개"}</span>`)).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
       )
       .join("");
-    $("bg-acting").hidden = phase !== "betting";
-    $("bg-between").hidden = phase === "betting";
+    $("bg-acting").hidden = phase !== "betting" || sealed;
+    $("bg-between").hidden = phase === "betting" || phase === "choosing";
+    $("bg-peeking").hidden = !sealed || state !== shown;
+    $("bg-peek").textContent = `${config.peekWord ?? "카드"} 확인`;
+    ($("bg-peek") as HTMLButtonElement).disabled = waiting;
+    $("bg-prompt").hidden = !prompt;
+    const promptKey = prompt ? JSON.stringify(prompt) : "";
+    if ($("bg-prompt").dataset.key !== promptKey) {
+      $("bg-prompt").dataset.key = promptKey;
+      $("bg-prompt").setAttribute("aria-label", prompt?.title ?? "");
+      $("bg-prompt").innerHTML = (prompt?.options ?? [])
+        .map((o) => `<button data-value="${o.value}">${o.label}</button>`)
+        .join("");
+    }
+    $("bg-prompt")
+      .querySelectorAll<HTMLButtonElement>("button")
+      .forEach((b) => (b.disabled = waiting));
     const off = (id: string, disabled: boolean) => (($(id) as HTMLButtonElement).disabled = disabled);
     off("bg-call", waiting || !choice);
     off("bg-fold", waiting || !choice);
@@ -313,7 +394,7 @@ export function mountBettingGame<S>(
   const show = (e: PageTransitionEvent) => {
     if (e.persisted && document.getElementById("bg-chips")) {
       lockedUntil = 0;
-      if (view) view.sync(game.view(state), false);
+      if (view) view.sync(table(state), false);
       present();
     }
   };

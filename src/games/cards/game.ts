@@ -10,6 +10,15 @@ export interface CardView {
   text: string;
   /** Seat 0's own card that the other seats cannot see. */
   secret?: boolean;
+  /** Seat 0's card dealt face down, which the person uncovers by hand. */
+  peek?: boolean;
+  /** Set by the table screen while such a card is still covered. */
+  covered?: boolean;
+}
+/** A choice seat 0 must make before play continues. */
+export interface Prompt {
+  title: string;
+  options: { label: string; value: number }[];
 }
 export interface SeatView {
   name: string;
@@ -34,16 +43,19 @@ export interface ResultView {
   /** The pot stays for a replay. */
   rematch: boolean;
 }
-export type Phase = "idle" | "betting" | "handOver" | "sessionOver";
+export type Phase = "idle" | "choosing" | "betting" | "handOver" | "sessionOver";
 /**
  * What the shared table screen needs from a betting card game. Seat 0 is the
  * person; the other seats are played by `decide`.
  */
 export interface BettingGame<S> {
-  create(opponents: number): S;
+  create(opponents: number, variant?: string): S;
   start(state: S, random: Random): S | null;
   act(state: S, action: Action): S | null;
   phase(state: S): Phase;
+  /** The choice seat 0 has to make now, when the phase is "choosing". */
+  prompt(state: S): Prompt | null;
+  choose(state: S, value: number): S | null;
   /** Seat to act, or -1. */
   turn(state: S): number;
   options(state: S): { fold: boolean; call: number; raise: number | null; allIn: number | null } | null;

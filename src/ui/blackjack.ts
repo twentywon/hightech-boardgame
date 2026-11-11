@@ -142,7 +142,7 @@ export function mountBlackjack(
     $("bj-rebuy").onclick = newSession;
     try {
       view = new BlackjackView($("board"), settings.quality);
-      view.onContact = () => sound.tap();
+      view.onContact = () => sound.card();
       view.onSettled = present;
       view.sync(model(state), false);
     } catch {

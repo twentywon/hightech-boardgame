@@ -1,15 +1,22 @@
+import { seededRandom } from "../../core/ai";
 import { options, pot } from "../cards/betting";
 import { NAMES, type BettingGame, type Tone } from "../cards/game";
 import { wager } from "../cards/judgement";
 import {
+  PAIRS,
   act,
+  bestPair,
+  choices,
+  choose,
   createDeck,
   createSession,
+  handOf,
   rank,
   showdown,
   start,
   type Card,
   type State,
+  type Variant,
 } from "./rules";
 
 /** Key for the card painter and for comparing cards. */
@@ -37,29 +44,92 @@ export function equity(hand: readonly Card[]) {
     }
   return score / total;
 }
+/**
+ * Three-card game: chance that the seat to act ends with the best hand,
+ * estimated by dealing the unseen cards at random. It knows its own cards and
+ * the one card every other seat shows.
+ */
+export function equityThree(state: State, samples: number, seed: number) {
+  const b = state.betting,
+    me = b.turn,
+    rivals = b.seats.flatMap((seat, i) => (i !== me && !seat.folded && !seat.out ? [i] : [])),
+    known = new Set(state.hands[me].map(faceOf)),
+    showing = rivals.map((i) => state.hands[i][state.open[i] ?? 0]);
+  for (const c of showing) known.add(faceOf(c));
+  const unseen = createDeck().filter((c) => !known.has(faceOf(c))),
+    random = seededRandom(seed);
+  let score = 0;
+  for (let n = 0; n < samples; n++) {
+    for (let i = 0; i < Math.min(unseen.length - 1, 1 + rivals.length * 2); i++) {
+      const j = i + Math.floor(random() * (unseen.length - i));
+      [unseen[i], unseen[j]] = [unseen[j], unseen[i]];
+    }
+    let at = 0;
+    const best = (cards: Card[]) => {
+      while (cards.length < 3) cards.push(unseen[at++]);
+      const pair = bestPair(cards);
+      return [cards[pair[0]], cards[pair[1]]];
+    };
+    const mine = state.picks[me] ? handOf(state, me) : best(state.hands[me].slice());
+    const verdict = showdown([
+      { seat: -1, cards: mine },
+      ...showing.map((c, k) => ({ seat: k, cards: best([c]) })),
+    ]);
+    score += verdict.winners.includes(-1) ? (verdict.rematch ? 0.5 : 1) : 0;
+  }
+  return score / samples;
+}
 
 export const seotda: BettingGame<State> = {
-  create: (opponents) => createSession(opponents),
+  create: (opponents, variant) => createSession(opponents, (variant as Variant) ?? "two"),
   start,
   act,
+  choose,
   phase: (s) => s.phase,
   turn: (s) => (s.phase === "betting" ? s.betting.turn : -1),
   options: (s) => (s.phase === "betting" ? options(s.betting) : null),
   round: (s) => s.round,
   won: (s) => s.won,
   stage: (s) =>
-    s.phase === "betting" ? (s.betting.high > 0 ? "베팅 중" : "베팅 시작") : "",
+    s.phase !== "betting"
+      ? ""
+      : s.variant === "three"
+        ? s.second
+          ? "세 번째 패 베팅"
+          : "첫 베팅"
+        : s.betting.high > 0
+          ? "베팅 중"
+          : "베팅 시작",
+  prompt(s) {
+    const kind = choices(s);
+    if (!kind) return null;
+    const cards = s.hands[0];
+    return kind === "show"
+      ? {
+          title: "상대에게 공개할 패를 고르세요",
+          options: cards.map((c, i) => ({ label: `${cardText(c)} 공개`, value: i })),
+        }
+      : {
+          title: "족보로 쓸 두 장을 고르세요",
+          options: PAIRS.map(([a, b], i) => ({
+            label: `${cardText(cards[a])} · ${cardText(cards[b])} — ${rank([cards[a], cards[b]]).name}`,
+            value: i,
+          })),
+        };
+  },
   view(s) {
-    const over = s.phase === "handOver" || s.phase === "sessionOver";
+    const over = s.phase === "handOver" || s.phase === "sessionOver",
+      settled = over && !s.result?.rematch;
     return {
-      pot: pot(s.betting),
+      // Once the pot has been paid it is no longer on the table.
+      pot: settled ? 0 : pot(s.betting),
       seats: s.betting.seats.map((seat, i) => {
         const cards = s.hands[i],
-          // Seat 0 always sees its own cards; others only at a showdown they reached.
-          open = i === 0 || (over && s.result?.shown[i] != null),
+          // Others' cards open only at a showdown they reached.
+          revealed = over && s.result?.shown[i] != null,
           net = s.result?.net[i] ?? 0,
-          tone: Tone =
-            over && !s.result?.rematch ? (net > 0 ? "win" : net < 0 ? "lose" : "push") : "neutral";
+          tone: Tone = settled ? (net > 0 ? "win" : net < 0 ? "lose" : "push") : "neutral",
+          decided = s.variant === "two" || !!s.picks[i];
         return {
           name: NAMES[i],
           chips: seat.chips,
@@ -70,18 +140,22 @@ export const seotda: BettingGame<State> = {
           tone,
           note: seat.folded
             ? "다이"
-            : open && cards.length === 2
-              ? rank(cards).name
+            : (i === 0 || revealed) && cards.length >= 2 && decided
+              ? rank(handOf(s, i)).name
               : seat.allIn && cards.length
                 ? "올인"
                 : "",
-          cards: seat.folded
-            ? []
-            : cards.map((c) => ({
-                id: c.id,
-                face: open ? faceOf(c) : null,
-                text: open ? cardText(c) : "",
-              })),
+          cards: cards.map((c, k) => {
+            // A folded hand lies face down, mine included.
+            const open = !seat.folded && (i === 0 || revealed || (s.variant === "three" && s.open[i] === k));
+            return {
+              id: c.id,
+              face: open ? faceOf(c) : null,
+              text: open ? cardText(c) : "",
+              secret: i === 0 && !seat.folded && !over && s.variant === "three" && s.open[0] !== null && s.open[0] !== k,
+              peek: i === 0 && k === 2 && !seat.folded && !over,
+            };
+          }),
         };
       }),
     };
@@ -105,7 +179,11 @@ export const seotda: BettingGame<State> = {
     const b = s.betting,
       choice = options(b)!,
       rivals = b.seats.filter((seat, i) => i !== b.turn && !seat.folded && !seat.out).length,
-      chance = equity(s.hands[b.turn]) ** Math.max(1, rivals);
-    return wager(chance, choice, pot(b), difficulty, seed + s.round * 7919 + b.turn * 104729 + b.raises * 31);
+      salt = seed + s.round * 7919 + b.turn * 104729 + b.raises * 31 + (s.second ? 613 : 0),
+      chance =
+        s.variant === "three"
+          ? equityThree(s, 150, salt)
+          : equity(s.hands[b.turn]) ** Math.max(1, rivals);
+    return wager(chance, choice, pot(b), difficulty, salt);
   },
 };

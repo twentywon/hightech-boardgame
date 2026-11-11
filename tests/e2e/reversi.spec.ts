@@ -25,7 +25,9 @@ async function cell(page: Page, row: number, col: number, top = false) {
     d = cameraDistance(aspect, top, SUBJECTS.reversi),
     a = top ? Math.PI / 2 - 0.001 : (55 * Math.PI) / 180;
   const camera = new PerspectiveCamera(38, aspect, 0.1, 60);
-  camera.position.set(0, Math.sin(a) * d, Math.cos(a) * d);
+  // In a local game the table is turned to the player to move.
+  const flipped = (await page.locator("#board").getAttribute("data-flipped")) === "true";
+  camera.position.set(0, Math.sin(a) * d, Math.cos(a) * d * (flipped ? -1 : 1));
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld();
   const w = toWorld({ row, col }),

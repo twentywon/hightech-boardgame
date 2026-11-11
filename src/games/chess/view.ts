@@ -2,7 +2,15 @@ import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
 import { wood, disposeScene, afterGPUFrame } from "../../engine/scene-utils";
 import { toWorld, fromWorld, squares } from "./coordinates";
-import { FOV, OVERHEAD, SUBJECTS, TILT, cameraDistance } from "../../engine/camera";
+import {
+  FOV,
+  OVERHEAD,
+  SUBJECTS,
+  TILT,
+  TURN_MS,
+  cameraDistance,
+  orbit,
+} from "../../engine/camera";
 interface Token {
   mesh: T.Group;
   type: PieceSymbol;
@@ -42,6 +50,7 @@ export class ChessView {
   private cameraStart = new T.Vector3();
   private cameraTarget = new T.Vector3();
   private cameraAt = 0;
+  private cameraMs = 450;
   private pointerId: number | null = null;
   get animating() {
     return !!this.cameraAt || this.moves.length > 0;
@@ -162,12 +171,9 @@ export class ChessView {
       if (!this.dirty && !wasAnimating) return;
       this.dirty = false;
       if (this.cameraAt) {
-        const u = Math.min(1, (t - this.cameraAt) / 450);
-        this.camera.position.lerpVectors(
-          this.cameraStart,
-          this.cameraTarget,
-          u * u * (3 - 2 * u),
-        );
+        // A delayed turn has not begun while the time is still negative.
+        const u = Math.max(0, Math.min(1, (t - this.cameraAt) / this.cameraMs));
+        orbit(this.camera.position, this.cameraStart, this.cameraTarget, u * u * (3 - 2 * u));
         if (u === 1) this.cameraAt = 0;
       }
       this.camera.lookAt(0, 0.1, 0);
@@ -516,12 +522,14 @@ export class ChessView {
       Math.cos(a) * distance * (this.facing === "w" ? 1 : -1),
     );
   }
-  setCamera(facing: Color, top = this.top) {
+  /** `delay` holds the turn back until the last move has been seen. */
+  setCamera(facing: Color, top = this.top, delay = 0) {
+    this.cameraMs = facing === this.facing ? 450 : TURN_MS;
     this.facing = facing;
     this.top = top;
     this.cameraStart.copy(this.camera.position);
     this.target();
-    this.cameraAt = performance.now();
+    this.cameraAt = performance.now() + delay;
     this.dirty = true;
   }
   private resize(force = false) {

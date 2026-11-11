@@ -67,7 +67,11 @@ test("janggi opens inline; pointer and keyboard moves, pass, undo, views and res
   await expect(page.getByRole("img", { name: "장기판 미리보기" })).toBeVisible();
   await expect(page.getByLabel("로컬 2인")).toBeChecked();
   await expect(page.getByLabel("AI 난이도")).toBeHidden();
-  await expect(page.getByLabel("상차림")).toHaveValue("NENE");
+  // Two local players each choose their own formation.
+  await expect(page.getByLabel("초(1P) 상차림")).toHaveValue("NENE");
+  await expect(page.getByLabel("한(2P) 상차림")).toHaveValue("NENE");
+  await page.getByLabel("초(1P) 상차림").selectOption("ENEN");
+  await page.getByLabel("한(2P) 상차림").selectOption("NEEN");
   await expect(page.locator("canvas")).toHaveCount(0);
   expect(page.url()).toBe(url);
   await page.screenshot({ path: `test-results/${info.project.name}-janggi-setup.png`, fullPage: true });
@@ -141,7 +145,8 @@ test("the janggi computer answers from its Worker; hint, undo, playing Han, and 
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await expect(page.getByLabel("AI 난이도")).toHaveValue("normal");
   await page.getByLabel("AI 난이도").selectOption("easy");
-  await page.getByLabel("상차림").selectOption("ENEN");
+  await expect(page.getByLabel("한(2P) 상차림")).toBeHidden();
+  await page.getByLabel("내 상차림").selectOption("ENEN");
   await button(page, /테이블에 앉기/).click();
   await ready(page);
   await expect(page.locator(".player").nth(1)).toContainText("컴퓨터 · 쉬움");
@@ -164,7 +169,7 @@ test("the janggi computer answers from its Worker; hint, undo, playing Han, and 
   await expect(page.locator("canvas")).toHaveCount(0);
   await selectGame(page, "장기");
   await expect(page.getByLabel("컴퓨터 대전", { exact: true })).toBeChecked();
-  await expect(page.getByLabel("상차림")).toHaveValue("ENEN");
+  await expect(page.getByLabel("내 상차림")).toHaveValue("ENEN");
   await page.getByLabel("내 진영").selectOption("white");
   await button(page, /테이블에 앉기/).click();
   await ready(page);

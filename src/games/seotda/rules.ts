@@ -120,7 +120,15 @@ export function showdown(hands: { seat: number; cards: readonly Card[] }[]) {
   return { strength, winners, voided, rematch: voided || winners.length > 1 };
 }
 
-export type Phase = "idle" | "betting" | "handOver" | "sessionOver";
+export type Phase = "idle" | "choosing" | "betting" | "handOver" | "sessionOver";
+/** Two cards and one betting round, or three cards with one shown and two rounds. */
+export type Variant = "two" | "three";
+/** The three ways to make a hand of two from three cards. */
+export const PAIRS: [number, number][] = [
+  [0, 1],
+  [0, 2],
+  [1, 2],
+];
 export interface Result {
   /** Seats that took chips; empty when the round is replayed. */
   winners: number[];
@@ -137,6 +145,13 @@ export interface State {
   betting: Betting;
   deck: Card[];
   hands: Dealt[][];
+  variant: Variant;
+  /** Three-card game: the card each seat shows, by index in its hand. */
+  open: (number | null)[];
+  /** Three-card game: the two cards each seat plays, by index. */
+  picks: ([number, number] | null)[];
+  /** Three-card game: the second betting round has begun. */
+  second: boolean;
   /** Seat that acts first; moves on each hand. */
   first: number;
   round: number;
@@ -145,9 +160,13 @@ export interface State {
   /** Seat 0 lost every chip, or every computer did. */
   won: boolean | null;
 }
-export function createSession(opponents = 2): State {
+export function createSession(opponents = 2, variant: Variant = "two"): State {
   return {
     phase: "idle",
+    variant,
+    open: Array(opponents + 1).fill(null),
+    picks: Array(opponents + 1).fill(null),
+    second: false,
     betting: {
       seats: Array.from({ length: opponents + 1 }, () => createSeat(START_CHIPS)),
       turn: -1,
@@ -169,7 +188,36 @@ const clone = (s: State): State => ({
   betting: cloneBetting(s.betting),
   deck: s.deck.slice(),
   hands: s.hands.map((h) => h.slice()),
+  open: s.open.slice(),
+  picks: s.picks.slice(),
 });
+/** The two cards a seat plays: the pair it picked, or its only two. */
+export const handOf = (s: State, seat: number): Dealt[] => {
+  const pick = s.picks[seat];
+  return pick ? [s.hands[seat][pick[0]], s.hands[seat][pick[1]]] : s.hands[seat].slice(0, 2);
+};
+/** The strongest pair among three cards, by plain strength. */
+export function bestPair(cards: readonly Card[]): [number, number] {
+  let best = PAIRS[0],
+    score = -1;
+  for (const pair of PAIRS) {
+    const value = rank([cards[pair[0]], cards[pair[1]]]).score;
+    if (value > score) {
+      score = value;
+      best = pair;
+    }
+  }
+  return best;
+}
+/** Which of two cards a computer seat shows: it keeps its picture card hidden. */
+const shown = (cards: readonly Card[]) =>
+  cards[0].kind === "plain" && cards[1].kind !== "plain"
+    ? 0
+    : cards[1].kind === "plain" && cards[0].kind !== "plain"
+      ? 1
+      : cards[0].month <= cards[1].month
+        ? 0
+        : 1;
 function dealTo(s: State, seats: number[], random: Random) {
   s.deck = shuffle(createDeck(), random);
   s.hands = s.hands.map(() => []);
@@ -183,7 +231,7 @@ function finish(s: State) {
     before = b.seats.map((seat) => seat.total);
   s.phase = "handOver";
   const shown = b.seats.map((_, i) =>
-    live.length > 1 && live.includes(i) ? rank(s.hands[i]).name : null,
+    live.length > 1 && live.includes(i) ? rank(handOf(s, i)).name : null,
   );
   if (live.length === 1) {
     const won = payout(b, () => 1);
@@ -195,7 +243,7 @@ function finish(s: State) {
       reason: "모두 다이",
     };
   } else {
-    const verdict = showdown(live.map((seat) => ({ seat, cards: s.hands[seat] })));
+    const verdict = showdown(live.map((seat) => ({ seat, cards: handOf(s, seat) })));
     if (verdict.rematch) {
       // The pot stays; only the tied seats, or everyone after a 구사, play again.
       const again = verdict.voided ? live : verdict.winners;
@@ -246,8 +294,60 @@ export function start(state: State, random: Random = cryptoRandom): State | null
     ante(b);
     dealTo(s, contenders(b), random);
   }
+  s.open = s.open.map(() => null);
+  s.picks = s.picks.map(() => null);
+  s.second = false;
+  if (s.variant === "three") {
+    for (const seat of contenders(b)) if (seat !== 0) s.open[seat] = shown(s.hands[seat]);
+    // Seat 0 chooses which card to show before the first bet.
+    if (contenders(b).includes(0)) {
+      s.phase = "choosing";
+      return s;
+    }
+  }
+  openStreet(b, s.first);
+  if (b.turn === -1) afterStreet(s);
+  return s;
+}
+/** A betting round is over: deal the third card, or end the hand. */
+function afterStreet(s: State) {
+  const b = s.betting;
+  if (s.variant === "two" || s.second || contenders(b).length < 2) {
+    finish(s);
+    return;
+  }
+  s.second = true;
+  for (const seat of contenders(b)) {
+    s.hands[seat].push({ ...s.deck.pop()!, id: s.nextId++ });
+    if (seat !== 0) s.picks[seat] = bestPair(s.hands[seat]);
+  }
+  // Seat 0 looks at its third card and picks two before the last bet.
+  if (contenders(b).includes(0)) {
+    s.phase = "choosing";
+    return;
+  }
   openStreet(b, s.first);
   if (b.turn === -1) finish(s);
+}
+/** What seat 0 has to choose now, in the three-card game. */
+export function choices(state: State): "show" | "pick" | null {
+  if (state.phase !== "choosing") return null;
+  return state.hands[0].length === 2 ? "show" : "pick";
+}
+/** Seat 0 shows a card (index 0–1) or picks a pair (index into PAIRS). */
+export function choose(state: State, value: number): State | null {
+  const kind = choices(state);
+  if (!kind || !Number.isInteger(value) || value < 0 || value > (kind === "show" ? 1 : 2))
+    return null;
+  const s = clone(state);
+  if (kind === "show") s.open[0] = value;
+  else s.picks[0] = PAIRS[value];
+  s.phase = "betting";
+  openStreet(s.betting, s.first);
+  if (s.betting.turn === -1) {
+    if (kind === "show") afterStreet(s);
+    else finish(s);
+  }
   return s;
 }
 function nextSeat(b: Betting, from: number) {
@@ -262,7 +362,7 @@ export function act(state: State, action: Action): State | null {
   if (state.phase !== "betting" || state.betting.turn < 0) return null;
   const s = clone(state);
   if (!apply(s.betting, action)) return null;
-  if (s.betting.turn === -1) finish(s);
+  if (s.betting.turn === -1) afterStreet(s);
   return s;
 }
 export const potOf = (state: State) => pot(state.betting);

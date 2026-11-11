@@ -24,6 +24,7 @@ import {
   type PieceSymbol,
 } from "../games/chess/rules";
 import { ChessAIClient } from "../games/chess/client";
+import { TURN_DELAY_MS } from "../engine/camera";
 import { ChessView } from "../games/chess/view";
 import { Sound } from "../engine/sound";
 import { modal } from "./dialog";
@@ -433,6 +434,7 @@ export function mountChess(
     selected = target = cursor = null;
     aiError = "";
     view.render(engine());
+    faceMover();
     update();
     schedule();
   }
@@ -476,6 +478,14 @@ export function mountChess(
       update();
     }
   }
+  /** Two players at one screen: the table turns to whoever is to move. */
+  function faceMover(delay = 0) {
+    if (mode !== "local" || state.outcome || !view) return;
+    const mover = engine().turn();
+    if (mover === facing) return;
+    facing = mover;
+    view.setCamera(facing, top, delay);
+  }
   function accept(next: State) {
     state = next;
     selected = target = cursor = null;
@@ -484,6 +494,7 @@ export function mountChess(
     const game = engine(),
       last = snapshot().moves.at(-1);
     view?.render(game, last);
+    faceMover(TURN_DELAY_MS);
     update();
     if (state.outcome) {
       resultPending = true;

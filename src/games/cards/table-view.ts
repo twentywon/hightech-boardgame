@@ -208,7 +208,10 @@ const LAYOUTS: Record<"wide" | "square" | "compact" | "compactSquare", Layout> =
   },
 };
 const MINE_Z = 1.85,
-  RIVAL_Z = -1.9;
+  RIVAL_Z = -1.9,
+  // The pot sits between the rows, clear of seat 0's outline.
+  POT_Z = -0.2,
+  POT_LABEL_Z = 0.36;
 
 /** A felt table for seat 0 and up to three seats across from it. */
 export class CardTableView {
@@ -223,7 +226,15 @@ export class CardTableView {
   private cancelReady: (() => void) | null = null;
   private layout = LAYOUTS.wide;
   private model: TableView = { seats: [], pot: 0 };
-  private cards = new Map<number, { mesh: T.Mesh; faceUp: boolean }>();
+  private cards = new Map<number, { mesh: T.Mesh; faceUp: boolean; cover: T.Mesh | null }>();
+  private coverGeometry: T.PlaneGeometry;
+  private drag: { id: number; cover: T.Mesh; pointer: number; from: number } | null = null;
+  private slides: { cover: T.Mesh; start: number; from: number; to: number; done?: () => void }[] = [];
+  private flights = new T.Group();
+  private lastBets: number[] = [];
+  private lastPot = 0;
+  private ray = new T.Raycaster();
+  private plane = new T.Plane(new T.Vector3(0, 1, 0), -0.03);
   private tweens: Tween[] = [];
   private owned: { dispose(): void }[] = [];
   private cardGeometry: T.BoxGeometry;
@@ -246,8 +257,12 @@ export class CardTableView {
   onContact: () => void = () => {};
   /** Every animation finished and the plaques show the current table. */
   onSettled: () => void = () => {};
+  /** The person slid the cover off the card with this id. */
+  onPeek: (id: number) => void = () => {};
+  /** Chips started moving across the table. */
+  onChips: () => void = () => {};
   get animating() {
-    return this.tweens.length > 0;
+    return this.tweens.length > 0 || this.slides.length > 0;
   }
   get ready() {
     return this.readyFlag;
@@ -306,7 +321,7 @@ export class CardTableView {
       ),
     );
     marking.rotation.x = -Math.PI / 2;
-    marking.position.set(0, 0.004, -0.55);
+    marking.position.set(0, 0.004, -0.92);
     this.scene.add(marking);
     this.glow = new T.Mesh(
       this.own(new T.PlaneGeometry(1, 1)),
@@ -318,6 +333,7 @@ export class CardTableView {
     this.glow.visible = false;
     this.scene.add(this.glow);
     this.cardGeometry = this.own(new T.BoxGeometry(skin.width, 0.012, skin.height));
+    this.coverGeometry = this.own(new T.PlaneGeometry(skin.width, skin.height));
     this.back = this.paint((ctx, w, h) => skin.back(ctx, w, h));
     this.blank = this.paint((ctx, w, h) => {
       ctx.fillStyle = "#fbf8f0";
@@ -340,7 +356,8 @@ export class CardTableView {
       [this.edge, this.edge, this.back, this.edge, this.edge, this.edge],
     );
     this.deck.castShadow = true;
-    this.scene.add(this.deck, this.plaques, this.chips);
+    this.scene.add(this.deck, this.plaques, this.chips, this.flights);
+    this.bindCovers();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.resize();
@@ -424,14 +441,19 @@ export class CardTableView {
       now = performance.now(),
       { deck, discard } = this.layout;
     this.finish();
-    const targets = new Map<number, { face: string | null; at: T.Vector3; scale: number }>();
+    const targets = new Map<
+      number,
+      { face: string | null; at: T.Vector3; scale: number; covered: boolean }
+    >();
     model.seats.forEach((seat, s) => {
       const { x, z, width, scale } = this.row(s),
-        gap = this.gap(seat.cards.length, width, scale);
+        // A folded hand is squared up into a small pile.
+        gap = seat.folded ? 0.1 * scale : this.gap(seat.cards.length, width, scale);
       seat.cards.forEach((card, i) =>
         targets.set(card.id, {
           face: card.face,
           scale,
+          covered: !!card.covered,
           at: new T.Vector3(x + (i - (seat.cards.length - 1) / 2) * gap, 0.02 + i * 0.006, z),
         }),
       );
@@ -441,13 +463,17 @@ export class CardTableView {
       if (!targets.has(id)) {
         this.cards.delete(id);
         removed = true;
+        if (this.drag?.id === id) this.drag = null;
         const leave = () => this.scene.remove(entry.mesh);
         if (quick) leave();
         else this.tween(entry.mesh, now, 260, discard, entry.mesh.rotation.z, Math.PI, 0.15, false, leave);
       }
     let order = 0;
-    for (const [id, { face, at, scale }] of [...targets.entries()].sort(([a], [b]) => a - b)) {
+    for (const [id, { face, at, scale, covered }] of [...targets.entries()].sort(
+      ([a], [b]) => a - b,
+    )) {
       const existing = this.cards.get(id);
+      if (existing) this.setCover(id, existing, covered, quick);
       if (!existing) {
         const mesh = new T.Mesh(this.cardGeometry, [
           this.edge,
@@ -459,24 +485,34 @@ export class CardTableView {
         ]);
         mesh.castShadow = true;
         mesh.position.copy(deck);
-        mesh.rotation.z = Math.PI;
+        // A covered card travels face up under its cover, so it never flips.
+        mesh.rotation.z = covered ? 0 : Math.PI;
         mesh.scale.set(scale, 1, scale);
         this.setFace(mesh, face);
         this.scene.add(mesh);
-        this.cards.set(id, { mesh, faceUp: !!face });
-        this.tween(mesh, now + order++ * 130, 300, at, Math.PI, face ? 0 : Math.PI, 0.55, true);
+        const entry = { mesh, faceUp: !!face, cover: null };
+        this.cards.set(id, entry);
+        this.setCover(id, entry, covered, true);
+        this.tween(mesh, now + order++ * 130, 300, at, mesh.rotation.z, face ? 0 : Math.PI, 0.55, true);
       } else {
         existing.mesh.scale.set(scale, 1, scale);
         if (face && !existing.faceUp) {
           existing.faceUp = true;
           this.setFace(existing.mesh, face);
           this.tween(existing.mesh, now + order++ * 130, 340, at, Math.PI, 0, 0.5, true);
+        } else if (!face && existing.faceUp) {
+          // Folded: the card is turned face down where it lies.
+          existing.faceUp = false;
+          this.tween(existing.mesh, now + order++ * 60, 300, at, 0, Math.PI, 0.4, false, () =>
+            this.setFace(existing.mesh, null),
+          );
         } else if (existing.mesh.position.distanceToSquared(at) > 1e-6) {
           const flip = existing.mesh.rotation.z;
           this.tween(existing.mesh, now, 220, at, flip, flip, 0.08, false);
         }
       }
     }
+    this.moveChips(quick, now);
     this.dressTable();
     if (quick) this.finish();
     if (!this.tweens.length) this.settle();
@@ -495,11 +531,156 @@ export class CardTableView {
   ) {
     this.tweens.push({ mesh, start, duration, from: mesh.position.clone(), to: to.clone(), fromFlip, toFlip, lift, contact, done });
   }
+  /** Shows or removes the cover that hides a card until the person slides it off. */
+  private setCover(
+    id: number,
+    entry: { mesh: T.Mesh; cover: T.Mesh | null },
+    covered: boolean,
+    quick: boolean,
+  ) {
+    if (covered && !entry.cover) {
+      const cover = new T.Mesh(this.coverGeometry, this.back);
+      cover.rotation.x = -Math.PI / 2;
+      cover.position.y = 0.014;
+      cover.userData.id = id;
+      entry.mesh.add(cover);
+      entry.cover = cover;
+    } else if (!covered && entry.cover) {
+      const cover = entry.cover;
+      entry.cover = null;
+      if (this.drag?.id === id) this.drag = null;
+      const gone = () => entry.mesh.remove(cover);
+      // The cover slides the rest of the way off toward the player.
+      if (quick) gone();
+      else
+        this.slides.push({
+          cover,
+          start: performance.now(),
+          from: cover.position.z,
+          to: this.skin.height * 1.15,
+          done: gone,
+        });
+    }
+  }
+  /** Sliding a cover with the pointer: down the table, toward seat 0. */
+  private bindCovers() {
+    const canvas = this.renderer.domElement;
+    const spot = (e: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      this.ray.setFromCamera(
+        new T.Vector2(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          (-(e.clientY - rect.top) / rect.height) * 2 + 1,
+        ),
+        this.camera,
+      );
+      const hit = new T.Vector3();
+      return this.ray.ray.intersectPlane(this.plane, hit) ? hit : null;
+    };
+    canvas.addEventListener("pointerdown", (e) => {
+      if (this.disposed || this.drag || (e.pointerType === "mouse" && e.button !== 0)) return;
+      const covers = [...this.cards.values()].flatMap((c) => (c.cover ? [c.cover] : []));
+      if (!covers.length || !spot(e)) return;
+      const hit = this.ray.intersectObjects(covers)[0];
+      if (!hit) return;
+      const cover = hit.object as T.Mesh,
+        at = spot(e)!;
+      this.slides = this.slides.filter((s) => s.cover !== cover);
+      this.drag = { id: cover.userData.id as number, cover, pointer: e.pointerId, from: at.z - cover.position.z };
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    canvas.addEventListener("pointermove", (e) => {
+      if (!this.drag || this.drag.pointer !== e.pointerId) return;
+      const at = spot(e);
+      if (!at) return;
+      this.drag.cover.position.z = Math.max(0, Math.min(this.skin.height * 1.05, at.z - this.drag.from));
+      this.dirty = true;
+    });
+    const release = (e: PointerEvent) => {
+      if (!this.drag || this.drag.pointer !== e.pointerId) return;
+      const { id, cover } = this.drag;
+      this.drag = null;
+      if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      // Past half way counts as looking; otherwise the cover springs back.
+      if (cover.position.z > this.skin.height * 0.5) this.onPeek(id);
+      else this.slides.push({ cover, start: performance.now(), from: cover.position.z, to: 0 });
+    };
+    canvas.addEventListener("pointerup", release);
+    canvas.addEventListener("pointercancel", release);
+  }
+  /** Where a seat's chips enter and leave the table. */
+  private chipSpot(seat: number) {
+    const { x, z, scale } = this.row(seat),
+      reach = (this.skin.height * scale) / 2 + 0.55;
+    return new T.Vector3(x, 0.05, seat === 0 ? z - reach : z + reach);
+  }
+  /** Chips fly to the pot when a seat bets and from it when the pot is paid. */
+  private moveChips(quick: boolean, now: number) {
+    const model = this.model,
+      pot = new T.Vector3(0, 0.05, POT_Z),
+      fly = (from: T.Vector3, to: T.Vector3, amount: number, delay: number) => {
+        const count = Math.min(4, Math.max(1, Math.round(amount / 100)));
+        for (let i = 0; i < count; i++) {
+          const kind = amount >= 500 ? 0 : amount >= 100 ? 1 : amount >= 50 ? 2 : 3,
+            chip = new T.Mesh(this.chipGeometry, this.chipMaterials[kind]);
+          chip.position.copy(from);
+          chip.rotation.y = Math.PI / 2;
+          chip.castShadow = true;
+          chip.visible = false;
+          this.flights.add(chip);
+          this.tweens.push({
+            mesh: chip,
+            start: now + delay + i * 70,
+            duration: 380,
+            from: from.clone(),
+            to: to.clone().add(new T.Vector3((i - (count - 1) / 2) * 0.12, 0, 0)),
+            fromFlip: 0,
+            toFlip: 0,
+            lift: 0.7,
+            contact: false,
+            done: () => this.flights.remove(chip),
+          });
+        }
+      };
+    let moved = false;
+    if (!quick) {
+      model.seats.forEach((seat, s) => {
+        const before = this.lastBets[s] ?? 0,
+          // A smaller figure means a new hand began: the whole stake is new.
+          added = seat.bet < before ? seat.bet : seat.bet - before;
+        if (added > 0 && model.pot > 0) {
+          fly(this.chipSpot(s), pot, added, 0);
+          moved = true;
+        }
+      });
+      if (this.lastPot > 0 && model.pot === 0) {
+        const winners = model.seats.flatMap((seat, s) => (seat.tone === "win" ? [s] : []));
+        winners.forEach((s) => fly(pot, this.chipSpot(s), this.lastPot / winners.length, 250));
+        moved ||= winners.length > 0;
+      }
+    } else this.flights.clear();
+    this.lastBets = model.seats.map((seat) => seat.bet);
+    this.lastPot = model.pot;
+    if (moved) this.onChips();
+  }
   private step(now: number) {
+    if (this.slides.length) {
+      this.slides = this.slides.filter((s) => {
+        const p = Math.min(1, (now - s.start) / 220);
+        s.cover.position.z = s.from + (s.to - s.from) * p * (2 - p);
+        if (p < 1) return true;
+        s.done?.();
+        return false;
+      });
+      this.dirty = true;
+      if (!this.slides.length && !this.tweens.length) this.settle();
+    }
     if (!this.tweens.length) return false;
     this.tweens = this.tweens.filter((t) => {
       const p = Math.min(1, (now - t.start) / t.duration);
       if (p < 0) return true;
+      t.mesh.visible = true;
       const e = p * p * (3 - 2 * p);
       t.mesh.position.lerpVectors(t.from, t.to, e);
       t.mesh.position.y += Math.sin(Math.PI * p) * t.lift;
@@ -519,6 +700,11 @@ export class CardTableView {
       t.done?.();
     }
     this.tweens = [];
+    for (const s of this.slides) {
+      s.cover.position.z = s.to;
+      s.done?.();
+    }
+    this.slides = [];
   }
   private settle() {
     this.showPlaques(true);
@@ -544,7 +730,7 @@ export class CardTableView {
         mesh.position.set(
           (Math.floor(placed / 7) - (columns - 1) / 2) * 0.52,
           0.035 + (placed % 7) * 0.062,
-          0.35,
+          POT_Z,
         );
         mesh.rotation.y = Math.PI / 2;
         mesh.castShadow = true;
@@ -557,7 +743,11 @@ export class CardTableView {
       const { x, z, width, scale } = this.row(active),
         n = Math.max(1, this.model.seats[active].cards.length),
         w = this.skin.width * scale;
-      this.glow.scale.set((w + this.gap(n, width, scale) * (n - 1)) * 1.32 + 0.5, this.skin.height * scale * 1.75, 1);
+      this.glow.scale.set(
+        (w + this.gap(n, width, scale) * (n - 1)) * 1.32 + 0.5,
+        this.skin.height * scale * 1.5,
+        1,
+      );
       this.glow.position.set(x, 0.006, z);
     }
   }
@@ -596,7 +786,7 @@ export class CardTableView {
       );
     });
     if (this.model.pot > 0)
-      add(`판돈 ${this.model.pot.toLocaleString("ko-KR")}`, "neutral", 0, 0.95, 0.8);
+      add(`판돈 ${this.model.pot.toLocaleString("ko-KR")}`, "neutral", 0, POT_LABEL_Z, 0.8);
   }
   dispose() {
     if (this.disposed) return;

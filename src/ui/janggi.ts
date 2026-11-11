@@ -23,6 +23,7 @@ import {
 import { profiles } from "../games/janggi/ai";
 import { JanggiAIClient } from "../games/janggi/client";
 import { JanggiView } from "../games/janggi/view";
+import { TURN_DELAY_MS } from "../engine/camera";
 import { difficulties, type ColorChoice, type Difficulty } from "../core/ai";
 import { Sound } from "../engine/sound";
 import { modal } from "./dialog";
@@ -33,7 +34,10 @@ export interface JanggiOptions {
   difficulty: Difficulty;
   /** "black" is Cho (moves first), "white" is Han. */
   color: ColorChoice;
+  /** My formation against the computer; Cho's (player 1) in a local game. */
   formation: Formation;
+  /** Han's (player 2) formation in a local game. */
+  rivalFormation: Formation;
 }
 interface Navigation {
   header: () => string;
@@ -116,7 +120,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     stop();
     const option = (value: string, label: string, current: string) =>
       `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`;
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>장기 <span>Janggi</span></h2><p>초와 한, 아홉 줄 열 칸의 전장.<br>궁을 지키고 상대의 궁을 외통으로 몰아넣으세요.</p><ul class="rule-list"><li>초가 먼저 둡니다</li><li>포는 기물 하나를 넘어야 움직입니다</li><li>둘 곳이 마땅치 않으면 한 수 쉴 수 있습니다</li></ul><div class="game-meta">2인 · 9×10 · 기물 32개</div><div class="mode-select"><label><input type="radio" name="jg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="jg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options"><label>상차림<select id="jg-formation">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.formation)).join("")}</select></label><label id="jg-level">AI 난이도<select id="jg-difficulty">${difficulties.map((d) => option(d, profiles[d].label, preferences.difficulty)).join("")}</select></label><label id="jg-side">내 진영<select id="jg-color">${option("black", "초 (선공)", preferences.color)}${option("white", "한 (후공)", preferences.color)}${option("random", "무작위", preferences.color)}</select></label><small>상차림은 궁 양옆의 마와 상 순서입니다. 선택한 설정은 새 대국부터 적용됩니다.</small></div><button id="jg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art janggi-art" role="img" aria-label="장기판 미리보기"><div class="jg-mini">${["車", "馬", "象", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="han">${g}</b>` : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="han big">漢</b>' : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="cho big">楚</b>' : ""}</i>`).join("")}${["車", "象", "馬", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="cho">${g}</b>` : ""}</i>`).join("")}</div><span>CHO AND HAN, ACROSS THE BOARD</span></div></section>`;
+    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>장기 <span>Janggi</span></h2><p>초와 한, 아홉 줄 열 칸의 전장.<br>궁을 지키고 상대의 궁을 외통으로 몰아넣으세요.</p><ul class="rule-list"><li>초가 먼저 둡니다</li><li>포는 기물 하나를 넘어야 움직입니다</li><li>둘 곳이 마땅치 않으면 한 수 쉴 수 있습니다</li></ul><div class="game-meta">2인 · 9×10 · 기물 32개</div><div class="mode-select"><label><input type="radio" name="jg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="jg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options"><label><span id="jg-formation-label">상차림</span><select id="jg-formation" aria-labelledby="jg-formation-label">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.formation)).join("")}</select></label><label id="jg-rival">한(2P) 상차림<select id="jg-formation-2">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.rivalFormation)).join("")}</select></label><label id="jg-level">AI 난이도<select id="jg-difficulty">${difficulties.map((d) => option(d, profiles[d].label, preferences.difficulty)).join("")}</select></label><label id="jg-side">내 진영<select id="jg-color">${option("black", "초 (선공)", preferences.color)}${option("white", "한 (후공)", preferences.color)}${option("random", "무작위", preferences.color)}</select></label><small>상차림은 궁 양옆의 마와 상 순서이며 각자 자기 쪽에서 본 왼쪽부터입니다. 선택한 설정은 새 대국부터 적용됩니다.</small></div><button id="jg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art janggi-art" role="img" aria-label="장기판 미리보기"><div class="jg-mini">${["車", "馬", "象", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="han">${g}</b>` : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="han big">漢</b>' : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="cho big">楚</b>' : ""}</i>`).join("")}${["車", "象", "馬", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="cho">${g}</b>` : ""}</i>`).join("")}</div><span>CHO AND HAN, ACROSS THE BOARD</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=jg-mode]");
     const remember = () => {
       preferences = {
@@ -124,16 +128,25 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
         difficulty: $<HTMLSelectElement>("jg-difficulty").value as Difficulty,
         color: $<HTMLSelectElement>("jg-color").value as ColorChoice,
         formation: $<HTMLSelectElement>("jg-formation").value as Formation,
+        rivalFormation: $<HTMLSelectElement>("jg-formation-2").value as Formation,
       };
-      $("jg-level").hidden = $("jg-side").hidden = preferences.mode !== "ai";
+      arrange();
       nav.remember({ ...preferences });
+    };
+    // Two local players each pick a formation; against the computer only mine is asked.
+    const arrange = () => {
+      const local = preferences.mode !== "ai";
+      $("jg-level").hidden = $("jg-side").hidden = local;
+      $("jg-rival").hidden = !local;
+      $("jg-formation-label").textContent = local ? "초(1P) 상차림" : "내 상차림";
     };
     radios.forEach((r) => {
       r.checked = r.value === preferences.mode;
       r.onchange = remember;
     });
-    $("jg-level").hidden = $("jg-side").hidden = preferences.mode !== "ai";
-    for (const id of ["jg-difficulty", "jg-color", "jg-formation"]) $(id).onchange = remember;
+    arrange();
+    for (const id of ["jg-difficulty", "jg-color", "jg-formation", "jg-formation-2"])
+      $(id).onchange = remember;
     $("jg-start").onclick = start;
   }
   function start() {
@@ -148,9 +161,11 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
           : "cho";
     facing = mode === "ai" ? human : "cho";
     top = false;
-    // In a local game both sides use the chosen formation; the computer picks its own.
+    // Two local players each chose a formation; the computer picks its own.
     const rival =
-      mode === "ai" ? FORMATIONS[Math.floor(Math.random() * FORMATIONS.length)] : preferences.formation;
+      mode === "ai"
+        ? FORMATIONS[Math.floor(Math.random() * FORMATIONS.length)]
+        : preferences.rivalFormation;
     state =
       mode === "ai" && human === "han"
         ? createGame(rival, preferences.formation)
@@ -286,8 +301,15 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     hintAI.cancel();
     hinting = false;
     view?.render(state.board, last);
+    faceMover(TURN_DELAY_MS);
     update();
     schedule();
+  }
+  /** Two players at one screen: the board turns to whoever is to move. */
+  function faceMover(delay = 0) {
+    if (mode !== "local" || state.outcome || !view || state.turn === facing) return;
+    facing = state.turn;
+    view.setCamera(facing, top, delay);
   }
   /** How many moves one press of 무르기 takes back; 0 when it is unavailable. */
   function undoCount() {
@@ -307,6 +329,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     selected = target = cursor = null;
     aiError = "";
     view.render(state.board, null, false);
+    faceMover();
     update();
     schedule();
   }

@@ -1877,3 +1877,6 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
 @media (max-width: 760px) {
   .jg-mini { transform: scale(0.82) rotateX(38deg) rotateZ(-12deg); }
 }
+#yd-roll { min-height: 54px; border-radius: 12px; font-size: 15px; font-weight: 600; }
+.bg-prompt button { justify-content: center; text-align: center; }
+.bg-prompt::before { content: attr(aria-label); font-size: 13px; font-weight: 600; color: var(--ink-soft); }

@@ -280,9 +280,12 @@ test("chess planned-move repetition claim ends the game without executing the de
     await move(page, from, to, info);
   await tap(page, "f6", info);
   await page.locator("canvas").focus();
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowUp");
-  await page.keyboard.press("ArrowUp");
+  // Black is to move, so the table has turned: from Black's seat g8 lies
+  // one file to the left and two ranks toward the player.
+  await expect(page.locator("#board")).toHaveAttribute("data-facing", "b");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
   await expect(page.locator("#chess-claim-info")).toContainText("예정 수");
   await page.getByRole("button", { name: "무승부 청구", exact: true }).click();
   await expect(page.locator("#turn")).toContainText("무승부");

@@ -3,7 +3,7 @@ import { createDeck } from "../blackjack/shoe";
 import { options, pot } from "../cards/betting";
 import { NAMES, type BettingGame, type Tone } from "../cards/game";
 import { wager } from "../cards/judgement";
-import { act, createSession, evaluate, start, type Card, type State } from "./rules";
+import { act, choose, createSession, evaluate, start, type Card, type State } from "./rules";
 
 const SUIT = { S: "♠", H: "♥", D: "♦", C: "♣" } as const;
 export const faceOf = (c: Card) => `${c.rank}${c.suit}`;
@@ -49,6 +49,14 @@ export const poker: BettingGame<State> = {
   create: (opponents) => createSession(opponents),
   start,
   act,
+  choose,
+  prompt: (s) =>
+    s.phase === "choosing"
+      ? {
+          title: "상대에게 공개할 카드를 고르세요",
+          options: s.hands[0].map((c, i) => ({ label: `${cardText(c)} 공개`, value: i })),
+        }
+      : null,
   phase: (s) => s.phase,
   turn: (s) => (s.phase === "betting" ? s.betting.turn : -1),
   options: (s) => (s.phase === "betting" ? options(s.betting) : null),
@@ -58,7 +66,8 @@ export const poker: BettingGame<State> = {
   view(s) {
     const over = s.phase === "handOver" || s.phase === "sessionOver";
     return {
-      pot: pot(s.betting),
+      // Once the pot has been paid it is no longer on the table.
+      pot: over ? 0 : pot(s.betting),
       seats: s.betting.seats.map((seat, i) => {
         const cards = s.hands[i],
           // Face-down cards of other seats open only at a showdown they reached.
@@ -80,17 +89,18 @@ export const poker: BettingGame<State> = {
               : seat.allIn && cards.length
                 ? "올인"
                 : "",
-          cards: seat.folded
-            ? []
-            : cards.map((c) => {
-                const open = c.up || i === 0 || revealed;
-                return {
-                  id: c.id,
-                  face: open ? faceOf(c) : null,
-                  text: open ? cardText(c) : "",
-                  secret: i === 0 && !c.up && !over,
-                };
-              }),
+          cards: cards.map((c, k) => {
+            // A folded hand lies face down, mine included.
+            const open = !seat.folded && (c.up || i === 0 || revealed);
+            return {
+              id: c.id,
+              face: open ? faceOf(c) : null,
+              text: open ? cardText(c) : "",
+              secret: i === 0 && !seat.folded && !c.up && !over && s.phase !== "choosing",
+              // The seventh card arrives face down for the person to uncover.
+              peek: i === 0 && k === 6 && !seat.folded && !over,
+            };
+          }),
         };
       }),
     };

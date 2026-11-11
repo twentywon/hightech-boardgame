@@ -34,7 +34,9 @@ test("local undo takes back one stone at a time and is saved", async ({ page }) 
   const undo = page.getByRole("button", { name: "무르기", exact: true });
   await expect(undo).toBeDisabled();
   await enter(page, "1수");
-  await aim(page, "ArrowRight", "I8");
+  // White sits across the table: the view has turned, so right is now G.
+  await expect(page.locator("#board")).toHaveAttribute("data-flipped", "true");
+  await aim(page, "ArrowRight", "G8");
   await enter(page, "2수");
   await undo.click();
   await expect(count(page)).toHaveText("1수");
@@ -247,4 +249,70 @@ test("Chess undo and hint: take back a move, then play the suggested move", asyn
   }).toPass({ timeout: 15000 });
   await expect(page.locator("#turn")).toContainText("백의 차례");
   expect(errors).toEqual([]);
+});
+
+test("local two-player tables turn half way round to the player to move", async ({ page }) => {
+  test.setTimeout(120000);
+  const board = page.locator("#board");
+  const calm = () => expect(board).toHaveAttribute("data-animating", "false", { timeout: 15000 });
+  // Gomoku: white sees the table from the far side, black gets it back.
+  await page.goto("/");
+  await sit(page);
+  await expect(board).toHaveAttribute("data-flipped", "false");
+  await enter(page, "1수");
+  await expect(board).toHaveAttribute("data-flipped", "true");
+  await aim(page, "ArrowUp", "H9");
+  await enter(page, "2수");
+  await expect(board).toHaveAttribute("data-flipped", "false");
+  // A take-back turns the table back to the player whose move it undid.
+  await page.getByRole("button", { name: "무르기", exact: true }).click();
+  await expect(count(page)).toHaveText("1수");
+  await expect(board).toHaveAttribute("data-flipped", "true");
+  // Against the computer the table never turns.
+  await page.getByRole("button", { name: "World Table Games 홈" }).click();
+  await sit(page, true);
+  await enter(page, "1수");
+  await expect(count(page)).toHaveText("2수", { timeout: 20000 });
+  await expect(board).toHaveAttribute("data-flipped", "false");
+  // Reversi.
+  await page.getByRole("button", { name: "World Table Games 홈" }).click();
+  await selectGame(page, "리버시");
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await page.locator("canvas").focus();
+  await enter(page, "1수");
+  await expect(board).toHaveAttribute("data-flipped", "true");
+  // Chess: after White's move the board faces Black.
+  await page.getByRole("button", { name: "World Table Games 홈" }).click();
+  await selectGame(page, "체스");
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(board).toHaveAttribute("data-facing", "w");
+  await page.locator("canvas").focus();
+  await expect(async () => {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#confirm")).toHaveText("도착 칸을 선택하세요", { timeout: 300 });
+  }).toPass({ timeout: 15000 });
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await page.locator("#confirm").click();
+  await expect(count(page)).toHaveText("1수");
+  await expect(board).toHaveAttribute("data-facing", "b");
+  await calm();
+  // Janggi: after Cho's move the board faces Han.
+  await page.getByRole("button", { name: "World Table Games 홈" }).click();
+  await selectGame(page, "장기");
+  await page.getByRole("button", { name: /테이블에 앉기/ }).click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(board).toHaveAttribute("data-facing", "cho");
+  await page.locator("canvas").focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Enter");
+  await expect(count(page)).toHaveText("1수");
+  await expect(board).toHaveAttribute("data-facing", "han");
+  await calm();
+  // From Han's seat "up" is toward Cho: the centre soldier steps forward.
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#confirm")).toHaveText("병 45→55 이동 확정");
 });

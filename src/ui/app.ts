@@ -62,14 +62,15 @@ let janggiOptions: JanggiOptions = {
   difficulty: "normal",
   color: "black",
   formation: "NENE",
+  rivalFormation: "NENE",
 };
 // Kept for this page only, per betting game.
 const bettingOptions: Record<string, BettingOptions> = {
-  seotda: { opponents: 2, difficulty: "normal" },
-  "seven-poker": { opponents: 3, difficulty: "normal" },
+  seotda: { opponents: 2, variant: "two" },
+  "seven-poker": { opponents: 3 },
 };
 // Kept for this page only, like the chess preferences.
-let yachtOptions: YachtOptions = { mode: "solo", difficulty: "normal" };
+let yachtOptions: YachtOptions = { mode: "solo" };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
 // Hints run in their own Worker so they never cancel the opponent's search.
@@ -317,6 +318,7 @@ function game() {
     view.setLabels(settings.labels);
     view.renderState(state, false);
     if (settings.top) view.setCamera(true);
+    view.setFacing(flipped(), false);
     const canvas = view.renderer.domElement;
     canvas.tabIndex = 0;
     canvas.addEventListener("keydown", (e) => {
@@ -330,10 +332,12 @@ function game() {
       };
       if (directions[e.key]) {
         e.preventDefault();
-        const [r, c] = directions[e.key];
+        // From the far side of the table the arrows point the other way.
+        const [r, c] = directions[e.key],
+          sign = flipped() ? -1 : 1;
         candidate = {
-          row: Math.max(0, Math.min(14, p.row + r)),
-          col: Math.max(0, Math.min(14, p.col + c)),
+          row: Math.max(0, Math.min(14, p.row + r * sign)),
+          col: Math.max(0, Math.min(14, p.col + c * sign)),
         };
         view?.preview(candidate, state.turn);
         update();
@@ -403,8 +407,8 @@ function undoCount() {
 }
 function takeBack() {
   const count = undoCount();
-  if (!count || !view || view.moving || document.querySelector("dialog[open]"))
-    return;
+  // A take-back may come while the table is still turning to the next player.
+  if (!count || !view || document.querySelector("dialog[open]")) return;
   const previous = undo(state, count);
   if (!previous) return;
   // Drop any search for the abandoned position before replacing the state.
@@ -533,8 +537,12 @@ window.addEventListener("pageshow", (event) => {
   }
 });
 
+/** Two players at one screen: white sees the table from the far side. */
+const flipped = () => mode === "local" && state.turn === 2;
 function update() {
   if (!document.getElementById("turn")) return;
+  if (!state.winner) view?.setFacing(flipped());
+  $("board").dataset.flipped = String(flipped());
   $("turn").innerHTML =
     `<i class="stone ${state.turn === 1 ? "black" : "white"}"></i><span>${state.winner ? (state.winner === "draw" ? "무승부" : `${state.winner === 1 ? "흑" : "백"}돌 승리`) : isAITurn() ? "컴퓨터가 생각 중…" : `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`}</span>`;
   if (aiError && !state.winner) {

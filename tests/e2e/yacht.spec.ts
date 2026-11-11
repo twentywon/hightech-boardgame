@@ -64,7 +64,8 @@ test("yacht dice opens inline; roll, keep, score, and a whole solo game", async 
   await expect(page.getByRole("region", { name: "요트 다이스 대국 설정" })).toBeVisible();
   await expect(page.getByRole("img", { name: "요트 다이스 테이블 미리보기" })).toBeVisible();
   await expect(page.getByLabel("혼자 하기", { exact: true })).toBeChecked();
-  await expect(page.getByLabel("AI 난이도")).toBeHidden();
+  // The computer has one fixed strength and there is no hint.
+  await expect(page.getByLabel("AI 난이도")).toHaveCount(0);
   await expect(page.locator("canvas")).toHaveCount(0);
   expect(page.url()).toBe(url);
   await page.screenshot({ path: `test-results/${info.project.name}-yacht-setup.png`, fullPage: true });
@@ -75,8 +76,7 @@ test("yacht dice opens inline; roll, keep, score, and a whole solo game", async 
   // Nothing can be kept or scored before the first roll.
   await expect(die(page, 0)).toBeDisabled();
   await expect(page.locator(".yd-pick")).toHaveCount(0);
-  await button(page, "힌트").click();
-  await expect(page.locator("#yd-note")).toContainText("먼저 주사위를 굴리세요");
+  await expect(button(page, "힌트")).toHaveCount(0);
   // A double click rolls once.
   await rollButton(page).dblclick();
   await settled(page);
@@ -145,7 +145,7 @@ test("yacht dice opens inline; roll, keep, score, and a whole solo game", async 
   expect(foreign).toEqual([]);
 });
 
-test("the computer takes its own turn; hints advise; leaving drops the turn in progress", async ({
+test("the computer takes its own turn; leaving drops the turn in progress", async ({
   page,
 }) => {
   test.setTimeout(120000);
@@ -155,15 +155,11 @@ test("the computer takes its own turn; hints advise; leaving drops the turn in p
   await page.goto("/");
   await selectGame(page, "요트 다이스");
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
-  await expect(page.getByLabel("AI 난이도")).toHaveValue("normal");
-  await page.getByLabel("AI 난이도").selectOption("expert");
   await button(page, /테이블에 앉기/).click();
   await settled(page);
-  await expect(page.locator(".yd-sheet thead")).toContainText("컴퓨터 · 전문가");
+  await expect(page.locator(".yd-sheet thead")).toContainText("컴퓨터");
+  await expect(page.locator(".yd-sheet thead")).not.toContainText("보통");
   await rollOnce(page);
-  await button(page, "힌트").click();
-  await expect(page.locator("#yd-note")).toContainText("추천: 요트에 50점 기록");
-  await expect(page.locator('[data-category="yacht"] .yd-pick')).toHaveClass(/hinted/);
   await button(page, "요트에 50점 기록").click();
   // The computer rolls 2 3 4 6 6 and plays on by itself; my controls wait.
   await expect(turn(page)).toContainText("컴퓨터", { timeout: 10000 });
@@ -185,10 +181,9 @@ test("the computer takes its own turn; hints advise; leaving drops the turn in p
   await button(page, /테이블에 앉기/).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
   await button(page, "World Table Games 홈").click();
-  // The mode and level chosen earlier are remembered for this page; the game is new.
+  // The mode chosen earlier is remembered for this page; the game is new.
   await selectGame(page, "요트 다이스");
   await expect(page.getByLabel("컴퓨터 대전", { exact: true })).toBeChecked();
-  await expect(page.getByLabel("AI 난이도")).toHaveValue("expert");
   await page.getByLabel("로컬 2인", { exact: true }).check();
   await button(page, /테이블에 앉기/).click();
   await settled(page);

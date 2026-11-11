@@ -92,3 +92,22 @@ export function cameraDistance(
   cache.set(key, far);
   return far;
 }
+
+/** How long turning the table to the other player takes, and the pause before it. */
+export const TURN_MS = 700;
+export const TURN_DELAY_MS = 350;
+/**
+ * Camera position `t` of the way from `from` to `to`, travelling around the
+ * table's vertical axis rather than straight through it, so a half turn to
+ * the opposite side never passes over the top of the board.
+ */
+export function orbit(out: Vector3, from: Vector3, to: Vector3, t: number) {
+  const start = Math.atan2(from.x, from.z);
+  let sweep = Math.atan2(to.x, to.z) - start;
+  if (sweep > Math.PI) sweep -= Math.PI * 2;
+  if (sweep < -Math.PI) sweep += Math.PI * 2;
+  const r0 = Math.hypot(from.x, from.z),
+    r = r0 + (Math.hypot(to.x, to.z) - r0) * t,
+    angle = start + sweep * t;
+  return out.set(Math.sin(angle) * r, from.y + (to.y - from.y) * t, Math.cos(angle) * r);
+}
