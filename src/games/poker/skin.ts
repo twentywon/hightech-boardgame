@@ -3,12 +3,30 @@ import type { BettingConfig } from "../../ui/betting-game";
 import { poker } from "./game";
 import { ANTE, START_CHIPS, type State } from "./rules";
 
+// The card pictures, inlined so the game still needs no network requests.
+const pictures = new Map<string, HTMLImageElement>();
+const sources = import.meta.glob<string>("./cards/*.webp", {
+  query: "?inline",
+  import: "default",
+  eager: true,
+});
+// Decoded once when the app loads, long before a table is opened.
+if (typeof Image !== "undefined")
+  for (const [path, url] of Object.entries(sources)) {
+    const image = new Image();
+    image.src = url;
+    pictures.set(path.match(/(\w+)\.webp$/)![1], image);
+  }
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const SYMBOL = '"Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif';
+/**
+ * English-pattern cards from Wikimedia Commons (see public/cards-license.txt);
+ * a plain drawn face stands in for a picture that has not decoded.
+ */
 export const pokerSkin: CardSkin = {
   width: 1,
-  height: 1.4,
-  pixels: [300, 420],
+  height: 1.5,
+  pixels: [280, 420],
   lines: ["세븐 포커", "일곱 장 가운데 다섯 장으로 겨룹니다"],
   back(ctx, w, h) {
     ctx.fillStyle = "#f4efe2";
@@ -35,6 +53,13 @@ export const pokerSkin: CardSkin = {
   face(ctx, w, h, key) {
     const suit = key.slice(-1),
       rank = key.slice(0, -1);
+    const image = pictures.get(key);
+    if (image?.complete && image.naturalWidth) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(image, 0, 0, w, h);
+      return;
+    }
     ctx.fillStyle = "#fbf8f0";
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "#cfc8b8";

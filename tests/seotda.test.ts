@@ -328,7 +328,7 @@ describe("Three-card seotda", () => {
     expect(view.seats[2].cards.map((c) => c.text)).toEqual(["2", ""]);
     expect(JSON.stringify(view.seats.slice(1))).not.toMatch(/1광|1g|"5"|5p/);
   });
-  it("deals a third card after the first round, to be uncovered and picked from", () => {
+  it("deals a third card after the first round; seat 0 picks its two after the last bet", () => {
     let s = S.choose(S.start(S.createSession(2, "three"), dealing(deal3))!, 1)!;
     for (let i = 0; i < 3; i++) s = S.act(s, "call")!;
     expect(s.hands.map((h) => h.map(cardText))).toEqual([
@@ -336,23 +336,29 @@ describe("Three-card seotda", () => {
       ["1", "1광", "4"],
       ["2", "5", "9"],
     ]);
+    // The second round is bet on three cards; nothing is picked yet.
+    expect(s).toMatchObject({ phase: "betting", second: true });
+    expect(S.choices(s)).toBeNull();
+    expect(S.choose(s, 0)).toBeNull();
+    expect(seotda.view(s).seats[0].cards.map((c) => !!c.peek)).toEqual([false, false, true]);
+    // Until then my seat names the best hand my cards can make.
+    expect(seotda.view(s).seats[0].note).toBe("38광땡");
+    // The computers already hold their best two.
+    expect(S.handOf(s, 1).map(cardText)).toEqual(["1", "1광"]);
+    expect(S.handOf(s, 2).map(cardText)).toEqual(["2", "5"]);
+    for (let i = 0; i < 3; i++) s = S.act(s, "call")!;
+    // Only after the last bet does seat 0 choose its two cards.
     expect(s).toMatchObject({ phase: "choosing", second: true });
     expect(S.choices(s)).toBe("pick");
-    expect(seotda.view(s).seats[0].cards.map((c) => !!c.peek)).toEqual([false, false, true]);
     expect(seotda.prompt(s)!.options.map((o) => o.label)).toEqual([
       "3광 · 8광 — 38광땡",
       "3광 · 10 — 3끗",
       "8광 · 10 — 8끗",
     ]);
-    // The computers already hold their best two.
-    expect(S.handOf(s, 1).map(cardText)).toEqual(["1", "1광"]);
-    expect(S.handOf(s, 2).map(cardText)).toEqual(["2", "5"]);
     const worse = S.choose(s, 2)!;
     expect(S.handOf(worse, 0).map(cardText)).toEqual(["8광", "10"]);
-    expect(seotda.view(worse).seats[0].note).toBe("8끗");
-    let done = S.choose(s, 0)!;
-    expect(done).toMatchObject({ phase: "betting", second: true });
-    for (let i = 0; i < 3; i++) done = S.act(done, "call")!;
+    expect(worse.result).toMatchObject({ winners: [1], shown: ["8끗", "1땡", "7끗"] });
+    const done = S.choose(s, 0)!;
     expect(done.phase).toBe("handOver");
     expect(done.result).toMatchObject({ winners: [0], shown: ["38광땡", "1땡", "7끗"], net: [20, -10, -10] });
     // Every card of a hand that reached the showdown is opened.

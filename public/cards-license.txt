@@ -1,0 +1,9 @@
+Playing card images in Seven-Card Stud
+
+The fifty-two card faces are reduced-size renderings of the SVG files
+"English pattern <rank> of <suit>.svg" from Wikimedia Commons, by Dmitry Fomin
+(Дмитрий Фомин), released under the Creative Commons CC0 1.0 Universal Public
+Domain Dedication, https://creativecommons.org/publicdomain/zero/1.0/
+
+Source: https://commons.wikimedia.org/wiki/Category:English_pattern_playing_cards
+Changes: rendered at 250 px width on a white ground and re-encoded as WebP.

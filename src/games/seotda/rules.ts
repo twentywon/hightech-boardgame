@@ -309,11 +309,23 @@ export function start(state: State, random: Random = cryptoRandom): State | null
   if (b.turn === -1) afterStreet(s);
   return s;
 }
+/**
+ * The last bet is in. In the three-card game seat 0 now picks the two cards
+ * it plays, if it still has someone to show them to; then the hand ends.
+ */
+function conclude(s: State) {
+  const live = contenders(s.betting);
+  if (s.variant === "three" && live.length > 1 && live.includes(0) && s.hands[0].length === 3 && !s.picks[0]) {
+    s.phase = "choosing";
+    return;
+  }
+  finish(s);
+}
 /** A betting round is over: deal the third card, or end the hand. */
 function afterStreet(s: State) {
   const b = s.betting;
   if (s.variant === "two" || s.second || contenders(b).length < 2) {
-    finish(s);
+    conclude(s);
     return;
   }
   s.second = true;
@@ -321,13 +333,9 @@ function afterStreet(s: State) {
     s.hands[seat].push({ ...s.deck.pop()!, id: s.nextId++ });
     if (seat !== 0) s.picks[seat] = bestPair(s.hands[seat]);
   }
-  // Seat 0 looks at its third card and picks two before the last bet.
-  if (contenders(b).includes(0)) {
-    s.phase = "choosing";
-    return;
-  }
+  // Everyone bets on three cards; seat 0 picks its two only at the very end.
   openStreet(b, s.first);
-  if (b.turn === -1) finish(s);
+  if (b.turn === -1) conclude(s);
 }
 /** What seat 0 has to choose now, in the three-card game. */
 export function choices(state: State): "show" | "pick" | null {
@@ -340,14 +348,15 @@ export function choose(state: State, value: number): State | null {
   if (!kind || !Number.isInteger(value) || value < 0 || value > (kind === "show" ? 1 : 2))
     return null;
   const s = clone(state);
-  if (kind === "show") s.open[0] = value;
-  else s.picks[0] = PAIRS[value];
+  if (kind === "pick") {
+    s.picks[0] = PAIRS[value];
+    finish(s);
+    return s;
+  }
+  s.open[0] = value;
   s.phase = "betting";
   openStreet(s.betting, s.first);
-  if (s.betting.turn === -1) {
-    if (kind === "show") afterStreet(s);
-    else finish(s);
-  }
+  if (s.betting.turn === -1) afterStreet(s);
   return s;
 }
 function nextSeat(b: Betting, from: number) {

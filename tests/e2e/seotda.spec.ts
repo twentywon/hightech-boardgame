@@ -204,7 +204,7 @@ async function onTable(page: import("@playwright/test").Page, x: number, z: numb
   return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
 }
 
-test("three-card seotda: show one, bet, uncover the third by sliding, pick two, bet again", async ({
+test("three-card seotda: show one, bet, uncover the third by sliding, bet again, pick two last", async ({
   page,
 }, info) => {
   test.setTimeout(120000);
@@ -279,7 +279,16 @@ test("three-card seotda: show one, bet, uncover the third by sliding, pick two, 
   }
   await expect(page.locator("#bg-peek")).toBeHidden();
   await expect(seat(page, 0).locator(".bj-card")).toHaveText(["3광", "8광", "10"]);
-  // Pick the two that make the hand.
+  // The second round is bet on three cards, with my best hand named at my seat.
+  await expect(prompt(page)).toHaveCount(0);
+  await expect(seat(page, 0)).toContainText("38광땡");
+  await expect(turn(page)).toContainText(/세 번째 패 베팅|차례/);
+  await expect(async () => {
+    const call = page.locator("#bg-call");
+    if ((await call.isVisible()) && (await call.isEnabled())) await call.click({ timeout: 1000 });
+    await expect(prompt(page)).toHaveCount(3, { timeout: 1000 });
+  }).toPass({ timeout: 60000 });
+  // Only now, after the last bet, pick the two that make the hand.
   await expect(turn(page)).toContainText("족보로 쓸 두 장을 고르세요");
   await expect(prompt(page)).toHaveText(["3광 · 8광 — 38광땡", "3광 · 10 — 3끗", "8광 · 10 — 8끗"]);
   await page.screenshot({ path: `test-results/${info.project.name}-seotda-pick.png`, fullPage: true });
@@ -292,8 +301,8 @@ test("three-card seotda: show one, bet, uncover the third by sliding, pick two, 
     await settled(page);
     await tap(0, 1.55);
   } else await button(page, "3광 · 8광 — 38광땡").click();
-  await expect(seat(page, 0)).toContainText("38광땡");
-  await playOut(page);
+  // The pick ends the hand: the cards are shown at once.
+  await handOver(page);
   expect(Number((await page.locator("#bg-chips").textContent())!.replace(/,/g, ""))).toBeGreaterThan(1000);
   await expect(page.locator("#bg-outcome")).toContainText("나");
   await expect(page.locator("#bg-pot")).toHaveText("0");

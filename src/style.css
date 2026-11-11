@@ -1967,3 +1967,37 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
 @media (max-width: 760px) {
   .board-hint { top: 40px; bottom: auto; padding: 6px 14px; border-radius: 14px; font-size: 13px; }
 }
+
+/* Betting buttons inside the table, to the right of seat 0. */
+.bg-acting[hidden] { display: none; }
+.board-area .bg-acting {
+  position: absolute;
+  right: 18px;
+  bottom: 52px;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  width: 168px;
+  margin: 0;
+}
+.board-area .bg-acting .bj-row { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.board-area .bg-acting button {
+  min-height: 42px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 6px 14px #0004;
+}
+.board-area .bg-acting button,
+.board-area .bg-acting button.primary { background: #ffffff; color: #16181a; border: 1.5px solid #16181a; }
+.board-area .bg-acting button:hover:not(:disabled) { background: #f1ede2; }
+.board-area .bg-acting button:disabled { opacity: 0.6; }
+.betting-game .board-area { background: #2c6551; }
+/* A narrow table has no room beside the cards: the buttons sit under it, inside the frame. */
+@media (max-width: 760px) {
+  .board-area .bg-acting { position: static; width: auto; padding: 10px 12px 40px; }
+  /* It keeps its place while it is not my turn, so the page does not jump. */
+  .board-area .bg-acting[hidden] { display: grid; visibility: hidden; }
+  .board-area .bg-acting .bj-row { grid-template-columns: 1fr 1fr; }
+}
