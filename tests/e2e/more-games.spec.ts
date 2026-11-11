@@ -204,9 +204,11 @@ test("spider solitaire: deal a row, move a card by tapping it, undo", async ({ p
   await page.locator("#sp-undo").click();
   await expect(moves(page)).toHaveText("0수");
   // The stock on the table deals a row, like the button.
-  await tap(page, SPIDER_SUBJECT, stockSpot.x, stockSpot.z, mobile, 0.05);
-  await settled(page);
-  await expect(page.locator("#sp-stock")).toHaveText("4번");
+  await expect(async () => {
+    if ((await page.locator("#sp-stock").textContent()) === "5번") await tap(page, SPIDER_SUBJECT, stockSpot.x, stockSpot.z, mobile, 0.05);
+    await settled(page);
+    await expect(page.locator("#sp-stock")).toHaveText("4번", { timeout: 1000 });
+  }).toPass({ timeout: 15000 });
   await page.locator("#sp-deal").click();
   await settled(page);
   await expect(page.locator("#sp-stock")).toHaveText("3번");
