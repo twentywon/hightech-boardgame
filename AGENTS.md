@@ -5,7 +5,7 @@
 - Start with `npm run dev`. Production check: `npm run build`. Rules: `npm test`. Browser: `CHROMIUM_PATH=/usr/bin/chromium npx playwright test tests/e2e/<game>.spec.ts` for the specs of what changed (install Playwright Chromium locally). Do not run the whole browser suite unless the user asks for it.
 - Keep rules and AI independent of Three.js and DOM. All moves must pass through `play`.
 - Keep storage versioned and validate by replaying legal moves. Never trust saved board arrays.
-- Preserve pointer confirmation on touch, camera-transition input blocking, and engine resource disposal.
+- On the four board games a tap places or moves at once, like a click (the user asked for this; do not bring back the confirm step on touch). Preserve camera-transition input blocking and engine resource disposal.
 - Keep unimplemented games visibly disabled. No automatic public deployment or repository visibility changes.
 - Update README and ROADMAP for material changes. Test rule changes with Vitest and input/UI changes with Playwright.
 - Reversi rules live in `src/games/reversi/rules.ts`: use shared legal-move generation for sessions and search, reconstruct automatic passes during replay, and keep Reversi storage keys separate from Gomoku.

@@ -35,17 +35,13 @@ async function tap(page: Page, index: number, info: TestInfo) {
   if (info.project.name === "mobile") await page.touchscreen.tap(p.x, p.y);
   else await page.mouse.click(p.x, p.y);
 }
-/** Moves a piece with the pointer; a touch needs the confirm button. */
+/** Moves a piece with the pointer: a click or a tap on the piece, then on its destination. */
 async function move(page: Page, from: number, to: number, info: TestInfo) {
   await ready(page);
   const before = Number((await count(page).textContent())!.replace("수", ""));
   await tap(page, from, info);
   await expect(page.locator("#confirm")).toHaveText("도착점을 선택하세요");
   await tap(page, to, info);
-  if (info.project.name === "mobile") {
-    await expect(count(page)).toHaveText(`${before}수`);
-    await page.locator("#confirm").click();
-  }
   await expect(count(page)).toHaveText(`${before + 1}수`);
   await ready(page);
 }

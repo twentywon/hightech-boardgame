@@ -64,6 +64,7 @@ export class BoardView {
     sounded: boolean;
   }[] = [];
   onSettled: () => void = () => {};
+  private pressed = { x: 0, y: 0 };
   private ray = new T.Raycaster();
   private plane = new T.Plane(new T.Vector3(0, 1, 0), -0.15);
   private ghost: T.Mesh;
@@ -305,6 +306,7 @@ export class BoardView {
     canvas.addEventListener("pointerdown", (e) => {
       if (!e.isPrimary || e.button !== 0 || this.activePointer !== null) return;
       this.activePointer = e.pointerId;
+      this.pressed = { x: e.clientX, y: e.clientY };
       canvas.setPointerCapture(e.pointerId);
       this.pointer(e, false);
     });
@@ -323,10 +325,12 @@ export class BoardView {
       this.activePointer = null;
       if (canvas.hasPointerCapture(e.pointerId))
         canvas.releasePointerCapture(e.pointerId);
-      if (
-        e.pointerType === "mouse" &&
-        performance.now() - this.lastPointer > 320
-      ) {
+      // A click or a tap places at once. A finger that slid across the board
+      // only chose a point, which the button then confirms.
+      const tapped =
+        e.pointerType === "mouse" ||
+        Math.hypot(e.clientX - this.pressed.x, e.clientY - this.pressed.y) < 14;
+      if (tapped && performance.now() - this.lastPointer > 320) {
         this.lastPointer = performance.now();
         this.pointer(e, true);
       }

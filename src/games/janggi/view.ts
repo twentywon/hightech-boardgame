@@ -202,8 +202,8 @@ export class JanggiView {
     canvas.addEventListener("pointerup", (e) => {
       if (down !== e.pointerId) return;
       down = null;
-      // A mouse click commits; a touch only chooses and is confirmed by a button.
-      pick(e, e.pointerType === "mouse");
+      // A click or a tap commits at once.
+      pick(e, true);
     });
     canvas.addEventListener("pointercancel", () => (down = null));
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());

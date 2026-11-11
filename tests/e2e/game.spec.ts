@@ -29,9 +29,6 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
       bounds.x + bounds.width / 2,
       bounds.y + bounds.height / 2,
     );
-    await expect(page.getByRole("button", { name: /착수 확정/ })).toBeEnabled();
-    await expect(page.locator("#move-count")).toHaveText("0수");
-    await page.getByRole("button", { name: /착수 확정/ }).click();
   } else
     await canvas.click({
       position: { x: bounds.width / 2, y: bounds.height / 2 },

@@ -49,6 +49,7 @@ for (const game of ["gomoku", "reversi"] as const) {
   });
 
   test(`${game}: leaving the playable board clears the pending selection`, async ({ page }, info) => {
+    test.skip(info.project.name === "mobile", "a tap places at once; only a pointer that hovers leaves a pending selection");
     await start(page, game);
     const p = await opening(page, game);
     if (info.project.name === "mobile") await page.touchscreen.tap(p.x, p.y);

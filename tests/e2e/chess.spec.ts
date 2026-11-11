@@ -53,10 +53,6 @@ async function move(page: Page, from: Square, to: Square, info: TestInfo) {
   );
   await tap(page, from, info);
   await tap(page, to, info);
-  if (info.project.name === "mobile") {
-    await expect(page.locator("#move-count")).toHaveText(`${before}수`);
-    await page.locator("#confirm").click();
-  }
   await expect(page.locator("#move-count")).toHaveText(`${before + 1}수`);
   await ready(page);
 }
@@ -182,7 +178,6 @@ test("chess AI stays responsive, cancels old work and applies settings only to a
   await ready(page);
   await tap(page, "e2", info);
   await tap(page, "e4", info);
-  if (info.project.name === "mobile") await page.locator("#confirm").click();
   await expect(page.locator("#move-count")).toHaveText("2수", {
     timeout: 15000,
   });
@@ -236,7 +231,6 @@ test("chess underpromotion can be cancelled; reload has no saved game or prefere
     await move(page, from, to, info);
   await tap(page, "b7", info);
   await tap(page, "a8", info);
-  if (info.project.name === "mobile") await page.locator("#confirm").click();
   await expect(
     page.getByRole("heading", { name: "프로모션 기물을 선택하세요" }),
   ).toBeVisible();
@@ -245,7 +239,6 @@ test("chess underpromotion can be cancelled; reload has no saved game or prefere
   await expect(page.locator("dialog")).toHaveCount(0);
   await tap(page, "b7", info);
   await tap(page, "a8", info);
-  if (info.project.name === "mobile") await page.locator("#confirm").click();
   await page.getByRole("button", { name: /나이트/ }).click();
   await expect(page.locator("#chess-history")).toContainText("bxa8=N");
   await expect(page.locator("#move-count")).toHaveText("9수");

@@ -147,7 +147,8 @@ export class ChessView {
       this.pointerId = null;
       if (canvas.hasPointerCapture(e.pointerId))
         canvas.releasePointerCapture(e.pointerId);
-      if (e.pointerType === "mouse") this.pick(e, true);
+      // A click or a tap commits at once.
+      this.pick(e, true);
     });
     canvas.addEventListener("pointermove", (e) => {
       if (

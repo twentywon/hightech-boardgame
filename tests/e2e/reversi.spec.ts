@@ -58,11 +58,6 @@ test("Reversi actual WebGL mouse/touch flips, save, camera, restart and game sel
   const pos = await cell(page, 2, 3);
   if (info.project.name === "mobile") {
     await page.touchscreen.tap(pos.x, pos.y);
-    await expect(
-      page.getByRole("button", { name: "D3에 착수 확정" }),
-    ).toBeEnabled();
-    await expect(page.locator("#move-count")).toHaveText("0수");
-    await page.getByRole("button", { name: "D3에 착수 확정" }).click();
   } else await page.mouse.click(pos.x, pos.y);
   await expect(page.locator("#black-count")).toHaveText("4");
   await expect(page.locator("#white-count")).toHaveText("1");
