@@ -1752,3 +1752,64 @@ header, .library, dialog { font-synthesis: weight; }
 @media (max-height: 550px) and (min-width: 600px) {
   .yacht-game .table-layout { grid-template-columns: minmax(0, 1fr) 300px; }
 }
+
+/* ───────────────────────── Betting card games ───────────────────────── */
+.betting-game .table-layout { grid-template-columns: minmax(0, 1fr) 300px; }
+.bg-seats { list-style: none; margin: 0; padding: 0; font-size: 14px; line-height: 1.5; }
+.bg-seats li {
+  padding: 9px 2px 9px 12px;
+  border-bottom: 1px solid var(--line);
+  border-left: 4px solid transparent;
+}
+.bg-seats li.active { border-left-color: var(--seal); background: #fff8e6; }
+.bg-seats li.gone { color: var(--ink-faint); }
+.bg-seats b { font-weight: 700; margin-right: 6px; }
+.bg-stack { font-size: 12px; color: var(--ink-soft); }
+.bg-seats li.gone .bg-stack { color: var(--ink-faint); }
+.bg-hand { display: block; margin-top: 4px; }
+.bg-hand em { font-style: normal; font-weight: 700; margin-left: 4px; }
+.bg-sidebar .bj-card { font-family: var(--sans); }
+.seotda-art { background: radial-gradient(ellipse at 45% 40%, #2f7560, #173f34); }
+.sd-mini { position: relative; width: 280px; height: 220px; transform: rotateX(30deg) rotateZ(-7deg); }
+.sd-mini-card {
+  position: absolute;
+  top: 26px;
+  width: 92px;
+  height: 148px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  border: 7px solid #8f2416;
+  border-radius: 8px;
+  background: #fbf7ec;
+  box-shadow: 0 10px 18px #0c231c88;
+  color: #16181a;
+  font: 800 46px/1 Arial, sans-serif;
+  font-style: normal;
+}
+.sd-mini-card b {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f3d27a;
+  border: 2px solid #a3791b;
+  font: 800 22px/1 "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+.sd-mini-card:nth-child(2) { left: 88px; transform: rotate(-4deg); }
+.sd-mini-card:nth-child(3) { left: 176px; top: 38px; transform: rotate(8deg); }
+.sd-mini-card.back { left: 6px; top: 16px; transform: rotate(-13deg); background: #8f2416; border-color: #5d150c; }
+@media (max-width: 760px) {
+  .betting-game .table-layout { display: flex; }
+  .game-layout.betting-game #board {
+    height: min(96vw, 46svh, var(--available-board-height, 46svh));
+    min-height: 240px;
+  }
+  .bg-sidebar .bg-seats { order: 5; }
+  .sd-mini { transform: scale(0.8) rotateX(30deg) rotateZ(-7deg); }
+}
+@media (max-height: 550px) and (min-width: 600px) {
+  .bg-sidebar .bg-seats { order: 5; }
+}

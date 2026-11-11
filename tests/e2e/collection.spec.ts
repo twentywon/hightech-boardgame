@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { selectGame } from "./library";
+import { games } from "../../src/core/catalog";
 
 test("collection starts collapsed and switches game details inline without navigation", async ({ page }, info) => {
   const errors: string[] = [], workers: string[] = [];
@@ -9,8 +10,8 @@ test("collection starts collapsed and switches game details inline without navig
   page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
   await page.goto("/");
   const url = page.url();
-  await expect(page.locator(".game-card")).toHaveCount(5);
-  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(5);
+  await expect(page.locator(".game-card")).toHaveCount(games.length);
+  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(games.length);
   await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(0);
   await expect(page.locator(".featured")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "테이블에 앉기" })).toHaveCount(0);

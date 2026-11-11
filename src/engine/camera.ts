@@ -27,6 +27,12 @@ export const SUBJECTS = {
   blackjackTall: { half: 2.9, halfZ: 3.55, height: 0.3, lookY: 0, tilt: 1.1 },
   // Yacht dice: a tray with a row for the roll and a row for dice set aside.
   yacht: { half: 3.75, halfZ: 3.0, height: 0.9, lookY: 0, tilt: 1.1 },
+  // Card tables with several seats: one row of opponents across from seat 0.
+  cardsWide: { half: 5.9, halfZ: 3.7, height: 0.3, lookY: 0, tilt: 1.1 },
+  cardsSquare: { half: 3.75, halfZ: 3.9, height: 0.3, lookY: 0, tilt: 1.1 },
+  // The same table for games with only a few cards per seat.
+  cardsCompact: { half: 4.3, halfZ: 3.6, height: 0.3, lookY: 0, tilt: 1.1 },
+  cardsCompactSquare: { half: 3.3, halfZ: 3.7, height: 0.3, lookY: 0, tilt: 1.1 },
 } as const satisfies Record<string, Subject>;
 
 // Share of the canvas the board may fill. The top and bottom keep room for

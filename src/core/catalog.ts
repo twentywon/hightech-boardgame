@@ -34,4 +34,11 @@ export const games = [
     icon: "⚄",
     available: true,
   },
+  {
+    name: "섯다",
+    en: "SEOTDA",
+    category: "카드게임",
+    icon: "光",
+    available: true,
+  },
 ];

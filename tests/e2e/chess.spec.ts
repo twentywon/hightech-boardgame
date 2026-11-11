@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { PerspectiveCamera, Vector3 } from "three";
 import type { Square } from "chess.js";
 import { selectGame } from "./library";
+import { games } from "../../src/core/catalog";
 import { toWorld } from "../../src/games/chess/coordinates";
 import { SUBJECTS, cameraDistance } from "../../src/engine/camera";
 async function ready(page: Page) {
@@ -67,7 +68,7 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(5);
+  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(games.length);
   await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(0);
   await selectGame(page, "체스");
   await expect(
