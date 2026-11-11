@@ -6,5 +6,4 @@ The fifty-two card faces are reduced-size renderings of the SVG files
 Domain Dedication, https://creativecommons.org/publicdomain/zero/1.0/
 
 Source: https://commons.wikimedia.org/wiki/Category:English_pattern_playing_cards
-Changes: rendered at 250 px width on a white ground and re-encoded as WebP;
-in the games the faces are drawn with a paper tone multiplied over them.
+Changes: rendered at 250 px width on a white ground and re-encoded as WebP.

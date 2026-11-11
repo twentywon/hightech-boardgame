@@ -21,8 +21,8 @@ if (typeof Image !== "undefined")
   }
 const GLYPH: Record<string, string> = { S: "♠", H: "♥", D: "♦", C: "♣" };
 const SYMBOL = '"Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif';
-// The pictures are pure white and saturated; this tone settles them on the felt.
-const PAPER = "#dcd5c4";
+// The border of the card back.
+const PAPER = "#f4efe2";
 /** Paints the face of `key` (rank then suit letter, such as "10D"). */
 export function drawFace(ctx: CanvasRenderingContext2D, w: number, h: number, key: string) {
   const image = pictures.get(key);
@@ -51,10 +51,6 @@ export function drawFace(ctx: CanvasRenderingContext2D, w: number, h: number, ke
     ctx.font = `160px ${SYMBOL}`;
     ctx.fillText(GLYPH[suit], w / 2 + 16, h / 2 + 10);
   }
-  ctx.globalCompositeOperation = "multiply";
-  ctx.fillStyle = PAPER;
-  ctx.fillRect(0, 0, w, h);
-  ctx.globalCompositeOperation = "source-over";
 }
 /** Paints the shared card back. */
 export function drawBack(ctx: CanvasRenderingContext2D, w: number, h: number) {

@@ -75,7 +75,7 @@ function faceTexture(card: Card | null) {
   const { c, ctx } = canvas(...CARD.pixels);
   if (card) drawFace(ctx, c.width, c.height, card.rank + card.suit);
   else {
-    ctx.fillStyle = "#dcd5c4";
+    ctx.fillStyle = "#fbf8f0";
     ctx.fillRect(0, 0, c.width, c.height);
   }
   return texture(c);
