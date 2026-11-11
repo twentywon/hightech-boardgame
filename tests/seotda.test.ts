@@ -316,21 +316,22 @@ describe("Seotda computer", () => {
         expect(s.betting.seats.reduce((sum, x) => sum + x.chips, 0) + (s.result?.rematch ? S.potOf(s) : 0)).toBe(4000);
       }
   });
-  it("wins chips from weaker levels over many hands", () => {
-    // Heads-up, the same deals for every pairing; chips are topped up each hand.
-    const profit = (strong: Difficulty, weak: Difficulty) => {
-      let total = 0;
-      for (let seed = 1; seed <= 400; seed++) {
-        let s = S.start(S.createSession(1), seededRandom(seed))!;
-        let steps = 0;
-        while (s.phase === "betting")
-          s = S.act(s, seotda.decide(s, s.betting.turn === 0 ? strong : weak, seed * 13 + steps++))!;
-        if (!s.result!.rematch) total += s.result!.net[0];
-      }
-      return total;
+  it("wins chips from weaker levels over many hands, whichever seat it takes", () => {
+    // Every deal is played twice with the seats swapped, so the cards cancel out.
+    const edge = (strong: Difficulty, weak: Difficulty) => {
+      let sum = 0;
+      for (let seed = 1; seed <= 500; seed++)
+        for (const strongSeat of [0, 1]) {
+          let s = S.start(S.createSession(1), seededRandom(seed))!,
+            steps = 0;
+          while (s.phase === "betting")
+            s = S.act(s, seotda.decide(s, s.betting.turn === strongSeat ? strong : weak, seed * 13 + steps++))!;
+          if (!s.result!.rematch) sum += s.result!.net[strongSeat];
+        }
+      return sum;
     };
-    expect(profit("expert", "beginner")).toBeGreaterThan(0);
-    expect(profit("hard", "easy")).toBeGreaterThan(0);
-    expect(profit("beginner", "expert")).toBeLessThan(0);
+    expect(edge("expert", "beginner")).toBeGreaterThan(0);
+    expect(edge("expert", "normal")).toBeGreaterThan(0);
+    expect(edge("hard", "easy")).toBeGreaterThan(0);
   });
 });

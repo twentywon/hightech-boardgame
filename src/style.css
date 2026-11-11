@@ -1788,6 +1788,8 @@ header, .library, dialog { font-synthesis: weight; }
   font: 800 46px/1 Arial, sans-serif;
   font-style: normal;
 }
+img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 157px; object-fit: cover; }
+.dialog-body .credit { font-size: 12px; color: var(--ink-faint); }
 .sd-mini-card b {
   display: grid;
   place-items: center;
@@ -1812,4 +1814,17 @@ header, .library, dialog { font-synthesis: weight; }
 }
 @media (max-height: 550px) and (min-width: 600px) {
   .bg-sidebar .bg-seats { order: 5; }
+}
+.bg-sidebar .bj-card.secret { border-style: dashed; border-color: var(--ink-soft); background: #f1ece0; }
+.poker-art { background: radial-gradient(ellipse at 45% 40%, #2f7560, #173f34); }
+.pk-mini { position: relative; width: 320px; height: 210px; transform: rotateX(32deg) rotateZ(-6deg); }
+.pk-mini .bj-mini-card { top: 30px; width: 92px; height: 130px; font-size: 26px; transform: none; }
+.pk-mini .bj-mini-card b { font-size: 24px; }
+.pk-mini .bj-mini-card:nth-child(1) { left: 0; top: 30px; transform: rotate(-6deg); }
+.pk-mini .bj-mini-card:nth-child(2) { left: 52px; top: 26px; transform: rotate(-3deg); }
+.pk-mini .bj-mini-card:nth-child(3) { left: 108px; top: 24px; transform: none; }
+.pk-mini .bj-mini-card:nth-child(4) { left: 164px; top: 26px; transform: rotate(3deg); }
+.pk-mini .bj-mini-card:nth-child(5) { left: 220px; top: 30px; transform: rotate(6deg); }
+@media (max-width: 760px) {
+  .pk-mini { transform: scale(0.8) rotateX(32deg) rotateZ(-6deg); }
 }

@@ -49,7 +49,14 @@ for (const match of html.matchAll(cssTag)) {
   const css = await readFile(resolve(root, match[1]), "utf8");
   html = html.replace(match[0], () => `<style>${css}</style>`);
 }
-const notice = await readFile(resolve(root, "chess-license.txt"), "utf8");
+// Third-party notices travel with the single file: chess.js and the hwatu images.
+const notice = (
+  await Promise.all(
+    ["chess-license.txt", "hwatu-license.txt"].map((name) =>
+      readFile(resolve(root, name), "utf8"),
+    ),
+  )
+).join("\n\n");
 html = html.replace("</body>", () => `<!-- ${notice.replaceAll("--", "—")} -->\n</body>`);
 const target = resolve(root, "world-table-games.html");
 await writeFile(target, html);

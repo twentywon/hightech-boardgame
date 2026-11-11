@@ -8,6 +8,8 @@ export interface CardView {
   id: number;
   face: string | null;
   text: string;
+  /** Seat 0's own card that the other seats cannot see. */
+  secret?: boolean;
 }
 export interface SeatView {
   name: string;

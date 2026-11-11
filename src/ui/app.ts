@@ -7,6 +7,7 @@ import {
   type BettingOptions,
 } from "./betting-game";
 import { seotdaConfig } from "../games/seotda/skin";
+import { pokerConfig } from "../games/poker/skin";
 import { mountReversi, type ReversiController } from "./reversi";
 import { getOptions as getReversiOptions, setOptions as setReversiOptions } from "../games/reversi/storage";
 import { modal } from "./dialog";
@@ -57,6 +58,7 @@ let betting: BettingController | null = null;
 // Kept for this page only, per betting game.
 const bettingOptions: Record<string, BettingOptions> = {
   seotda: { opponents: 2, difficulty: "normal" },
+  "seven-poker": { opponents: 3, difficulty: "normal" },
 };
 // Kept for this page only, like the chess preferences.
 let yachtOptions: YachtOptions = { mode: "solo", difficulty: "normal" };
@@ -142,6 +144,7 @@ type GameSelection =
   | "blackjack"
   | "yacht-dice"
   | "seotda"
+  | "seven-poker"
   | null;
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
@@ -177,12 +180,15 @@ function menu(selected: GameSelection = null, category = "전체") {
       remember: (options) => { chessOptions = options; },
     });
   }
-  if (selected === "seotda") {
-    betting = mountBettingGame(app, {
+  if (selected === "seotda" || selected === "seven-poker") {
+    const nav = {
       header, bindHeader, back: () => menu(), settings,
       setupHost: $("game-detail"), preferences: bettingOptions[selected],
-      remember: (options) => { bettingOptions[selected] = options; },
-    }, seotdaConfig);
+      remember: (options: BettingOptions) => { bettingOptions[selected] = options; },
+    };
+    betting = selected === "seotda"
+      ? mountBettingGame(app, nav, seotdaConfig)
+      : mountBettingGame(app, nav, pokerConfig);
   }
   if (selected === "yacht-dice") {
     yacht = mountYacht(app, {

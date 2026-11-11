@@ -61,7 +61,8 @@ test("seotda opens inline; a hand is dealt, bet and shown down with hidden cards
   await expect(page.locator("#bg-chips")).toHaveText("980");
   // Whatever it answers, keep calling until the hand ends.
   await expect(async () => {
-    if (await button(page, /^(체크|콜)/).isEnabled()) await button(page, /^(체크|콜)/).click();
+    const call = page.locator("#bg-call");
+    if ((await call.isVisible()) && (await call.isEnabled())) await call.click({ timeout: 1000 });
     await expect(page.locator("#bg-deal")).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 40000 });
   await handOver(page);
@@ -77,7 +78,8 @@ test("seotda opens inline; a hand is dealt, bet and shown down with hidden cards
   await settled(page);
   await expect(page.locator("#move-count")).toHaveText("2판");
   await expect(async () => {
-    if (await button(page, "다이").isEnabled()) await button(page, "다이").click();
+    const fold = page.locator("#bg-fold");
+    if ((await fold.isVisible()) && (await fold.isEnabled())) await fold.click({ timeout: 1000 });
     await expect(page.locator("#bg-deal")).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 40000 });
   await handOver(page);

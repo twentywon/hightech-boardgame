@@ -409,7 +409,8 @@ export class CardTableView {
   }
   private gap(n: number, width: number, scale: number) {
     const w = this.skin.width * scale;
-    return n > 1 ? Math.min(w * 0.62, (width - w) / (n - 1)) : 0;
+    // Hands of a few cards lie side by side; longer ones overlap.
+    return n > 1 ? Math.min(w * (this.skin.compact ? 1.05 : 0.62), (width - w) / (n - 1)) : 0;
   }
   /**
    * Shows `model`. New cards are dealt from the deck in order, a card that

@@ -264,7 +264,7 @@ export function mountBettingGame<S>(
     $("bg-seats").innerHTML = table.seats
       .map(
         (seat) =>
-          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${seat.name}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? "다이" : seat.cards.length ? seat.cards.map((c) => (c.face ? `<span class="bj-card">${c.text}</span>` : '<span class="bj-card hidden">비공개</span>')).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
+          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${seat.name}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? "다이" : seat.cards.length ? seat.cards.map((c) => (c.face ? `<span class="bj-card${c.secret ? " secret" : ""}"${c.secret ? ' title="상대에게 보이지 않는 카드"' : ""}>${c.text}</span>` : '<span class="bj-card hidden">비공개</span>')).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
       )
       .join("");
     $("bg-acting").hidden = phase !== "betting";

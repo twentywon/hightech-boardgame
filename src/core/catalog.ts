@@ -41,4 +41,11 @@ export const games = [
     icon: "光",
     available: true,
   },
+  {
+    name: "세븐 포커",
+    en: "SEVEN POKER",
+    category: "카드게임",
+    icon: "♣",
+    available: true,
+  },
 ];
