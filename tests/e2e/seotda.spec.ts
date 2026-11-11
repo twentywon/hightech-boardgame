@@ -285,7 +285,9 @@ test("three-card seotda: show one, bet, uncover the third by sliding, pick two, 
   await page.screenshot({ path: `test-results/${info.project.name}-seotda-pick.png`, fullPage: true });
   if (desktop) {
     // Tapping two cards on the table takes the pair they make.
+    await settled(page);
     await tap(-0.945, 1.85);
+    await expect(page.locator("#board")).toHaveAttribute("data-picked", "1");
     await expect(prompt(page)).toHaveCount(3);
     await settled(page);
     await tap(0, 1.55);

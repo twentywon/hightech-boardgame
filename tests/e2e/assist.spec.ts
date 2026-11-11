@@ -253,11 +253,11 @@ test("local chess and janggi turn to the player to move; gomoku and reversi stay
   test.setTimeout(120000);
   const board = page.locator("#board");
   const calm = () => expect(board).toHaveAttribute("data-animating", "false", { timeout: 15000 });
-  // Gomoku: the board stays where it is, so "up" still means row 9 for white.
+  // Gomoku: the board stays where it is, so "up" still means row 7 for white.
   await page.goto("/");
   await sit(page);
   await enter(page, "1수");
-  await aim(page, "ArrowUp", "H9");
+  await aim(page, "ArrowUp", "H7");
   await enter(page, "2수");
   // Chess: after White's move the board faces Black.
   await page.getByRole("button", { name: "World Table Games 홈" }).click();

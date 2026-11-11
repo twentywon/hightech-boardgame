@@ -374,6 +374,9 @@ export function mountBettingGame<S>(
       picked,
       !waiting && (phase === "idle" || phase === "handOver"),
     );
+    // Lifting a picked card is an animation of its own.
+    $("board").dataset.animating = String(!!view?.animating || state !== shown);
+    $("board").dataset.picked = String(picked.length);
     $("bg-prompt")
       .querySelectorAll<HTMLButtonElement>("button")
       .forEach((b) => (b.disabled = waiting));
