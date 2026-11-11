@@ -1068,37 +1068,6 @@ header {
   color: var(--ink-soft);
   margin: 0;
 }
-.hero-facts {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  min-width: 230px;
-}
-.hero-facts > div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 28px;
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
-}
-.hero-facts dt { font-size: 13px; color: var(--ink-soft); }
-.hero-facts dd {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-}
-.hero-facts dd span {
-  margin-left: 6px;
-  font-family: var(--sans);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--ink-faint);
-}
 .library .collection-heading {
   display: flex;
   align-items: center;
@@ -1203,18 +1172,6 @@ header {
 .library .game-entry:nth-child(even) .game-icon { transform: rotate(3deg); }
 .library .game-card:hover:not(:disabled) .game-icon,
 .library .game-card[aria-expanded="true"] .game-icon { transform: rotate(0) scale(1.06); }
-/* The chosen tile stands on a brushed red ring. */
-.library .game-card[aria-expanded="true"] .game-icon::after {
-  content: "";
-  position: absolute;
-  left: -16px;
-  right: -16px;
-  bottom: -16px;
-  height: 34px;
-  border: 3px solid var(--seal);
-  border-radius: 50%;
-  z-index: -1;
-}
 .library .game-card:disabled .game-icon {
   background: transparent;
   color: var(--ink-faint);
@@ -1503,13 +1460,7 @@ dialog .stats { font-family: var(--mono); font-size: 12px; color: var(--ink-soft
   .brand-name small { display: none; }
   .brand-mark { width: 34px; height: 24px; }
   .brand-mark i { width: 24px; height: 24px; }
-  .hero { grid-template-columns: 1fr; gap: 28px; align-items: start; }
   .library .intro { font-size: 15px; }
-  .hero-facts { grid-template-columns: repeat(3, 1fr); min-width: 0; border-top: 1px solid var(--line); }
-  .hero-facts > div { display: block; padding: 12px 0 0; border-top: 0; }
-  .hero-facts dt { font-size: 11px; margin-bottom: 4px; }
-  .hero-facts dd { font-size: 22px; }
-  .hero-facts dd span { display: block; margin: 2px 0 0; font-size: 11px; }
   .library .collection-heading { display: flex; }
   .library .game-card { width: 128px; padding: 10px 6px 14px; }
   .library .game-icon, .library .game-icon[class] { width: 76px; height: 76px; border-radius: 20px; font-size: 40px; }
