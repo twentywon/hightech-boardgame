@@ -2001,3 +2001,34 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
   .board-area .bg-acting[hidden] { display: grid; visibility: hidden; }
   .board-area .bg-acting .bj-row { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Point-board games: setup art ─────────────────────────── */
+.hexa-art { background: radial-gradient(ellipse at 45% 40%, #2f4854, #141b20); }
+.morris-art { background: radial-gradient(ellipse at 45% 40%, #c9a06a, #7a5a36); }
+.gonu-art { background: radial-gradient(ellipse at 45% 40%, #d2b075, #8f6d3f); }
+.pg-mini { position: relative; width: 240px; height: 210px; }
+.pg-mini i { position: absolute; display: block; }
+.pg-mini.hexa i {
+  width: 72px;
+  height: 64px;
+  background: #d6ebe5;
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+.pg-mini.hexa i:nth-child(1) { left: 84px; top: 73px; background: #ff5a4a; }
+.pg-mini.hexa i:nth-child(2) { left: 84px; top: 5px; background: #3f8cff; }
+.pg-mini.hexa i:nth-child(3) { left: 84px; top: 141px; }
+.pg-mini.hexa i:nth-child(4) { left: 26px; top: 39px; background: #3f8cff; }
+.pg-mini.hexa i:nth-child(5) { left: 142px; top: 39px; }
+.pg-mini.hexa i:nth-child(6) { left: 26px; top: 107px; }
+.pg-mini.hexa i:nth-child(7) { left: 142px; top: 107px; background: #ff5a4a; }
+.pg-mini.morris i { border: 4px solid #2c2118; }
+.pg-mini.morris i:nth-child(1) { inset: 5px 20px; }
+.pg-mini.morris i:nth-child(2) { inset: 38px 53px; }
+.pg-mini.morris i:nth-child(3) { inset: 71px 86px; }
+.pg-mini.gonu i { background: #4a321a; border-radius: 3px; }
+.pg-mini.gonu i:nth-child(1) { left: 30px; right: 30px; top: 28px; height: 6px; }
+.pg-mini.gonu i:nth-child(2) { left: 30px; right: 30px; bottom: 28px; height: 6px; }
+.pg-mini.gonu i:nth-child(3) { left: 30px; top: 28px; bottom: 28px; width: 6px; }
+.pg-mini.gonu i:nth-child(4) { left: 30px; right: 30px; top: 102px; height: 6px; transform: rotate(40.5deg); }
+#pg-undo { min-height: 46px; border-radius: 12px; font-size: 14px; font-weight: 600; }
+.point-game canvas:focus-visible { outline: 3px solid var(--brass, #c9a85c); outline-offset: -3px; }

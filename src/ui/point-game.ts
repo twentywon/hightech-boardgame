@@ -1,0 +1,378 @@
+import { mirrorStatus } from "./banner";
+import { modal } from "./dialog";
+import { choose } from "../games/points/ai";
+import type { Move, PointGame } from "../games/points/types";
+import { PointBoardView, type BoardSpec } from "../games/points/view";
+import { Sound } from "../engine/sound";
+import type { Settings } from "../core/storage";
+
+export interface PointOptions {
+  mode: "local" | "ai";
+  variant: string;
+}
+/** Everything that differs between two games played on the points of a board. */
+export interface PointConfig<S> {
+  game: PointGame<S>;
+  board: (variant: string) => BoardSpec;
+  name: string;
+  english: string;
+  number: string;
+  intro: string;
+  meta: string;
+  art: string;
+  artClass: string;
+  artLabel: string;
+  tableLabel: string;
+  tableNote: (variant: string) => string;
+  rulesTitle: string;
+  rules: string;
+  /** Names of the two sides; side 0 moves first. */
+  sides: [string, string];
+  variants?: { value: string; label: string }[];
+  startWord: string;
+  /** Milliseconds the computer may think. */
+  budget?: number;
+}
+interface Navigation {
+  header: () => string;
+  bindHeader: () => void;
+  back: () => void;
+  settings: Settings;
+  setupHost: HTMLElement;
+  preferences: PointOptions;
+  remember: (options: PointOptions) => void;
+}
+export interface PointController {
+  dispose(): void;
+  setSettings(settings: Settings): void;
+}
+
+/** Mounts a point-board game: its setup panel in the collection, then its table. */
+export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: PointConfig<S>): PointController {
+  const { game } = config,
+    sound = new Sound();
+  sound.enabled = nav.settings.sound;
+  let settings = nav.settings,
+    preferences = { ...nav.preferences },
+    mode = preferences.mode,
+    variant = preferences.variant,
+    state = game.create(variant),
+    // What the panel describes: the last state whose pieces have come to rest.
+    shown = state,
+    past: S[] = [],
+    spec: BoardSpec = config.board(variant),
+    view: PointBoardView | null = null,
+    disposed = false,
+    generation = 0,
+    lockedUntil = 0,
+    announced = false,
+    thinking = false,
+    // The points chosen so far toward a move, and the keyboard's place on the board.
+    chosen: { from?: number; to?: number } = {},
+    cursor: number | null = null;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
+  const later = (fn: () => void, ms: number) => {
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      if (!disposed) fn();
+    }, ms);
+    timers.add(timer);
+  };
+  const over = (s: S = state) => game.winner(s) !== null;
+  const computerTurn = (s: S = state) => mode === "ai" && game.turn(s) === 1 && !over(s);
+  const who = (player: number) =>
+    mode === "local" ? `${config.sides[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${config.sides[0]})` : `컴퓨터 (${config.sides[1]})`;
+  function stop() {
+    generation++;
+    thinking = false;
+    timers.forEach(clearTimeout);
+    timers.clear();
+    view?.dispose();
+    view = null;
+  }
+  function setup() {
+    stop();
+    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select"><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div>${config.variants ? `<div class="ai-options"><label>종류<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label></div>` : ""}<small id="pg-options" class="session-note" hidden>컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button><small class="session-note">대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
+    const remember = () => {
+      preferences = {
+        mode: [...radios].find((r) => r.checked)!.value as PointOptions["mode"],
+        variant: document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant,
+      };
+      $("pg-options").hidden = preferences.mode !== "ai";
+      nav.remember({ ...preferences });
+    };
+    radios.forEach((r) => {
+      r.checked = r.value === preferences.mode;
+      r.onchange = remember;
+    });
+    if (document.getElementById("pg-variant")) $("pg-variant").onchange = remember;
+    $("pg-options").hidden = preferences.mode !== "ai";
+    $("pg-start").onclick = start;
+  }
+  function start() {
+    mode = preferences.mode;
+    variant = preferences.variant;
+    state = shown = game.create(variant);
+    spec = config.board(variant);
+    past = [];
+    chosen = {};
+    cursor = null;
+    announced = false;
+    lockedUntil = 0;
+    sound.enabled = settings.sound;
+    sound.unlock();
+    screen();
+  }
+  const model = (s: S) => ({ owners: game.owners(s), moveId: game.ply(s), effect: game.effect(s) });
+  function screen() {
+    stop();
+    const side = (p: number) =>
+      `<li id="pg-side-${p}"><i class="yut-dot" style="background:${spec.colors[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
+    root.innerHTML =
+      nav.header() +
+      `<main class="game-layout yacht-game point-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls"><button id="pg-undo">무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+    nav.bindHeader();
+    $("back").onclick = nav.back;
+    $("rules").onclick = () => modal(config.rulesTitle, config.rules);
+    $("restart").onclick = () =>
+      modal("새 판을 시작할까요?", "말을 모두 거두고 처음부터 다시 시작합니다.", [
+        { text: "계속하기", action: () => {} },
+        { text: "새 판", action: start },
+      ]);
+    $("pg-again").onclick = start;
+    $("pg-undo").onclick = undo;
+    try {
+      view = new PointBoardView($("board"), settings.quality, spec);
+      view.onContact = () => sound.tap();
+      view.onSettled = present;
+      view.onPick = pick;
+      const canvas = view.renderer.domElement;
+      canvas.tabIndex = 0;
+      canvas.setAttribute("aria-label", `${config.name} 판`);
+      canvas.addEventListener("keydown", key);
+      view.sync(model(state), false);
+    } catch {
+      view?.dispose();
+      view = null;
+      $("board").innerHTML =
+        '<div class="webgl-error"><h2>3D 화면을 시작할 수 없습니다</h2><p>WebGL을 지원하는 브라우저에서 하드웨어 가속을 확인해 주세요.</p></div>';
+    }
+    present();
+  }
+  const busy = () =>
+    !!view?.animating ||
+    state !== shown ||
+    thinking ||
+    performance.now() < lockedUntil ||
+    !!document.querySelector("dialog[open]");
+  function apply(next: S) {
+    state = next;
+    chosen = {};
+    if (view) view.sync(model(state));
+    else present();
+    update();
+  }
+  /** The legal moves that agree with the points chosen so far. */
+  const open = () =>
+    game.moves(state).filter(
+      (m) => (chosen.from === undefined || m.from === chosen.from) && (chosen.to === undefined || m.to === chosen.to),
+    );
+  /** What the next tap chooses: a piece, a destination, or a piece to take. */
+  function stage(): { field: "from" | "to" | "extra"; points: number[] } {
+    const moves = open(),
+      distinct = (values: number[]) => [...new Set(values)];
+    if (chosen.from === undefined && moves.some((m) => m.from >= 0))
+      return { field: "from", points: distinct(moves.map((m) => m.from)) };
+    if (chosen.to === undefined) return { field: "to", points: distinct(moves.map((m) => m.to)) };
+    return { field: "extra", points: distinct(moves.map((m) => m.extra)) };
+  }
+  /** A tap on a point (or -1): the choice it completes is played at once. */
+  function pick(point: number) {
+    if (busy() || computerTurn() || over()) return;
+    const { field, points } = stage();
+    if (!points.includes(point)) {
+      // Another of my pieces changes the choice; anything else clears it.
+      const first = game.moves(state).some((m) => m.from === point);
+      chosen = first && point !== chosen.from ? { from: point } : {};
+      update();
+      return;
+    }
+    if (field === "from") chosen = { from: point };
+    else if (field === "to") chosen = { ...chosen, to: point };
+    const moves = open(),
+      move: Move | undefined =
+        field === "extra" ? moves.find((m) => m.extra === point) : field === "to" && moves.length === 1 ? moves[0] : undefined;
+    if (!move) {
+      update();
+      return;
+    }
+    const next = game.play(state, move);
+    if (!next) return;
+    sound.unlock();
+    past.push(state);
+    lockedUntil = performance.now() + 200;
+    later(update, 220);
+    apply(next);
+  }
+  /** Arrow keys walk the points of the board; Enter taps the one under the cursor. */
+  function key(e: KeyboardEvent) {
+    const steps: Record<string, [number, number]> = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+    if (e.key === "Escape") {
+      chosen = {};
+      update();
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (cursor !== null) pick(cursor);
+    } else if (steps[e.key]) {
+      e.preventDefault();
+      const here = spec.points[cursor ?? 0],
+        [dx, dz] = steps[e.key];
+      let best = cursor ?? 0,
+        cost = Infinity;
+      if (cursor !== null)
+        spec.points.forEach((p, i) => {
+          const along = (p.x - here.x) * dx + (p.z - here.z) * dz,
+            across = Math.abs((p.x - here.x) * dz) + Math.abs((p.z - here.z) * dx);
+          // The nearest point lying mostly in that direction.
+          if (along > 0.05 && across <= along * 1.6 && along + across * 2 < cost) {
+            cost = along + across * 2;
+            best = i;
+          }
+        });
+      cursor = best;
+      update();
+    }
+  }
+  function undo() {
+    if (busy() || !past.length) return;
+    // Against the computer, go back to my own last turn.
+    let back = past.pop()!;
+    while (mode === "ai" && game.turn(back) !== 0 && past.length) back = past.pop()!;
+    generation++;
+    state = shown = back;
+    chosen = {};
+    announced = false;
+    if (view) view.sync(model(state), false);
+    else present();
+  }
+  function computer() {
+    if (thinking || !computerTurn() || state !== shown) return;
+    thinking = true;
+    const current = generation;
+    update();
+    later(() => {
+      const move = current === generation && computerTurn() ? choose(game, state, config.budget ?? 350) : null,
+        next = move && game.play(state, move);
+      thinking = false;
+      if (current !== generation || !next) {
+        update();
+        return;
+      }
+      past.push(state);
+      apply(next);
+    }, 450);
+  }
+  /** Everything has come to rest: describe the current state. */
+  function present() {
+    if (disposed) return;
+    shown = state;
+    update();
+    if (over() && !announced) {
+      announced = true;
+      if (mode === "ai" && game.winner(state) === 1) sound.lose();
+      else sound.win();
+    }
+    computer();
+  }
+  function update() {
+    if (disposed || !document.getElementById("pg-undo")) return;
+    mirrorStatus();
+    const s = shown,
+      waiting = busy(),
+      bot = computerTurn(s),
+      done = over(s),
+      turn = game.turn(s),
+      next = done || bot || waiting ? null : stage();
+    $("board").dataset.animating = String(!!view?.animating || state !== shown || thinking);
+    $("board").dataset.turn = String(turn);
+    $("move-count").textContent = `${game.ply(s)}수`;
+    $("turn").dataset.player = String(turn);
+    $("turn").textContent = done
+      ? "대국이 끝났습니다."
+      : state !== shown
+        ? "말이 움직이는 중…"
+        : bot
+          ? `${who(1)}가 생각하는 중…`
+          : next?.field === "extra"
+            ? `${who(turn)} 차례 — 떼어낼 상대 말을 고르세요.`
+            : next?.field === "to" && chosen.from !== undefined
+              ? `${who(turn)} 차례 — 갈 곳을 고르세요.`
+              : `${who(turn)} 차례 — ${game.hint(s)}`;
+    const tally = game.tally(s);
+    for (const p of [0, 1]) {
+      $(`pg-count-${p}`).textContent = tally[p];
+      $(`pg-side-${p}`).classList.toggle("active", !done && turn === p);
+    }
+    $<HTMLButtonElement>("pg-undo").disabled = waiting || !past.length;
+    $("pg-note").textContent = "";
+    view?.setMarks({
+      movable: next?.field === "from" ? next.points : chosen.from !== undefined && next ? [chosen.from] : [],
+      selected: chosen.from ?? null,
+      targets: next?.field === "to" ? next.points : [],
+      removable: next?.field === "extra" ? next.points : [],
+      cursor: document.activeElement === view.renderer.domElement ? cursor : null,
+    });
+    $("pg-result").hidden = !done;
+    if (done) {
+      const winner = game.winner(s);
+      $("pg-final").textContent =
+        winner === "draw"
+          ? `비겼습니다. ${game.reason(s)}`
+          : `${mode === "ai" ? (winner === 0 ? "이겼습니다!" : "컴퓨터가 이겼습니다.") : `${who(winner as number)} 승리!`} ${game.reason(s)}`;
+    }
+  }
+  const hide = (e: PageTransitionEvent) => {
+    generation++;
+    thinking = false;
+    timers.forEach(clearTimeout);
+    timers.clear();
+    if (!e.persisted) {
+      view?.dispose();
+      view = null;
+      sound.dispose();
+    }
+  };
+  const show = (e: PageTransitionEvent) => {
+    if (e.persisted && document.getElementById("pg-undo")) {
+      lockedUntil = 0;
+      if (view) view.sync(model(state), false);
+      present();
+    }
+  };
+  const dialogClosed = () => later(update, 0);
+  document.addEventListener("close", dialogClosed, true);
+  document.addEventListener("cancel", dialogClosed, true);
+  document.addEventListener("click", dialogClosed, true);
+  window.addEventListener("pagehide", hide);
+  window.addEventListener("pageshow", show);
+  setup();
+  return {
+    dispose() {
+      disposed = true;
+      stop();
+      sound.dispose();
+      document.removeEventListener("close", dialogClosed, true);
+      document.removeEventListener("cancel", dialogClosed, true);
+      document.removeEventListener("click", dialogClosed, true);
+      window.removeEventListener("pagehide", hide);
+      window.removeEventListener("pageshow", show);
+    },
+    setSettings(next) {
+      settings = next;
+      sound.enabled = next.sound;
+      view?.setQuality(next.quality);
+    },
+  };
+}

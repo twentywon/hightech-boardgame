@@ -228,3 +228,77 @@ export function cabin(scene: T.Object3D, own: Own, half: number, depth: number, 
   floor.receiveShadow = true;
   scene.add(floor);
 }
+
+/**
+ * The yard of a Korean house: packed earth, the porch and its posts behind,
+ * a step stone with rubber shoes, jars on a stone stand and a tiled wall.
+ * The playing area in front of the house, round the origin, is left clear.
+ */
+export function hanokYard(scene: T.Object3D, own: Own) {
+  const standard = (options: T.MeshStandardMaterialParameters) =>
+    own(new T.MeshStandardMaterial({ roughness: 0.85, ...options }));
+  const add = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, shadow = true) => {
+    const mesh = new T.Mesh(own(geometry), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  };
+  const earth = standard({
+    map: own(speckled("#c2a071", ["rgba(92,66,36,0.18)", "rgba(255,240,205,0.16)", "rgba(120,96,60,0.2)"], 31, 14)),
+    roughness: 1,
+  });
+  add(new T.PlaneGeometry(90, 90), earth, 0, -0.03, 0, false).rotation.x = -Math.PI / 2;
+  // The house: a stone footing, the wooden porch on it, a step stone and posts.
+  const stone = standard({
+    map: own(speckled("#9c968a", ["rgba(40,40,40,0.16)", "rgba(255,255,255,0.14)"], 77, 2)),
+  });
+  const timber = standard({ map: own(wood(true)), roughness: 0.7 }),
+    plank = standard({ map: own(wood()), roughness: 0.6 });
+  add(new T.BoxGeometry(30, 0.5, 5), stone, 0, 0.22, -9.0);
+  add(new T.BoxGeometry(26, 0.16, 3.2), plank, 0, 0.86, -8.6);
+  for (const x of [-9, -3, 3, 9]) {
+    add(new T.BoxGeometry(0.34, 0.36, 0.34), stone, x, 0.65, -7.2);
+    add(new T.BoxGeometry(0.3, 6, 0.3), timber, x, 3.8, -7.2);
+  }
+  add(new T.BoxGeometry(26, 0.22, 0.24), timber, 0, 0.72, -7.05);
+  add(new T.BoxGeometry(2.6, 0.3, 0.95), stone, 0, 0.13, -6.0);
+  // A pair of white rubber shoes left on the step stone.
+  const shoe = own(new T.SphereGeometry(0.17, 16, 10)),
+    rubber = standard({ color: "#f3efe4", roughness: 0.5 });
+  for (const x of [-0.22, 0.22]) {
+    const mesh = new T.Mesh(shoe, rubber);
+    mesh.scale.set(0.75, 0.45, 1.5);
+    mesh.position.set(x + 0.5, 0.35, -6.0);
+    mesh.castShadow = true;
+    scene.add(mesh);
+  }
+  // Stepping stones from the step to the mat.
+  for (const [x, z, r] of [[0.1, -5.15, 0.42], [-0.15, -4.75, 0.3]] as const) {
+    const slab = add(new T.CylinderGeometry(r, r * 1.05, 0.06, 9), stone, x, 0.0, z, false);
+    slab.scale.z = 0.7;
+  }
+  // Jars for sauces on a low stone stand, to one side of the yard.
+  const glaze = standard({ color: "#4a2f22", roughness: 0.35, metalness: 0.05 }),
+    profile = [
+      [0.22, 0], [0.34, 0.08], [0.47, 0.34], [0.5, 0.56], [0.44, 0.82], [0.32, 0.98], [0.3, 1.04], [0.35, 1.07],
+    ].map(([r, y]) => new T.Vector2(r, y)),
+    jar = own(new T.LatheGeometry(profile, 22)),
+    lid = own(new T.CylinderGeometry(0.2, 0.39, 0.1, 22));
+  add(new T.BoxGeometry(3.6, 0.18, 2.6), stone, -6.6, 0.06, -4.6);
+  for (const [x, z, s] of [[-7.3, -5.2, 1.25], [-6.2, -5.3, 1.0], [-5.5, -4.5, 0.72], [-6.6, -4.2, 0.85], [-7.5, -4.0, 0.62]]) {
+    const body = new T.Mesh(jar, glaze),
+      top = new T.Mesh(lid, glaze);
+    body.scale.setScalar(s);
+    body.position.set(x, 0.15, z);
+    top.scale.setScalar(s);
+    top.position.set(x, 0.15 + 1.1 * s, z);
+    body.castShadow = top.castShadow = true;
+    scene.add(body, top);
+  }
+  // A low wall of stacked stones under a tiled coping closes the far right.
+  add(new T.BoxGeometry(1.1, 1.5, 9), stone, 9.2, 0.7, -2.5);
+  const tile = standard({ color: "#3b3d42", roughness: 0.6 });
+  add(new T.BoxGeometry(1.5, 0.22, 9.2), tile, 9.2, 1.55, -2.5);
+}

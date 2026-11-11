@@ -62,4 +62,25 @@ export const games = [
     icon: "✕",
     available: true,
   },
+  {
+    name: "헥사 세균전",
+    en: "HEXA GERM WAR",
+    category: "보드게임",
+    icon: "⬢",
+    available: true,
+  },
+  {
+    name: "나인 멘스 모리스",
+    en: "NINE MEN'S MORRIS",
+    category: "보드게임",
+    icon: "▣",
+    available: true,
+  },
+  {
+    name: "고누",
+    en: "GONU",
+    category: "보드게임",
+    icon: "井",
+    available: true,
+  },
 ];
