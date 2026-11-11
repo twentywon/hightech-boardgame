@@ -61,7 +61,6 @@ test("blackjack opens inline, then bet → deal → hit → dealer → settlemen
   await page.goto("/");
   const card = page.getByRole("button", { name: "블랙잭 살펴보기", exact: true });
   await expect(card).toHaveAttribute("aria-expanded", "false");
-  await expect(button(page, /요트 다이스 개발 예정/)).toBeDisabled();
   const url = page.url();
   await card.click();
   await expect(page.getByRole("region", { name: "블랙잭 대국 설정" })).toBeVisible();

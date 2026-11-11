@@ -10,8 +10,8 @@ test("collection starts collapsed and switches game details inline without navig
   await page.goto("/");
   const url = page.url();
   await expect(page.locator(".game-card")).toHaveCount(5);
-  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(4);
-  await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(1);
+  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(5);
+  await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(0);
   await expect(page.locator(".featured")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "테이블에 앉기" })).toHaveCount(0);
   await page.screenshot({ path: `test-results/${info.project.name}-collection-collapsed.png`, fullPage: true });

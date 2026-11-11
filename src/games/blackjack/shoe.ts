@@ -1,3 +1,4 @@
+import { cryptoRandom, type Random } from "../../core/random";
 export const RANKS = [
   "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K",
 ] as const;
@@ -13,17 +14,7 @@ export const SHOE_SIZE = DECKS * 52;
 /** A round never starts with fewer cards than this; the shoe is reshuffled first. */
 export const RESHUFFLE_BELOW = 104;
 
-/** Returns a number in [0, 1). Injected in tests to make the shoe reproducible. */
-export type Random = () => number;
-/**
- * One 32-bit draw per call. Scaling to an index below 312 leaves a bias under
- * one in ten million, which a chip game without stakes can ignore.
- */
-export const cryptoRandom: Random = () => {
-  const buffer = new Uint32Array(1);
-  crypto.getRandomValues(buffer);
-  return buffer[0] / 4294967296;
-};
+export { cryptoRandom, type Random } from "../../core/random";
 export function createDeck(decks = DECKS): Card[] {
   const cards: Card[] = [];
   for (let d = 0; d < decks; d++)

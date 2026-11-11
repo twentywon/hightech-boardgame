@@ -32,6 +32,6 @@ export const games = [
     en: "YACHT DICE",
     category: "주사위게임",
     icon: "⚄",
-    available: false,
+    available: true,
   },
 ];

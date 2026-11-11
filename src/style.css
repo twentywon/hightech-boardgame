@@ -1625,3 +1625,130 @@ header, .library, dialog { font-synthesis: weight; }
   .bj-sidebar .input-help { order: 3; }
   .bj-sidebar .bj-money { order: 4; margin: 8px 0; }
 }
+
+/* ───────────────────────── Yacht dice ───────────────────────── */
+.yacht-game .table-layout { grid-template-columns: minmax(0, 1fr) 330px; }
+.yd-sidebar { font-family: var(--sans); color: var(--ink); display: flex; flex-direction: column; }
+.yd-sidebar #turn {
+  min-height: 56px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #e5e9dc;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.yd-controls { display: grid; gap: 8px; margin-top: 12px; }
+.yd-dice { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.yd-die {
+  min-height: 56px;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 600;
+  position: relative;
+}
+.yd-die[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.yd-die[aria-pressed="true"]::after {
+  content: "보관";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  font-family: var(--sans);
+  font-size: 9px;
+  font-weight: 600;
+}
+.yd-die[aria-pressed="true"]:hover:not(:disabled) { background: #000; }
+.yd-die.hinted, .yd-pick.hinted { outline: 3px solid var(--seal); outline-offset: 1px; }
+.yd-controls .bj-row button { min-height: 50px; border-radius: 12px; font-size: 14px; font-weight: 600; }
+.yd-controls .primary { font-size: 15px; }
+.yd-sidebar .input-help { margin: 2px 2px 0; font-size: 12px; min-height: 1.6em; line-height: 1.5; }
+.yd-result {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.yd-result p { margin: 0 0 10px; font-size: 15px; font-weight: 700; }
+.yd-result button { width: 100%; min-height: 50px; border-radius: 12px; }
+.yd-sheet {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.yd-sheet caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 2px 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.yd-sheet th, .yd-sheet td { height: 38px; padding: 2px 6px; border-bottom: 1px solid var(--line); }
+.yd-sheet thead th { height: 30px; font-size: 12px; font-weight: 600; color: var(--ink-soft); text-align: center; }
+.yd-sheet thead th:first-child, .yd-sheet tbody th { text-align: left; }
+.yd-sheet tbody th { font-weight: 600; line-height: 1.25; }
+.yd-sheet tbody th small { display: block; font-size: 10.5px; font-weight: 400; color: var(--ink-faint); }
+.yd-sheet td { width: 76px; text-align: center; font-family: var(--mono); font-size: 14px; color: var(--ink-faint); }
+.yd-sheet td.filled { color: var(--ink); font-weight: 600; }
+.yd-sheet .current { background: #fff8e6; }
+.yd-sheet tr.sum th, .yd-sheet tr.sum td { background: #ece7da; color: var(--ink-soft); font-size: 12px; }
+.yd-sheet tr.total th, .yd-sheet tr.total td {
+  border-top: 1.5px solid var(--ink);
+  border-bottom: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.yd-pick {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 4px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.yd-pick:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+.yacht-game .webgl-error { color: #f4efe2; }
+.yacht-art { background: radial-gradient(ellipse at 45% 40%, #2f7560, #173f34); }
+.yd-mini { position: relative; width: 300px; height: 210px; transform: rotateX(28deg) rotateZ(-6deg); }
+.yd-mini-die {
+  position: absolute;
+  width: 78px;
+  height: 78px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #f6f0e2;
+  box-shadow: 0 7px 0 #cfc5ad, 0 14px 18px #0c231c88;
+  color: #16181a;
+  font: 400 70px/1 "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif;
+  font-style: normal;
+}
+.yd-mini-die.d0 { left: 6px; top: 20px; transform: rotate(-9deg); }
+.yd-mini-die.d1 { left: 104px; top: 4px; transform: rotate(6deg); }
+.yd-mini-die.d2 { left: 204px; top: 26px; transform: rotate(-4deg); }
+.yd-mini-die.d3 { left: 54px; top: 116px; transform: rotate(8deg); }
+.yd-mini-die.d4 { left: 158px; top: 122px; transform: rotate(-11deg); }
+@media (max-width: 760px) {
+  .yacht-game .table-layout { display: flex; }
+  /* Keep the tray, the dice and the roll button on one screen. */
+  .game-layout.yacht-game #board {
+    height: min(80vw, 40svh, var(--available-board-height, 40svh));
+    min-height: 220px;
+  }
+  .yd-sidebar #turn { min-height: 0; padding: 12px 14px; }
+  .yd-mini { transform: scale(0.8) rotateX(28deg) rotateZ(-6deg); }
+}
+@media (max-height: 550px) and (min-width: 600px) {
+  .yacht-game .table-layout { grid-template-columns: minmax(0, 1fr) 300px; }
+}

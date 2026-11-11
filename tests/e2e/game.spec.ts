@@ -12,7 +12,7 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
   await expect(
     page.getByRole("heading", { name: /함께 앉으면/ }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(0);
   await page.screenshot({
     path: `test-results/${info.project.name}-menu.png`,
     fullPage: true,

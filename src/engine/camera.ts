@@ -25,6 +25,8 @@ export const SUBJECTS = {
   // portrait ones, and looks down more steeply so card faces stay readable.
   blackjackWide: { half: 4.6, halfZ: 3.55, height: 0.3, lookY: 0, tilt: 1.1 },
   blackjackTall: { half: 2.9, halfZ: 3.55, height: 0.3, lookY: 0, tilt: 1.1 },
+  // Yacht dice: a tray with a row for the roll and a row for dice set aside.
+  yacht: { half: 3.75, halfZ: 3.0, height: 0.9, lookY: 0, tilt: 1.1 },
 } as const satisfies Record<string, Subject>;
 
 // Share of the canvas the board may fill. The top and bottom keep room for

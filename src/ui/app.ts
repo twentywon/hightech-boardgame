@@ -1,5 +1,6 @@
 import { mountChess, type ChessController } from "./chess";
 import { mountBlackjack, type BlackjackController } from "./blackjack";
+import { mountYacht, type YachtController, type YachtOptions } from "./yacht";
 import { mountReversi, type ReversiController } from "./reversi";
 import { getOptions as getReversiOptions, setOptions as setReversiOptions } from "../games/reversi/storage";
 import { modal } from "./dialog";
@@ -45,6 +46,9 @@ let resultPending = false;
 let reversi: ReversiController | null = null;
 let chess: ChessController | null = null;
 let blackjack: BlackjackController | null = null;
+let yacht: YachtController | null = null;
+// Kept for this page only, like the chess preferences.
+let yachtOptions: YachtOptions = { mode: "solo", difficulty: "normal" };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
 // Hints run in their own Worker so they never cancel the opponent's search.
@@ -98,6 +102,8 @@ function bindHeader() {
   $("settings").onclick = showSettings;
 }
 function clear() {
+  yacht?.dispose();
+  yacht = null;
   blackjack?.dispose();
   blackjack = null;
   chess?.dispose();
@@ -116,7 +122,13 @@ function clear() {
   aiError = "";
   resultPending = false;
 }
-type GameSelection = "gomoku" | "reversi" | "chess" | "blackjack" | null;
+type GameSelection =
+  | "gomoku"
+  | "reversi"
+  | "chess"
+  | "blackjack"
+  | "yacht-dice"
+  | null;
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="mode" value="ai"> 컴퓨터 대전</label></div>${aiForm()}<button class="primary" id="start">테이블에 앉기 <span>↗</span></button>${load() ? '<button class="text-button" id="resume">저장한 게임 이어하기 →</button>' : ""}</div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
 }
@@ -149,6 +161,13 @@ function menu(selected: GameSelection = null, category = "전체") {
       header, bindHeader, back: () => menu(), settings,
       setupHost: $("game-detail"), preferences: chessOptions,
       remember: (options) => { chessOptions = options; },
+    });
+  }
+  if (selected === "yacht-dice") {
+    yacht = mountYacht(app, {
+      header, bindHeader, back: () => menu(), settings,
+      setupHost: $("game-detail"), preferences: yachtOptions,
+      remember: (options) => { yachtOptions = options; },
     });
   }
   if (selected === "blackjack") {
@@ -549,6 +568,7 @@ function showSettings() {
     reversi?.setSettings(settings);
     chess?.setSettings(settings);
     blackjack?.setSettings(settings);
+    yacht?.setSettings(settings);
     d.close();
     d.remove();
   };
