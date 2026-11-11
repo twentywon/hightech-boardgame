@@ -51,10 +51,12 @@ test("yut opens inline; throws gather, pieces enter, stack, capture and earn a t
   // Blue: 윷 then 걸. Red: 걸 (lands on blue's 3 → capture), then 도.
   await throws(page, [4, 3, 3, 1]);
   await sit(page, "local");
-  await expect(turn(page)).toContainText("청 (플레이어 1) 차례 — 윷을 던지세요.");
+  await expect(turn(page)).toContainText("청 (플레이어 1) 차례 — 윷가락을 눌러 던지세요.");
   await expect(moves(page)).toHaveCount(0);
+  // The same line is shown inside the yard, by the sticks.
+  await expect(page.locator(".board-hint")).toHaveText("청 (플레이어 1) 차례 — 윷가락을 눌러 던지세요.");
   await toss(page);
-  await expect(turn(page)).toContainText("윷! 한 번 더 던지세요.");
+  await expect(turn(page)).toContainText("윷! 윷가락을 눌러 한 번 더 던지세요.");
   await expect(page.locator("#yut-throw")).toHaveText("한 번 더 던지기");
   await toss(page);
   await expect(page.locator("#yut-throw")).toBeDisabled();
@@ -75,7 +77,7 @@ test("yut opens inline; throws gather, pieces enter, stack, capture and earn a t
   await moves(page).first().click();
   await settled(page);
   await expect(page.locator("#yut-count-0")).toHaveText("대기 3 · 말판 1 · 난 말 0");
-  await expect(turn(page)).toContainText("말을 잡았습니다. 한 번 더 던지세요.");
+  await expect(turn(page)).toContainText("말을 잡았습니다. 윷가락을 눌러 한 번 더 던지세요.");
   await toss(page);
   await expect(moves(page)).toHaveText(["도 바깥 3의 말 → 바깥 4 · 잡기", "도 새 말 → 바깥 1"]);
   expect(errors).toEqual([]);
@@ -87,9 +89,14 @@ test("yut in the yard: tap a piece, then a gold ring; corners take the short roa
   // Blue: 모, 도 → a piece on corner 1, which then turns onto the short road.
   await throws(page, [5, 1, 2, 3]);
   await sit(page, "local");
-  await toss(page);
-  await toss(page);
   await page.locator("canvas").scrollIntoViewIfNeeded();
+  // The sticks themselves throw: tap them where they lie.
+  await tap(page, { x: 0, z: 4.35 });
+  await expect(page.locator(".yut-chip")).toHaveText(["모"]);
+  await settled(page);
+  await tap(page, { x: 0.3, z: 4.5 });
+  await expect(page.locator(".yut-chip")).toHaveText(["모", "도"]);
+  await settled(page);
   // Tap the waiting pieces, then the first corner.
   await tap(page, { x: -3.31, z: 4.31 });
   await expect(moves(page).locator("visible=true").and(page.locator(".chosen"))).toHaveCount(2);

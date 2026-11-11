@@ -1,3 +1,4 @@
+import { mirrorStatus } from "./banner";
 import {
   MAX_BET,
   MIN_BET,
@@ -256,6 +257,7 @@ export function mountBlackjack(
   }
   function update() {
     if (disposed || !document.getElementById("bj-chips")) return;
+    mirrorStatus();
     const s = shown,
       waiting = busy() || state !== shown,
       broke = isBroke(s);

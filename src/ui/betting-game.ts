@@ -1,3 +1,4 @@
+import { mirrorStatus } from "./banner";
 import type { Action } from "../games/cards/betting";
 import type { BettingGame, TableView } from "../games/cards/game";
 import { CardTableView, type CardSkin } from "../games/cards/table-view";
@@ -311,6 +312,7 @@ export function mountBettingGame<S>(
   }
   function update() {
     if (disposed || !document.getElementById("bg-chips")) return;
+    mirrorStatus();
     const s = shown,
       seats = table(s),
       phase = game.phase(s),
@@ -333,7 +335,7 @@ export function mountBettingGame<S>(
       state !== shown
         ? "카드를 나누는 중…"
         : phase === "idle"
-          ? `${config.dealWord}를 눌러 시작하세요.`
+          ? `덱이나 ${config.dealWord} 버튼을 눌러 시작하세요.`
           : phase === "sessionOver"
             ? game.won(s)
               ? "상대의 칩을 모두 땄습니다!"

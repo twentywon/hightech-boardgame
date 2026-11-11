@@ -1943,3 +1943,29 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
 @media (max-width: 760px) {
   .yut-mini { transform: scale(0.8) rotateX(30deg) rotateZ(-8deg); }
 }
+
+/* The status line repeated inside the game screen, on the player's side. */
+.board-hint {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 38px;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  margin: 0 auto;
+  z-index: 2;
+  padding: 9px 18px;
+  border-radius: 999px;
+  background: #101a17d9;
+  color: #fff6dc;
+  font: 700 15px/1.35 var(--sans);
+  text-align: center;
+  text-wrap: balance;
+  pointer-events: none;
+  box-shadow: 0 6px 18px #0005;
+}
+.board-hint[hidden] { display: none; }
+/* Small screens have no free strip below the player's cards: it goes on top. */
+@media (max-width: 760px) {
+  .board-hint { top: 40px; bottom: auto; padding: 6px 14px; border-radius: 14px; font-size: 13px; }
+}

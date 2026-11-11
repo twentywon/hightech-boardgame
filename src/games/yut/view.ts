@@ -21,6 +21,8 @@ export interface Marks {
   /** Stations (or `FINISHED`) the selected pieces may go to. */
   targets: number[];
   turn: 0 | 1;
+  /** The sticks may be tapped to throw them. */
+  canThrow?: boolean;
 }
 
 // Everything is laid out round the origin; the board sits a little toward the house.
@@ -209,6 +211,7 @@ interface Tween {
   hop: number;
   toTurn?: T.Quaternion;
   spins?: number;
+  bounces?: number;
   contact: boolean;
 }
 const X = new T.Vector3(1, 0, 0),
@@ -243,6 +246,8 @@ export class YutView {
   onContact: (stick: boolean) => void = () => {};
   /** Every animation has finished. */
   onSettled: () => void = () => {};
+  /** The sticks were tapped while they may be thrown. */
+  onThrow: () => void = () => {};
   /** A station, a waiting place (`WAITING`) or the exit (`FINISHED`) was tapped. */
   onPick: (station: number) => void = () => {};
   get animating() {
@@ -343,12 +348,13 @@ export class YutView {
       if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 12) return;
       const station = this.stationUnder(e);
       if (station !== null) this.onPick(station);
+      else if (this.marks.canThrow && this.overSticks()) this.onThrow();
     });
     canvas.addEventListener("pointermove", (e) => {
       if (e.pointerType !== "mouse" || this.animating) return;
       const station = this.stationUnder(e),
         live = station !== null && (this.marks.movable.includes(station) || this.marks.targets.includes(station));
-      canvas.style.cursor = live ? "pointer" : "";
+      canvas.style.cursor = live || (station === null && this.marks.canThrow && this.overSticks()) ? "pointer" : "";
     });
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
@@ -433,6 +439,15 @@ export class YutView {
     this.add(new T.BoxGeometry(1.1, 1.5, 9), stone, 9.2, 0.7, -2.5);
     const tile = this.standard({ color: "#3b3d42", roughness: 0.6 });
     this.add(new T.BoxGeometry(1.5, 0.22, 9.2), tile, 9.2, 1.55, -2.5);
+  }
+  /** True when the last aimed ray meets the strip where the sticks lie. */
+  private overSticks() {
+    const hit = new T.Vector3();
+    return (
+      !!this.ray.ray.intersectPlane(this.ground, hit) &&
+      Math.abs(hit.x) < 2.1 &&
+      Math.abs(hit.z - THROW_Z) < 1.0
+    );
   }
   private stationUnder(e: PointerEvent): number | null {
     aim(this.ray, e, this.renderer.domElement, this.camera);
@@ -528,8 +543,14 @@ export class YutView {
           this.tweens.push({
             object: stick,
             start: now + i * 45,
-            duration: 780,
-            points: [new T.Vector3((i - 1.5) * 0.3, 0.9, THROW_Z + 2.4), to],
+            duration: 1150,
+            // Thrown from the near side: it lands short, then skips twice to rest.
+            points: [
+              new T.Vector3((i - 1.5) * 0.3, 0.9, THROW_Z + 2.4),
+              new T.Vector3(to.x + (Math.random() - 0.5) * 0.5, to.y, to.z + 0.45 + Math.random() * 0.25),
+              new T.Vector3(to.x + (Math.random() - 0.5) * 0.2, to.y, to.z + 0.14),
+              to,
+            ],
             hop: 2.3,
             toTurn,
             spins: 2 + Math.floor(Math.random() * 3),
@@ -596,6 +617,13 @@ export class YutView {
         chosen = station === this.marks.selected;
       ring(p.x, p.z, 0.012, chosen ? 1 : 2, station === WAITING ? 2.1 : 1);
     }
+    if (this.marks.canThrow) {
+      const mesh = new T.Mesh(this.ringGeometry, this.ringMaterials[0]);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(0, 0.006, THROW_Z);
+      mesh.scale.set(5.2, 2.5, 1);
+      this.rings.add(mesh);
+    }
     for (const station of this.marks.targets) {
       const p = spot(station);
       ring(p.x, p.z, 0.014, 0, station === FINISHED ? 1.25 : 1);
@@ -607,15 +635,27 @@ export class YutView {
     this.tweens = this.tweens.filter((t) => {
       const p = Math.min(1, (now - t.start) / t.duration);
       if (p < 0) return true;
-      const legs = t.points.length - 1,
-        leg = Math.min(legs - 1, Math.floor(p * legs)),
-        local = p * legs - leg;
-      t.object.position.lerpVectors(t.points[leg], t.points[leg + 1], local);
-      t.object.position.y += Math.sin(Math.PI * local) * t.hop;
+      const legs = t.points.length - 1;
+      let leg = Math.min(legs - 1, Math.floor(p * legs)),
+        local = p * legs - leg,
+        hop = t.hop;
       if (t.toTurn) {
-        spin.setFromAxisAngle(X, (1 - p) * (t.spins ?? 0) * Math.PI * 2);
+        // A thrown stick: one long flight, then two quick, lower bounces.
+        const ends = [0, 0.56, 0.82, 1];
+        leg = p < ends[1] ? 0 : p < ends[2] ? 1 : 2;
+        local = (p - ends[leg]) / (ends[leg + 1] - ends[leg]);
+        hop = [t.hop, 0.5, 0.16][leg];
+        if (leg > (t.bounces ?? 0)) {
+          t.bounces = leg;
+          this.onContact(true);
+        }
+        // It keeps turning as it skips, slower with every bounce.
+        spin.setFromAxisAngle(X, (1 - p) ** 2 * (t.spins ?? 0) * Math.PI * 2);
         t.object.quaternion.copy(t.toTurn).multiply(spin);
+        t.object.rotateOnWorldAxis(Y, (1 - p) * (leg ? 0.5 : 1.2) * ((t.spins ?? 0) % 2 ? 1 : -1));
       }
+      t.object.position.lerpVectors(t.points[leg], t.points[leg + 1], local);
+      t.object.position.y += Math.sin(Math.PI * local) * hop;
       if (p < 1) return true;
       t.object.position.copy(t.points[legs]);
       if (t.toTurn) t.object.quaternion.copy(t.toTurn);

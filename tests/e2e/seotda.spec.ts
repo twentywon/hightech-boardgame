@@ -148,7 +148,7 @@ test("seotda with three computers: the table plays on without me, and leaving dr
   await settled(page);
   await expect(page.locator("#bg-chips")).toHaveText("1,000");
   await expect(page.locator("#bg-pot")).toHaveText("0");
-  await expect(turn(page)).toContainText("패 받기를 눌러 시작하세요");
+  await expect(turn(page)).toContainText("덱이나 패 받기 버튼을 눌러 시작하세요");
   expect(errors).toEqual([]);
 });
 

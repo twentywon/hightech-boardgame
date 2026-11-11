@@ -31,4 +31,5 @@
 - Choices in betting games carry the card ids they stand for (`Prompt.options[].cards`); the table offers those cards and the deck through `CardTableView.setChoices`, and a tap must go through the same `act` path as the button. Seat 0's `secret` cards are drawn shaded.
 - Pointer-to-ray conversion is `aim` in `src/engine/scene-utils.ts`; do not copy it into a view.
 - Yut nori rules live in `src/games/yut/rules.ts` (stations 0–28, `WAITING`, `FINISHED`; a move turns onto a short road only when it starts on a corner or the centre). Its computer (`ai.ts`) is a synchronous one-move evaluation. The yard in `view.ts` is fully procedural: add no external asset without a licence notice. Tests fix the throws with `tests/yut-fixtures.ts`.
+- `mirrorStatus` (`src/ui/banner.ts`) repeats `#turn` inside `.board-area` as `.board-hint` (aria-hidden; the side panel stays the live region). Anything withheld from `#turn` is therefore withheld there too: never write to `.board-hint` directly.
 - Recorded sounds under `src/engine/sounds/` are CC0 (Kenney); keep `public/sound-license.txt` and the synthesised fallback.

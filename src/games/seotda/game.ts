@@ -80,6 +80,8 @@ export function equityThree(state: State, samples: number, seed: number) {
   return score / samples;
 }
 
+/** The strongest two of three cards. */
+const bestOf = (cards: readonly Card[]) => bestPair(cards).map((k) => cards[k]);
 export const seotda: BettingGame<State> = {
   create: (opponents, variant) => createSession(opponents, (variant as Variant) ?? "two"),
   start,
@@ -143,6 +145,9 @@ export const seotda: BettingGame<State> = {
             ? "다이"
             : (i === 0 || revealed) && cards.length >= 2 && decided
               ? rank(handOf(s, i)).name
+              : i === 0 && cards.length >= 2
+                ? // Not chosen yet: the best hand my cards can make so far.
+                  rank(cards.length > 2 ? bestOf(cards) : cards).name
               : seat.allIn && cards.length
                 ? "올인"
                 : "",

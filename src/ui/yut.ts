@@ -1,3 +1,4 @@
+import { mirrorStatus } from "./banner";
 import {
   FINISHED,
   PIECES,
@@ -152,6 +153,7 @@ export function mountYut(
       };
       view.onSettled = present;
       view.onPick = pick;
+      view.onThrow = () => act((s) => throwSticks(s, random));
       view.sync(model(state), false);
     } catch {
       view?.dispose();
@@ -252,6 +254,7 @@ export function mountYut(
   }
   function update() {
     if (disposed || !document.getElementById("yut-throw")) return;
+    mirrorStatus();
     const s = shown,
       waiting = busy(),
       bot = computerTurn(s),
@@ -269,11 +272,11 @@ export function mountYut(
       : state !== shown
         ? "윷과 말이 움직이는 중…"
         : s.forfeited.length
-          ? `${s.forfeited.map((r) => RESULT_NAMES[r]).join("·")}는 쓸 말이 없어 넘어갑니다. ${name} 차례 — 윷을 던지세요.`
+          ? `${s.forfeited.map((r) => RESULT_NAMES[r]).join("·")}는 쓸 말이 없어 넘어갑니다. ${name} 차례 — 윷가락을 눌러 던지세요.`
           : bot
             ? `${name}가 ${s.throwsLeft > 0 ? "윷을 던지는 중" : "말을 고르는 중"}…`
             : s.throwsLeft > 0
-              ? `${name} 차례 — ${s.pending.length ? `${thrown} 한 번 더 던지세요.` : s.last?.captured && s.last.player === s.turn ? "말을 잡았습니다. 한 번 더 던지세요." : "윷을 던지세요."}`
+              ? `${name} 차례 — ${s.pending.length ? `${thrown} 윷가락을 눌러 한 번 더 던지세요.` : s.last?.captured && s.last.player === s.turn ? "말을 잡았습니다. 윷가락을 눌러 한 번 더 던지세요." : "윷가락을 눌러 던지세요."}`
               : `${name} 차례 — ${thrown} 옮길 말을 고르세요.`;
     s.pieces.forEach((stations, p) => {
       const count = (station: number) => stations.filter((x) => x === station).length;
@@ -316,6 +319,7 @@ export function mountYut(
           : "금색 고리가 갈 수 있는 자리입니다.";
     view?.setMarks({
       turn: s.turn,
+      canThrow: !waiting && !bot && !over && s.throwsLeft > 0,
       movable: waiting ? [] : [...new Set(legal.map((m) => m.from))],
       selected: waiting ? null : selected,
       targets: waiting || selected === null ? [] : from(selected).map((m) => m.to),
