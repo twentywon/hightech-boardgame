@@ -436,8 +436,17 @@ export function mountChess(
     update();
     schedule();
   }
+  // A hint may be requested while a piece is still moving; only the move
+  // itself waits for the animation.
+  const canHint = () =>
+    !!view &&
+    !state.outcome &&
+    !aiTurn() &&
+    !promoting &&
+    !hidden &&
+    !document.querySelector("dialog[open]");
   async function showHint() {
-    if (!canPlay() || hinting) return;
+    if (!canHint() || hinting) return;
     const position = state,
       current = generation;
     hinting = true;
@@ -540,7 +549,8 @@ export function mountChess(
       : selected
         ? "도착 칸을 선택하세요"
         : "기물을 선택하세요";
-    $<HTMLButtonElement>("undo").disabled = !undoCount();
+    // Enabled again by onSettled once the pieces stop moving.
+    $<HTMLButtonElement>("undo").disabled = !undoCount() || !!view?.animating;
     $<HTMLButtonElement>("hint").disabled =
       hinting || !!state.outcome || aiTurn() || !view;
     $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";

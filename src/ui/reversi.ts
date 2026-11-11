@@ -313,8 +313,15 @@ export function mountReversi(
       : "저장을 사용할 수 없습니다";
     schedule();
   }
+  // A hint may be requested while discs are still flipping; only the
+  // placement itself waits for the animation.
+  const canHint = () =>
+    !!view &&
+    !state.winner &&
+    !aiTurn() &&
+    !document.querySelector("dialog[open]");
   async function showHint() {
-    if (!canPlay() || hinting) return;
+    if (!canHint() || hinting) return;
     const snapshot = state,
       current = generation;
     hinting = true;
@@ -392,7 +399,8 @@ export function mountReversi(
       candidate && isLegal(candidate)
         ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}에 착수 확정`
         : "위치를 선택하세요";
-    $<HTMLButtonElement>("undo").disabled = !undoTarget();
+    // Enabled again by onSettled once the discs stop flipping.
+    $<HTMLButtonElement>("undo").disabled = !undoTarget() || !!view?.animating;
     $<HTMLButtonElement>("hint").disabled =
       hinting || !!state.winner || aiTurn() || !view;
     $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";

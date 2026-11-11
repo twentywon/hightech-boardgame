@@ -354,8 +354,15 @@ function cancelHint() {
   hinting = false;
   view?.suggest(null);
 }
+// A hint may be requested while the last stone is still settling; only the
+// placement itself waits for the input lock.
+const canHint = () =>
+  view !== null &&
+  state.winner === null &&
+  !isAITurn() &&
+  !document.querySelector("dialog[open]");
 async function showHint() {
-  if (!canPlay() || hinting) return;
+  if (!canHint() || hinting) return;
   const snapshot = state,
     generation = sessionGeneration;
   hinting = true;
