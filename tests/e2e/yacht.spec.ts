@@ -204,7 +204,7 @@ test("dialogs wait their turn and the tray fits every screen shape", async ({ pa
   await sit(page);
   await rollOnce(page);
   await button(page, "게임 방법").click();
-  await expect(page.getByRole("dialog")).toContainText("보너스 35점");
+  await expect(page.getByRole("dialog")).toContainText("63점 이상이면 +35점");
   await expect(page.locator("dialog")).toHaveCount(1);
   await page.getByRole("dialog").getByRole("button", { name: "확인" }).click();
   await expect(button(page, "풀하우스에 19점 기록")).toBeEnabled();
