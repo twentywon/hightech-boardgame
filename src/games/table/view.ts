@@ -3,6 +3,7 @@ import { afterGPUFrame, aim } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
+import type { Move } from "../points/types";
 
 export type TableSubject = Subject & { tilt: number };
 /** A place on the table that a tap can choose: it stands for the point `point`. */
@@ -44,6 +45,7 @@ export abstract class TableView<S> implements PointView<S> {
   onContact: () => void = () => {};
   onSettled: () => void = () => {};
   onPick: (point: number) => void = () => {};
+  onMove: (move: Move) => void = () => {};
   get animating() {
     return this.tweens.length > 0;
   }
@@ -75,12 +77,35 @@ export abstract class TableView<S> implements PointView<S> {
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     host.append(this.renderer.domElement);
     const el = this.renderer.domElement;
-    let down: number | null = null;
-    el.addEventListener("pointerdown", (e) => (down = e.pointerType === "mouse" && e.button !== 0 ? null : e.pointerId));
-    el.addEventListener("pointercancel", () => (down = null));
+    let down: number | null = null,
+      dragging = false;
+    const ground = (e: PointerEvent) => {
+      aim(this.ray, e, el, this.camera);
+      const hit = new T.Vector3();
+      return this.ray.ray.intersectPlane(this.floor, hit) ? { x: hit.x, z: hit.z } : null;
+    };
+    el.addEventListener("pointerdown", (e) => {
+      down = e.pointerType === "mouse" && e.button !== 0 ? null : e.pointerId;
+      if (down === null || this.disposed || this.animating) return;
+      const at = ground(e);
+      // A view may take the gesture for itself (a flick): the tap is then not a pick.
+      dragging = !!at && this.dragStart(this.under(this.ray.ray), at);
+      if (dragging) el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener("pointercancel", () => {
+      if (dragging) this.dragEnd(null);
+      down = null;
+      dragging = false;
+    });
     el.addEventListener("pointerup", (e) => {
       const mine = down === e.pointerId;
       down = null;
+      if (dragging) {
+        dragging = false;
+        this.dragEnd(mine && !this.disposed ? ground(e) : null);
+        this.dirty = true;
+        return;
+      }
       if (!mine || this.disposed || this.animating) return;
       aim(this.ray, e, el, this.camera);
       this.onPick(this.under(this.ray.ray));
@@ -88,6 +113,12 @@ export abstract class TableView<S> implements PointView<S> {
     // A mouse that hovers shows where a tap would land.
     let hovered = -1;
     el.addEventListener("pointermove", (e) => {
+      if (dragging && down === e.pointerId) {
+        const at = ground(e);
+        if (at) this.dragMove(at);
+        this.dirty = true;
+        return;
+      }
       if (e.pointerType !== "mouse" || this.disposed) return;
       aim(this.ray, e, el, this.camera);
       const point = this.under(this.ray.ray);
@@ -146,6 +177,23 @@ export abstract class TableView<S> implements PointView<S> {
   protected abstract animate(before: S, state: S): boolean;
   /** Draws the marks of the screen: what can be chosen, and the keyboard's place. */
   protected abstract mark(marks: Marks): void;
+  /** The plane a dragged pointer is followed on. */
+  protected floor = new T.Plane(new T.Vector3(0, 1, 0), 0);
+  /** A press on `point` (or -1) at a place on the floor; true to follow it as a drag instead of a pick. */
+  protected dragStart(_point: number, _at: { x: number; z: number }) {
+    return false;
+  }
+  protected dragMove(_at: { x: number; z: number }) {}
+  /** The drag is let go at a place on the floor, or abandoned (null). */
+  protected dragEnd(_at: { x: number; z: number } | null) {}
+  /** Drops every running tween without laying the state out: the caller does that. */
+  protected settleNow() {
+    this.tweens = [];
+  }
+  /** Asks for another frame, for a view that changes something outside a tween. */
+  protected redraw() {
+    this.dirty = true;
+  }
   /** The point under a hovering mouse, or -1. */
   protected hover(_point: number) {}
   /** Called when the canvas changes shape, before the camera is set. */

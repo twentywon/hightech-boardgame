@@ -181,4 +181,18 @@ export const games = [
     icon: "🁣",
     available: true,
   },
+  {
+    name: "알까기",
+    en: "ALKKAGI",
+    category: "보드게임",
+    icon: "◎",
+    available: true,
+  },
+  {
+    name: "카롬",
+    en: "CARROM",
+    category: "보드게임",
+    icon: "◍",
+    available: true,
+  },
 ];
