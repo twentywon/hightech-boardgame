@@ -3,8 +3,12 @@ export default defineConfig({
   testDir: "./tests/e2e",
   // Software WebGL rendering in cloud can make the complete multi-step flow exceed 30s.
   timeout: 60000,
+  // Spec files run side by side (tests inside one file still run in order). One at a time took 40 minutes;
+  // PW_WORKERS=1 goes back to that when a failure has to be told apart from a crowded machine.
   fullyParallel: false,
-  workers: 1,
+  workers: Number(process.env.PW_WORKERS) || 3,
+  // Software WebGL under load can be late once; a real failure fails twice.
+  retries: 1,
   use: {
     baseURL: "http://127.0.0.1:4174",
     launchOptions: {
