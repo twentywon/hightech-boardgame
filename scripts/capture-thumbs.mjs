@@ -11,7 +11,7 @@ import { games } from "../src/core/catalog.ts";
 const { chromium } = createRequire(import.meta.url)("playwright");
 const out = process.argv[2] ?? ".";
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, deviceScaleFactor: 1 });
+const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, deviceScaleFactor: 2 });
 const wait = (ms) => page.waitForTimeout(ms);
 const keys = async (list, pause = 110) => {
   await page.locator("canvas").focus();
@@ -86,12 +86,27 @@ const play = {
       await wait(2600);
     }
   },
+  spider: async () => {
+    for (let i = 0; i < 3; i++) {
+      await press("#sp-deal");
+      await wait(1100);
+    }
+  },
+  mancala: async () => {
+    for (let i = 0; i < 3; i++) {
+      await keys(["ArrowRight", "Enter"]);
+      await wait(4500);
+    }
+  },
   "world-tour": async () => {
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 160; i++) {
+      await press("dialog .primary");
+      await press("#tour-key");
       await press("#tour-yes");
       await press("#tour-roll");
       await wait(450);
     }
+    await press("dialog .primary");
     await wait(1500);
   },
 };
@@ -106,6 +121,13 @@ for (const game of games) {
   await wait(1800);
   await play[id]?.();
   await wait(800);
+  // No selection rings or cursor: the screens leave them out while this flag is set.
+  await page.evaluate(() => {
+    document.documentElement.dataset.capture = "1";
+    document.activeElement?.blur?.();
+  });
+  await page.locator("h1").first().click();
+  await wait(400);
   // Only the table: captions, the status line and buttons over it are hidden.
   await page.addStyleTag({ content: ".board-label, .board-bottom, .board-hint, .bg-acting { display: none !important; }" });
   await wait(200);

@@ -2,7 +2,8 @@ import type { PointConfig } from "../../ui/point-game";
 import { GRAPHITE, PENCILS, PaperView, hatch, type PaperGame } from "../paper/view";
 import { hex, sizeOf, type State } from "./rules";
 
-const REACH = 3.5,
+// The board runs from edge to edge of the page.
+const REACH = 3.95,
   ROOT3 = Math.sqrt(3);
 /** Radius of a cell and the centres of all cells, for a board of `size`. */
 export function hexLayout(size: number) {
@@ -26,6 +27,7 @@ const corners = (cx: number, cy: number, r: number) =>
   });
 const paper: PaperGame<State> = {
   half: 4.1,
+  corner: true,
   points: (s) => hexLayout(s.size).points,
   reach: (s) => hexLayout(s.size).radius * 0.95,
   ply: (s) => s.ply,
@@ -39,10 +41,17 @@ const paper: PaperGame<State> = {
         owner = s.cells[cell],
         row = Math.floor(cell / s.size),
         col = cell % s.size;
-      ctx.beginPath();
-      shape.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.closePath();
-      if (owner !== null) hatch(ctx, [cx - r, cy - r, r * 2, r * 2], PENCILS[owner], r * 0.2, cell === newest ? fresh : 1);
+      const outline = () => {
+        ctx.beginPath();
+        shape.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+        ctx.closePath();
+      };
+      outline();
+      if (owner !== null) {
+        hatch(ctx, [cx - r, cy - r, r * 2, r * 2], PENCILS[owner], r * 0.2, cell === newest ? fresh : 1);
+        // Hatching leaves its last stroke as the path: trace the cell again.
+        outline();
+      }
       ctx.strokeStyle = GRAPHITE;
       ctx.globalAlpha = 0.55;
       ctx.lineWidth = unit * 0.025;

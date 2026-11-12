@@ -4,6 +4,8 @@
  * The panel's live region remains the accessible source; this copy is hidden
  * from assistive technology.
  */
+/** True while the collection's thumbnails are being captured: tables are shown without selection marks. */
+export const capturing = () => document.documentElement.dataset.capture === "1";
 export function mirrorStatus() {
   queueMicrotask(() => {
     const host = document.querySelector(".board-area"),

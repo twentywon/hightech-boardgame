@@ -2076,3 +2076,6 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
 @media (max-width: 760px) {
   .library .game-icon.shot { width: 104px; height: 78px; border-radius: 14px; }
 }
+dialog .key-card { margin: 4px 0 0; padding: 22px 18px; border: 2px solid #c9a227; border-radius: 14px; background: #fff7d6; color: #3a2c08; font-size: 17px; font-weight: 700; text-align: center; line-height: 1.6; }
+.sp-sidebar .bj-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#sp-hint { min-height: 50px; border-radius: 12px; font-size: 14px; font-weight: 600; }

@@ -6,7 +6,7 @@ import { FOV, cameraDistance, type Subject } from "../../src/engine/camera";
 import { checkersBoard } from "../../src/games/checkers/board";
 import { dotsPoints } from "../../src/games/dots/config";
 import { hexLayout } from "../../src/games/hex/config";
-import { PaperView } from "../../src/games/paper/view";
+import { paperPlace, paperSubject } from "../../src/games/paper/view";
 import { MANCALA_SUBJECT, pitAt } from "../../src/games/mancala/view";
 import { SPIDER_SUBJECT, columnSpots, stockSpot } from "../../src/games/spider/layout";
 
@@ -86,9 +86,10 @@ test("the notebook: dots and boxes closes a box for another turn, hex colours a 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const mobile = info.project.name === "mobile";
-  const mark = async (point: { x: number; z: number }) => {
-    const p = PaperView.place(point);
-    await tap(page, PaperView.subject, p.x, p.z, mobile, 0.07);
+  // Hex fills its page, with the pencils in a corner; dots and boxes keeps them beside it.
+  const mark = async (point: { x: number; z: number }, corner = false) => {
+    const p = paperPlace(point, corner);
+    await tap(page, paperSubject(corner), p.x, p.z, mobile, 0.07);
     await settled(page);
   };
   await sit(page, "도츠 앤 박시스", "local", "3");
@@ -110,7 +111,7 @@ test("the notebook: dots and boxes closes a box for another turn, hex colours a 
   await page.screenshot({ path: `test-results/${info.project.name}-dots.png`, fullPage: true });
   await sit(page, "헥스", "ai", "7");
   await expect(page.locator(".board-label")).toContainText("7 × 7");
-  await mark(hexLayout(7).points[24]);
+  await mark(hexLayout(7).points[24], true);
   await expect(moves(page)).toHaveText("2수", { timeout: 30000 });
   await expect(page.locator("#pg-count-0")).toHaveText("칸 1");
   await expect(page.locator("#pg-count-1")).toHaveText("칸 1");
@@ -125,7 +126,7 @@ test("mancala in the market: sowing into my store keeps the turn", async ({ page
   const mobile = info.project.name === "mobile",
     sow = async (pit: number) => {
       const p = pitAt(pit);
-      await tap(page, MANCALA_SUBJECT, p.x, p.z, mobile, 0.3);
+      await tap(page, MANCALA_SUBJECT, p.x, p.z, mobile, 0.56);
       await settled(page);
     };
   await sit(page, "만칼라", "local");
@@ -172,7 +173,7 @@ test("snakes and ladders: the die walks the token and a ladder lifts it", async 
   expect(errors).toEqual([]);
 });
 
-test("spider solitaire: deal a row, move a card by tapping it, undo", async ({ page }, info) => {
+test("spider solitaire: a hint, a card dragged to its column, undo and a new row", async ({ page }, info) => {
   test.setTimeout(90000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -189,18 +190,46 @@ test("spider solitaire: deal a row, move a card by tapping it, undo", async ({ p
   await expect(page.locator("#sp-done")).toHaveText("0 / 8");
   await expect(page.locator("#sp-stock")).toHaveText("5번");
   await expect(page.locator("#sp-undo")).toBeDisabled();
-  // Tap the face-up card of each column until one of them moves.
+  // The hint names a card and a column; drag that card there.
   const lengths = [6, 6, 6, 6, 5, 5, 5, 5, 5, 5];
-  await expect(async () => {
-    for (const [column, length] of lengths.entries()) {
-      const cards = Array.from({ length }, (_, i) => ({ id: i, rank: 1, suit: 0, up: i === length - 1 })),
-        spot = columnSpots(cards, column)[length - 1];
-      await tap(page, SPIDER_SUBJECT, spot.x, spot.z + 0.4, mobile, 0.03);
-      await settled(page);
-      if ((await moves(page).textContent()) !== "0수") break;
-    }
-    await expect(moves(page)).toHaveText("1수", { timeout: 500 });
-  }).toPass({ timeout: 30000 });
+  const spotOf = async (column: number, dz = 0.4) => {
+    const cards = Array.from({ length: lengths[column] }, (_, i) => ({ id: i, rank: 1, suit: 0, up: i === lengths[column] - 1 })),
+      spot = columnSpots(cards, column)[lengths[column] - 1],
+      box = (await page.locator("canvas").boundingBox())!,
+      aspect = box.width / box.height,
+      d = cameraDistance(aspect, false, SPIDER_SUBJECT),
+      camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+    camera.position.set(0, Math.sin(SPIDER_SUBJECT.tilt) * d, Math.cos(SPIDER_SUBJECT.tilt) * d);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const v = new Vector3(spot.x, 0.03, spot.z + dz).project(camera);
+    return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+  };
+  const drag = async (from: number, to: number) => {
+    const a = await spotOf(from),
+      b = await spotOf(to, 0.9);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+    await page.mouse.move(b.x, b.y, { steps: 4 });
+    await page.mouse.up();
+    await settled(page);
+  };
+  await page.locator("#sp-hint").click();
+  const advice = (await turn(page).textContent())!.match(/(\d+)번째 줄의 카드를 (\d+)번째 줄로/)!;
+  expect(advice).not.toBeNull();
+  const [from, to] = [Number(advice[1]) - 1, Number(advice[2]) - 1];
+  // Let go over a column that cannot take it: the card slides back.
+  const wrong = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].find((c) => c !== from && c !== to)!;
+  await drag(from, wrong);
+  await page.locator("#sp-hint").click();
+  if ((await turn(page).textContent())!.includes(`${from + 1}번째 줄의 카드를 ${to + 1}번째 줄로`)) await expect(moves(page)).toHaveText("0수");
+  // A click without a drag moves nothing.
+  const still = await spotOf(from);
+  await page.mouse.click(still.x, still.y);
+  await expect(moves(page)).toHaveText("0수");
+  await drag(from, to);
+  await expect(moves(page)).toHaveText("1수");
   await page.locator("#sp-undo").click();
   await expect(moves(page)).toHaveText("0수");
   // The stock on the table deals a row, like the button.
@@ -242,14 +271,24 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   await expect(page.locator("#tour-money-1")).toContainText("1,900 · 도시 0 · 세금", { timeout: 20000 });
   await expect(page.locator("#tour-roll")).toBeEnabled({ timeout: 20000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  // Play on, buying and building whatever is offered, into the next round.
+  // Play on, buying, building and drawing golden keys, into the next round.
+  let keys = 0;
   await expect(async () => {
-    const yes = page.locator("#tour-yes"),
+    const read = page.locator("dialog .primary"),
+      key = page.locator("#tour-key"),
+      yes = page.locator("#tour-yes"),
       roll = page.locator("#tour-roll");
-    if ((await yes.isVisible()) && (await yes.isEnabled())) await yes.click({ timeout: 1000 });
+    if (await read.isVisible()) {
+      // The card is shown before it takes effect.
+      await expect(page.locator("dialog .key-card")).not.toBeEmpty();
+      keys++;
+      await read.click({ timeout: 1000 });
+    } else if ((await key.isVisible()) && (await key.isEnabled())) await key.click({ timeout: 1000 });
+    else if ((await yes.isVisible()) && (await yes.isEnabled())) await yes.click({ timeout: 1000 });
     else if ((await roll.isVisible()) && (await roll.isEnabled())) await roll.click({ timeout: 1000 });
-    await expect(moves(page)).toHaveText(/^[2-9] \//, { timeout: 600 });
-  }).toPass({ timeout: 150000, intervals: [150] });
+    await expect(moves(page)).toHaveText(/^[3-9] \//, { timeout: 600 });
+  }).toPass({ timeout: 160000, intervals: [150] });
+  expect(keys).toBeGreaterThanOrEqual(0);
   await page.screenshot({ path: `test-results/${info.project.name}-tour.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

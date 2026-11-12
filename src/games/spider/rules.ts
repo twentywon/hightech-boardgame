@@ -72,6 +72,38 @@ export function bestTarget(state: State, column: number, index: number) {
     null
   );
 }
+/**
+ * A move worth trying, or null when there is none: joining a run of one suit
+ * comes first, then turning a hidden card up, then anything that is not
+ * pointless.
+ */
+export function hint(state: State): { from: number; index: number; to: number } | null {
+  let best: { from: number; index: number; to: number } | null = null,
+    top = -Infinity;
+  state.columns.forEach((cards, from) =>
+    cards.forEach((card, index) => {
+      if (!movable(state, from, index)) return;
+      const above = cards[index - 1],
+        // Taking a card off the one it already follows in suit gains nothing.
+        settled = !!above && above.up && above.suit === card.suit && above.rank === card.rank + 1;
+      for (const to of targets(state, from, index)) {
+        const onto = state.columns[to][state.columns[to].length - 1];
+        if (!onto && index === 0) continue;
+        let score = 0;
+        if (onto?.suit === card.suit) score += 6 + (cards.length - index);
+        if (above && !above.up) score += 4;
+        if (index === 0) score += 2;
+        if (!onto) score -= 2;
+        if (settled) score -= onto?.suit === card.suit ? 5 : 20;
+        if (score > top) {
+          top = score;
+          best = { from, index, to };
+        }
+      }
+    }),
+  );
+  return top > -10 ? best : null;
+}
 /** Turns the last card of each column up and takes off any complete run. */
 function tidy(state: State) {
   state.columns = state.columns.map((cards) => {

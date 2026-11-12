@@ -39,8 +39,16 @@ export class SpiderView {
   /** A card touched the felt. */
   onContact: () => void = () => {};
   onSettled: () => void = () => {};
-  /** A card of a column was tapped. */
-  onCard: (column: number, index: number) => void = () => {};
+  /**
+   * The run starting at a card was dragged and let go over a column. The
+   * screen moves it or, by syncing again, lets it slide back.
+   */
+  onDrop: (column: number, index: number, to: number) => void = () => {};
+  /** May the run starting at this card be picked up? */
+  canDrag: (column: number, index: number) => boolean = () => false;
+  private drag: { pointer: number; column: number; index: number; meshes: T.Mesh[]; grab: T.Vector3; moved: boolean } | null = null;
+  private marks = new T.Group();
+  private table = new T.Plane(new T.Vector3(0, 1, 0), -0.05);
   /** An empty column or the stock was tapped. */
   onStock: () => void = () => {};
   get animating() {
@@ -89,7 +97,7 @@ export class SpiderView {
     );
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;
-    this.scene.add(felt, this.piles);
+    this.scene.add(felt, this.piles, this.marks);
     this.geometry = this.own(new T.BoxGeometry(CARD.width, 0.006, CARD.height));
     this.edge = this.own(new T.MeshStandardMaterial({ color: "#efe9db", roughness: 0.8 }));
     this.back = this.paint(drawBack);
@@ -98,22 +106,69 @@ export class SpiderView {
     el.addEventListener("pointerdown", (e) => {
       down = e.pointerType === "mouse" && e.button !== 0 ? null : { pointer: e.pointerId, x: e.clientX, y: e.clientY };
     });
-    el.addEventListener("pointerup", (e) => {
-      const tap = down;
-      down = null;
-      if (this.disposed || this.animating || !this.state || tap?.pointer !== e.pointerId) return;
-      if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 12) return;
+    const spot = (e: PointerEvent) => {
+      aim(this.ray, e, el, this.camera);
+      const hit = new T.Vector3();
+      return this.ray.ray.intersectPlane(this.table, hit) ? hit : null;
+    };
+    // A finger on the table drags cards; it must not scroll the page.
+    el.style.touchAction = "none";
+    el.addEventListener("pointerdown", (e) => {
+      if (this.disposed || this.animating || !this.state || this.drag || !down) return;
       aim(this.ray, e, el, this.camera);
       // The card nearest the eye is the one on top.
       const hit = this.ray.intersectObjects([...this.cards.values()].map((c) => c.mesh), false)[0];
-      if (hit) {
-        const id = hit.object.userData.id as number;
-        this.state.columns.forEach((cards, column) => {
-          const index = cards.findIndex((c) => c.id === id);
-          if (index >= 0) this.onCard(column, index);
-        });
-      } else if (this.ray.intersectObjects(this.piles.children, false).some((h) => h.object.userData.stock)) this.onStock();
+      if (!hit) return;
+      const id = hit.object.userData.id as number;
+      this.state.columns.forEach((cards, column) => {
+        const index = cards.findIndex((c) => c.id === id);
+        if (index < 0 || !this.canDrag(column, index)) return;
+        const at = spot(e);
+        if (!at) return;
+        this.marks.clear();
+        this.drag = {
+          pointer: e.pointerId,
+          column,
+          index,
+          meshes: cards.slice(index).map((c) => this.cards.get(c.id)!.mesh),
+          grab: at.clone().sub(hit.object.position),
+          moved: false,
+        };
+        el.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
     });
+    el.addEventListener("pointermove", (e) => {
+      const drag = this.drag;
+      if (!drag || drag.pointer !== e.pointerId) return;
+      const at = spot(e);
+      if (!at) return;
+      drag.moved = true;
+      // The run follows the pointer, lifted clear of the other cards.
+      drag.meshes.forEach((mesh, i) => mesh.position.set(at.x - drag.grab.x, 0.5 + i * 0.01, at.z - drag.grab.z + i * 0.46));
+      this.dirty = true;
+    });
+    const release = (e: PointerEvent) => {
+      const drag = this.drag;
+      if (drag && drag.pointer === e.pointerId) {
+        this.drag = null;
+        if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+        const x = drag.meshes[0].position.x,
+          to = Math.max(0, Math.min(9, Math.round(x / PITCH + 4.5)));
+        // Let go over its own column, or cancelled: the screen puts it back.
+        this.onDrop(drag.column, drag.index, e.type === "pointerup" && drag.moved ? to : drag.column);
+        down = null;
+        return;
+      }
+      const tap = down;
+      down = null;
+      if (this.disposed || this.animating || !this.state || tap?.pointer !== e.pointerId || e.type !== "pointerup") return;
+      if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 12) return;
+      aim(this.ray, e, el, this.camera);
+      if (this.ray.intersectObjects(this.piles.children, false).some((h) => h.object.userData.stock)) this.onStock();
+    };
+    el.addEventListener("pointerup", release);
+    el.addEventListener("pointercancel", release);
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.resize();
@@ -162,6 +217,7 @@ export class SpiderView {
     if (this.disposed) return;
     this.state = state;
     this.dirty = true;
+    this.marks.clear();
     for (const t of this.tweens) t.mesh.position.copy(t.to);
     this.tweens = [];
     const quick = !animate || this.reducedMotion,
@@ -212,6 +268,27 @@ export class SpiderView {
     for (let i = 0; i < state.stock.length / 10; i++) pile(stockSpot.x - i * 0.22, this.back, 10 + i, true);
     state.done.forEach((suit, i) => pile((-4.5 + i * 0.5) * PITCH, this.face({ id: -1, rank: 13, suit, up: true }), 13 + i));
     if (!this.tweens.length) this.onSettled();
+  }
+  /** Outlines the run a hint would move and the column it would go to. */
+  showHint(column: number, index: number, to: number) {
+    this.marks.clear();
+    if (!this.state) return;
+    const material = this.own(new T.MeshBasicMaterial({ color: "#ffd84a", transparent: true, opacity: 0.55, depthWrite: false })),
+      frame = (x: number, z: number, depth: number) => {
+        const mesh = new T.Mesh(this.own(new T.PlaneGeometry(CARD.width + 0.14, depth + 0.14)), material);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set(x, 0.6, z);
+        mesh.renderOrder = 4;
+        this.marks.add(mesh);
+      },
+      from = columnSpots(this.state.columns[column], column),
+      target = columnSpots(this.state.columns[to], to),
+      last = from[from.length - 1],
+      end = target[target.length - 1];
+    // From the top of the first card of the run to the bottom of its last.
+    frame(from[index].x, (from[index].z + last.z) / 2, last.z - from[index].z + CARD.height);
+    frame((to - 4.5) * PITCH, end ? end.z + 0.46 : -4.4, CARD.height);
+    this.dirty = true;
   }
   private step(now: number) {
     if (!this.tweens.length) return false;

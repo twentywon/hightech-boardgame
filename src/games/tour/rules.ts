@@ -21,37 +21,43 @@ const special = (kind: Kind, name: string): Space => ({ kind, name, price: 0, gr
 export const SPACES: Space[] = [
   special("start", "출발"),
   city("하노이", 60, 0, "VN"),
-  special("luck", "행운"),
+  special("luck", "황금열쇠"),
   city("방콕", 80, 0, "TH"),
   city("자카르타", 90, 0, "ID"),
   special("tax", "세금"),
-  city("뭄바이", 100, 0, "IN"),
+  city("싱가포르", 100, 0, "SG"),
+  city("뭄바이", 110, 0, "IN"),
   city("두바이", 120, 1, "AE"),
-  special("storm", "태풍"),
+  special("storm", "무인도"),
   city("이스탄불", 140, 1, "TR"),
   city("카이로", 150, 1, "EG"),
-  special("luck", "행운"),
+  special("luck", "황금열쇠"),
   city("나이로비", 160, 1, "KE"),
   city("케이프타운", 180, 1, "ZA"),
   city("아테네", 200, 2, "GR"),
   city("로마", 220, 2, "IT"),
+  city("암스테르담", 230, 2, "NL"),
   special("festival", "축제"),
   city("바르셀로나", 240, 2, "ES"),
   city("파리", 260, 2, "FR"),
-  special("luck", "행운"),
+  special("luck", "황금열쇠"),
   city("런던", 280, 2, "GB"),
   city("베를린", 300, 2, "DE"),
   city("스톡홀름", 320, 2, "SE"),
   city("멕시코시티", 330, 3, "MX"),
+  city("리마", 340, 3, "PE"),
   special("airport", "공항"),
   city("토론토", 350, 3, "CA"),
   city("뉴욕", 400, 3, "US"),
-  special("luck", "행운"),
+  special("luck", "황금열쇠"),
   city("리우", 360, 3, "BR"),
   city("부에노스아이레스", 380, 3, "AR"),
   city("시드니", 420, 3, "AU"),
+  city("도쿄", 440, 0, "JP"),
   city("서울", 450, 0, "KR"),
 ];
+/** Where the island that holds a traveller for a while lies. */
+export const ISLAND = SPACES.findIndex((space) => space.kind === "storm");
 export const START_MONEY = 2000,
   SALARY = 200,
   TAX = 100,
@@ -81,7 +87,7 @@ export const LUCK: Luck[] = [
   { text: "기념품을 너무 많이 샀습니다.", money: -80 },
   { text: "짐이 다른 공항으로 갔습니다. 새 옷을 삽니다.", money: -40 },
   { text: "출발 칸으로 돌아가 월급을 받습니다.", to: 0 },
-  { text: "태풍 예보를 놓쳤습니다. 태풍 칸으로 갑니다.", to: 8 },
+  { text: "배가 떠내려갔습니다. 무인도로 갑니다.", to: ISLAND },
   { text: "지름길을 찾았습니다. 세 칸 앞으로 갑니다.", step: 3 },
   { text: "길을 잘못 들었습니다. 두 칸 뒤로 갑니다.", step: -2 },
   { text: "건물을 수리합니다. 건물 하나에 30씩 냅니다.", repairs: 30 },
@@ -94,7 +100,8 @@ export interface Player {
   wait: number;
   out: boolean;
 }
-export type Phase = "roll" | "buy" | "build" | "over";
+/** "key": a golden key card waits to be drawn; "card": it has been drawn and waits to be read. */
+export type Phase = "roll" | "key" | "card" | "buy" | "build" | "over";
 export interface State {
   players: Player[];
   /** Owner of each space, or -1, and the building level on it (0–3). */
@@ -107,8 +114,13 @@ export interface State {
   /** Squares the mover walked on the last roll, then any place it was sent to. */
   path: number[];
   rollId: number;
-  /** What happened on the last step, for the status line. */
+  /** What happened on the last step, for the status line, and whose step it was. */
   note: string;
+  actor: number;
+  /** Doubles the traveller to move has rolled in a row. */
+  doubles: number;
+  /** The golden key card drawn and not yet carried out (index into `LUCK`), or -1. */
+  card: number;
   /** Winner once the game is over; several when they are level. */
   winners: number[];
 }
@@ -125,6 +137,9 @@ export function createGame(players: number): State {
     path: [],
     rollId: 0,
     note: "",
+    actor: 0,
+    doubles: 0,
+    card: -1,
     winners: [],
   };
 }
@@ -191,6 +206,7 @@ function pass(s: State, again: boolean) {
       if (next === 0) s.round++;
     } while (s.players[next].out);
     s.turn = next;
+    s.doubles = 0;
     if (s.round > ROUNDS) {
       const best = Math.max(...alive.map((i) => worth(s, i)));
       return finish(s, alive.filter((i) => worth(s, i) === best));
@@ -205,7 +221,7 @@ function finish(s: State, winners: number[]) {
   return s;
 }
 /** What the space a traveller stands on does. Returns true when a decision is pending. */
-function arrive(s: State, random: Random): boolean {
+function arrive(s: State): boolean {
   const me = s.turn,
     p = s.players[me],
     space = SPACES[p.at];
@@ -234,34 +250,17 @@ function arrive(s: State, random: Random): boolean {
     s.note += ` 세금 ${TAX}을(를) 냈습니다.`;
   } else if (space.kind === "storm") {
     p.wait = STORM_TURNS;
-    s.note += ` 태풍으로 ${STORM_TURNS}번 쉽니다.`;
+    s.note += ` 무인도에서 ${STORM_TURNS}번 쉽니다.`;
   } else if (space.kind === "airport") {
     p.at = 0;
     p.money += SALARY;
     s.path.push(0);
     s.note += " 비행기로 출발 칸에 가서 월급을 받았습니다.";
   } else if (space.kind === "luck") {
-    const card = LUCK[Math.floor(random() * LUCK.length)];
-    s.note += ` 행운 카드: ${card.text}`;
-    if (card.money) {
-      if (card.money > 0) p.money += card.money;
-      else charge(s, me, -card.money);
-    }
-    if (card.repairs) charge(s, me, card.repairs * s.levels.reduce((n, level, i) => n + (s.owners[i] === me ? level : 0), 0));
-    if (card.gift)
-      s.players.forEach((other, i) => {
-        if (i !== me && !other.out) p.money += charge(s, i, card.gift!);
-      });
-    if (card.to !== undefined) {
-      if (card.to === 0) p.money += SALARY;
-      p.at = card.to;
-      s.path.push(card.to);
-      if (card.to !== 0) return arrive(s, random);
-    }
-    if (card.step) {
-      walk(s, me, card.step);
-      return arrive(s, random);
-    }
+    // The card is drawn by hand: the turn waits for it.
+    s.phase = "key";
+    s.note += " 황금열쇠 칸에 섰습니다.";
+    return true;
   }
   return false;
 }
@@ -274,18 +273,74 @@ export function roll(state: State, random: Random): State | null {
   s.rollId++;
   s.path = [];
   s.note = "";
+  s.actor = me;
   if (p.wait > 0) {
     p.wait--;
-    s.note = `태풍이 지나가기를 기다립니다 (남은 횟수 ${p.wait}).`;
+    s.note = `무인도에서 배를 기다립니다 (남은 횟수 ${p.wait}).`;
     return pass(s, false);
   }
   s.dice = [1 + Math.floor(random() * 6), 1 + Math.floor(random() * 6)];
   const double = s.dice[0] === s.dice[1];
   s.note = `${s.dice[0]}와 ${s.dice[1]}이(가) 나왔습니다.`;
+  s.doubles = double ? s.doubles + 1 : 0;
+  // A third double in a row sends the traveller straight to the island.
+  if (s.doubles >= 3) {
+    p.at = ISLAND;
+    p.wait = STORM_TURNS;
+    s.path = [ISLAND];
+    s.note += ` 같은 눈이 세 번 이어져 무인도로 갑니다.`;
+    return pass(s, false);
+  }
   walk(s, me, s.dice[0] + s.dice[1]);
-  if (arrive(s, random)) return s;
-  // A double rolls again, unless the traveller was caught by the storm.
+  if (arrive(s)) return s;
+  // A double rolls again, unless the traveller is held on the island.
   return pass(s, double && p.wait === 0);
+}
+/** Draws the golden key card that waits on the pile; it is read before it takes effect. */
+export function draw(state: State, random: Random): State | null {
+  if (state.phase !== "key") return null;
+  const s = clone(state);
+  s.card = Math.floor(random() * LUCK.length);
+  s.phase = "card";
+  s.actor = s.turn;
+  s.note = `황금열쇠: ${LUCK[s.card].text}`;
+  return s;
+}
+/** Carries out the golden key card that was drawn. */
+export function follow(state: State): State | null {
+  if (state.phase !== "card" || state.card < 0) return null;
+  const s = clone(state),
+    me = s.turn,
+    p = s.players[me],
+    card = LUCK[s.card];
+  s.card = -1;
+  s.path = [];
+  s.rollId++;
+  s.actor = me;
+  s.note = `황금열쇠: ${card.text}`;
+  s.phase = "roll";
+  if (card.money) {
+    if (card.money > 0) p.money += card.money;
+    else charge(s, me, -card.money);
+  }
+  if (card.repairs) charge(s, me, card.repairs * s.levels.reduce((n, level, i) => n + (s.owners[i] === me ? level : 0), 0));
+  if (card.gift)
+    s.players.forEach((other, i) => {
+      if (i !== me && !other.out) p.money += charge(s, i, card.gift!);
+    });
+  let pending = false;
+  if (card.to !== undefined) {
+    if (card.to === 0) p.money += SALARY;
+    p.at = card.to;
+    s.path.push(card.to);
+    if (card.to !== 0) pending = arrive(s);
+  }
+  if (card.step) {
+    walk(s, me, card.step);
+    pending = arrive(s);
+  }
+  if (pending) return s;
+  return pass(s, s.dice[0] === s.dice[1] && p.wait === 0);
 }
 /** Answers the pending offer to buy the city or to build on it. */
 export function decide(state: State, yes: boolean): State | null {
@@ -294,6 +349,7 @@ export function decide(state: State, yes: boolean): State | null {
     me = s.turn,
     p = s.players[me],
     space = SPACES[p.at];
+  s.actor = me;
   if (yes && s.phase === "buy") {
     p.money -= space.price;
     s.owners[p.at] = me;

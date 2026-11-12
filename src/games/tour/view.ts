@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { SPACES, type State } from "./rules";
 import { drawFlag } from "./flags";
@@ -7,8 +7,9 @@ import { drawFlag } from "./flags";
 export const TOUR_SUBJECT: Subject & { tilt: number } = { half: 6.6, halfZ: 6.6, height: 1.6, lookY: 0, tilt: 0.98 };
 export const PLAYER_COLORS = ["#d2452f", "#2f62c0", "#3f9a5a", "#e0a020"];
 const GROUPS = ["#e26a4a", "#d9a441", "#4a8fd0", "#57a56b"],
-  SIDE = 8,
-  STEP = 1.45,
+  // Ten spaces along each side, corners included.
+  SIDE = 9,
+  STEP = 1.3,
   REACH = (SIDE * STEP) / 2;
 /** Centre of a space: 0 is the near right corner and the road runs clockwise seen from above. */
 export function spaceAt(index: number) {
@@ -53,7 +54,7 @@ function tileTexture(index: number) {
   ctx.font = `600 ${city ? 28 : 34}px ${FONT}`;
   ctx.fillStyle = "#5a5148";
   ctx.fillText(
-    city ? String(space.price) : { start: "월급 +200", luck: "카드", tax: "-100", storm: "2번 쉼", festival: "쉬어 가기", airport: "출발로", city: "" }[space.kind],
+    city ? String(space.price) : { start: "월급 +200", luck: "카드 뽑기", tax: "-100", storm: "2번 쉼", festival: "쉬어 가기", airport: "출발로", city: "" }[space.kind],
     128,
     city ? 224 : 198,
   );
@@ -119,6 +120,11 @@ export class TourView {
   onSettled: () => void = () => {};
   /** The board was tapped. */
   onTap: () => void = () => {};
+  /** The pile of golden key cards was tapped. */
+  onDeck: () => void = () => {};
+  private deck!: T.Mesh;
+  private halo!: T.Mesh;
+  private ray = new T.Raycaster();
   get animating() {
     return this.tweens.length > 0;
   }
@@ -213,6 +219,40 @@ export class TourView {
       gold: standard({ color: "#d9b24a", roughness: 0.3, metalness: 0.7 }),
       dark: standard({ color: "#3a3f45" }),
     };
+    // The pile of golden key cards, and the ring that lights up when one is to be drawn.
+    const keyCanvas = document.createElement("canvas");
+    keyCanvas.width = 256;
+    keyCanvas.height = 360;
+    const k = keyCanvas.getContext("2d")!;
+    k.fillStyle = "#d9a520";
+    k.fillRect(0, 0, 256, 360);
+    k.strokeStyle = "#7a5a10";
+    k.lineWidth = 14;
+    k.strokeRect(14, 14, 228, 332);
+    k.lineWidth = 16;
+    k.lineCap = "round";
+    k.beginPath();
+    k.arc(128, 116, 42, 0, Math.PI * 2);
+    k.moveTo(128, 158);
+    k.lineTo(128, 286);
+    k.moveTo(128, 250);
+    k.lineTo(168, 250);
+    k.moveTo(128, 286);
+    k.lineTo(160, 286);
+    k.stroke();
+    const gold = standard({ color: "#b8891a", roughness: 0.5 });
+    this.deck = new T.Mesh(this.own(new T.BoxGeometry(1.15, 0.3, 1.6)), [gold, gold, standard({ map: this.own(texture(keyCanvas)), roughness: 0.45 }), gold, gold, gold]);
+    this.deck.position.set(-2.6, 0.16, 2.2);
+    this.deck.rotation.y = 0.25;
+    this.deck.castShadow = true;
+    this.halo = new T.Mesh(
+      this.own(new T.RingGeometry(1.15, 1.32, 48)),
+      this.own(new T.MeshBasicMaterial({ color: "#ffe27a", transparent: true, opacity: 0.95, depthWrite: false })),
+    );
+    this.halo.rotation.x = -Math.PI / 2;
+    this.halo.position.set(-2.6, 0.02, 2.2);
+    this.halo.visible = false;
+    this.scene.add(this.deck, this.halo);
     const pawn = this.own(new T.CylinderGeometry(0.09, 0.22, 0.5, 18)),
       head = this.own(new T.SphereGeometry(0.15, 16, 12));
     for (let i = 0; i < players; i++) {
@@ -237,7 +277,11 @@ export class TourView {
     let down: number | null = null;
     el.addEventListener("pointerdown", (e) => (down = e.pointerType === "mouse" && e.button !== 0 ? null : e.pointerId));
     el.addEventListener("pointerup", (e) => {
-      if (down === e.pointerId && !this.disposed && !this.animating) this.onTap();
+      if (down === e.pointerId && !this.disposed && !this.animating) {
+        aim(this.ray, e, el, this.camera);
+        if (this.ray.intersectObject(this.deck, false).length) this.onDeck();
+        else this.onTap();
+      }
       down = null;
     });
     this.observer = new ResizeObserver(() => this.resize());
@@ -372,6 +416,7 @@ export class TourView {
     });
   }
   private place(state: State) {
+    this.halo.visible = state.phase === "key";
     state.players.forEach((player, i) => {
       this.tokens[i].position.copy(this.stand(i, player.at));
       this.tokens[i].visible = !player.out;

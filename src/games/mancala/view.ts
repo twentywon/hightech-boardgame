@@ -7,7 +7,9 @@ import type { Marks } from "../points/view";
 import { STORE, type State } from "./rules";
 
 export const MANCALA_SUBJECT: Subject & { tilt: number } = { half: 5.9, halfZ: 4.6, height: 0.8, lookY: 0, tilt: 1.0 };
-const GAP = 1.3,
+/** How deep the pits are cut into the plank. */
+const DEPTH = 0.46,
+  GAP = 1.3,
   ROW = 0.85,
   STORE_X = 4.75;
 /** Centre of a pit or store on the board. */
@@ -48,7 +50,7 @@ export class MancalaView implements PointView<State> {
   private tweens: Tween[] = [];
   private state: State | null = null;
   private ray = new T.Raycaster();
-  private ground = new T.Plane(new T.Vector3(0, 1, 0), -0.3);
+  private ground = new T.Plane(new T.Vector3(0, 1, 0), -0.56);
   private reducedMotion =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   onContact: () => void = () => {};
@@ -99,7 +101,7 @@ export class MancalaView implements PointView<State> {
       this.own(new T.MeshBasicMaterial({ map: this.countTexture, transparent: true, depthWrite: false })),
     );
     labels.rotation.x = -Math.PI / 2;
-    labels.position.y = 0.34;
+    labels.position.y = 0.1 + DEPTH + 0.045;
     labels.renderOrder = 3;
     this.ringGeometry = this.own(new T.RingGeometry(0.56, 0.64, 40));
     this.ringMaterials = ["#fff3c4", "#4a7fd0"].map((color) =>
@@ -194,13 +196,31 @@ export class MancalaView implements PointView<State> {
     // The board: a plank with twelve pits and a store at each end.
     const timber = standard({ map: this.own(wood()), color: "#c99a66", roughness: 0.55 }),
       hollow = standard({ color: "#6e4a2c", roughness: 0.7 });
-    add(new T.BoxGeometry(11.4, 0.3, 3.5), timber, 0, 0.15, 0);
+    // A thin base, and on it a thick plank with the pits cut right through, so
+    // each pit is a real hollow with walls that catch the light and the shade.
+    add(new T.BoxGeometry(11.4, 0.1, 3.5), hollow, 0, 0.05, 0);
+    const plank = new T.Shape();
+    plank.moveTo(-5.7, -1.75);
+    plank.lineTo(5.7, -1.75);
+    plank.lineTo(5.7, 1.75);
+    plank.lineTo(-5.7, 1.75);
+    plank.closePath();
     for (let pit = 0; pit < 14; pit++) {
       const p = pitAt(pit),
-        store = STORE.includes(pit),
-        dish = add(new T.CylinderGeometry(0.52, 0.42, 0.06, 28), hollow, p.x, 0.3, p.z, false);
-      if (store) dish.scale.set(1.05, 1, 2.55);
+        hole = new T.Path();
+      // Shape coordinates: y is −z on the board.
+      if (STORE.includes(pit)) hole.absellipse(p.x, -p.z, 0.56, 1.4, 0, Math.PI * 2, true);
+      else hole.absarc(p.x, -p.z, 0.54, 0, Math.PI * 2, true);
+      plank.holes.push(hole);
     }
+    const top = add(
+      new T.ExtrudeGeometry(plank, { depth: DEPTH, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.03, bevelSegments: 2, curveSegments: 28 }),
+      timber,
+      0,
+      0.1,
+      0,
+    );
+    top.rotation.x = -Math.PI / 2;
     // The stalls: baskets of spices, clay jars, a brass tray and the awning's poles.
     const basket = standard({ color: "#a9793f", roughness: 0.9 }),
       spices = ["#b83a1e", "#e2a52b", "#6b7a2a", "#7a3b1d"].map((color) => standard({ color, roughness: 1 })),
@@ -248,7 +268,7 @@ export class MancalaView implements PointView<State> {
       angle = index * 2.4 + pit;
     return new T.Vector3(
       p.x + Math.cos(angle) * radius,
-      0.42 + Math.floor(index / 14) * 0.2,
+      0.21 + Math.floor(index / 14) * 0.2,
       p.z + Math.sin(angle) * radius * (store ? 2.6 : 1),
     );
   }
@@ -323,10 +343,11 @@ export class MancalaView implements PointView<State> {
     state.sown.path.forEach((pit, i) => {
       const mesh = this.stones.children[first + i];
       if (!mesh) return;
+      // One stone at a time: the next leaves only when the last has landed.
       this.tweens.push({
         mesh,
-        start: now + i * 130,
-        duration: 260,
+        start: now + i * 430,
+        duration: 400,
         from: mesh.position.clone(),
         to: this.spot(pit, landed[pit]++, landed[pit] + 2),
       });
@@ -340,7 +361,7 @@ export class MancalaView implements PointView<State> {
       const mesh = new T.Mesh(this.ringGeometry, this.ringMaterials[kind]),
         p = pitAt(pit);
       mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(p.x, 0.345, p.z);
+      mesh.position.set(p.x, 0.1 + DEPTH + 0.05, p.z);
       mesh.renderOrder = 2;
       this.rings.add(mesh);
     };
@@ -353,7 +374,7 @@ export class MancalaView implements PointView<State> {
       const p = Math.min(1, (now - t.start) / t.duration);
       if (p < 0) return true;
       t.mesh.position.lerpVectors(t.from, t.to, p);
-      t.mesh.position.y += Math.sin(Math.PI * p) * 0.7;
+      t.mesh.position.y += Math.sin(Math.PI * p) * 0.9;
       if (p < 1) return true;
       this.onContact();
       return false;

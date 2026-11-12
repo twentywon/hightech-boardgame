@@ -1,4 +1,4 @@
-import { mirrorStatus } from "./banner";
+import { capturing, mirrorStatus } from "./banner";
 import {
   FINISHED,
   PIECES,
@@ -317,13 +317,16 @@ export function mountYut(
         : selected === null
           ? "마당에서 말을 누른 뒤 금색 고리를 누르거나, 위 버튼으로 옮기세요."
           : "금색 고리가 갈 수 있는 자리입니다.";
-    view?.setMarks({
+    view?.setMarks(
+      capturing() ? { turn: s.turn, movable: [], selected: null, targets: [] } : {
       turn: s.turn,
       canThrow: !waiting && !bot && !over && s.throwsLeft > 0,
       movable: waiting ? [] : [...new Set(legal.map((m) => m.from))],
       selected: waiting ? null : selected,
       targets: waiting || selected === null ? [] : from(selected).map((m) => m.to),
-    });
+    },
+    );
+
     $("yut-result").hidden = !over;
     if (over)
       $("yut-final").textContent =

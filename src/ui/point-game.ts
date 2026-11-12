@@ -1,4 +1,4 @@
-import { mirrorStatus } from "./banner";
+import { capturing, mirrorStatus } from "./banner";
 import { modal } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
 import type { Move, PointGame } from "../games/points/types";
@@ -373,7 +373,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $<HTMLButtonElement>("pg-undo").disabled = waiting || !past.length;
     if (config.action) $<HTMLButtonElement>("pg-action").disabled = waiting || bot || done;
     $("pg-note").textContent = "";
-    view?.setMarks({
+    const marks: Marks = {
       movable:
         next?.field === "from" && config.showMovable !== false
           ? next.points
@@ -383,8 +383,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       selected: chosen.from ?? null,
       targets: next?.field === "to" ? next.points : [],
       removable: next?.field === "extra" ? next.points : [],
-      cursor: document.activeElement === view.renderer.domElement ? cursor : null,
-    });
+      cursor: view && document.activeElement === view.renderer.domElement ? cursor : null,
+    };
+    view?.setMarks(capturing() ? { movable: [], selected: null, targets: [], removable: [], cursor: null } : marks);
+
     $("pg-result").hidden = !done;
     if (done) {
       const winner = game.winner(s);

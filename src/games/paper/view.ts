@@ -23,10 +23,22 @@ export interface PaperGame<S> {
   paint: (ctx: CanvasRenderingContext2D, px: Px, unit: number, state: S, fresh: number) => void;
   /** Changes whenever a mark is added. */
   ply: (state: S) => number;
+  /**
+   * True when the drawing leaves the page's lower left corner free: the
+   * pencils lie there and the page fills the view.
+   */
+  corner?: boolean;
 }
-const SUBJECT: Subject & { tilt: number } = { half: 4.6, halfZ: 5.0, height: 0.4, lookY: 0, tilt: 1.08 };
-/** Board units from the origin to the page's centre: the pencils lie to its right. */
-const PAGE_X = -0.5;
+/** What the camera frames: the page with the pencils beside it, or the page alone. */
+export const paperSubject = (corner = false): Subject & { tilt: number } =>
+  corner
+    ? // A board wider than it is deep: the view closes in on it and the page runs past the frame.
+      { half: 4.35, halfZ: 3.5, height: 0.4, lookY: 0, tilt: 1.08 }
+    : { half: 4.6, halfZ: 4.5, height: 0.4, lookY: 0, tilt: 1.08 };
+/** Board units from the origin to the page's centre: with the pencils beside it the page sits to the left. */
+const pageX = (corner = false) => (corner ? 0 : -0.5);
+/** Where a point of the game lies in the scene. */
+export const paperPlace = (point: { x: number; z: number }, corner = false) => ({ x: point.x + pageX(corner), z: point.z });
 /** A wobbly pencil line: a few thin strokes side by side. */
 export function pencilLine(ctx: CanvasRenderingContext2D, from: [number, number], to: [number, number], color: string, width: number) {
   ctx.strokeStyle = color;
@@ -85,6 +97,8 @@ export class PaperView<S> implements PointView<S> {
   private cursor: T.Mesh;
   private ray = new T.Raycaster();
   private ground = new T.Plane(new T.Vector3(0, 1, 0), -0.05);
+  private pageX: number;
+  private subject: Subject & { tilt: number };
   private reducedMotion =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   onContact: () => void = () => {};
@@ -102,6 +116,8 @@ export class PaperView<S> implements PointView<S> {
     quality: "high" | "low",
     private game: PaperGame<S>,
   ) {
+    const PAGE_X = (this.pageX = pageX(game.corner));
+    this.subject = paperSubject(game.corner);
     this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
@@ -170,12 +186,19 @@ export class PaperView<S> implements PointView<S> {
       // Laid flat with the point away from the player, each at its own slight angle.
       stick.rotation.x = -Math.PI / 2;
       pencil.add(stick);
-      pencil.rotation.y = 0.16 - i * 0.08;
-      pencil.position.set(game.half + PAGE_X + 0.8 + i * 0.3, 0.09, 1.2 + (i % 2) * 0.35);
+      if (game.corner) {
+        // Along the free strip at the foot of the page, points to the left.
+        pencil.rotation.y = Math.PI / 2 + 0.05 - i * 0.025;
+        pencil.position.set(-1.2 + i * 0.22, 0.16, 2.95 + i * 0.2);
+      } else {
+        pencil.rotation.y = 0.16 - i * 0.08;
+        pencil.position.set(game.half + PAGE_X + 0.8 + i * 0.3, 0.09, 1.2 + (i % 2) * 0.35);
+      }
       this.scene.add(pencil);
     });
-    add(new T.BoxGeometry(0.9, 0.3, 0.5), standard({ color: "#f3efe6", roughness: 0.9 }), game.half + PAGE_X + 1.2, 0.15, -2.6).rotation.y = 0.4;
-    add(new T.BoxGeometry(0.5, 0.36, 0.34), standard({ color: "#c23b2b", roughness: 0.4 }), game.half + PAGE_X + 1.6, 0.18, -3.5).rotation.y = -0.3;
+    const [ex, ez] = game.corner ? [game.half - 0.9, -2.85] : [game.half + PAGE_X + 1.2, -2.6];
+    add(new T.BoxGeometry(0.9, 0.3, 0.5), standard({ color: "#f3efe6", roughness: 0.9 }), ex, 0.22, ez).rotation.y = 0.4;
+    if (!game.corner) add(new T.BoxGeometry(0.5, 0.36, 0.34), standard({ color: "#c23b2b", roughness: 0.4 }), game.half + PAGE_X + 1.6, 0.18, -3.5).rotation.y = -0.3;
     // The keyboard's place on the page.
     this.cursor = new T.Mesh(
       this.own(new T.RingGeometry(0.16, 0.22, 32)),
@@ -221,11 +244,6 @@ export class PaperView<S> implements PointView<S> {
     };
     this.raf = requestAnimationFrame(loop);
   }
-  /** Where a point of the game lies in the scene. */
-  static place(point: { x: number; z: number }) {
-    return { x: point.x + PAGE_X, z: point.z };
-  }
-  static subject = SUBJECT;
   private pointUnder(e: PointerEvent) {
     if (!this.state) return -1;
     aim(this.ray, e, this.renderer.domElement, this.camera);
@@ -234,7 +252,7 @@ export class PaperView<S> implements PointView<S> {
     let best = -1,
       nearest = this.game.reach(this.state);
     this.game.points(this.state).forEach((p, i) => {
-      const d = Math.hypot(p.x + PAGE_X - hit.x, p.z - hit.z);
+      const d = Math.hypot(p.x + this.pageX - hit.x, p.z - hit.z);
       if (d < nearest) {
         nearest = d;
         best = i;
@@ -278,8 +296,8 @@ export class PaperView<S> implements PointView<S> {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    const distance = cameraDistance(this.camera.aspect, false, SUBJECT);
-    this.camera.position.set(0, Math.sin(SUBJECT.tilt) * distance, Math.cos(SUBJECT.tilt) * distance);
+    const distance = cameraDistance(this.camera.aspect, false, this.subject);
+    this.camera.position.set(0, Math.sin(this.subject.tilt) * distance, Math.cos(this.subject.tilt) * distance);
     this.camera.lookAt(0, 0, 0);
     this.dirty = true;
   }
@@ -304,7 +322,7 @@ export class PaperView<S> implements PointView<S> {
   setMarks(marks: Marks) {
     const point = marks.cursor !== null && this.state ? this.game.points(this.state)[marks.cursor] : null;
     this.cursor.visible = !!point;
-    if (point) this.cursor.position.set(point.x + PAGE_X, 0.075, point.z);
+    if (point) this.cursor.position.set(point.x + this.pageX, 0.075, point.z);
     this.dirty = true;
   }
   dispose() {
