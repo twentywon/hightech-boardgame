@@ -103,6 +103,7 @@ const play = {
       await press("dialog .primary");
       await press("#tour-key");
       await press("#tour-yes");
+      await press("#tour-end");
       await press("#tour-roll");
       await wait(450);
     }

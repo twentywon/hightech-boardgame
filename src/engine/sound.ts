@@ -123,6 +123,11 @@ export class Sound {
     [1568, 2093].forEach((f, i) => this.tone("triangle", f, f, 0.2 + i * 0.09, 0.5, 0.09));
     this.tone("sine", 3136, 3136, 0.29, 0.6, 0.04);
   }
+  /** A double: a short rising fanfare. */
+  double() {
+    [784, 988, 1175, 1568].forEach((f, i) => this.tone("triangle", f, f, 0.25 + i * 0.09, i === 3 ? 0.5 : 0.16, 0.08));
+    this.tone("sine", 3136, 3136, 0.52, 0.5, 0.03);
+  }
   /** A bright, glittering run of notes. */
   sparkle() {
     [1047, 1319, 1568, 2093, 2637, 3136, 4186].forEach((f, i) => {

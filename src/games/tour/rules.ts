@@ -76,31 +76,78 @@ export const START_MONEY = 2000,
   LEVELS = ["땅", "집", "빌딩", "랜드마크"];
 /** Cost of raising a city to `level` (1–3), and the fee for staying at each level. */
 export const buildCost = (space: Space, level: number) => Math.round((space.price * [0, 0.5, 0.8, 1.2][level]) / 10) * 10;
-export const feeOf = (space: Space, level: number) => Math.round((space.price * [0.2, 0.6, 1.3, 2.5][level]) / 10) * 10;
+/** What a place with `level` buildings has cost: the land and every building up to that level. */
+export const outlay = (space: Space, level: number) => {
+  let total = space.price;
+  for (let l = 1; l <= level; l++) total += buildCost(space, l);
+  return total;
+};
+/** A stay costs one and a half times what was spent on the place, with the units dropped. */
+export const feeOf = (space: Space, level: number) => Math.floor((outlay(space, level) * 1.5) / 10) * 10;
 export interface Luck {
   text: string;
   money?: number;
-  /** Move to this space (collecting the salary when passing the start). */
+  /** Move to this space; `forward` pays the salary when the way there passes the start. */
   to?: number;
+  forward?: boolean;
   step?: number;
-  /** Pay this for each building owned. */
+  /** Once round the board back to the same space, with the salary. */
+  lap?: boolean;
+  /** Pay this for each building owned, or for each place owned. */
   repairs?: number;
-  /** Collect this from every other traveller. */
+  perPlace?: number;
+  /** Collect this from every other traveller, or pay it to each of them. */
   gift?: number;
+  treat?: number;
+  /** Pay this into the peace fund, or take everything in it. */
+  donate?: number;
+  takeFund?: boolean;
+  /** Kept until needed: leaves the island at once, or waives one fee. */
+  ticket?: boolean;
+  waiver?: boolean;
+  /** The dearest place owned is sold back to the bank at half of what was spent. */
+  halfSale?: boolean;
 }
+const SPACE_PORT = SPACES.findIndex((space) => space.kind === "space"),
+  byName = (name: string) => SPACES.findIndex((space) => space.name === name);
 export const LUCK: Luck[] = [
-  { text: "여행 복권에 당첨되었습니다.", money: 150 },
-  { text: "여행 사진 공모전에서 입상했습니다.", money: 80 },
-  { text: "항공 마일리지를 환급받았습니다.", money: 50 },
-  { text: "여권을 다시 발급받았습니다.", money: -60 },
-  { text: "기념품을 너무 많이 샀습니다.", money: -80 },
-  { text: "짐이 다른 공항으로 갔습니다. 새 옷을 삽니다.", money: -40 },
-  { text: "출발 칸으로 돌아가 월급을 받습니다.", to: 0 },
-  { text: "배가 떠내려갔습니다. 무인도로 갑니다.", to: ISLAND },
+  // Windfalls.
+  { text: "여행 복권에 당첨되었습니다. 150을 받습니다.", money: 150 },
+  { text: "여행 사진 공모전에서 입상했습니다. 80을 받습니다.", money: 80 },
+  { text: "항공 마일리지를 환급받았습니다. 50을 받습니다.", money: 50 },
+  { text: "평화를 위해 애쓴 공로로 큰 상을 받았습니다. 상금 300을 받습니다.", money: 300 },
+  { text: "여행 장학생으로 뽑혔습니다. 100을 받습니다.", money: 100 },
+  { text: "세계 자동차 경주에서 우승했습니다. 200을 받습니다.", money: 200 },
+  { text: "오래 부은 여행 적금이 만기가 되었습니다. 120을 받습니다.", money: 120 },
+  // Costs.
+  { text: "여권을 잃어버려 다시 발급받았습니다. 60을 냅니다.", money: -60 },
+  { text: "기념품을 너무 많이 샀습니다. 80을 냅니다.", money: -80 },
+  { text: "짐이 다른 공항으로 갔습니다. 새 옷값 40을 냅니다.", money: -40 },
+  { text: "여행 중에 배탈이 났습니다. 병원비 50을 냅니다.", money: -50 },
+  { text: "과속으로 단속에 걸렸습니다. 벌금 50을 냅니다.", money: -50 },
+  { text: "해외 연수를 떠납니다. 등록금 100을 냅니다.", money: -100 },
+  // Journeys.
+  { text: "고속 열차를 탔습니다. 출발 칸으로 가서 월급을 받습니다.", to: 0 },
+  { text: "배가 떠내려갔습니다. 무인도로 갑니다. 월급은 받지 못합니다.", to: ISLAND },
+  { text: "우주여행 초청장을 받았습니다. 우주여행 칸으로 갑니다. 출발을 지나면 월급을 받습니다.", to: SPACE_PORT, forward: true },
+  { text: "서울 관광을 떠납니다. 서울로 갑니다. 출발을 지나면 월급을 받습니다.", to: byName("서울"), forward: true },
+  { text: "파리 관광을 떠납니다. 파리로 갑니다. 출발을 지나면 월급을 받습니다.", to: byName("파리"), forward: true },
+  { text: "세계 일주 초대권입니다. 판을 한 바퀴 돌아 제자리로 오고 월급을 받습니다.", lap: true },
   { text: "지름길을 찾았습니다. 세 칸 앞으로 갑니다.", step: 3 },
   { text: "길을 잘못 들었습니다. 두 칸 뒤로 갑니다.", step: -2 },
-  { text: "건물을 수리합니다. 건물 하나에 30씩 냅니다.", repairs: 30 },
+  { text: "숙소를 옮깁니다. 세 칸 뒤로 갑니다.", step: -3 },
+  // What is owned.
+  { text: "건물을 수리합니다. 건물 한 단계마다 30을 냅니다.", repairs: 30 },
+  { text: "재산세 고지서가 나왔습니다. 가진 땅 하나마다 30을 냅니다.", perPlace: 30 },
+  { text: "급히 돈이 필요합니다. 가장 비싼 내 땅을 들인 돈의 반값에 은행에 팝니다.", halfSale: true },
+  // The others, and the fund.
   { text: "생일입니다. 다른 여행자에게서 50씩 받습니다.", gift: 50 },
+  { text: "한턱냅니다. 다른 여행자에게 30씩 줍니다.", treat: 30 },
+  { text: "인류평화기금에 100을 기부합니다.", donate: 100 },
+  { text: "인류평화기금 배당일입니다. 모인 기금을 모두 받습니다.", takeFund: true },
+  // Kept for later.
+  { text: "무인도 탈출권입니다. 갖고 있다가 무인도에 갇힐 때 저절로 써서 바로 떠납니다.", ticket: true },
+  { text: "우대권입니다. 갖고 있다가 다음에 낼 숙박료나 통행료 한 번을 내지 않습니다.", waiver: true },
 ];
 export interface Player {
   money: number;
@@ -108,12 +155,16 @@ export interface Player {
   /** Turns still to sit out in the storm. */
   wait: number;
   out: boolean;
+  /** Island escape tickets and fee waivers kept from golden keys. */
+  tickets: number;
+  waivers: number;
 }
 /**
  * "key": a golden key card waits to be drawn; "card": it has been drawn and
- * waits to be read; "travel": a destination is to be chosen for space travel.
+ * waits to be read; "travel": a destination is to be chosen for space travel;
+ * "end": everything is done and the traveller may still sell before passing the dice on.
  */
-export type Phase = "roll" | "key" | "card" | "travel" | "buy" | "build" | "over";
+export type Phase = "roll" | "key" | "card" | "travel" | "buy" | "build" | "end" | "over";
 export interface State {
   players: Player[];
   /** Owner of each space, or -1, and the building level on it (0–3). */
@@ -141,7 +192,7 @@ export interface State {
 export function createGame(players: number): State {
   const n = Math.max(2, Math.min(4, players));
   return {
-    players: Array.from({ length: n }, () => ({ money: START_MONEY, at: 0, wait: 0, out: false })),
+    players: Array.from({ length: n }, () => ({ money: START_MONEY, at: 0, wait: 0, out: false, tickets: 0, waivers: 0 })),
     owners: SPACES.map(() => -1),
     levels: SPACES.map(() => 0),
     turn: 0,
@@ -173,6 +224,8 @@ export function sell(state: State, player: number, index: number): State | null 
   s.owners[index] = -1;
   s.levels[index] = 0;
   s.actor = player;
+  // Having sold the very place it was about to build on, it may buy it back instead.
+  if (s.phase === "build" && s.players[player].at === index) s.phase = "buy";
   s.note = `${SPACES[index].name}을(를) ${back}에 팔았습니다.`;
   return s;
 }
@@ -228,30 +281,58 @@ function walk(s: State, player: number, steps: number) {
     if (p.at === 0 && steps > 0) p.money += SALARY;
   }
 }
-/** Ends the turn: the next traveller still in the game rolls, or the game is counted. */
+/**
+ * The step is over. A double rolls again; otherwise the traveller is left to
+ * end the turn by hand (it may still sell), unless it is out of the game.
+ */
 function pass(s: State, again: boolean) {
   const alive = s.players.flatMap((p, i) => (p.out ? [] : [i]));
   if (alive.length <= 1) return finish(s, alive);
-  if (!again || s.players[s.turn].out) {
-    let next = s.turn;
-    do {
-      next = (next + 1) % s.players.length;
-      if (next === 0) s.round++;
-    } while (s.players[next].out);
-    s.turn = next;
-    s.doubles = 0;
-    if (s.round > ROUNDS) {
-      const best = Math.max(...alive.map((i) => worth(s, i)));
-      return finish(s, alive.filter((i) => worth(s, i) === best));
-    }
+  if (s.players[s.turn].out) return advance(s);
+  s.phase = again ? "roll" : "end";
+  return s;
+}
+/** Hands the dice to the next traveller still in the game, or counts the game. */
+function advance(s: State) {
+  const alive = s.players.flatMap((p, i) => (p.out ? [] : [i]));
+  if (alive.length <= 1) return finish(s, alive);
+  let next = s.turn;
+  do {
+    next = (next + 1) % s.players.length;
+    if (next === 0) s.round++;
+  } while (s.players[next].out);
+  s.turn = next;
+  s.doubles = 0;
+  if (s.round > ROUNDS) {
+    const best = Math.max(...alive.map((i) => worth(s, i)));
+    return finish(s, alive.filter((i) => worth(s, i) === best));
   }
   s.phase = "roll";
   return s;
+}
+/** The traveller to move ends its turn. */
+export function endTurn(state: State): State | null {
+  if (state.phase !== "end") return null;
+  const s = clone(state);
+  s.actor = s.turn;
+  s.note = "";
+  return advance(s);
 }
 function finish(s: State, winners: number[]) {
   s.phase = "over";
   s.winners = winners;
   return s;
+}
+/** Holds a traveller on the island, unless it carries an escape ticket. */
+function strand(s: State, player: number) {
+  const p = s.players[player];
+  if (p.tickets > 0) {
+    p.tickets--;
+    s.note += " 무인도 탈출권을 써서 갇히지 않았습니다.";
+  } else {
+    p.wait = STORM_TURNS;
+    s.note += " 무인도에 갇혔습니다.";
+  }
 }
 /** What the space a traveller stands on does. Returns true when a decision is pending. */
 function arrive(s: State): boolean {
@@ -261,17 +342,17 @@ function arrive(s: State): boolean {
   if (space.kind === "city" || space.kind === "ship") {
     const owner = s.owners[p.at];
     if (owner === -1) {
-      if (p.money >= space.price) {
-        s.phase = "buy";
-        return true;
-      }
-      s.note += ` ${space.name}을(를) 살 돈이 모자랍니다.`;
+      // Offered even to an empty purse: something else may be sold to pay for it.
+      s.phase = "buy";
+      return true;
     } else if (owner === me) {
-      const level = s.levels[p.at];
-      if (space.kind === "city" && level < 3 && p.money >= buildCost(space, level + 1)) {
+      if (space.kind === "city" && s.levels[p.at] < 3) {
         s.phase = "build";
         return true;
       }
+    } else if (p.waivers > 0) {
+      p.waivers--;
+      s.note += ` 우대권을 써서 ${space.name}의 ${space.kind === "ship" ? "통행료" : "숙박료"}를 내지 않았습니다.`;
     } else {
       const fee = space.kind === "ship" ? SHIP_TOLL : feeOf(space, s.levels[p.at]),
         paid = charge(s, me, fee);
@@ -287,8 +368,7 @@ function arrive(s: State): boolean {
     p.money += s.fund;
     s.fund = 0;
   } else if (space.kind === "storm") {
-    p.wait = STORM_TURNS;
-    s.note += " 무인도에 갇혔습니다.";
+    strand(s, me);
   } else if (space.kind === "space") {
     // The destination is chosen by hand: the turn waits for it.
     s.phase = "travel";
@@ -332,11 +412,12 @@ export function roll(state: State, random: Random): State | null {
   // A third double in a row sends the traveller straight to the island.
   if (s.doubles >= 3) {
     p.at = ISLAND;
-    p.wait = STORM_TURNS;
     s.path = [ISLAND];
     s.note += ` 같은 눈이 세 번 이어져 무인도로 갑니다.`;
+    strand(s, me);
     return pass(s, false);
   }
+  if (double) s.note += " 더블! 한 번 더 굴립니다.";
   walk(s, me, s.dice[0] + s.dice[1]);
   if (arrive(s)) return s;
   // A double rolls again, unless the traveller is held on the island.
@@ -417,23 +498,53 @@ export function follow(state: State): State | null {
   s.actor = me;
   s.note = `황금열쇠: ${card.text}`;
   s.phase = "roll";
+  const owned = () => s.owners.flatMap((owner, i) => (owner === me ? [i] : []));
   if (card.money) {
     if (card.money > 0) p.money += card.money;
     else charge(s, me, -card.money);
   }
-  if (card.repairs) charge(s, me, card.repairs * s.levels.reduce((n, level, i) => n + (s.owners[i] === me ? level : 0), 0));
+  if (card.repairs) charge(s, me, card.repairs * owned().reduce((n, i) => n + s.levels[i], 0));
+  if (card.perPlace) charge(s, me, card.perPlace * owned().length);
+  if (card.halfSale) {
+    const dearest = owned().sort((a, b) => invested(s, b) - invested(s, a))[0];
+    if (dearest === undefined) s.note += " 가진 땅이 없어 아무 일도 없습니다.";
+    else {
+      const back = Math.round(invested(s, dearest) / 2);
+      p.money += back;
+      s.owners[dearest] = -1;
+      s.levels[dearest] = 0;
+      s.note += ` ${SPACES[dearest].name}을(를) ${back}에 팔았습니다.`;
+    }
+  }
   if (card.gift)
     s.players.forEach((other, i) => {
       if (i !== me && !other.out) p.money += charge(s, i, card.gift!);
     });
+  if (card.treat)
+    s.players.forEach((other, i) => {
+      if (i !== me && !other.out && !p.out) other.money += charge(s, me, card.treat!);
+    });
+  if (card.donate) s.fund += charge(s, me, card.donate);
+  if (card.takeFund) {
+    s.note += s.fund ? ` ${s.fund}을(를) 받았습니다.` : " 모인 기금이 없습니다.";
+    p.money += s.fund;
+    s.fund = 0;
+  }
+  if (card.ticket) p.tickets++;
+  if (card.waiver) p.waivers++;
+  if (card.lap) {
+    p.money += SALARY;
+    s.path.push(p.at);
+  }
   let pending = false;
-  if (card.to !== undefined) {
-    if (card.to === 0) p.money += SALARY;
+  if (card.to !== undefined && !p.out) {
+    if (card.to === 0 || (card.forward && card.to < p.at)) p.money += SALARY;
+    const moved = card.to !== p.at;
     p.at = card.to;
     s.path.push(card.to);
-    if (card.to !== 0) pending = arrive(s);
+    if (card.to !== 0 && moved) pending = arrive(s);
   }
-  if (card.step) {
+  if (card.step && !p.out) {
     walk(s, me, card.step);
     pending = arrive(s);
   }
@@ -448,6 +559,8 @@ export function decide(state: State, yes: boolean): State | null {
     p = s.players[me],
     space = SPACES[p.at];
   s.actor = me;
+  const cost = s.phase === "buy" ? space.price : buildCost(space, s.levels[p.at] + 1);
+  if (yes && p.money < cost) return null;
   if (yes && s.phase === "buy") {
     p.money -= space.price;
     s.owners[p.at] = me;
