@@ -2126,3 +2126,10 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
   .game-layout.yacht-game.board-tall #board { height: min(104vw, 56svh, var(--available-board-height, 56svh)); }
   .game-layout.yacht-game.board-taller #board { height: min(170vw, 70svh, var(--available-board-height, 70svh)); }
 }
+
+/* Tools of a point game lie on the table, at its lower right. */
+.board-area .pg-tools { position:absolute;right:14px;bottom:50px;z-index:3;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none; }
+.board-area .pg-tools .pg-tool { pointer-events:auto;padding:11px 18px;border-radius:999px;border:0;background:#fbf7ee;color:#1d2a26;font-weight:700;font-size:14px;box-shadow:0 8px 20px rgba(0,0,0,.35);cursor:pointer; }
+.board-area .pg-tools .pg-tool[hidden] { display:none; }
+.board-area .pg-tools .pg-tool:disabled { opacity:.55;cursor:default; }
+@media (max-width: 760px) { .board-area .pg-tools { right:8px;bottom:40px;gap:6px; } .board-area .pg-tools .pg-tool { padding:9px 13px;font-size:13px; } }

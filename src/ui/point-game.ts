@@ -1,4 +1,3 @@
-import { part, table } from "./guide";
 import { capturing, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
@@ -20,6 +19,8 @@ export interface PointView<S> {
   onContact: () => void;
   onSettled: () => void;
   onPick: (point: number) => void;
+  /** A whole move made by a gesture of the view's own (a flick), instead of by picking points. */
+  onMove?: (move: Move) => void;
   sync(state: S, animate?: boolean): void;
   setMarks(marks: Marks): void;
   setQuality(quality: "high" | "low"): void;
@@ -50,6 +51,10 @@ export interface PointConfig<S> {
   firstNote?: string;
   /** What a piece coming to rest sounds like, instead of a tap. */
   contact?: (sound: Sound, state: S) => void;
+  /** A piece with a single legal move makes it as soon as it is picked. */
+  autoSingle?: boolean;
+  /** No taking back: something hidden would be learnt from it. */
+  noUndo?: boolean;
   /** Where the keyboard starts on the board. */
   keyStart?: (state: S) => number;
   /** True when a move has changed where the keyboard belongs (a new phase): it goes back to `keyStart`. */
@@ -184,28 +189,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       `<li id="pg-side-${p}"><i class="yut-dot" style="background:${(spec?.colors ?? config.colorsOf?.(variant) ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool" hidden>${tool.label}</button>`).join("")}<button id="pg-undo" ${config.action ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool" hidden>${tool.label}</button>`).join("")}</div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
-    $("rules").onclick = () =>
-      modal(
-        config.rulesTitle,
-        // The controls come before the closing remarks.
-        config.rules.replace("<h3>그 밖에</h3>", () => controls + "<h3>그 밖에</h3>"),
-      );
-    const controls =
-          part(
-            "조작",
-            table(
-              ...(config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소")
-                .split("<br>")
-                .map((line): [string, string] => {
-                  const at = line.indexOf(": ");
-                  return [line.slice(0, at), line.slice(at + 2)];
-                }),
-              ["새 게임", "설정 창이 뜹니다. 고른 설정으로 새로 시작합니다."],
-            ),
-          );
+    $("rules").onclick = () => modal(config.rulesTitle, config.rules);
     $("restart").onclick = () => setupDialog(setup);
     $("pg-again").onclick = () => setupDialog(setup);
     $("pg-undo").onclick = undo;
@@ -238,6 +225,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       view.onContact = () => (config.contact ? config.contact(sound, state) : sound.tap());
       view.onSettled = present;
       view.onPick = pick;
+      view.onMove = commit;
       const canvas = view.renderer.domElement;
       canvas.tabIndex = 0;
       canvas.setAttribute("aria-label", `${config.name} 판`);
@@ -282,6 +270,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   /** A tap on a point (or -1): the choice it completes is played at once. */
   function pick(point: number) {
     if (busy() || computerTurn() || over()) return;
+    // A move that needs no piece (a tool, a draw) is played from wherever the choice stands.
+    const direct = game.moves(state).filter((m) => m.from === -1 && m.to === point && m.extra === -1);
+    if (direct.length === 1 && stage().field === "from") return commit(direct[0]);
     const { field, points } = stage();
     if (!points.includes(point)) {
       // Another of my pieces changes the choice; anything else clears it.
@@ -294,11 +285,20 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     else if (field === "to") chosen = { ...chosen, to: point };
     const moves = open(),
       move: Move | undefined =
-        field === "extra" ? moves.find((m) => m.extra === point) : field === "to" && moves.length === 1 ? moves[0] : undefined;
+        field === "extra"
+          ? moves.find((m) => m.extra === point)
+          : (field === "to" || (field === "from" && config.autoSingle)) && moves.length === 1
+            ? moves[0]
+            : undefined;
     if (!move) {
       update();
       return;
     }
+    commit(move);
+  }
+  /** Plays a move of mine. */
+  function commit(move: Move) {
+    if (busy() || computerTurn() || over()) return;
     const next = game.play(state, move, cryptoRandom);
     if (!next) return;
     sound.unlock();

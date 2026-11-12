@@ -1,3 +1,4 @@
+import { shownGuide } from "./guide";
 export function modal(
   title: string,
   body: string,
@@ -7,7 +8,7 @@ export function modal(
 ) {
   document.querySelector("dialog")?.remove();
   const d = document.createElement("dialog");
-  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>${title}</h2><div class="dialog-body">${body}</div><div class="dialog-actions">${actions.map((a, i) => `<button ${i === actions.length - 1 ? 'class="primary"' : ""}>${a.text}</button>`).join("")}</div>`;
+  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>${title}</h2><div class="dialog-body">${shownGuide(body)}</div><div class="dialog-actions">${actions.map((a, i) => `<button ${i === actions.length - 1 ? 'class="primary"' : ""}>${a.text}</button>`).join("")}</div>`;
   document.body.append(d);
   // Only the action row: a body may carry buttons of its own.
   d.querySelectorAll<HTMLButtonElement>(".dialog-actions button").forEach(

@@ -164,7 +164,7 @@ for (const game of games) {
   await page.locator("h1").first().click();
   await wait(400);
   // Only the table: captions, the status line and buttons over it are hidden.
-  await page.addStyleTag({ content: ".board-label, .board-bottom, .board-hint, .bg-acting { display: none !important; }" });
+  await page.addStyleTag({ content: ".board-label, .board-bottom, .board-hint, .bg-acting, .pg-tools, .tour-end, .tour-toast { display: none !important; }" });
   await wait(200);
   await page.locator("canvas").screenshot({ path: `${out}/${id}.png` });
   console.log(id);

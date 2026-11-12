@@ -160,4 +160,25 @@ export const games = [
     icon: "🐇",
     available: true,
   },
+  {
+    name: "숫자 야구",
+    en: "HIT AND BLOW",
+    category: "보드게임",
+    icon: "⚾",
+    available: true,
+  },
+  {
+    name: "길막기",
+    en: "WALL RACE",
+    category: "보드게임",
+    icon: "▦",
+    available: true,
+  },
+  {
+    name: "도미노",
+    en: "DOMINOES",
+    category: "보드게임",
+    icon: "🁣",
+    available: true,
+  },
 ];
