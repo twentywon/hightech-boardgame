@@ -165,28 +165,43 @@ export class LudoView extends TableView<State> {
   protected subject() {
     return SUBJECT;
   }
-  /** Where each of the eight tokens stands; tokens sharing a square stand a little apart. */
+  /** Where each of the eight tokens stands. Tokens sharing a square stand side by side, each made smaller, so that none hides another. */
   private stands(state: State) {
-    const out: { x: number; z: number }[] = [];
+    const out: { x: number; z: number; scale: number }[] = [],
+      groups = new Map<string, number[]>();
     state.tokens.forEach((tokens, side) =>
       tokens.forEach((progress, k) => {
-        const p = tokenAt(side, progress, k),
-          shared = progress >= 0 && progress < HOME ? out.filter((o) => Math.hypot(o.x - p.x, o.z - p.z) < 0.4).length : 0;
-        out.push({ x: p.x + shared * 0.2, z: p.z - shared * 0.14 });
+        const p = tokenAt(side, progress, k);
+        out.push({ ...p, scale: 1 });
+        if (progress < 0 || progress >= HOME) return;
+        const key = `${Math.round(p.x * 100)},${Math.round(p.z * 100)}`;
+        groups.set(key, [...(groups.get(key) ?? []), side * 4 + k]);
       }),
     );
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      const d = S * 0.25;
+      group.forEach((token, i) => {
+        // Two stand left and right; more fill the corners of the square.
+        const [dx, dz] = group.length === 2 ? [i ? d : -d, 0] : [i % 2 ? d : -d, i < 2 ? -d : d];
+        out[token] = { x: out[token].x + dx, z: out[token].z + dz, scale: group.length === 2 ? 0.74 : 0.62 };
+      });
+    }
     return out;
   }
   protected spots(): Spot[] {
     const state = this.state;
     if (!state) return [];
-    const out: Spot[] = this.stands(state).map((p, point) => ({ ...p, y: 0.3, r: 0.42, point }));
+    const out: Spot[] = this.stands(state).map((p, point) => ({ x: p.x, z: p.z, y: 0.3, r: 0.42 * p.scale, point }));
     // The die is a place too: a tap on it rolls.
     out.push({ ...DIE, y: 0.3, r: 0.75, point: ROLL });
     return out;
   }
   protected place(state: State) {
-    this.stands(state).forEach((p, i) => this.tokens[i].position.set(p.x, 0.25, p.z));
+    this.stands(state).forEach((p, i) => {
+      this.tokens[i].position.set(p.x, 0.25 * p.scale, p.z);
+      this.tokens[i].scale.setScalar(p.scale);
+    });
     this.die.quaternion.copy(upright(state.die));
     this.die.position.y = 0.31;
   }

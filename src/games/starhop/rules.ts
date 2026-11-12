@@ -84,19 +84,37 @@ export function play(state: State, move: Move): State | null {
     ply = state.ply + 1;
   cells[move.from] = null;
   cells[move.to] = me;
-  // Home is the point opposite one's own.
-  const home = HOME[me ? 0 : 1].every((i) => cells[i] === me);
+  // Home is the point opposite one's own. A marble the other side leaves behind there cannot keep the game from ending:
+  // the point counts as filled when every hole is taken and at least one marble in it is the mover's.
+  const target = HOME[me ? 0 : 1],
+    home = target.every((i) => cells[i] !== null) && target.some((i) => cells[i] === me);
   return { cells, turn: me ? 0 : 1, winner: home ? me : ply >= TURN_LIMIT ? "draw" : null, last: { from: move.from, to: move.to, path }, ply };
 }
-/** How far a side's marbles still are from the far tip of the point they are bound for, in rows. */
-const toGo = (state: State, side: number) => state.cells.reduce((n: number, owner, i) => (owner === side ? n + (side === 0 ? HOLES[i].r + 8 : 8 - HOLES[i].r) : n), 0);
+/** How many holes lie between a hole and the far tip of the point a side is bound for. */
+const TIP = [
+    { q: 4, r: -8 },
+    { q: -4, r: 8 },
+  ],
+  FAR = [0, 1].map((side) => HOLES.map((h) => (Math.abs(h.q - TIP[side].q) + Math.abs(h.r - TIP[side].r) + Math.abs(h.q + h.r - TIP[side].q - TIP[side].r)) / 2));
+/** How far a side's marbles still are from that tip, all together; the one left furthest behind counts again. */
+function toGo(state: State, side: number) {
+  let sum = 0,
+    worst = 0;
+  state.cells.forEach((owner, i) => {
+    if (owner !== side) return;
+    sum += FAR[side][i];
+    worst = Math.max(worst, FAR[side][i]);
+  });
+  return sum + worst;
+}
 export const evaluate = (state: State, player: 0 | 1) => toGo(state, player ? 0 : 1) - toGo(state, player);
-/** The moves that gain most ground, and a few that at least lose none: the rest are many and seldom good. */
+/** The moves that gain most ground; when few do, the sideways ones too, which is how the last holes get filled. */
 export function candidates(state: State): Move[] {
-  const gain = (m: Move) => (state.turn === 0 ? HOLES[m.from].r - HOLES[m.to].r : HOLES[m.to].r - HOLES[m.from].r),
+  const far = FAR[state.turn],
+    gain = (m: Move) => far[m.from] - far[m.to],
     all = moves(state).sort((a, b) => gain(b) - gain(a)),
     forward = all.filter((m) => gain(m) > 0);
-  return (forward.length ? forward : all).slice(0, 14);
+  return (forward.length >= 6 ? forward : all).slice(0, 14);
 }
 const effect = (state: State): Effect | null =>
   state.last ? { kind: state.last.path.length > 1 ? "jump" : "move", from: state.last.from, to: state.last.to, converted: [], removed: [] } : null;

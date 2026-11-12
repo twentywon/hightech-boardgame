@@ -3,7 +3,7 @@ import { aim, wood } from "../../engine/scene-utils";
 import { pub } from "../../engine/scenery";
 import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { BALL_R, DT, GOAL, HALF_X, HALF_Z, RODS, createWorld, foot, steer, step, type World } from "./sim";
+import { BALL_R, DT, GOAL, HALF_X, HALF_Z, MAX_SLIDE, RODS, createWorld, foot, offset, steer, step, type World } from "./sim";
 import { GOALS, type State } from "./rules";
 
 export const FOOSBALL_COLORS: [string, string] = ["#c8321f", "#e7b416"];
@@ -48,7 +48,7 @@ export class FoosballView extends TableView<State> {
   private rods: { group: T.Group; figures: T.Group }[] = [];
   private ball: T.Mesh;
   private beads: T.Mesh[][] = [[], []];
-  /** Where I want my rods, -1 to 1, and whether a kick is waiting to be taken. */
+  /** How far across I have pushed my rods, in table units, and whether a kick is waiting to be taken. */
   private target = 0;
   private kick = false;
   private held = 0;
@@ -165,7 +165,10 @@ export class FoosballView extends TableView<State> {
     el.addEventListener("pointermove", (e) => {
       if (e.pointerType !== "mouse" || this.disposed) return;
       aim(ray, e, el, this.camera);
-      if (ray.ray.intersectPlane(this.floor, hit)) this.steerTo(hit.x);
+      if (!ray.ray.intersectPlane(this.floor, hit)) return;
+      // A mouse needs no button held: wherever it goes, the rods go as far.
+      if (this.grip !== null && e.buttons === 0) this.push(hit.x - this.grip);
+      if (e.buttons === 0) this.grip = hit.x;
     });
     el.addEventListener("keydown", (e) => {
       if (e.key === "ArrowLeft") this.held = -1;
@@ -176,6 +179,9 @@ export class FoosballView extends TableView<State> {
       if ((e.key === "ArrowLeft" && this.held < 0) || (e.key === "ArrowRight" && this.held > 0)) this.held = 0;
     });
     el.addEventListener("blur", () => (this.held = 0));
+    el.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse" && e.buttons === 0) this.grip = null;
+    });
     this.pose();
     this.begin();
     const tick = () => {
@@ -189,23 +195,31 @@ export class FoosballView extends TableView<State> {
   get animating() {
     return false;
   }
-  private steerTo(x: number) {
-    this.target = Math.max(-1, Math.min(1, x / (HALF_X * 0.72)));
+  /** The rods go exactly as far as the hand does. */
+  private push(by: number) {
+    this.target = Math.max(-MAX_SLIDE, Math.min(MAX_SLIDE, this.target + by));
   }
+  private grip: number | null = null;
   protected dragStart(_point: number, at: { x: number; z: number }) {
-    this.steerTo(at.x);
+    this.grip = at.x;
     this.kick = true;
     return true;
   }
   protected dragMove(at: { x: number; z: number }) {
-    this.steerTo(at.x);
+    if (this.grip !== null) this.push(at.x - this.grip);
+    this.grip = at.x;
+  }
+  protected dragEnd() {
+    this.grip = null;
   }
   /** Runs the table for the time that has passed since the last frame. */
   private advance(now: number) {
-    const passed = Math.min(0.05, (now - this.last) / 1000);
+    // The table itself never jumps more than a twentieth of a second; a held key counts the whole time, however slow the frames.
+    const real = Math.min(0.3, (now - this.last) / 1000),
+      passed = Math.min(0.05, real);
     this.last = now;
     if (!this.state || this.state.winner !== null || document.hidden || document.querySelector("dialog[open]")) return;
-    if (this.held) this.target = Math.max(-1, Math.min(1, this.target + this.held * 2.6 * passed));
+    if (this.held) this.push(this.held * 4.5 * real);
     if (this.wait > 0) {
       this.wait -= passed;
       this.kick = false;
@@ -241,14 +255,14 @@ export class FoosballView extends TableView<State> {
     RODS.forEach((rod, i) => {
       const { group, figures } = this.rods[i],
         kick = foot(world.swing[rod.side]);
-      group.position.x = world.slide[rod.side] * rod.travel;
+      group.position.x = offset(rod, world.slide[rod.side]);
       figures.rotation.x = Math.asin(Math.max(-1, Math.min(1, kick.reach / LEG))) * (rod.side === 0 ? 1 : -1);
     });
     this.ball.position.set(world.ball.x, BALL_R, world.ball.z);
     if (++this.frame % 6 === 0) {
       const data = this.renderer.domElement.dataset;
       data.ball = `${world.ball.x.toFixed(2)},${world.ball.z.toFixed(2)}`;
-      data.slide = world.slide[0].toFixed(2);
+      data.slide = (world.slide[0] / MAX_SLIDE).toFixed(2);
     }
   }
   protected subject(aspect: number): TableSubject {

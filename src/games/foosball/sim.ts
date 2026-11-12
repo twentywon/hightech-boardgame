@@ -33,7 +33,7 @@ const rod = (side: 0 | 1, z: number, count: number): Rod => {
 export const RODS: Rod[] = [rod(0, 4.3, 1), rod(0, 3.1, 2), rod(1, 1.85, 3), rod(0, 0.62, 5), rod(1, -0.62, 5), rod(0, -1.85, 3), rod(1, -3.1, 2), rod(1, -4.3, 1)];
 export interface World {
   ball: { x: number; z: number; vx: number; vz: number };
-  /** How far each side has slid its rods, -1 to 1 of their travel, and how fast that is changing. */
+  /** How far each side has pushed its rods across the table, in the table's own units (each rod stops at its own travel), and how fast that is changing. */
   slide: [number, number];
   slideSpeed: [number, number];
   /** Seconds since each side began its swing, or -1 when the figures hang straight. */
@@ -55,11 +55,11 @@ export const createWorld = (toward: 0 | 1 = 0, nudge = 0): World => ({
   clock: 0,
   hit: false,
 });
-/** What a side asks of its rods in a slice: where to slide to (-1 to 1) and whether to kick. */
+/** What a side asks of its rods in a slice: how far across to push them (in table units) and whether to kick. */
 export interface Input {
   target: number;
   kick: boolean;
-  /** Share of the full sliding speed this hand has; 1 when left out. */
+  /** Share of the computer's sliding speed this hand has; left out, the rods go where they are asked at once, as a hand moves them. */
   pace?: number;
 }
 /** How far forward of the rod the feet are during a swing, and how fast they are moving: back a little, then through. */
@@ -71,15 +71,19 @@ export function foot(swing: number) {
     speed = t < 0.25 ? -0.5 / 0.25 : t < 0.55 ? 1.5 / 0.3 : -1 / 0.45;
   return { reach: reach * REACH, speed: (speed * REACH) / SWING };
 }
-/** How fast a side can slide its rods, in travels per second. */
-export const SLIDE_SPEED = 3.2;
+/** How fast a computer's hand slides its rods, in table units a second, and the farthest any rod travels. */
+export const SLIDE_SPEED = 4.2,
+  MAX_SLIDE = Math.max(...RODS.map((r) => r.travel));
+/** How far across a rod stands for a push of `slide`. */
+export const offset = (rod: Rod, slide: number) => Math.max(-rod.travel, Math.min(rod.travel, slide));
 /** Advances the table by one slice. Returns the side that scored in it, or null. */
 export function step(world: World, inputs: [Input, Input]): 0 | 1 | null {
   const ball = world.ball;
   world.clock += DT;
   for (const side of [0, 1] as const) {
-    const wanted = Math.max(-1, Math.min(1, inputs[side].target)),
-      most = SLIDE_SPEED * DT * (inputs[side].pace ?? 1),
+    const wanted = Math.max(-MAX_SLIDE, Math.min(MAX_SLIDE, inputs[side].target)),
+      pace = inputs[side].pace,
+      most = pace === undefined ? Infinity : SLIDE_SPEED * DT * pace,
       move = Math.max(-most, Math.min(most, wanted - world.slide[side]));
     world.slide[side] += move;
     world.slideSpeed[side] = move / DT;
@@ -104,9 +108,11 @@ export function step(world: World, inputs: [Input, Input]): 0 | 1 | null {
       forward = r.side === 0 ? -1 : 1,
       fz = r.z + kick.reach * forward,
       fvz = kick.speed * forward,
-      fvx = world.slideSpeed[r.side] * r.travel;
+      shift = offset(r, world.slide[r.side]),
+      // A rod at its stop is not moving; a hand that jerks the rod still strikes no harder than a firm push.
+      fvx = Math.abs(world.slide[r.side]) > r.travel ? 0 : Math.max(-9, Math.min(9, world.slideSpeed[r.side]));
     for (const base of r.figures) {
-      const fx = base + world.slide[r.side] * r.travel,
+      const fx = base + shift,
         dx = ball.x - fx,
         dz = ball.z - fz,
         dist = Math.hypot(dx, dz),
@@ -175,15 +181,15 @@ export function steer(world: World, side: 0 | 1, level: keyof typeof SKILL, rand
   let best = world.slide[side],
     nearest = Infinity;
   for (const base of rod.figures) {
-    const wanted = (aimed - base) / rod.travel;
-    if (Math.abs(wanted) <= 1 && Math.abs(wanted - world.slide[side]) < nearest) {
+    const wanted = aimed - base;
+    if (Math.abs(wanted) <= rod.travel && Math.abs(wanted - world.slide[side]) < nearest) {
       nearest = Math.abs(wanted - world.slide[side]);
       best = wanted;
     }
   }
   const within = mine.some((r) => {
     const ahead = (r.z - ball.z) * forward * -1;
-    return ahead > -0.05 && ahead < BALL_R + FOOT_R + 0.22 && r.figures.some((base) => Math.abs(base + world.slide[side] * r.travel - ball.x) < skill.eye);
+    return ahead > -0.05 && ahead < BALL_R + FOOT_R + 0.22 && r.figures.some((base) => Math.abs(base + offset(r, world.slide[side]) - ball.x) < skill.eye);
   });
   return { target: best, kick: within && random() < skill.will, pace: skill.pace };
 }

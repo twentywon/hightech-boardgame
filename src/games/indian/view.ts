@@ -6,7 +6,19 @@ import { CARD, drawBack, drawFace } from "../cards/faces";
 import { pot, type State } from "./rules";
 
 export const CHIP_COLORS: [string, string] = ["#c8321f", "#2f62c0"];
-const TABLE = 2.3,
+const UP = new T.Vector3(0, 1, 0),
+  /** The figure's own measures, from where it sits: shoulder, the two bones of the arm, and which way the elbow points. */
+  SHOULDER = new T.Vector3(-1.15, 4.55, 0),
+  UPPER = 1.0,
+  FORE = 2.0,
+  POLE = new T.Vector3(-0.5, -0.6, 0.6),
+  /** How large its card is drawn, where it lies before it is raised and where it is held, and where the hand takes it. */
+  THEIRS = 1.6,
+  DOWN = new T.Vector3(-0.9, 2.34, 1.95),
+  HELD = new T.Vector3(0, 7.2, 0.7),
+  GRIP_DOWN = new T.Vector3(0, 0.16, -0.1),
+  GRIP_HELD = new T.Vector3(-0.8, -1.05, 0.02),
+  TABLE = 2.3,
   /** The size of a card in the scene. */
   CW = 1.05,
   CH = CW * 1.5;
@@ -17,7 +29,14 @@ const TABLE = 2.3,
  */
 export class IndianView extends TableView<State> {
   private faces = new Map<number, T.Material>();
-  private theirs: T.Mesh;
+  private theirs = new T.Group();
+  private theirFace: T.Mesh;
+  private upper: T.Mesh;
+  private fore: T.Mesh;
+  private elbow: T.Mesh;
+  private hand: T.Mesh;
+  /** The round whose card has been raised, or is being raised. */
+  private raised = 0;
   private mine: T.Mesh;
   private shown: T.Mesh;
   private back: T.Material;
@@ -58,10 +77,12 @@ export class IndianView extends TableView<State> {
     part(new T.SphereGeometry(0.62, 18, 12), joint, 0, 2.3, 0).scale.set(1.35, 0.7, 0.9);
     part(new T.CylinderGeometry(0.22, 0.26, 0.5, 14), white, 0, 4.95, 0);
     part(new T.SphereGeometry(0.62, 28, 20), white, 0, 5.72, 0.02).scale.set(0.9, 1.08, 0.98);
-    // Its right arm (on my left) is raised to hold the card; the other rests on the table.
-    limb([-1.15, 4.55, 0], [-1.5, 4.0, 0.75], 0.2);
-    limb([-1.5, 4.0, 0.75], [-0.5, 5.72, 0.7], 0.17);
-    part(new T.SphereGeometry(0.21, 14, 10), white, -0.42, 5.9, 0.7);
+    // Its right arm (on my left) picks the card up and holds it to the forehead: two bones that follow the hand. The other rests on the table.
+    part(new T.SphereGeometry(0.225, 14, 10), joint, SHOULDER.x, SHOULDER.y, SHOULDER.z);
+    this.upper = part(new T.CapsuleGeometry(0.2, UPPER, 6, 14), white, 0, 0, 0);
+    this.fore = part(new T.CapsuleGeometry(0.17, FORE, 6, 14), white, 0, 0, 0);
+    this.elbow = part(new T.SphereGeometry(0.2, 14, 10), joint, 0, 0, 0);
+    this.hand = part(new T.SphereGeometry(0.21, 14, 10), white, 0, 0, 0);
     limb([1.15, 4.55, 0], [1.45, 3.2, 0.9], 0.2);
     limb([1.45, 3.2, 0.9], [0.8, TABLE + 0.2, 2.0], 0.17);
     part(new T.SphereGeometry(0.21, 14, 10), white, 0.7, TABLE + 0.2, 2.15).scale.set(1.2, 0.6, 1.3);
@@ -70,25 +91,67 @@ export class IndianView extends TableView<State> {
     // The cards: its own on its forehead, mine at the top of my view, and mine again laid down once the round is over.
     const card = this.own(new T.PlaneGeometry(CW, CH));
     this.back = this.standard({ map: this.texture((ctx, w, h) => drawBack(ctx, w, h)), roughness: 0.6 });
-    this.theirs = new T.Mesh(card, this.back);
-    // Against its forehead: the lower edge at the brow, the card standing up over the head.
-    this.theirs.position.set(0, 6.3, -3.92);
-    this.theirs.rotation.x = -0.1;
-    this.theirs.scale.setScalar(0.66);
-    this.theirs.castShadow = true;
+    // Its card has two sides: it lies face down on the table before it is raised.
+    this.theirFace = new T.Mesh(card, this.back);
+    const reverse = new T.Mesh(card, this.back);
+    reverse.rotation.y = Math.PI;
+    reverse.position.z = -0.004;
+    this.theirFace.castShadow = reverse.castShadow = true;
+    this.theirs.add(this.theirFace, reverse);
+    this.theirs.scale.setScalar(THEIRS);
+    figure.add(this.theirs);
+    this.pose(1);
     this.mine = new T.Mesh(card, this.back);
     this.shown = new T.Mesh(card, this.back);
     this.shown.rotation.x = -Math.PI / 2;
-    this.shown.position.set(0, TABLE + 0.03, 2.2);
-    this.scene.add(this.theirs, this.shown, this.camera);
+    this.shown.position.set(0, TABLE + 0.03, 1.6);
+    this.shown.scale.setScalar(1.5);
+    this.scene.add(this.shown, this.camera);
     // Fixed before my eyes, so that it stays at the top of the view whatever the shape of the screen.
-    this.mine.position.set(0, 0.7, -1.9);
+    this.mine.position.set(0, 0.66, -1.9);
     this.mine.rotation.x = 0.45;
-    this.mine.scale.setScalar(0.36);
+    this.mine.scale.setScalar(0.44);
     this.camera.add(this.mine);
     this.chip = this.own(new T.CylinderGeometry(0.24, 0.24, 0.07, 22));
     this.paints = [...CHIP_COLORS, "#e0b020"].map((color) => this.standard({ color, roughness: 0.4 }));
     this.begin();
+  }
+  /** Lays a bone of the arm between two points. */
+  private bone(mesh: T.Mesh, a: T.Vector3, b: T.Vector3) {
+    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+    mesh.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
+  }
+  /** The card and the arm that holds it, from lying on the table (0) to standing on the forehead (1). */
+  private pose(p: number) {
+    const e = p * p * (3 - 2 * p),
+      card = this.theirs.position.lerpVectors(DOWN, HELD, e);
+    // It comes up in an arc, turning its face to me as it goes.
+    card.y += Math.sin(Math.PI * e) * 0.35;
+    card.z += Math.sin(Math.PI * e) * 0.5;
+    this.theirs.rotation.x = Math.PI / 2 + (-0.1 - Math.PI / 2) * e;
+    const hand = card.clone().add(new T.Vector3().lerpVectors(GRIP_DOWN, GRIP_HELD, e)),
+      reach = hand.clone().sub(SHOULDER),
+      d = Math.min(reach.length(), UPPER + FORE - 0.02),
+      along = reach.normalize(),
+      a = (UPPER * UPPER - FORE * FORE + d * d) / (2 * d),
+      out = POLE.clone().addScaledVector(along, -POLE.dot(along)).normalize(),
+      elbow = SHOULDER.clone().addScaledVector(along, a).addScaledVector(out, Math.sqrt(Math.max(0, UPPER * UPPER - a * a))),
+      wrist = SHOULDER.clone().addScaledVector(along, d);
+    this.bone(this.upper, SHOULDER, elbow);
+    this.bone(this.fore, elbow, wrist);
+    this.elbow.position.copy(elbow);
+    this.hand.position.copy(wrist);
+  }
+  /** The figure picks its new card up from the table and raises it to its forehead. */
+  private lift(round: number) {
+    this.raised = round;
+    this.pose(0);
+    this.tween(180, 1100, (p) => this.pose(p));
+  }
+  sync(state: State, animate = true) {
+    const first = !this.state;
+    super.sync(state, animate);
+    if (first && animate && !this.reducedMotion && state.winner === null) this.lift(state.round);
   }
   private texture(paint: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
     const canvas = document.createElement("canvas");
@@ -108,7 +171,7 @@ export class IndianView extends TableView<State> {
     return material;
   }
   protected subject(aspect: number): TableSubject {
-    return { half: aspect < 1 ? 3.0 : 4.4, halfZ: 0.6, height: 7.4, lookY: 4.7, tilt: 0.2 };
+    return { half: aspect < 1 ? 2.7 : 3.7, halfZ: 0.6, height: 8.9, lookY: 5.3, tilt: 0.2 };
   }
   protected spots(): Spot[] {
     return [];
@@ -133,19 +196,22 @@ export class IndianView extends TableView<State> {
   }
   protected place(state: State) {
     const showing = state.phase === "show" || state.winner !== null;
-    this.theirs.material = this.face(state.cards[1]);
+    this.theirFace.material = this.face(state.cards[1]);
+    this.pose(1);
     // My own card stays face down until the round is decided.
     this.mine.visible = !showing;
     this.shown.visible = showing;
     if (showing) this.shown.material = this.face(state.cards[0]);
-    let used = this.pile(state.chips[0], this.paints[0], -3.6, 2.6, 0);
-    used = this.pile(state.chips[1], this.paints[1], 1.9, -2.6, used);
+    let used = this.pile(state.chips[0], this.paints[0], -2.9, 2.6, 0);
+    used = this.pile(state.chips[1], this.paints[1], 1.7, -2.6, used);
     used = this.pile(pot(state), this.paints[2], -0.8, -0.2, used);
     for (let i = used; i < this.chips.length; i++) this.chips[i].visible = false;
   }
   protected animate(before: State, state: State) {
     if (state.ply !== before.ply + 1) return false;
     this.place(state);
+    // A new round: the figure raises its new card.
+    if (state.round !== this.raised && state.phase === "bet" && state.winner === null) this.lift(state.round);
     // Chips clack as they are put in; a card laid down is heard too.
     this.tween(0, 260, (p) => {
       if (p === 1) this.onContact();

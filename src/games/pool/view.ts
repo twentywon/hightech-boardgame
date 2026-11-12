@@ -67,6 +67,7 @@ function numberDisc(id: number) {
 export class PoolView extends FlickView<State> {
   private meshes: T.Object3D[] = [];
   private ring: T.Mesh;
+  private cue = new T.Group();
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#16110d");
     this.scene.add(new T.HemisphereLight("#d8cdb8", "#221a14", 1.5));
@@ -114,6 +115,26 @@ export class PoolView extends FlickView<State> {
     this.top = R;
     this.ring = ringMesh(<X extends { dispose(): void }>(r: X) => this.own(r), 0.26, 0.33, "#ffd24a");
     this.scene.add(this.ring);
+    // The cue: pale ash with a dark butt and a blue tip, lying behind the white ball along the line of the shot.
+    const stick = new T.Group(),
+      length = 5.2,
+      piece = (from: number, to: number, a: number, b: number, color: string) => {
+        // The geometry's upper end points away from the ball once laid down.
+        const mesh = new T.Mesh(this.own(new T.CylinderGeometry(b, a, to - from, 14)), this.standard({ color, roughness: 0.4 }));
+        mesh.rotation.z = Math.PI / 2;
+        mesh.position.x = -(from + to) / 2;
+        mesh.castShadow = true;
+        stick.add(mesh);
+      };
+    piece(0, 0.05, 0.03, 0.03, "#3f7fd0");
+    piece(0.05, 0.16, 0.03, 0.032, "#f4f1e6");
+    piece(0.16, length * 0.62, 0.032, 0.052, "#d9b877");
+    piece(length * 0.62, length, 0.052, 0.07, "#2a1a12");
+    // The butt is held a little higher than the tip, clear of the rail.
+    stick.rotation.z = -0.075;
+    this.cue.add(stick);
+    this.cue.visible = false;
+    this.scene.add(this.cue);
     this.begin();
   }
   protected subject(): TableSubject {
@@ -148,6 +169,14 @@ export class PoolView extends FlickView<State> {
   protected spots(): Spot[] {
     const cue = this.state?.discs[CUE];
     return cue && this.mine() ? [{ x: cue.x, y: R, z: cue.z, r: 0.5, point: CUE }] : [];
+  }
+  protected aimed(aim: { x: number; z: number; angle: number; power: number } | null) {
+    this.cue.visible = !!aim;
+    if (!aim) return;
+    // Drawn back farther the harder the shot.
+    this.cue.position.set(aim.x, R, aim.z);
+    this.cue.rotation.y = -aim.angle;
+    this.cue.children[0].position.x = -(R + 0.06 + aim.power * 0.05);
   }
   protected mark(_marks: Marks) {
     const cue = this.state?.discs[CUE];

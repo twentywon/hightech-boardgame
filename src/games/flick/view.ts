@@ -111,8 +111,9 @@ export abstract class FlickView<S> extends TableView<S> {
     const show = aim.power >= 1,
       reach = 0.4 + aim.power * 0.16;
     this.arrow.visible = this.pull.visible = show;
-    if (!show) return;
     const angle = Math.atan2(dz, dx);
+    this.aimed(show ? { x: aim.x, z: aim.z, angle, power: aim.power } : null);
+    if (!show) return;
     this.arrow.position.set(aim.x + (Math.cos(angle) * reach) / 2, this.top + 0.25, aim.z + (Math.sin(angle) * reach) / 2);
     this.arrow.scale.set(reach, 1, 1 + aim.power / POWERS);
     this.arrow.rotation.y = -angle;
@@ -124,8 +125,11 @@ export abstract class FlickView<S> extends TableView<S> {
     const aim = this.aiming;
     this.aiming = null;
     this.arrow.visible = this.pull.visible = false;
+    this.aimed(null);
     if (aim && at && aim.power >= 1) this.shoot(aim.point, aim.degrees, aim.power);
   }
+  /** Told where a pull is aiming and how hard, or null when there is none: for a view that shows something of its own. */
+  protected aimed(_aim: { x: number; z: number; angle: number; power: number } | null) {}
   protected abstract mark(marks: Marks): void;
   dispose() {
     cancelAnimationFrame(this.ticker);

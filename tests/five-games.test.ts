@@ -1,11 +1,12 @@
 import { describe, expect, test } from "vitest";
 import type { Move, PointGame } from "../src/games/points/types";
+import { choose } from "../src/games/points/ai";
 import { HOLES, HOME, starHop, createGame as createStar, moves as starMoves, play as starPlay } from "../src/games/starhop/rules";
 import { ludo, createGame as createLudo, moves as ludoMoves, play as ludoPlay } from "../src/games/ludo/rules";
 import { pool, createGame as createPool, moves as poolMoves, CUE } from "../src/games/pool/rules";
-import { indian, createGame as createIndian, pot, START_CHIPS } from "../src/games/indian/rules";
+import { indian, createGame as createIndian, pot, CALL, NEXT, ROUNDS, START_CHIPS } from "../src/games/indian/rules";
 import { foosball, createGame as createFoosball, play as goal, moves as goalMoves, GOALS } from "../src/games/foosball/rules";
-import { BALL_R, HALF_X, HALF_Z, RODS, createWorld, foot, steer, step, SWING } from "../src/games/foosball/sim";
+import { BALL_R, HALF_X, HALF_Z, MAX_SLIDE, RODS, createWorld, foot, offset, steer, step, SWING } from "../src/games/foosball/sim";
 
 function seeded(seed: number) {
   let s = seed;
@@ -54,6 +55,25 @@ describe("chinese checkers", () => {
     const { state } = playOut(starHop, createStar(), 120, seeded(3));
     expect(state.cells.filter((c) => c === 0).length).toBe(10);
     expect(state.cells.filter((c) => c === 1).length).toBe(10);
+  });
+  test("the computer brings its marbles home instead of shuffling to a draw", () => {
+    let state = createStar();
+    // A fixed clock: the search always reaches its depth, so the game is the same every run.
+    while (state.winner === null) state = starPlay(state, choose(starHop, state, 1e9, 2, () => 0)!)!;
+    expect(state.winner).not.toBe("draw");
+    expect(state.ply).toBeLessThan(300);
+  });
+  test("a marble left behind in its own point does not keep the other side from winning", () => {
+    const state = createStar();
+    // Side 0 has nine marbles home and one hole of the point is still held by side 1.
+    state.cells.fill(null);
+    const [squatter, last, ...rest] = [...HOME[1]].sort((a, b) => HOLES[b].r - HOLES[a].r);
+    rest.forEach((i) => (state.cells[i] = 0));
+    state.cells[squatter] = 1;
+    const from = HOLES.findIndex((h, i) => state.cells[i] === null && i !== last && starMoves({ ...state, cells: state.cells.map((c, j) => (j === i ? 0 : c)) }).some((m) => m.from === i && m.to === last));
+    state.cells[from] = 0;
+    HOME[0].slice(0, 9).forEach((i) => (state.cells[i] = 1));
+    expect(starPlay(state, { from, to: last, extra: -1 })!.winner).toBe(0);
   });
 });
 describe("ludo", () => {
@@ -118,6 +138,26 @@ describe("indian poker", () => {
       expect(state.chips[0] + state.chips[1] + pot(state)).toBe(START_CHIPS * 2);
     }
   });
+  test("a game is one pack: ten rounds, however the chips stand", () => {
+    for (const seed of [1, 2, 3]) {
+      const random = seeded(seed);
+      let state = createIndian(random),
+        rounds = 1;
+      // I raise all I can and the computer calls everything, so that someone runs dry early.
+      while (indian.winner(state) === null) {
+        const legal = indian.moves(state),
+          before = state.round,
+          pick = legal.find((m) => m.to === NEXT) ?? (state.turn === 0 ? legal[legal.length - 1] : legal.find((m) => m.to === CALL)!);
+        state = indian.play(state, pick, random)!;
+        if (state.round !== before) rounds++;
+        expect(state.chips[0]).toBeGreaterThanOrEqual(0);
+        expect(state.chips[1]).toBeGreaterThanOrEqual(0);
+        expect(state.chips[0] + state.chips[1] + pot(state)).toBe(START_CHIPS * 2);
+      }
+      expect(rounds).toBe(ROUNDS);
+      expect(state.deck.length).toBe(0);
+    }
+  });
   test("the computer decides the same whatever its own card is", () => {
     const state = createIndian(seeded(8)),
       waiting = { ...state, turn: 1 as const },
@@ -131,6 +171,16 @@ describe("table soccer", () => {
       const mine = RODS.filter((r) => r.side === side);
       expect(mine.map((r) => r.figures.length).sort()).toEqual([1, 2, 3, 5]);
     }
+  });
+  test("my rods go as far as my hand at once, each stopping at its own end", () => {
+    const world = createWorld(0);
+    step(world, [{ target: 0.5, kick: false }, { target: 0, kick: false }]);
+    expect(world.slide[0]).toBe(0.5);
+    step(world, [{ target: MAX_SLIDE, kick: false }, { target: 0, kick: false }]);
+    for (const rod of RODS.filter((r) => r.side === 0)) expect(offset(rod, world.slide[0])).toBe(rod.travel);
+    // The computer's hand takes its time.
+    step(world, [{ target: 0, kick: false }, { target: 1, kick: false, pace: 1 }]);
+    expect(world.slide[1]).toBeLessThan(0.1);
   });
   test("a goal is a move, and the fifth one wins", () => {
     let state = createFoosball();
