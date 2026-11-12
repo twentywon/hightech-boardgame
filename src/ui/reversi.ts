@@ -1,3 +1,4 @@
+import { mirrorStatus } from "./banner";
 import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import {
@@ -84,7 +85,7 @@ export function mountReversi(
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
     host.innerHTML =
-      `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>리버시 <span>Reversi</span></h2><p>코너를 지키고, 다음 수를 열어두세요.<br>마지막 순간까지 승부는 바뀔 수 있습니다.</p><div class="game-meta">2인 · 8×8 보드 · 전략</div><div class="mode-select"><label><input type="radio" name="rv-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="rv-mode" value="ai"> 컴퓨터 대전</label></div><div id="rv-options" class="ai-options" hidden><label>AI 난이도<select id="rv-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><label>플레이어 색상<select id="rv-color">${[
+      `<section class="featured"><div class="feature-copy"><h2>리버시 <span>Reversi</span></h2><p>코너를 지키고, 다음 수를 열어두세요.<br>마지막 순간까지 승부는 바뀔 수 있습니다.</p><div class="game-meta">2인 · 8×8 보드 · 전략</div><div class="mode-select"><label><input type="radio" name="rv-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="rv-mode" value="ai"> 컴퓨터 대전</label></div><div id="rv-options" class="ai-options" hidden><label>AI 난이도<select id="rv-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><label>플레이어 색상<select id="rv-color">${[
         ["black", "흑돌"],
         ["white", "백돌"],
         ["random", "무작위"],
@@ -293,6 +294,8 @@ export function mountReversi(
     } else schedule();
   }
   function update() {
+    // The status is read on the table itself: the panel's copy is not shown.
+    mirrorStatus();
     if (disposed || !document.getElementById("black-count")) return;
     const c = counts(state.board);
     $("black-count").textContent = String(c.black);

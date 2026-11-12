@@ -10,7 +10,7 @@ export const snakesConfig: PointConfig<State> = {
   name: "뱀과 사다리",
   english: "Snakes and Ladders",
   number: "NO. 17 — UP AND DOWN",
-  intro: `<p>주사위를 굴려 100번 칸까지 먼저 가는 놀이.<br>사다리는 올라가고, 뱀을 만나면 미끄러집니다.</p><ul class="rule-list"><li>주사위 눈만큼 앞으로 갑니다</li><li>사다리 아래에 서면 꼭대기로 올라갑니다</li><li>뱀 머리에 서면 꼬리로 내려갑니다</li></ul>`,
+  intro: `<p>주사위를 굴려 100번 칸까지 먼저 가는 놀이.<br>사다리는 올라가고, 뱀을 만나면 미끄러집니다.</p>`,
   meta: `2인 · 100칸 · 사다리 ${Object.keys(LADDERS).length}개 · 뱀 ${Object.keys(SNAKES).length}마리`,
   art: `<div class="pg-mini snakes">${"<i></i>".repeat(3)}</div><span>UP THE LADDER</span>`,
   artClass: "snakes-art",

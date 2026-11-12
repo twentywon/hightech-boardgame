@@ -490,7 +490,9 @@ export class CardTableView {
         // A folded hand is squared up into a small pile.
         gap = seat.folded ? 0.1 * scale : this.gap(seat.cards.length, width, scale);
       // My own cards that the others cannot see lie together at the left of my row.
-      const cards = s === 0 && this.skin.secretLeft ? [...seat.cards].sort((a, b) => Number(!!b.secret) - Number(!!a.secret)) : seat.cards;
+      // The other seats' face-down cards are gathered at my left of their row in the same way.
+      const hidden = (card: (typeof seat.cards)[number]) => (s === 0 ? !!card.secret : card.face === null),
+        cards = this.skin.secretLeft ? [...seat.cards].sort((a, b) => Number(hidden(b)) - Number(hidden(a))) : seat.cards;
       cards.forEach((card, i) =>
         targets.set(card.id, {
           face: card.face,

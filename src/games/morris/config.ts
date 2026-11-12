@@ -9,7 +9,7 @@ export const morrisConfig: PointConfig<State> = {
   name: "나인 멘스 모리스",
   english: "Nine Men's Morris",
   number: "NO. 11 — MILLS",
-  intro: `<p>말 아홉 개로 셋을 한 줄에 세우는 오래된 놀이.<br>줄을 만들 때마다 상대 말을 하나 떼어 냅니다.</p><ul class="rule-list"><li>먼저 번갈아 말 아홉 개를 놓습니다</li><li>그다음 선을 따라 한 칸씩 옮깁니다</li><li>셋이 남으면 어디로든 날아갑니다</li></ul>`,
+  intro: `<p>말 아홉 개로 셋을 한 줄에 세우는 오래된 놀이.<br>줄을 만들 때마다 상대 말을 하나 떼어 냅니다.</p>`,
   meta: `2인 · 점 24개 · 말 ${MEN}개씩`,
   art: `<div class="pg-mini morris"><i></i><i></i><i></i></div><span>THREE IN A ROW</span>`,
   artClass: "morris-art",

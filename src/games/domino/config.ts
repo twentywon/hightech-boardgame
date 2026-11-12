@@ -27,7 +27,7 @@ export const dominoConfig: PointConfig<State> = {
   name: "도미노",
   english: "Dominoes",
   number: "NO. 28 — MATCH THE ENDS",
-  intro: `<p>어두운 마룻바닥 위에 패를 한 줄로 이어 갑니다.<br>줄 끝의 숫자와 같은 숫자를 가진 패만 놓을 수 있습니다.</p><ul class="rule-list"><li>0–6 눈의 패 28장, 일곱 장씩 나눕니다</li><li>낼 패가 없으면 더미에서 가져옵니다</li><li>패를 먼저 다 내면 승리</li></ul>`,
+  intro: `<p>어두운 마룻바닥 위에 패를 한 줄로 이어 갑니다.<br>줄 끝의 숫자와 같은 숫자를 가진 패만 놓을 수 있습니다.</p>`,
   meta: "나 대 컴퓨터 · 패 28장 · 일곱 장씩",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>END TO END</span>`,
   artClass: "domino-art",

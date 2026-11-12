@@ -17,7 +17,7 @@ export const ludoConfig: PointConfig<State> = {
   name: "루도",
   english: "Ludo",
   number: "NO. 31 — ROUND AND HOME",
-  intro: `<p>흰 테이블 위의 십자 모양 판.<br>주사위를 굴려 말 네 개를 한 바퀴 돌려 가운데 집에 먼저 넣으세요.</p><ul class="rule-list"><li>6이 나와야 말이 마당에서 나옵니다</li><li>상대 말이 있는 칸에 서면 그 말은 마당으로 돌아갑니다</li><li>별 칸과 출발 칸은 안전합니다</li></ul>`,
+  intro: `<p>흰 테이블 위의 십자 모양 판.<br>주사위를 굴려 말 네 개를 한 바퀴 돌려 가운데 집에 먼저 넣으세요.</p>`,
   meta: "2인 · 말 4개씩 · 주사위 1개",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>ROLL, RACE, RETURN</span>`,
   artClass: "ludo-art",

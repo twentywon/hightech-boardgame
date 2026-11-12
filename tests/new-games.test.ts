@@ -241,23 +241,31 @@ describe("Sea battle", () => {
     expect(B.moves(s)).toHaveLength(100);
     expect(B.play(s, to(5))).toBeNull();
     s = B.play(s, to(100 + destroyer.cells[0]))!;
-    expect([s.last, s.turn]).toEqual([{ point: 100 + destroyer.cells[0], hit: true, sunk: null }, 1]);
-    // Side 1 misses somewhere in side 0's waters.
-    const empty = Array.from({ length: 100 }, (_, c) => c).find((c) => !s.fleets[0].some((ship) => ship.cells.includes(c)))!;
-    s = B.play(s, to(empty))!;
-    expect(s.last).toEqual({ point: empty, hit: false, sunk: null });
+    // A hit earns another shot: the turn stays with side 0.
+    expect([s.last, s.turn]).toEqual([{ point: 100 + destroyer.cells[0], hit: true, sunk: null }, 0]);
     expect(B.play(s, to(100 + destroyer.cells[0]))).toBeNull();
     s = B.play(s, to(100 + destroyer.cells[1]))!;
-    expect([s.last!.sunk, B.afloat(s, 1), B.afloat(s, 0)]).toEqual(["구축함", 4, 5]);
+    expect([s.last!.sunk, B.afloat(s, 1), B.afloat(s, 0), s.turn]).toEqual(["구축함", 4, 5, 0]);
+    // A miss passes the turn; side 1 then misses somewhere in side 0's waters and passes it back.
+    const clear = Array.from({ length: 100 }, (_, c) => c).find((c) => !s.fleets[1].some((ship) => ship.cells.includes(c)))!;
+    s = B.play(s, to(100 + clear))!;
+    expect([s.last, s.turn]).toEqual([{ point: 100 + clear, hit: false, sunk: null }, 1]);
+    const empty = Array.from({ length: 100 }, (_, c) => c).find((c) => !s.fleets[0].some((ship) => ship.cells.includes(c)))!;
+    s = B.play(s, to(empty))!;
+    expect([s.last, s.turn]).toEqual([{ point: empty, hit: false, sunk: null }, 0]);
+    // What is left afloat is told by name, never by place.
+    expect(B.seaBattle.tally(s)[1]).toBe("남은 배 4척 — 항공모함(5) · 전함(4) · 순양함(3) · 잠수함(3)");
   });
   it("ends when a whole fleet is down", () => {
     let s = B.createBattle(seededRandom(3));
     const targets = s.fleets[1].flatMap((ship) => ship.cells),
       water = Array.from({ length: 100 }, (_, c) => c).filter((c) => !s.fleets[0].some((ship) => ship.cells.includes(c)));
-    targets.forEach((cell, i) => {
+    // Every shot is a hit, so side 0 keeps the turn to the end.
+    for (const cell of targets) {
+      expect(s.turn).toBe(0);
       s = B.play(s, to(100 + cell))!;
-      if (i < targets.length - 1) s = B.play(s, to(water[i]))!;
-    });
+    }
+    expect(water.length).toBeGreaterThan(0);
     expect([s.winner, B.afloat(s, 1), B.moves(s)]).toEqual([0, 0, []]);
   });
   it("the computer fires only where it has not fired, follows up a hit, and wins without seeing the ships", () => {

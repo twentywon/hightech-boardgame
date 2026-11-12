@@ -115,8 +115,9 @@ export function play(state: State, move: Move, random: Random = cryptoRandom): S
     return null;
   const shots: [boolean[], boolean[]] = [state.shots[0].slice(), state.shots[1].slice()];
   shots[target][cell] = true;
-  const next: State = { ...state, shots, turn: target as 0 | 1, ply: state.ply + 1, last: null },
-    ship = state.fleets[target].find((s) => s.cells.includes(cell));
+  // A hit earns another shot.
+  const ship = state.fleets[target].find((s) => s.cells.includes(cell)),
+    next: State = { ...state, shots, turn: ship ? state.turn : (target as 0 | 1), ply: state.ply + 1, last: null };
   next.last = { point: move.to, hit: !!ship, sunk: ship && sunk(next, target, ship) ? ship.name : null };
   if (!afloat(next, target)) next.winner = state.turn;
   return next;
@@ -187,9 +188,15 @@ export const seaBattle: PointGame<State> = {
       const [name, length] = FLEET[s.fleets[0].length];
       return `${name}(${length}칸)을 내 해역에 놓으세요 — ${s.across ? "가로" : "세로"}로 놓입니다.`;
     }
-    return s.last?.sunk ? `${s.last.sunk} 격침! 쏠 칸을 고르세요.` : "상대 해역에서 쏠 칸을 고르세요.";
+    return s.last?.sunk ? `${s.last.sunk} 격침! 한 번 더 쏩니다.` : s.last?.hit ? "명중! 한 번 더 쏩니다." : "상대 해역에서 쏠 칸을 고르세요.";
   },
+  // Which ships are still afloat is known to both (a sinking is called out); where they lie is not told.
   tally: (s) =>
-    s.phase === "place" ? [`배 ${s.fleets[0].length} / ${FLEET.length}척 배치`, "배치 완료"] : ([0, 1].map((p) => `남은 배 ${afloat(s, p)}척`) as [string, string]),
+    s.phase === "place"
+      ? [`배 ${s.fleets[0].length} / ${FLEET.length}척 배치`, "배치 완료"]
+      : ([0, 1].map((p) => {
+          const left = s.fleets[p].filter((ship) => !sunk(s, p, ship)).map((ship) => `${ship.name}(${ship.cells.length})`);
+          return `남은 배 ${left.length}척${left.length ? ` — ${left.join(" · ")}` : ""}`;
+        }) as [string, string]),
   reason: () => "상대 함대를 모두 가라앉혔습니다.",
 };

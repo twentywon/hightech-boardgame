@@ -14,7 +14,7 @@ export const foosballConfig: PointConfig<State> = {
   name: "테이블 사커",
   english: "Table Soccer",
   number: "NO. 34 — RODS AND A BALL",
-  intro: `<p>펍 구석의 막대 축구대.<br>막대에 꿰인 선수들을 좌우로 밀고 돌려 차서 공을 상대 골문에 넣으세요.</p><ul class="rule-list"><li>쉬지 않고 이어지는 실시간 경기입니다</li><li>내 막대 네 줄이 함께 움직입니다</li><li>${GOALS}골을 먼저 넣으면 이깁니다</li></ul>`,
+  intro: `<p>펍 구석의 막대 축구대.<br>막대에 꿰인 선수들을 좌우로 밀고 돌려 차서 공을 상대 골문에 넣으세요.</p>`,
   meta: "컴퓨터 대전 · 막대 8줄 · 선수 22명",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FIRST TO ${GOALS}</span>`,
   artClass: "foosball-art",

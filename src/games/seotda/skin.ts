@@ -102,7 +102,7 @@ export const seotdaConfig: BettingConfig<State> = {
   skin: seotdaSkin,
   name: "섯다",
   english: "Seotda",
-  intro: `<p>화투 두 장으로 겨루는 족보.<br>두 장 섯다와 세 장 섯다를 고를 수 있습니다.</p><ul class="rule-list"><li>광땡 &gt; 땡 &gt; 알리·독사·구삥·장삥·장사·세륙 &gt; 끗</li><li>땡잡이·암행어사·구사 같은 특수 족보가 있습니다</li><li>체크·콜·하프·올인·다이로 베팅합니다</li></ul>`,
+  intro: `<p>화투 두 장으로 겨루는 족보.<br>두 장 섯다와 세 장 섯다를 고를 수 있습니다.</p>`,
   meta: `나 + 컴퓨터 1–3명 · 화투 20장 · 시작 칩 ${START_CHIPS.toLocaleString("ko-KR")} · 기본 판돈 ${ANTE}`,
   art: `<div class="sd-mini"><i class="sd-mini-card back"></i><img class="sd-mini-card" src="${picture(3, "gwang")}" alt=""><img class="sd-mini-card" src="${picture(8, "gwang")}" alt=""></div><span>TWO CARDS, ONE CALL</span>`,
   artLabel: "섯다 테이블 미리보기",

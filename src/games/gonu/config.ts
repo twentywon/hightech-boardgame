@@ -9,7 +9,7 @@ export const gonuConfig: PointConfig<State> = {
   name: "고누",
   english: "Gonu",
   number: "NO. 12 — ON THE GROUND",
-  intro: `<p>마당 흙바닥에 말판을 긋고 돌멩이로 두는 놀이.<br>우물·네줄·호박·자동차·참고누 다섯 가지 말판이 있습니다.</p><ul class="rule-list"><li>말은 선을 따라 한 칸씩 움직입니다</li><li>우물·호박고누: 상대를 가두면 승리</li><li>네줄·자동차·참고누: 상대 말을 잡습니다</li></ul>`,
+  intro: `<p>마당 흙바닥에 말판을 긋고 돌멩이로 두는 놀이.<br>우물·네줄·호박·자동차·참고누 다섯 가지 말판이 있습니다.</p>`,
   meta: "2인 · 말판 다섯 가지 · 돌멩이 2–12개씩",
   art: `<div class="pg-mini gonu"><i></i><i></i><i></i><i></i></div><span>LINES IN THE EARTH</span>`,
   artClass: "gonu-art",

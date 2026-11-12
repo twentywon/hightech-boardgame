@@ -2315,3 +2315,34 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
 html { -webkit-tap-highlight-color: transparent; }
 *, *::before, *::after { -webkit-tap-highlight-color: transparent; }
 .board-area, .board-area *, button, .game-top, header { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* At a table ----------------------------------------------------------------
+   The page's bar and the game's name are not shown; leaving and the settings
+   are two round buttons in the table's upper left corner, the status line
+   stands at the top of the table, and the panel does not repeat it. */
+#app:has(> .game-layout) > header { height:0 !important;min-height:0 !important;padding:0 !important;border:0 !important;overflow:visible;background:none;pointer-events:none; }
+#app:has(> .game-layout) > header .brand { position:absolute !important;width:1px !important;height:1px !important;min-height:0 !important;padding:0 !important;overflow:hidden;opacity:0;pointer-events:auto; }
+.game-layout { margin-top:0 !important;padding-top:8px; }
+.game-layout .game-top { padding-left:0 !important;padding-right:0 !important;min-height:0; }
+.board-area .board-nav { position:absolute;left:10px;top:10px;z-index:4;display:flex;gap:6px; }
+.board-area .board-icon { width:38px;height:38px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;background:#fffffff2;color:#16181a;font-size:19px;line-height:1;box-shadow:0 4px 10px #0005;cursor:pointer; }
+.board-area .board-icon:hover { background:#f1ede2; }
+.board-area .board-icon:focus-visible { outline:3px solid var(--brass, #c9a85c);outline-offset:2px; }
+.board-area .board-label { left:106px; }
+/* The status line: at the top, between the corner buttons. */
+.board-area > .board-hint, .game-layout .board-area > .board-hint { display:block !important;top:12px;bottom:auto;left:106px !important;right:106px !important;max-width:calc(100% - 212px);padding:7px 16px;font-size:14px; }
+.game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area > .board-hint { right:150px !important;max-width:calc(100% - 256px); }
+.board-area > .board-hint[hidden] { display:none !important; }
+.board-area .board-label { top:56px; }
+.game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area .board-controls { top:56px; }
+/* The panel's copy of the status stays for readers (it is the live region) but is not shown, unless it holds a button to press. */
+.game-sidebar #turn:not(:has(button)) { position:absolute !important;width:1px !important;height:1px !important;padding:0 !important;margin:0 !important;overflow:hidden !important;opacity:0 !important;border:0 !important; }
+@media (orientation: landscape) and (max-height: 540px) {
+  .game-layout .game-top { height:auto;min-height:0;margin-bottom:4px; }
+  .board-area .board-icon { width:32px;height:32px;font-size:16px; }
+  .board-area .board-nav { left:6px;top:6px; }
+  .board-area > .board-hint, .game-layout .board-area > .board-hint { top:6px;left:84px !important;right:84px !important;max-width:calc(100% - 168px);padding:5px 12px;font-size:12.5px; }
+  .game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area > .board-hint { right:116px !important;max-width:calc(100% - 200px); }
+  .board-area .board-label { display:none; }
+  .game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area .board-controls { top:44px; }
+}

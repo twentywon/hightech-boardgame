@@ -236,6 +236,8 @@ export class ChessView {
         color: color === "w" ? "#f2ecdb" : "#22292b",
         roughness: 0.28,
         metalness: 0.09,
+        // The turned bodies are open shells: drawn one-sided, their far wall showed through the near one.
+        side: T.DoubleSide,
       });
     const add = (geo: T.BufferGeometry, x = 0, y = 0, z = 0) => {
       const m = new T.Mesh(geo, mat);

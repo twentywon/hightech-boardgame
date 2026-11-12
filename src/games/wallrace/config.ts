@@ -12,7 +12,7 @@ export const wallRaceConfig: PointConfig<State> = {
   name: "길막기",
   english: "Wall Race",
   number: "NO. 27 — RACE AND BLOCK",
-  intro: `<p>흔히 '쿼리도'로 알려진 놀이 방식입니다.<br>말을 한 칸 옮기거나 벽을 세워, 맞은편 끝줄에 먼저 닿으세요.</p><ul class="rule-list"><li>한 차례에 말 한 칸 또는 벽 하나</li><li>벽은 두 칸 길이, 각자 ${WALLS}개</li><li>길을 완전히 막는 벽은 세울 수 없습니다</li></ul>`,
+  intro: `<p>흔히 '쿼리도'로 알려진 놀이 방식입니다.<br>말을 한 칸 옮기거나 벽을 세워, 맞은편 끝줄에 먼저 닿으세요.</p>`,
   meta: `2인 · ${N}×${N} · 벽 ${WALLS}개씩`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>RACE OR BLOCK</span>`,
   artClass: "wallrace-art",

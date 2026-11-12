@@ -12,7 +12,7 @@ export const carromConfig: PointConfig<State> = {
   name: "카롬",
   english: "Carrom",
   number: "NO. 26 — STRIKE AND POCKET",
-  intro: `<p>흰 대리석 바닥 위의 카롬 판.<br>스트라이커를 튕겨 내 말을 네 귀퉁이 구멍에 넣습니다.</p><ul class="rule-list"><li>흰 말 9개, 검은 말 9개, 빨간 여왕 1개</li><li>내 말을 넣으면 한 번 더 칩니다</li><li>내 말 아홉 개를 먼저 다 넣으면 승리</li></ul>`,
+  intro: `<p>흰 대리석 바닥 위의 카롬 판.<br>스트라이커를 튕겨 내 말을 네 귀퉁이 구멍에 넣습니다.</p>`,
   meta: "2인 · 말 9개씩 · 여왕 1개",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>STRIKE AND POCKET</span>`,
   artClass: "carrom-art",

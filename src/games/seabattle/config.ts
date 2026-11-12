@@ -26,7 +26,7 @@ export const seaBattleConfig: PointConfig<State> = {
   name: "배틀십",
   english: "Battleship",
   number: "NO. 20 — HIDDEN FLEETS",
-  intro: `<p>지하 작전실, 탁자 위의 해도 두 장.<br>보이지 않는 상대 함대를 한 칸씩 쏘아 모두 가라앉히세요.</p><ul class="rule-list"><li>먼저 내 배 다섯 척을 해도에 놓습니다</li><li>번갈아 한 칸씩 쏩니다</li><li>빨간 말뚝은 명중, 흰 말뚝은 빗나감</li></ul>`,
+  intro: `<p>지하 작전실, 탁자 위의 해도 두 장.<br>보이지 않는 상대 함대를 한 칸씩 쏘아 모두 가라앉히세요.</p>`,
   meta: `2인 · 10×10 해도 두 장 · 배 ${FLEET.length}척`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FIND AND SINK</span>`,
   artClass: "seabattle-art",

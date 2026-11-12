@@ -14,7 +14,7 @@ export const poolConfig: PointConfig<State> = {
   name: "포켓볼",
   english: "Pocket Ball",
   number: "NO. 32 — EIGHT BALL",
-  intro: `<p>펍 한쪽의 당구대.<br>흰 공을 쳐서 내 공 일곱 개를 넣고, 마지막에 검은 8번을 넣으세요.</p><ul class="rule-list"><li>먼저 들어간 공으로 단색·줄무늬가 정해집니다</li><li>내 공을 넣으면 한 번 더 칩니다</li><li>8번을 일찍 넣으면 집니다</li></ul>`,
+  intro: `<p>펍 한쪽의 당구대.<br>흰 공을 쳐서 내 공 일곱 개를 넣고, 마지막에 검은 8번을 넣으세요.</p>`,
   meta: "2인 · 공 15개 · 구멍 6개",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>CALL THE EIGHT</span>`,
   artClass: "pool-art",

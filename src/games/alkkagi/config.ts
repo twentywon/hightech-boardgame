@@ -29,7 +29,7 @@ export const alkkagiConfig: PointConfig<State> = {
   name: "알까기",
   english: "Alkkagi",
   number: "NO. 25 — FLICK",
-  intro: `<p>손가락으로 알을 튕겨 상대 알을 판 밖으로 떨어뜨립니다.<br>바둑알은 개수와 자리를 정하고, 장기알은 장기 첫 자리에서 시작합니다.</p><ul class="rule-list"><li>알을 누른 채 뒤로 당겼다 놓으면 튕겨 나갑니다</li><li>판 밖으로 나간 알은 누구 것이든 잃습니다</li><li>상대 알을 모두 떨어뜨리면 승리</li></ul>`,
+  intro: `<p>손가락으로 알을 튕겨 상대 알을 판 밖으로 떨어뜨립니다.<br>바둑알은 개수와 자리를 정하고, 장기알은 장기 첫 자리에서 시작합니다.</p>`,
   meta: "2인 · 바둑알 3–10개 또는 장기알 16개",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FLICK THEM OFF</span>`,
   artClass: "alkkagi-art",

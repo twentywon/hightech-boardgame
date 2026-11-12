@@ -22,7 +22,7 @@ export const indianConfig: PointConfig<State> = {
   name: "인디언 포커",
   english: "Indian Poker",
   number: "NO. 33 — THE CARD YOU CANNOT SEE",
-  intro: `<p>맞은편의 흰 마네킹이 카드를 이마에 붙이고 나를 봅니다.<br>상대 카드는 보이지만 내 카드는 보이지 않습니다. 그 한 장에 칩을 겁니다.</p><ul class="rule-list"><li>카드는 1–10이 두 장씩, 높은 쪽이 이깁니다</li><li>콜하면 서로 카드를 확인합니다</li><li>한 덱 20장을 다 쓰면(10판) 한 게임이 끝납니다</li><li>10을 들고 접으면 벌칙 ${TEN_PENALTY}개</li></ul>`,
+  intro: `<p>맞은편의 흰 마네킹이 카드를 이마에 붙이고 나를 봅니다.<br>상대 카드는 보이지만 내 카드는 보이지 않습니다. 그 한 장에 칩을 겁니다.</p>`,
   meta: `나 대 컴퓨터 · 카드 20장 · 칩 ${START_CHIPS}개씩`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>READ THE OTHER FACE</span>`,
   artClass: "indian-art",

@@ -22,7 +22,7 @@ export const tileRummyConfig: PointConfig<State> = {
   name: "타일 러미",
   english: "Tile Rummy",
   number: "NO. 29 — SETS AND RUNS",
-  intro: `<p>흔히 '루미큐브'로 알려진 놀이 방식입니다. 교실 바닥에 타일을 펼쳐 놓고,<br>같은 숫자끼리 또는 이어지는 숫자끼리 묶어 내 타일을 먼저 다 내려놓으세요.</p><ul class="rule-list"><li>1–13의 네 색 타일 두 벌과 조커 2개</li><li>첫 등록은 내 타일로 ${OPENING}점 이상</li><li>판의 묶음을 풀어 다시 짤 수 있습니다</li></ul>`,
+  intro: `<p>흔히 '루미큐브'로 알려진 놀이 방식입니다. 교실 바닥에 타일을 펼쳐 놓고,<br>같은 숫자끼리 또는 이어지는 숫자끼리 묶어 내 타일을 먼저 다 내려놓으세요.</p>`,
   meta: `나 대 컴퓨터 · 타일 106개 · ${RACK_SIZE}개씩`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>GROUPS AND RUNS</span>`,
   artClass: "tilerummy-art",

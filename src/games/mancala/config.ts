@@ -11,7 +11,7 @@ export const mancalaConfig: PointConfig<State> = {
   name: "만칼라",
   english: "Mancala",
   number: "NO. 16 — SOW AND REAP",
-  intro: `<p>사막 나라 시장의 양탄자 위에서 돌을 뿌리는 놀이.<br>내 창고에 돌을 더 많이 모으면 이깁니다.</p><ul class="rule-list"><li>구멍 하나의 돌을 집어 하나씩 뿌립니다</li><li>마지막 돌이 내 창고에 들어가면 한 번 더</li><li>빈 구멍에 떨어지면 맞은편 돌을 가져옵니다</li></ul>`,
+  intro: `<p>사막 나라 시장의 양탄자 위에서 돌을 뿌리는 놀이.<br>내 창고에 돌을 더 많이 모으면 이깁니다.</p>`,
   meta: `2인 · 구멍 ${PITS}개씩 · 돌 ${STONES}개씩`,
   art: `<div class="pg-mini mancala">${"<i></i>".repeat(8)}</div><span>SOW AND REAP</span>`,
   artClass: "mancala-art",

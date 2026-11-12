@@ -9,7 +9,7 @@ export const checkersConfig: PointConfig<State> = {
   name: "체커",
   english: "Checkers",
   number: "NO. 13 — JUMP",
-  intro: `<p>대각선으로 한 칸씩, 상대 말은 뛰어넘어 잡습니다.<br>끝줄에 닿으면 왕이 되어 뒤로도 갑니다.</p><ul class="rule-list"><li>어두운 칸에서만 대각선으로 움직입니다</li><li>잡을 수 있으면 반드시 잡아야 합니다</li><li>한 말로 이어서 여러 번 뛸 수 있습니다</li></ul>`,
+  intro: `<p>대각선으로 한 칸씩, 상대 말은 뛰어넘어 잡습니다.<br>끝줄에 닿으면 왕이 되어 뒤로도 갑니다.</p>`,
   meta: "2인 · 8×8 · 말 12개씩",
   art: `<div class="pg-mini checkers">${"<i></i>".repeat(4)}</div><span>JUMP TO CAPTURE</span>`,
   artClass: "checkers-art",

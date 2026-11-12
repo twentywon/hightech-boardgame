@@ -9,7 +9,7 @@ export const hexaConfig: PointConfig<State> = {
   name: "헥사 세균전",
   english: "Hexa Germ War",
   number: "NO. 10 — SPREAD",
-  intro: `<p>육각 판 위에서 세균을 불려 나갑니다.<br>옆으로 복제하고, 멀리 뛰어 상대를 물들이세요.</p><ul class="rule-list"><li>옆 칸으로 가면 복제, 두 칸을 뛰면 이동</li><li>도착한 칸에 닿은 상대 세균은 모두 내 편</li><li>판이 끝났을 때 세균이 많은 쪽이 승리</li></ul>`,
+  intro: `<p>육각 판 위에서 세균을 불려 나갑니다.<br>옆으로 복제하고, 멀리 뛰어 상대를 물들이세요.</p>`,
   meta: `2인 · 맵 ${Object.keys(MAPS).length}가지 · 세균 3개로 시작`,
   art: `<div class="pg-mini hexa">${"<i></i>".repeat(7)}</div><span>COPY, JUMP, CONVERT</span>`,
   artClass: "hexa-art",

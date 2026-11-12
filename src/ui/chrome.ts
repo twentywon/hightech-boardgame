@@ -17,6 +17,24 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   // Buttons a screen already laid over its table join them, so that all stand in one corner.
   board.querySelectorAll<HTMLElement>(":scope > .pg-tools, :scope > .bg-acting, :scope > .tour-end").forEach((el) => box.append(el));
   board.append(box);
+  // Leaving and the settings are two round buttons in the table's upper left corner; the page's own bar
+  // and the game's name are not shown at a table (both stay for readers and the keyboard).
+  const nav = document.createElement("div");
+  nav.className = "board-nav";
+  const back = main.querySelector<HTMLButtonElement>("#back");
+  if (back) {
+    back.textContent = "←";
+    back.setAttribute("aria-label", "← 컬렉션");
+    back.className = "board-icon";
+    nav.append(back);
+  }
+  const settings = document.querySelector<HTMLButtonElement>("#app > header #settings");
+  if (settings) {
+    settings.className = "board-icon";
+    nav.append(settings);
+  }
+  board.append(nav);
+  main.querySelector(".game-top h1")?.classList.add("sr-only");
   // 새 게임 stays with the other screen buttons over the table and opens the game's own setup in a dialog.
   const restart = main.querySelector<HTMLButtonElement>("#restart");
   if (restart) restart.onclick = () => setupDialog(setup);

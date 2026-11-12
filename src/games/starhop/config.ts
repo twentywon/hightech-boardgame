@@ -13,7 +13,7 @@ export const starHopConfig: PointConfig<State> = {
   name: "차이니즈 체커",
   english: "Chinese Checkers",
   number: "NO. 30 — HOP ACROSS",
-  intro: `<p>흰 테이블 위의 별 모양 판.<br>구슬 열 개를 맞은편 꼭짓점으로 먼저 모두 옮기세요.</p><ul class="rule-list"><li>옆 구멍으로 한 칸, 또는 구슬 하나를 뛰어넘기</li><li>뛰어넘기는 이어서 여러 번 할 수 있습니다</li><li>잡는 수는 없습니다</li></ul>`,
+  intro: `<p>흰 테이블 위의 별 모양 판.<br>구슬 열 개를 맞은편 꼭짓점으로 먼저 모두 옮기세요.</p>`,
   meta: "2인 · 구멍 121개 · 구슬 10개씩",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>HOP AND HOP AGAIN</span>`,
   artClass: "starhop-art",

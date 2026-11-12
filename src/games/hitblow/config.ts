@@ -22,7 +22,7 @@ export const hitBlowConfig: PointConfig<State> = {
   name: "히트 앤 블로",
   english: "Hit and Blow",
   number: "NO. 24 — STRIKES AND BALLS",
-  intro: `<p>교실 칠판에 적어 가며 하는 숫자 맞히기.<br>'숫자 야구'라고도 합니다. 스트라이크와 볼을 실마리로 상대 숫자를 먼저 찾으세요.</p><ul class="rule-list"><li>서로 다른 숫자로 된 수를 하나씩 숨깁니다</li><li>자리까지 맞으면 스트라이크, 숫자만 맞으면 볼</li><li>같은 횟수로 던져 먼저 맞히면 승리</li></ul>`,
+  intro: `<p>교실 칠판에 적어 가며 하는 숫자 맞히기.<br>'숫자 야구'라고도 합니다. 스트라이크와 볼을 실마리로 상대 숫자를 먼저 찾으세요.</p>`,
   meta: "나 대 컴퓨터 · 세 자리 또는 네 자리 · 중복 허용 선택",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>STRIKE, BALL, OUT</span>`,
   artClass: "hitblow-art",

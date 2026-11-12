@@ -18,7 +18,7 @@ export const pokerConfig: BettingConfig<State> = {
   skin: pokerSkin,
   name: "세븐 포커",
   english: "Seven-Card Stud",
-  intro: `<p>일곱 장 가운데 가장 좋은 다섯 장.<br>상대의 보이는 카드를 읽고 판돈을 겨루세요.</p><ul class="rule-list"><li>처음 세 장 가운데 한 장을 골라 공개합니다</li><li>네 번째–여섯 번째는 펴서, 일곱 번째는 엎어서 받아 직접 확인합니다</li><li>카드를 받을 때마다 베팅합니다</li></ul>`,
+  intro: `<p>일곱 장 가운데 가장 좋은 다섯 장.<br>상대의 보이는 카드를 읽고 판돈을 겨루세요.</p>`,
   meta: `나 + 컴퓨터 1–3명 · 카드 52장 · 시작 칩 ${START_CHIPS.toLocaleString("ko-KR")} · 기본 판돈 ${ANTE}`,
   art: `<div class="pk-mini"><i class="bj-mini-card back"></i><i class="bj-mini-card back"></i><i class="bj-mini-card">A<b>♠</b></i><i class="bj-mini-card red">A<b>♥</b></i><i class="bj-mini-card">K<b>♣</b></i></div><span>SEVEN CARDS, FIVE COUNT</span>`,
   artLabel: "세븐 포커 테이블 미리보기",

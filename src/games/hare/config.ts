@@ -22,7 +22,7 @@ export const hareConfig: PointConfig<State> = {
   name: "토끼와 사냥개",
   english: "Hare and Hounds",
   number: "NO. 23 — THE CHASE",
-  intro: `<p>사냥개 세 마리가 토끼 한 마리를 몰아넣습니다.<br>토끼는 사냥개 사이를 빠져나가면 이깁니다.</p><ul class="rule-list"><li>사냥개는 뒤로 물러설 수 없습니다</li><li>토끼는 어느 쪽으로든 갑니다</li><li>토끼가 갇히면 사냥개, 빠져나가면 토끼의 승리</li></ul>`,
+  intro: `<p>사냥개 세 마리가 토끼 한 마리를 몰아넣습니다.<br>토끼는 사냥개 사이를 빠져나가면 이깁니다.</p>`,
   meta: "2인 · 점 11개 · 사냥개 3 대 토끼 1",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>THREE AGAINST ONE</span>`,
   artClass: "hare-art",

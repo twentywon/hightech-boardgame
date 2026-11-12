@@ -84,7 +84,7 @@ export const hexConfig: PointConfig<State> = {
   name: "헥스",
   english: "Hex",
   number: "NO. 15 — CONNECT",
-  intro: `<p>공책에 그린 육각 판을 색연필로 한 칸씩 칠합니다.<br>마주 보는 내 두 변을 먼저 이으면 이깁니다.</p><ul class="rule-list"><li>차례마다 빈칸 하나를 내 색으로 칠합니다</li><li>빨강은 위–아래, 파랑은 왼쪽–오른쪽을 잇습니다</li><li>무승부가 없습니다</li></ul>`,
+  intro: `<p>공책에 그린 육각 판을 색연필로 한 칸씩 칠합니다.<br>마주 보는 내 두 변을 먼저 이으면 이깁니다.</p>`,
   meta: "2인 · 7×7 · 9×9 · 11×11",
   art: `<div class="pg-mini hexa">${"<i></i>".repeat(7)}</div><span>EDGE TO EDGE</span>`,
   artClass: "paper-art",

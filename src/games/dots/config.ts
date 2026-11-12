@@ -74,7 +74,7 @@ export const dotsConfig: PointConfig<State> = {
   name: "도츠 앤 박시스",
   english: "Dots and Boxes",
   number: "NO. 14 — PENCIL LINES",
-  intro: `<p>공책에 점을 찍고 색연필로 선을 긋는 놀이.<br>네모의 네 번째 변을 그으면 그 네모는 내 것입니다.</p><ul class="rule-list"><li>차례마다 이웃한 두 점을 선으로 잇습니다</li><li>네모를 완성하면 한 번 더 긋습니다</li><li>네모를 더 많이 가진 쪽이 승리</li></ul>`,
+  intro: `<p>공책에 점을 찍고 색연필로 선을 긋는 놀이.<br>네모의 네 번째 변을 그으면 그 네모는 내 것입니다.</p>`,
   meta: "2인 · 네모 3×3 · 5×5 · 7×7",
   art: `<div class="pg-mini dots">${"<i></i>".repeat(6)}</div><span>CLOSE THE BOX</span>`,
   artClass: "paper-art",

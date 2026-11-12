@@ -104,7 +104,7 @@ export function mountBlackjack(
   }
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 04 — TWENTY-ONE</span><h2>블랙잭 <span>Blackjack</span></h2><p>21에 가깝게, 하지만 넘지 않게.<br>딜러보다 높은 합계를 만들면 이깁니다.</p><ul class="rule-list"><li>블랙잭(A + 10점 카드)은 3 : 2 지급</li><li>딜러는 17 이상에서 멈춥니다</li><li>더블 다운과 스플릿을 지원합니다</li></ul><div class="game-meta">1인 대 딜러 · 6덱 · 시작 칩 ${chips(START_CHIPS)}</div><button id="bj-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">가상 칩으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art blackjack-art" role="img" aria-label="블랙잭 테이블 미리보기"><div class="bj-mini"><i class="bj-mini-card back"></i><i class="bj-mini-card">K<b>♠</b></i><i class="bj-mini-card red">A<b>♥</b></i><span class="bj-mini-chips"><b></b><b></b><b></b></span></div><span>TWENTY-ONE, NOT ONE MORE</span></div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 04 — TWENTY-ONE</span><h2>블랙잭 <span>Blackjack</span></h2><p>21에 가깝게, 하지만 넘지 않게.<br>딜러보다 높은 합계를 만들면 이깁니다.</p><div class="game-meta">1인 대 딜러 · 6덱 · 시작 칩 ${chips(START_CHIPS)}</div><button id="bj-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art blackjack-art" role="img" aria-label="블랙잭 테이블 미리보기"><div class="bj-mini"><i class="bj-mini-card back"></i><i class="bj-mini-card">K<b>♠</b></i><i class="bj-mini-card red">A<b>♥</b></i><span class="bj-mini-chips"><b></b><b></b><b></b></span></div><span>TWENTY-ONE, NOT ONE MORE</span></div></section>`;
     $("bj-start").onclick = start;
   }
   function start() {
