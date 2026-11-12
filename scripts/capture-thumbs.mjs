@@ -98,7 +98,9 @@ const play = {
       await wait(4500);
     }
   },
-  "sea-battle": async () => {
+  battleship: async () => {
+    await press("#pg-tool-1");
+    await wait(600);
     for (const walk of [["ArrowRight", "Enter"], ["ArrowDown", "ArrowRight", "Enter"], ["ArrowLeft", "ArrowLeft", "ArrowUp", "Enter"], ["ArrowDown", "ArrowDown", "Enter"], ["ArrowRight", "ArrowRight", "ArrowRight", "Enter"], ["ArrowUp", "ArrowUp", "ArrowUp", "Enter"]]) {
       await keys(walk);
       await wait(2200);

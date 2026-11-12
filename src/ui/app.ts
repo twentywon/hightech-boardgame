@@ -105,10 +105,10 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   hex: { config: hexConfig, options: { mode: "ai", variant: "9", level: "normal" } },
   mancala: { config: mancalaConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "snakes-and-ladders": { config: snakesConfig, options: { mode: "ai", variant: "", level: "normal" } },
-  "sea-battle": { config: seaBattleConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "battleship": { config: seaBattleConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "four-in-a-row": { config: fourRowConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "twist-five": { config: twistConfig, options: { mode: "ai", variant: "", level: "normal" } },
-  "hare-and-hounds": { config: hareConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "hare-and-hounds": { config: hareConfig, options: { mode: "ai", variant: "hounds", level: "normal" } },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
@@ -213,7 +213,7 @@ type GameSelection =
   | "snakes-and-ladders"
   | "spider"
   | "world-tour"
-  | "sea-battle"
+  | "battleship"
   | "four-in-a-row"
   | "twist-five"
   | "hare-and-hounds"

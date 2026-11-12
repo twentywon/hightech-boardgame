@@ -13,7 +13,7 @@ export const twistConfig: PointConfig<State> = {
   name: "돌림 오목",
   english: "Twist Five",
   number: "NO. 22 — PLACE AND TURN",
-  intro: `<p>구슬을 하나 놓고, 네 조각 가운데 하나를 돌립니다.<br>돌린 뒤에 다섯이 이어지면 이깁니다.</p><ul class="rule-list"><li>6×6 판은 3×3 조각 넷으로 되어 있습니다</li><li>놓은 뒤 조각 하나를 90° 돌립니다</li><li>가로·세로·대각선 다섯이면 승리</li></ul>`,
+  intro: `<p>흔히 '펜타고'로 알려진 놀이 방식입니다. 구슬을 하나 놓고, 네 조각 가운데 하나를 돌립니다.<br>돌린 뒤에 다섯이 이어지면 이깁니다.</p><ul class="rule-list"><li>6×6 판은 3×3 조각 넷으로 되어 있습니다</li><li>놓은 뒤 조각 하나를 90° 돌립니다</li><li>가로·세로·대각선 다섯이면 승리</li></ul>`,
   meta: "2인 · 6×6 · 조각 넷",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>PLACE, THEN TURN</span>`,
   artClass: "twist-art",

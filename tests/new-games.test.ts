@@ -174,6 +174,19 @@ describe("Hare and hounds", () => {
     expect([s.winner, s.stall]).toEqual([1, H.STALL_LIMIT]);
     for (let seed = 1; seed <= 8; seed++) expect(playout(H.hare, seed).winner).not.toBe("draw");
   });
+  it("lets side 0 play the hare: the hounds, now side 1, still move first", () => {
+    let s = H.hare.create("hare");
+    expect([s.hunter, s.turn, H.hare.owners(s)[10], H.hare.owners(s)[0]]).toEqual([1, 1, 0, 1]);
+    expect(H.moves(s).every((m) => s.hounds.includes(m.from))).toBe(true);
+    s = H.play(s, step(1, 4))!;
+    expect([s.turn, H.moves(s).every((m) => m.from === 10)]).toEqual([0, true]);
+    // Passing the hounds wins for side 0 here, and being penned in loses.
+    const away = H.play({ ...s, hounds: [4, 5, 6], hare: 2, turn: 0 }, step(2, 0))!;
+    expect(away.winner).toBe(0);
+    const closed = H.play({ ...s, hounds: [8, 7, 5], hare: 10, turn: 1 }, step(5, 9))!;
+    expect([closed.winner, H.hare.reason(closed)]).toEqual([1, "토끼가 갈 곳이 없습니다."]);
+    expect(H.evaluate(s, 0)).toBe(-H.evaluate(s, 1));
+  });
 });
 
 describe("Sea battle", () => {
@@ -190,10 +203,40 @@ describe("Sea battle", () => {
         expect(cells.every((c) => c >= 0 && c < 100)).toBe(true);
       }
     }
-    expect(frozen(B.createGame(seededRandom(5)))).toBe(frozen(B.createGame(seededRandom(5))));
+    expect(frozen(B.createBattle(seededRandom(5)))).toBe(frozen(B.createBattle(seededRandom(5))));
+  });
+  it("begins with side 0 laying its fleet: ship by ship, turned, or the rest by chance", () => {
+    let s = B.createGame(seededRandom(9));
+    expect([s.phase, s.fleets[0].length, s.fleets[1].length, s.turn]).toEqual(["place", 0, 5, 0]);
+    // The carrier, across from A1; it cannot start where it would leave the chart.
+    expect(B.play(s, to(6))).toBeNull();
+    expect(B.play(s, to(100))).toBeNull();
+    s = B.play(s, to(0))!;
+    expect([s.fleets[0][0], s.phase, s.ply]).toEqual([{ name: "항공모함", cells: [0, 1, 2, 3, 4] }, "place", 0]);
+    // The next ship may not cross it.
+    expect(B.play(s, to(2))).toBeNull();
+    s = B.play(s, to(B.TURN_SHIP))!;
+    expect([s.across, s.fleets[0].length]).toEqual([false, 1]);
+    expect(B.play(s, to(4))).toBeNull();
+    s = B.play(s, to(10))!;
+    expect(s.fleets[0][1]).toEqual({ name: "전함", cells: [10, 20, 30, 40] });
+    // A cruiser of three cannot start on the ninth row going down.
+    expect(B.play(s, to(80))).toBeNull();
+    const before = JSON.stringify(s),
+      ready = B.play(s, to(B.LAY_REST), seededRandom(3))!;
+    expect(JSON.stringify(s)).toBe(before);
+    expect([ready.phase, ready.fleets[0].length, new Set(ready.fleets[0].flatMap((ship) => ship.cells)).size]).toEqual(["battle", 5, 17]);
+    expect(ready.fleets[0].slice(0, 2)).toEqual(s.fleets[0]);
+    // In the battle the tools are gone and only the other waters can be fired at.
+    expect(B.play(ready, to(B.TURN_SHIP))).toBeNull();
+    expect(B.moves(ready).every((m) => m.to >= 100 && m.to < 200)).toBe(true);
+    // Laid by hand to the end, the battle begins with the last ship.
+    let hand = B.createGame(seededRandom(1));
+    for (const bow of [0, 10, 20, 30, 40]) hand = B.play(hand, to(bow))!;
+    expect([hand.phase, hand.fleets[0].map((ship) => ship.cells.length)]).toEqual(["battle", [5, 4, 3, 3, 2]]);
   });
   it("fires at the other side's waters only, once a square, and reports hits and sinkings", () => {
-    let s = B.createGame(seededRandom(2));
+    let s = B.createBattle(seededRandom(2));
     const destroyer = s.fleets[1][4];
     expect(B.moves(s)).toHaveLength(100);
     expect(B.play(s, to(5))).toBeNull();
@@ -208,7 +251,7 @@ describe("Sea battle", () => {
     expect([s.last!.sunk, B.afloat(s, 1), B.afloat(s, 0)]).toEqual(["구축함", 4, 5]);
   });
   it("ends when a whole fleet is down", () => {
-    let s = B.createGame(seededRandom(3));
+    let s = B.createBattle(seededRandom(3));
     const targets = s.fleets[1].flatMap((ship) => ship.cells),
       water = Array.from({ length: 100 }, (_, c) => c).filter((c) => !s.fleets[0].some((ship) => ship.cells.includes(c)));
     targets.forEach((cell, i) => {
@@ -220,7 +263,7 @@ describe("Sea battle", () => {
   it("the computer fires only where it has not fired, follows up a hit, and wins without seeing the ships", () => {
     for (const level of ["easy", "normal", "hard"] as const) {
       const random = seededRandom(7);
-      let s = B.createGame(seededRandom(11)),
+      let s = B.createBattle(seededRandom(11)),
         shots = 0;
       while (s.winner === null) {
         const before = frozen(s),
@@ -235,7 +278,7 @@ describe("Sea battle", () => {
       expect(shots).toBeLessThanOrEqual(200);
     }
     // After a hit with nothing sunk, the stronger levels fire beside it.
-    let s = B.createGame(seededRandom(4));
+    let s = B.createBattle(seededRandom(4));
     const carrier = s.fleets[1][0];
     s = { ...B.play(s, to(100 + carrier.cells[2]))!, turn: 0 };
     for (const level of ["normal", "hard"] as const) {
@@ -248,7 +291,7 @@ describe("Sea battle", () => {
       let total = 0;
       for (let seed = 1; seed <= 12; seed++) {
         const random = seededRandom(seed * 13);
-        let g = B.createGame(seededRandom(seed)),
+        let g = B.createBattle(seededRandom(seed)),
           n = 0;
         while (g.winner === null) {
           g = { ...B.play(g, B.aimShot(g, level, random)!)!, turn: 0 };

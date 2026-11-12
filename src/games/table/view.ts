@@ -85,6 +85,22 @@ export abstract class TableView<S> implements PointView<S> {
       aim(this.ray, e, el, this.camera);
       this.onPick(this.under(this.ray.ray));
     });
+    // A mouse that hovers shows where a tap would land.
+    let hovered = -1;
+    el.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse" || this.disposed) return;
+      aim(this.ray, e, el, this.camera);
+      const point = this.under(this.ray.ray);
+      if (point === hovered) return;
+      hovered = point;
+      this.hover(point);
+      this.dirty = true;
+    });
+    el.addEventListener("pointerleave", () => {
+      hovered = -1;
+      this.hover(-1);
+      this.dirty = true;
+    });
     el.style.cursor = "pointer";
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
@@ -130,6 +146,8 @@ export abstract class TableView<S> implements PointView<S> {
   protected abstract animate(before: S, state: S): boolean;
   /** Draws the marks of the screen: what can be chosen, and the keyboard's place. */
   protected abstract mark(marks: Marks): void;
+  /** The point under a hovering mouse, or -1. */
+  protected hover(_point: number) {}
   /** Called when the canvas changes shape, before the camera is set. */
   protected layout(_aspect: number) {}
   /** The point of the spot nearest the ray, or -1. */

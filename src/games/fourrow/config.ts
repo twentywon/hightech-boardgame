@@ -7,6 +7,8 @@ export const fourRowConfig: PointConfig<State> = {
   game: fourRow,
   view: (host, quality) => new FourRowView(host, quality),
   shape: "tall",
+  // A plastic disc dropping into a plastic rack.
+  contact: (sound) => sound.plastic(),
   colors: DISC_COLORS,
   // The keyboard walks along the tops of the columns.
   keyPoints: () => Array.from({ length: COLS }, (_, col) => ({ x: cellAt(col).x, z: 0 })),
@@ -14,7 +16,7 @@ export const fourRowConfig: PointConfig<State> = {
   name: "사목",
   english: "Four in a Row",
   number: "NO. 21 — DROP FOUR",
-  intro: `<p>세워 둔 틀에 원반을 떨어뜨립니다.<br>가로·세로·대각선으로 넷을 먼저 이으면 이깁니다.</p><ul class="rule-list"><li>원반은 고른 줄의 맨 아래 빈칸까지 떨어집니다</li><li>넷이 한 줄로 이어지면 승리</li><li>칸이 모두 차면 무승부</li></ul>`,
+  intro: `<p>흔히 '커넥트 포'로 알려진 놀이 방식입니다. 세워 둔 틀에 원반을 떨어뜨립니다.<br>가로·세로·대각선으로 넷을 먼저 이으면 이깁니다.</p><ul class="rule-list"><li>원반은 고른 줄의 맨 아래 빈칸까지 떨어집니다</li><li>넷이 한 줄로 이어지면 승리</li><li>칸이 모두 차면 무승부</li></ul>`,
   meta: `2인 · ${COLS}줄 × ${ROWS}칸`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FOUR IN A LINE</span>`,
   artClass: "fourrow-art",

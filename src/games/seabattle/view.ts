@@ -2,7 +2,7 @@ import * as T from "three";
 import { wood } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { CELLS, SIZE, sunk, type Ship, type State } from "./rules";
+import { CELLS, FLEET, SIZE, span, sunk, type Ship, type State } from "./rules";
 
 const CELL = 0.5,
   SIDE = CELL * SIZE,
@@ -89,6 +89,8 @@ export class SeaBattleView extends TableView<State> {
   private cursor: T.Mesh;
   private latest: T.Mesh;
   private stacked = false;
+  private ghost: T.Mesh;
+  private hovered = -1;
   private laid: State["fleets"] | null = null;
   constructor(
     host: HTMLElement,
@@ -156,7 +158,9 @@ export class SeaBattleView extends TableView<State> {
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.cursor = ringMesh(own, 0.2, 0.27, "#ffffff");
     this.latest = ringMesh(own, 0.24, 0.3, "#ffd24a");
-    this.scene.add(this.cursor, this.latest);
+    this.ghost = new T.Mesh(this.own(new T.BoxGeometry(1, 0.16, 0.3)), this.own(new T.MeshBasicMaterial({ color: "#ffd24a", transparent: true, opacity: 0.6, depthWrite: false })));
+    this.ghost.visible = false;
+    this.scene.add(this.cursor, this.latest, this.ghost);
     this.begin();
   }
   protected layout(aspect: number) {
@@ -267,9 +271,25 @@ export class SeaBattleView extends TableView<State> {
     });
     return true;
   }
+  protected hover(point: number) {
+    this.hovered = point;
+    this.mark(this.marks);
+  }
   protected mark(marks: Marks) {
     this.cursor.visible = marks.cursor !== null;
     if (marks.cursor !== null) this.cursor.position.set(this.at(marks.cursor).x, 0.01, this.at(marks.cursor).z);
+    // While the fleet is laid, the next ship is shown where the pointer or the keyboard would put it.
+    const state = this.state,
+      bow = this.hovered >= 0 ? this.hovered : (marks.cursor ?? -1),
+      cells = state?.phase === "place" && bow >= 0 && bow < CELLS && marks.targets.includes(bow) ? span(bow, FLEET[state.fleets[0].length][1], state.across) : null;
+    this.ghost.visible = !!cells;
+    if (cells && state) {
+      const a = this.at(cells[0]),
+        b = this.at(cells[cells.length - 1]);
+      this.ghost.position.set((a.x + b.x) / 2, 0.06, (a.z + b.z) / 2);
+      this.ghost.scale.set(cells.length * CELL - 0.12, 1, 1);
+      this.ghost.rotation.y = state.across ? 0 : Math.PI / 2;
+    }
   }
 }
 /** Where the keyboard walks: the two charts side by side. */

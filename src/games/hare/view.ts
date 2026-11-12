@@ -150,10 +150,9 @@ export class HareView extends TableView<State> {
       b = placeAt(to);
     if (!piece) return false;
     // Two hops along the line.
-    this.tween(0, 420, (p) => {
-      piece.position.set(a.x + (b.x - a.x) * p, Math.abs(Math.sin(p * Math.PI * 2)) * 0.45, a.z + (b.z - a.z) * p);
-      if (p === 1) this.onContact();
-    });
+    // Its voice is heard as it sets off.
+    this.onContact();
+    this.tween(0, 420, (p) => piece.position.set(a.x + (b.x - a.x) * p, Math.abs(Math.sin(p * Math.PI * 2)) * 0.45, a.z + (b.z - a.z) * p));
     return true;
   }
   protected mark(marks: Marks) {

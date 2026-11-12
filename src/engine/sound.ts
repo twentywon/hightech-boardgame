@@ -123,6 +123,41 @@ export class Sound {
     [1568, 2093].forEach((f, i) => this.tone("triangle", f, f, 0.2 + i * 0.09, 0.5, 0.09));
     this.tone("sine", 3136, 3136, 0.29, 0.6, 0.04);
   }
+  /** Something heavy dropping into water: a plop and the wash after it. */
+  splash() {
+    this.tone("sine", 420, 90, 0, 0.22, 0.16);
+    this.noise(0.03, 0.55, 0.2, 2600, "lowpass", 500);
+    this.noise(0.2, 0.5, 0.08, 1200, "bandpass", 600);
+  }
+  /** An explosion: a crack, a deep thump and a rumble dying away. */
+  explosion() {
+    this.noise(0, 0.12, 0.3, 3000, "highpass", 800);
+    this.tone("sine", 140, 34, 0, 0.6, 0.4);
+    this.tone("triangle", 90, 30, 0.02, 0.5, 0.2);
+    this.noise(0.04, 0.9, 0.26, 900, "lowpass", 120);
+  }
+  /** A plastic disc dropping into a plastic rack: a hard click and a lighter rattle. */
+  plastic() {
+    this.noise(0, 0.035, 0.3, 4200, "bandpass", 3200);
+    this.tone("square", 1900, 1300, 0, 0.04, 0.05);
+    this.noise(0.07, 0.03, 0.14, 5200, "bandpass", 4200);
+    this.tone("square", 2300, 1700, 0.07, 0.03, 0.025);
+  }
+  /** Two barks. */
+  bark() {
+    for (const at of [0, 0.2]) {
+      this.tone("sawtooth", 520, 210, at, 0.13, 0.16);
+      this.tone("square", 260, 120, at, 0.12, 0.06);
+      this.noise(at, 0.1, 0.1, 1400, "bandpass", 700);
+    }
+  }
+  /** Three light, quick hops. */
+  hop() {
+    [0, 0.11, 0.22].forEach((at, i) => {
+      this.tone("sine", 880 + i * 120, 620 + i * 120, at, 0.07, 0.09);
+      this.noise(at, 0.04, 0.05, 2600, "bandpass", 1800);
+    });
+  }
   /** A double: a short rising fanfare. */
   double() {
     [784, 988, 1175, 1568].forEach((f, i) => this.tone("triangle", f, f, 0.25 + i * 0.09, i === 3 ? 0.5 : 0.16, 0.08));

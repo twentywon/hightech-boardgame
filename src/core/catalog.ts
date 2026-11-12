@@ -133,8 +133,8 @@ export const games = [
     available: true,
   },
   {
-    name: "해전",
-    en: "SEA BATTLE",
+    name: "배틀십",
+    en: "BATTLESHIP",
     category: "보드게임",
     icon: "⚓",
     available: true,

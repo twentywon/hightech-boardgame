@@ -3,7 +3,8 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 /**
  * Hare and hounds: three hounds try to pen the hare in; the hare tries to
  * slip past them. Eleven points: one at each end and a 3×3 block between.
- * Side 0 plays the hounds and moves first; side 1 plays the hare.
+ * The hounds move first. Which side plays them is the state's `hunter`: side 0
+ * unless the player has chosen the hare.
  */
 export interface Place {
   /** Column 0 (the hounds' end) to 4 (the hare's end), and row 0–2. */
@@ -37,6 +38,8 @@ export const NEIGHBOURS: number[][] = PLACES.map((_, i) => LINKS.flatMap(([a, b]
 /** Moves in a row by which the hounds only shuffle up and down before the hare is let go. */
 export const STALL_LIMIT = 10;
 export interface State {
+  /** The side that plays the hounds. */
+  hunter: 0 | 1;
   hounds: number[];
   hare: number;
   turn: 0 | 1;
@@ -46,27 +49,28 @@ export interface State {
   last: { from: number; to: number } | null;
   ply: number;
 }
-export const createGame = (): State => ({ hounds: [0, index(1, 0), index(1, 2)], hare: 10, turn: 0, winner: null, stall: 0, last: null, ply: 0 });
+export const createGame = (hunter: 0 | 1 = 0): State => ({ hunter, hounds: [0, index(1, 0), index(1, 2)], hare: 10, turn: hunter, winner: null, stall: 0, last: null, ply: 0 });
 const occupied = (state: State, point: number) => state.hare === point || state.hounds.includes(point);
 export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
   const free = (from: number) => NEIGHBOURS[from].filter((to) => !occupied(state, to));
-  if (state.turn === 1) return free(state.hare).map((to) => ({ from: state.hare, to, extra: -1 }));
+  if (state.turn !== state.hunter) return free(state.hare).map((to) => ({ from: state.hare, to, extra: -1 }));
   // A hound never goes back toward its own end.
   return state.hounds.flatMap((from) => free(from).filter((to) => PLACES[to].col >= PLACES[from].col).map((to) => ({ from, to, extra: -1 })));
 }
 export function play(state: State, move: Move): State | null {
   if (!moves(state).some((m) => m.from === move.from && m.to === move.to) || move.extra !== -1) return null;
   const next: State = { ...state, hounds: state.hounds.slice(), last: { from: move.from, to: move.to }, ply: state.ply + 1, turn: state.turn ? 0 : 1 };
-  if (state.turn === 1) next.hare = move.to;
+  if (state.turn !== state.hunter) next.hare = move.to;
   else {
     next.hounds[next.hounds.indexOf(move.from)] = move.to;
     next.stall = PLACES[move.to].col > PLACES[move.from].col ? 0 : state.stall + 1;
   }
   const hareCol = PLACES[next.hare].col;
   // Past every hound, the hare can no longer be caught.
-  if (next.hounds.every((h) => PLACES[h].col > hareCol) || next.stall >= STALL_LIMIT) next.winner = 1;
-  else if (!moves({ ...next, winner: null }).length) next.winner = next.turn === 1 ? 0 : 1;
+  const runner = state.hunter ? 0 : 1;
+  if (next.hounds.every((h) => PLACES[h].col > hareCol) || next.stall >= STALL_LIMIT) next.winner = runner;
+  else if (!moves({ ...next, winner: null }).length) next.winner = next.turn === runner ? state.hunter : runner;
   return next;
 }
 /** The hare wants room and to be near the hounds' end; the hounds want the opposite. */
@@ -74,24 +78,27 @@ export function evaluate(state: State, player: 0 | 1) {
   const room = NEIGHBOURS[state.hare].filter((to) => !occupied(state, to)).length,
     behind = state.hounds.filter((h) => PLACES[h].col > PLACES[state.hare].col).length,
     forHare = room * 3 + (4 - PLACES[state.hare].col) * 2 + behind * 8 + state.stall;
-  return player === 1 ? forHare : -forHare;
+  return player !== state.hunter ? forHare : -forHare;
 }
 const effect = (state: State): Effect | null =>
   state.last ? { kind: "move", from: state.last.from, to: state.last.to, converted: [], removed: [] } : null;
 export const hare: PointGame<State> = {
-  create: () => createGame(),
+  create: (variant) => createGame(variant === "hare" ? 1 : 0),
   moves,
   play,
   turn: (s) => s.turn,
   winner: (s) => s.winner,
-  owners: (s) => PLACES.map((_, i) => (s.hounds.includes(i) ? 0 : s.hare === i ? 1 : null)),
+  owners: (s) => PLACES.map((_, i) => (s.hounds.includes(i) ? s.hunter : s.hare === i ? (s.hunter ? 0 : 1) : null)),
   effect,
   ply: (s) => s.ply,
   evaluate,
-  hint: (s) => (s.turn === 0 ? "움직일 사냥개를 고르세요." : "토끼를 고른 뒤 갈 곳을 고르세요."),
-  tally: (s) => ["세 마리", s.stall ? `제자리걸음 ${s.stall} / ${STALL_LIMIT}` : "한 마리"],
+  hint: (s) => (s.turn === s.hunter ? "움직일 사냥개를 고르세요." : "토끼를 고른 뒤 갈 곳을 고르세요."),
+  tally: (s) => {
+    const texts: [string, string] = [s.stall ? `세 마리 · 제자리걸음 ${s.stall} / ${STALL_LIMIT}` : "세 마리", "한 마리"];
+    return s.hunter ? [texts[1], texts[0]] : texts;
+  },
   reason: (s) =>
-    s.winner === 0
+    s.winner === s.hunter
       ? "토끼가 갈 곳이 없습니다."
       : s.stall >= STALL_LIMIT
         ? `사냥개가 ${STALL_LIMIT}번 잇달아 나아가지 못했습니다.`

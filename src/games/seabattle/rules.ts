@@ -6,7 +6,11 @@ import type { Level } from "../points/ai";
  * Sea battle: each side hides a fleet on its own 10×10 chart and the two
  * take turns to fire at one square of the other's. Whoever sinks the whole
  * of the other fleet wins. Points 0–99 are side 0's waters, 100–199 side 1's.
+ * Side 0 lays its own fleet first, ship by ship; side 1's is laid by chance.
  */
+/** Moves of the laying phase that are not squares: turn the next ship, lay the rest by chance. */
+export const TURN_SHIP = 200,
+  LAY_REST = 201;
 export const SIZE = 10,
   CELLS = SIZE * SIZE,
   /** Lengths of the five ships, with their names. */
@@ -22,6 +26,10 @@ export interface Ship {
   cells: number[];
 }
 export interface State {
+  /** "place" while side 0 still has ships to lay, then "battle". */
+  phase: "place" | "battle";
+  /** Whether the next ship is laid across (to the right of the square chosen) or down. */
+  across: boolean;
   fleets: [Ship[], Ship[]];
   /** Squares of each side's waters that have been fired at. */
   shots: [boolean[], boolean[]];
@@ -31,9 +39,9 @@ export interface State {
   ply: number;
 }
 /** A fleet laid out at random: no two ships share a square. */
-export function layFleet(random: Random): Ship[] {
-  const taken = new Set<number>();
-  return FLEET.map(([name, length]) => {
+export function layFleet(random: Random, laid: Ship[] = []): Ship[] {
+  const taken = new Set<number>(laid.flatMap((ship) => ship.cells));
+  return FLEET.slice(laid.length).map(([name, length]) => {
     for (;;) {
       const across = random() < 0.5,
         row = Math.floor(random() * (across ? SIZE : SIZE - length + 1)),
@@ -45,7 +53,28 @@ export function layFleet(random: Random): Ship[] {
     }
   });
 }
+/** The squares a ship of `length` covers from `bow`, or null when it would leave the chart. */
+export function span(bow: number, length: number, across: boolean) {
+  const row = Math.floor(bow / SIZE),
+    col = bow % SIZE;
+  if (bow < 0 || bow >= CELLS || (across ? col + length > SIZE : row + length > SIZE)) return null;
+  return Array.from({ length }, (_, k) => (across ? bow + k : bow + k * SIZE));
+}
+/** A game that begins with side 0 laying its ships. */
 export const createGame = (random: Random = cryptoRandom): State => ({
+  phase: "place",
+  across: true,
+  fleets: [[], layFleet(random)],
+  shots: [Array(CELLS).fill(false), Array(CELLS).fill(false)],
+  turn: 0,
+  winner: null,
+  last: null,
+  ply: 0,
+});
+/** A game with both fleets already laid by chance. */
+export const createBattle = (random: Random = cryptoRandom): State => ({
+  phase: "battle",
+  across: true,
   fleets: [layFleet(random), layFleet(random)],
   shots: [Array(CELLS).fill(false), Array(CELLS).fill(false)],
   turn: 0,
@@ -57,12 +86,29 @@ export const sunk = (state: State, side: number, ship: Ship) => ship.cells.every
 export const afloat = (state: State, side: number) => state.fleets[side].filter((ship) => !sunk(state, side, ship)).length;
 export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
+  if (state.phase === "place") {
+    const taken = new Set(state.fleets[0].flatMap((ship) => ship.cells)),
+      length = FLEET[state.fleets[0].length][1],
+      out: Move[] = [];
+    for (let bow = 0; bow < CELLS; bow++) {
+      const cells = span(bow, length, state.across);
+      if (cells && !cells.some((c) => taken.has(c))) out.push({ from: -1, to: bow, extra: -1 });
+    }
+    return [...out, { from: -1, to: TURN_SHIP, extra: -1 }, { from: -1, to: LAY_REST, extra: -1 }];
+  }
   const target = state.turn ? 0 : 1,
     out: Move[] = [];
   for (let c = 0; c < CELLS; c++) if (!state.shots[target][c]) out.push({ from: -1, to: target * CELLS + c, extra: -1 });
   return out;
 }
-export function play(state: State, move: Move): State | null {
+export function play(state: State, move: Move, random: Random = cryptoRandom): State | null {
+  if (state.phase === "place") {
+    if (state.winner !== null || move.from !== -1 || move.extra !== -1 || !moves(state).some((m) => m.to === move.to)) return null;
+    if (move.to === TURN_SHIP) return { ...state, across: !state.across };
+    const [name, length] = FLEET[state.fleets[0].length],
+      mine = move.to === LAY_REST ? [...state.fleets[0], ...layFleet(random, state.fleets[0])] : [...state.fleets[0], { name, cells: span(move.to, length, state.across)! }];
+    return { ...state, fleets: [mine, state.fleets[1]], phase: mine.length === FLEET.length ? "battle" : "place" };
+  }
   const target = state.turn ? 0 : 1,
     cell = move.to - target * CELLS;
   if (state.winner !== null || move.from !== -1 || move.extra !== -1 || !Number.isInteger(cell) || cell < 0 || cell >= CELLS || state.shots[target][cell])
@@ -136,7 +182,14 @@ export const seaBattle: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s, player) => afloat(s, player) - afloat(s, player ? 0 : 1),
-  hint: (s) => (s.last?.sunk ? `${s.last.sunk} 격침! 쏠 칸을 고르세요.` : "상대 해역에서 쏠 칸을 고르세요."),
-  tally: (s) => [0, 1].map((p) => `남은 배 ${afloat(s, p)}척`) as [string, string],
+  hint: (s) => {
+    if (s.phase === "place") {
+      const [name, length] = FLEET[s.fleets[0].length];
+      return `${name}(${length}칸)을 내 해역에 놓으세요 — ${s.across ? "가로" : "세로"}로 놓입니다.`;
+    }
+    return s.last?.sunk ? `${s.last.sunk} 격침! 쏠 칸을 고르세요.` : "상대 해역에서 쏠 칸을 고르세요.";
+  },
+  tally: (s) =>
+    s.phase === "place" ? [`배 ${s.fleets[0].length} / ${FLEET.length}척 배치`, "배치 완료"] : ([0, 1].map((p) => `남은 배 ${afloat(s, p)}척`) as [string, string]),
   reason: () => "상대 함대를 모두 가라앉혔습니다.",
 };

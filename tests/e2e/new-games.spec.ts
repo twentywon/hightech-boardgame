@@ -90,12 +90,40 @@ test("hare and hounds: a hound steps forward, the hare answers, a hound cannot g
   expect(errors).toEqual([]);
 });
 
-test("sea battle: a shot lands in the other waters, the computer fires back, and its ships stay hidden", async ({ page }, info) => {
+test("battleship: I lay my fleet, a shot lands in the other waters, the computer fires back, its ships stay hidden", async ({ page }, info) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await sit(page, "해전");
+  await page.goto("/");
+  await selectGame(page, "배틀십");
+  // No table for two: the mode cannot be chosen.
+  await expect(page.getByLabel("로컬 2인", { exact: true })).toBeHidden();
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await page.locator("canvas").focus();
+  await expect(page.locator("#turn")).toContainText("항공모함(5칸)을 내 해역에 놓으세요 — 가로");
+  await expect(page.locator("#pg-count-0")).toHaveText("배 0 / 5척 배치");
+  const turnShip = page.getByRole("button", { name: /배 돌리기/ }),
+    layRest = page.getByRole("button", { name: "남은 배 무작위로 놓기" });
+  // The keyboard starts in my own waters: the carrier goes down where it stands.
+  await keys(page, ["ArrowRight", "ArrowLeft", "Enter"]);
+  await expect(page.locator("#pg-count-0")).toHaveText("배 1 / 5척 배치");
+  await expect(page.locator("#turn")).toContainText("전함(4칸)");
+  await turnShip.click();
+  await expect(page.locator("#turn")).toContainText("세로로 놓입니다");
+  // Undo lifts the carrier again.
+  await page.getByRole("button", { name: "무르기", exact: true }).click();
+  await page.getByRole("button", { name: "무르기", exact: true }).click();
+  await expect(page.locator("#pg-count-0")).toHaveText("배 0 / 5척 배치");
+  await page.locator("canvas").focus();
+  await keys(page, ["Enter"]);
+  await layRest.click();
   await expect(page.locator("#pg-count-0")).toHaveText("남은 배 5척");
-  // The keyboard starts in the waters I fire at.
+  await expect(turnShip).toBeHidden();
+  await expect(layRest).toBeHidden();
+  await expect(page.locator("#turn")).toContainText("상대 해역에서 쏠 칸");
+  await expect(count(page)).toHaveText("0수");
+  // The keyboard now starts in the waters I fire at.
+  await page.locator("canvas").focus();
   await keys(page, ["ArrowRight", "Enter"]);
   await expect(count(page)).toHaveText("2수", { timeout: 20000 });
   // The same square cannot be fired at twice.
@@ -106,32 +134,25 @@ test("sea battle: a shot lands in the other waters, the computer fires back, and
   // Nothing about the fleets is written into the page.
   const html = await page.locator("main").innerHTML();
   expect(html).not.toMatch(/항공모함|순양함|잠수함|구축함/);
-  await page.screenshot({ path: `test-results/${info.project.name}-sea-battle.png`, fullPage: true });
+  await page.screenshot({ path: `test-results/${info.project.name}-battleship.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
 
-test("sea battle with two players: a tap on the chart fires, and only at the other side's", async ({ page }, info) => {
-  await sit(page, "해전", true);
-  const box = (await page.locator("canvas").boundingBox())!;
-  const tap = async (fx: number, fy: number) => {
-    await expect(board(page)).toHaveAttribute("data-animating", "false", { timeout: 20000 });
-    await page.waitForTimeout(260);
-    if (info.project.name === "mobile") await page.touchscreen.tap(box.x + box.width * fx, box.y + box.height * fy);
-    else await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
-  };
-  // Side 0 fires at the right-hand chart on a wide screen, the upper one on a narrow one.
-  const wide = box.width / box.height >= 0.95,
-    theirs: [number, number] = wide ? [0.75, 0.55] : [0.5, 0.3],
-    mine: [number, number] = wide ? [0.25, 0.55] : [0.5, 0.72];
-  await tap(...mine);
-  await expect(count(page)).toHaveText("0수");
-  await tap(...theirs);
-  await expect(count(page)).toHaveText("1수");
-  await expect(page.locator("#turn")).toContainText("홍군");
-  // Now the other chart is the target.
-  await tap(...theirs);
-  await expect(count(page)).toHaveText("1수");
-  await tap(...mine);
-  await expect(count(page)).toHaveText("2수");
+test("hare and hounds as the hare: the computer's hounds move first, then the hare is mine", async ({ page }) => {
+  await page.goto("/");
+  await selectGame(page, "토끼와 사냥개");
+  await page.getByLabel("내 말 (컴퓨터 대전)").selectOption("hare");
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(page.locator("#pg-side-0")).toContainText("나 (토끼)");
+  await expect(page.locator("#pg-side-1")).toContainText("(사냥개)");
+  await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+  await expect(page.locator("#turn")).toContainText("토끼를 고른 뒤 갈 곳을 고르세요", { timeout: 20000 });
+  await page.locator("canvas").focus();
+  // The far end: walk the cursor to the hare and step it one column in.
+  await keys(page, ["ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "Enter"]);
+  await expect(page.locator("#turn")).toContainText("갈 곳을 고르세요");
+  await keys(page, ["ArrowLeft", "Enter"]);
+  await expect(count(page)).toHaveText("3수", { timeout: 20000 });
 });
