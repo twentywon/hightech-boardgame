@@ -27,7 +27,7 @@ import { ChessAIClient } from "../games/chess/client";
 import { TURN_DELAY_MS } from "../engine/camera";
 import { ChessView } from "../games/chess/view";
 import { Sound } from "../engine/sound";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 interface Navigation {
   header: () => string;
   bindHeader: () => void;
@@ -133,17 +133,9 @@ export function mountChess(
     if (!cache.has(key)) cache.set(key, claimReasons(state, intended));
     return cache.get(key)!;
   }
-  // Hints use their own Worker so they never cancel the opponent's search.
-  const hintAI = new ChessAIClient();
-  let hinting = false;
-  function cancelHint() {
-    hintAI.cancel();
-    hinting = false;
-  }
   function pause() {
     generation++;
     ai.cancel();
-    cancelHint();
     timers.forEach(clearTimeout);
     timers.clear();
     computing = false;
@@ -180,8 +172,8 @@ export function mountChess(
     };
     nav.remember({ ...preferences });
   }
-  function setup() {
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 03 — THINK AHEAD</span><h2>체스 <span>Chess</span></h2><p>한 수 앞에서, 더 먼 가능성으로.<br>여섯 가지 기물로 나만의 전략을 펼쳐보세요.</p><div class="game-meta">2인 · 8×8 보드 · 백 선공</div><div class="mode-select"><label><input type="radio" name="chess-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="chess-mode" value="ai"> 컴퓨터 대전</label></div><div id="chess-options" hidden>${optionsForm("chess")}</div><button id="chess-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art chess-art" role="img" aria-label="체스판 미리보기"><div class="chess-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 ? "♞︎" : i === 35 ? "♔︎" : i === 44 ? "♟︎" : ""}</i>`).join("")}</div><span>EVERY MOVE OPENS A WORLD</span></div></section>`;
+  function setup(host = nav.setupHost) {
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 03 — THINK AHEAD</span><h2>체스 <span>Chess</span></h2><p>한 수 앞에서, 더 먼 가능성으로.<br>여섯 가지 기물로 나만의 전략을 펼쳐보세요.</p><div class="game-meta">2인 · 8×8 보드 · 백 선공</div><div class="mode-select"><label><input type="radio" name="chess-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="chess-mode" value="ai"> 컴퓨터 대전</label></div><div id="chess-options" hidden>${optionsForm("chess")}</div><button id="chess-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art chess-art" role="img" aria-label="체스판 미리보기"><div class="chess-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 ? "♞︎" : i === 35 ? "♔︎" : i === 44 ? "♟︎" : ""}</i>`).join("")}</div><span>EVERY MOVE OPENS A WORLD</span></div></section>`;
     document
       .querySelectorAll<HTMLInputElement>("input[name=chess-mode]")
       .forEach(
@@ -195,6 +187,11 @@ export function mountChess(
       );
     $("chess-difficulty").onchange = () => remember("chess");
     $("chess-color").onchange = () => remember("chess");
+    // From the table, the panel opens on the mode being played.
+    document.querySelectorAll<HTMLInputElement>("input[name=chess-mode]").forEach((input) => {
+      input.checked = input.value === nextMode;
+    });
+    $("chess-options").hidden = nextMode !== "ai";
     $("chess-start").onclick = () => {
       nextMode = document.querySelector<HTMLInputElement>(
         "input[name=chess-mode]:checked",
@@ -238,20 +235,11 @@ export function mountChess(
     resultPending = false;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout chess-game"><div class="game-top"><div><button id="back" class="text-button">← 컬렉션</button><h1>체스 <small>CHESS</small></h1></div><div class="game-actions"><button id="chess-config">대국 설정</button><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="chess-flip">보드 방향 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE CHESS TABLE</span><span>8 × 8 · 백 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">THINK AHEAD</div><h2>한 수 앞에서,<br>더 먼 가능성으로.</h2><div id="turn" role="status" aria-live="polite"></div>${(["w", "b"] as const).map((c) => `<div class="player"><i class="chess-glyph">${glyphs[c].k}</i><span>${c === "w" ? "백" : "흑"}<small>${mode === "local" ? `플레이어 ${c === "w" ? 1 : 2}` : human === c ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span></div>`).join("")}<div id="chess-captured" class="chess-captured"></div><div class="chess-confirm-slot"><button id="confirm" class="primary" disabled>기물을 선택하세요</button></div><button id="chess-clear" class="text-button">선택 취소</button><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><button id="chess-claim" disabled>무승부 청구</button><p id="chess-claim-info" class="input-help"></p><p class="input-help">마우스: 기물 선택 후 도착 칸 클릭<br>터치: 기물을 누른 뒤 도착 칸을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소<br>예정 수 청구: 기물 선택 후 방향키로 도착 칸 미리보기</p><h3 class="history-title">이동 기록</h3><ol id="chess-history" class="chess-history" aria-label="SAN 이동 기록"></ol></aside></div></main>`;
+      `<main class="game-layout chess-game"><div class="game-top"><div><button id="back" class="text-button">← 컬렉션</button><h1>체스 <small>CHESS</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="chess-flip">보드 방향 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE CHESS TABLE</span><span>8 × 8 · 백 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">THINK AHEAD</div><h2>한 수 앞에서,<br>더 먼 가능성으로.</h2><div id="turn" role="status" aria-live="polite"></div>${(["w", "b"] as const).map((c) => `<div class="player"><i class="chess-glyph">${glyphs[c].k}</i><span>${c === "w" ? "백" : "흑"}<small>${mode === "local" ? `플레이어 ${c === "w" ? 1 : 2}` : human === c ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span></div>`).join("")}<div id="chess-captured" class="chess-captured"></div><div class="chess-confirm-slot"><button id="confirm" class="primary" disabled>기물을 선택하세요</button></div><button id="chess-clear" class="text-button">선택 취소</button><div class="assist"><button id="undo">무르기</button></div><button id="chess-claim" disabled>무승부 청구</button><p id="chess-claim-info" class="input-help"></p><p class="input-help">마우스: 기물 선택 후 도착 칸 클릭<br>터치: 기물을 누른 뒤 도착 칸을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소<br>예정 수 청구: 기물 선택 후 방향키로 도착 칸 미리보기</p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("chess-config").onclick = configure;
-    $("restart").onclick = () =>
-      dialog(
-        "새 체스 대국을 시작할까요?",
-        "현재 대국을 끝내고 선택한 설정으로 새로 시작합니다.",
-        [
-          { text: "계속하기", action: () => {} },
-          { text: "새 게임", action: start },
-        ],
-      );
+    $("restart").onclick = () => setupDialog(setup);
     $("camera").onclick = () => {
       top = !top;
       clearSelection();
@@ -269,7 +257,6 @@ export function mountChess(
     $("chess-clear").onclick = clearSelection;
     $("chess-claim").onclick = claim;
     $("undo").onclick = takeBack;
-    $("hint").onclick = showHint;
     try {
       view = new ChessView($("board"), settings.quality, facing);
       view.onSelect = select;
@@ -438,46 +425,6 @@ export function mountChess(
     update();
     schedule();
   }
-  // A hint may be requested while a piece is still moving; only the move
-  // itself waits for the animation.
-  const canHint = () =>
-    !!view &&
-    !state.outcome &&
-    !aiTurn() &&
-    !promoting &&
-    !hidden &&
-    !document.querySelector("dialog[open]");
-  async function showHint() {
-    if (!canHint() || hinting) return;
-    const position = state,
-      current = generation;
-    hinting = true;
-    update();
-    try {
-      const r = await hintAI.compute(
-        position,
-        "hard",
-        3 + position.moves.length * 104729,
-      );
-      if (disposed || current !== generation || state !== position || !view)
-        return;
-      hinting = false;
-      const move = r.move;
-      if (
-        move &&
-        availableMoves(move.from).some((m) => m.to === move.to)
-      ) {
-        // Propose the move as an ordinary selection; the person confirms it.
-        selected = move.from;
-        target = cursor = move.to;
-      }
-      update();
-    } catch (e) {
-      if (disposed || current !== generation || state !== position) return;
-      hinting = false;
-      update();
-    }
-  }
   /** Two players at one screen: the table turns to whoever is to move. */
   function faceMover(delay = 0) {
     if (mode !== "local" || state.outcome || !view) return;
@@ -490,7 +437,6 @@ export function mountChess(
     state = next;
     selected = target = cursor = null;
     aiError = "";
-    cancelHint();
     const game = engine(),
       last = snapshot().moves.at(-1);
     view?.render(game, last);
@@ -517,7 +463,7 @@ export function mountChess(
     }
   }
   function update() {
-    if (disposed || !document.getElementById("chess-history")) return;
+    if (disposed || !document.getElementById("chess-captured")) return;
     const game = engine(),
       moves = snapshot().moves,
       last = moves.at(-1),
@@ -562,9 +508,6 @@ export function mountChess(
         : "기물을 선택하세요";
     // Enabled again by onSettled once the pieces stop moving.
     $<HTMLButtonElement>("undo").disabled = !undoCount() || !!view?.animating;
-    $<HTMLButtonElement>("hint").disabled =
-      hinting || !!state.outcome || aiTurn() || !view;
-    $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";
     const currentClaim = claims(),
       planned = currentClaim.length
         ? []
@@ -585,11 +528,6 @@ export function mountChess(
             `<div><small>${c === "w" ? "백" : "흑"}이 잡은 기물</small><span>${captured[c].map((p) => glyphs[other(c)][p]).join(" ") || "—"}</span></div>`,
         )
         .join("");
-      $("chess-history").innerHTML = Array.from(
-        { length: Math.ceil(moves.length / 2) },
-        (_, i) =>
-          `<li><span>${i + 1}.</span><span>${moves[i * 2].san}</span><span>${moves[i * 2 + 1]?.san ?? ""}</span></li>`,
-      ).join("");
     }
     const king = check
       ? game
@@ -666,40 +604,6 @@ export function mountChess(
       }
     }, 200);
   }
-  function configure() {
-    pause();
-    promoting = false;
-    const d = dialog(
-      "다음 체스 대국 설정",
-      `<p>현재 대국의 난이도와 배정 색상은 유지됩니다. 다시 시작할 때 아래 설정을 적용합니다.</p><label class="setting">플레이 모드<select id="chess-next-mode"><option value="local" ${nextMode === "local" ? "selected" : ""}>로컬 2인</option><option value="ai" ${nextMode === "ai" ? "selected" : ""}>컴퓨터 대전</option></select></label>${optionsForm("chess-next")}`,
-      [
-        {
-          text: "설정 적용",
-          action: () => {},
-        },
-      ],
-    );
-    // modal removes the dialog before its action; capture form values while it exists.
-    d.querySelector("button")!.onclick = () => {
-      remember("chess-next");
-      nextMode = $<HTMLSelectElement>("chess-next-mode").value as Mode;
-      d.close();
-      d.remove();
-    };
-    let resumed = false;
-    const resume = () => {
-      if (resumed) return;
-      resumed = true;
-      later(() => {
-        update();
-        if (state.outcome) result();
-        else schedule();
-      }, 0);
-    };
-    d.addEventListener("close", resume, { once: true });
-    d.addEventListener("cancel", resume, { once: true });
-    update();
-  }
   function result() {
     if (!resultPending || !state.outcome) return;
     if (view?.animating || document.querySelector("dialog[open]")) {
@@ -714,14 +618,14 @@ export function mountChess(
       `<p>${state.outcome.reason}<br>${state.moves.length}수의 대국을 마쳤습니다.</p>`,
       [
         { text: "게임판 보기", action: () => {} },
-        { text: "다시 플레이", action: start },
+        { text: "새 게임", action: () => setupDialog(setup) },
       ],
     );
   }
   function rules() {
     dialog(
       "킹을 지키고, 체크메이트하세요",
-      `<ol><li>백이 먼저 시작합니다. 자기 기물을 선택하고 합법적인 도착 칸으로 이동하세요.</li><li>자기 킹이 공격받는 체크를 반드시 해소해야 합니다. 킹을 잡는 대신 체크메이트로 승리합니다.</li><li>캐슬링은 킹·룩의 이동 이력과 공격받는 칸을 검사합니다. 앙파상은 직전 두 칸 전진한 폰에만 가능합니다.</li><li>마지막 줄에 도착한 폰은 퀸·룩·비숍·나이트로 프로모션합니다.</li><li>스테일메이트와 지원하는 기물 부족은 무승부입니다. 3회 반복·50수는 청구 버튼, 5회 반복·75수는 자동 종료입니다.</li></ol><h3>기물별 이동</h3><dl class="piece-moves"><dt>킹 ♔</dt><dd>가로·세로·대각선 어느 방향으로든 한 칸. 공격받는 칸으로는 갈 수 없습니다. 한 번도 움직이지 않았다면 룩 쪽으로 두 칸 가는 캐슬링을 할 수 있습니다.</dd><dt>퀸 ♕</dt><dd>가로·세로·대각선으로 원하는 만큼. 다른 기물을 넘을 수 없습니다.</dd><dt>룩 ♖</dt><dd>가로·세로로 원하는 만큼. 다른 기물을 넘을 수 없습니다.</dd><dt>비숍 ♗</dt><dd>대각선으로 원하는 만큼. 처음 선 칸의 색을 벗어나지 못합니다.</dd><dt>나이트 ♘</dt><dd>한 방향으로 두 칸 간 뒤 옆으로 한 칸(L자). 다른 기물을 뛰어넘는 유일한 기물입니다.</dd><dt>폰 ♙</dt><dd>앞으로 한 칸, 첫 이동만 두 칸까지. 잡을 때는 대각선 앞 한 칸입니다. 뒤로는 못 갑니다. 앙파상으로 잡을 수 있고, 마지막 줄에서 프로모션합니다.</dd></dl><p>도착 칸을 선택하면 그 예정 수로 가능한 무승부 청구도 안내합니다. 새로고침하면 대국과 체스 설정이 초기화됩니다.</p><p><b>무르기</b>는 직전 수를 되돌립니다. 컴퓨터 대전에서는 내 차례로 돌아갑니다. <b>힌트</b>는 추천 수를 기물과 도착 칸 선택으로 보여 주며, 이동은 직접 확정합니다. 대국이 끝난 뒤에는 무를 수 없습니다.</p>`,
+      `<ol><li>백이 먼저 두고, 한 번에 기물 하나씩 번갈아 움직입니다. 자기 기물이 있는 칸으로는 갈 수 없고, 상대 기물이 있는 칸으로 가면 그 기물을 잡습니다.</li><li>상대 킹을 피할 수 없게 공격하는 <b>체크메이트</b>를 만들면 이깁니다. 킹은 실제로 잡지 않습니다.</li></ol><h3>기물별 이동</h3><dl class="piece-moves"><dt>킹 ♔</dt><dd>가로·세로·대각선 어느 방향으로든 한 칸. 공격받는 칸으로는 갈 수 없습니다.</dd><dt>퀸 ♕</dt><dd>가로·세로·대각선으로 원하는 만큼. 다른 기물을 넘을 수 없습니다.</dd><dt>룩 ♖</dt><dd>가로·세로로 원하는 만큼. 다른 기물을 넘을 수 없습니다.</dd><dt>비숍 ♗</dt><dd>대각선으로 원하는 만큼. 처음 선 칸의 색을 벗어나지 못합니다.</dd><dt>나이트 ♘</dt><dd>한 방향으로 두 칸 간 뒤 옆으로 한 칸(L자). 다른 기물을 뛰어넘는 유일한 기물입니다.</dd><dt>폰 ♙</dt><dd>앞으로 한 칸, 처음 움직일 때만 두 칸까지. 앞이 막히면 못 갑니다. 잡을 때만 대각선 앞 한 칸으로 갑니다. 뒤로는 못 갑니다.</dd></dl><h3>체크와 체크메이트</h3><dl class="piece-moves"><dt>체크</dt><dd>킹이 다음 수에 잡힐 위치에 놓인 상태입니다. 반드시 바로 벗어나야 합니다. 방법은 세 가지입니다: 킹을 안전한 칸으로 옮기기, 공격하는 기물을 잡기, 공격 길 사이에 기물을 놓아 막기(나이트의 공격은 막을 수 없습니다).</dd><dt>체크메이트</dt><dd>체크를 벗어날 방법이 하나도 없으면 체크메이트로 집니다.</dd><dt>금지된 수</dt><dd>자기 킹이 체크에 놓이게 되는 수는 둘 수 없습니다. 그래서 킹 앞을 지키는 기물은 움직이지 못할 수 있습니다(핀).</dd></dl><h3>특수 규칙</h3><dl class="piece-moves"><dt>캐슬링</dt><dd>킹과 룩을 한 수에 함께 움직여 킹을 안전하게 숨기는 수입니다. 킹을 룩 쪽으로 두 칸 옮기면 룩이 킹을 넘어 바로 옆 칸에 놓입니다. 킹 쪽(짧은 캐슬링)과 퀸 쪽(긴 캐슬링) 둘 다 가능합니다.<br><b>조건</b> ① 그 킹과 그 룩이 한 번도 움직인 적이 없을 것 ② 킹과 룩 사이에 기물이 없을 것 ③ 킹이 지금 체크가 아닐 것 ④ 킹이 지나가는 칸과 도착하는 칸이 공격받지 않을 것. 룩만 공격받거나 룩이 지나는 칸이 공격받는 것은 괜찮습니다.<br><b>두는 법</b> 킹을 고른 뒤 두 칸 옆의 도착 칸을 누릅니다.</dd><dt>앙파상</dt><dd>상대 폰이 처음 자리에서 두 칸 전진해 내 폰 바로 옆에 섰을 때, 그 폰이 한 칸만 온 것처럼 대각선 뒤 칸으로 가면서 잡는 수입니다. 잡힌 폰은 내 폰이 도착한 칸이 아니라 옆 칸에서 사라집니다.<br><b>조건</b> 상대가 두 칸 전진한 <b>바로 다음 수</b>에만 가능합니다. 한 수라도 지나면 권리가 없어집니다. 폰만 폰을 이렇게 잡을 수 있습니다.</dd><dt>프로모션(승급)</dt><dd>폰이 맨 끝 줄에 도착하면 반드시 퀸·룩·비숍·나이트 중 하나로 바꿉니다. 이미 가진 기물과 상관없이 고를 수 있어 퀸이 둘 이상이 될 수도 있습니다. 대부분 퀸을 고르지만, 나이트가 체크를 만들거나 스테일메이트를 피할 때는 다른 기물이 더 좋습니다.</dd></dl><h3>무승부</h3><dl class="piece-moves"><dt>스테일메이트</dt><dd>둘 차례인 쪽이 체크는 아닌데 둘 수 있는 수가 하나도 없으면 무승부입니다. 이기고 있을 때 상대의 수를 모두 막지 않도록 조심하세요.</dd><dt>기물 부족</dt><dd>어느 쪽도 체크메이트를 만들 수 없는 기물만 남으면 무승부입니다. 예: 킹 대 킹, 킹과 비숍 대 킹, 킹과 나이트 대 킹.</dd><dt>3회 반복</dt><dd>같은 사람의 차례에 같은 배치가 세 번 나오면 <b>무승부 청구</b> 버튼으로 무승부를 청구할 수 있습니다. 다섯 번 나오면 자동으로 무승부입니다.</dd><dt>50수 규칙</dt><dd>양쪽 합쳐 50수씩(100번의 이동) 동안 폰이 움직이지 않고 잡힌 기물도 없으면 무승부를 청구할 수 있습니다. 75수가 되면 자동으로 무승부입니다.</dd></dl><h3>기물의 가치(참고)</h3><p>폰 1 · 나이트 3 · 비숍 3 · 룩 5 · 퀸 9. 맞바꿀 때 어림하는 값이며 규칙은 아닙니다.</p><p>도착 칸을 선택하면 그 예정 수로 가능한 무승부 청구도 안내합니다. 새로고침하면 대국과 체스 설정이 초기화됩니다.</p><p><b>무르기</b>는 직전 수를 되돌립니다. 컴퓨터 대전에서는 내 차례로 돌아갑니다. 대국이 끝난 뒤에는 무를 수 없습니다.</p>`,
     );
   }
   const hide = (e: PageTransitionEvent) => {

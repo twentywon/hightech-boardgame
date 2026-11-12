@@ -134,6 +134,7 @@ test("yacht dice opens inline; roll, keep, score, and a whole solo game", async 
   await page.screenshot({ path: `test-results/${info.project.name}-yacht-over.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await button(page, "다시 플레이").click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await settled(page);
   await expect(page.locator("#move-count")).toHaveText("1 / 12 라운드");
   await expect(page.locator("#yd-total-0")).toHaveText("0");

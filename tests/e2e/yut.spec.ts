@@ -130,6 +130,7 @@ test("yut against the computer plays on to a result, and the screen fits", async
   }).toPass({ timeout: 220000, intervals: [100] });
   await expect(page.locator("#yut-final")).toContainText(/이겼습니다|컴퓨터가 먼저/);
   await page.locator("#yut-again").click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#yut-count-0")).toHaveText("대기 4 · 말판 0 · 난 말 0");
   expect(errors).toEqual([]);
 });

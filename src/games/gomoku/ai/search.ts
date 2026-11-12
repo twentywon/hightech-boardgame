@@ -1,4 +1,4 @@
-import type { State, Point, Player } from "../rules";
+import { doubleThree, type State, type Point, type Player } from "../rules";
 import { profiles, seededRandom, type Difficulty } from "./difficulty";
 import { rank, patternScore, type Board, type Candidate } from "./evaluator";
 export interface SearchOptions {
@@ -56,7 +56,12 @@ export function search(
     reason: "evaluation",
   };
   const board: Board = Int8Array.from(state.board.flat());
-  const legal = board.findIndex((v) => v === 0);
+  // Where the double three is refused, the root never offers such a point.
+  // Deeper plies keep them: a small inaccuracy, never an illegal reply.
+  const banned = (index: number) =>
+    !!state.noDoubleThree &&
+    doubleThree(state.board, { row: Math.floor(index / 15), col: index % 15 }, state.turn);
+  const legal = board.findIndex((v, i) => v === 0 && !banned(i));
   let best = legal;
   const finish = (): SearchResult => ({
     move: best < 0 ? null : { row: Math.floor(best / 15), col: best % 15 },
@@ -210,9 +215,10 @@ export function search(
       profile.defense,
       difficulty !== "beginner",
       check,
-    );
+    ).filter((c) => c.attack.five || !banned(c.index));
     let root = tactical(all);
     best = root[0]?.index ?? legal;
+    if (!root.length) return finish();
     if (root[0]?.attack.five) {
       stats.reason = "immediate win";
       return finish();

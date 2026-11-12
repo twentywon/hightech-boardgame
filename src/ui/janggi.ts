@@ -26,7 +26,7 @@ import { JanggiView } from "../games/janggi/view";
 import { TURN_DELAY_MS } from "../engine/camera";
 import { difficulties, type ColorChoice, type Difficulty } from "../core/ai";
 import { Sound } from "../engine/sound";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import type { Mode, Settings } from "../core/storage";
 
 export interface JanggiOptions {
@@ -116,11 +116,11 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     selected = target = cursor = null;
     aiError = "";
   }
-  function setup() {
-    stop();
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
     const option = (value: string, label: string, current: string) =>
       `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`;
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>장기 <span>Janggi</span></h2><p>초와 한, 아홉 줄 열 칸의 전장.<br>궁을 지키고 상대의 궁을 외통으로 몰아넣으세요.</p><ul class="rule-list"><li>초가 먼저 둡니다</li><li>포는 기물 하나를 넘어야 움직입니다</li><li>둘 곳이 마땅치 않으면 한 수 쉴 수 있습니다</li></ul><div class="game-meta">2인 · 9×10 · 기물 32개</div><div class="mode-select"><label><input type="radio" name="jg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="jg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options"><label><span id="jg-formation-label">상차림</span><select id="jg-formation" aria-labelledby="jg-formation-label">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.formation)).join("")}</select></label><label id="jg-rival">한(2P) 상차림<select id="jg-formation-2">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.rivalFormation)).join("")}</select></label><label id="jg-level">AI 난이도<select id="jg-difficulty">${difficulties.map((d) => option(d, profiles[d].label, preferences.difficulty)).join("")}</select></label><label id="jg-side">내 진영<select id="jg-color">${option("black", "초 (선공)", preferences.color)}${option("white", "한 (후공)", preferences.color)}${option("random", "무작위", preferences.color)}</select></label><small>상차림은 궁 양옆의 마와 상 순서이며 각자 자기 쪽에서 본 왼쪽부터입니다. 선택한 설정은 새 대국부터 적용됩니다.</small></div><button id="jg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art janggi-art" role="img" aria-label="장기판 미리보기"><div class="jg-mini">${["車", "馬", "象", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="han">${g}</b>` : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="han big">漢</b>' : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="cho big">楚</b>' : ""}</i>`).join("")}${["車", "象", "馬", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="cho">${g}</b>` : ""}</i>`).join("")}</div><span>CHO AND HAN, ACROSS THE BOARD</span></div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>장기 <span>Janggi</span></h2><p>초와 한, 아홉 줄 열 칸의 전장.<br>궁을 지키고 상대의 궁을 외통으로 몰아넣으세요.</p><ul class="rule-list"><li>초가 먼저 둡니다</li><li>포는 기물 하나를 넘어야 움직입니다</li><li>둘 곳이 마땅치 않으면 한 수 쉴 수 있습니다</li></ul><div class="game-meta">2인 · 9×10 · 기물 32개</div><div class="mode-select"><label><input type="radio" name="jg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="jg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options"><label><span id="jg-formation-label">상차림</span><select id="jg-formation" aria-labelledby="jg-formation-label">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.formation)).join("")}</select></label><label id="jg-rival">한(2P) 상차림<select id="jg-formation-2">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.rivalFormation)).join("")}</select></label><label id="jg-level">AI 난이도<select id="jg-difficulty">${difficulties.map((d) => option(d, profiles[d].label, preferences.difficulty)).join("")}</select></label><label id="jg-side">내 진영<select id="jg-color">${option("black", "초 (선공)", preferences.color)}${option("white", "한 (후공)", preferences.color)}${option("random", "무작위", preferences.color)}</select></label><small>상차림은 궁 양옆의 마와 상 순서이며 각자 자기 쪽에서 본 왼쪽부터입니다. 선택한 설정은 새 대국부터 적용됩니다.</small></div><button id="jg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">현재 대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art janggi-art" role="img" aria-label="장기판 미리보기"><div class="jg-mini">${["車", "馬", "象", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="han">${g}</b>` : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="han big">漢</b>' : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="cho big">楚</b>' : ""}</i>`).join("")}${["車", "象", "馬", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="cho">${g}</b>` : ""}</i>`).join("")}</div><span>CHO AND HAN, ACROSS THE BOARD</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=jg-mode]");
     const remember = () => {
       preferences = {
@@ -178,15 +178,11 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
   function screen() {
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout janggi-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>장기 <small>JANGGI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE JANGGI TABLE</span><span>9 × 10 · 초 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar jg-sidebar"><div id="turn" role="status" aria-live="polite"></div>${(["cho", "han"] as const).map((side) => `<div class="player"><i class="jg-glyph ${side}">${side === "cho" ? "楚" : "漢"}</i><span>${SIDE[side]}<small>${who(side)}</small></span><b id="jg-points-${side}"></b></div>`).join("")}<button id="confirm" class="primary" disabled>기물을 선택하세요</button><div class="assist"><button id="jg-pass">한수쉼</button><button id="jg-clear">선택 취소</button></div><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><div id="jg-result" class="yd-result" hidden><p id="jg-final"></p><button id="jg-again" class="primary">다시 플레이</button></div><p class="input-help">마우스: 기물을 누른 뒤 도착점을 클릭<br>터치: 기물을 누른 뒤 도착점을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소</p><h3 class="history-title">이동 기록</h3><ol id="jg-history" class="chess-history" aria-label="이동 기록"></ol></aside></div></main>`;
+      `<main class="game-layout janggi-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>장기 <small>JANGGI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE JANGGI TABLE</span><span>9 × 10 · 초 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar jg-sidebar"><div id="turn" role="status" aria-live="polite"></div>${(["cho", "han"] as const).map((side) => `<div class="player"><i class="jg-glyph ${side}">${side === "cho" ? "楚" : "漢"}</i><span>${SIDE[side]}<small>${who(side)}</small></span><b id="jg-points-${side}"></b></div>`).join("")}<button id="confirm" class="primary" disabled>기물을 선택하세요</button><div class="assist"><button id="jg-pass">한수쉼</button><button id="jg-clear">선택 취소</button></div><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><div id="jg-result" class="yd-result" hidden><p id="jg-final"></p><button id="jg-again" class="primary">다시 플레이</button></div><p class="input-help">마우스: 기물을 누른 뒤 도착점을 클릭<br>터치: 기물을 누른 뒤 도착점을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소</p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () =>
-      modal("새 장기 대국을 시작할까요?", "현재 대국을 끝내고 선택한 설정으로 새로 시작합니다.", [
-        { text: "계속하기", action: () => {} },
-        { text: "새 게임", action: start },
-      ]);
+    $("restart").onclick = () => setupDialog(setup);
     $("camera").onclick = () => {
       top = !top;
       clearSelection();
@@ -199,7 +195,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     $("jg-pass").onclick = () => submit(null);
     $("undo").onclick = takeBack;
     $("hint").onclick = showHint;
-    $("jg-again").onclick = start;
+    $("jg-again").onclick = () => setupDialog(setup);
     try {
       view = new JanggiView($("board"), settings.quality, facing);
       view.onSelect = select;
@@ -396,7 +392,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     }, 250);
   }
   function update() {
-    if (disposed || !document.getElementById("jg-history")) return;
+    if (disposed || !document.getElementById("jg-result")) return;
     const check = !state.outcome && inCheck(state),
       last = state.moves.at(-1) ?? null,
       score = points(state.board);
@@ -439,18 +435,6 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     $<HTMLButtonElement>("hint").disabled = hinting || !!state.outcome || aiTurn() || !view;
     $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";
     // History: one line per pair of moves, replayed for the piece names.
-    const rows: string[] = [];
-    let replay: State | null = undo(state, state.moves.length) ?? state;
-    state.moves.forEach((move, i) => {
-      const text = describe(replay!.board, move, replay!.turn);
-      if (i % 2 === 0) rows.push(`<li><span>${i / 2 + 1}.</span><span>${text}</span><span></span></li>`);
-      else rows[rows.length - 1] = rows[rows.length - 1].replace("<span></span></li>", `<span>${text}</span></li>`);
-      replay = play({ ...replay!, outcome: null }, move) ?? replay;
-    });
-    if ($("jg-history").childElementCount !== rows.length || $("jg-history").dataset.moves !== String(state.moves.length)) {
-      $("jg-history").innerHTML = rows.join("");
-      $("jg-history").dataset.moves = String(state.moves.length);
-    }
     $("jg-result").hidden = !state.outcome;
     if (state.outcome) {
       $("jg-final").textContent = state.outcome.winner
@@ -487,7 +471,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     }
   };
   const show = (e: PageTransitionEvent) => {
-    if (e.persisted && document.getElementById("jg-history")) {
+    if (e.persisted && document.getElementById("jg-result")) {
       update();
       schedule();
     }

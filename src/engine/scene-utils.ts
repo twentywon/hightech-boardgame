@@ -63,7 +63,8 @@ export function afterGPUFrame(
     gl.deleteSync(sync);
   };
 }
-export function wood(dark = false) {
+/** A wood texture; `grain` below 1 thins the streaks out for a calmer surface. */
+export function wood(dark = false, grain = 1) {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 512;
@@ -75,11 +76,11 @@ export function wood(dark = false) {
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 4294967296;
   };
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < 1000 * grain; i++) {
     const y = rand() * 512;
     ctx.strokeStyle = dark
-      ? `rgba(18,9,4,${rand() * 0.13})`
-      : `rgba(77,41,14,${rand() * 0.15})`;
+      ? `rgba(18,9,4,${rand() * 0.13 * grain})`
+      : `rgba(77,41,14,${rand() * 0.15 * grain})`;
     ctx.lineWidth = rand() * 1.5;
     ctx.beginPath();
     ctx.moveTo(0, y);

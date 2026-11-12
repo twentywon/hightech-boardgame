@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { selectGame } from "./library";
-test("menu, actual WebGL moves, persistence, camera and restart", async ({
+test("menu, actual WebGL moves, camera and the new-game dialog", async ({
   page,
 }, info) => {
   const errors: string[] = [];
@@ -51,18 +51,22 @@ test("menu, actual WebGL moves, persistence, camera and restart", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.reload();
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect(page.locator("#move-count")).toHaveText("1수");
+  // Nothing is kept across a reload: no game is offered to continue.
+  await expect(page.getByRole("button", { name: /이어하기/ })).toHaveCount(0);
   const angled = await page.locator("canvas").screenshot();
   await page.getByRole("button", { name: "시점 전환" }).click();
   await page.waitForTimeout(550);
   const overhead = await page.locator("canvas").screenshot();
   expect(overhead.equals(angled)).toBe(false);
-  await page.getByRole("button", { name: "다시 시작", exact: true }).click();
+  // The new-game dialog can be left without losing the game.
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await expect(page.getByRole("dialog").getByLabel("삼삼(3-3) 허용")).toBeChecked();
+  await page.getByRole("dialog").getByRole("button", { name: "계속하기" }).click();
+  await expect(page.locator("#move-count")).toHaveText("1수");
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
+  await expect(page.getByRole("button", { name: /힌트/ })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 test("AI responds and settings persist", async ({ page }, info) => {
@@ -123,56 +127,41 @@ test("five difficulties, white opening, next-game policy and persisted preferenc
   );
   await expect(page.locator("#move-count")).toHaveText("1수");
   await expect(page.locator("#turn")).toContainText("백돌");
-  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
-  await selectGame(page);
-  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
-  await page.getByLabel("AI 난이도").selectOption("beginner");
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect(page.locator(".player").first()).toContainText(
-    "컴퓨터 · 어려움",
-  );
-  await page.getByRole("button", { name: "다시 시작", exact: true }).click();
-  const restartWorker = page.waitForEvent("worker", { timeout: 15000 });
+  // The dialog opens on the mode being played and applies its choices to the next game.
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("컴퓨터 대전", { exact: true })).toBeChecked();
+  await dialog.getByLabel("AI 난이도").selectOption("beginner");
+  const restartWorker = page.waitForEvent("worker", { timeout: 15000 });
+  await dialog.getByRole("button", { name: "새 게임 시작" }).click();
   await restartWorker;
   await expect(page.locator(".player").first()).toContainText("컴퓨터 · 입문");
   await expect(page.locator("#move-count")).toHaveText("1수");
 });
 
-const thinkingSession = {
-  version: 2,
-  mode: "ai",
-  difficulty: "expert",
-  human: 2,
-  moves: [
-    { row: 7, col: 7, player: 1 },
-    { row: 6, col: 7, player: 2 },
-    { row: 8, col: 8, player: 1 },
-    { row: 8, col: 7, player: 2 },
-    { row: 6, col: 6, player: 1 },
-    { row: 9, col: 9, player: 2 },
-    { row: 5, col: 7, player: 1 },
-    { row: 9, col: 6, player: 2 },
-  ],
-};
-test("expert Worker keeps animation frames alive; menu and restart discard old work", async ({
+/** Sits down against the expert as black and plays the centre, so that it starts thinking. */
+async function provoke(page: Page) {
+  await selectGame(page);
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await page.getByLabel("AI 난이도").selectOption("expert");
+  await page.getByLabel("플레이어 색상").selectOption("black");
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await page.locator("canvas").focus();
+  await expect(async () => {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#move-count")).not.toHaveText("0수", { timeout: 500 });
+  }).toPass({ timeout: 15000 });
+}
+test("expert Worker keeps animation frames alive; menu and a new game discard old work", async ({
   page,
 }, info) => {
-  test.setTimeout(60000);
+  test.setTimeout(90000);
   const workers: string[] = [];
   page.on("worker", (worker) => workers.push(worker.url()));
   await page.goto("/");
-  await page.evaluate(
-    (s) => localStorage.setItem("wtg.session.v1", JSON.stringify(s)),
-    thinkingSession,
-  );
-  await page.reload();
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect(page.locator("#turn")).toContainText("컴퓨터가 생각 중");
+  await provoke(page);
   await expect
-    .poll(() => workers.length, { timeout: 10000 })
+    .poll(() => workers.length, { timeout: 15000 })
     .toBeGreaterThan(0);
   const ticks = await page.evaluate(async () => {
     const gaps: number[] = [];
@@ -192,71 +181,83 @@ test("expert Worker keeps animation frames alive; menu and restart discard old w
     body: JSON.stringify(ticks),
     contentType: "application/json",
   });
-  expect(workers.length).toBeGreaterThan(0);
   expect(ticks.count).toBeGreaterThan(5);
   expect(ticks.max).toBeLessThan(1000);
-  await expect(page.locator("#move-count")).toHaveText("9수", {
-    timeout: 10000,
-  });
-  // Start another expert calculation, then leave for a fresh local game.
-  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
-  await page.evaluate(
-    (s) => localStorage.setItem("wtg.session.v1", JSON.stringify(s)),
-    thinkingSession,
-  );
-  await page.reload();
-  const beforeRestart = workers.length;
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect
-    .poll(() => workers.length, { timeout: 10000 })
-    .toBeGreaterThan(beforeRestart);
-  await page.getByRole("button", { name: "다시 시작", exact: true }).click();
+  await expect(page.locator("#move-count")).toHaveText("2수", { timeout: 20000 });
+  // Start another expert calculation, then begin a fresh local game from the dialog.
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(async () => {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#move-count")).toHaveText("3수", { timeout: 500 });
+  }).toPass({ timeout: 15000 });
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await page.getByRole("dialog").getByLabel("로컬 2인", { exact: true }).check();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
   await page.waitForTimeout(3400);
   await expect(page.locator("#move-count")).toHaveText("0수");
+  // The same when leaving for the collection in the middle of a search.
   await page.getByRole("button", { name: "컬렉션", exact: false }).click();
-  await page.evaluate(
-    (s) => localStorage.setItem("wtg.session.v1", JSON.stringify(s)),
-    thinkingSession,
-  );
-  await page.reload();
-  const beforeMenu = workers.length;
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect
-    .poll(() => workers.length, { timeout: 10000 })
-    .toBeGreaterThan(beforeMenu);
+  await provoke(page);
   await page.getByRole("button", { name: "컬렉션", exact: false }).click();
   await selectGame(page);
+  await page.getByLabel("로컬 2인", { exact: true }).check();
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await page.waitForTimeout(3400);
   await expect(page.locator("#move-count")).toHaveText("0수");
 });
 
-test("random color is resolved once and retained when resuming", async ({
-  page,
-}) => {
+test("random color is resolved once for the game", async ({ page }) => {
   await page.goto("/");
   await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("플레이어 색상").selectOption("random");
-  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   // Do not stub global Math.random: Three.js uses it for resource identifiers.
-  const human = await page.evaluate(
-    () => JSON.parse(localStorage.getItem("wtg.session.v1")!).human,
-  );
-  expect([1, 2]).toContain(human);
+  const black = await page.locator(".player").first().textContent();
+  const human = black!.includes("나") ? 1 : 2;
+  await expect(page.locator(".player").nth(human - 1)).toContainText("나");
+  await expect(page.locator(".player").nth(2 - human)).toContainText("컴퓨터");
   await expect(page.locator("#move-count")).toHaveText(
     human === 2 ? "1수" : "0수", { timeout: 15000 },
   );
-  await page.reload();
+});
+
+test("with the double three refused, the meeting point of two open threes cannot be played", async ({ page }) => {
+  await page.goto("/");
   await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect(page.locator(".player").nth(human - 1)).toContainText("나");
-  await expect(page.locator("#move-count")).toHaveText(human === 2 ? "1수" : "0수");
+  await page.getByLabel("삼삼(3-3) 허용").uncheck();
+  await page.getByRole("button", { name: "테이블에 앉기" }).click();
+  await expect(page.locator(".board-label")).toContainText("삼삼 금지");
+  await page.locator("canvas").focus();
+  const count = page.locator("#move-count");
+  /** Walks the cursor from the centre and places a stone there. */
+  const put = async (keys: string[], moves: number) => {
+    // Past the input lock, so that no key of the walk is dropped.
+    await page.waitForTimeout(450);
+    await expect(async () => {
+      for (const key of keys) await page.keyboard.press(key);
+      await page.keyboard.press("Enter");
+      await expect(count).toHaveText(`${moves}수`, { timeout: 500 });
+    }).toPass({ timeout: 15000 });
+  };
+  const far = (side: string) => Array<string>(5).fill(side);
+  await put(["ArrowUp"], 1);
+  await put(far("ArrowLeft"), 2);
+  await put(["ArrowDown"], 3);
+  await put([...far("ArrowLeft"), "ArrowUp"], 4);
+  await put(["ArrowLeft"], 5);
+  await put([...far("ArrowLeft"), "ArrowDown"], 6);
+  await put(["ArrowRight"], 7);
+  await put(far("ArrowRight"), 8);
+  // The centre would make an open three across and another down.
+  await page.waitForTimeout(450);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#turn")).toContainText("삼삼 금지");
+  await expect(count).toHaveText("8수");
+  // One open three alone is allowed.
+  await put(["ArrowUp", "ArrowUp"], 9);
 });
 
 test("AI selection remains usable when storage writes are blocked", async ({
@@ -278,7 +279,4 @@ test("AI selection remains usable when storage writes are blocked", async ({
     "컴퓨터 · 전문가",
   );
   await expect(page.locator("#move-count")).toHaveText("1수");
-  await expect(page.locator("#save-status")).toContainText(
-    "저장을 사용할 수 없습니다",
-  );
 });

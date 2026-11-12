@@ -891,10 +891,6 @@ dialog h2 {
 .chess-captured small { font:10px Arial,sans-serif;color:#77715f;white-space:nowrap; }
 .chess-captured span { font-family:Georgia,serif;overflow-wrap:anywhere; }
 .chess-game #chess-claim { width:100%;font-size:12px; }
-.history-title { font-size:12px;font-weight:500;margin:20px 0 10px; }
-.chess-history { list-style:none;padding:0;margin:0;max-height:180px;overflow-y:auto;font-size:12px;font-variant-numeric:tabular-nums;border-top:1px solid #d9d2c4; }
-.chess-history li { display:grid;grid-template-columns:30px 1fr 1fr;gap:8px;padding:9px 4px;border-bottom:1px solid #e0d9ca; }
-.chess-history li span:first-child { color:#8b806a; }
 @media(max-width:760px) {
   .chess-mini { width:220px;height:220px;border-width:12px; }
   .chess-mini i { font-size:26px; }
@@ -2100,3 +2096,14 @@ dialog .deed-list li { display: flex; align-items: center; justify-content: spac
 dialog .deed-list small { display: block; font-size: 12px; color: var(--ink-faint); }
 dialog .deed-list button { flex: none; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--ink); background: transparent; font-size: 13px; font-weight: 600; }
 dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
+
+/* New-game dialog: the setup panel without its title, art or blurb. */
+.setup-dialog { width:min(92vw,460px); }
+.setup-dialog .featured { display:block;padding:0;margin:0;border:0;background:none;box-shadow:none;min-height:0; }
+.setup-dialog .feature-copy { padding:0;max-width:none; }
+.setup-dialog .feature-art,.setup-dialog .pill,.setup-dialog .game-number,.setup-dialog .feature-copy > h2,.setup-dialog .feature-copy > p,.setup-dialog .game-meta,.setup-dialog .rule-list,.setup-dialog .session-note { display:none; }
+.setup-dialog .feature-copy .primary { width:100%;margin-top:18px;justify-content:center;text-align:center; }
+.setup-note { margin:6px 0 4px;color:#7b7263;font-size:13px; }
+.rule-option { display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 4px;font-size:14px;cursor:pointer; }
+.rule-option input { width:18px;height:18px;accent-color:#1d5a48; }
+.rule-option small { flex-basis:100%;color:#7b7263;font-size:12px; }

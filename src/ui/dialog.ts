@@ -20,3 +20,33 @@ export function modal(
   d.addEventListener("cancel", () => d.remove());
   d.showModal();
 }
+/**
+ * Offers a game's own setup panel in a dialog, for starting anew from the
+ * table. `fill` draws the panel into the host; its start button closes the
+ * dialog once it has read the choices.
+ */
+export function setupDialog(fill: (host: HTMLElement) => void) {
+  document.querySelector("dialog")?.remove();
+  const d = document.createElement("dialog");
+  d.className = "setup-dialog";
+  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>새 게임</h2><p class="setup-note">지금 하던 게임은 끝내고 처음부터 다시 시작합니다.</p><div class="dialog-body setup-host"></div><div class="dialog-actions"><button id="setup-cancel">계속하기</button></div>`;
+  document.body.append(d);
+  const close = () => {
+    d.close();
+    d.remove();
+  };
+  fill(d.querySelector<HTMLElement>(".setup-host")!);
+  d.querySelector<HTMLButtonElement>("#setup-cancel")!.onclick = close;
+  d.querySelectorAll<HTMLButtonElement>(".setup-host button.primary").forEach((button) => {
+    const begin = button.onclick;
+    button.textContent = "새 게임 시작";
+    button.onclick = (event) => {
+      // The choices are read from the form, so it must outlive the handler.
+      begin?.call(button, event);
+      close();
+    };
+  });
+  d.addEventListener("cancel", () => d.remove());
+  d.showModal();
+  return d;
+}

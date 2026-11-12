@@ -20,7 +20,7 @@ import { advise } from "../games/yacht/ai";
 import { YachtView } from "../games/yacht/view";
 import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import type { Settings } from "../core/storage";
 
 export type YachtMode = "solo" | "local" | "ai";
@@ -107,9 +107,9 @@ export function mountYacht(
     view?.dispose();
     view = null;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 05 — FIVE DICE</span><h2>요트 다이스 <span>Yacht Dice</span></h2><p>주사위 다섯 개, 세 번의 기회.<br>남길 눈을 골라 열두 칸의 족보를 채우세요.</p><ul class="rule-list"><li>한 차례에 최대 세 번 굴립니다</li><li>차례마다 족보 한 칸을 반드시 채웁니다</li><li>상단 합계 63 이상이면 보너스 35점</li></ul><div class="game-meta">1–2인 · 12라운드 · 주사위 5개</div><div class="mode-select"><label><input type="radio" name="yd-mode" value="solo"> 혼자 하기</label><label><input type="radio" name="yd-mode" value="local"> 로컬 2인</label><label><input type="radio" name="yd-mode" value="ai"> 컴퓨터 대전</label></div><small id="yd-options" class="session-note" hidden>컴퓨터 대전에서는 내가 먼저 굴립니다.</small><button id="yd-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">점수는 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art yacht-art" role="img" aria-label="요트 다이스 테이블 미리보기"><div class="yd-mini">${[5, 5, 5, 2, 2].map((n, i) => `<i class="yd-mini-die d${i}">${PIPS[n]}</i>`).join("")}</div><span>FIVE DICE, THREE ROLLS</span></div></section>`;
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 05 — FIVE DICE</span><h2>요트 다이스 <span>Yacht Dice</span></h2><p>주사위 다섯 개, 세 번의 기회.<br>남길 눈을 골라 열두 칸의 족보를 채우세요.</p><ul class="rule-list"><li>한 차례에 최대 세 번 굴립니다</li><li>차례마다 족보 한 칸을 반드시 채웁니다</li><li>상단 합계 63 이상이면 보너스 35점</li></ul><div class="game-meta">1–2인 · 12라운드 · 주사위 5개</div><div class="mode-select"><label><input type="radio" name="yd-mode" value="solo"> 혼자 하기</label><label><input type="radio" name="yd-mode" value="local"> 로컬 2인</label><label><input type="radio" name="yd-mode" value="ai"> 컴퓨터 대전</label></div><small id="yd-options" class="session-note" hidden>컴퓨터 대전에서는 내가 먼저 굴립니다.</small><button id="yd-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">점수는 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art yacht-art" role="img" aria-label="요트 다이스 테이블 미리보기"><div class="yd-mini">${[5, 5, 5, 2, 2].map((n, i) => `<i class="yd-mini-die d${i}">${PIPS[n]}</i>`).join("")}</div><span>FIVE DICE, THREE ROLLS</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=yd-mode]");
     const remember = () => {
       preferences = { mode: [...radios].find((r) => r.checked)!.value as YachtMode };
@@ -140,17 +140,13 @@ export function mountYacht(
       `<tr data-category="${c}"><th scope="row">${NAMES[c][0]}<small>${NAMES[c][1]}</small></th>${cells(c)}</tr>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>요트 다이스 <small>YACHT DICE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE DICE TRAY</span><span>주사위 5개 · 3번 굴리기</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / 12 라운드</span></div></section><aside class="game-sidebar yd-sidebar"><div id="turn" role="status" aria-live="polite"></div><div class="yd-controls"><div class="yd-dice" role="group" aria-label="주사위 — 눌러서 보관하거나 되돌리기">${Array.from({ length: DICE }, (_, i) => `<button id="yd-die-${i}" class="yd-die" aria-pressed="false"></button>`).join("")}</div><button id="yd-roll" class="primary">굴리기</button><p id="yd-note" class="input-help"></p></div><div id="yd-result" class="yd-result" hidden><p id="yd-final"></p><button id="yd-again" class="primary">다시 플레이</button></div><table class="yd-sheet"><caption>점수표 — 내 차례에 열린 칸의 점수를 눌러 기록합니다</caption><thead><tr><th scope="col">족보</th>${columns}</tr></thead><tbody>${UPPER.map(row).join("")}<tr class="sum"><th scope="row">상단 합계<small>${BONUS_AT} 이상이면 보너스</small></th>${cells("upper")}</tr><tr class="sum"><th scope="row">보너스<small>+${BONUS}</small></th>${cells("bonus")}</tr>${CATEGORIES.slice(6).map(row).join("")}<tr class="total"><th scope="row">총점</th>${cells("total")}</tr></tbody></table></aside></div></main>`;
+      `<main class="game-layout yacht-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>요트 다이스 <small>YACHT DICE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE DICE TRAY</span><span>주사위 5개 · 3번 굴리기</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / 12 라운드</span></div></section><aside class="game-sidebar yd-sidebar"><div id="turn" role="status" aria-live="polite"></div><div class="yd-controls"><div class="yd-dice" role="group" aria-label="주사위 — 눌러서 보관하거나 되돌리기">${Array.from({ length: DICE }, (_, i) => `<button id="yd-die-${i}" class="yd-die" aria-pressed="false"></button>`).join("")}</div><button id="yd-roll" class="primary">굴리기</button><p id="yd-note" class="input-help"></p></div><div id="yd-result" class="yd-result" hidden><p id="yd-final"></p><button id="yd-again" class="primary">다시 플레이</button></div><table class="yd-sheet"><caption>점수표 — 내 차례에 열린 칸의 점수를 눌러 기록합니다</caption><thead><tr><th scope="col">족보</th>${columns}</tr></thead><tbody>${UPPER.map(row).join("")}<tr class="sum"><th scope="row">상단 합계<small>${BONUS_AT} 이상이면 보너스</small></th>${cells("upper")}</tr><tr class="sum"><th scope="row">보너스<small>+${BONUS}</small></th>${cells("bonus")}</tr>${CATEGORIES.slice(6).map(row).join("")}<tr class="total"><th scope="row">총점</th>${cells("total")}</tr></tbody></table></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () =>
-      modal("새 게임을 시작할까요?", "지금까지의 점수를 지우고 처음부터 다시 시작합니다.", [
-        { text: "계속하기", action: () => {} },
-        { text: "새 게임", action: start },
-      ]);
+    $("restart").onclick = () => setupDialog(setup);
     $("yd-roll").onclick = () => act((s) => roll(s, random));
-    $("yd-again").onclick = start;
+    $("yd-again").onclick = () => setupDialog(setup);
     for (let i = 0; i < DICE; i++) $(`yd-die-${i}`).onclick = () => hold(i);
     root.querySelector<HTMLElement>(".yd-sheet")!.onclick = (e) => {
       const button = (e.target as HTMLElement).closest<HTMLButtonElement>(".yd-pick");

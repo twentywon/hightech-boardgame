@@ -10,7 +10,6 @@ import {
   type Player,
   type Point,
 } from "../games/reversi/rules";
-import { load, save } from "../games/reversi/storage";
 import {
   difficulties,
   difficultyLabels,
@@ -21,7 +20,7 @@ import {
 import { ReversiAIClient } from "../games/reversi/client";
 import { BoardView } from "../engine/board-view";
 import { Sound } from "../engine/sound";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import { setSettings, type Settings, type Mode } from "../core/storage";
 interface Navigation {
   header: () => string;
@@ -29,7 +28,6 @@ interface Navigation {
   back: () => void;
   settings: Settings;
   setupHost: HTMLElement;
-  configure: () => void;
   preferences: AIOptions;
   remember: (options: AIOptions) => void;
 }
@@ -42,10 +40,7 @@ export function mountReversi(
   nav: Navigation,
 ): ReversiController {
   const ai = new ReversiAIClient(),
-    // Hints use their own Worker so they never cancel the opponent's search.
-    hintAI = new ReversiAIClient(),
     sound = new Sound();
-  let hinting = false;
   sound.enabled = nav.settings.sound;
   let preferences = nav.preferences,
     state = createGame(),
@@ -72,16 +67,9 @@ export function mountReversi(
     timers.add(timer);
   };
   const aiTurn = () => mode === "ai" && state.turn !== human;
-  const persist = () => save({ state, mode, difficulty, human });
-  function cancelHint() {
-    hintAI.cancel();
-    hinting = false;
-    view?.suggest(null);
-  }
   function stop() {
     generation++;
     ai.cancel();
-    cancelHint();
     timers.forEach(clearTimeout);
     timers.clear();
     view?.dispose();
@@ -91,9 +79,9 @@ export function mountReversi(
     aiError = "";
     resultPending = false;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML =
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML =
       `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>리버시 <span>Reversi</span></h2><p>코너를 지키고, 다음 수를 열어두세요.<br>마지막 순간까지 승부는 바뀔 수 있습니다.</p><div class="game-meta">2인 · 8×8 보드 · 전략</div><div class="mode-select"><label><input type="radio" name="rv-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="rv-mode" value="ai"> 컴퓨터 대전</label></div><div id="rv-options" class="ai-options" hidden><label>AI 난이도<select id="rv-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><label>플레이어 색상<select id="rv-color">${[
         ["black", "흑돌"],
         ["white", "백돌"],
@@ -105,7 +93,7 @@ export function mountReversi(
         )
         .join(
           "",
-        )}</select></label><small>선택한 설정은 다음 새 대국부터 적용됩니다.</small></div><button id="rv-start" class="primary">테이블에 앉기 <span>↗</span></button>${load() ? '<button id="rv-resume" class="text-button">리버시 이어하기 →</button>' : ""}</div><div class="feature-art reversi-art" role="img" aria-label="리버시판 미리보기"><div class="reversi-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 || i === 36 ? '<b class="white"></b>' : i === 28 || i === 35 ? '<b class="black"></b>' : ""}</i>`).join("")}</div><span>THE ART OF REVERSAL</span></div></section>`;
+        )}</select></label><small>선택한 설정은 다음 새 대국부터 적용됩니다.</small></div><button id="rv-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art reversi-art" role="img" aria-label="리버시판 미리보기"><div class="reversi-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 || i === 36 ? '<b class="white"></b>' : i === 28 || i === 35 ? '<b class="black"></b>' : ""}</i>`).join("")}</div><span>THE ART OF REVERSAL</span></div></section>`;
     document.querySelectorAll<HTMLInputElement>("input[name=rv-mode]").forEach(
       (input) =>
         (input.onchange = () => {
@@ -130,14 +118,11 @@ export function mountReversi(
       )!.value as Mode;
       start();
     };
-    if (document.getElementById("rv-resume"))
-      $("rv-resume").onclick = () => {
-        const s = load();
-        if (s) {
-          ({ state, mode, difficulty, human } = s);
-          screen();
-        }
-      };
+    // From the table, the panel opens on the mode being played.
+    document.querySelectorAll<HTMLInputElement>("input[name=rv-mode]").forEach((input) => {
+      input.checked = input.value === mode;
+    });
+    $("rv-options").hidden = mode !== "ai";
   }
   function start() {
     difficulty = preferences.difficulty;
@@ -150,7 +135,6 @@ export function mountReversi(
             ? 1
             : 2;
     state = createGame();
-    persist();
     sound.unlock();
     screen();
   }
@@ -158,20 +142,11 @@ export function mountReversi(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>리버시 <small>REVERSI</small></h1></div><div class="game-actions"><button id="rv-config">대국 설정</button><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE REVERSI TABLE</span><span>8 × 8 · 흑 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">TURN THE TABLE</div><h2>마지막 한 수까지,<br>가능성은 열려있습니다.</h2><div id="turn" role="status" aria-live="polite"></div><div id="pass-notice" role="status" aria-live="polite" hidden></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "local" ? "플레이어 1" : human === 1 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="black-count">2</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "local" ? "플레이어 2" : human === 2 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="white-count">2</b></div><label class="hint-toggle"><input id="hints" type="checkbox" ${showHints ? "checked" : ""}> 합법 수 안내</label><p class="hint">상대 돌을 사이에 두고 뒤집으세요.<br>마지막에 더 많은 돌을 가진 쪽이 승리합니다.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><p class="input-help">마우스: 클릭하여 착수<br>터치: 칸을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p><span id="save-status" class="save-status"></span></aside></div></main>`;
+      `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>리버시 <small>REVERSI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE REVERSI TABLE</span><span>8 × 8 · 흑 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">TURN THE TABLE</div><h2>마지막 한 수까지,<br>가능성은 열려있습니다.</h2><div id="turn" role="status" aria-live="polite"></div><div id="pass-notice" role="status" aria-live="polite" hidden></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "local" ? "플레이어 1" : human === 1 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="black-count">2</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "local" ? "플레이어 2" : human === 2 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="white-count">2</b></div><label class="hint-toggle"><input id="hints" type="checkbox" ${showHints ? "checked" : ""}> 합법 수 안내</label><p class="hint">상대 돌을 사이에 두고 뒤집으세요.<br>마지막에 더 많은 돌을 가진 쪽이 승리합니다.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 클릭하여 착수<br>터치: 칸을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
-    $("rv-config").onclick = nav.configure;
     $("rules").onclick = rules;
-    $("restart").onclick = () =>
-      modal(
-        "새 리버시 대국을 시작할까요?",
-        "선택한 다음 대국 설정으로 새로 시작합니다.",
-        [
-          { text: "계속하기", action: () => {} },
-          { text: "새 게임", action: start },
-        ],
-      );
+    $("restart").onclick = () => setupDialog(setup);
     $("camera").onclick = () => {
       settings.top = !settings.top;
       view?.setCamera(settings.top);
@@ -189,7 +164,6 @@ export function mountReversi(
       if (candidate) place(candidate);
     };
     $("undo").onclick = takeBack;
-    $("hint").onclick = showHint;
     try {
       view = new BoardView($("board"), settings.quality, "reversi");
       view.onContact = () => sound.tap();
@@ -299,67 +273,21 @@ export function mountReversi(
     // Drop searches and pending replies for the abandoned position.
     generation++;
     ai.cancel();
-    cancelHint();
     timers.forEach(clearTimeout);
     timers.clear();
     state = previous;
     candidate = null;
     aiError = "";
-    const saved = persist();
     view.renderReversi(state, false);
     update();
-    $("save-status").textContent = saved
-      ? "✓ 이 기기에 자동 저장됨"
-      : "저장을 사용할 수 없습니다";
     schedule();
-  }
-  // A hint may be requested while discs are still flipping; only the
-  // placement itself waits for the animation.
-  const canHint = () =>
-    !!view &&
-    !state.winner &&
-    !aiTurn() &&
-    !document.querySelector("dialog[open]");
-  async function showHint() {
-    if (!canHint() || hinting) return;
-    const snapshot = state,
-      current = generation;
-    hinting = true;
-    update();
-    try {
-      const r = await hintAI.compute(
-        snapshot,
-        "hard",
-        snapshot.moves.length * 104729 + 3,
-      );
-      if (disposed || current !== generation || state !== snapshot || !view)
-        return;
-      hinting = false;
-      if (r.move && isLegal(r.move)) {
-        candidate = { row: r.move.row, col: r.move.col };
-        view.preview(candidate, state.turn);
-        view.suggest(candidate);
-      }
-      update();
-    } catch (e) {
-      if (disposed || current !== generation || state !== snapshot) return;
-      hinting = false;
-      update();
-      if ((e as Error).name !== "AbortError")
-        $("save-status").textContent = "힌트를 계산하지 못했습니다";
-    }
   }
   function accept(next: State) {
     state = next;
     candidate = null;
     aiError = "";
-    cancelHint();
-    const saved = persist();
     view?.renderReversi(state);
     update();
-    $("save-status").textContent = saved
-      ? "✓ 이 기기에 자동 저장됨"
-      : "저장을 사용할 수 없습니다";
     if (state.winner) {
       resultPending = true;
       later(result, 900);
@@ -401,9 +329,6 @@ export function mountReversi(
         : "위치를 선택하세요";
     // Enabled again by onSettled once the discs stop flipping.
     $<HTMLButtonElement>("undo").disabled = !undoTarget() || !!view?.animating;
-    $<HTMLButtonElement>("hint").disabled =
-      hinting || !!state.winner || aiTurn() || !view;
-    $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";
     const legal =
       showHints && !state.winner
         ? legalMoves(state.board, state.turn).map((m) => point(m.index))
@@ -466,7 +391,7 @@ export function mountReversi(
   function rules() {
     modal(
       "사이에 두고, 뒤집으세요",
-      `<ol><li>흑돌이 먼저 시작합니다. 상대 돌을 자기 돌 사이에 가둘 수 있는 빈 칸에 놓으세요.</li><li>가로·세로·대각선 8방향의 해당 돌이 모두 뒤집힙니다.</li><li>둘 곳이 없으면 자동 패스합니다. 양쪽 모두 둘 수 없으면 빈 칸이 남아도 종료합니다.</li><li>마지막에 실제 돌 개수가 많으면 승리, 같으면 무승부입니다.</li></ol><p>처음이라면 코너를 지키고 상대가 둘 수 있는 칸을 줄여보세요. 많이 뒤집는 수가 언제나 좋은 수는 아닙니다.</p><p><b>무르기</b>는 직전 수를 되돌립니다. 컴퓨터 대전에서는 내 차례로 돌아갑니다. <b>힌트</b>는 추천 칸을 금색 고리로 표시합니다. 대국이 끝난 뒤에는 무를 수 없습니다.</p>`,
+      `<ol><li>흑돌이 먼저 시작합니다. 상대 돌을 자기 돌 사이에 가둘 수 있는 빈 칸에 놓으세요.</li><li>가로·세로·대각선 8방향의 해당 돌이 모두 뒤집힙니다.</li><li>둘 곳이 없으면 자동 패스합니다. 양쪽 모두 둘 수 없으면 빈 칸이 남아도 종료합니다.</li><li>마지막에 실제 돌 개수가 많으면 승리, 같으면 무승부입니다.</li></ol><p>처음이라면 코너를 지키고 상대가 둘 수 있는 칸을 줄여보세요. 많이 뒤집는 수가 언제나 좋은 수는 아닙니다.</p><p><b>무르기</b>는 직전 수를 되돌립니다. 컴퓨터 대전에서는 내 차례로 돌아갑니다. 대국이 끝난 뒤에는 무를 수 없습니다.</p>`,
     );
   }
   function result() {
@@ -484,14 +409,13 @@ export function mountReversi(
       `<p>흑 ${c.black} : 백 ${c.white}<br>빈 칸 ${c.empty}개 · 실제 돌 개수로 판정했습니다.</p>`,
       [
         { text: "게임판 보기", action: () => {} },
-        { text: "다시 플레이", action: start },
+        { text: "새 게임", action: () => setupDialog(setup) },
       ],
     );
   }
   const hide = (e: PageTransitionEvent) => {
     generation++;
     ai.cancel();
-    cancelHint();
     timers.forEach(clearTimeout);
     timers.clear();
     if (!e.persisted) {

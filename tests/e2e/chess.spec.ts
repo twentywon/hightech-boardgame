@@ -85,7 +85,8 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
   await move(page, "e2", "e4", info);
   await move(page, "d7", "d5", info);
   await move(page, "e4", "d5", info);
-  await expect(page.locator("#chess-history")).toContainText("exd5");
+  await expect(page.locator("#chess-history")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /힌트|대국 설정/ })).toHaveCount(0);
   await expect(page.locator("#chess-captured")).toContainText("♟");
   const p = await cell(page, "e8");
   await page.mouse.click(p.x, p.y, { button: "right" });
@@ -107,8 +108,8 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "다시 시작", exact: true }).click();
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
   await selectGame(page);
@@ -181,15 +182,18 @@ test("chess AI stays responsive, cancels old work and applies settings only to a
   await expect(page.locator("#move-count")).toHaveText("2수", {
     timeout: 15000,
   });
-  await page.getByRole("button", { name: "대국 설정", exact: true }).click();
-  await page.getByLabel("AI 난이도").selectOption("expert");
-  await page.getByLabel("플레이어 색상").selectOption("black");
-  await page.getByRole("button", { name: "설정 적용", exact: true }).click();
+  // The new-game dialog: leaving it keeps the game, starting applies the choices.
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("컴퓨터 대전", { exact: true })).toBeChecked();
+  await dialog.getByLabel("AI 난이도").selectOption("expert");
+  await dialog.getByLabel("플레이어 색상").selectOption("black");
+  await dialog.getByRole("button", { name: "계속하기" }).click();
   await expect(page.locator(".player").last()).toContainText("컴퓨터 · 쉬움");
   await expect(page.locator("#move-count")).toHaveText("2수");
   const freshWorker = page.waitForEvent("worker");
-  await page.getByRole("button", { name: "다시 시작", exact: true }).click();
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await freshWorker;
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 전문가",
@@ -240,7 +244,6 @@ test("chess underpromotion can be cancelled; reload has no saved game or prefere
   await tap(page, "b7", info);
   await tap(page, "a8", info);
   await page.getByRole("button", { name: /나이트/ }).click();
-  await expect(page.locator("#chess-history")).toContainText("bxa8=N");
   await expect(page.locator("#move-count")).toHaveText("9수");
   expect(
     await page.evaluate(

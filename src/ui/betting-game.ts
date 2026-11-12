@@ -4,7 +4,7 @@ import type { BettingGame, TableView } from "../games/cards/game";
 import { CardTableView, type CardSkin } from "../games/cards/table-view";
 import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import type { Settings } from "../core/storage";
 
 export interface BettingOptions {
@@ -100,9 +100,9 @@ export function mountBettingGame<S>(
     view?.dispose();
     view = null;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="ai-options"><label>상대 수<select id="bg-opponents">${[1, 2, 3].map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label>${config.variants ? `<label>방식<select id="bg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">가상 칩으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="ai-options"><label>상대 수<select id="bg-opponents">${[1, 2, 3].map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label>${config.variants ? `<label>방식<select id="bg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">가상 칩으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const remember = () => {
       preferences = {
         opponents: Number($<HTMLSelectElement>("bg-opponents").value),
@@ -130,15 +130,11 @@ export function mountBettingGame<S>(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 세션</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div id="bg-acting" class="bj-controls bg-acting" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">다이</button></div><div class="bj-row"><button id="bg-raise">하프</button><button id="bg-allin">올인</button></div></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-peeking" class="bj-controls" hidden><button id="bg-peek" class="primary"></button></div><div id="bg-prompt" class="bj-controls bg-prompt" role="group" hidden></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="primary">${config.dealWord}</button><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
+      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div id="bg-acting" class="bj-controls bg-acting" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">다이</button></div><div class="bj-row"><button id="bg-raise">하프</button><button id="bg-allin">올인</button></div></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-peeking" class="bj-controls" hidden><button id="bg-peek" class="primary"></button></div><div id="bg-prompt" class="bj-controls bg-prompt" role="group" hidden></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="primary">${config.dealWord}</button><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
-    $("restart").onclick = () =>
-      modal("새 세션을 시작할까요?", "모든 좌석의 칩을 처음으로 되돌리고 새로 시작합니다.", [
-        { text: "계속하기", action: () => {} },
-        { text: "새 세션", action: newSession },
-      ]);
+    $("restart").onclick = () => setupDialog(setup);
     const play = (action: Action) => () => act((s) => game.act(s, action));
     $("bg-call").onclick = play("call");
     $("bg-fold").onclick = play("fold");

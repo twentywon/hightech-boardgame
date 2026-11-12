@@ -3,11 +3,12 @@ import {
   createGame,
   play,
   winningLine,
+  doubleThree,
+  undo,
   type Point,
   type State,
 } from "../src/games/gomoku/rules";
 import { chooseMove } from "../src/games/gomoku/ai";
-import { encode, decode } from "../src/core/storage";
 import { toWorld, fromWorld } from "../src/games/gomoku/coordinates";
 function moves(points: Point[]) {
   let s = createGame();
@@ -103,9 +104,9 @@ describe("AI", () => {
       { row: 7, col: 3 },
       { row: 1, col: 0 },
     ]);
-    const snapshot = encode({ state: s, mode: "ai" });
+    const snapshot = JSON.stringify(s);
     expect(chooseMove(s)).toEqual({ row: 7, col: 4 });
-    expect(encode({ state: s, mode: "ai" })).toBe(snapshot);
+    expect(JSON.stringify(s)).toBe(snapshot);
   });
   it("blocks opponent immediate win", () => {
     const s = moves([
@@ -131,38 +132,6 @@ describe("AI", () => {
   });
 });
 describe("Persistence and coordinates", () => {
-  it("replays saved games exactly", () => {
-    const state = moves([
-      { row: 7, col: 7 },
-      { row: 8, col: 8 },
-    ]);
-    expect(decode(encode({ state, mode: "ai" }))).toEqual({
-      state,
-      mode: "ai",
-    });
-  });
-  it("rejects corrupted data and illegal histories", () => {
-    for (const raw of [
-      "{",
-      "null",
-      '{"version":2}',
-      '{"version":1,"mode":"local","moves":[null]}',
-      JSON.stringify({
-        version: 1,
-        mode: "ai",
-        moves: [{ row: 0, col: 0, player: 2 }],
-      }),
-      JSON.stringify({
-        version: 1,
-        mode: "local",
-        moves: [
-          { row: 0, col: 0, player: 1 },
-          { row: 0, col: 0, player: 2 },
-        ],
-      }),
-    ])
-      expect(decode(raw)).toBeNull();
-  });
   it("round-trips all intersections", () => {
     for (let row = 0; row < 15; row++)
       for (let col = 0; col < 15; col++) {
@@ -171,5 +140,45 @@ describe("Persistence and coordinates", () => {
         expect(fromWorld(v.x, v.z)).toEqual(p);
       }
     expect(fromWorld(3.3, 0)).toBeNull();
+  });
+});
+
+describe("Double three (삼삼)", () => {
+  // Black holds H7·H9 and G8·I8, leaving H8 as the meeting point of two open threes.
+  const cross = (noDoubleThree: boolean) => {
+    let s = createGame(noDoubleThree);
+    for (const p of [
+      { row: 6, col: 7 }, { row: 0, col: 0 },
+      { row: 8, col: 7 }, { row: 0, col: 2 },
+      { row: 7, col: 6 }, { row: 0, col: 4 },
+      { row: 7, col: 8 }, { row: 14, col: 0 },
+    ])
+      s = play(s, p)!;
+    return s;
+  };
+  it("is allowed by default and refused when the rule is on", () => {
+    expect(play(cross(false), { row: 7, col: 7 })).not.toBeNull();
+    const s = cross(true);
+    expect(doubleThree(s.board, { row: 7, col: 7 }, 1)).toBe(true);
+    expect(play(s, { row: 7, col: 7 })).toBeNull();
+    // A single open three is fine, and the rule survives the move and an undo.
+    const next = play(s, { row: 5, col: 7 })!;
+    expect(next.noDoubleThree).toBe(true);
+    expect(undo(next)!.noDoubleThree).toBe(true);
+  });
+  it("does not count a three blocked at one end", () => {
+    let s = cross(true);
+    // White closes the column above; black passes elsewhere first.
+    s = play(s, { row: 14, col: 14 })!;
+    s = play(s, { row: 5, col: 7 })!;
+    expect(doubleThree(s.board, { row: 7, col: 7 }, 1)).toBe(false);
+    expect(play(s, { row: 7, col: 7 })).not.toBeNull();
+  });
+  it("keeps the computer off a refused point", () => {
+    const s = cross(true);
+    for (const level of ["beginner", "easy", "normal"] as const) {
+      const move = chooseMove(s, level, { timeMs: 200 })!;
+      expect(play(s, move)).not.toBeNull();
+    }
   });
 });

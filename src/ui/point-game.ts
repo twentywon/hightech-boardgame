@@ -1,5 +1,5 @@
 import { capturing, mirrorStatus } from "./banner";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
 import type { Move, PointGame } from "../games/points/types";
 import { PointBoardView, type BoardSpec, type Marks } from "../games/points/view";
@@ -118,9 +118,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     view?.dispose();
     view = null;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select"><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button><small class="session-note">대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select"><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button><small class="session-note">대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
     const remember = () => {
       preferences = {
@@ -162,16 +162,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       `<li id="pg-side-${p}"><i class="yut-dot" style="background:${(spec?.colors ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
-    $("restart").onclick = () =>
-      modal("새 판을 시작할까요?", "말을 모두 거두고 처음부터 다시 시작합니다.", [
-        { text: "계속하기", action: () => {} },
-        { text: "새 판", action: start },
-      ]);
-    $("pg-again").onclick = start;
+    $("restart").onclick = () => setupDialog(setup);
+    $("pg-again").onclick = () => setupDialog(setup);
     $("pg-undo").onclick = undo;
     if (config.action) $("pg-action").onclick = () => pick(game.moves(state)[0]?.to ?? -1);
     try {

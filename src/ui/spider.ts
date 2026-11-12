@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import { SpiderView } from "../games/spider/view";
 import { createGame, deal, dealError, hint, move, movable, stuck, suitsOf, targets, type State } from "../games/spider/rules";
 import { cryptoRandom, type Random } from "../core/random";
@@ -39,9 +39,9 @@ export function mountSpider(root: HTMLElement, nav: Navigation, random: Random =
     view?.dispose();
     view = null;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 18 — EIGHT RUNS</span><h2>스파이더 <span>Spider Solitaire</span></h2><p>혼자서 카드 104장을 풀어 가는 놀이.<br>K부터 A까지 같은 무늬로 이으면 한 줄이 완성됩니다.</p><ul class="rule-list"><li>한 장 낮은 카드를 아래로 이어 붙입니다</li><li>같은 무늬로 이어진 묶음은 함께 옮깁니다</li><li>여덟 줄을 모두 완성하면 성공</li></ul><div class="game-meta">1인 · 카드 104장 · 열 줄</div><div class="ai-options"><label>무늬 수<select id="sp-suits">${[["1", "한 가지 (쉬움)"], ["2", "두 가지 (보통)"], ["4", "네 가지 (어려움)"]].map(([value, label]) => `<option value="${value}" ${preferences.suits === value ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><button id="sp-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">판은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art spider-art" role="img" aria-label="스파이더 카드놀이 미리보기"><div class="pk-mini"><i class="bj-mini-card back"></i><i class="bj-mini-card">K<b>♠</b></i><i class="bj-mini-card">Q<b>♠</b></i><i class="bj-mini-card">J<b>♠</b></i><i class="bj-mini-card">10<b>♠</b></i></div><span>KING DOWN TO ACE</span></div></section>`;
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 18 — EIGHT RUNS</span><h2>스파이더 <span>Spider Solitaire</span></h2><p>혼자서 카드 104장을 풀어 가는 놀이.<br>K부터 A까지 같은 무늬로 이으면 한 줄이 완성됩니다.</p><ul class="rule-list"><li>한 장 낮은 카드를 아래로 이어 붙입니다</li><li>같은 무늬로 이어진 묶음은 함께 옮깁니다</li><li>여덟 줄을 모두 완성하면 성공</li></ul><div class="game-meta">1인 · 카드 104장 · 열 줄</div><div class="ai-options"><label>무늬 수<select id="sp-suits">${[["1", "한 가지 (쉬움)"], ["2", "두 가지 (보통)"], ["4", "네 가지 (어려움)"]].map(([value, label]) => `<option value="${value}" ${preferences.suits === value ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><button id="sp-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">판은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art spider-art" role="img" aria-label="스파이더 카드놀이 미리보기"><div class="pk-mini"><i class="bj-mini-card back"></i><i class="bj-mini-card">K<b>♠</b></i><i class="bj-mini-card">Q<b>♠</b></i><i class="bj-mini-card">J<b>♠</b></i><i class="bj-mini-card">10<b>♠</b></i></div><span>KING DOWN TO ACE</span></div></section>`;
     $("sp-suits").onchange = () => {
       preferences = { suits: $<HTMLSelectElement>("sp-suits").value };
       nav.remember({ ...preferences });
@@ -61,16 +61,12 @@ export function mountSpider(root: HTMLElement, nav: Navigation, random: Random =
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game spider-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>스파이더 <small>SPIDER SOLITAIRE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 판</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE SPIDER TABLE</span><span>무늬 ${suitsOf(preferences.suits)}가지</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar sp-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>완성한 줄</dt><dd id="sp-done"></dd></div><div><dt>남은 더미</dt><dd id="sp-stock"></dd></div></dl><div class="yd-controls"><button id="sp-deal" class="primary">새 카드 돌리기</button><div class="bj-row"><button id="sp-undo">무르기</button><button id="sp-hint">힌트</button></div><p class="input-help">옮길 카드를 끌어서 원하는 줄에 놓으세요. 같은 무늬로 이어진 묶음은 맨 위 카드를 끌면 함께 움직입니다. 오른쪽 아래 더미를 눌러도 새 카드를 돌립니다.</p></div><div id="sp-result" class="yd-result" hidden><p id="sp-final"></p><button id="sp-again" class="primary">새 판</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game spider-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>스파이더 <small>SPIDER SOLITAIRE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE SPIDER TABLE</span><span>무늬 ${suitsOf(preferences.suits)}가지</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar sp-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>완성한 줄</dt><dd id="sp-done"></dd></div><div><dt>남은 더미</dt><dd id="sp-stock"></dd></div></dl><div class="yd-controls"><button id="sp-deal" class="primary">새 카드 돌리기</button><div class="bj-row"><button id="sp-undo">무르기</button><button id="sp-hint">힌트</button></div><p class="input-help">옮길 카드를 끌어서 원하는 줄에 놓으세요. 같은 무늬로 이어진 묶음은 맨 위 카드를 끌면 함께 움직입니다. 오른쪽 아래 더미를 눌러도 새 카드를 돌립니다.</p></div><div id="sp-result" class="yd-result" hidden><p id="sp-final"></p><button id="sp-again" class="primary">새 판</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () =>
-      modal("새 판을 시작할까요?", "지금 판을 버리고 카드를 새로 섞습니다.", [
-        { text: "계속하기", action: () => {} },
-        { text: "새 판", action: start },
-      ]);
-    $("sp-again").onclick = start;
+    $("restart").onclick = () => setupDialog(setup);
+    $("sp-again").onclick = () => setupDialog(setup);
     $("sp-deal").onclick = dealRow;
     $("sp-undo").onclick = undo;
     $("sp-hint").onclick = showHint;

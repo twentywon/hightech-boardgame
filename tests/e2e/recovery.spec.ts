@@ -2,8 +2,6 @@ import { test, expect, type Page } from "@playwright/test";
 import { SUBJECTS, cameraDistance } from "../../src/engine/camera";
 import { selectGame } from "./library";
 import { PerspectiveCamera, Vector3 } from "three";
-import { playout } from "../reversi-fixtures";
-import { encode, SESSION_KEY } from "../../src/games/reversi/storage";
 
 async function start(page: Page, game: "gomoku" | "reversi", ai = false) {
   await page.goto("/");
@@ -81,36 +79,44 @@ for (const game of ["gomoku", "reversi"] as const) {
     await retry.click();
     await expect(page.locator("#move-count")).toHaveText("1수", { timeout: 15000 });
   });
-
-  test(`${game}: game result survives page suspension while settings are open`, async ({ page }) => {
-    await page.goto("/");
-    const reversi = playout(7, 1);
-    expect(reversi.winner).toBeNull();
-    const key = game === "gomoku" ? "wtg.session.v1" : SESSION_KEY;
-    const value = game === "gomoku" ? JSON.stringify({
-      version: 2, mode: "local", moves: Array.from({ length: 8 }, (_, i) => ({
-        row: i % 2 ? 0 : 7, col: i % 2 ? Math.floor(i / 2) : 3 + i / 2, player: i % 2 ? 2 : 1,
-      })),
-    }) : encode({ state: reversi, mode: "local", difficulty: "normal", human: 1 });
-    await page.evaluate(({ key, value }) => localStorage.setItem(key, value), { key, value });
-    await page.reload();
-    await selectGame(page, game === "gomoku" ? "오목" : "리버시");
-    await page.getByRole("button", { name: game === "gomoku" ? "저장한 게임 이어하기" : "리버시 이어하기" }).click();
-    await page.locator("canvas").focus();
-    // Open settings in the same task as the winning keypress. Software WebGL can
-    // delay a later Playwright click until after the 850/900ms result timer fires.
-    await page.evaluate(() => {
-      document.querySelector("canvas")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      document.querySelector<HTMLButtonElement>("#settings")!.click();
-      window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
-      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
-    });
-    await expect(page.locator("#turn")).toContainText(/승리|무승부/);
-    await page.getByLabel("렌더링 품질").selectOption("low");
-    await page.waitForTimeout(1200);
-    await expect(page.getByRole("heading", { name: "나만의 테이블" })).toBeVisible();
-    await page.getByRole("button", { name: "설정 저장" }).click();
-    await expect(page.getByRole("button", { name: "게임판 보기" })).toBeVisible({ timeout: 15000 });
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("wtg.settings.v1")!).quality)).toBe("low");
-  });
 }
+
+test("gomoku: game result survives page suspension while settings are open", async ({ page }) => {
+  await start(page, "gomoku");
+  await page.locator("canvas").focus();
+  const count = page.locator("#move-count");
+  /** Walks the cursor from the centre and places a stone there. */
+  const put = async (keys: string[], moves: number) => {
+    // Past the input lock, so that no key of the walk is dropped.
+    await page.waitForTimeout(450);
+    await expect(async () => {
+      for (const key of keys) await page.keyboard.press(key);
+      await page.keyboard.press("Enter");
+      await expect(count).toHaveText(`${moves}수`, { timeout: 500 });
+    }).toPass({ timeout: 15000 });
+  };
+  // Black fills H8–K8 while white answers on the row above.
+  for (let i = 0; i < 4; i++) {
+    const along = Array<string>(i).fill("ArrowRight");
+    await put(along, i * 2 + 1);
+    await put(["ArrowUp", ...along], i * 2 + 2);
+  }
+  await page.waitForTimeout(450);
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator("#confirm")).toContainText("G8");
+  // Open settings in the same task as the winning keypress. Software WebGL can
+  // delay a later Playwright click until after the 850ms result timer fires.
+  await page.evaluate(() => {
+    document.querySelector("canvas")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    document.querySelector<HTMLButtonElement>("#settings")!.click();
+    window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  });
+  await expect(page.locator("#turn")).toContainText(/승리|무승부/);
+  await page.getByLabel("렌더링 품질").selectOption("low");
+  await page.waitForTimeout(1200);
+  await expect(page.getByRole("heading", { name: "나만의 테이블" })).toBeVisible();
+  await page.getByRole("button", { name: "설정 저장" }).click();
+  await expect(page.getByRole("button", { name: "게임판 보기" })).toBeVisible({ timeout: 15000 });
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("wtg.settings.v1")!).quality)).toBe("low");
+});

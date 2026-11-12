@@ -153,7 +153,8 @@ export class BoardView {
         0.36,
         this.variant === "reversi" ? 6.3 : 6.55,
       ),
-      new T.MeshStandardMaterial({ map: wood(), roughness: 0.52 }),
+      // A quiet grain: the lines of the grid must be the only lines that count.
+      new T.MeshStandardMaterial({ map: wood(false, 0.3), roughness: 0.52 }),
     );
     board.position.y = -0.03;
     board.castShadow = board.receiveShadow = true;

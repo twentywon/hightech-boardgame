@@ -28,7 +28,7 @@ async function aim(page: Page, key: string, square: string) {
   }).toPass({ timeout: 15000 });
 }
 
-test("local undo takes back one stone at a time and is saved", async ({ page }) => {
+test("local undo takes back one stone at a time", async ({ page }) => {
   await page.goto("/");
   await sit(page);
   const undo = page.getByRole("button", { name: "무르기", exact: true });
@@ -42,13 +42,9 @@ test("local undo takes back one stone at a time and is saved", async ({ page }) 
   await undo.click();
   await expect(count(page)).toHaveText("0수");
   await expect(undo).toBeDisabled();
-  await page.reload();
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect(count(page)).toHaveText("0수");
 });
 
-test("hint proposes a legal move and undo against the computer returns to my turn", async ({
+test("undo against the computer returns to my turn", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -57,13 +53,9 @@ test("hint proposes a legal move and undo against the computer returns to my tur
   await sit(page, true);
   await enter(page, "1수");
   await expect(count(page)).toHaveText("2수", { timeout: 20000 });
-  const hint = page.getByRole("button", { name: /힌트/ });
-  await expect(hint).toBeEnabled();
-  await hint.click();
-  const confirm = page.getByRole("button", { name: /착수 확정/ });
-  await expect(confirm).toBeEnabled({ timeout: 20000 });
-  await expect(hint).toHaveText("힌트");
-  await confirm.click();
+  await expect(page.getByRole("button", { name: /힌트/ })).toHaveCount(0);
+  await aim(page, "ArrowDown", "H12");
+  await enter(page, "3수");
   await expect(count(page)).toHaveText("4수", { timeout: 20000 });
   await expect(page.locator("#turn")).toContainText("차례");
   await page.getByRole("button", { name: "무르기", exact: true }).click();
@@ -74,40 +66,6 @@ test("hint proposes a legal move and undo against the computer returns to my tur
   await aim(page, "ArrowDown", "H13");
   await enter(page, "3수");
   expect(errors).toEqual([]);
-});
-
-test("a win against the computer is recorded once and ends undo", async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => {
-    const moves = [];
-    for (let i = 0; i < 4; i++)
-      moves.push(
-        { row: 7, col: 3 + i, player: 1 },
-        { row: 0, col: i * 2, player: 2 },
-      );
-    localStorage.setItem(
-      "wtg.session.v1",
-      JSON.stringify({ version: 2, mode: "ai", difficulty: "beginner", human: 1, moves }),
-    );
-  });
-  await page.reload();
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await page.locator("canvas").focus();
-  await enter(page, "9수");
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("흑돌이 승리했습니다", { timeout: 15000 });
-  await expect(dialog).toContainText("입문 전적 · 1승 0패 0무");
-  await dialog.getByRole("button", { name: "게임판 보기" }).click();
-  await expect(page.getByRole("button", { name: "무르기", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: /힌트/ })).toBeDisabled();
-  // Reopening the finished game must not count the win again.
-  await page.reload();
-  await selectGame(page);
-  await page.getByRole("button", { name: "저장한 게임 이어하기" }).click();
-  await expect(page.getByRole("dialog")).toContainText("입문 전적 · 1승 0패 0무", {
-    timeout: 15000,
-  });
 });
 
 test("coordinate labels setting persists", async ({ page }) => {
@@ -142,7 +100,7 @@ test("the exported single HTML runs its AI Workers when opened from disk", async
   expect(errors).toEqual([]);
 });
 
-test("Reversi undo restores flipped discs; hint and undo work against the computer", async ({
+test("Reversi undo restores flipped discs, also against the computer", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -170,12 +128,8 @@ test("Reversi undo restores flipped discs; hint and undo work against the comput
   await page.locator("canvas").focus();
   await enter(page, "1수");
   await expect(count(page)).toHaveText("2수", { timeout: 20000 });
-  const hint = page.getByRole("button", { name: /힌트/ });
-  await expect(hint).toBeEnabled({ timeout: 10000 });
-  await hint.click();
-  const confirm = page.getByRole("button", { name: /착수 확정/ });
-  await expect(confirm).toBeEnabled({ timeout: 20000 });
-  await confirm.click();
+  await expect(page.getByRole("button", { name: /힌트/ })).toHaveCount(0);
+  await enter(page, "3수");
   await expect(count(page)).toHaveText("4수", { timeout: 20000 });
   await expect(page.locator("#turn")).toContainText("흑돌의 차례", { timeout: 10000 });
   await expect(async () => {
@@ -190,7 +144,7 @@ test("Reversi undo restores flipped discs; hint and undo work against the comput
   expect(errors).toEqual([]);
 });
 
-test("Chess undo and hint: take back a move, then play the suggested move", async ({
+test("Chess undo: take back a move, alone and against the computer", async ({
   page,
 }) => {
   test.setTimeout(120000);
@@ -216,16 +170,15 @@ test("Chess undo and hint: take back a move, then play the suggested move", asyn
   await expect(confirm).toHaveText("E2 → E4 이동 확정");
   await confirm.click();
   await expect(count(page)).toHaveText("1수");
-  await expect(page.locator("#chess-history li")).toHaveCount(1);
+  await expect(page.locator("#chess-history")).toHaveCount(0);
   await expect(async () => {
     await undo.click({ timeout: 500 });
     await expect(count(page)).toHaveText("0수", { timeout: 500 });
   }).toPass({ timeout: 15000 });
-  await expect(page.locator("#chess-history li")).toHaveCount(0);
   await expect(page.locator("#turn")).toContainText("백의 차례");
   await expect(undo).toBeDisabled();
 
-  // Against the computer: follow the hint, let it reply, then take both back.
+  // Against the computer: move, let it reply, then take both back.
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
   await selectGame(page, "체스");
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
@@ -233,11 +186,15 @@ test("Chess undo and hint: take back a move, then play the suggested move", asyn
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", {
     timeout: 20000,
   });
-  const hint = page.getByRole("button", { name: /힌트/ });
-  await expect(hint).toBeEnabled({ timeout: 10000 });
-  await hint.click();
-  await expect(confirm).toContainText("이동 확정", { timeout: 30000 });
-  await expect(confirm).toBeEnabled();
+  await expect(page.getByRole("button", { name: /힌트/ })).toHaveCount(0);
+  await page.locator("canvas").focus();
+  await expect(async () => {
+    await page.keyboard.press("Enter");
+    await expect(confirm).toHaveText("도착 칸을 선택하세요", { timeout: 300 });
+  }).toPass({ timeout: 15000 });
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(confirm).toHaveText("E2 → E4 이동 확정");
   await confirm.click();
   await expect(count(page)).toHaveText("2수", { timeout: 30000 });
   await expect(page.locator("#turn")).toContainText("백의 차례", { timeout: 10000 });

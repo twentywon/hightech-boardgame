@@ -17,14 +17,9 @@ import { search, searchSteps, profiles } from "../src/games/reversi/ai";
 import { stableEdges, positional } from "../src/games/reversi/evaluator";
 import { difficulties } from "../src/core/ai";
 import {
-  encode,
-  decode,
-  save,
-  load,
   getOptions,
   setOptions,
   OPTIONS_KEY,
-  SESSION_KEY,
 } from "../src/games/reversi/storage";
 import { fromWorld, toWorld } from "../src/games/reversi/coordinates";
 import { playout, findPassHistory } from "./reversi-fixtures";
@@ -313,47 +308,17 @@ describe("Reversi strategic and exact search", () => {
     expect(r.stats.nodeLimited).toBe(true);
   });
 });
-describe("Reversi persistence", () => {
-  it("replays legal history including auto passes and keeps Gomoku storage separate", () => {
-    const s = findPassHistory(),
-      session = {
-        state: s,
-        mode: "ai" as const,
-        difficulty: "hard" as const,
-        human: 2 as const,
-      };
-    expect(decode(encode(session))).toEqual(session);
-    const map = new Map<string, string>([
-      ["wtg.session.v1", "gomoku untouched"],
-      ["wtg.ai.v1", "gomoku preferences"],
-    ]);
+describe("Reversi preferences", () => {
+  it("keeps its options apart from Gomoku and survives unavailable storage", () => {
+    const map = new Map<string, string>([["wtg.ai.v1", "gomoku preferences"]]);
     vi.stubGlobal("localStorage", {
       getItem: (k: string) => map.get(k) ?? null,
       setItem: (k: string, v: string) => map.set(k, v),
     });
-    expect(save(session)).toBe(true);
-    expect(load()).toEqual(session);
     setOptions({ difficulty: "expert", color: "random" });
     expect(getOptions()).toEqual({ difficulty: "expert", color: "random" });
-    expect(map.get("wtg.session.v1")).toBe("gomoku untouched");
     expect(map.get("wtg.ai.v1")).toBe("gomoku preferences");
-    expect(map.has(SESSION_KEY) && map.has(OPTIONS_KEY)).toBe(true);
-  });
-  it("rejects illegal or corrupted history and handles unavailable storage", () => {
-    for (const raw of [
-      "{",
-      "null",
-      "{}",
-      JSON.stringify({ version: 2, game: "reversi", mode: "local", moves: [] }),
-      JSON.stringify({ version: 1, game: "gomoku", mode: "local", moves: [] }),
-      JSON.stringify({
-        version: 1,
-        game: "reversi",
-        mode: "local",
-        moves: [{ row: 0, col: 0, player: 1 }],
-      }),
-    ])
-      expect(decode(raw)).toBeNull();
+    expect(map.has(OPTIONS_KEY)).toBe(true);
     vi.stubGlobal("localStorage", {
       getItem: () => {
         throw Error();
@@ -362,18 +327,7 @@ describe("Reversi persistence", () => {
         throw Error();
       },
     });
-    expect(load()).toBeNull();
-    expect(
-      save({
-        state: createGame(),
-        mode: "local",
-        difficulty: "normal",
-        human: 1,
-      }),
-    ).toBe(false);
     expect(getOptions()).toEqual({ difficulty: "normal", color: "black" });
-    expect(() =>
-      setOptions({ difficulty: "hard", color: "white" }),
-    ).not.toThrow();
+    expect(() => setOptions({ difficulty: "hard", color: "white" })).not.toThrow();
   });
 });

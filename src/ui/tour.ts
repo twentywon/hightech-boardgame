@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import { PLAYER_COLORS, TourView } from "../games/tour/view";
 import {
   LEVELS,
@@ -83,9 +83,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     view?.dispose();
     view = null;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 19 — AROUND THE WORLD</span><h2>세계 일주 <span>World Tour</span></h2><p>주사위를 굴려 세계의 도시를 돌며 땅을 사고 건물을 올립니다.<br>내 도시에 묵는 여행자에게서 숙박료를 받으세요.</p><ul class="rule-list"><li>빈 도시에 서면 살 수 있습니다</li><li>내 도시에 다시 서면 집 → 빌딩 → 랜드마크</li><li>돈이 떨어지면 탈락, 마지막까지 남으면 승리</li></ul><div class="game-meta">나 + 컴퓨터 1–3명 · ${SPACES.length}칸 · 시작 자금 ${won(START_MONEY)}</div><div class="ai-options"><label>상대 수<select id="tour-opponents">${[1, 2, 3].map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label></div><button id="tour-start" class="primary">여행 떠나기 <span>↗</span></button><small class="session-note">가상의 돈으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art tour-art" role="img" aria-label="세계 일주 판 미리보기"><div class="pg-mini tour"><i></i><i></i><i></i></div><span>BUY, BUILD, COLLECT</span></div></section>`;
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 19 — AROUND THE WORLD</span><h2>세계 일주 <span>World Tour</span></h2><p>주사위를 굴려 세계의 도시를 돌며 땅을 사고 건물을 올립니다.<br>내 도시에 묵는 여행자에게서 숙박료를 받으세요.</p><ul class="rule-list"><li>빈 도시에 서면 살 수 있습니다</li><li>내 도시에 다시 서면 집 → 빌딩 → 랜드마크</li><li>돈이 떨어지면 탈락, 마지막까지 남으면 승리</li></ul><div class="game-meta">나 + 컴퓨터 1–3명 · ${SPACES.length}칸 · 시작 자금 ${won(START_MONEY)}</div><div class="ai-options"><label>상대 수<select id="tour-opponents">${[1, 2, 3].map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label></div><button id="tour-start" class="primary">여행 떠나기 <span>↗</span></button><small class="session-note">가상의 돈으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art tour-art" role="img" aria-label="세계 일주 판 미리보기"><div class="pg-mini tour"><i></i><i></i><i></i></div><span>BUY, BUILD, COLLECT</span></div></section>`;
     $("tour-opponents").onchange = () => {
       preferences = { opponents: Number($<HTMLSelectElement>("tour-opponents").value) };
       nav.remember({ ...preferences });
@@ -104,16 +104,12 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game tour-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>세계 일주 <small>WORLD TOUR</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 여행</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WORLD BOARD</span><span>${SPACES.length}칸 · ${ROUNDS}바퀴</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / ${ROUNDS} 바퀴</span></div></section><aside class="game-sidebar yd-sidebar tour-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides" id="tour-players">${state.players.map((_, i) => `<li id="tour-player-${i}"><button class="tour-deeds" data-player="${i}" aria-label="${NAMES[i]}의 땅 증서 보기"><i class="yut-dot" style="background:${PLAYER_COLORS[i]}"></i><b>${NAMES[i]}</b><span id="tour-money-${i}"></span></button></li>`).join("")}</ul><div class="yd-controls"><button id="tour-roll" class="primary">주사위 굴리기</button><button id="tour-key" class="primary" hidden>황금열쇠 뽑기</button><div class="bj-row" id="tour-offer" hidden><button id="tour-yes" class="primary"></button><button id="tour-no">지나치기</button></div><p id="tour-note" class="input-help"></p></div><div id="tour-result" class="yd-result" hidden><p id="tour-final"></p><button id="tour-again" class="primary">새 여행</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game tour-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>세계 일주 <small>WORLD TOUR</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WORLD BOARD</span><span>${SPACES.length}칸 · ${ROUNDS}바퀴</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / ${ROUNDS} 바퀴</span></div></section><aside class="game-sidebar yd-sidebar tour-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides" id="tour-players">${state.players.map((_, i) => `<li id="tour-player-${i}"><button class="tour-deeds" data-player="${i}" aria-label="${NAMES[i]}의 땅 증서 보기"><i class="yut-dot" style="background:${PLAYER_COLORS[i]}"></i><b>${NAMES[i]}</b><span id="tour-money-${i}"></span></button></li>`).join("")}</ul><div class="yd-controls"><button id="tour-roll" class="primary">주사위 굴리기</button><button id="tour-key" class="primary" hidden>황금열쇠 뽑기</button><div class="bj-row" id="tour-offer" hidden><button id="tour-yes" class="primary"></button><button id="tour-no">지나치기</button></div><p id="tour-note" class="input-help"></p></div><div id="tour-result" class="yd-result" hidden><p id="tour-final"></p><button id="tour-again" class="primary">새 여행</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () =>
-      modal("새 여행을 시작할까요?", "지금까지의 돈과 도시를 모두 버리고 처음부터 다시 시작합니다.", [
-        { text: "계속하기", action: () => {} },
-        { text: "새 여행", action: start },
-      ]);
-    $("tour-again").onclick = start;
+    $("restart").onclick = () => setupDialog(setup);
+    $("tour-again").onclick = () => setupDialog(setup);
     $("tour-players").onclick = (e) => {
       const button = (e.target as HTMLElement).closest<HTMLElement>(".tour-deeds");
       if (button) deeds(Number(button.dataset.player));

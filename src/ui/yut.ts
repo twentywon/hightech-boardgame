@@ -15,7 +15,7 @@ import { choose } from "../games/yut/ai";
 import { YutView, type YardModel } from "../games/yut/view";
 import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import type { Settings } from "../core/storage";
 
 export type YutMode = "local" | "ai";
@@ -92,9 +92,9 @@ export function mountYut(
     view?.dispose();
     view = null;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 09 — FOUR STICKS</span><h2>윷놀이 <span>Yut Nori</span></h2><p>마당에 멍석을 깔고 윷가락 네 개를 던집니다.<br>말 네 개를 먼저 모두 내면 이깁니다.</p><ul class="rule-list"><li>도·개·걸·윷·모만큼 말을 옮깁니다</li><li>윷·모가 나오거나 상대 말을 잡으면 한 번 더</li><li>모서리와 중앙에서 멈추면 지름길로 갑니다</li></ul><div class="game-meta">2인 · 말 4개 · 윷가락 4개</div><div class="mode-select"><label><input type="radio" name="yut-mode" value="local"> 로컬 2인</label><label><input type="radio" name="yut-mode" value="ai"> 컴퓨터 대전</label></div><small id="yut-options" class="session-note" hidden>컴퓨터 대전에서는 내가 청으로 먼저 던집니다.</small><button id="yut-start" class="primary">마당에 앉기 <span>↗</span></button><small class="session-note">대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art yut-art" role="img" aria-label="윷놀이 마당 미리보기"><div class="yut-mini">${[0, 1, 2, 3].map((i) => `<i class="yut-mini-stick s${i}"></i>`).join("")}</div><span>FOUR STICKS, ONE YARD</span></div></section>`;
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 09 — FOUR STICKS</span><h2>윷놀이 <span>Yut Nori</span></h2><p>마당에 멍석을 깔고 윷가락 네 개를 던집니다.<br>말 네 개를 먼저 모두 내면 이깁니다.</p><ul class="rule-list"><li>도·개·걸·윷·모만큼 말을 옮깁니다</li><li>윷·모가 나오거나 상대 말을 잡으면 한 번 더</li><li>모서리와 중앙에서 멈추면 지름길로 갑니다</li></ul><div class="game-meta">2인 · 말 4개 · 윷가락 4개</div><div class="mode-select"><label><input type="radio" name="yut-mode" value="local"> 로컬 2인</label><label><input type="radio" name="yut-mode" value="ai"> 컴퓨터 대전</label></div><small id="yut-options" class="session-note" hidden>컴퓨터 대전에서는 내가 청으로 먼저 던집니다.</small><button id="yut-start" class="primary">마당에 앉기 <span>↗</span></button><small class="session-note">대국은 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art yut-art" role="img" aria-label="윷놀이 마당 미리보기"><div class="yut-mini">${[0, 1, 2, 3].map((i) => `<i class="yut-mini-stick s${i}"></i>`).join("")}</div><span>FOUR STICKS, ONE YARD</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=yut-mode]");
     const remember = () => {
       preferences = { mode: [...radios].find((r) => r.checked)!.value as YutMode };
@@ -131,17 +131,13 @@ export function mountYut(
       `<li id="yut-side-${p}"><i class="yut-dot p${p}"></i><b>${who(p)}</b><span id="yut-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game yut-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>윷놀이 <small>YUT NORI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">다시 시작</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE YARD</span><span>말 4개 · 윷가락 4개</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar yut-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls"><button id="yut-throw" class="primary">윷 던지기</button><div id="yut-pending" class="yut-pending" aria-label="쓸 수 있는 윷패"></div><div id="yut-moves" class="yut-moves" role="group" aria-label="옮길 수 있는 말"></div><p id="yut-note" class="input-help"></p></div><div id="yut-result" class="yd-result" hidden><p id="yut-final"></p><button id="yut-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game yut-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>윷놀이 <small>YUT NORI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE YARD</span><span>말 4개 · 윷가락 4개</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar yut-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls"><button id="yut-throw" class="primary">윷 던지기</button><div id="yut-pending" class="yut-pending" aria-label="쓸 수 있는 윷패"></div><div id="yut-moves" class="yut-moves" role="group" aria-label="옮길 수 있는 말"></div><p id="yut-note" class="input-help"></p></div><div id="yut-result" class="yd-result" hidden><p id="yut-final"></p><button id="yut-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () =>
-      modal("새 판을 시작할까요?", "말을 모두 거두고 처음부터 다시 시작합니다.", [
-        { text: "계속하기", action: () => {} },
-        { text: "새 판", action: start },
-      ]);
+    $("restart").onclick = () => setupDialog(setup);
     $("yut-throw").onclick = () => act((s) => throwSticks(s, random));
-    $("yut-again").onclick = start;
+    $("yut-again").onclick = () => setupDialog(setup);
     $("yut-moves").onclick = (e) => {
       const button = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-piece]");
       if (button) play(Number(button.dataset.piece), Number(button.dataset.result));

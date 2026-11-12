@@ -167,8 +167,8 @@ test("seven-card stud with three computers fits every screen shape and resets on
   await playOut(page);
   const stacks = await page.locator("#bg-seats .bg-stack").allTextContents();
   expect(stacks.reduce((n, t) => n + Number(t.match(/칩 ([\d,]+)/)![1].replace(/,/g, "")), 0)).toBe(4000);
-  await button(page, "새 세션").click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 세션" }).click();
+  await button(page, "새 게임").click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await settled(page);
   await expect(page.locator("#bg-chips")).toHaveText("1,000");
   await expect(page.locator("#move-count")).toHaveText("0판");

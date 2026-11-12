@@ -32,7 +32,7 @@ import {
   type Tone,
 } from "../games/blackjack/view";
 import { Sound } from "../engine/sound";
-import { modal } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 import type { Settings } from "../core/storage";
 
 interface Navigation {
@@ -100,9 +100,9 @@ export function mountBlackjack(
     view?.dispose();
     view = null;
   }
-  function setup() {
-    stop();
-    nav.setupHost.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 04 — TWENTY-ONE</span><h2>블랙잭 <span>Blackjack</span></h2><p>21에 가깝게, 하지만 넘지 않게.<br>딜러보다 높은 합계를 만들면 이깁니다.</p><ul class="rule-list"><li>블랙잭(A + 10점 카드)은 3 : 2 지급</li><li>딜러는 17 이상에서 멈춥니다</li><li>더블 다운과 스플릿을 지원합니다</li></ul><div class="game-meta">1인 대 딜러 · 6덱 · 시작 칩 ${chips(START_CHIPS)}</div><button id="bj-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">가상 칩으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art blackjack-art" role="img" aria-label="블랙잭 테이블 미리보기"><div class="bj-mini"><i class="bj-mini-card back"></i><i class="bj-mini-card">K<b>♠</b></i><i class="bj-mini-card red">A<b>♥</b></i><span class="bj-mini-chips"><b></b><b></b><b></b></span></div><span>TWENTY-ONE, NOT ONE MORE</span></div></section>`;
+  function setup(host = nav.setupHost) {
+    if (host === nav.setupHost) stop();
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><div class="pill">지금 플레이 가능</div><span class="game-number">NO. 04 — TWENTY-ONE</span><h2>블랙잭 <span>Blackjack</span></h2><p>21에 가깝게, 하지만 넘지 않게.<br>딜러보다 높은 합계를 만들면 이깁니다.</p><ul class="rule-list"><li>블랙잭(A + 10점 카드)은 3 : 2 지급</li><li>딜러는 17 이상에서 멈춥니다</li><li>더블 다운과 스플릿을 지원합니다</li></ul><div class="game-meta">1인 대 딜러 · 6덱 · 시작 칩 ${chips(START_CHIPS)}</div><button id="bj-start" class="primary">테이블에 앉기 <span>↗</span></button><small class="session-note">가상 칩으로만 진행하며, 이 페이지를 여는 동안만 유지됩니다.</small></div><div class="feature-art blackjack-art" role="img" aria-label="블랙잭 테이블 미리보기"><div class="bj-mini"><i class="bj-mini-card back"></i><i class="bj-mini-card">K<b>♠</b></i><i class="bj-mini-card red">A<b>♥</b></i><span class="bj-mini-chips"><b></b><b></b><b></b></span></div><span>TWENTY-ONE, NOT ONE MORE</span></div></section>`;
     $("bj-start").onclick = start;
   }
   function start() {
@@ -116,19 +116,11 @@ export function mountBlackjack(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout blackjack-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>블랙잭 <small>BLACKJACK</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 세션</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE BLACKJACK TABLE</span><span>6덱 · 딜러는 17에서 스탠드</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0라운드</span></div></section><aside class="game-sidebar bj-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>보유 칩</dt><dd id="bj-chips"></dd></div><div><dt>베팅</dt><dd id="bj-bet"></dd></div></dl><div class="bj-text" role="group" aria-label="테이블 상황"><p id="bj-dealer"></p><ul id="bj-hands"></ul></div><div id="bj-betting" class="bj-controls" role="group" aria-label="베팅"><div class="bj-chips-row"><button id="bj-add-10" aria-label="10 칩 추가">+10</button><button id="bj-add-50" aria-label="50 칩 추가">+50</button><button id="bj-add-100" aria-label="100 칩 추가">+100</button></div><div class="bj-row"><button id="bj-clear">베팅 초기화</button><button id="bj-rebet">이전 베팅</button></div><button id="bj-deal" class="primary">카드 받기</button></div><div id="bj-playing" class="bj-controls" role="group" aria-label="내 차례"><div class="bj-row"><button id="bj-hit" class="primary">히트</button><button id="bj-stand" class="primary">스탠드</button></div><div class="bj-row"><button id="bj-double">더블 다운</button><button id="bj-split">스플릿</button></div></div><div id="bj-result" class="bj-controls bj-result" role="group" aria-label="라운드 결과"><ul id="bj-outcome"></ul><p id="bj-net"></p><button id="bj-next" class="primary">다음 라운드</button><button id="bj-rebuy" class="primary">칩 다시 받기</button></div><p id="bj-note" class="input-help"></p></aside></div></main>`;
+      `<main class="game-layout blackjack-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>블랙잭 <small>BLACKJACK</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE BLACKJACK TABLE</span><span>6덱 · 딜러는 17에서 스탠드</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0라운드</span></div></section><aside class="game-sidebar bj-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>보유 칩</dt><dd id="bj-chips"></dd></div><div><dt>베팅</dt><dd id="bj-bet"></dd></div></dl><div class="bj-text" role="group" aria-label="테이블 상황"><p id="bj-dealer"></p><ul id="bj-hands"></ul></div><div id="bj-betting" class="bj-controls" role="group" aria-label="베팅"><div class="bj-chips-row"><button id="bj-add-10" aria-label="10 칩 추가">+10</button><button id="bj-add-50" aria-label="50 칩 추가">+50</button><button id="bj-add-100" aria-label="100 칩 추가">+100</button></div><div class="bj-row"><button id="bj-clear">베팅 초기화</button><button id="bj-rebet">이전 베팅</button></div><button id="bj-deal" class="primary">카드 받기</button></div><div id="bj-playing" class="bj-controls" role="group" aria-label="내 차례"><div class="bj-row"><button id="bj-hit" class="primary">히트</button><button id="bj-stand" class="primary">스탠드</button></div><div class="bj-row"><button id="bj-double">더블 다운</button><button id="bj-split">스플릿</button></div></div><div id="bj-result" class="bj-controls bj-result" role="group" aria-label="라운드 결과"><ul id="bj-outcome"></ul><p id="bj-net"></p><button id="bj-next" class="primary">다음 라운드</button><button id="bj-rebuy" class="primary">칩 다시 받기</button></div><p id="bj-note" class="input-help"></p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () =>
-      modal(
-        "새 세션을 시작할까요?",
-        `칩을 ${chips(START_CHIPS)}으로 되돌리고 카드를 새로 섞습니다.`,
-        [
-          { text: "계속하기", action: () => {} },
-          { text: "새 세션", action: newSession },
-        ],
-      );
+    $("restart").onclick = () => setupDialog(setup);
     $("bj-add-10").onclick = () => bet((s) => addBet(s, 10));
     $("bj-add-50").onclick = () => bet((s) => addBet(s, 50));
     $("bj-add-100").onclick = () => bet((s) => addBet(s, 100));

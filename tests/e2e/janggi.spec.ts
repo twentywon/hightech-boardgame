@@ -82,9 +82,7 @@ test("janggi opens inline; pointer and keyboard moves, pass, undo, views and res
   await move(page, sq(1, 10), sq(1, 9), info);
   await expect(turn(page)).toContainText("한의 차례");
   await move(page, sq(5, 4), sq(5, 5), info);
-  await expect(page.locator("#jg-history li")).toHaveCount(1);
-  await expect(page.locator("#jg-history li").first()).toContainText("차 01→91");
-  await expect(page.locator("#jg-history li").first()).toContainText("병 45→55");
+  await expect(page.locator("#jg-history")).toHaveCount(0);
   // A point that is not a legal destination keeps the piece selected and moves nothing.
   await tap(page, sq(9, 10), info);
   await tap(page, sq(9, 5), info);
@@ -103,26 +101,23 @@ test("janggi opens inline; pointer and keyboard moves, pass, undo, views and res
   // Pass, then take both back one at a time.
   await button(page, "한수쉼").click();
   await expect(count(page)).toHaveText("4수");
-  await expect(page.locator("#jg-history")).toContainText("한수쉼");
   await expect(turn(page)).toContainText("초의 차례");
   await button(page, "무르기").click();
   await expect(count(page)).toHaveText("3수");
   await expect(turn(page)).toContainText("한의 차례");
   await button(page, "무르기").click();
   await expect(count(page)).toHaveText("2수");
-  await expect(page.locator("#jg-history")).not.toContainText("졸 75→65");
   // The overhead view still maps a click to the right point.
   await button(page, "시점 전환").click();
   await ready(page);
   await expect(page.locator("#board")).toHaveAttribute("data-top", "true");
   await move(page, sq(1, 7), sq(1, 6), info);
-  await expect(page.locator("#jg-history")).toContainText("졸 71→61");
+  await expect(count(page)).toHaveText("3수");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await button(page, "다시 시작").click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임" }).click();
+  await button(page, "새 게임").click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await ready(page);
   await expect(count(page)).toHaveText("0수");
-  await expect(page.locator("#jg-history li")).toHaveCount(0);
   // Nothing is stored; a reload starts over.
   expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => /janggi|jg/i.test(k)))).toEqual([]);
   await page.reload();

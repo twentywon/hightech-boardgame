@@ -16,8 +16,6 @@ import { AIClient, type WorkerPort } from "../src/games/gomoku/ai/client";
 import {
   getAIOptions,
   setAIOptions,
-  encode,
-  decode,
 } from "../src/core/storage";
 function fixture(stones: [number, number, Player][], turn: Player = 1): State {
   const s = createGame();
@@ -212,15 +210,6 @@ describe("Versioned AI preferences and session", () => {
       map.set("wtg.ai.v1", value);
       expect(getAIOptions()).toEqual({ difficulty: "normal", color: "black" });
     }
-  });
-  it("preserves the active session settings and resolved random color", () => {
-    const s = play(createGame(), { row: 7, col: 7 })!;
-    expect(
-      decode(encode({ state: s, mode: "ai", difficulty: "hard", human: 2 })),
-    ).toEqual({ state: s, mode: "ai", difficulty: "hard", human: 2 });
-    expect(
-      decode(JSON.stringify({ version: 1, mode: "ai", moves: [] }))?.state,
-    ).toEqual(createGame());
   });
   it("handles unavailable localStorage", () => {
     vi.stubGlobal("localStorage", {
