@@ -152,7 +152,8 @@ async function provoke(page: Page) {
     await expect(page.locator("#move-count")).not.toHaveText("0수", { timeout: 500 });
   }).toPass({ timeout: 15000 });
 }
-test("expert Worker keeps animation frames alive; menu and a new game discard old work", async ({
+// @alone: it measures how evenly frames come, which other browsers running beside it would spoil.
+test("expert Worker keeps animation frames alive; menu and a new game discard old work @alone", async ({
   page,
 }, info) => {
   test.setTimeout(90000);

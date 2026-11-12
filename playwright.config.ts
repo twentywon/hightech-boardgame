@@ -7,6 +7,8 @@ export default defineConfig({
   // PW_WORKERS=1 goes back to that when a failure has to be told apart from a crowded machine.
   fullyParallel: false,
   workers: Number(process.env.PW_WORKERS) || 3,
+  // Tests that measure timing (@alone) run only when nothing runs beside them: `npm run e2e` does both passes.
+  grepInvert: Number(process.env.PW_WORKERS) === 1 ? undefined : /@alone/,
   // Software WebGL under load can be late once; a real failure fails twice.
   retries: 1,
   use: {

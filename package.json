@@ -12,7 +12,8 @@
     "ai:evaluate": "vitest run --config evaluation.config.ts",
     "reversi:evaluate": "vitest run --config reversi-evaluation.config.ts",
     "build:html": "npm run build && node scripts/export-html.mjs",
-    "chess:measure": "vitest run --config chess-performance.config.ts"
+    "chess:measure": "vitest run --config chess-performance.config.ts",
+    "e2e": "playwright test --trace off && PW_WORKERS=1 playwright test --trace off --grep @alone"
   },
   "dependencies": {
     "chess.js": "1.4.0",
