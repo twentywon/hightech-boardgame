@@ -9,7 +9,8 @@ export function modal(
   const d = document.createElement("dialog");
   d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>${title}</h2><div class="dialog-body">${body}</div><div class="dialog-actions">${actions.map((a, i) => `<button ${i === actions.length - 1 ? 'class="primary"' : ""}>${a.text}</button>`).join("")}</div>`;
   document.body.append(d);
-  d.querySelectorAll("button").forEach(
+  // Only the action row: a body may carry buttons of its own.
+  d.querySelectorAll<HTMLButtonElement>(".dialog-actions button").forEach(
     (b, i) =>
       (b.onclick = () => {
         d.close();
