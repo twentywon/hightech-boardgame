@@ -2311,3 +2311,7 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
 @media (orientation: landscape) and (max-height: 540px) {
   .game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area .board-controls { top: 30px; width: 104px; }
 }
+/* Touch: no blue flash where a finger lands, and no text picked up by a long press on the table. */
+html { -webkit-tap-highlight-color: transparent; }
+*, *::before, *::after { -webkit-tap-highlight-color: transparent; }
+.board-area, .board-area *, button, .game-top, header { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
