@@ -342,49 +342,89 @@ describe("Tile rummy", () => {
     expect(R.worth([tile(0, 9), tile(1, 9), tile(2, 9), tile(3, 9), R.JOKER])).toBe(0);
     expect([R.colourOf(tile(3, 13, 1)), R.numberOf(tile(3, 13, 1)), R.isJoker(105)]).toEqual([3, 13, true]);
   });
-  it("deals fourteen each; a first turn needs thirty of one's own tiles in good sets", () => {
+  it("deals fourteen each; tiles are picked from the rack and laid as a set; a first turn needs thirty", () => {
     const dealt = R.createGame(seededRandom(6));
-    expect([dealt.racks[0].length, dealt.racks[1].length, dealt.pool.length]).toEqual([14, 14, 78]);
-    let s: R.State = { ...dealt, racks: [[tile(0, 10), tile(1, 10), tile(2, 10), tile(0, 2), tile(0, 3), tile(0, 4)], dealt.racks[1]], before: { table: [], rack: [tile(0, 10), tile(1, 10), tile(2, 10), tile(0, 2), tile(0, 3), tile(0, 4)] } };
-    const move = (from: number, dest: number) => (s = R.play(s, { from, to: dest, extra: -1 })!);
-    expect(R.moves(s).some((m) => m.to === R.DRAW)).toBe(true);
-    // Nine points are not enough.
-    move(tile(0, 2), R.NEW_SET);
-    move(tile(0, 3), R.SET_BASE);
-    move(tile(0, 4), R.SET_BASE);
-    expect([s.table, R.trouble(s).includes("30점"), R.moves(s).some((m) => m.to === R.END), R.moves(s).some((m) => m.to === R.DRAW)]).toEqual([[[tile(0, 2), tile(0, 3), tile(0, 4)]], true, false, false]);
-    move(tile(0, 10), R.NEW_SET);
-    move(tile(1, 10), R.SET_BASE + 1);
-    expect(R.trouble(s)).toContain("맞지 않는");
-    // A tile of this turn may go back to the rack; the reset undoes everything.
-    move(tile(1, 10), R.TO_RACK);
-    expect(s.racks[0]).toContain(tile(1, 10));
+    expect([dealt.racks[0].length, dealt.racks[1].length, dealt.pool.length, dealt.picked]).toEqual([14, 14, 78, []]);
+    const rack = [tile(0, 10), tile(1, 10), tile(2, 10), tile(0, 2), tile(0, 3), tile(0, 4)];
+    let s: R.State = { ...dealt, racks: [rack, dealt.racks[1]], before: { table: [], rack } };
+    const tap = (...points: number[]) => {
+      for (const point of points) s = R.play(s, to(point))!;
+    };
+    const can = (point: number) => R.moves(s).some((m) => m.from === -1 && m.to === point);
+    expect([can(R.DRAW), can(R.NEW_SET)]).toEqual([true, false]);
+    // Two tiles are no set yet: no button. The third makes the run.
+    tap(tile(0, 2), tile(0, 3));
+    expect([s.picked, can(R.NEW_SET), can(R.RESET)]).toEqual([[tile(0, 2), tile(0, 3)], false, true]);
+    tap(tile(0, 4));
+    expect([can(R.NEW_SET), can(R.REGROUP)]).toEqual([true, false]);
+    tap(R.NEW_SET);
+    // Nine points are not enough for a first turn.
+    expect([s.table, s.picked, R.trouble(s).includes("30점"), can(R.END), can(R.DRAW)]).toEqual([[[tile(0, 2), tile(0, 3), tile(0, 4)]], [], true, false, false]);
+    // A tile picked by mistake is put back by a second tap.
+    tap(tile(0, 10), tile(0, 10));
+    expect(s.picked).toEqual([]);
+    // A tile laid this turn may go back to the rack.
+    tap(tile(0, 4));
+    expect(can(R.TO_RACK)).toBe(true);
+    tap(R.TO_RACK);
+    expect([s.racks[0].includes(tile(0, 4)), R.trouble(s)]).toEqual([true, "맞지 않는 묶음이 있습니다 (붉은 바탕)."]);
+    // The reset undoes the whole turn, picks and all.
+    tap(tile(0, 10));
     const reset = R.play(s, to(R.RESET))!;
-    expect([reset.table, reset.racks[0].length]).toEqual([[], 6]);
-    move(tile(1, 10), R.SET_BASE + 1);
-    move(tile(2, 10), R.SET_BASE + 1);
+    expect([reset.table, reset.racks[0].length, reset.picked]).toEqual([[], 6, []]);
+    s = reset;
+    tap(tile(0, 10), tile(1, 10), tile(2, 10), R.NEW_SET);
     expect(R.trouble(s)).toBe("");
     const done = R.play(s, to(R.END))!;
-    expect([done.winner, done.opened, done.turn, done.table.length]).toEqual([0, [true, false], 1, 2]);
+    expect([done.winner, done.opened, done.turn, done.table.length, done.picked]).toEqual([null, [true, false], 1, 1, []]);
+    // A tile that is not mine to touch cannot be picked.
+    expect(R.play(s, to(dealt.racks[1][0]))).toBeNull();
   });
-  it("after opening, sets on the table may be added to and taken apart, if all are good at the end", () => {
+  it("one of my tiles shows where it fits; tiles of the table are picked with mine and regrouped", () => {
     const dealt = R.createGame(seededRandom(8)),
       run = [tile(1, 4), tile(1, 5), tile(1, 6), tile(1, 7)],
-      rack = [tile(1, 8), tile(0, 7), tile(2, 7), tile(3, 1)];
-    let s: R.State = { ...dealt, racks: [rack, dealt.racks[1]], table: [run], before: { table: [run], rack }, opened: [true, true] };
-    const move = (from: number, dest: number) => (s = R.play(s, { from, to: dest, extra: -1 })!);
-    // Not opened, a tile of the table could not be touched.
-    expect(R.moves({ ...s, opened: [false, true] }).some((m) => m.from === tile(1, 7))).toBe(false);
-    move(tile(1, 8), R.SET_BASE);
-    // The 7 leaves the run for a set of sevens; the run 4-5-6 and 8 alone are no longer good.
-    move(tile(1, 7), R.NEW_SET);
-    move(tile(0, 7), R.SET_BASE + 1);
-    move(tile(2, 7), R.SET_BASE + 1);
-    expect(R.trouble(s)).toContain("맞지 않는");
-    move(tile(1, 8), R.TO_RACK);
-    expect(R.trouble(s)).toBe("");
+      sevens = [tile(0, 7), tile(2, 7), tile(3, 7)],
+      rack = [tile(1, 8), tile(0, 9), tile(2, 9), tile(3, 1)];
+    let s: R.State = { ...dealt, racks: [rack, dealt.racks[1]], table: [run, sevens], before: { table: [run, sevens], rack }, opened: [true, true] };
+    const tap = (...points: number[]) => {
+      for (const point of points) s = R.play(s, to(point))!;
+    };
+    const places = () => R.moves(s).filter((m) => m.from === -1 && m.to >= R.SET_BASE && m.to < R.NEW_SET).map((m) => m.to - R.SET_BASE);
+    // Before opening, the tiles of the table cannot be picked.
+    expect(R.play({ ...s, opened: [false, true] }, to(tile(1, 7)))).toBeNull();
+    // The blue 8 fits the end of the blue run and nowhere else; the black 1 fits nothing.
+    tap(tile(1, 8));
+    expect(places()).toEqual([0]);
+    tap(tile(1, 8), tile(3, 1));
+    expect(places()).toEqual([]);
+    tap(tile(3, 1), tile(1, 8), R.SET_BASE);
+    expect([s.table[0], s.racks[0].includes(tile(1, 8)), s.picked]).toEqual([[...run, tile(1, 8)], false, []]);
+    // The blue 7 is taken from the run to join the sevens: picked on the table, it shows that set.
+    tap(tile(1, 7));
+    expect(places()).toEqual([1]);
+    tap(R.SET_BASE + 1);
+    // The run is broken now (4-5-6 and 8): the table is not good.
+    expect([s.table[1].length, R.trouble(s)]).toEqual([4, "맞지 않는 묶음이 있습니다 (붉은 바탕)."]);
+    // The 8 goes back to the rack; then two nines of mine take the red… no: regroup needs a set.
+    tap(tile(1, 8), R.TO_RACK);
+    expect(R.trouble(s)).toBe("내 타일을 하나 이상 내려놓아야 합니다.");
+    // A seven from the table with two tiles of mine is no set; no button comes up.
+    tap(tile(0, 7), tile(0, 9), tile(2, 9));
+    expect(R.moves(s).some((m) => m.to === R.REGROUP || m.to === R.NEW_SET)).toBe(false);
+    tap(R.RESET);
+    // Regrouping: the 6 and 7 of the run with my 8 make a new run, leaving 4-5 broken until mended.
+    tap(tile(1, 6), tile(1, 7), tile(1, 8));
+    expect(R.moves(s).some((m) => m.to === R.REGROUP)).toBe(true);
+    expect(R.moves(s).some((m) => m.to === R.NEW_SET)).toBe(false);
+    tap(R.REGROUP);
+    expect([s.table.map((set) => set.length), s.table[2], R.trouble(s)]).toEqual([[2, 3, 3], [tile(1, 6), tile(1, 7), tile(1, 8)], "맞지 않는 묶음이 있습니다 (붉은 바탕)."]);
+    // Mended by putting the 6 back where it came from: 4-5-6 and 7-8 … still broken, so the 7 follows.
+    tap(tile(1, 6), R.SET_BASE);
+    tap(tile(1, 7), R.SET_BASE);
+    tap(tile(1, 8), R.SET_BASE);
+    expect([s.table.map((set) => set.length), R.trouble(s)]).toEqual([[5, 3], ""]);
     const next = R.play(s, to(R.END))!;
-    expect([next.turn, next.table.map((set) => set.length), next.racks[0]]).toEqual([1, [3, 3], [tile(3, 1), tile(1, 8)]]);
+    expect([next.turn, next.racks[0]]).toEqual([1, [tile(0, 9), tile(2, 9), tile(3, 1)]]);
   });
   it("drawing ends the turn; the computer lays what its rack holds and games come to an end", () => {
     const s = R.createGame(seededRandom(9)),

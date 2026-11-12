@@ -36,7 +36,7 @@ export const HINGES = [-2.5, 2.5];
 export const arenaOf = (mode: Mode): Arena =>
   mode === "go"
     ? { halfX: 4.8, halfZ: 4.8, cushions: false, pockets: [], friction: 7, bounce: 0.9 }
-    : { halfX: 4.55, halfZ: 5.05, cushions: false, pockets: [], friction: 8.6, bounce: 0.9, posts: HINGES.flatMap((x) => [-0.26, 0, 0.26].map((dx) => ({ x: x + dx, z: 0, r: 0.13 }))) };
+    : { halfX: 4.55, halfZ: 5.05, cushions: false, pockets: [], friction: 10.5, bounce: 0.9, posts: HINGES.flatMap((x) => [-0.26, 0, 0.26].map((dx) => ({ x: x + dx, z: 0, r: 0.13 }))) };
 /** Where a line crossing of the go board lies. */
 export const goPoint = (point: number) => ({ x: ((point % GO) - 9) * GO_STEP, z: (Math.floor(point / GO) - 9) * GO_STEP });
 const disc = (id: number, x: number, z: number, r: number, m: number): Disc => ({ id, x, z, vx: 0, vz: 0, r, m, on: true });

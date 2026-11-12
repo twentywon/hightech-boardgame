@@ -1,8 +1,7 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { NEW_SET, SET_BASE, TILE_COUNT, TO_RACK, colourOf, isJoker, numberOf, valid, type State } from "./rules";
+import { SET_BASE, TILE_COUNT, TO_RACK, colourOf, isJoker, numberOf, valid, type State } from "./rules";
 
 const W = 0.6,
   D = 0.84,
@@ -32,6 +31,44 @@ function face(colour: number, text: string) {
   t.colorSpace = T.SRGBColorSpace;
   return t;
 }
+/** Strips of varnished wood, each a little different, their ends staggered from row to row. */
+function floorboards() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 1024;
+  const ctx = c.getContext("2d")!;
+  let seed = 11;
+  const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const strip = 64;
+  for (let row = 0; row < 1024 / strip; row++) {
+    // Each row starts somewhere else, and a strip that runs off the right edge comes back in at the left, so the pattern repeats without a seam.
+    const start = rand() * 300;
+    let x = start;
+    while (x < 1024 + start) {
+      const length = 260 + rand() * 240,
+        tone = 150 + rand() * 34,
+        grain = Array.from({ length: 9 }, () => [rand() * strip, 1 + rand() * 2, 0.03 + rand() * 0.05]);
+      for (const at of [x, x - 1024]) {
+        ctx.fillStyle = `rgb(${tone + 44}, ${tone - 2}, ${tone - 62})`;
+        ctx.fillRect(at, row * strip, Math.min(length, 1024 + start - x), strip);
+        for (const [y, h, alpha] of grain) {
+          ctx.fillStyle = `rgba(90,52,20,${alpha})`;
+          ctx.fillRect(at, row * strip + y, Math.min(length, 1024 + start - x), h);
+        }
+        ctx.fillStyle = "rgba(60,34,14,0.55)";
+        ctx.fillRect(at - 1, row * strip, 2, strip);
+      }
+      x += length;
+    }
+    ctx.fillStyle = "rgba(60,34,14,0.5)";
+    ctx.fillRect(0, row * strip, 1024, 2);
+  }
+  const t = new T.CanvasTexture(c);
+  t.colorSpace = T.SRGBColorSpace;
+  t.wrapS = t.wrapT = T.RepeatWrapping;
+  t.repeat.set(4, 4);
+  t.anisotropy = 4;
+  return t;
+}
 interface Pose {
   x: number;
   z: number;
@@ -51,26 +88,66 @@ export class TileRummyView extends TableView<State> {
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#b98d5a");
     this.daylight("#ffffff", "#8a6d4a", "#fff3da", 12, 2.0);
-    // The classroom floor: boards, and the feet of desks and chairs at its edges.
-    const boards = this.own(wood());
-    boards.repeat.set(7, 12);
-    const floor = this.add(new T.PlaneGeometry(90, 90), this.standard({ map: boards, color: "#d2ae7c", roughness: 0.6 }), 0, 0, 0);
+    // A classroom floor: varnished strips of wood laid end to end, sunlight from the windows lying across it,
+    // and round its edges the legs of desks and chairs, a satchel, indoor shoes and things dropped.
+    const floor = this.add(new T.PlaneGeometry(60, 60), this.standard({ map: this.own(floorboards()), roughness: 0.42 }), 0, 0, 0);
     floor.rotation.x = -Math.PI / 2;
     floor.castShadow = false;
-    const seam = this.standard({ color: "#7a5a36", roughness: 1 });
-    for (let k = -12; k <= 12; k++) this.add(new T.BoxGeometry(0.03, 0.004, 90), seam, k * 1.5, 0.002, 0).castShadow = false;
-    const steel = this.standard({ color: "#7c858e", roughness: 0.45, metalness: 0.5 }),
-      rubber = this.standard({ color: "#2a2d31", roughness: 0.9 });
-    for (const [x, z] of [[-9.6, -6.6], [-7.2, -6.6], [7.4, -6.9], [9.8, -6.9], [-10.2, 2.2], [10.3, 1.4], [10.3, 3.6]]) {
-      this.add(new T.CylinderGeometry(0.09, 0.09, 3, 10), steel, x, 1.5, z);
-      this.add(new T.CylinderGeometry(0.13, 0.13, 0.12, 12), rubber, x, 0.06, z);
+    const sun = this.own(new T.MeshBasicMaterial({ color: "#fff3c4", transparent: true, opacity: 0.2, depthWrite: false }));
+    for (const x of [-8.6, -3.4, 1.8]) {
+      const patch = this.add(new T.PlaneGeometry(3.6, 7.5), sun, x + 3.4, 0.004, -3.4);
+      patch.rotation.set(-Math.PI / 2, 0, 0.5);
+      patch.castShadow = false;
     }
-    // Things dropped on the floor: an eraser, a pencil, an indoor shoe.
-    this.add(new T.BoxGeometry(0.5, 0.16, 0.26), this.standard({ color: "#f3f0ea" }), -9.2, 0.08, -3.2).rotation.y = 0.5;
-    this.add(new T.CylinderGeometry(0.045, 0.045, 1.5, 6), this.standard({ color: "#e0a020" }), 9.4, 0.05, -3.6).rotation.set(Math.PI / 2, 0, 0.8);
-    const shoe = this.standard({ color: "#f6f6f2", roughness: 0.7 });
-    this.add(new T.BoxGeometry(0.7, 0.3, 1.5), shoe, -9.7, 0.15, 5.2).rotation.y = -0.3;
-    this.add(new T.BoxGeometry(0.72, 0.1, 0.5), this.standard({ color: "#3b6fb8" }), -9.55, 0.32, 5.65).rotation.y = -0.3;
+    const steel = this.standard({ color: "#8a939c", roughness: 0.4, metalness: 0.55 }),
+      cap = this.standard({ color: "#c9d24a", roughness: 0.9 }),
+      top = this.standard({ color: "#d8b47a", roughness: 0.5 }),
+      seat = this.standard({ color: "#b98a52", roughness: 0.6 });
+    /** A desk seen from the floor: four legs on felt caps, a rail between them and the board above. */
+    const desk = (x: number, z: number, turn: number) => {
+      const g = new T.Group();
+      for (const dx of [-1.15, 1.15])
+        for (const dz of [-0.75, 0.75]) {
+          this.add(new T.CylinderGeometry(0.07, 0.07, 3.2, 10), steel, dx, 1.6, dz, g);
+          this.add(new T.SphereGeometry(0.13, 12, 8), cap, dx, 0.1, dz, g);
+        }
+      for (const dx of [-1.15, 1.15]) this.add(new T.BoxGeometry(0.06, 0.06, 1.5), steel, dx, 0.6, 0, g);
+      this.add(new T.BoxGeometry(2.7, 0.12, 1.9), top, 0, 3.2, 0, g);
+      g.position.set(x, 0, z);
+      g.rotation.y = turn;
+      this.scene.add(g);
+    };
+    const chair = (x: number, z: number, turn: number) => {
+      const g = new T.Group();
+      for (const dx of [-0.6, 0.6])
+        for (const dz of [-0.55, 0.55]) {
+          this.add(new T.CylinderGeometry(0.055, 0.055, 1.9, 10), steel, dx, 0.95, dz, g);
+          this.add(new T.SphereGeometry(0.11, 12, 8), cap, dx, 0.09, dz, g);
+        }
+      this.add(new T.BoxGeometry(1.4, 0.1, 1.3), seat, 0, 1.9, 0, g);
+      g.position.set(x, 0, z);
+      g.rotation.y = turn;
+      this.scene.add(g);
+    };
+    desk(-10.6, -7.4, 0.06);
+    desk(-6.2, -8.2, -0.04);
+    desk(6.4, -8.2, 0.05);
+    desk(10.8, -7.3, -0.08);
+    chair(-11.4, -1.4, 0.3);
+    chair(11.5, 0.6, -0.4);
+    chair(11.2, 5.4, 0.2);
+    // A satchel leaning by a desk, a pair of indoor shoes, an eraser, a pencil, a crumpled note.
+    this.add(new T.BoxGeometry(1.5, 1.7, 0.6), this.standard({ color: "#2f4f8a", roughness: 0.8 }), -11.2, 0.85, 3.4).rotation.y = 0.5;
+    this.add(new T.BoxGeometry(1.3, 0.5, 0.64), this.standard({ color: "#f2c230", roughness: 0.8 }), -11.2, 1.2, 3.4).rotation.y = 0.5;
+    const shoe = this.standard({ color: "#f6f6f2", roughness: 0.7 }),
+      band = this.standard({ color: "#3b6fb8" });
+    for (const [x, turn] of [[-10.4, -0.3], [-9.5, -0.15]]) {
+      this.add(new T.BoxGeometry(0.62, 0.28, 1.4), shoe, x, 0.14, 6.0).rotation.y = turn;
+      this.add(new T.BoxGeometry(0.64, 0.1, 0.42), band, x + 0.1, 0.3, 6.35).rotation.y = turn;
+    }
+    this.add(new T.BoxGeometry(0.5, 0.16, 0.26), this.standard({ color: "#f3f0ea" }), 9.6, 0.08, -4.2).rotation.y = 0.5;
+    this.add(new T.CylinderGeometry(0.045, 0.045, 1.5, 6), this.standard({ color: "#e0a020" }), 10.2, 0.05, -2.9).rotation.set(Math.PI / 2, 0, 0.8);
+    this.add(new T.IcosahedronGeometry(0.22, 0), this.standard({ color: "#fbfaf2", roughness: 1 }), -9.4, 0.18, -4.6);
     const block = this.own(new T.BoxGeometry(W, 0.14, D)),
       ivory = this.standard({ color: "#f8f3e4", roughness: 0.4 }),
       back = this.standard({ color: "#e2d8bd", roughness: 0.5 }),
@@ -126,11 +203,6 @@ export class TileRummyView extends TableView<State> {
       bounds.push({ x: x + (set.length * PITCH) / 2, z, w: set.length * PITCH });
       x += width + 0.35;
     });
-    if (x + 2 * PITCH > ROW_WIDTH / 2) {
-      x = -ROW_WIDTH / 2;
-      z += D + 0.2;
-    }
-    slots.set(NEW_SET, { x: x + 0.5 * PITCH, z });
     const rack = (tiles: number[], z0: number, up: boolean) => {
       const sorted = [...tiles].sort((a, b) => (isJoker(a) ? 99 : colourOf(a)) - (isJoker(b) ? 99 : colourOf(b)) || numberOf(a) - numberOf(b)),
         perRow = 22;
@@ -201,7 +273,7 @@ export class TileRummyView extends TableView<State> {
     if (!state) return;
     for (const tile of [...state.racks[0], ...state.table.flat()]) {
       const pose = this.poses.get(tile);
-      if (pose) this.put(tile, pose, marks.selected === tile ? 0.28 : 0);
+      if (pose) this.put(tile, pose, state.picked.includes(tile) ? 0.3 : 0);
     }
     // Where the tile picked up may go.
     const open = [...this.slots].filter(([point]) => marks.targets.includes(point));

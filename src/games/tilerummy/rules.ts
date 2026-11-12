@@ -25,6 +25,8 @@ export const TILE_COUNT = 106,
   RESET = 404,
   /** The computer takes the table apart and builds it anew round tiles of its own, in one move. */
   REBUILD = 405,
+  /** The tiles picked, some of them from the table, are made into a set of their own. */
+  REGROUP = 406,
   /** The computer lays a whole set from its rack in one move. */
   MELD_BASE = 500;
 export const isJoker = (tile: number) => tile >= JOKER;
@@ -34,6 +36,8 @@ export interface State {
   racks: [number[], number[]];
   pool: number[];
   table: number[][];
+  /** The tiles the mover has picked up so far, from the rack or the table, to do something with together. */
+  picked: number[];
   /** The table and the mover's rack as the turn began: what a reset returns to, and what the turn is judged against. */
   before: { table: number[][]; rack: number[] };
   opened: [boolean, boolean];
@@ -51,7 +55,7 @@ export function createGame(random: Random = cryptoRandom): State {
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   const racks: [number[], number[]] = [pool.splice(0, RACK_SIZE), pool.splice(0, RACK_SIZE)];
-  return { racks, pool, table: [], before: { table: [], rack: racks[0].slice() }, opened: [false, false], turn: 0, winner: null, idle: 0, ply: 0, last: null };
+  return { racks, pool, table: [], picked: [], before: { table: [], rack: racks[0].slice() }, opened: [false, false], turn: 0, winner: null, idle: 0, ply: 0, last: null };
 }
 /** What a set is worth, or 0 when the tiles do not make a set. A joker counts as the tile it stands for. */
 export function worth(tiles: number[]) {
@@ -213,31 +217,39 @@ export function moves(state: State): Move[] {
   const me = state.turn,
     rack = state.racks[me],
     mine = laid(state),
+    picked = state.picked,
     out: Move[] = [],
     tool = (to: number) => out.push({ from: -1, to, extra: -1 });
-  // My own tiles may always be moved; the tiles that lay on the table only once I have opened.
-  const movable = [...rack, ...state.table.flat().filter((t) => mine.includes(t) || state.opened[me])];
-  for (const tile of movable) {
-    const at = state.table.findIndex((set) => set.includes(tile));
-    state.table.forEach((_, i) => i !== at && out.push({ from: tile, to: SET_BASE + i, extra: -1 }));
-    if (at < 0 || state.table[at].length > 1) out.push({ from: tile, to: NEW_SET, extra: -1 });
-    if (at >= 0 && mine.includes(tile)) out.push({ from: tile, to: TO_RACK, extra: -1 });
+  // A tap picks a tile up or puts it back. My own tiles always; those that lay on the table only once I have opened.
+  for (const tile of [...rack, ...state.table.flat().filter((t) => mine.includes(t) || state.opened[me])]) tool(tile);
+  if (picked.length) {
+    // Picked tiles that make a set are laid as one: straight from the rack, or regrouped when some come from the table.
+    if (valid(picked)) tool(picked.every((t) => rack.includes(t)) ? NEW_SET : REGROUP);
+    // They may join a set on the table that stays good with them.
+    state.table.forEach((set, i) => !picked.some((t) => set.includes(t)) && valid([...set, ...picked]) && tool(SET_BASE + i));
+    // Tiles laid this turn may go back to the rack.
+    if (picked.every((t) => mine.includes(t))) tool(TO_RACK);
   }
   const changed = mine.length > 0 || !sameTable(state.table, state.before.table);
-  if (changed) tool(RESET);
+  if (changed || picked.length) tool(RESET);
   if (changed && !trouble(state)) tool(END);
   if (!changed) tool(DRAW);
-  // Whole sets from the rack: no place on the table stands for these, so only a computer makes them.
+  // A computer's shortcuts, which nothing on the table stands for, so that a person never makes them:
+  // a whole set from the rack, one tile of the rack onto a set, and the table taken apart and built anew.
   melds(state).forEach((_, k) => tool(MELD_BASE + k));
-  // Likewise the table taken apart and built anew: a person does that tile by tile.
-  if (me === 1 && rebuild(state)) tool(REBUILD);
+  // The other two belong to the computer's side alone: a move that names a piece would change how a person's taps are read,
+  // and the rebuilding takes a moment to find.
+  if (me === 1) {
+    for (const tile of rack) state.table.forEach((set, i) => valid([...set, tile]) && out.push({ from: tile, to: SET_BASE + i, extra: -1 }));
+    if (rebuild(state)) tool(REBUILD);
+  }
   return out;
 }
 /** Hands the turn over, with the table as it stands as the new starting point. */
 function pass(state: State, idle: boolean): State {
   const me = state.turn,
     other = (me ? 0 : 1) as 0 | 1,
-    next: State = { ...state, turn: other, before: { table: state.table.map((set) => set.slice()), rack: state.racks[other].slice() }, idle: idle ? state.idle + 1 : 0, ply: state.ply + 1 };
+    next: State = { ...state, turn: other, picked: [], before: { table: state.table.map((set) => set.slice()), rack: state.racks[other].slice() }, idle: idle ? state.idle + 1 : 0, ply: state.ply + 1 };
   if (!state.racks[me].length) next.winner = me;
   else if (next.idle >= 2) {
     // Nobody can go on: the lighter rack wins.
@@ -255,7 +267,7 @@ export function play(state: State, move: Move): State | null {
   if (move.from === -1) {
     if (move.to === RESET) {
       racks[me] = state.before.rack.slice();
-      return { ...state, racks, table: state.before.table.map((set) => set.slice()), last: null };
+      return { ...state, racks, picked: [], table: state.before.table.map((set) => set.slice()), last: null };
     }
     if (move.to === END) {
       const opened: [boolean, boolean] = [state.opened[0], state.opened[1]];
@@ -268,6 +280,20 @@ export function play(state: State, move: Move): State | null {
       racks[me].push(pool.pop()!);
       return pass({ ...state, racks, pool, last: null }, false);
     }
+    if (move.to < TILE_COUNT) {
+      const tile = move.to;
+      return { ...state, picked: state.picked.includes(tile) ? without(state.picked, tile) : [...state.picked, tile], last: null };
+    }
+    if (move.to === NEW_SET || move.to === REGROUP || move.to === TO_RACK || (move.to >= SET_BASE && move.to < NEW_SET)) {
+      // The picked tiles leave wherever they were and go together to one place.
+      const picked = state.picked,
+        target = move.to >= SET_BASE && move.to < NEW_SET ? state.table[move.to - SET_BASE] : null,
+        table = state.table.map((set) => (set === target ? [...set, ...picked] : set.filter((t) => !picked.includes(t))));
+      racks[me] = racks[me].filter((t) => !picked.includes(t));
+      if (move.to === TO_RACK) racks[me].push(...picked);
+      else if (!target) table.push(picked.slice());
+      return { ...state, racks, picked: [], table: table.filter((set) => set.length), last: picked[0] };
+    }
     if (move.to === REBUILD) {
       const plan = rebuild(state)!;
       racks[me] = racks[me].filter((t) => !plan.used.includes(t));
@@ -277,15 +303,9 @@ export function play(state: State, move: Move): State | null {
     racks[me] = racks[me].filter((t) => !set.includes(t));
     return { ...state, racks, table: [...state.table, set], last: set[0] };
   }
-  const tile = move.from;
-  let table = state.table.map((set) => without(set, tile));
-  racks[me] = without(racks[me], tile);
-  if (move.to === TO_RACK) racks[me].push(tile);
-  else if (move.to === NEW_SET) table.push([tile]);
-  else table[move.to - SET_BASE].push(tile);
-  // A set left empty is gone; the points of the sets after it shift down, as the views expect.
-  table = table.filter((set) => set.length);
-  return { ...state, racks, table, last: tile };
+  // The computer sets one tile of its rack onto a set.
+  racks[me] = without(racks[me], move.from);
+  return { ...state, racks, table: state.table.map((set, i) => (i === move.to - SET_BASE ? [...set, move.from] : set)), last: move.from };
 }
 /**
  * The computer's step, from its own rack and the table alone: it lays the
@@ -312,7 +332,9 @@ export function chooseStep(state: State, level: Level, random: Random = Math.ran
   if (level !== "easy" && has(REBUILD)) return has(REBUILD)!;
   if (state.opened[me] && level !== "easy")
     for (const tile of state.racks[me])
-      for (let i = 0; i < state.table.length; i++) if (valid([...state.table[i], tile])) return { from: tile, to: SET_BASE + i, extra: -1 };
+      for (let i = 0; i < state.table.length; i++)
+        if (valid([...state.table[i], tile]) && legal.some((m) => m.from === tile && m.to === SET_BASE + i)) return { from: tile, to: SET_BASE + i, extra: -1 };
+  // Whatever it had picked up without using is put down again before the turn ends.
   return has(END) ?? has(DRAW) ?? has(RESET) ?? null;
 }
 const effect = (state: State): Effect | null => (state.last === null ? null : { kind: "place", from: -1, to: state.last, converted: [], removed: [] });
@@ -329,6 +351,12 @@ export const tileRummy: PointGame<State> = {
   evaluate: (s, player) => s.racks[player ? 0 : 1].length - s.racks[player].length,
   hint: (s) => {
     const changed = laid(s).length > 0 || !sameTable(s.table, s.before.table);
+    if (s.picked.length)
+      return valid(s.picked)
+        ? "고른 타일이 묶음이 됩니다. 판의 버튼을 누르세요."
+        : s.picked.length === 1
+          ? "붙일 수 있는 묶음에 금색 칸이 떴습니다. 새 묶음을 만들려면 타일을 더 고르세요."
+          : `타일 ${s.picked.length}개를 골랐습니다. 묶음이 되면 버튼이 뜹니다.`;
     if (!changed) return s.opened[s.turn] ? "타일을 내려놓거나 판의 묶음을 고쳐 짜세요. 낼 것이 없으면 한 장 가져옵니다." : `내 타일로 ${OPENING}점 이상의 묶음을 만들어 첫 등록을 하세요. 못 하면 한 장 가져옵니다.`;
     return trouble(s) || "차례를 마칠 수 있습니다.";
   },
