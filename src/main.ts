@@ -36,3 +36,31 @@ document.getElementById("rotate-go")?.addEventListener("click", async () => {
     help.textContent = "이 브라우저는 화면을 대신 돌려 주지 못합니다. 화면 회전 잠금을 풀고 휴대폰을 가로로 돌려 주세요.";
   }
 });
+
+// The browser's (or the phone's) back button leaves a table for the collection instead of leaving the page.
+// Sitting down adds one history entry; going back from it presses the table's own ← 컬렉션.
+const atTable = () => !!root.querySelector(":scope > main.game-layout");
+const remember = () => {
+  try {
+    if (!history.state?.table) history.pushState({ table: true }, "");
+  } catch {
+    // A page that may not touch its history (some embedded viewers) keeps the browser's own behaviour.
+  }
+};
+new MutationObserver(() => {
+  if (atTable()) remember();
+  // Left by the table's own button: the entry that stood for the table is used up.
+  else if (history.state?.table) history.back();
+}).observe(root, { childList: true });
+window.addEventListener("popstate", () => {
+  if (!atTable() || history.state?.table) return;
+  const open = document.querySelector<HTMLDialogElement>("dialog[open]");
+  if (open) {
+    // A window over the table is closed first; the table stays.
+    open.close();
+    open.remove();
+    remember();
+    return;
+  }
+  document.getElementById("back")?.click();
+});
