@@ -269,6 +269,32 @@ describe("Alkkagi", () => {
     expect(hit.discs[soldier].x).toBeGreaterThan(-2.3);
     expect(hit.discs[soldier].on).toBe(true);
   });
+  it("a go stone struck too hard may fly: it sails over what lies in its way", () => {
+    const disc = (id: number, x: number, z: number): P.Disc => ({ id, x, z, vx: 0, vz: 0, r: 0.235, m: 1, on: true });
+    const s: A.State = { ...A.createGame("go-3"), phase: "play", toPlace: [0, 0], discs: [disc(0, 0, 4), disc(1, 0, 2), disc(2, 3, -3)], owners: [0, 1, 1], labels: ["", "", ""] },
+      shot = { from: 0, to: P.shotCode(270, 20), extra: -1 };
+    expect([A.flyChance(15), A.flyChance(16) > 0, A.flyChance(20) > A.flyChance(17)]).toEqual([0, true, true]);
+    // On the board it hits the stone in front of it.
+    const slid = A.play(s, shot, () => 0.99)!;
+    expect([slid.last!.fly, slid.discs[1].z < 2]).toEqual([false, true]);
+    // In the air it passes over that stone, which never moves, and comes down far beyond it.
+    const flew = A.play(s, shot, () => 0)!;
+    expect([flew.last!.fly, flew.discs[1].z, flew.discs[1].on, flew.discs[0].z < -2]).toEqual([true, 2, true, true]);
+    expect(flew.discs.every((d) => d.air === undefined && d.flight === undefined)).toBe(true);
+    // A gentler shot never flies, whatever the chance; nor does a janggi piece.
+    expect(A.play(s, { from: 0, to: P.shotCode(270, 12), extra: -1 }, () => 0)!.last!.fly).toBe(false);
+    const j = A.createGame("janggi");
+    expect(A.play(j, { from: 8, to: P.shotCode(270, 20), extra: -1 }, () => 0)!.last!.fly).toBe(false);
+    // Left to itself the computer thinks without chance, and aims its go stones below the strength that flies.
+    expect(A.aimed(s).every((m) => P.shotOf(m.to)!.power < A.FLY_FROM)).toBe(true);
+    // In the air a disc touches nothing and lands with most of its speed gone.
+    const pair = [disc(0, -2, 0), disc(1, 0, 0)];
+    P.strike(pair[0], 0, 10);
+    P.launch(pair[0], 0.3);
+    expect(P.lift(pair[0])).toBe(0);
+    for (let i = 0; i < 18; i++) P.step(pair, { halfX: 9, halfZ: 9, cushions: false, pockets: [], friction: 12, bounce: 0.9 });
+    expect([P.lift(pair[0]) > 0.9, pair[1].x]).toEqual([true, 0]);
+  });
   it("the computer shoots only its own stones and plays a game out", () => {
     const random = seededRandom(5);
     let s = A.createGame("go-5");

@@ -1,7 +1,7 @@
 import type { Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
-import { copy, settle, shotCode, shotOf, speedOf, strike, type Arena, type Disc } from "../flick/physics";
+import { copy, launch, settle, shotCode, shotOf, speedOf, strike, type Arena, type Disc } from "../flick/physics";
 
 /**
  * Alkkagi: stones are flicked with a finger to knock the other side's off
@@ -26,7 +26,8 @@ export interface State {
   toPlace: [number, number];
   turn: 0 | 1;
   winner: Winner;
-  last: { disc: number; code: number } | null;
+  /** The last shot; `fly` when the stone was struck so hard that it left the board and sailed through the air. */
+  last: { disc: number; code: number; fly: boolean } | null;
   /** The stones the last shot sent off. */
   lost: number[];
   ply: number;
@@ -35,8 +36,8 @@ export interface State {
 export const HINGES = [-2.5, 2.5];
 export const arenaOf = (mode: Mode): Arena =>
   mode === "go"
-    ? { halfX: 4.8, halfZ: 4.8, cushions: false, pockets: [], friction: 7, bounce: 0.9 }
-    : { halfX: 4.55, halfZ: 5.05, cushions: false, pockets: [], friction: 10.5, bounce: 0.9, posts: HINGES.flatMap((x) => [-0.26, 0, 0.26].map((dx) => ({ x: x + dx, z: 0, r: 0.13 }))) };
+    ? { halfX: 4.8, halfZ: 4.8, cushions: false, pockets: [], friction: 12, bounce: 0.9 }
+    : { halfX: 4.55, halfZ: 5.05, cushions: false, pockets: [], friction: 15, bounce: 0.9, posts: HINGES.flatMap((x) => [-0.26, 0, 0.26].map((dx) => ({ x: x + dx, z: 0, r: 0.13 }))) };
 /** Where a line crossing of the go board lies. */
 export const goPoint = (point: number) => ({ x: ((point % GO) - 9) * GO_STEP, z: (Math.floor(point / GO) - 9) * GO_STEP });
 const disc = (id: number, x: number, z: number, r: number, m: number): Disc => ({ id, x, z, vx: 0, vz: 0, r, m, on: true });
@@ -97,7 +98,8 @@ export function aimed(state: State): Move[] {
     state.discs.forEach((to) => {
       if (!to.on || state.owners[to.id] === state.turn) return;
       const degrees = (Math.atan2(to.z - from.z, to.x - from.x) * 180) / Math.PI;
-      for (const power of [7, 11, 15, 20]) out.push({ from: from.id, to: shotCode(degrees, power), extra: -1 });
+      // Go stones are never aimed hard enough to take off; the heavier janggi pieces need the strength.
+      for (const power of state.mode === "go" ? [8, 11, 13, 15] : [9, 13, 17, 20]) out.push({ from: from.id, to: shotCode(degrees, power), extra: -1 });
     });
   });
   return out;
@@ -107,7 +109,13 @@ export function moves(state: State): Move[] {
   if (state.phase === "place") return [...free(state, state.turn).map((to) => ({ from: -1, to, extra: -1 })), { from: -1, to: LAY_ROW, extra: -1 }];
   return aimed(state);
 }
-export function play(state: State, move: Move): State | null {
+/** From this strength on a go stone may take off; the chance grows with every step above it. */
+export const FLY_FROM = 16,
+  FLY_CHANCE = 0.14,
+  FLY_SECONDS = 0.42;
+export const flyChance = (power: number) => (power >= FLY_FROM ? (power - FLY_FROM + 1) * FLY_CHANCE : 0);
+/** `random` decides whether a stone struck too hard flies; left out, it never does (the computer thinks its shots through that way). */
+export function play(state: State, move: Move, random: Random = () => 1): State | null {
   if (state.winner !== null || move.extra !== -1) return null;
   const me = state.turn,
     other = (me ? 0 : 1) as 0 | 1;
@@ -130,15 +138,17 @@ export function play(state: State, move: Move): State | null {
   const shot = shotOf(move.to),
     mine = state.discs[move.from];
   if (!shot || !mine || !mine.on || state.owners[move.from] !== me) return null;
-  const discs = copy(state.discs);
+  const discs = copy(state.discs),
+    fly = state.mode === "go" && random() < flyChance(shot.power);
   strike(discs[move.from], shot.angle, speedOf(shot.power));
+  if (fly) launch(discs[move.from], FLY_SECONDS);
   const { gone } = settle(discs, arenaOf(state.mode)),
     left = [0, 1].map((side) => discs.filter((d) => d.on && state.owners[d.id] === side).length);
   return {
     ...state,
     discs,
     turn: other,
-    last: { disc: move.from, code: move.to },
+    last: { disc: move.from, code: move.to, fly },
     lost: gone,
     ply: state.ply + 1,
     winner: left[0] && left[1] ? null : left[0] ? 0 : left[1] ? 1 : "draw",
@@ -186,7 +196,7 @@ const alive = (state: State, side: number) => state.discs.filter((d) => d.on && 
 export const alkkagi: PointGame<State> = {
   create: (variant) => createGame(variant || "go-5"),
   moves,
-  play: (state, move) => play(state, move),
+  play,
   choose: chooseShot,
   turn: (s) => s.turn,
   winner: (s) => s.winner,
@@ -198,7 +208,7 @@ export const alkkagi: PointGame<State> = {
   hint: (s) =>
     s.phase === "place"
       ? `내 쪽 절반의 선 위에 알을 놓으세요 (남은 ${s.toPlace[s.turn]}개).`
-      : "내 알을 누른 채 뒤로 당겼다 놓아 튕기세요.",
+      : `${s.last?.fly ? "너무 세게 맞은 알이 붕 떴다 떨어졌습니다. " : ""}내 알을 누른 채 뒤로 당겼다 놓아 튕기세요.`,
   tally: (s) => (s.phase === "place" ? (s.toPlace.map((n) => `놓을 알 ${n}개`) as [string, string]) : ([0, 1].map((p) => `남은 알 ${alive(s, p)}개`) as [string, string])),
   reason: (s) => (s.winner === "draw" ? "두 사람의 알이 함께 모두 떨어졌습니다." : "상대 알을 모두 판 밖으로 내보냈습니다."),
 };

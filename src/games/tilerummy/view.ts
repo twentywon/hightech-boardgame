@@ -3,9 +3,9 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { SET_BASE, TILE_COUNT, TO_RACK, colourOf, isJoker, numberOf, valid, type State } from "./rules";
 
-const W = 0.6,
-  D = 0.84,
-  PITCH = 0.64,
+const W = 0.68,
+  D = 0.95,
+  PITCH = 0.72,
   ROW_WIDTH = 15.6,
   SUBJECT: TableSubject = { half: 8.4, halfZ: 6.6, height: 0.5, lookY: 0, tilt: 1.12 };
 export const RACK_COLORS: [string, string] = ["#f4ead2", "#9aa3ad"];
@@ -88,17 +88,11 @@ export class TileRummyView extends TableView<State> {
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#b98d5a");
     this.daylight("#ffffff", "#8a6d4a", "#fff3da", 12, 2.0);
-    // A classroom floor: varnished strips of wood laid end to end, sunlight from the windows lying across it,
+    // A classroom floor: varnished strips of wood laid end to end,
     // and round its edges the legs of desks and chairs, a satchel, indoor shoes and things dropped.
     const floor = this.add(new T.PlaneGeometry(60, 60), this.standard({ map: this.own(floorboards()), roughness: 0.42 }), 0, 0, 0);
     floor.rotation.x = -Math.PI / 2;
     floor.castShadow = false;
-    const sun = this.own(new T.MeshBasicMaterial({ color: "#fff3c4", transparent: true, opacity: 0.2, depthWrite: false }));
-    for (const x of [-8.6, -3.4, 1.8]) {
-      const patch = this.add(new T.PlaneGeometry(3.6, 7.5), sun, x + 3.4, 0.004, -3.4);
-      patch.rotation.set(-Math.PI / 2, 0, 0.5);
-      patch.castShadow = false;
-    }
     const steel = this.standard({ color: "#8a939c", roughness: 0.4, metalness: 0.55 }),
       cap = this.standard({ color: "#c9d24a", roughness: 0.9 }),
       top = this.standard({ color: "#d8b47a", roughness: 0.5 }),
@@ -205,7 +199,7 @@ export class TileRummyView extends TableView<State> {
     });
     const rack = (tiles: number[], z0: number, up: boolean) => {
       const sorted = [...tiles].sort((a, b) => (isJoker(a) ? 99 : colourOf(a)) - (isJoker(b) ? 99 : colourOf(b)) || numberOf(a) - numberOf(b)),
-        perRow = 22;
+        perRow = 21;
       sorted.forEach((tile, k) => {
         const row = Math.floor(k / perRow),
           inRow = Math.min(perRow, sorted.length - row * perRow);
@@ -214,14 +208,14 @@ export class TileRummyView extends TableView<State> {
     };
     rack(state.racks[0], 4.7, true);
     rack(state.racks[1], -6.0, state.winner !== null);
-    slots.set(TO_RACK, { x: Math.min(7.6, (Math.min(22, state.racks[0].length) / 2 + 0.8) * PITCH), z: 4.7 });
+    slots.set(TO_RACK, { x: Math.min(7.6, (Math.min(21, state.racks[0].length) / 2 + 0.8) * PITCH), z: 4.7 });
     state.pool.forEach((tile, k) => poses.set(tile, { x: 7.9 - (k % 3) * 0.05, z: -2 + (k % 3) * 0.04, up: false }));
     return { poses, slots, bounds };
   }
   protected spots(): Spot[] {
     const state = this.state;
     if (!state) return [];
-    const out: Spot[] = [...state.racks[0], ...state.table.flat()].map((tile) => ({ x: this.poses.get(tile)!.x, y: 0.1, z: this.poses.get(tile)!.z, r: 0.34, point: tile }));
+    const out: Spot[] = [...state.racks[0], ...state.table.flat()].map((tile) => ({ x: this.poses.get(tile)!.x, y: 0.1, z: this.poses.get(tile)!.z, r: 0.38, point: tile }));
     for (const [point, at] of this.slots) if (this.marks.targets.includes(point)) out.push({ ...at, y: 0.05, r: 0.36, point });
     return out;
   }

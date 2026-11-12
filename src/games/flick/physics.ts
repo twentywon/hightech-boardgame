@@ -14,6 +14,9 @@ export interface Disc {
   m: number;
   /** Still on the table. */
   on: boolean;
+  /** Slices it still has to spend in the air, and how many the flight lasts: an airborne disc touches nothing. */
+  air?: number;
+  flight?: number;
 }
 export interface Arena {
   halfX: number;
@@ -28,6 +31,8 @@ export interface Arena {
   /** How much speed a collision keeps (1 keeps all). */
   bounce: number;
 }
+/** How much of its speed a disc keeps when it comes down from a flight. */
+export const LANDING = 0.3;
 export const DT = 1 / 120,
   /** Below this speed a disc is at rest. */
   REST = 0.04,
@@ -37,6 +42,17 @@ export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): num
   const gone: number[] = [];
   for (const d of discs) {
     if (!d.on) continue;
+    if (d.air) {
+      // In the air nothing slows it; it comes down with most of its speed spent.
+      d.x += d.vx * DT;
+      d.z += d.vz * DT;
+      if (--d.air === 0) {
+        d.vx *= LANDING;
+        d.vz *= LANDING;
+        if (heard) heard.hits++;
+      }
+      continue;
+    }
     const speed = Math.hypot(d.vx, d.vz);
     if (speed <= REST) {
       d.vx = d.vz = 0;
@@ -51,10 +67,10 @@ export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): num
   // Discs that overlap are pushed apart and exchange speed along the line between them.
   for (let i = 0; i < discs.length; i++) {
     const a = discs[i];
-    if (!a.on) continue;
+    if (!a.on || a.air) continue;
     for (let j = i + 1; j < discs.length; j++) {
       const b = discs[j];
-      if (!b.on) continue;
+      if (!b.on || b.air) continue;
       const dx = b.x - a.x,
         dz = b.z - a.z,
         reach = a.r + b.r,
@@ -80,7 +96,7 @@ export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): num
     }
   }
   for (const d of discs) {
-    if (!d.on) continue;
+    if (!d.on || d.air) continue;
     for (const post of arena.posts ?? []) {
       const dx = d.x - post.x,
         dz = d.z - post.z,
@@ -136,7 +152,11 @@ export function settle(discs: Disc[], arena: Arena) {
     gone.push(...step(discs, arena));
     steps++;
   }
-  for (const d of discs) d.vx = d.vz = 0;
+  for (const d of discs) {
+    d.vx = d.vz = 0;
+    delete d.air;
+    delete d.flight;
+  }
   return { gone, steps };
 }
 export const copy = (discs: Disc[]) => discs.map((d) => ({ ...d }));
@@ -159,3 +179,9 @@ export function strike(disc: Disc, angle: number, speed: number) {
 }
 /** How fast a disc leaves the finger for a strength of 1–20. */
 export const speedOf = (power: number) => 1.5 + power * 0.8;
+/** Sends a disc into the air for a while: it flies on in a straight line over everything in its way. */
+export function launch(disc: Disc, seconds: number) {
+  disc.air = disc.flight = Math.round(seconds / DT);
+}
+/** How high an airborne disc is above the table, as a share of the top of its arc (0 on the table). */
+export const lift = (disc: Disc) => (disc.air && disc.flight ? Math.sin(Math.PI * (1 - disc.air / disc.flight)) : 0);

@@ -1,7 +1,7 @@
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView } from "../table/view";
-import { DT, POWERS, moving, step, type Arena, type Disc } from "./physics";
+import { DT, POWERS, lift, moving, step, type Arena, type Disc } from "./physics";
 
 /**
  * A table of discs that are flicked: the view lays them out, replays a shot
@@ -68,7 +68,8 @@ export abstract class FlickView<S> extends TableView<S> {
             fell = falling.get(disc.id);
           if (fell === undefined) {
             mesh.visible = disc.on;
-            mesh.position.set(disc.x, this.top, disc.z);
+            // A disc struck too hard sails over the others in an arc.
+            mesh.position.set(disc.x, this.top + lift(disc) * 1.5, disc.z);
           } else {
             // Off the table: it drops out of sight.
             falling.set(disc.id, fell + 1);

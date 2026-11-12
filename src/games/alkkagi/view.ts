@@ -3,8 +3,8 @@ import { wood } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { FlickView } from "../flick/view";
-import { copy, shotCode, shotOf, speedOf, strike, type Disc } from "../flick/physics";
-import { GO, GO_STEP, HINGES, arenaOf, goPoint, type Mode, type State } from "./rules";
+import { copy, launch, shotCode, shotOf, speedOf, strike, type Disc } from "../flick/physics";
+import { FLY_SECONDS, GO, GO_STEP, HINGES, arenaOf, goPoint, type Mode, type State } from "./rules";
 
 export const STONE_COLORS: [string, string] = ["#1b1c20", "#f1ece0"];
 export const PIECE_COLORS: [string, string] = ["#2f7d4f", "#c0392b"];
@@ -173,6 +173,7 @@ export class AlkkagiView extends FlickView<State> {
     const shot = shotOf(state.last.code)!,
       live = copy(before.discs);
     strike(live[state.last.disc], shot.angle, speedOf(shot.power));
+    if (state.last.fly) launch(live[state.last.disc], FLY_SECONDS);
     return live;
   }
   protected shooter(point: number) {
