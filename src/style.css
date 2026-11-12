@@ -2090,3 +2090,13 @@ dialog .key-card { margin: 4px 0 0; padding: 22px 18px; border: 2px solid #c9a22
   .spider-game #board { height: 88vw; }
   .spider-game .sp-sidebar { grid-template-columns: 1fr; }
 }
+.tour-sidebar .tour-deeds { all: unset; display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; width: 100%; cursor: pointer; }
+.tour-sidebar .tour-deeds span { grid-column: 2; }
+.tour-sidebar .tour-deeds:focus-visible { outline: 3px solid var(--brass, #c9a85c); outline-offset: 4px; border-radius: 8px; }
+.tour-sidebar .yut-sides li { display: block; }
+.tour-sidebar .yut-sides li:hover { border-color: var(--ink); }
+dialog .deed-list { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--line); }
+dialog .deed-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 9px 0; border-bottom: 1px solid var(--line); }
+dialog .deed-list small { display: block; font-size: 12px; color: var(--ink-faint); }
+dialog .deed-list button { flex: none; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--ink); background: transparent; font-size: 13px; font-weight: 600; }
+dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }

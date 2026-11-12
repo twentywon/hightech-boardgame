@@ -387,6 +387,19 @@ describe("World tour", () => {
     t = T.follow(T.draw(t, feed([7.5 / T.LUCK.length]))!)!;
     expect([t.players[0].at, t.players[0].wait, t.turn]).toEqual([T.ISLAND, 1, 1]);
   });
+  it("sells a place back at half of what was spent on it, in its owner's turn only", () => {
+    const s = T.createGame(2);
+    s.owners[3] = 0;
+    s.levels[3] = 2;
+    s.owners[1] = 1;
+    // Bangkok: 80 for the land, 40 and 60 for the buildings.
+    expect(T.invested(s, 3)).toBe(180);
+    expect(T.sell(s, 1, 1)).toBeNull();
+    expect(T.sell(s, 0, 1)).toBeNull();
+    const sold = T.sell(s, 0, 3)!;
+    expect([sold.owners[3], sold.levels[3], sold.players[0].money, sold.turn, sold.phase]).toEqual([-1, 0, 2090, 0, "roll"]);
+    expect(s.owners[3]).toBe(0);
+  });
   it("sends a traveller to the island on the third double in a row", () => {
     let s = T.createGame(2);
     s.owners[2] = s.owners[4] = 1;

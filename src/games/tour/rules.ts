@@ -158,6 +158,24 @@ export function createGame(players: number): State {
     winners: [],
   };
 }
+/** What was spent on a space: its price and every building on it. */
+export function invested(state: State, index: number) {
+  let total = SPACES[index].price;
+  for (let level = 1; level <= state.levels[index]; level++) total += buildCost(SPACES[index], level);
+  return total;
+}
+/** A traveller sells one of its own places back at half of what was spent on it, during its own turn. */
+export function sell(state: State, player: number, index: number): State | null {
+  if (state.phase === "over" || state.turn !== player || state.owners[index] !== player) return null;
+  const s = clone(state),
+    back = Math.round(invested(state, index) / 2);
+  s.players[player].money += back;
+  s.owners[index] = -1;
+  s.levels[index] = 0;
+  s.actor = player;
+  s.note = `${SPACES[index].name}을(를) ${back}에 팔았습니다.`;
+  return s;
+}
 /** Cash plus half of what was spent on land and buildings. */
 export function worth(state: State, player: number) {
   let invested = 0;

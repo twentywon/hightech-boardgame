@@ -93,6 +93,55 @@ export class Sound {
     if (!this.sample("chips", 0.5))
       [1900, 2300, 2050].forEach((f, i) => this.tone("triangle", f, f * 0.8, i * 0.05, 0.07, 0.035));
   }
+  /** A burst of filtered noise that swells and dies away. */
+  private noise(at: number, length: number, volume: number, frequency: number, type: BiquadFilterType = "bandpass", sweep = frequency) {
+    const c = this.context;
+    if (!this.enabled || !c) return;
+    const buffer = c.createBuffer(1, Math.ceil(c.sampleRate * length), c.sampleRate),
+      data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const source = c.createBufferSource(),
+      filter = c.createBiquadFilter(),
+      gain = c.createGain(),
+      t = c.currentTime + at;
+    source.buffer = buffer;
+    filter.type = type;
+    filter.frequency.setValueAtTime(frequency, t);
+    filter.frequency.linearRampToValueAtTime(sweep, t + length);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(volume, t + length * 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(c.destination);
+    source.start(t);
+  }
+  /** A cash machine: the drawer's rattle, then two bright bells. */
+  cash() {
+    this.noise(0, 0.12, 0.12, 3200, "highpass");
+    this.noise(0.1, 0.1, 0.1, 2600, "highpass");
+    [1568, 2093].forEach((f, i) => this.tone("triangle", f, f, 0.2 + i * 0.09, 0.5, 0.09));
+    this.tone("sine", 3136, 3136, 0.29, 0.6, 0.04);
+  }
+  /** A bright, glittering run of notes. */
+  sparkle() {
+    [1047, 1319, 1568, 2093, 2637, 3136, 4186].forEach((f, i) => {
+      this.tone("sine", f, f, i * 0.07, 0.5, 0.05);
+      this.tone("triangle", f * 2, f * 2, i * 0.07 + 0.02, 0.25, 0.015);
+    });
+  }
+  /** Waves breaking on a beach, twice. */
+  waves() {
+    this.noise(0, 1.3, 0.16, 500, "lowpass", 2200);
+    this.noise(1.0, 1.6, 0.13, 700, "lowpass", 1600);
+  }
+  /** Something vast and far away: a slow rising sweep over a hollow chord. */
+  space() {
+    this.tone("sine", 110, 440, 0, 1.6, 0.07);
+    this.tone("sine", 165, 660, 0.1, 1.6, 0.045);
+    this.tone("triangle", 880, 1760, 0.5, 1.3, 0.02);
+    this.noise(0.2, 1.4, 0.03, 4000, "bandpass", 900);
+  }
   /** Rising chime for a win or a draw. */
   win() {
     [523, 659, 784, 1047].forEach((f, i) =>

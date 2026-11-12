@@ -35,16 +35,112 @@ function tileTexture(index: number) {
   c.width = c.height = 256;
   const ctx = c.getContext("2d")!,
     space = SPACES[index];
+  const pictured = space.kind === "luck" || space.kind === "storm" || space.kind === "space";
   ctx.fillStyle = "#f6f0e0";
   ctx.fillRect(0, 0, 256, 256);
   ctx.fillStyle = space.kind === "city" ? GROUPS[space.group] : "#2c3a44";
   ctx.fillRect(0, 0, 256, 64);
+  if (space.kind === "luck") {
+    // A yellow space with a golden key.
+    ctx.fillStyle = "#f7d038";
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.strokeStyle = "#8a6410";
+    ctx.lineWidth = 15;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(92, 96, 28, 0, Math.PI * 2);
+    ctx.moveTo(118, 96);
+    ctx.lineTo(190, 96);
+    ctx.moveTo(166, 96);
+    ctx.lineTo(166, 122);
+    ctx.moveTo(190, 96);
+    ctx.lineTo(190, 118);
+    ctx.stroke();
+  } else if (space.kind === "storm") {
+    // An island: sky, sea, a mound of sand and a palm tree.
+    ctx.fillStyle = "#bfe3f5";
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = "#3f8fc4";
+    ctx.fillRect(0, 118, 256, 138);
+    ctx.fillStyle = "#edd28c";
+    ctx.beginPath();
+    ctx.ellipse(128, 124, 78, 30, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.strokeStyle = "#7a4f28";
+    ctx.lineWidth = 9;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(126, 112);
+    ctx.quadraticCurveTo(120, 78, 140, 52);
+    ctx.stroke();
+    ctx.strokeStyle = "#2f8a4a";
+    ctx.lineWidth = 9;
+    for (const [dx, dy] of [[-42, 6], [-30, -22], [4, -30], [34, -14], [40, 12]]) {
+      ctx.beginPath();
+      ctx.moveTo(140, 52);
+      ctx.quadraticCurveTo(140 + dx * 0.5, 52 + dy - 8, 140 + dx, 52 + dy);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+    ctx.lineWidth = 5;
+    for (const [x, y] of [[40, 142], [176, 150], [96, 162]]) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + 14, y - 8, x + 28, y);
+      ctx.stroke();
+    }
+  } else if (space.kind === "space") {
+    // Deep space: stars, a ringed planet and a rocket.
+    ctx.fillStyle = "#141833";
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = "#ffffff";
+    for (let i = 0; i < 46; i++) {
+      const x = (i * 97) % 248,
+        y = (i * 53) % 248;
+      ctx.fillRect(x + 4, y + 4, i % 5 ? 2 : 4, i % 5 ? 2 : 4);
+    }
+    ctx.fillStyle = "#e08a3c";
+    ctx.beginPath();
+    ctx.arc(82, 84, 32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#f3d9a4";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.ellipse(82, 84, 54, 14, -0.35, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(178, 86);
+    ctx.rotate(0.7);
+    ctx.fillStyle = "#e9eef2";
+    ctx.beginPath();
+    ctx.moveTo(0, -34);
+    ctx.quadraticCurveTo(17, -8, 14, 22);
+    ctx.lineTo(-14, 22);
+    ctx.quadraticCurveTo(-17, -8, 0, -34);
+    ctx.fill();
+    ctx.fillStyle = "#d2452f";
+    ctx.beginPath();
+    ctx.moveTo(-14, 8);
+    ctx.lineTo(-28, 28);
+    ctx.lineTo(-14, 22);
+    ctx.moveTo(14, 8);
+    ctx.lineTo(28, 28);
+    ctx.lineTo(14, 22);
+    ctx.fill();
+    ctx.fillStyle = "#f7b733";
+    ctx.beginPath();
+    ctx.moveTo(-8, 24);
+    ctx.lineTo(0, 44);
+    ctx.lineTo(8, 24);
+    ctx.fill();
+    ctx.restore();
+  }
   ctx.strokeStyle = "#2c2118";
   ctx.lineWidth = 8;
   ctx.strokeRect(4, 4, 248, 248);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#1c1f22";
+  ctx.fillStyle = space.kind === "space" || space.kind === "storm" ? "#ffffff" : "#1c1f22";
   const city = space.kind === "city",
     size = space.name.length > 5 ? 30 : space.name.length > 3 ? 38 : city ? 46 : 54;
   // A city shows its country's flag under the colour band, then its name and price.
@@ -79,10 +175,10 @@ function tileTexture(index: number) {
     ctx.fill();
   }
   ctx.font = `800 ${size}px ${FONT}`;
-  const tall = city || space.kind === "ship";
+  const tall = city || space.kind === "ship" || pictured;
   ctx.fillText(space.name, 128, tall ? 182 : 128);
   ctx.font = `600 ${city ? 28 : 34}px ${FONT}`;
-  ctx.fillStyle = "#5a5148";
+  ctx.fillStyle = space.kind === "space" ? "#cfd6ff" : space.kind === "luck" ? "#5a4208" : space.kind === "storm" ? "#ffffff" : "#5a5148";
   ctx.fillText(
     city
       ? String(space.price)

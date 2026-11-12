@@ -268,6 +268,12 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   await expect(turn(page)).toContainText("방콕을(를) 80에 살 수 있습니다");
   await page.locator("dialog").getByRole("button", { name: "사기 (80)" }).click();
   await expect(page.locator("#tour-money-0")).toContainText("1,920 · 도시 1 · 방콕");
+  // A traveller's title deeds open from the list; the computer's turn offers nothing to sell.
+  await page.getByRole("button", { name: "나의 땅 증서 보기" }).click();
+  await expect(page.locator("dialog .deed-list li")).toHaveCount(1);
+  await expect(page.locator("dialog .deed-list")).toContainText("방콕");
+  await expect(page.locator("dialog [data-sell]")).toHaveCount(0);
+  await page.locator("dialog").getByRole("button", { name: "닫기" }).click();
   // The computer rolls by itself and reaches the empty fund.
   await expect(page.locator("#tour-money-1")).toContainText("2,000 · 도시 0 · 기금 수령", { timeout: 20000 });
   await expect(page.locator("#tour-roll")).toBeEnabled({ timeout: 20000 });

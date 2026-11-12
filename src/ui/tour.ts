@@ -11,6 +11,8 @@ import {
   SHIP_TOLL,
   TRAVEL_FEE,
   destination,
+  invested,
+  sell,
   travel,
   buildCost,
   createGame,
@@ -102,7 +104,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game tour-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>세계 일주 <small>WORLD TOUR</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 여행</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WORLD BOARD</span><span>${SPACES.length}칸 · ${ROUNDS}바퀴</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / ${ROUNDS} 바퀴</span></div></section><aside class="game-sidebar yd-sidebar tour-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides" id="tour-players">${state.players.map((_, i) => `<li id="tour-player-${i}"><i class="yut-dot" style="background:${PLAYER_COLORS[i]}"></i><b>${NAMES[i]}</b><span id="tour-money-${i}"></span></li>`).join("")}</ul><div class="yd-controls"><button id="tour-roll" class="primary">주사위 굴리기</button><button id="tour-key" class="primary" hidden>황금열쇠 뽑기</button><div class="bj-row" id="tour-offer" hidden><button id="tour-yes" class="primary"></button><button id="tour-no">지나치기</button></div><p id="tour-note" class="input-help"></p></div><div id="tour-result" class="yd-result" hidden><p id="tour-final"></p><button id="tour-again" class="primary">새 여행</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game tour-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>세계 일주 <small>WORLD TOUR</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 여행</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WORLD BOARD</span><span>${SPACES.length}칸 · ${ROUNDS}바퀴</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / ${ROUNDS} 바퀴</span></div></section><aside class="game-sidebar yd-sidebar tour-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides" id="tour-players">${state.players.map((_, i) => `<li id="tour-player-${i}"><button class="tour-deeds" data-player="${i}" aria-label="${NAMES[i]}의 땅 증서 보기"><i class="yut-dot" style="background:${PLAYER_COLORS[i]}"></i><b>${NAMES[i]}</b><span id="tour-money-${i}"></span></button></li>`).join("")}</ul><div class="yd-controls"><button id="tour-roll" class="primary">주사위 굴리기</button><button id="tour-key" class="primary" hidden>황금열쇠 뽑기</button><div class="bj-row" id="tour-offer" hidden><button id="tour-yes" class="primary"></button><button id="tour-no">지나치기</button></div><p id="tour-note" class="input-help"></p></div><div id="tour-result" class="yd-result" hidden><p id="tour-final"></p><button id="tour-again" class="primary">새 여행</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
@@ -112,6 +114,10 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         { text: "새 여행", action: start },
       ]);
     $("tour-again").onclick = start;
+    $("tour-players").onclick = (e) => {
+      const button = (e.target as HTMLElement).closest<HTMLElement>(".tour-deeds");
+      if (button) deeds(Number(button.dataset.player));
+    };
     $("tour-roll").onclick = () => act((s) => roll(s, random));
     // If the card was closed without its button, it is carried out from here.
     $("tour-key").onclick = () => {
@@ -146,7 +152,8 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
   const busy = () =>
     !!view?.animating || state !== shown || thinking || revealing || performance.now() < lockedUntil || !!document.querySelector("dialog[open]");
   function apply(next: State) {
-    if (next.rollId !== state.rollId && next.path.length) sound.dice(2);
+    // Every throw of the dice is heard, whoever throws and wherever it leads.
+    if (next.dice !== state.dice) sound.dice(3);
     view?.hideCard();
     state = next;
     if (view) view.sync(state);
@@ -180,6 +187,42 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     // The card turns over on the board before its text is shown.
     if (view) view.revealCard(open);
     else open();
+  }
+  /** The title deeds a traveller holds; in my own turn mine can be sold back to the bank. */
+  function deeds(player: number) {
+    if (document.querySelector("dialog[open]") || state !== shown) return;
+    const owned = state.owners.flatMap((owner, i) => (owner === player ? [i] : [])),
+      selling = player === 0 && state.turn === 0 && state.phase !== "over" && !busy(),
+      rows = owned
+        .map((i) => {
+          const space = SPACES[i],
+            back = Math.round(invested(state, i) / 2),
+            fee = space.kind === "ship" ? SHIP_TOLL : feeOf(space, state.levels[i]);
+          return `<li><span><b>${space.name}</b> ${space.kind === "ship" ? "우주선" : LEVELS[state.levels[i]]}<small>${space.kind === "ship" ? "통행료" : "숙박료"} ${won(fee)} · 들인 돈 ${won(invested(state, i))}</small></span>${selling ? `<button data-sell="${i}">팔기 (+${won(back)})</button>` : ""}</li>`;
+        })
+        .join("");
+    modal(
+      `${NAMES[player]}의 땅 증서`,
+      `<p>가진 돈 ${won(state.players[player].money)} · 증서 ${owned.length}장</p>${owned.length ? `<ul class="deed-list">${rows}</ul>` : "<p>가진 땅이 없습니다.</p>"}${player === 0 ? `<p class="credit">${selling ? "팔면 들인 돈의 절반을 은행에서 돌려받습니다." : "내 차례에 주사위를 굴리기 전이나 선택하는 동안 팔 수 있습니다."}</p>` : ""}`,
+      [{ text: "닫기", action: () => later(ask, 0) }],
+    );
+    document.querySelectorAll<HTMLButtonElement>("dialog [data-sell]").forEach((button) => {
+      button.onclick = () => {
+        const dialog = button.closest("dialog")!;
+        dialog.close();
+        dialog.remove();
+        const next = sell(state, 0, Number(button.dataset.sell));
+        if (!next) return;
+        sound.unlock();
+        sound.cash();
+        // The offer on the table, if any, is put again once the deeds are closed.
+        asked = null;
+        state = shown = next;
+        if (view) view.sync(state, false);
+        update();
+        deeds(0);
+      };
+    });
   }
   /** The choices of my turn come up as dialogs: buy, build, or where to travel. */
   function ask() {
@@ -237,10 +280,14 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         state = shown = drawn;
         thinking = true;
         update();
-        // Once it lies open the next step carries it out.
+        // The card is shown to everyone; it closes by itself after a moment, and then it is carried out.
         const read = () => {
           thinking = false;
-          later(computer, 900);
+          modal(`${NAMES[drawn.turn]}의 황금열쇠`, `<p class="key-card">${LUCK[drawn.card].text}</p>`, [{ text: "확인", action: () => later(computer, 200) }]);
+          const shownCard = document.querySelector("dialog");
+          later(() => {
+            if (shownCard?.isConnected) shownCard.querySelector<HTMLButtonElement>("button")?.click();
+          }, 2600);
         };
         if (view) view.revealCard(read);
         else read();
@@ -257,8 +304,20 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       if (next) apply(next);
     }, 700);
   }
+  /** What the step just shown sounded like: money paid, and the special spaces reached. */
+  function effects(before: State, now: State) {
+    const mover = now.actor,
+      there = SPACES[now.players[mover].at].kind,
+      arrived = before.players[mover].at !== now.players[mover].at || before.rollId !== now.rollId;
+    if (now.players.some((p, i) => p.money < before.players[i].money)) sound.cash();
+    if (!arrived) return;
+    if (now.phase === "key" && before.phase !== "key") sound.sparkle();
+    else if (there === "storm" && now.players[mover].wait > 0 && before.players[mover].wait === 0) sound.waves();
+    else if (now.phase === "travel" && before.phase !== "travel") sound.space();
+  }
   function present() {
     if (disposed) return;
+    if (shown !== state) effects(shown, state);
     shown = state;
     update();
     if (state.phase === "over" && !announced) {
