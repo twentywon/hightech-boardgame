@@ -35,7 +35,7 @@ export interface PointConfig<S> {
   colors?: [string, string];
   keyPoints?: (state: S) => { x: number; z: number }[];
   /** A board drawn its own way instead of as pieces on points. */
-  view?: (host: HTMLElement, quality: "high" | "low", variant: string, mode: "local" | "ai") => PointView<S>;
+  view?: (host: HTMLElement, quality: "high" | "low", variant: string, mode: "local" | "ai", level: Level) => PointView<S>;
   /** What the further choice of a move is, when it is not a piece to take off. */
   extraHint?: string;
   /** A table that needs more height on a narrow screen: an upright rack, or two boards one above the other. */
@@ -199,7 +199,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (config.action) $("pg-action").onclick = () => pick(game.moves(state)[0]?.to ?? -1);
     (config.tools ?? []).forEach((tool, i) => ($(`pg-tool-${i}`).onclick = () => pick(tool.point)));
     try {
-      if (config.view) view = config.view($("board"), settings.quality, variant, mode);
+      if (config.view) view = config.view($("board"), settings.quality, variant, mode, level);
       else {
         const board = new PointBoardView($("board"), settings.quality, spec!);
         view = {

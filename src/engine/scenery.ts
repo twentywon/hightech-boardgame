@@ -302,3 +302,77 @@ export function hanokYard(scene: T.Object3D, own: Own) {
   const tile = standard({ color: "#3b3d42", roughness: 0.6 });
   add(new T.BoxGeometry(1.5, 0.22, 9.2), tile, 9.2, 1.55, -2.5);
 }
+/**
+ * A pub round a games table: a dark boarded floor `drop` below the table top,
+ * a brick wall at the back with a neon sign, a shelf of bottles and a
+ * dartboard, and stools and a small table with glasses of beer at the sides.
+ * `half` is how far the table reaches sideways; everything stands clear of it.
+ */
+export function pub(scene: T.Object3D, own: Own, half: number, drop: number) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.8, ...options }));
+  const add = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, shadow = true) => {
+    const mesh = new T.Mesh(own(geometry), material);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  };
+  const boards = own(wood(true));
+  boards.repeat.set(6, 6);
+  add(new T.PlaneGeometry(90, 90), standard({ map: boards, color: "#6b5340", roughness: 0.65 }), 0, -drop, 0, false).rotation.x = -Math.PI / 2;
+  // Bricks.
+  const { c, ctx } = canvas(256, 256);
+  ctx.fillStyle = "#3a2a24";
+  ctx.fillRect(0, 0, 256, 256);
+  for (let row = 0; row < 8; row++)
+    for (let col = -1; col < 4; col++) {
+      const tone = 96 + ((row * 7 + col * 13) % 5) * 9;
+      ctx.fillStyle = `rgb(${tone + 44}, ${tone - 22}, ${tone - 40})`;
+      ctx.fillRect(col * 64 + (row % 2 ? 32 : 0) + 2, row * 32 + 2, 60, 28);
+    }
+  const bricks = own(new T.CanvasTexture(c));
+  bricks.colorSpace = T.SRGBColorSpace;
+  bricks.wrapS = bricks.wrapT = T.RepeatWrapping;
+  bricks.repeat.set(9, 4);
+  const wallZ = -10.5;
+  add(new T.PlaneGeometry(60, 26), standard({ map: bricks, roughness: 1 }), 0, 9 - drop, wallZ, false);
+  // A neon sign: a ring and a glass, glowing.
+  const neon = (color: string) => own(new T.MeshBasicMaterial({ color }));
+  add(new T.TorusGeometry(1.5, 0.07, 10, 48), neon("#ff4fa0"), -5, 7.2 - drop + 3, wallZ + 0.2, false);
+  add(new T.TorusGeometry(0.62, 0.06, 10, 32, Math.PI), neon("#ffd24a"), -5, 7.0 - drop + 3, wallZ + 0.22, false).rotation.z = Math.PI;
+  add(new T.CylinderGeometry(0.05, 0.05, 1.0, 8), neon("#ffd24a"), -5.62, 7.5 - drop + 3, wallZ + 0.22, false);
+  add(new T.CylinderGeometry(0.05, 0.05, 1.0, 8), neon("#ffd24a"), -4.38, 7.5 - drop + 3, wallZ + 0.22, false);
+  add(new T.CylinderGeometry(0.05, 0.05, 1.3, 8), neon("#7fe3ff"), -5, 8.0 - drop + 3, wallZ + 0.22, false).rotation.z = Math.PI / 2;
+  const glow = new T.PointLight("#ff6fb0", 30, 16, 1.8);
+  glow.position.set(-5, 7.2 - drop + 3, wallZ + 1.5);
+  scene.add(glow);
+  // A shelf of bottles and a dartboard.
+  add(new T.BoxGeometry(6.4, 0.16, 0.7), standard({ map: own(wood(true)), roughness: 0.6 }), 4.6, 9 - drop, wallZ + 0.4);
+  ["#2f6b3f", "#7a4a1c", "#c9a23a", "#2f4f7a", "#7a1f2a", "#d9d2c0", "#2f6b3f", "#7a4a1c"].forEach((color, i) => {
+    add(new T.CylinderGeometry(0.19, 0.21, 0.95, 14), standard({ color, roughness: 0.25, metalness: 0.2 }), 2.0 + i * 0.74, 9.55 - drop, wallZ + 0.42);
+    add(new T.CylinderGeometry(0.07, 0.1, 0.4, 10), standard({ color, roughness: 0.25 }), 2.0 + i * 0.74, 10.2 - drop, wallZ + 0.42);
+  });
+  const board = add(new T.CylinderGeometry(1.15, 1.15, 0.12, 40), standard({ color: "#1c1c1c" }), 9.6, 9.6 - drop, wallZ + 0.2);
+  board.rotation.x = Math.PI / 2;
+  [["#d9d2c0", 0.95], ["#1f6a4a", 0.7], ["#c8321f", 0.42], ["#d9d2c0", 0.2], ["#c8321f", 0.08]].forEach(([color, r], i) => {
+    add(new T.CylinderGeometry(r as number, r as number, 0.13 + i * 0.01, 36), standard({ color: color as string }), 9.6, 9.6 - drop, wallZ + 0.22 + i * 0.005).rotation.x = Math.PI / 2;
+  });
+  // Stools, and a small round table with two glasses of beer.
+  const steel = standard({ color: "#2b2e33", roughness: 0.4, metalness: 0.6 }),
+    leather = standard({ color: "#5a2420", roughness: 0.6 });
+  for (const [x, z] of [[-half - 2.4, -3.4], [-half - 2.9, 2.6], [half + 2.6, -4.2]]) {
+    add(new T.CylinderGeometry(0.7, 0.7, 0.22, 28), leather, x, 0.2 - drop + 2.2, z);
+    add(new T.CylinderGeometry(0.09, 0.09, 2.2, 10), steel, x, 1.1 - drop, z);
+    add(new T.CylinderGeometry(0.62, 0.7, 0.1, 24), steel, x, 0.05 - drop, z);
+  }
+  const tx = half + 3.1,
+    tz = 1.6;
+  add(new T.CylinderGeometry(1.25, 1.25, 0.14, 36), standard({ map: own(wood(true)), roughness: 0.5 }), tx, 3.0 - drop, tz);
+  add(new T.CylinderGeometry(0.12, 0.12, 3, 12), steel, tx, 1.5 - drop, tz);
+  add(new T.CylinderGeometry(0.8, 0.9, 0.12, 24), steel, tx, 0.06 - drop, tz);
+  for (const [dx, dz] of [[-0.4, -0.2], [0.35, 0.3]]) {
+    add(new T.CylinderGeometry(0.22, 0.2, 0.62, 18), own(new T.MeshStandardMaterial({ color: "#e0a020", roughness: 0.15, transparent: true, opacity: 0.85 })), tx + dx, 3.38 - drop, tz + dz);
+    add(new T.CylinderGeometry(0.225, 0.225, 0.12, 18), standard({ color: "#fbf6e6", roughness: 0.9 }), tx + dx, 3.74 - drop, tz + dz);
+  }
+}

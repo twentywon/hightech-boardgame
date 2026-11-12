@@ -176,6 +176,18 @@ const play = {
     await page.evaluate(() => document.querySelectorAll("dialog").forEach((d) => d.remove()));
     await wait(600);
   },
+  ludo: async () => {
+    for (let i = 0; i < 40; i++) {
+      await press("#pg-tool-0");
+      await wait(900);
+    }
+  },
+  "indian-poker": async () => {
+    await wait(800);
+  },
+  "table-soccer": async () => {
+    await wait(2600);
+  },
 };
 const only = process.argv[3];
 for (const game of games) {

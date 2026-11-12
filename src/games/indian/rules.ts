@@ -1,0 +1,152 @@
+import { cryptoRandom, type Random } from "../../core/random";
+import type { Effect, Move, PointGame, Winner } from "../points/types";
+import type { Level } from "../points/ai";
+
+/**
+ * Indian poker for two: each holds one card against the forehead, face out,
+ * so that each sees the other's card and not its own. They bet on it; the
+ * higher card takes the pot at a showdown. The pack is one to ten, twice,
+ * and is played through once.
+ */
+export const START_CHIPS = 30,
+  ANTE = 1,
+  /** What it costs to fold when one's own card turns out to be the ten. */
+  TEN_PENALTY = 10,
+  FOLD = 0,
+  CALL = 1,
+  /** Raising by one, two or three: points 2, 3 and 4. */
+  RAISE = 1,
+  NEXT = 5;
+export interface State {
+  deck: number[];
+  cards: [number, number];
+  chips: [number, number];
+  /** What each has put in this round, the ante included; and what was left on the table by a tie. */
+  bets: [number, number];
+  carry: number;
+  turn: 0 | 1;
+  /** "show" once the round is decided: both cards are seen and side 0 deals the next. */
+  phase: "bet" | "show";
+  /** Who bets first this round, and whether that side has checked. */
+  first: 0 | 1;
+  checked: boolean;
+  round: number;
+  /** How the round ended, for the status line. */
+  result: string;
+  winner: Winner;
+  ply: number;
+}
+const NAMES = ["나", "컴퓨터"];
+function deal(state: State): State {
+  const deck = state.deck.slice(),
+    cards: [number, number] = [deck.pop()!, deck.pop()!],
+    chips: [number, number] = [state.chips[0] - ANTE, state.chips[1] - ANTE];
+  return { ...state, deck, cards, chips, bets: [ANTE, ANTE], turn: state.first, phase: "bet", checked: false, result: "" };
+}
+export function createGame(random: Random = cryptoRandom): State {
+  const deck = Array.from({ length: 20 }, (_, i) => (i % 10) + 1);
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deal({ deck, cards: [0, 0], chips: [START_CHIPS, START_CHIPS], bets: [0, 0], carry: 0, turn: 0, phase: "bet", first: 0, checked: false, round: 1, result: "", winner: null, ply: 0 });
+}
+export const pot = (state: State) => state.bets[0] + state.bets[1] + state.carry;
+/** What the mover must add to stay in. */
+export const owed = (state: State) => state.bets[state.turn ? 0 : 1] - state.bets[state.turn];
+export function moves(state: State): Move[] {
+  if (state.winner !== null) return [];
+  const to = (point: number): Move => ({ from: -1, to: point, extra: -1 });
+  if (state.phase === "show") return [to(NEXT)];
+  const me = state.turn,
+    out = [to(CALL)],
+    due = owed(state);
+  if (due > 0) out.push(to(FOLD));
+  // A raise must be covered by both: the mover after calling, the other in answering it.
+  for (let n = 1; n <= 3; n++) if (state.chips[me] >= due + n && state.chips[me ? 0 : 1] >= n) out.push(to(RAISE + n));
+  return out;
+}
+function settle(state: State, taker: 0 | 1 | null, result: string): State {
+  const chips: [number, number] = [state.chips[0], state.chips[1]];
+  if (taker !== null) chips[taker] += pot(state);
+  return { ...state, chips, carry: taker === null ? pot(state) : 0, bets: [0, 0], phase: "show", turn: 0, result };
+}
+export function play(state: State, move: Move): State | null {
+  if (move.from !== -1 || move.extra !== -1 || !moves(state).some((m) => m.to === move.to)) return null;
+  const me = state.turn,
+    other = (me ? 0 : 1) as 0 | 1,
+    next: State = { ...state, ply: state.ply + 1, chips: [state.chips[0], state.chips[1]], bets: [state.bets[0], state.bets[1]] };
+  if (move.to === NEXT) {
+    // The game ends when the pack is used up or someone cannot put up the ante.
+    if (state.deck.length < 2 || state.chips.some((c) => c < ANTE)) {
+      const [a, b] = state.chips;
+      return { ...next, winner: a === b ? "draw" : a > b ? 0 : 1 };
+    }
+    return deal({ ...next, first: state.first ? 0 : 1, round: state.round + 1 });
+  }
+  if (move.to === FOLD) {
+    // Folding the ten costs dear.
+    const penalty = state.cards[me] === 10 ? Math.min(TEN_PENALTY, next.chips[me]) : 0;
+    next.chips[me] -= penalty;
+    next.chips[other] += penalty;
+    return settle(next, other, `${NAMES[me]}이(가) 접었습니다${penalty ? ` — 접은 카드가 10이라 ${penalty}개를 더 냅니다` : ""}.`);
+  }
+  const due = Math.min(owed(state), next.chips[me]);
+  next.chips[me] -= due;
+  next.bets[me] += due;
+  if (move.to === CALL) {
+    // A check by the first to speak passes the word; anything else that matches the bets shows the cards.
+    if (owed(state) === 0 && me === state.first && !state.checked) return { ...next, checked: true, turn: other };
+    const [a, b] = state.cards;
+    return settle(next, a === b ? null : a > b ? 0 : 1, a === b ? "비겼습니다. 판돈은 다음 판으로 넘어갑니다." : `${NAMES[a > b ? 0 : 1]}의 카드가 높습니다.`);
+  }
+  const more = move.to - RAISE;
+  next.chips[me] -= more;
+  next.bets[me] += more;
+  return { ...next, turn: other };
+}
+/**
+ * The computer's bet. It sees my card and what has been bet, never its own
+ * card: the lower mine, the likelier its own is higher.
+ */
+export function chooseBet(state: State, level: Level, random: Random = Math.random): Move | null {
+  const legal = moves(state);
+  if (!legal.length) return null;
+  if (state.phase === "show") return legal[0];
+  const has = (point: number) => legal.find((m) => m.to === point),
+    seen = state.cards[state.turn ? 0 : 1],
+    // The chance that an unseen card beats the one it sees.
+    chance = (10 - seen) / 10 + (level === "easy" ? (random() - 0.5) * 0.5 : 0),
+    due = owed(state),
+    bluff = level !== "easy" && random() < (level === "hard" ? 0.18 : 0.08),
+    raise = (n: number) => has(RAISE + n) ?? has(RAISE + 1) ?? has(CALL)!;
+  if (due > 0) {
+    // What it costs to see the cards against what lies on the table.
+    const price = due / (pot(state) + due);
+    if (chance > 0.75 || bluff) return raise(chance > 0.88 ? 3 : 2);
+    if (chance >= price + 0.08) return has(CALL)!;
+    return has(FOLD) ?? has(CALL)!;
+  }
+  if (chance > 0.6 || bluff) return raise(chance > 0.85 ? 3 : chance > 0.72 ? 2 : 1);
+  return has(CALL)!;
+}
+const effect = (): Effect | null => null;
+export const indian: PointGame<State> = {
+  create: () => createGame(),
+  moves,
+  play: (state, move) => play(state, move),
+  choose: chooseBet,
+  turn: (s) => s.turn,
+  winner: (s) => s.winner,
+  owners: () => Array(6).fill(null),
+  effect,
+  ply: (s) => s.ply,
+  evaluate: (s, player) => s.chips[player] - s.chips[player ? 0 : 1],
+  // My own card is told only once the round is over.
+  hint: (s) =>
+    s.phase === "show"
+      ? `${s.result} 내 카드 ${s.cards[0]}, 상대 카드 ${s.cards[1]}. 다음 판을 받으세요.`
+      : `상대 카드는 ${s.cards[1]}입니다. 판돈 ${pot(s)}${owed(s) > 0 ? ` · 따라가려면 ${owed(s)}` : ""}.`,
+  tally: (s) => [0, 1].map((p) => `칩 ${s.chips[p]}${s.phase === "bet" ? ` · 건 칩 ${s.bets[p]}` : ""}`) as [string, string],
+  reason: (s) => `${s.round}판을 마쳤습니다. 칩 ${s.chips[0]} 대 ${s.chips[1]}.`,
+};

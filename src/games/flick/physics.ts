@@ -23,7 +23,8 @@ export interface Arena {
   halfZ: number;
   /** Cushions that discs bounce off; without them a disc whose centre passes the edge is gone. */
   cushions: boolean;
-  pockets: { x: number; z: number; r: number }[];
+  /** A pocket with `only` takes just those discs (a goal takes the ball, not the players). */
+  pockets: { x: number; z: number; r: number; only?: number[] }[];
   /** Round things fixed to the table that discs bounce off (the hinges of a folding board). */
   posts?: { x: number; z: number; r: number }[];
   /** How fast a sliding disc slows, in units per second per second. */
@@ -114,7 +115,7 @@ export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): num
         if (heard && into < -0.6) heard.hits++;
       }
     }
-    if (arena.pockets.some((p) => Math.hypot(d.x - p.x, d.z - p.z) < p.r)) {
+    if (arena.pockets.some((p) => (!p.only || p.only.includes(d.id)) && Math.hypot(d.x - p.x, d.z - p.z) < p.r)) {
       d.on = false;
       d.vx = d.vz = 0;
       gone.push(d.id);
