@@ -1,6 +1,7 @@
 import { mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { PLAYER_COLORS, TourView } from "../games/tour/view";
+import { drawFlag } from "../games/tour/flags";
 import {
   LEVELS,
   ROUNDS,
@@ -46,6 +47,20 @@ interface Navigation {
 export interface TourController {
   dispose(): void;
   setSettings(settings: Settings): void;
+}
+const flagImages = new Map<string, string>();
+/** A country's flag as an image for the page, drawn once. */
+function flagImage(country: string) {
+  let url = flagImages.get(country);
+  if (!url) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 96;
+    canvas.height = 64;
+    drawFlag(canvas.getContext("2d")!, country, 0, 0, 96, 64);
+    url = canvas.toDataURL();
+    flagImages.set(country, url);
+  }
+  return url;
 }
 const NAMES = ["나", "컴퓨터 1", "컴퓨터 2", "컴퓨터 3"];
 const won = (n: number) => n.toLocaleString("ko-KR");
@@ -208,7 +223,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
           const space = SPACES[i],
             back = Math.round(invested(state, i) / 2),
             fee = space.kind === "ship" ? SHIP_TOLL : feeOf(space, state.levels[i]);
-          return `<li><span><b>${space.name}</b> ${space.kind === "ship" ? "우주선" : LEVELS[state.levels[i]]}<small>${space.kind === "ship" ? "통행료" : "숙박료"} ${won(fee)} · 들인 돈 ${won(invested(state, i))}</small></span>${selling ? `<button data-sell="${i}">팔기 (+${won(back)})</button>` : ""}</li>`;
+          return `<li>${space.kind === "ship" ? '<i class="deed-flag ship" aria-hidden="true">🚀</i>' : `<img class="deed-flag" src="${flagImage(space.country)}" alt="">`}<span><b>${space.name}</b> ${space.kind === "ship" ? "우주선" : LEVELS[state.levels[i]]}<small>${space.kind === "ship" ? "통행료" : "숙박료"} ${won(fee)} · 들인 돈 ${won(invested(state, i))}</small></span>${selling ? `<button data-sell="${i}">팔기 (+${won(back)})</button>` : ""}</li>`;
         })
         .join("");
     modal(

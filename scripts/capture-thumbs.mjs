@@ -100,6 +100,8 @@ const play = {
   },
   "world-tour": async () => {
     for (let i = 0; i < 160; i++) {
+      // Short of money, the offer is passed over rather than paid for by selling.
+      await press("dialog:has(.tour-short) .dialog-actions button");
       await press("dialog .primary");
       await press("#tour-key");
       await press("#tour-yes");
@@ -107,8 +109,14 @@ const play = {
       await press("#tour-roll");
       await wait(450);
     }
-    await press("dialog .primary");
-    await wait(1500);
+    for (let i = 0; i < 6; i++) {
+      await press("dialog:has(.tour-short) .dialog-actions button");
+      await press("dialog .primary");
+      await wait(900);
+    }
+    // No window may be left over the table.
+    await page.evaluate(() => document.querySelectorAll("dialog").forEach((d) => d.remove()));
+    await wait(600);
   },
 };
 const only = process.argv[3];

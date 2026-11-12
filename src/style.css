@@ -2116,3 +2116,7 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
 @media (prefers-reduced-motion: reduce) { .tour-toast { animation:none; } }
 .tour-short { color:#a3402c;font-weight:600; }
 @media (max-width: 760px) { .board-area .tour-end { right:10px;bottom:44px;padding:11px 20px;font-size:15px; } .tour-toast { font-size:20px;padding:10px 20px; } }
+
+.deed-list li { align-items:center; }
+.deed-flag { flex:none;width:48px;height:32px;margin-right:12px;border-radius:4px;box-shadow:0 0 0 1px rgba(0,0,0,.18);object-fit:cover; }
+.deed-flag.ship { display:grid;place-items:center;font-style:normal;font-size:20px;background:#141a33; }

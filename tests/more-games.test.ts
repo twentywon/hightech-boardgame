@@ -279,13 +279,13 @@ describe("Spider solitaire", () => {
 
 describe("World tour", () => {
   const dice = (...faces: number[]) => die(...faces);
-  it("lays out 36 spaces, ten to a side, with cities whose fees rise with every building", () => {
-    expect(T.SPACES).toHaveLength(36);
-    expect(T.SPACES.filter((s) => s.kind === "city")).toHaveLength(26);
-    expect([0, 9, 18, 27].map((i) => T.SPACES[i].name)).toEqual(["출발", "무인도", "인류평화기금", "우주여행"]);
-    expect([T.SPACES[5].name, T.SPACES[28].name, T.SPACES[29].name]).toEqual(["기금 수령", "뉴욕", "콜롬비아호"]);
+  it("lays out 40 spaces, ten to a side, with cities whose fees rise with every building", () => {
+    expect(T.SPACES).toHaveLength(40);
+    expect(T.SPACES.filter((s) => s.kind === "city")).toHaveLength(30);
+    expect([0, 10, 20, 30].map((i) => T.SPACES[i].name)).toEqual(["출발", "무인도", "인류평화기금", "우주여행"]);
+    expect([T.SPACES[5].name, T.SPACES[31].name, T.SPACES[32].name]).toEqual(["기금 수령", "뉴욕", "콜롬비아호"]);
     expect(T.SPACES.filter((s) => s.name === "황금열쇠")).toHaveLength(4);
-    const seoul = T.SPACES[35];
+    const seoul = T.SPACES[39];
     expect([0, 1, 2, 3].map((level) => T.feeOf(seoul, level))).toEqual([670, 1020, 1560, 2370]);
     // One and a half times what was spent, with the units dropped: 60 → 90, 110 + 60 → 250.
     expect(T.feeOf(T.SPACES[7], 1)).toBe(250);
@@ -338,69 +338,69 @@ describe("World tour", () => {
   });
   it("pays the salary past the start; the peace fund is paid in and taken out whole", () => {
     let s = T.createGame(2);
-    s.players[0].at = 16;
+    s.players[0].at = 18;
     s = T.roll(s, dice(1, 1))!;
     // The fund space takes 150; the double rolls again.
-    expect([s.players[0].at, s.players[0].money, s.fund, s.turn]).toEqual([18, 1850, 150, 0]);
-    s.players[1].at = 34;
+    expect([s.players[0].at, s.players[0].money, s.fund, s.turn]).toEqual([20, 1850, 150, 0]);
+    s.players[1].at = 38;
     s.turn = 1;
     s = T.roll(s, dice(3, 4))!;
-    // 34 → 5 passes the start (+200) and collects the fund (+150).
+    // 38 → 5 passes the start (+200) and collects the fund (+150).
     expect([s.players[1].at, s.players[1].money, s.fund]).toEqual([5, 2350, 0]);
   });
   it("holds a traveller on the island for one turn unless a double is rolled", () => {
     let s = T.createGame(2);
-    s.players[0].at = 6;
+    s.players[0].at = 7;
     s = T.roll(s, dice(1, 2))!;
-    expect([s.players[0].at, s.players[0].wait, s.turn, s.phase]).toEqual([9, 1, 0, "end"]);
+    expect([s.players[0].at, s.players[0].wait, s.turn, s.phase]).toEqual([10, 1, 0, "end"]);
     // The other traveller declines Jakarta and passes the dice back.
     const back = T.endTurn(T.decide(T.roll(T.endTurn(s)!, dice(1, 3))!, false)!)!;
     expect(back.turn).toBe(0);
     // No double: the turn is spent on the island.
     const waited = T.roll(back, dice(2, 3))!;
-    expect([waited.players[0].at, waited.players[0].wait, waited.phase]).toEqual([9, 0, "end"]);
+    expect([waited.players[0].at, waited.players[0].wait, waited.phase]).toEqual([10, 0, "end"]);
     // A double leaves at once by that roll, and earns no further roll.
     const escaped = T.roll(back, dice(2, 2))!;
-    expect([escaped.players[0].at, escaped.players[0].wait, escaped.phase, escaped.turn]).toEqual([13, 0, "buy", 0]);
+    expect([escaped.players[0].at, escaped.players[0].wait, escaped.phase, escaped.turn]).toEqual([14, 0, "buy", 0]);
     expect(T.decide(escaped, false)!.phase).toBe("end");
     // An escape ticket is spent instead of waiting.
     let free = T.createGame(2);
-    free.players[0].at = 6;
+    free.players[0].at = 7;
     free.players[0].tickets = 1;
     free = T.roll(free, dice(1, 2))!;
     expect([free.players[0].wait, free.players[0].tickets]).toEqual([0, 0]);
   });
   it("travels from the space port to any space ahead, paying the ship's owner and taking the salary", () => {
     let s = T.createGame(2);
-    s.players[0].at = 23;
+    s.players[0].at = 26;
     s = T.roll(s, dice(1, 3))!;
-    expect([s.players[0].at, s.phase]).toEqual([27, "travel"]);
-    expect(T.travel(s, 27)).toBeNull();
-    expect(T.travel(s, 36)).toBeNull();
+    expect([s.players[0].at, s.phase]).toEqual([30, "travel"]);
+    expect(T.travel(s, 30)).toBeNull();
+    expect(T.travel(s, 40)).toBeNull();
     expect(T.roll(s, dice(1, 1))).toBeNull();
     // Nobody owns the ship: the journey is free. Bangkok lies past the start.
     const free = T.travel(s, 3)!;
     expect([free.players[0].at, free.players[0].money, free.phase, free.path]).toEqual([3, 2200, "buy", [3]]);
     // With the ship in the other traveller's hands the journey costs 200.
-    s.owners[29] = 1;
-    const paid = T.travel(s, 35)!;
-    expect([paid.players[0].at, paid.players[0].money, paid.players[1].money, paid.phase]).toEqual([35, 1800, 2200, "buy"]);
+    s.owners[32] = 1;
+    const paid = T.travel(s, 39)!;
+    expect([paid.players[0].at, paid.players[0].money, paid.players[1].money, paid.phase]).toEqual([39, 1800, 2200, "buy"]);
     // Landing on the ship itself costs its toll; it can be bought but not built on.
     let t = T.createGame(2);
-    t.players[0].at = 27;
-    t.owners[29] = 1;
+    t.players[0].at = 30;
+    t.owners[32] = 1;
     t = T.roll(t, dice(1, 1))!;
     expect([t.players[0].money, t.players[1].money]).toEqual([1800, 2200]);
     let u = T.createGame(2);
-    u.players[0].at = 26;
+    u.players[0].at = 29;
     u = T.decide(T.roll(u, dice(1, 2))!, true)!;
-    expect([u.owners[29], u.players[0].money]).toEqual([0, 1600]);
+    expect([u.owners[32], u.players[0].money]).toEqual([0, 1600]);
     u.turn = 0;
-    u.players[0].at = 26;
+    u.players[0].at = 29;
     u.phase = "roll";
     expect(T.roll(u, dice(1, 2))!.phase).toBe("end");
     // A computer flies to the dearest place it can afford.
-    expect(T.destination(s)).toBe(35);
+    expect(T.destination(s)).toBe(39);
   });
   it("waits for a golden key to be drawn and read before it takes effect", () => {
     let s = T.createGame(2);
@@ -434,13 +434,13 @@ describe("World tour", () => {
     expect([lap.players[0].at, lap.players[0].money]).toEqual([2, 2200]);
     // A journey forward to Paris from a later key passes the start; the dearest place goes at half price.
     let far = T.createGame(2);
-    far.players[0].at = 28;
+    far.players[0].at = 31;
     far = T.roll(far, dice(1, 1))!;
     const paris = T.follow(T.draw(far, card((c) => c.forward === true && T.SPACES[c.to!].name === "파리"))!)!;
-    expect([paris.players[0].at, paris.players[0].money, paris.phase]).toEqual([20, 2200, "buy"]);
-    far.owners[1] = far.owners[35] = 0;
+    expect([paris.players[0].at, paris.players[0].money, paris.phase]).toEqual([22, 2200, "buy"]);
+    far.owners[1] = far.owners[39] = 0;
     const sold = T.follow(T.draw(far, card((c) => !!c.halfSale))!)!;
-    expect([sold.owners[35], sold.owners[1], sold.players[0].money]).toEqual([-1, 0, 2225]);
+    expect([sold.owners[39], sold.owners[1], sold.players[0].money]).toEqual([-1, 0, 2225]);
     // The fund is fed and emptied by cards too.
     const gave = T.follow(T.draw(far, card((c) => !!c.donate))!)!;
     expect([gave.fund, gave.players[0].money]).toEqual([100, 1900]);
@@ -462,12 +462,12 @@ describe("World tour", () => {
   it("sends a traveller to the island on the third double in a row", () => {
     let s = T.createGame(2);
     s.owners[2] = s.owners[4] = 1;
-    s.players[0].at = 14;
-    // 14 → 18 (festival), 18 → 22 (London, declined), then a third double.
+    s.players[0].at = 16;
+    // 16 → 20 (the fund), 20 → 24 (London, declined), then a third double.
     s = T.roll(s, dice(2, 2))!;
-    expect([s.players[0].at, s.turn, s.doubles]).toEqual([18, 0, 1]);
+    expect([s.players[0].at, s.turn, s.doubles]).toEqual([20, 0, 1]);
     s = T.decide(T.roll(s, dice(2, 2))!, false)!;
-    expect([s.players[0].at, s.turn, s.doubles]).toEqual([22, 0, 2]);
+    expect([s.players[0].at, s.turn, s.doubles]).toEqual([24, 0, 2]);
     s = T.roll(s, dice(5, 5))!;
     expect([s.players[0].at, s.players[0].wait, s.turn, s.phase]).toEqual([T.ISLAND, 1, 0, "end"]);
     expect([T.endTurn(s)!.turn, T.endTurn(s)!.doubles]).toEqual([1, 0]);
@@ -475,11 +475,11 @@ describe("World tour", () => {
   });
   it("sells cities to cover a debt, and the last traveller with money wins", () => {
     let s = T.createGame(2);
-    s.owners[35] = 1;
-    s.levels[35] = 3;
+    s.owners[39] = 1;
+    s.levels[39] = 3;
     s.owners[1] = 0;
     s.players[0].money = 100;
-    s.players[0].at = 32;
+    s.players[0].at = 36;
     s = T.roll(s, dice(1, 2))!;
     // The fee is 2370: Hanoi is sold for 30 and it is still not enough.
     expect(s.players[0].out).toBe(true);

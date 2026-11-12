@@ -4,11 +4,11 @@ import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { SPACES, type State } from "./rules";
 import { drawFlag } from "./flags";
 
-export const TOUR_SUBJECT: Subject & { tilt: number } = { half: 6.6, halfZ: 6.6, height: 1.6, lookY: 0, tilt: 0.98 };
+export const TOUR_SUBJECT: Subject & { tilt: number } = { half: 7.3, halfZ: 7.3, height: 1.6, lookY: 0, tilt: 0.98 };
 export const PLAYER_COLORS = ["#d2452f", "#2f62c0", "#3f9a5a", "#e0a020"];
 const GROUPS = ["#e26a4a", "#d9a441", "#4a8fd0", "#57a56b"],
   // Ten spaces along each side, corners included.
-  SIDE = 9,
+  SIDE = 10,
   STEP = 1.3,
   REACH = (SIDE * STEP) / 2;
 /** Centre of a space: 0 is the near right corner and the road runs clockwise seen from above. */

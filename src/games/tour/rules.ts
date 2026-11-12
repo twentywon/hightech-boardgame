@@ -23,6 +23,7 @@ export interface Space {
 }
 const city = (name: string, price: number, group: number, country: string): Space => ({ kind: "city", name, price, group, country });
 const special = (kind: Kind, name: string): Space => ({ kind, name, price: 0, group: -1, country: "" });
+// Forty spaces, ten to a side: the corners are 0, 10, 20 and 30.
 export const SPACES: Space[] = [
   special("start", "출발"),
   city("하노이", 60, 0, "VN"),
@@ -33,6 +34,7 @@ export const SPACES: Space[] = [
   city("싱가포르", 100, 0, "SG"),
   city("뭄바이", 110, 0, "IN"),
   city("두바이", 120, 1, "AE"),
+  city("라고스", 130, 1, "NG"),
   special("storm", "무인도"),
   city("이스탄불", 140, 1, "TR"),
   city("카이로", 150, 1, "EG"),
@@ -42,6 +44,7 @@ export const SPACES: Space[] = [
   city("아테네", 200, 2, "GR"),
   city("로마", 220, 2, "IT"),
   city("암스테르담", 230, 2, "NL"),
+  city("빈", 235, 2, "AT"),
   special("fund", "인류평화기금"),
   city("바르셀로나", 240, 2, "ES"),
   city("파리", 260, 2, "FR"),
@@ -49,6 +52,7 @@ export const SPACES: Space[] = [
   city("런던", 280, 2, "GB"),
   city("베를린", 300, 2, "DE"),
   city("스톡홀름", 320, 2, "SE"),
+  city("바르샤바", 325, 2, "PL"),
   city("멕시코시티", 330, 3, "MX"),
   city("리마", 340, 3, "PE"),
   special("space", "우주여행"),
@@ -57,6 +61,7 @@ export const SPACES: Space[] = [
   special("luck", "황금열쇠"),
   city("리우", 360, 3, "BR"),
   city("부에노스아이레스", 380, 3, "AR"),
+  city("토론토", 400, 3, "CA"),
   city("시드니", 420, 3, "AU"),
   city("도쿄", 440, 0, "JP"),
   city("서울", 450, 0, "KR"),

@@ -133,6 +133,9 @@ const FLAGS: Record<string, (ctx: Ctx, x: number, y: number, w: number, h: numbe
     for (const [sx, sy] of [[0.36, 0.14], [0.31, 0.3], [0.41, 0.3], [0.33, 0.22], [0.39, 0.22]]) star(c, x + w * sx, y + h * sy, h * 0.035, "#ffffff");
   },
   NL: (c, x, y, w, h) => bands(c, x, y, w, h, ["#ae1c28", "#ffffff", "#21468b"]),
+  NG: (c, x, y, w, h) => bands(c, x, y, w, h, ["#008751", "#ffffff", "#008751"], true),
+  AT: (c, x, y, w, h) => bands(c, x, y, w, h, ["#ed2939", "#ffffff", "#ed2939"]),
+  PL: (c, x, y, w, h) => bands(c, x, y, w, h, ["#ffffff", "#dc143c"]),
   PE: (c, x, y, w, h) => bands(c, x, y, w, h, ["#d91023", "#ffffff", "#d91023"], true),
   JP: (c, x, y, w, h) => (bands(c, x, y, w, h, ["#ffffff"]), disc(c, x + w / 2, y + h / 2, h * 0.3, "#bc002d")),
   KR: (c, x, y, w, h) => {

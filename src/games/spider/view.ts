@@ -190,21 +190,8 @@ export class SpiderView {
     const key = faceOf(card);
     let material = this.faces.get(key);
     if (!material) {
-      // Stacked cards show only their top strip: it carries the rank and suit, large, across its whole width.
-      material = this.paint((ctx, w, h) => {
-        drawFace(ctx, w, h, key);
-        const band = h * 0.33;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(8, 8, w - 16, band);
-        ctx.fillStyle = card.suit % 2 ? "#c8321f" : "#16181a";
-        ctx.textBaseline = "middle";
-        ctx.textAlign = "left";
-        ctx.font = `800 ${band * 0.86}px "Helvetica Neue", Arial, sans-serif`;
-        ctx.fillText(RANK_NAMES[card.rank], 20, 8 + band * 0.54, w * 0.52);
-        ctx.textAlign = "right";
-        ctx.font = `${band * 0.86}px "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif`;
-        ctx.fillText(["♠", "♥", "♣", "♦"][card.suit], w - 20, 8 + band * 0.54);
-      });
+      // The same faces as the other card games, untouched.
+      material = this.paint((ctx, w, h) => drawFace(ctx, w, h, key));
       this.faces.set(key, material);
     }
     return material;
