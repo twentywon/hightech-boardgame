@@ -143,7 +143,8 @@ test("seotda with three computers: the table plays on without me, and leaving dr
   // A new session in the middle of a hand discards it.
   await button(page, "패 받기").click();
   await settled(page);
-  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
+  await button(page, "새 게임").click();
+  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await settled(page);
   await expect(page.locator("#bg-chips")).toHaveText("1,000");
   await expect(page.locator("#bg-pot")).toHaveText("0");
