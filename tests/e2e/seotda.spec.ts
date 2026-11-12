@@ -298,7 +298,8 @@ test("three-card seotda: show one, bet, uncover the third by sliding, bet again,
     await expect(page.locator("#board")).toHaveAttribute("data-picked", "1");
     await expect(prompt(page)).toHaveCount(3);
     await settled(page);
-    await tap(0, 1.55);
+    // The card I showed (8광) lies at the right of my row; the hidden ones are gathered at the left.
+    await tap(0.945, 1.7);
   } else await button(page, "3광 · 8광 — 38광땡").click();
   // The pick ends the hand: the cards are shown at once.
   await handOver(page);
