@@ -1,3 +1,4 @@
+import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import { mirrorStatus } from "./banner";
 import {
@@ -141,11 +142,11 @@ export function mountYacht(
       `<tr data-category="${c}"><th scope="row">${NAMES[c][0]}<small>${NAMES[c][1]}</small></th>${cells(c)}</tr>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>요트 다이스 <small>YACHT DICE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE DICE TRAY</span><span>주사위 5개 · 3번 굴리기</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / 12 라운드</span></div></section><aside class="game-sidebar yd-sidebar"><div id="turn" role="status" aria-live="polite"></div><div class="yd-controls"><div class="yd-dice" role="group" aria-label="주사위 — 눌러서 보관하거나 되돌리기">${Array.from({ length: DICE }, (_, i) => `<button id="yd-die-${i}" class="yd-die" aria-pressed="false"></button>`).join("")}</div><button id="yd-roll" class="primary">굴리기</button><p id="yd-note" class="input-help"></p></div><div id="yd-result" class="yd-result" hidden><p id="yd-final"></p><button id="yd-again" class="primary">다시 플레이</button></div><table class="yd-sheet"><caption>점수표 — 내 차례에 열린 칸의 점수를 눌러 기록합니다</caption><thead><tr><th scope="col">족보</th>${columns}</tr></thead><tbody>${UPPER.map(row).join("")}<tr class="sum"><th scope="row">상단 합계<small>${BONUS_AT} 이상이면 보너스</small></th>${cells("upper")}</tr><tr class="sum"><th scope="row">보너스<small>+${BONUS}</small></th>${cells("bonus")}</tr>${CATEGORIES.slice(6).map(row).join("")}<tr class="total"><th scope="row">총점</th>${cells("total")}</tr></tbody></table></aside></div></main>`;
+      `<main class="game-layout yacht-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>요트 다이스 <small>YACHT DICE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE DICE TRAY</span><span>주사위 5개 · 3번 굴리기</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / 12 라운드</span></div></section><aside class="game-sidebar yd-sidebar"><div id="turn" role="status" aria-live="polite"></div><div class="yd-controls"><div class="yd-dice sr-only" role="group" aria-label="주사위 — 눌러서 보관하거나 되돌리기">${Array.from({ length: DICE }, (_, i) => `<button id="yd-die-${i}" class="yd-die" aria-pressed="false"></button>`).join("")}</div><button id="yd-roll" class="primary">굴리기</button><p id="yd-note" class="input-help"></p></div><div id="yd-result" class="yd-result" hidden><p id="yd-final"></p><button id="yd-again" class="primary">다시 플레이</button></div><table class="yd-sheet"><caption>점수표 — 내 차례에 열린 칸의 점수를 눌러 기록합니다</caption><thead><tr><th scope="col">족보</th>${columns}</tr></thead><tbody>${UPPER.map(row).join("")}<tr class="sum"><th scope="row">상단 합계<small>${BONUS_AT} 이상이면 보너스</small></th>${cells("upper")}</tr><tr class="sum"><th scope="row">보너스<small>+${BONUS}</small></th>${cells("bonus")}</tr>${CATEGORIES.slice(6).map(row).join("")}<tr class="total"><th scope="row">총점</th>${cells("total")}</tr></tbody></table></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () => setupDialog(setup);
+    dress(setup, ["#yd-roll"]);
     $("yd-roll").onclick = () => act((s) => roll(s, random));
     $("yd-again").onclick = () => setupDialog(setup);
     for (let i = 0; i < DICE; i++) $(`yd-die-${i}`).onclick = () => hold(i);
@@ -158,7 +159,8 @@ export function mountYacht(
       // The roll has one recorded sound of its own; landings add nothing.
       view.onContact = () => {};
       view.onSettled = present;
-      view.onPick = hold;
+      // Before the first roll of a turn there is nothing to set aside: a tap on the dice throws them.
+      view.onPick = (index) => (!hasRolled(state) && !state.over ? $("yd-roll").click() : hold(index));
       view.sync(state, false);
     } catch {
       view?.dispose();

@@ -1,3 +1,4 @@
+import { capturing } from "../../ui/banner";
 import * as T from "three";
 import { afterGPUFrame, aim } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
@@ -254,6 +255,7 @@ export class CardTableView {
   private chipMaterials: T.Material[][] = [];
   private glow: T.Mesh;
   private deck: T.Mesh;
+  private arrow = new T.Group();
   private reducedMotion =
     typeof matchMedia === "function" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -365,14 +367,34 @@ export class CardTableView {
     );
     this.deck.castShadow = true;
     this.scene.add(this.deck, this.plaques, this.chips, this.flights);
+    // An arrow over the deck while a tap on it would deal.
+    const gold = new T.MeshBasicMaterial({ color: "#ffd24a" }),
+      head = new T.Mesh(new T.ConeGeometry(0.2, 0.34, 4), gold),
+      shaft = new T.Mesh(new T.BoxGeometry(0.1, 0.34, 0.1), gold);
+    head.rotation.x = Math.PI;
+    shaft.position.y = 0.32;
+    this.arrow.add(head, shaft);
+    this.owned.push(gold, head.geometry, shaft.geometry);
+    this.arrow.visible = false;
+    this.scene.add(this.arrow);
     this.bindCovers();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.resize();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
-      const moved = this.step(performance.now());
-      if (!this.dirty && !moved) return;
+      const now = performance.now(),
+        moved = this.step(now),
+        // The arrow bobs over the deck; it is left out of the collection's captures.
+        pointing = this.deckOpen && !this.animating && !capturing();
+      if (pointing !== this.arrow.visible) this.dirty = true;
+      this.arrow.visible = pointing;
+      if (pointing) {
+        const { deck } = this.layout;
+        this.arrow.position.set(deck.x, deck.y + 0.75 + Math.sin(now / 260) * 0.12, deck.z);
+        this.arrow.rotation.y = now / 700;
+      }
+      if (!this.dirty && !moved && !pointing) return;
       this.dirty = false;
       this.renderer.render(this.scene, this.camera);
       if (!this.readyFlag && !this.cancelReady)
@@ -465,7 +487,9 @@ export class CardTableView {
       const { x, z, width, scale } = this.row(s),
         // A folded hand is squared up into a small pile.
         gap = seat.folded ? 0.1 * scale : this.gap(seat.cards.length, width, scale);
-      seat.cards.forEach((card, i) =>
+      // My own cards that the others cannot see lie together at the left of my row.
+      const cards = s === 0 ? [...seat.cards].sort((a, b) => Number(!!b.secret) - Number(!!a.secret)) : seat.cards;
+      cards.forEach((card, i) =>
         targets.set(card.id, {
           face: card.face,
           scale,

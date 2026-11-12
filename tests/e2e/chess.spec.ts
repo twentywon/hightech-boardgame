@@ -108,8 +108,7 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
   await selectGame(page);
@@ -183,17 +182,14 @@ test("chess AI stays responsive, cancels old work and applies settings only to a
     timeout: 15000,
   });
   // The new-game dialog: leaving it keeps the game, starting applies the choices.
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator(".side-setup");
   await expect(dialog.getByLabel("컴퓨터 대전", { exact: true })).toBeChecked();
   await dialog.getByLabel("AI 난이도").selectOption("expert");
   await dialog.getByLabel("플레이어 색상").selectOption("black");
-  await dialog.getByRole("button", { name: "계속하기" }).click();
   await expect(page.locator(".player").last()).toContainText("컴퓨터 · 쉬움");
   await expect(page.locator("#move-count")).toHaveText("2수");
   const freshWorker = page.waitForEvent("worker");
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await freshWorker;
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 전문가",

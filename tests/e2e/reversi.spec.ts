@@ -75,8 +75,7 @@ test("Reversi actual WebGL mouse/touch flips, camera, new game and game selectio
   expect((await page.locator("canvas").screenshot()).equals(before)).toBe(
     false,
   );
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
   await expect(page.locator("#black-count")).toHaveText("2");
   // Nothing is kept for later: the collection offers no game to continue.
@@ -121,15 +120,12 @@ test("Reversi difficulty/color persist independently; changes apply next match",
   });
   await expect(page.locator(".player").first()).toContainText("컴퓨터 · 쉬움");
   // The dialog opens on the mode being played; leaving it changes nothing.
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator(".side-setup");
   await expect(dialog.getByLabel("컴퓨터 대전", { exact: true })).toBeChecked();
   await dialog.getByLabel("AI 난이도").selectOption("hard");
-  await dialog.getByRole("button", { name: "계속하기" }).click();
   await expect(page.locator(".player").first()).toContainText("컴퓨터 · 쉬움");
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
   const restartWorker = page.waitForEvent("worker", { timeout: 15000 });
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await restartWorker;
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 어려움",
@@ -221,8 +217,7 @@ test("Reversi random color is resolved once and storage failure is safe", async 
       throw Error("Storage disabled");
     };
   });
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator(".side-setup");
   await dialog.getByLabel("AI 난이도").selectOption("expert");
   await dialog.getByLabel("플레이어 색상").selectOption("white");
   await dialog.getByRole("button", { name: "새 게임 시작" }).click();

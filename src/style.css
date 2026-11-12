@@ -2101,10 +2101,11 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
 
 /* New-game dialog: the setup panel without its title, art or blurb. */
 .setup-dialog { width:min(92vw,460px); }
-.setup-dialog .featured { display:block;padding:0;margin:0;border:0;background:none;box-shadow:none;min-height:0; }
-.setup-dialog .feature-copy { padding:0;max-width:none; }
+.setup-dialog .featured, .side-setup .featured { display:block;padding:0;margin:0;border:0;background:none;box-shadow:none;min-height:0; }
+.setup-dialog .feature-copy, .side-setup .feature-copy { padding:0;max-width:none; }
 .setup-dialog .feature-art,.setup-dialog .pill,.setup-dialog .game-number,.setup-dialog .feature-copy > h2,.setup-dialog .feature-copy > p,.setup-dialog .game-meta,.setup-dialog .rule-list,.setup-dialog .session-note { display:none; }
-.setup-dialog .feature-copy .primary { width:100%;margin-top:18px;justify-content:center;text-align:center; }
+.side-setup .feature-art,.side-setup .pill,.side-setup .game-number,.side-setup .feature-copy > h2,.side-setup .feature-copy > p,.side-setup .game-meta,.side-setup .rule-list,.side-setup .session-note { display:none; }
+.setup-dialog .feature-copy .primary, .side-setup .feature-copy .primary { width:100%;margin-top:18px;justify-content:center;text-align:center; }
 .setup-note { margin:6px 0 4px;color:#7b7263;font-size:13px; }
 .rule-option { display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 4px;font-size:14px;cursor:pointer; }
 .rule-option input { width:18px;height:18px;accent-color:#1d5a48; }
@@ -2186,3 +2187,71 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
   /* The status line stands in the panel beside the table: it need not lie over the table as well. */
   .game-layout .board-hint { display: none !important; }
 }
+
+/* Table chrome ------------------------------------------------------------
+   The buttons that play the game lie over the table (`dress` in chrome.ts);
+   the panel keeps what there is to know, the screen's own buttons and the
+   new-game form. */
+/* A button whose work a tap on the table already does: not shown, kept for the keyboard and for readers. It is not clipped, so it can still be pressed. */
+.sr-only { position:absolute !important;width:1px !important;height:1px !important;min-height:0 !important;padding:0 !important;margin:0 !important;overflow:hidden !important;opacity:0 !important;border:0 !important;white-space:nowrap; }
+.board-area .board-controls { position:absolute;right:12px;bottom:10px;z-index:3;display:flex;flex-wrap:wrap-reverse;justify-content:flex-end;align-items:flex-end;gap:6px 8px;max-width:calc(100% - 190px);pointer-events:none; }
+.board-area .board-controls > * { pointer-events:auto;margin:0;min-height:0;order:0; }
+.board-area .board-controls [hidden] { display:none !important; }
+.board-area .board-controls .assist, .board-area .board-controls .bj-row, .board-area .board-controls .bj-chips-row, .board-area .board-controls .yut-moves, .board-area .board-controls .bj-controls { display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px 8px;margin:0;grid-template-columns:none; }
+/* Buttons a screen laid over its table itself stand in the same corner. */
+.board-area .board-controls > .pg-tools, .board-area .board-controls > .bg-acting, .board-area .board-controls > .tour-end { position:static;translate:none;padding:0;width:auto;visibility:visible; }
+.board-area .board-controls > .bg-acting { display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px 8px; }
+.board-area .board-controls > .bg-acting[hidden] { display:none !important; }
+.board-area .board-controls > .bg-acting .bj-row { display:flex;gap:6px 8px; }
+/* The count that stood in that corner moves beside the mark. */
+.board-area .board-bottom { justify-content:flex-start;gap:16px; }
+/* The panel is as tall as the table and scrolls inside itself. */
+@media (min-width: 761px) { .game-layout:not(.spider-game) .table-layout > aside.game-sidebar { height:0;min-height:100%;overflow-y:auto;overscroll-behavior:contain;padding-top:0;padding-bottom:0;padding-right:4px; } }
+.board-area .board-controls button, .board-area .board-controls button.primary, .board-area .board-controls .hint-toggle {
+  width:auto;min-height:36px;padding:0 15px;border-radius:999px;border:1.5px solid #16181a;background:#fff;color:#16181a;font-size:13.5px;font-weight:700;box-shadow:0 5px 12px #0005;cursor:pointer;
+}
+.board-area .board-controls button.primary { background:#204e43;border-color:#204e43;color:#fff; }
+.board-area .board-controls button:hover:not(:disabled) { background:#f1ede2; }
+.board-area .board-controls button.primary:hover:not(:disabled) { background:#173a32; }
+.board-area .board-controls button:disabled { opacity:.55;cursor:default; }
+.board-area .board-controls button, .board-area .board-controls .chess-confirm-slot { width:auto !important;flex:0 0 auto; }
+.board-area .board-controls .text-button { text-decoration:none; }
+.board-area .board-controls .hint-toggle { display:inline-flex;align-items:center;gap:6px;font-weight:600; }
+.board-area .board-controls .yd-dice { display:flex;gap:5px; }
+.board-area .board-controls .yd-die { min-width:46px;padding:0 6px;border-radius:10px;font-size:13px; }
+.board-area .board-controls .yd-die[aria-pressed="true"] { background:#16181a;color:#fff; }
+.board-area .board-controls .yd-die[aria-pressed="true"]::after { display:none; }
+.board-area .board-controls .input-help { margin:0;padding:4px 10px;border-radius:10px;background:#16181acc;color:#fff;font-size:12px; }
+.board-area .board-controls .input-help:empty { display:none; }
+.board-area .board-controls .bg-prompt::before { padding:4px 10px;border-radius:10px;background:#16181acc;color:#fff; }
+.board-area .board-controls .chess-confirm-slot { min-height:0; }
+.game-sidebar .side-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:18px; }
+.game-sidebar .side-actions button { flex:1 1 auto;font-size:12px;min-height:38px; }
+.game-sidebar .side-setup { margin-top:18px;padding-top:16px;border-top:1px solid #d9cfba; }
+.game-sidebar .side-setup h3 { margin:0;font-size:15px; }
+.game-sidebar .side-setup .setup-note { margin:4px 0 10px;font-size:12px; }
+.game-sidebar .side-setup .mode-select { display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0; }
+.game-sidebar .side-setup .mode-select label { display:inline-flex;align-items:center;gap:5px;font-size:13px; }
+.game-sidebar .side-setup .ai-options { grid-template-columns:1fr;gap:8px;margin:8px 0;max-width:none; }
+.game-sidebar .side-setup label { font-size:13px; }
+.game-sidebar .side-setup select { width:100%; }
+.game-sidebar .side-setup .feature-copy .primary { margin-top:10px;min-height:42px; }
+.game-sidebar .side-setup.flash { animation:side-flash 1.1s ease-out; }
+@keyframes side-flash { 0%,40% { box-shadow:0 0 0 3px #b99a58; } 100% { box-shadow:0 0 0 3px #b99a5800; } }
+@media (orientation: landscape) and (max-height: 540px) {
+  .board-area .board-controls { right:8px;bottom:6px;gap:4px 6px;max-width:calc(100% - 150px); }
+  .board-area .board-controls button, .board-area .board-controls button.primary, .board-area .board-controls .hint-toggle { min-height:32px;padding:0 11px;font-size:12px; }
+  .game-layout .game-sidebar .side-actions .input-help, .game-layout .game-sidebar .side-setup .setup-note { display:none; }
+}
+/* The panel's own buttons and the new-game form come last, whatever order a screen gives the rest. */
+.game-sidebar .side-actions { order: 98; }
+.game-sidebar .side-setup { order: 99; }
+.board-area .board-controls button { min-height: 36px !important; border-radius: 999px !important; }
+.board-area .board-controls .yd-die { border-radius: 10px !important; }
+@media (orientation: landscape) and (max-height: 540px) {
+  .board-area .board-controls button { min-height: 32px !important; }
+  .spider-game .sp-sidebar { display: block !important; margin-top: 0; }
+  .spider-game .sp-sidebar > * + * { margin-top: 8px !important; }
+}
+/* The status line over the table stands clear of the buttons in the corner. */
+.board-area > .board-hint { bottom: 56px; }

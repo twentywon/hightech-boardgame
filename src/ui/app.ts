@@ -1,3 +1,4 @@
+import { dress } from "./chrome";
 import { mountChess, type ChessController } from "./chess";
 import { mountBlackjack, type BlackjackController } from "./blackjack";
 import { mountYacht, type YachtController, type YachtOptions } from "./yacht";
@@ -464,11 +465,17 @@ function game() {
   clear();
   app.innerHTML =
     header() +
-    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · ${state.noDoubleThree ? "삼삼 금지" : "삼삼 허용"}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">AT THE TABLE</div><h2>좋은 한 수를<br>생각해 보세요.</h2><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 교차점을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
+    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · ${state.noDoubleThree ? "삼삼 금지" : "삼삼 허용"}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">AT THE TABLE</div><h2>좋은 한 수를<br>생각해 보세요.</h2><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 교차점을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
   bindHeader();
   $("back").onclick = () => menu();
   $("rules").onclick = showRules;
-  $("restart").onclick = askNewGame;
+  dress(
+    (host) => {
+      host.innerHTML = gomokuSetup();
+      bindGomokuSetup();
+    },
+    [".assist"],
+  );
   $("camera").onclick = () => {
     settings.top = !settings.top;
     setSettings(settings);
@@ -476,9 +483,6 @@ function game() {
     $("camera").setAttribute("aria-pressed", String(settings.top));
     candidate = null;
     update();
-  };
-  $("confirm").onclick = () => {
-    if (candidate) place(candidate);
   };
   $("undo").onclick = takeBack;
   try {
@@ -693,14 +697,6 @@ function update() {
     $("turn").append(retry);
   }
   $("move-count").textContent = `${state.moves.length}수`;
-  $<HTMLButtonElement>("confirm").disabled =
-    !candidate ||
-    !!state.winner ||
-    isAITurn() ||
-    !!(candidate && state.board[candidate.row][candidate.col]);
-  $("confirm").textContent = candidate
-    ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}에 착수 확정`
-    : "위치를 선택하세요";
   $<HTMLButtonElement>("undo").disabled = !undoCount();
 }
 function showResult() {

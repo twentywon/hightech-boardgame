@@ -1,3 +1,4 @@
+import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import {
   FORMATIONS,
@@ -179,11 +180,11 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
   function screen() {
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout janggi-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>장기 <small>JANGGI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE JANGGI TABLE</span><span>9 × 10 · 초 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar jg-sidebar"><div id="turn" role="status" aria-live="polite"></div>${(["cho", "han"] as const).map((side) => `<div class="player"><i class="jg-glyph ${side}">${side === "cho" ? "楚" : "漢"}</i><span>${SIDE[side]}<small>${who(side)}</small></span><b id="jg-points-${side}"></b></div>`).join("")}<button id="confirm" class="primary" disabled>기물을 선택하세요</button><div class="assist"><button id="jg-pass">한수쉼</button><button id="jg-clear">선택 취소</button></div><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><div id="jg-result" class="yd-result" hidden><p id="jg-final"></p><button id="jg-again" class="primary">다시 플레이</button></div><p class="input-help">마우스: 기물을 누른 뒤 도착점을 클릭<br>터치: 기물을 누른 뒤 도착점을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소</p></aside></div></main>`;
+      `<main class="game-layout janggi-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>장기 <small>JANGGI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE JANGGI TABLE</span><span>9 × 10 · 초 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar jg-sidebar"><div id="turn" role="status" aria-live="polite"></div>${(["cho", "han"] as const).map((side) => `<div class="player"><i class="jg-glyph ${side}">${side === "cho" ? "楚" : "漢"}</i><span>${SIDE[side]}<small>${who(side)}</small></span><b id="jg-points-${side}"></b></div>`).join("")}<button id="confirm" class="primary sr-only" disabled>기물을 선택하세요</button><div class="assist"><button id="jg-pass">한수쉼</button><button id="jg-clear">선택 취소</button></div><div class="assist"><button id="undo">무르기</button><button id="hint">힌트</button></div><div id="jg-result" class="yd-result" hidden><p id="jg-final"></p><button id="jg-again" class="primary">다시 플레이</button></div><p class="input-help">마우스: 기물을 누른 뒤 도착점을 클릭<br>터치: 기물을 누른 뒤 도착점을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소</p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () => setupDialog(setup);
+    dress(setup, [".assist"]);
     $("camera").onclick = () => {
       top = !top;
       clearSelection();

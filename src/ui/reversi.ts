@@ -1,3 +1,4 @@
+import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import {
   createGame,
@@ -143,11 +144,11 @@ export function mountReversi(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>리버시 <small>REVERSI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE REVERSI TABLE</span><span>8 × 8 · 흑 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">TURN THE TABLE</div><h2>마지막 한 수까지,<br>가능성은 열려있습니다.</h2><div id="turn" role="status" aria-live="polite"></div><div id="pass-notice" role="status" aria-live="polite" hidden></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "local" ? "플레이어 1" : human === 1 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="black-count">2</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "local" ? "플레이어 2" : human === 2 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="white-count">2</b></div><label class="hint-toggle"><input id="hints" type="checkbox" ${showHints ? "checked" : ""}> 합법 수 안내</label><p class="hint">상대 돌을 사이에 두고 뒤집으세요.<br>마지막에 더 많은 돌을 가진 쪽이 승리합니다.</p><button id="confirm" class="primary" disabled>위치를 선택하세요</button><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 클릭하여 착수<br>터치: 칸을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
+      `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>리버시 <small>REVERSI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE REVERSI TABLE</span><span>8 × 8 · 흑 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div class="eyebrow">TURN THE TABLE</div><h2>마지막 한 수까지,<br>가능성은 열려있습니다.</h2><div id="turn" role="status" aria-live="polite"></div><div id="pass-notice" role="status" aria-live="polite" hidden></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "local" ? "플레이어 1" : human === 1 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="black-count">2</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "local" ? "플레이어 2" : human === 2 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="white-count">2</b></div><label class="hint-toggle"><input id="hints" type="checkbox" ${showHints ? "checked" : ""}> 합법 수 안내</label><p class="hint">상대 돌을 사이에 두고 뒤집으세요.<br>마지막에 더 많은 돌을 가진 쪽이 승리합니다.</p><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 클릭하여 착수<br>터치: 칸을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () => setupDialog(setup);
+    dress(setup, [".hint-toggle", ".assist"]);
     $("camera").onclick = () => {
       settings.top = !settings.top;
       view?.setCamera(settings.top);
@@ -160,9 +161,6 @@ export function mountReversi(
     $("hints").onchange = () => {
       showHints = $<HTMLInputElement>("hints").checked;
       update();
-    };
-    $("confirm").onclick = () => {
-      if (candidate) place(candidate);
     };
     $("undo").onclick = takeBack;
     try {
@@ -322,12 +320,6 @@ export function mountReversi(
     $("pass-notice").textContent = state.lastPassed
       ? `${state.lastPassed === 1 ? "흑" : "백"}돌은 둘 곳이 없어 자동 패스했습니다.`
       : "";
-    $<HTMLButtonElement>("confirm").disabled =
-      !candidate || !canPlay() || !isLegal(candidate);
-    $("confirm").textContent =
-      candidate && isLegal(candidate)
-        ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}에 착수 확정`
-        : "위치를 선택하세요";
     // Enabled again by onSettled once the discs stop flipping.
     $<HTMLButtonElement>("undo").disabled = !undoTarget() || !!view?.animating;
     const legal =

@@ -10,7 +10,8 @@ export const ludoConfig: PointConfig<State> = {
   autoSingle: true,
   // A roll cannot be taken back.
   noUndo: true,
-  tools: [{ label: "주사위 굴리기", point: ROLL }],
+  // The die itself is tapped: the button is kept for the keyboard only.
+  tools: [{ label: "주사위 굴리기", point: ROLL, onBoard: true }],
   name: "루도",
   english: "Ludo",
   number: "NO. 31 — ROUND AND HOME",

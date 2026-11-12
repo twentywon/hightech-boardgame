@@ -1,3 +1,4 @@
+import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import { mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
@@ -62,11 +63,11 @@ export function mountSpider(root: HTMLElement, nav: Navigation, random: Random =
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game spider-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>스파이더 <small>SPIDER SOLITAIRE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE SPIDER TABLE</span><span>무늬 ${suitsOf(preferences.suits)}가지</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar sp-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>완성한 줄</dt><dd id="sp-done"></dd></div><div><dt>남은 더미</dt><dd id="sp-stock"></dd></div></dl><div class="yd-controls"><button id="sp-deal" class="primary">새 카드 돌리기</button><div class="bj-row"><button id="sp-undo">무르기</button><button id="sp-hint">힌트</button></div><p class="input-help">옮길 카드를 끌어서 원하는 줄에 놓으세요. 같은 무늬로 이어진 묶음은 맨 위 카드를 끌면 함께 움직입니다. 오른쪽 아래 더미를 눌러도 새 카드를 돌립니다.</p></div><div id="sp-result" class="yd-result" hidden><p id="sp-final"></p><button id="sp-again" class="primary">새 판</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game spider-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>스파이더 <small>SPIDER SOLITAIRE</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE SPIDER TABLE</span><span>무늬 ${suitsOf(preferences.suits)}가지</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar sp-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>완성한 줄</dt><dd id="sp-done"></dd></div><div><dt>남은 더미</dt><dd id="sp-stock"></dd></div></dl><div class="yd-controls"><button id="sp-deal" class="primary sr-only">새 카드 돌리기</button><div class="bj-row"><button id="sp-undo">무르기</button><button id="sp-hint">힌트</button></div><p class="input-help">옮길 카드를 끌어서 원하는 줄에 놓으세요. 같은 무늬로 이어진 묶음은 맨 위 카드를 끌면 함께 움직입니다. 오른쪽 아래 더미를 눌러도 새 카드를 돌립니다.</p></div><div id="sp-result" class="yd-result" hidden><p id="sp-final"></p><button id="sp-again" class="primary">새 판</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () => setupDialog(setup);
+    dress(setup, [".yd-controls .bj-row"]);
     $("sp-again").onclick = () => setupDialog(setup);
     $("sp-deal").onclick = dealRow;
     $("sp-undo").onclick = undo;

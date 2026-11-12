@@ -235,8 +235,7 @@ test("running out of chips offers a fresh session; leaving and new sessions drop
   // A new session in the middle of a round discards it.
   await dealRound(page, 50);
   await expect(chips(page)).toHaveText("950");
-  await button(page, "새 게임").click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await settled(page);
   await expect(chips(page)).toHaveText("1,000");
   await expect(page.locator("#bj-hands li")).toHaveCount(0);

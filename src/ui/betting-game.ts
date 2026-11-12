@@ -1,3 +1,4 @@
+import { dress } from "./chrome";
 import { mirrorStatus } from "./banner";
 import type { Action } from "../games/cards/betting";
 import type { BettingGame, TableView } from "../games/cards/game";
@@ -130,11 +131,11 @@ export function mountBettingGame<S>(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div id="bg-acting" class="bj-controls bg-acting" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">다이</button></div><div class="bj-row"><button id="bg-raise">하프</button><button id="bg-allin">올인</button></div></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-peeking" class="bj-controls" hidden><button id="bg-peek" class="primary"></button></div><div id="bg-prompt" class="bj-controls bg-prompt" role="group" hidden></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="primary">${config.dealWord}</button><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
+      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div id="bg-acting" class="bj-controls bg-acting" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">다이</button></div><div class="bj-row"><button id="bg-raise">하프</button><button id="bg-allin">올인</button></div></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-peeking" class="bj-controls" hidden><button id="bg-peek" class="primary"></button></div><div id="bg-prompt" class="bj-controls bg-prompt" role="group" hidden></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="sr-only">${config.dealWord}</button></div><div id="bg-after" class="bj-controls"><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
-    $("restart").onclick = () => setupDialog(setup);
+    dress(setup, ["#bg-peeking", "#bg-prompt", "#bg-after"]);
     const play = (action: Action) => () => act((s) => game.act(s, action));
     $("bg-call").onclick = play("call");
     $("bg-fold").onclick = play("fold");
@@ -331,7 +332,7 @@ export function mountBettingGame<S>(
       state !== shown
         ? "카드를 나누는 중…"
         : phase === "idle"
-          ? `덱이나 ${config.dealWord} 버튼을 눌러 시작하세요.`
+          ? "덱을 눌러 시작하세요."
           : phase === "sessionOver"
             ? game.won(s)
               ? "상대의 칩을 모두 땄습니다!"

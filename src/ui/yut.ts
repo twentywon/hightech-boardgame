@@ -1,3 +1,4 @@
+import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import { capturing, mirrorStatus } from "./banner";
 import {
@@ -132,11 +133,11 @@ export function mountYut(
       `<li id="yut-side-${p}"><i class="yut-dot p${p}"></i><b>${who(p)}</b><span id="yut-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game yut-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>윷놀이 <small>YUT NORI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE YARD</span><span>말 4개 · 윷가락 4개</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar yut-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls"><button id="yut-throw" class="primary">윷 던지기</button><div id="yut-pending" class="yut-pending" aria-label="쓸 수 있는 윷패"></div><div id="yut-moves" class="yut-moves" role="group" aria-label="옮길 수 있는 말"></div><p id="yut-note" class="input-help"></p></div><div id="yut-result" class="yd-result" hidden><p id="yut-final"></p><button id="yut-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game yut-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>윷놀이 <small>YUT NORI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE YARD</span><span>말 4개 · 윷가락 4개</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar yut-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls"><button id="yut-throw" class="primary sr-only">윷 던지기</button><div id="yut-pending" class="yut-pending" aria-label="쓸 수 있는 윷패"></div><div id="yut-moves" class="yut-moves" role="group" aria-label="옮길 수 있는 말"></div><p id="yut-note" class="input-help"></p></div><div id="yut-result" class="yd-result" hidden><p id="yut-final"></p><button id="yut-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
-    $("restart").onclick = () => setupDialog(setup);
+    dress(setup, ["#yut-moves"]);
     $("yut-throw").onclick = () => act((s) => throwSticks(s, random));
     $("yut-again").onclick = () => setupDialog(setup);
     $("yut-moves").onclick = (e) => {

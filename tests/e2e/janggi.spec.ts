@@ -114,8 +114,7 @@ test("janggi opens inline; pointer and keyboard moves, pass, undo, views and res
   await move(page, sq(1, 7), sq(1, 6), info);
   await expect(count(page)).toHaveText("3수");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await button(page, "새 게임").click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await ready(page);
   await expect(count(page)).toHaveText("0수");
   // Nothing is stored; a reload starts over.

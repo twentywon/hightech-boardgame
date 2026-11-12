@@ -59,12 +59,9 @@ test("menu, actual WebGL moves, camera and the new-game dialog", async ({
   const overhead = await page.locator("canvas").screenshot();
   expect(overhead.equals(angled)).toBe(false);
   // The new-game dialog can be left without losing the game.
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await expect(page.getByRole("dialog").getByLabel("삼삼(3-3) 허용")).toBeChecked();
-  await page.getByRole("dialog").getByRole("button", { name: "계속하기" }).click();
+  await expect(page.locator(".side-setup").getByLabel("삼삼(3-3) 허용")).toBeChecked();
   await expect(page.locator("#move-count")).toHaveText("1수");
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
   await expect(page.getByRole("button", { name: /힌트/ })).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -128,8 +125,7 @@ test("five difficulties, white opening, next-game policy and persisted preferenc
   await expect(page.locator("#move-count")).toHaveText("1수");
   await expect(page.locator("#turn")).toContainText("백돌");
   // The dialog opens on the mode being played and applies its choices to the next game.
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.locator(".side-setup");
   await expect(dialog.getByLabel("컴퓨터 대전", { exact: true })).toBeChecked();
   await dialog.getByLabel("AI 난이도").selectOption("beginner");
   const restartWorker = page.waitForEvent("worker", { timeout: 15000 });
@@ -191,9 +187,8 @@ test("expert Worker keeps animation frames alive; menu and a new game discard ol
     await page.keyboard.press("Enter");
     await expect(page.locator("#move-count")).toHaveText("3수", { timeout: 500 });
   }).toPass({ timeout: 15000 });
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await page.getByRole("dialog").getByLabel("로컬 2인", { exact: true }).check();
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
+  await page.locator(".side-setup").getByLabel("로컬 2인", { exact: true }).check();
+  await page.locator(".side-setup").getByRole("button", { name: "새 게임 시작" }).click();
   await expect(page.locator("#move-count")).toHaveText("0수");
   await page.waitForTimeout(3400);
   await expect(page.locator("#move-count")).toHaveText("0수");
