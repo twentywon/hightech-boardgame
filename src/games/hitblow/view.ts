@@ -97,8 +97,9 @@ export class HitBlowView extends TableView<State> {
         const y = 118 + i * 50,
           won = guess.strikes === state.size;
         chalk(`${from + i + 1}.`, x, y, 34, "rgba(244,241,230,0.7)");
-        chalk(guess.digits.join("  "), x + 64, y, 42, won ? "#ffd24a" : "#f4f1e6");
-        chalk(won ? "정답!" : describeGuess(guess), x + 500, y, 38, won ? "#ffd24a" : guess.strikes ? "#ffb4a2" : "#bfe3c8", "right");
+        // Each digit in its own place, so that four of them never run into the verdict.
+        guess.digits.forEach((digit, k) => chalk(String(digit), x + 84 + k * 52, y, 42, won ? "#ffd24a" : "#f4f1e6", "center"));
+        chalk(won ? "정답!" : describeGuess(guess), x + 510, y, 36, won ? "#ffd24a" : guess.strikes ? "#ffb4a2" : "#bfe3c8", "right");
       });
       if (!guesses.length) chalk("아직 없음", x, 118, 30, "rgba(244,241,230,0.45)");
     };
@@ -109,13 +110,15 @@ export class HitBlowView extends TableView<State> {
     // What is being keyed in, and my own number once it is fixed.
     chalk(state.phase === "secret" ? "내 숫자 정하기" : "던질 숫자", 70, 630, 32, "rgba(244,241,230,0.8)");
     for (let i = 0; i < state.size; i++) {
-      const x = 300 + i * 70;
+      // Clear of the words before them, whichever they are.
+      const x = 360 + i * 70;
       ctx.strokeStyle = "#f4f1e6";
       ctx.lineWidth = 3;
       ctx.strokeRect(x - 26, 600, 52, 60);
       if (state.entry[i] !== undefined) chalk(String(state.entry[i]), x, 632, 46, "#ffd24a", "center");
     }
     if (state.secrets[0]) chalk(`내 숫자  ${state.secrets[0].join(" ")}`, W - 70, 630, 34, "#bfe3c8", "right");
+    if (state.repeat) chalk("중복 허용", 680, 630, 28, "rgba(244,241,230,0.6)", "left");
     for (let key = 0; key < 12; key++) {
       const x = keyX(key),
         open = marks.targets.includes(key),

@@ -23,6 +23,8 @@ export const TILE_COUNT = 106,
   END = 402,
   DRAW = 403,
   RESET = 404,
+  /** The computer takes the table apart and builds it anew round tiles of its own, in one move. */
+  REBUILD = 405,
   /** The computer lays a whole set from its rack in one move. */
   MELD_BASE = 500;
 export const isJoker = (tile: number) => tile >= JOKER;
@@ -121,6 +123,91 @@ export function melds(state: State): number[][] {
   }
   return out.sort((a, b) => worth(b) - worth(a) || a[0] - b[0]);
 }
+/**
+ * Splits tiles (no jokers among them) into good sets that use every one of
+ * them, or returns null when that cannot be done or takes too long to find.
+ */
+export function partition(tiles: number[], budget = 20000): number[][] | null {
+  // Tiles by colour and number; two of each exist.
+  const have: number[][][] = Array.from({ length: 4 }, () => Array.from({ length: 14 }, () => []));
+  for (const tile of tiles) have[colourOf(tile)][numberOf(tile)].push(tile);
+  const out: number[][] = [];
+  let nodes = 0;
+  const solve = (): boolean => {
+    if (++nodes > budget) return false;
+    // The lowest tile left must head a run of its colour, or sit in a group of its number.
+    let c = -1,
+      n = -1;
+    find: for (let number = 1; number <= 13; number++)
+      for (let colour = 0; colour < 4; colour++)
+        if (have[colour][number].length) {
+          c = colour;
+          n = number;
+          break find;
+        }
+    if (c < 0) return true;
+    // Runs upward from it: every length from three that the colour still affords.
+    let reach = n;
+    while (reach < 13 && have[c][reach + 1].length) reach++;
+    for (let end = reach; end >= n + 2; end--) {
+      const set: number[] = [];
+      for (let k = n; k <= end; k++) set.push(have[c][k].pop()!);
+      out.push(set);
+      if (solve()) return true;
+      out.pop();
+      for (let k = end; k >= n; k--) have[c][k].push(set[k - n]);
+    }
+    // Groups of its number with two or three of the other colours.
+    const others = [0, 1, 2, 3].filter((colour) => colour !== c && have[colour][n].length),
+      picks = others.length === 3 ? [others, [others[0], others[1]], [others[0], others[2]], [others[1], others[2]]] : others.length === 2 ? [others] : [];
+    for (const pick of picks) {
+      const set = [have[c][n].pop()!, ...pick.map((colour) => have[colour][n].pop()!)];
+      out.push(set);
+      if (solve()) return true;
+      out.pop();
+      have[c][n].push(set[0]);
+      pick.forEach((colour, k) => have[colour][n].push(set[k + 1]));
+    }
+    return false;
+  };
+  return solve() ? out.map((set) => set.slice()) : null;
+}
+const rebuilt = new WeakMap<State, { table: number[][]; used: number[] } | null>();
+/**
+ * The best the mover can do by taking the table apart: the table built anew
+ * with as many of its own tiles worked in as it can find room for. Sets with
+ * a joker are left as they stand. Null when no tile of the rack can be added.
+ */
+export function rebuild(state: State) {
+  if (rebuilt.has(state)) return rebuilt.get(state)!;
+  const me = state.turn,
+    fixed = state.table.filter((set) => set.some(isJoker)),
+    loose = state.table.filter((set) => !set.some(isJoker)).flat(),
+    rack = state.racks[me].filter((t) => !isJoker(t)).sort((a, b) => numberOf(b) - numberOf(a)),
+    used: number[] = [];
+  let best: number[][] | null = null;
+  if (state.opened[me] && state.table.every(valid)) {
+    let again = true;
+    while (again) {
+      again = false;
+      const rest = rack.filter((t) => !used.includes(t));
+      // One tile at a time, then two together (two of the rack with one of the table make a set).
+      search: for (const group of [rest.map((t) => [t]), rest.flatMap((a, i) => rest.slice(i + 1).map((b) => [a, b]))])
+        for (const extra of group) {
+          const sets = partition([...loose, ...used, ...extra], group[0]?.length === 1 ? 20000 : 4000);
+          if (sets) {
+            used.push(...extra);
+            best = sets;
+            again = true;
+            break search;
+          }
+        }
+    }
+  }
+  const result = best && used.length ? { table: [...fixed, ...best], used } : null;
+  rebuilt.set(state, result);
+  return result;
+}
 export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
   const me = state.turn,
@@ -142,6 +229,8 @@ export function moves(state: State): Move[] {
   if (!changed) tool(DRAW);
   // Whole sets from the rack: no place on the table stands for these, so only a computer makes them.
   melds(state).forEach((_, k) => tool(MELD_BASE + k));
+  // Likewise the table taken apart and built anew: a person does that tile by tile.
+  if (me === 1 && rebuild(state)) tool(REBUILD);
   return out;
 }
 /** Hands the turn over, with the table as it stands as the new starting point. */
@@ -179,6 +268,11 @@ export function play(state: State, move: Move): State | null {
       racks[me].push(pool.pop()!);
       return pass({ ...state, racks, pool, last: null }, false);
     }
+    if (move.to === REBUILD) {
+      const plan = rebuild(state)!;
+      racks[me] = racks[me].filter((t) => !plan.used.includes(t));
+      return { ...state, racks, table: plan.table.map((set) => set.slice()), last: plan.used[0] };
+    }
     const set = melds(state)[move.to - MELD_BASE];
     racks[me] = racks[me].filter((t) => !set.includes(t));
     return { ...state, racks, table: [...state.table, set], last: set[0] };
@@ -214,6 +308,8 @@ export function chooseStep(state: State, level: Level, random: Random = Math.ran
       total = plan.reduce((n, set) => n + worth(set), 0);
     if (state.opened[me] || begun || total >= OPENING) return { from: -1, to: MELD_BASE, extra: -1 };
   }
+  // Then the table itself: taken apart and put together again round tiles of its own.
+  if (level !== "easy" && has(REBUILD)) return has(REBUILD)!;
   if (state.opened[me] && level !== "easy")
     for (const tile of state.racks[me])
       for (let i = 0; i < state.table.length; i++) if (valid([...state.table[i], tile])) return { from: tile, to: SET_BASE + i, extra: -1 };

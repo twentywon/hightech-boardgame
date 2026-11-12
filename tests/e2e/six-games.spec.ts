@@ -49,7 +49,7 @@ test("number baseball: I fix my number, throw, and the computer throws back; its
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await selectGame(page, "숫자 야구");
+  await selectGame(page, "히트 앤 블로");
   await expect(page.getByLabel("로컬 2인", { exact: true })).toBeHidden();
   await page.locator(".game-stage button.primary").click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });

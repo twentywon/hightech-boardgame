@@ -128,6 +128,29 @@ describe("Number baseball", () => {
     expect(N.judge([1, 2, 3], [3, 1, 2])).toEqual({ strikes: 0, balls: 3 });
     expect([N.allNumbers(3).length, N.allNumbers(4).length]).toEqual([720, 5040]);
   });
+  it("with repeats allowed, digits out of place are matched one for one", () => {
+    expect(N.judge([1, 1, 2], [3, 1, 1])).toEqual({ strikes: 1, balls: 1 });
+    expect(N.judge([1, 1, 2], [1, 1, 1])).toEqual({ strikes: 2, balls: 0 });
+    expect(N.judge([1, 2, 2], [2, 1, 1])).toEqual({ strikes: 0, balls: 2 });
+    expect(N.judge([5, 5, 5, 5], [5, 5, 5, 5])).toEqual({ strikes: 4, balls: 0 });
+    expect([N.allNumbers(3, true).length, N.allNumbers(4, true).length]).toEqual([1000, 10000]);
+    let s = N.createGame(3, seededRandom(2), true);
+    for (const d of [7, 7, 7, N.ENTER]) s = N.play(s, to(d))!;
+    expect([s.repeat, s.secrets[0], s.phase]).toEqual([true, [7, 7, 7], "play"]);
+    // The computer still finds it from the answers alone.
+    let turn: N.State = { ...s, turn: 1, guesses: [[{ digits: [0, 0, 0], strikes: 0, balls: 0 }], []] },
+      throws = 0;
+    const random = seededRandom(3);
+    for (;;) {
+      turn = N.play(turn, N.chooseGuess(turn, "hard", random)!)!;
+      throws++;
+      if (turn.guesses[1][turn.guesses[1].length - 1].strikes === 3) break;
+      turn = { ...turn, turn: 1, guesses: [[...turn.guesses[0], { digits: [0, 0, 0], strikes: 0, balls: 0 }], turn.guesses[1]] };
+      expect(throws).toBeLessThan(20);
+    }
+    expect(N.hitBlow.create("4d").repeat).toBe(true);
+    expect(N.hitBlow.create("4").size).toBe(4);
+  });
   it("takes my number, then guesses in turn; both guess the same number of times", () => {
     let s = N.createGame(3, seededRandom(4));
     const key = (...digits: number[]) => {
@@ -372,6 +395,27 @@ describe("Tile rummy", () => {
     expect(step.table).toEqual([[tile(0, 11), tile(1, 11), tile(2, 11)]]);
     step = R.play(step, R.chooseStep(step, "normal", still)!)!;
     expect([step.turn, step.opened[1], step.racks[1]]).toEqual([0, true, [tile(3, 5)]]);
+    // Opened, it takes the table apart: its 5 and 8 fit only if the run 4–7 gives up its ends.
+    const run = [tile(1, 4), tile(1, 5), tile(1, 6), tile(1, 7)],
+      sixes = [tile(0, 6), tile(2, 6), tile(3, 6)],
+      hand = [tile(1, 8), tile(1, 9), tile(0, 1)],
+      table: R.State = { ...s, turn: 1, opened: [true, true], table: [run, sixes], racks: [s.racks[0], hand], before: { table: [run, sixes], rack: hand } };
+    expect(R.partition([...run, ...sixes, tile(1, 8), tile(1, 9)])!.map((set) => set.length).sort()).toEqual([3, 6]);
+    expect(R.partition([tile(0, 1), tile(0, 2)])).toBeNull();
+    // Four of one number give one up to a run that needs it.
+    const fours = [tile(0, 9), tile(1, 9), tile(2, 9), tile(3, 9)],
+      need: R.State = { ...table, table: [fours], racks: [s.racks[0], [tile(3, 10), tile(3, 11)]], before: { table: [fours], rack: [tile(3, 10), tile(3, 11)] } },
+      plan = R.rebuild(need)!;
+    expect([plan.used.sort((a, b) => a - b), plan.table.map((set) => set.length).sort()]).toEqual([[tile(3, 10), tile(3, 11)], [3, 3]]);
+    const before = JSON.stringify(need),
+      built = R.play(need, R.chooseStep(need, "hard", still)!)!;
+    expect(JSON.stringify(need)).toBe(before);
+    expect([built.racks[1], built.table.every(R.valid), R.trouble(built)]).toEqual([[], true, ""]);
+    expect(R.play(built, R.chooseStep(built, "hard", still)!)!.winner).toBe(1);
+    // The easy level leaves the table alone; a person has no such move.
+    expect(R.chooseStep(need, "easy", () => 0.9)).toEqual(to(R.DRAW));
+    expect(R.moves({ ...need, turn: 0 }).some((m) => m.to === R.REBUILD)).toBe(false);
+    expect(R.rebuild({ ...need, opened: [true, false] })).toBeNull();
     // Too little for an opening: it draws instead.
     const poor: R.State = { ...rich, racks: [s.racks[0], [tile(0, 1), tile(1, 1), tile(2, 1), tile(3, 5)]], before: { table: [], rack: [tile(0, 1), tile(1, 1), tile(2, 1), tile(3, 5)] } };
     expect(R.chooseStep(poor, "hard", still)).toEqual(to(R.DRAW));
