@@ -35,7 +35,8 @@ test("four in a row: discs fall to the bottom, the computer answers, undo return
   // The rules follow the common order.
   await page.getByRole("button", { name: "게임 방법" }).click();
   await expect(page.locator("dialog h3").first()).toHaveText("기본 규칙");
-  await expect(page.locator("dialog")).toContainText("조작");
+  // The sections on controls and closing remarks are gone from every window.
+  expect(await page.locator("dialog h3").allTextContents()).toEqual(["기본 규칙", "알아 둘 모양", "처음이라면"]);
   expect(errors).toEqual([]);
 });
 

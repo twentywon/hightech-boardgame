@@ -2132,4 +2132,5 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
 .board-area .pg-tools .pg-tool { pointer-events:auto;padding:11px 18px;border-radius:999px;border:0;background:#fbf7ee;color:#1d2a26;font-weight:700;font-size:14px;box-shadow:0 8px 20px rgba(0,0,0,.35);cursor:pointer; }
 .board-area .pg-tools .pg-tool[hidden] { display:none; }
 .board-area .pg-tools .pg-tool:disabled { opacity:.55;cursor:default; }
-@media (max-width: 760px) { .board-area .pg-tools { right:8px;bottom:40px;gap:6px; } .board-area .pg-tools .pg-tool { padding:9px 13px;font-size:13px; } }
+/* On a narrow screen they go to the upper left, under the status line: the near edge is where my own pieces lie. */
+@media (max-width: 760px) { .board-area .pg-tools { left:8px;right:auto;top:84px;bottom:auto;gap:6px;align-items:flex-start; } .board-area .pg-tools .pg-tool { padding:9px 13px;font-size:13px; } }
