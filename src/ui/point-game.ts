@@ -1,3 +1,4 @@
+import { part, table } from "./guide";
 import { capturing, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
@@ -165,7 +166,25 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       `<main class="game-layout yacht-game point-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
-    $("rules").onclick = () => modal(config.rulesTitle, config.rules);
+    $("rules").onclick = () =>
+      modal(
+        config.rulesTitle,
+        // The controls come before the closing remarks.
+        config.rules.replace("<h3>그 밖에</h3>", () => controls + "<h3>그 밖에</h3>"),
+      );
+    const controls =
+          part(
+            "조작",
+            table(
+              ...(config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소")
+                .split("<br>")
+                .map((line): [string, string] => {
+                  const at = line.indexOf(": ");
+                  return [line.slice(0, at), line.slice(at + 2)];
+                }),
+              ["새 게임", "설정 창이 뜹니다. 고른 설정으로 새로 시작합니다."],
+            ),
+          );
     $("restart").onclick = () => setupDialog(setup);
     $("pg-again").onclick = () => setupDialog(setup);
     $("pg-undo").onclick = undo;

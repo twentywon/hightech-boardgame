@@ -1,3 +1,4 @@
+import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { GRAPHITE, PENCILS, PaperView, hatch, pencilLine, type PaperGame } from "../paper/view";
 import { dots, lineCount, sizeOf, type State } from "./rules";
@@ -81,7 +82,10 @@ export const dotsConfig: PointConfig<State> = {
   tableLabel: "THE NOTEBOOK",
   tableNote: (variant) => `네모 ${sizeOf(variant)} × ${sizeOf(variant)}`,
   rulesTitle: "네 번째 변을 긋는 사람이 네모를 갖습니다",
-  rules: `<ol><li>빨강 색연필이 먼저 긋습니다. 차례마다 <b>가로나 세로로 이웃한 두 점</b>을 선 하나로 잇습니다.</li><li>내가 그은 선으로 네모의 <b>네 변이 모두</b> 그어지면 그 네모는 내 것이 되고 내 색으로 칠해집니다.</li><li>네모를 하나라도 완성하면 <b>한 번 더</b> 긋습니다. 선 하나로 네모 둘을 한꺼번에 완성할 수도 있습니다.</li><li>선을 모두 그으면 끝나고, 네모를 더 많이 가진 쪽이 이깁니다.</li></ol><p>세 변이 그어진 네모는 다음에 긋는 사람이 가져가므로, 세 번째 변을 긋지 않고 버티는 것이 요령입니다. 긋고 싶은 자리(두 점 사이)를 누르면 됩니다. <b>무르기</b>는 직전 선을 지웁니다. 저장은 없습니다.</p>`,
+  rules:
+    part("기본 규칙", steps("<b>빨강 색연필이 먼저</b> 긋습니다.", "차례마다 <b>가로나 세로로 이웃한 두 점</b>을 선 하나로 잇습니다.", "내가 그은 선으로 네모의 <b>네 변이 모두</b> 그어지면 그 네모는 내 것이 되고 내 색으로 칠해집니다.", "네모를 하나라도 완성하면 <b>한 번 더</b> 긋습니다. 선 하나로 네모 둘을 한꺼번에 완성할 수도 있습니다.", "선을 모두 그으면 끝나고, 네모를 더 많이 가진 쪽이 이깁니다.")) +
+    part("처음이라면", notes("세 변이 그어진 네모는 다음에 긋는 사람이 가져갑니다. <b>세 번째 변을 긋지 않고 버티는 것</b>이 요령입니다.", "네모가 길게 이어진 줄은 한 번에 여러 개를 내주게 됩니다.", "끝에 가서 어쩔 수 없이 내줄 때는 가장 짧은 줄을 내줍니다.")) +
+    part("그 밖에", notes("새 게임 설정에서 판 크기와 컴퓨터 난이도를 고릅니다.", "<b>무르기</b>는 직전 선을 지웁니다.", "저장은 없습니다. 새로고침하면 처음으로 돌아갑니다.")),
   sides: ["빨강", "파랑"],
   variantLabel: "판 크기",
   variants: [

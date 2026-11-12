@@ -1,3 +1,4 @@
+import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { GRAPHITE, PENCILS, PaperView, hatch, type PaperGame } from "../paper/view";
 import { hex, sizeOf, type State } from "./rules";
@@ -91,7 +92,11 @@ export const hexConfig: PointConfig<State> = {
   tableLabel: "THE NOTEBOOK",
   tableNote: (variant) => `${sizeOf(variant)} × ${sizeOf(variant)}`,
   rulesTitle: "내 두 변을 먼저 이으세요",
-  rules: `<ol><li>빨강 색연필이 먼저 칠합니다. 차례마다 <b>빈칸 하나</b>를 내 색으로 칠합니다. 한번 칠한 칸은 바뀌지 않습니다.</li><li><b>빨강</b>은 빨간 선이 그어진 <b>위쪽 변과 아래쪽 변</b>을, <b>파랑</b>은 파란 선이 그어진 <b>왼쪽 변과 오른쪽 변</b>을 내 칸으로 끊기지 않게 이으면 이깁니다.</li><li>칸은 여섯 방향으로 이웃합니다. 네 귀퉁이 칸은 두 변에 모두 닿습니다.</li></ol><p>판이 가득 차면 반드시 한쪽이 이어지므로 무승부가 없습니다. 상대의 길을 막는 것이 곧 내 길을 잇는 것입니다. 먼저 두는 쪽이 유리하며, 선수를 바꾸는 규칙은 넣지 않았습니다. <b>무르기</b>는 직전 수를 지웁니다. 저장은 없습니다.</p>`,
+  rules:
+    part("기본 규칙", steps("<b>빨강 색연필이 먼저</b> 칠합니다.", "차례마다 <b>빈칸 하나</b>를 내 색으로 칠합니다. 한번 칠한 칸은 바뀌지 않습니다.", "내 두 변을 내 칸으로 끊기지 않게 먼저 이으면 이깁니다.")) +
+    part("이을 변", table(["빨강", "빨간 선이 그어진 <b>위쪽 변과 아래쪽 변</b>"], ["파랑", "파란 선이 그어진 <b>왼쪽 변과 오른쪽 변</b>"], ["이웃", "칸은 여섯 방향으로 이웃합니다. 네 귀퉁이 칸은 두 변에 모두 닿습니다."])) +
+    part("처음이라면", notes("판이 가득 차면 반드시 한쪽이 이어집니다. 무승부가 없습니다.", "상대의 길을 막는 것이 곧 내 길을 잇는 것입니다.", "한 칸 띄워 두 길로 이을 수 있게 두면 상대가 끊기 어렵습니다.", "가운데가 양쪽 변에 모두 가까워 좋은 자리입니다.")) +
+    part("그 밖에", notes("먼저 두는 쪽이 유리합니다. 선수를 바꾸는 규칙은 넣지 않았습니다.", "새 게임 설정에서 판 크기와 컴퓨터 난이도를 고릅니다.", "<b>무르기</b>는 직전 수를 지웁니다.", "저장은 없습니다. 새로고침하면 처음으로 돌아갑니다.")),
   sides: ["빨강", "파랑"],
   variantLabel: "판 크기",
   variants: [
