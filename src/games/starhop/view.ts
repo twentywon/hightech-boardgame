@@ -58,7 +58,11 @@ export class StarHopView extends TableView<State> {
     table.rotation.x = -Math.PI / 2;
     table.castShadow = false;
     const rim = this.standard({ color: "#8a5a2c", roughness: 0.5 });
-    this.add(new T.CylinderGeometry(5.6, 5.6, 0.26, 72), [rim, this.standard({ map: this.own(boardTexture()), roughness: 0.6 }), rim], 0, -0.13, 0);
+    this.add(new T.CylinderGeometry(5.6, 5.6, 0.26, 72), rim, 0, -0.132, 0);
+    // The face is a flat disc of its own: a cylinder's cap lays its picture a quarter turn round, which put the holes off the marbles.
+    const face = this.add(new T.CircleGeometry(5.6, 72), this.standard({ map: this.own(boardTexture()), roughness: 0.6 }), 0, 0, 0);
+    face.rotation.x = -Math.PI / 2;
+    face.castShadow = false;
     this.ball = this.own(new T.SphereGeometry(0.24, 26, 18));
     this.paints = STAR_COLORS.map((color) => this.standard({ color, roughness: 0.15, metalness: 0.1 }));
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
