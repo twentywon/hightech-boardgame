@@ -1,6 +1,6 @@
 import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
-import { capturing, mirrorStatus } from "./banner";
+import { capturing, cheer, mirrorStatus } from "./banner";
 import {
   FINISHED,
   PIECES,
@@ -168,6 +168,9 @@ export function mountYut(
     !!document.querySelector("dialog[open]");
   function apply(next: State) {
     if (next.throwId !== state.throwId) sound.dice(4);
+    // A piece sent home is worth a cheer.
+    if (next.last && next.last !== state.last && next.last.captured)
+      cheer(mode === "ai" && next.last.player === 1 ? "잡혔다!" : "잡았다!");
     state = next;
     selected = null;
     if (view) view.sync(model(state));

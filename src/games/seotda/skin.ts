@@ -34,6 +34,7 @@ export const seotdaSkin: CardSkin = {
   pixels: [250, 410],
   lines: ["섯다", "두 장의 족보로 겨룹니다"],
   compact: true,
+  secretLeft: true,
   back(ctx, w, h) {
     ctx.fillStyle = "#8f2416";
     ctx.fillRect(0, 0, w, h);

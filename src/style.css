@@ -2258,3 +2258,47 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
 .game-sidebar .side-setup [hidden] { display: none !important; }
 /* The spider's stock lies in the lower right corner of its table: its buttons stand in the left one. */
 .spider-game .board-area .board-controls { right: auto; left: 12px; bottom: 36px; justify-content: flex-start; }
+
+/* The corner buttons, laid as a block -------------------------------------
+   Several buttons are set two (or three) abreast with equal widths, so that
+   they make a rectangle; the groups a screen wraps them in dissolve. */
+.board-area .board-controls { width:min(248px, calc(100% - 24px));max-width:none;flex-wrap:wrap;justify-content:flex-end;align-items:stretch;gap:6px; }
+.board-area .board-controls .assist, .board-area .board-controls .bj-row, .board-area .board-controls .bj-chips-row, .board-area .board-controls .bj-controls, .board-area .board-controls .yut-moves,
+.board-area .board-controls > .pg-tools, .board-area .board-controls > .bg-acting, .board-area .board-controls > .bg-acting .bj-row { display:contents; }
+.board-area .board-controls button, .board-area .board-controls button.primary, .board-area .board-controls .hint-toggle {
+  flex:1 1 calc(50% - 3px) !important;width:auto !important;min-width:0;padding:6px 10px;justify-content:center;text-align:center;white-space:normal;line-height:1.2;border-radius:12px !important;pointer-events:auto;
+}
+.board-area .board-controls .hint-toggle { min-height:36px;justify-content:center; }
+/* Three abreast where a row of three belongs together, and one to a row where the text is long. */
+.board-area .board-controls #bj-betting button { flex-basis:calc(33.333% - 4px) !important; }
+.board-area .board-controls .yut-moves button, .board-area .board-controls .bg-prompt button { flex-basis:100% !important; }
+.board-area .board-controls .bg-prompt::before, .board-area .board-controls .input-help { flex:1 1 100%;text-align:center; }
+.blackjack-game .board-area .board-controls { width:min(300px, calc(100% - 24px)); }
+@media (orientation: landscape) and (max-height: 540px) {
+  .board-area .board-controls { width:min(210px, calc(100% - 16px));gap:4px; }
+  .blackjack-game .board-area .board-controls { width:min(250px, calc(100% - 16px)); }
+  .board-area .board-controls button, .board-area .board-controls button.primary, .board-area .board-controls .hint-toggle { padding:4px 8px;font-size:12px; }
+}
+/* The screen's own buttons head the panel. */
+.game-sidebar .side-actions { order:-1;margin:0 0 12px; }
+/* A cheer over the table ---------------------------------------------------- */
+.board-cheer { position:absolute;left:50%;top:46%;z-index:6;translate:-50% -50%;pointer-events:none;animation:cheer-pop 1.9s cubic-bezier(.2,1.4,.3,1) both; }
+.board-cheer span {
+  display:block;padding:14px 38px;border-radius:999px;font:900 clamp(30px,6vw,58px)/1.1 var(--sans, sans-serif);letter-spacing:.02em;white-space:nowrap;
+  color:#fff7c2;background:linear-gradient(100deg,#ff3d6e,#ff9d00 30%,#ffe14a 50%,#ff9d00 70%,#ff3d6e);background-size:220% 100%;
+  text-shadow:0 2px 0 #7a1d00,0 0 18px #fff3;box-shadow:0 0 0 4px #fff8,0 0 34px 10px #ffb30099,0 14px 30px #0007;animation:cheer-shine .7s linear infinite;
+}
+.board-cheer i { position:absolute;left:50%;top:50%;width:10px;height:10px;margin:-5px;border-radius:50%;background:#ffe14a;box-shadow:0 0 10px 3px #ffd000;rotate:var(--a);animation:cheer-spark 1.1s ease-out both; }
+.board-cheer i:nth-child(odd) { background:#ff5d8f;box-shadow:0 0 10px 3px #ff2d6a;animation-delay:.12s; }
+@keyframes cheer-pop { 0% { scale:.2;opacity:0; } 14% { scale:1.18;opacity:1; } 24% { scale:1; } 78% { scale:1;opacity:1; } 100% { scale:1.25;opacity:0; } }
+@keyframes cheer-shine { to { background-position:-220% 0; } }
+@keyframes cheer-spark { 0% { transform:translateY(0) scale(1);opacity:1; } 100% { transform:translateY(-170px) scale(.2);opacity:0; } }
+@media (prefers-reduced-motion: reduce) { .board-cheer, .board-cheer span, .board-cheer i { animation:none; } .board-cheer i { display:none; } }
+/* A lone button, or the odd one of three, is as wide as the others would be. */
+.board-area .board-controls button, .board-area .board-controls .hint-toggle { max-width: calc(50% - 3px); }
+.board-area .board-controls #bj-betting button { max-width: calc(33.333% - 4px); }
+.board-area .board-controls .yut-moves button, .board-area .board-controls .bg-prompt button { max-width: none; }
+/* The status line keeps to the left of the buttons. */
+.board-area:has(.board-controls button:not([hidden], .sr-only)) > .board-hint { right: 272px; }
+.blackjack-game .board-area:has(.board-controls button:not([hidden], .sr-only)) > .board-hint { right: 324px; }
+.spider-game .board-area:has(.board-controls button:not([hidden], .sr-only)) > .board-hint { right: 16px; left: 272px; }

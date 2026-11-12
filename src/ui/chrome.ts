@@ -1,8 +1,8 @@
 /**
  * How every table screen is laid out, whatever the game: the buttons that
  * act on the game lie over the table, in its lower right corner, and the panel beside it holds
- * what there is to know (whose turn, the score), then the screen's own
- * buttons (rules, camera), then the new-game form, open at all times.
+ * what there is to know (whose turn, the score), headed by the screen's own
+ * buttons (rules, camera) and ended by the new-game form, open at all times.
  */
 export function dress(setup: (host: HTMLElement) => void, controls: string[] = []) {
   const main = document.querySelector<HTMLElement>("main.game-layout"),
@@ -25,7 +25,9 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   section.className = "side-setup";
   section.setAttribute("aria-label", "새 게임");
   section.innerHTML = `<h3>새 게임</h3><p class="setup-note">고르고 시작하면 지금 하던 게임은 끝납니다.</p><div class="setup-host"></div>`;
-  side.append(bar, section);
+  // The screen's own buttons head the panel; the new-game form ends it.
+  side.prepend(bar);
+  side.append(section);
   setup(section.querySelector<HTMLElement>(".setup-host")!);
   section.querySelectorAll<HTMLButtonElement>(".setup-host button.primary").forEach((button) => (button.textContent = "새 게임 시작"));
   // The collection may have been scrolled; a table always starts at its top.

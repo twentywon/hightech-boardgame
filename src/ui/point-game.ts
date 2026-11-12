@@ -1,5 +1,5 @@
 import { dress } from "./chrome";
-import { capturing, mirrorStatus } from "./banner";
+import { capturing, cheer, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
 import type { Move, PointGame } from "../games/points/types";
@@ -43,6 +43,8 @@ export interface PointConfig<S> {
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
   tools?: { label: string; point: number; onBoard?: boolean }[];
+  /** A line to flash over the table for what a move has just done (a piece taken), or null. */
+  cheer?: (before: S, state: S, mode: "local" | "ai") => string | null;
   /** No table for two: one side's pieces are hidden from the other. */
   computerOnly?: boolean;
   /** The names and colours of the two sides, when they depend on the variant. */
@@ -247,6 +249,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     performance.now() < lockedUntil ||
     !!document.querySelector("dialog[open]");
   function apply(next: S) {
+    const shout = config.cheer?.(state, next, mode);
+    if (shout) cheer(shout);
     if (cursor !== null && config.rehome?.(state, next)) cursor = config.keyStart?.(next) ?? cursor;
     state = next;
     chosen = {};

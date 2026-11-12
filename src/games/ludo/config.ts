@@ -8,6 +8,8 @@ export const ludoConfig: PointConfig<State> = {
   view: (host, quality) => new LudoView(host, quality),
   colors: LUDO_COLORS,
   autoSingle: true,
+  cheer: (before, state, mode) =>
+    state.last && state.last !== before.last && state.last.sent.length ? (mode === "ai" && state.last.side === 1 ? "잡혔다!" : "잡았다!") : null,
   // A roll cannot be taken back.
   noUndo: true,
   // The die itself is tapped: the button is kept for the keyboard only.

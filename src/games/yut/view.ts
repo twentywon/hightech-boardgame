@@ -300,7 +300,7 @@ export class YutView {
     this.scene.add(sun);
     this.buildYard();
     this.ringGeometry = this.own(new T.RingGeometry(0.33, 0.43, 40));
-    this.ringMaterials = ["#f4d06a", "#ffffff", "#7fe0a2"].map((color) =>
+    this.ringMaterials = ["#f4d06a", "#ffffff", "#7fe0a2", "#e3261c"].map((color) =>
       this.own(new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false })),
     );
     this.scene.add(this.rings);
@@ -572,7 +572,8 @@ export class YutView {
     }
     for (const station of this.marks.targets) {
       const p = spot(station);
-      ring(p.x, p.z, 0.014, 0, station === FINISHED ? 1.25 : 1);
+      // Red: gold was lost against the board.
+      ring(p.x, p.z, 0.014, 3, station === FINISHED ? 1.25 : 1);
     }
   }
   private step(now: number) {

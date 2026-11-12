@@ -258,11 +258,11 @@ test("three-card seotda: show one, bet, uncover the third by sliding, bet again,
   await page.screenshot({ path: `test-results/${info.project.name}-seotda-covered.png`, fullPage: true });
   if (info.project.name === "mobile") await button(page, "세 번째 패 확인").click();
   else {
-    // The third card lies to the right of my two. A short slide springs back …
+    // My hidden cards lie at the left of my row, the one I showed at the right: the third card is in the middle. A short slide springs back …
     await page.locator("canvas").scrollIntoViewIfNeeded();
-    const from = await onTable(page, 0.945, 1.85),
-      near = await onTable(page, 0.945, 2.2),
-      far = await onTable(page, 0.945, 3.1);
+    const from = await onTable(page, 0, 1.85),
+      near = await onTable(page, 0, 2.2),
+      far = await onTable(page, 0, 3.1);
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(near.x, near.y, { steps: 5 });

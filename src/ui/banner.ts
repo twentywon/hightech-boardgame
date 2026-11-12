@@ -22,3 +22,19 @@ export function mirrorStatus() {
     hint.hidden = !text;
   });
 }
+
+/**
+ * A short, showy line in the middle of the table for something worth a
+ * cheer (a piece taken). It is decoration: the status line says the same.
+ */
+export function cheer(text: string) {
+  const board = document.querySelector<HTMLElement>(".board-area");
+  if (!board || capturing()) return;
+  board.querySelector(".board-cheer")?.remove();
+  const el = document.createElement("div");
+  el.className = "board-cheer";
+  el.setAttribute("aria-hidden", "true");
+  el.innerHTML = `<span>${text}</span>${Array.from({ length: 12 }, (_, i) => `<i style="--a:${i * 30}deg"></i>`).join("")}`;
+  board.append(el);
+  setTimeout(() => el.remove(), 1900);
+}
