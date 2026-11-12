@@ -124,6 +124,38 @@ const play = {
       await wait(2600);
     }
   },
+  "hit-and-blow": async () => {
+    for (const walk of [["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], Array(6).fill("ArrowRight").concat("Enter"), Array(9).fill("ArrowLeft").concat("Enter"), ["ArrowRight", "Enter"], ["ArrowRight", "Enter"], Array(9).fill("ArrowRight").concat("Enter"), Array(8).fill("ArrowLeft").concat("Enter"), ["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], Array(6).fill("ArrowRight").concat("Enter")]) {
+      await keys(walk, 60);
+      await wait(700);
+    }
+    await wait(1500);
+  },
+  "wall-race": async () => {
+    for (const walk of [["ArrowUp", "ArrowUp", "ArrowUp", "Enter"], ["ArrowUp", "ArrowUp", "Enter"], ["ArrowLeft", "Enter"], ["ArrowUp", "Enter"]]) {
+      await keys(walk);
+      await wait(2200);
+    }
+  },
+  dominoes: async () => {
+    for (let i = 0; i < 5; i++) {
+      await keys(["ArrowRight", "ArrowLeft", "Enter"]);
+      await wait(600);
+      await keys(["ArrowUp", "Enter"]);
+      await press("#pg-tool-0");
+      await wait(2200);
+    }
+  },
+  alkkagi: async () => {
+    await press("#pg-tool-0");
+    await wait(6500);
+  },
+  "tile-rummy": async () => {
+    for (let i = 0; i < 9; i++) {
+      await press("#pg-tool-1");
+      await wait(3200);
+    }
+  },
   "world-tour": async () => {
     for (let i = 0; i < 160; i++) {
       // Short of money, the offer is passed over rather than paid for by selling.

@@ -195,4 +195,11 @@ export const games = [
     icon: "◍",
     available: true,
   },
+  {
+    name: "타일 러미",
+    en: "TILE RUMMY",
+    category: "보드게임",
+    icon: "▤",
+    available: true,
+  },
 ];
