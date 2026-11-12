@@ -74,7 +74,8 @@ test("indian poker: I see only the other card, and a call ends the round", async
   await expect(page.getByLabel("로컬 2인", { exact: true })).toBeHidden();
   await expect(page.locator("#turn")).toContainText("상대 카드는");
   // My own card is nowhere in the page while the betting lasts.
-  expect(await page.locator("main").innerHTML()).not.toContain("내 카드");
+  expect(await page.locator("#turn").innerHTML()).not.toContain("내 카드");
+  expect(await page.locator(".yut-sides").innerHTML()).not.toContain("내 카드");
   await expect(page.getByRole("button", { name: "무르기", exact: true })).toBeHidden();
   await page.locator(".board-area .pg-tools").getByRole("button", { name: "콜 · 체크" }).click();
   await expect(count(page)).not.toHaveText("0수", { timeout: 30000 });

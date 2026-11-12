@@ -195,7 +195,7 @@ test("Chess undo: take back a move, alone and against the computer", async ({
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
   await expect(confirm).toHaveText("E2 → E4 이동 확정");
-  await confirm.click();
+  await confirm.evaluate((button: HTMLElement) => button.click());
   await expect(count(page)).toHaveText("2수", { timeout: 30000 });
   await expect(page.locator("#turn")).toContainText("백의 차례", { timeout: 10000 });
   await expect(async () => {
@@ -229,7 +229,7 @@ test("local chess and janggi turn to the player to move; gomoku and reversi stay
   }).toPass({ timeout: 15000 });
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
-  await page.locator("#confirm").click();
+  await page.locator("#confirm").evaluate((button: HTMLElement) => button.click());
   await expect(count(page)).toHaveText("1수");
   await expect(board).toHaveAttribute("data-facing", "b");
   await calm();

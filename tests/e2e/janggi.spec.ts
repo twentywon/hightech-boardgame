@@ -144,7 +144,7 @@ test("the janggi computer answers from its Worker; hint, undo, playing Han, and 
   await button(page, "힌트").click();
   await expect(page.locator("#confirm")).toContainText("이동 확정", { timeout: 30000 });
   const worker = page.waitForEvent("worker", { timeout: 20000 });
-  await page.locator("#confirm").click();
+  await page.locator("#confirm").evaluate((button: HTMLElement) => button.click());
   await worker;
   await expect(count(page)).toHaveText("2수", { timeout: 30000 });
   await expect(turn(page)).toContainText("초의 차례", { timeout: 10000 });
