@@ -34,7 +34,13 @@ export interface PointConfig<S> {
   colors?: [string, string];
   keyPoints?: (state: S) => { x: number; z: number }[];
   /** A board drawn its own way instead of as pieces on points. */
-  view?: (host: HTMLElement, quality: "high" | "low", variant: string) => PointView<S>;
+  view?: (host: HTMLElement, quality: "high" | "low", variant: string, mode: "local" | "ai") => PointView<S>;
+  /** What the further choice of a move is, when it is not a piece to take off. */
+  extraHint?: string;
+  /** A table that needs more height on a narrow screen: an upright rack, or two boards one above the other. */
+  shape?: "tall" | "taller";
+  /** Where the keyboard starts on the board. */
+  keyStart?: (state: S) => number;
   /** A button that plays the only legal move, such as a roll of the die. */
   action?: string;
   /** How the game is operated, when it is not by picking a piece and a destination. */
@@ -163,7 +169,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       `<li id="pg-side-${p}"><i class="yut-dot" style="background:${(spec?.colors ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () =>
@@ -190,7 +196,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $("pg-undo").onclick = undo;
     if (config.action) $("pg-action").onclick = () => pick(game.moves(state)[0]?.to ?? -1);
     try {
-      if (config.view) view = config.view($("board"), settings.quality, variant);
+      if (config.view) view = config.view($("board"), settings.quality, variant, mode);
       else {
         const board = new PointBoardView($("board"), settings.quality, spec!);
         view = {
@@ -297,9 +303,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       e.preventDefault();
       const points = spec?.points ?? config.keyPoints?.(state) ?? [];
       if (!points.length) return;
-      const here = points[cursor ?? 0],
+      const start = config.keyStart?.(state) ?? 0,
+        here = points[cursor ?? start],
         [dx, dz] = steps[e.key];
-      let best = cursor ?? 0,
+      let best = cursor ?? start,
         cost = Infinity;
       if (cursor !== null)
         points.forEach((p, i) => {
@@ -333,7 +340,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const current = generation;
     update();
     later(() => {
-      const move = current === generation && computerTurn() ? choose(game, state, LEVELS[level].budget, LEVELS[level].depth, undefined, LEVELS[level].slip) : null,
+      const move =
+          current === generation && computerTurn()
+            ? game.choose
+              ? game.choose(state, level, cryptoRandom)
+              : choose(game, state, LEVELS[level].budget, LEVELS[level].depth, undefined, LEVELS[level].slip)
+            : null,
         next = move && game.play(state, move, cryptoRandom);
       thinking = false;
       if (current !== generation || !next) {
@@ -376,7 +388,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         : bot
           ? `${who(1)}가 생각하는 중…`
           : next?.field === "extra"
-            ? `${who(turn)} 차례 — 떼어낼 상대 말을 고르세요.`
+            ? `${who(turn)} 차례 — ${config.extraHint ?? "떼어낼 상대 말을 고르세요."}`
             : next?.field === "to" && chosen.from !== undefined
               ? `${who(turn)} 차례 — 갈 곳을 고르세요.`
               : `${who(turn)} 차례 — ${game.hint(s)}`;
@@ -399,6 +411,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       targets: next?.field === "to" ? next.points : [],
       removable: next?.field === "extra" ? next.points : [],
       cursor: view && document.activeElement === view.renderer.domElement ? cursor : null,
+      pending: next?.field === "extra" ? (chosen.to ?? null) : null,
     };
     view?.setMarks(capturing() ? { movable: [], selected: null, targets: [], removable: [], cursor: null } : marks);
 

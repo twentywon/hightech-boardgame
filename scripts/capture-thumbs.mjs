@@ -98,6 +98,30 @@ const play = {
       await wait(4500);
     }
   },
+  "sea-battle": async () => {
+    for (const walk of [["ArrowRight", "Enter"], ["ArrowDown", "ArrowRight", "Enter"], ["ArrowLeft", "ArrowLeft", "ArrowUp", "Enter"], ["ArrowDown", "ArrowDown", "Enter"], ["ArrowRight", "ArrowRight", "ArrowRight", "Enter"], ["ArrowUp", "ArrowUp", "ArrowUp", "Enter"]]) {
+      await keys(walk);
+      await wait(2200);
+    }
+  },
+  "four-in-a-row": async () => {
+    for (const walk of [["ArrowRight", "ArrowLeft", "Enter"], ["ArrowLeft", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], ["Enter"], ["ArrowLeft", "ArrowLeft", "ArrowLeft", "Enter"]]) {
+      await keys(walk);
+      await wait(2400);
+    }
+  },
+  "twist-five": async () => {
+    for (const walk of [["ArrowRight", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "Enter"], ["ArrowLeft", "ArrowLeft", "ArrowDown", "Enter", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "Enter"], ["ArrowRight", "ArrowRight", "ArrowRight", "ArrowUp", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "Enter"]]) {
+      await keys(walk);
+      await wait(3200);
+    }
+  },
+  "hare-and-hounds": async () => {
+    for (const walk of [["ArrowRight", "ArrowLeft", "Enter", "ArrowRight", "Enter"], ["ArrowUp", "Enter", "ArrowRight", "Enter"]]) {
+      await keys(walk);
+      await wait(2600);
+    }
+  },
   "world-tour": async () => {
     for (let i = 0; i < 160; i++) {
       // Short of money, the offer is passed over rather than paid for by selling.

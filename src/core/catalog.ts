@@ -132,4 +132,32 @@ export const games = [
     icon: "✈",
     available: true,
   },
+  {
+    name: "해전",
+    en: "SEA BATTLE",
+    category: "보드게임",
+    icon: "⚓",
+    available: true,
+  },
+  {
+    name: "사목",
+    en: "FOUR IN A ROW",
+    category: "보드게임",
+    icon: "◉",
+    available: true,
+  },
+  {
+    name: "돌림 오목",
+    en: "TWIST FIVE",
+    category: "보드게임",
+    icon: "↻",
+    available: true,
+  },
+  {
+    name: "토끼와 사냥개",
+    en: "HARE AND HOUNDS",
+    category: "보드게임",
+    icon: "🐇",
+    available: true,
+  },
 ];

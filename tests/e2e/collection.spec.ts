@@ -33,7 +33,7 @@ test("collection starts collapsed and switches game details inline without navig
   await expect(page.getByRole("img", { name: "나무 오목판 미리보기" })).toBeVisible();
   await expect(page.getByRole("button", { name: "리버시 살펴보기" })).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".featured")).toHaveCount(1);
-  await page.getByRole("button", { name: "오목 살펴보기" }).click();
+  await page.getByRole("button", { name: "오목 살펴보기", exact: true }).click();
   await expect(page.locator(".featured")).toHaveCount(0);
   await expect(page.locator("canvas")).toHaveCount(0);
   expect(page.url()).toBe(url);
@@ -45,7 +45,7 @@ test("collection starts collapsed and switches game details inline without navig
 test("collection preserves filters, supports keyboard/touch and resets on home or reload", async ({ page }, info) => {
   await page.goto("/");
   await page.getByRole("button", { name: "보드게임", exact: true }).click();
-  const gomoku = page.getByRole("button", { name: "오목 살펴보기" });
+  const gomoku = page.getByRole("button", { name: "오목 살펴보기", exact: true });
   await gomoku.focus();
   await page.keyboard.press("Enter");
   await expect(gomoku).toBeFocused();

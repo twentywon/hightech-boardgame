@@ -40,6 +40,8 @@ export interface Marks {
   targets: number[];
   removable: number[];
   cursor: number | null;
+  /** A destination already chosen while a further choice is awaited. */
+  pending?: number | null;
 }
 /** Strokes the straight lines of a board. */
 export function strokeLines(

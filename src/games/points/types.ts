@@ -32,6 +32,11 @@ export interface PointGame<S> {
   play(state: S, move: Move, random?: () => number): S | null;
   /** Points whose piece stands taller (a crowned checker). */
   crowned?(state: S): boolean[];
+  /**
+   * The computer's move, for a game the shared search does not suit (one
+   * with hidden pieces). It may use only what the player to move can see.
+   */
+  choose?(state: S, level: "easy" | "normal" | "hard", random: () => number): Move | null;
   /** The moves worth searching, when that is fewer than every legal one. */
   candidates?(state: S): Move[];
   turn(state: S): 0 | 1;
