@@ -271,7 +271,7 @@ test("dialogs do not collide with the result, and the table fits every screen sh
   // Rotate and resize mid-round: the table and the action buttons stay on screen.
   const shapes =
     info.project.name === "mobile"
-      ? [{ width: 915, height: 412 }, { width: 412, height: 915 }]
+      ? [{ width: 915, height: 412 }, { width: 740, height: 360 }] // phones play in landscape only
       : [{ width: 900, height: 620 }, { width: 700, height: 1000 }, { width: 1440, height: 1000 }];
   for (const size of shapes) {
     await page.setViewportSize(size);

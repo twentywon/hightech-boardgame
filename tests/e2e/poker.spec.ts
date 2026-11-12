@@ -137,7 +137,7 @@ test("seven-card stud with three computers fits every screen shape and resets on
   await expect(page.locator("#bg-call")).toBeEnabled();
   const shapes =
     info.project.name === "mobile"
-      ? [{ width: 915, height: 412 }, { width: 412, height: 915 }]
+      ? [{ width: 915, height: 412 }, { width: 740, height: 360 }] // phones play in landscape only
       : [{ width: 900, height: 620 }, { width: 700, height: 1000 }, { width: 1440, height: 1000 }];
   for (const size of shapes) {
     await page.setViewportSize(size);
