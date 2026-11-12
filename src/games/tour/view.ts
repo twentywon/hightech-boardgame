@@ -49,14 +49,46 @@ function tileTexture(index: number) {
     size = space.name.length > 5 ? 30 : space.name.length > 3 ? 38 : city ? 46 : 54;
   // A city shows its country's flag under the colour band, then its name and price.
   if (city) drawFlag(ctx, space.country, 73, 76, 110, 72);
+  if (space.kind === "ship") {
+    // The spacecraft: a white body with a dark nose, wings and a flame.
+    ctx.fillStyle = "#e9eef2";
+    ctx.beginPath();
+    ctx.moveTo(128, 70);
+    ctx.quadraticCurveTo(152, 96, 150, 136);
+    ctx.lineTo(106, 136);
+    ctx.quadraticCurveTo(104, 96, 128, 70);
+    ctx.fill();
+    ctx.fillStyle = "#2c3a44";
+    ctx.beginPath();
+    ctx.moveTo(128, 70);
+    ctx.quadraticCurveTo(140, 82, 143, 96);
+    ctx.lineTo(113, 96);
+    ctx.quadraticCurveTo(116, 82, 128, 70);
+    ctx.moveTo(106, 118);
+    ctx.lineTo(84, 142);
+    ctx.lineTo(106, 136);
+    ctx.moveTo(150, 118);
+    ctx.lineTo(172, 142);
+    ctx.lineTo(150, 136);
+    ctx.fill();
+    ctx.fillStyle = "#f08a24";
+    ctx.beginPath();
+    ctx.moveTo(114, 138);
+    ctx.lineTo(128, 162);
+    ctx.lineTo(142, 138);
+    ctx.fill();
+  }
   ctx.font = `800 ${size}px ${FONT}`;
-  ctx.fillText(space.name, 128, city ? 182 : 128);
+  const tall = city || space.kind === "ship";
+  ctx.fillText(space.name, 128, tall ? 182 : 128);
   ctx.font = `600 ${city ? 28 : 34}px ${FONT}`;
   ctx.fillStyle = "#5a5148";
   ctx.fillText(
-    city ? String(space.price) : { start: "월급 +200", luck: "카드 뽑기", tax: "-100", storm: "2번 쉼", festival: "쉬어 가기", airport: "출발로", city: "" }[space.kind],
+    city
+      ? String(space.price)
+      : { start: "월급 +200", luck: "카드 뽑기", collect: "기금 받기", storm: "더블이면 탈출", fund: "-150", space: "어디든 이동", ship: String(space.price), city: "" }[space.kind],
     128,
-    city ? 224 : 198,
+    tall ? 224 : 198,
   );
   return texture(c);
 }
@@ -120,6 +152,45 @@ export class TourView {
   onSettled: () => void = () => {};
   /** The board was tapped. */
   onTap: () => void = () => {};
+  /**
+   * Turns the top golden key card over: it lifts off the pile, flips and
+   * comes forward. `done` is called when it has opened.
+   */
+  revealCard(done: () => void) {
+    if (this.disposed) return;
+    this.card.visible = true;
+    this.halo.visible = false;
+    const from = this.deck.position.clone().setY(0.4),
+      to = new T.Vector3(0, 2.6, 3.4),
+      now = performance.now();
+    if (this.reducedMotion) {
+      this.card.position.copy(to);
+      this.card.rotation.set(-0.6, 0, 0);
+      this.card.scale.setScalar(1.7);
+      this.dirty = true;
+      done();
+      return;
+    }
+    this.tweens.push({
+      start: now,
+      duration: 700,
+      update: (p) => {
+        const e = p * p * (3 - 2 * p);
+        this.card.position.lerpVectors(from, to, e);
+        this.card.position.y += Math.sin(Math.PI * p) * 1.2;
+        // Face down on the pile, it turns over as it rises and tilts toward the player.
+        this.card.rotation.set(-0.6 * e, 0.25 * (1 - e), Math.PI * (1 - e));
+        this.card.scale.setScalar(1 + 0.7 * e);
+        if (p === 1) done();
+      },
+    });
+  }
+  /** Puts the opened card away. */
+  hideCard() {
+    this.card.visible = false;
+    this.dirty = true;
+  }
+  private card!: T.Mesh;
   /** The pile of golden key cards was tapped. */
   onDeck: () => void = () => {};
   private deck!: T.Mesh;
@@ -252,7 +323,36 @@ export class TourView {
     this.halo.rotation.x = -Math.PI / 2;
     this.halo.position.set(-2.6, 0.02, 2.2);
     this.halo.visible = false;
-    this.scene.add(this.deck, this.halo);
+    // The card that is turned over: gold back, pale face with the key.
+    const faceCanvas = document.createElement("canvas");
+    faceCanvas.width = 256;
+    faceCanvas.height = 360;
+    const f = faceCanvas.getContext("2d")!;
+    f.fillStyle = "#fff7d6";
+    f.fillRect(0, 0, 256, 360);
+    f.strokeStyle = "#c9a227";
+    f.lineWidth = 14;
+    f.strokeRect(14, 14, 228, 332);
+    f.fillStyle = "#7a5a10";
+    f.textAlign = "center";
+    f.font = `800 44px ${FONT}`;
+    f.fillText("황금열쇠", 128, 110);
+    f.strokeStyle = "#b8891a";
+    f.lineWidth = 14;
+    f.lineCap = "round";
+    f.beginPath();
+    f.arc(128, 178, 30, 0, Math.PI * 2);
+    f.moveTo(128, 208);
+    f.lineTo(128, 300);
+    f.moveTo(128, 272);
+    f.lineTo(156, 272);
+    f.moveTo(128, 300);
+    f.lineTo(150, 300);
+    f.stroke();
+    this.card = new T.Mesh(this.own(new T.BoxGeometry(1.15, 0.02, 1.6)), [gold, gold, standard({ map: this.own(texture(faceCanvas)), roughness: 0.5 }), standard({ map: this.own(texture(keyCanvas)), roughness: 0.45 }), gold, gold]);
+    this.card.visible = false;
+    this.card.castShadow = true;
+    this.scene.add(this.deck, this.halo, this.card);
     const pawn = this.own(new T.CylinderGeometry(0.09, 0.22, 0.5, 18)),
       head = this.own(new T.SphereGeometry(0.15, 16, 12));
     for (let i = 0; i < players; i++) {

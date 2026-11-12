@@ -251,7 +251,7 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   test.setTimeout(180000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  // I roll 1 and 2 and reach Bangkok; the computer rolls 2 and 3 to the tax.
+  // I roll 1 and 2 and reach Bangkok; the computer rolls 2 and 3 to the space that pays out the fund.
   await loadShuffles(page, die(1, 2, 2, 3));
   await page.goto("/");
   await selectGame(page, "세계 일주");
@@ -263,12 +263,13 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   await expect(page.locator("#tour-offer")).toBeHidden();
   await page.locator("#tour-roll").click();
   await settled(page);
+  // The offer comes up as a dialog.
+  await expect(page.getByRole("heading", { name: "방콕을(를) 살까요?" })).toBeVisible();
   await expect(turn(page)).toContainText("방콕을(를) 80에 살 수 있습니다");
-  await expect(page.locator("#tour-yes")).toHaveText("사기 (80)");
-  await page.locator("#tour-yes").click();
+  await page.locator("dialog").getByRole("button", { name: "사기 (80)" }).click();
   await expect(page.locator("#tour-money-0")).toContainText("1,920 · 도시 1 · 방콕");
-  // The computer rolls by itself and pays the tax.
-  await expect(page.locator("#tour-money-1")).toContainText("1,900 · 도시 0 · 세금", { timeout: 20000 });
+  // The computer rolls by itself and reaches the empty fund.
+  await expect(page.locator("#tour-money-1")).toContainText("2,000 · 도시 0 · 기금 수령", { timeout: 20000 });
   await expect(page.locator("#tour-roll")).toBeEnabled({ timeout: 20000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   // Play on, buying, building and drawing golden keys, into the next round.
@@ -279,9 +280,8 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
       yes = page.locator("#tour-yes"),
       roll = page.locator("#tour-roll");
     if (await read.isVisible()) {
-      // The card is shown before it takes effect.
-      await expect(page.locator("dialog .key-card")).not.toBeEmpty();
-      keys++;
+      // A golden key is shown before it takes effect; other dialogs ask to buy, build or travel.
+      if (await page.locator("dialog .key-card").count()) keys++;
       await read.click({ timeout: 1000 });
     } else if ((await key.isVisible()) && (await key.isEnabled())) await key.click({ timeout: 1000 });
     else if ((await yes.isVisible()) && (await yes.isEnabled())) await yes.click({ timeout: 1000 });

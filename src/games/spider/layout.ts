@@ -2,15 +2,16 @@ import type { Subject } from "../../engine/camera";
 import type { Card } from "./rules";
 
 /** Where the cards of spider solitaire lie; shared by the view and the browser tests. */
-export const SPIDER_SUBJECT: Subject & { tilt: number } = { half: 6.3, halfZ: 5.4, height: 0.3, lookY: 0, tilt: 1.25 };
+// Wide and shallow, so the ten columns fill a wide canvas and the cards come out large.
+export const SPIDER_SUBJECT: Subject & { tilt: number } = { half: 6.2, halfZ: 3.6, height: 0.3, lookY: 0, tilt: 1.25 };
 export const PITCH = 1.22,
-  PILES_Z = 4.55;
-const TOP = -4.4,
+  PILES_Z = 2.85;
+const TOP = -3.1,
   /** How far each card of a column lies below the one before: face down, face up. */
   DOWN = 0.2,
-  UP = 0.46,
+  UP = 0.52,
   /** The column may not run past this z; longer columns are squeezed. */
-  FLOOR = 3.3;
+  FLOOR = 1.55;
 /** Where the cards of a column lie, top to bottom. */
 export function columnSpots(cards: Card[], column: number) {
   let length = 0;

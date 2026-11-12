@@ -2,7 +2,7 @@ import * as T from "three";
 import { afterGPUFrame, aim } from "../../engine/scene-utils";
 import { FOV, cameraDistance } from "../../engine/camera";
 import { CARD, drawBack, drawFace } from "../cards/faces";
-import { faceOf, type Card, type State } from "./rules";
+import { RANK_NAMES, faceOf, type Card, type State } from "./rules";
 import { PILES_Z, PITCH, SPIDER_SUBJECT, columnSpots, stockSpot } from "./layout";
 
 interface Tween {
@@ -145,7 +145,7 @@ export class SpiderView {
       if (!at) return;
       drag.moved = true;
       // The run follows the pointer, lifted clear of the other cards.
-      drag.meshes.forEach((mesh, i) => mesh.position.set(at.x - drag.grab.x, 0.5 + i * 0.01, at.z - drag.grab.z + i * 0.46));
+      drag.meshes.forEach((mesh, i) => mesh.position.set(at.x - drag.grab.x, 0.5 + i * 0.01, at.z - drag.grab.z + i * 0.52));
       this.dirty = true;
     });
     const release = (e: PointerEvent) => {
@@ -190,7 +190,21 @@ export class SpiderView {
     const key = faceOf(card);
     let material = this.faces.get(key);
     if (!material) {
-      material = this.paint((ctx, w, h) => drawFace(ctx, w, h, key));
+      // Stacked cards show only their top strip: it carries the rank and suit, large, across its whole width.
+      material = this.paint((ctx, w, h) => {
+        drawFace(ctx, w, h, key);
+        const band = h * 0.33;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(8, 8, w - 16, band);
+        ctx.fillStyle = card.suit % 2 ? "#c8321f" : "#16181a";
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.font = `800 ${band * 0.86}px "Helvetica Neue", Arial, sans-serif`;
+        ctx.fillText(RANK_NAMES[card.rank], 20, 8 + band * 0.54, w * 0.52);
+        ctx.textAlign = "right";
+        ctx.font = `${band * 0.86}px "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", sans-serif`;
+        ctx.fillText(["♠", "♥", "♣", "♦"][card.suit], w - 20, 8 + band * 0.54);
+      });
       this.faces.set(key, material);
     }
     return material;
@@ -287,7 +301,7 @@ export class SpiderView {
       end = target[target.length - 1];
     // From the top of the first card of the run to the bottom of its last.
     frame(from[index].x, (from[index].z + last.z) / 2, last.z - from[index].z + CARD.height);
-    frame((to - 4.5) * PITCH, end ? end.z + 0.46 : -4.4, CARD.height);
+    frame((to - 4.5) * PITCH, end ? end.z + 0.52 : columnSpots([{ id: -1, rank: 1, suit: 0, up: true }], to)[0].z, CARD.height);
     this.dirty = true;
   }
   private step(now: number) {

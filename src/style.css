@@ -2079,3 +2079,14 @@ img.sd-mini-card { display: block; padding: 0; border: 0; width: 96px; height: 1
 dialog .key-card { margin: 4px 0 0; padding: 22px 18px; border: 2px solid #c9a227; border-radius: 14px; background: #fff7d6; color: #3a2c08; font-size: 17px; font-weight: 700; text-align: center; line-height: 1.6; }
 .sp-sidebar .bj-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 #sp-hint { min-height: 50px; border-radius: 12px; font-size: 14px; font-weight: 600; }
+
+/* Spider needs the whole width for its ten columns: the panel goes under the table. */
+.spider-game .table-layout { display: block; }
+.spider-game #board { height: min(58vw, 800px, calc(100svh - 150px)); min-height: 300px; }
+.spider-game .sp-sidebar { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; align-items: start; margin-top: 14px; }
+.spider-game .sp-sidebar #turn, .spider-game .sp-sidebar .bj-money, .spider-game .sp-sidebar .yd-controls { margin: 0; }
+.spider-game .sp-sidebar .yd-result { grid-column: 1 / -1; }
+@media (max-width: 760px) {
+  .spider-game #board { height: 88vw; }
+  .spider-game .sp-sidebar { grid-template-columns: 1fr; }
+}

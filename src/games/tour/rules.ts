@@ -6,7 +6,12 @@ import type { Random } from "../../core/random";
  * others for staying. Whoever is left with money, or is richest when the
  * last round ends, wins.
  */
-export type Kind = "start" | "city" | "luck" | "tax" | "storm" | "festival" | "airport";
+/**
+ * ship: a spacecraft that can be owned like a city but not built on;
+ * fund: visitors pay into the peace fund; collect: the visitor takes the fund;
+ * storm: the island; space: travel onward to any space.
+ */
+export type Kind = "start" | "city" | "ship" | "luck" | "collect" | "storm" | "fund" | "space";
 export interface Space {
   kind: Kind;
   name: string;
@@ -24,7 +29,7 @@ export const SPACES: Space[] = [
   special("luck", "황금열쇠"),
   city("방콕", 80, 0, "TH"),
   city("자카르타", 90, 0, "ID"),
-  special("tax", "세금"),
+  special("collect", "기금 수령"),
   city("싱가포르", 100, 0, "SG"),
   city("뭄바이", 110, 0, "IN"),
   city("두바이", 120, 1, "AE"),
@@ -37,7 +42,7 @@ export const SPACES: Space[] = [
   city("아테네", 200, 2, "GR"),
   city("로마", 220, 2, "IT"),
   city("암스테르담", 230, 2, "NL"),
-  special("festival", "축제"),
+  special("fund", "인류평화기금"),
   city("바르셀로나", 240, 2, "ES"),
   city("파리", 260, 2, "FR"),
   special("luck", "황금열쇠"),
@@ -46,9 +51,9 @@ export const SPACES: Space[] = [
   city("스톡홀름", 320, 2, "SE"),
   city("멕시코시티", 330, 3, "MX"),
   city("리마", 340, 3, "PE"),
-  special("airport", "공항"),
-  city("토론토", 350, 3, "CA"),
-  city("뉴욕", 400, 3, "US"),
+  special("space", "우주여행"),
+  city("뉴욕", 350, 3, "US"),
+  { kind: "ship", name: "콜롬비아호", price: 400, group: -1, country: "" },
   special("luck", "황금열쇠"),
   city("리우", 360, 3, "BR"),
   city("부에노스아이레스", 380, 3, "AR"),
@@ -60,8 +65,12 @@ export const SPACES: Space[] = [
 export const ISLAND = SPACES.findIndex((space) => space.kind === "storm");
 export const START_MONEY = 2000,
   SALARY = 200,
-  TAX = 100,
-  STORM_TURNS = 2,
+  /** Paid into the peace fund by each visitor, and to the ship's owner for a stay or a journey. */
+  FUND_FEE = 150,
+  SHIP_TOLL = 200,
+  TRAVEL_FEE = 200,
+  /** Turns spent on the island, unless a double is rolled. */
+  STORM_TURNS = 1,
   ROUNDS = 25,
   /** Names of what stands on a city: bare land, then the three buildings. */
   LEVELS = ["땅", "집", "빌딩", "랜드마크"];
@@ -100,8 +109,11 @@ export interface Player {
   wait: number;
   out: boolean;
 }
-/** "key": a golden key card waits to be drawn; "card": it has been drawn and waits to be read. */
-export type Phase = "roll" | "key" | "card" | "buy" | "build" | "over";
+/**
+ * "key": a golden key card waits to be drawn; "card": it has been drawn and
+ * waits to be read; "travel": a destination is to be chosen for space travel.
+ */
+export type Phase = "roll" | "key" | "card" | "travel" | "buy" | "build" | "over";
 export interface State {
   players: Player[];
   /** Owner of each space, or -1, and the building level on it (0–3). */
@@ -121,6 +133,8 @@ export interface State {
   doubles: number;
   /** The golden key card drawn and not yet carried out (index into `LUCK`), or -1. */
   card: number;
+  /** Money waiting in the peace fund. */
+  fund: number;
   /** Winner once the game is over; several when they are level. */
   winners: number[];
 }
@@ -140,6 +154,7 @@ export function createGame(players: number): State {
     actor: 0,
     doubles: 0,
     card: -1,
+    fund: 0,
     winners: [],
   };
 }
@@ -225,7 +240,7 @@ function arrive(s: State): boolean {
   const me = s.turn,
     p = s.players[me],
     space = SPACES[p.at];
-  if (space.kind === "city") {
+  if (space.kind === "city" || space.kind === "ship") {
     const owner = s.owners[p.at];
     if (owner === -1) {
       if (p.money >= space.price) {
@@ -235,27 +250,32 @@ function arrive(s: State): boolean {
       s.note += ` ${space.name}을(를) 살 돈이 모자랍니다.`;
     } else if (owner === me) {
       const level = s.levels[p.at];
-      if (level < 3 && p.money >= buildCost(space, level + 1)) {
+      if (space.kind === "city" && level < 3 && p.money >= buildCost(space, level + 1)) {
         s.phase = "build";
         return true;
       }
     } else {
-      const fee = feeOf(space, s.levels[p.at]),
+      const fee = space.kind === "ship" ? SHIP_TOLL : feeOf(space, s.levels[p.at]),
         paid = charge(s, me, fee);
       s.players[owner].money += paid;
-      s.note += ` ${space.name}의 숙박료 ${paid}을(를) 냈습니다.`;
+      s.note += ` ${space.name}의 ${space.kind === "ship" ? "통행료" : "숙박료"} ${paid}을(를) 냈습니다.`;
     }
-  } else if (space.kind === "tax") {
-    charge(s, me, TAX);
-    s.note += ` 세금 ${TAX}을(를) 냈습니다.`;
+  } else if (space.kind === "fund") {
+    const paid = charge(s, me, FUND_FEE);
+    s.fund += paid;
+    s.note += ` 인류평화기금에 ${paid}을(를) 냈습니다 (모인 돈 ${s.fund}).`;
+  } else if (space.kind === "collect") {
+    s.note += s.fund ? ` 인류평화기금 ${s.fund}을(를) 받았습니다.` : " 모인 기금이 없습니다.";
+    p.money += s.fund;
+    s.fund = 0;
   } else if (space.kind === "storm") {
     p.wait = STORM_TURNS;
-    s.note += ` 무인도에서 ${STORM_TURNS}번 쉽니다.`;
-  } else if (space.kind === "airport") {
-    p.at = 0;
-    p.money += SALARY;
-    s.path.push(0);
-    s.note += " 비행기로 출발 칸에 가서 월급을 받았습니다.";
+    s.note += " 무인도에 갇혔습니다.";
+  } else if (space.kind === "space") {
+    // The destination is chosen by hand: the turn waits for it.
+    s.phase = "travel";
+    s.note += " 우주여행 칸에 섰습니다.";
+    return true;
   } else if (space.kind === "luck") {
     // The card is drawn by hand: the turn waits for it.
     s.phase = "key";
@@ -274,14 +294,22 @@ export function roll(state: State, random: Random): State | null {
   s.path = [];
   s.note = "";
   s.actor = me;
-  if (p.wait > 0) {
-    p.wait--;
-    s.note = `무인도에서 배를 기다립니다 (남은 횟수 ${p.wait}).`;
-    return pass(s, false);
-  }
   s.dice = [1 + Math.floor(random() * 6), 1 + Math.floor(random() * 6)];
   const double = s.dice[0] === s.dice[1];
   s.note = `${s.dice[0]}와 ${s.dice[1]}이(가) 나왔습니다.`;
+  if (p.wait > 0) {
+    // On the island a double gets the traveller off at once; otherwise the turn is spent there.
+    if (!double) {
+      p.wait--;
+      s.note += " 무인도에서 한 차례 쉽니다.";
+      return pass(s, false);
+    }
+    p.wait = 0;
+    s.doubles = 0;
+    s.note += " 더블! 무인도를 탈출합니다.";
+    walk(s, me, s.dice[0] + s.dice[1]);
+    return arrive(s) ? s : pass(s, false);
+  }
   s.doubles = double ? s.doubles + 1 : 0;
   // A third double in a row sends the traveller straight to the island.
   if (s.doubles >= 3) {
@@ -295,6 +323,58 @@ export function roll(state: State, random: Random): State | null {
   if (arrive(s)) return s;
   // A double rolls again, unless the traveller is held on the island.
   return pass(s, double && p.wait === 0);
+}
+/** Where a computer traveller flies: the dearest free place it can afford, else a city of its own to build on, else the start. */
+export function destination(state: State) {
+  const me = state.turn,
+    money = state.players[me].money - TRAVEL_FEE;
+  let best = 0,
+    top = 0;
+  SPACES.forEach((space, i) => {
+    if (i === state.players[me].at || (space.kind !== "city" && space.kind !== "ship")) return;
+    const owner = state.owners[i],
+      value =
+        owner === -1 && money - space.price >= 250
+          ? space.price + 1000
+          : owner === me && space.kind === "city" && state.levels[i] < 3 && money - buildCost(space, state.levels[i] + 1) >= 400
+            ? space.price
+            : 0;
+    if (value > top) {
+      top = value;
+      best = i;
+    }
+  });
+  return best;
+}
+/**
+ * Space travel: onward to any other space. The owner of the ship is paid for
+ * the journey, and passing the start pays the salary.
+ */
+export function travel(state: State, to: number): State | null {
+  const here = state.players[state.turn].at;
+  if (state.phase !== "travel" || !Number.isInteger(to) || to < 0 || to >= SPACES.length || to === here) return null;
+  const s = clone(state),
+    me = s.turn,
+    p = s.players[me],
+    ship = SPACES.findIndex((space) => space.kind === "ship"),
+    owner = s.owners[ship];
+  s.actor = me;
+  s.rollId++;
+  s.path = [];
+  s.phase = "roll";
+  s.note = `${SPACES[to].name}(으)로 우주여행을 떠납니다.`;
+  if (owner >= 0 && owner !== me) {
+    const paid = charge(s, me, TRAVEL_FEE);
+    s.players[owner].money += paid;
+    s.note += ` ${SPACES[ship].name} 주인에게 ${paid}을(를) 냈습니다.`;
+    if (p.out) return pass(s, false);
+  }
+  // Going forward: a destination behind lies past the start.
+  if (to < here) p.money += SALARY;
+  p.at = to;
+  s.path.push(to);
+  if (arrive(s)) return s;
+  return pass(s, s.doubles > 0 && p.wait === 0);
 }
 /** Draws the golden key card that waits on the pile; it is read before it takes effect. */
 export function draw(state: State, random: Random): State | null {
@@ -340,7 +420,7 @@ export function follow(state: State): State | null {
     pending = arrive(s);
   }
   if (pending) return s;
-  return pass(s, s.dice[0] === s.dice[1] && p.wait === 0);
+  return pass(s, s.doubles > 0 && p.wait === 0);
 }
 /** Answers the pending offer to buy the city or to build on it. */
 export function decide(state: State, yes: boolean): State | null {
@@ -360,7 +440,8 @@ export function decide(state: State, yes: boolean): State | null {
     s.levels[p.at] = level;
     s.note = `${space.name}에 ${LEVELS[level]}을(를) 지었습니다.`;
   } else s.note = `${space.name}을(를) 지나칩니다.`;
-  return pass(s, s.dice[0] === s.dice[1]);
+  // Only a double rolled in the open earns another roll, not one that freed the traveller from the island.
+  return pass(s, s.doubles > 0);
 }
 /** A computer traveller buys and builds while it keeps a reserve for fees. */
 export function wants(state: State) {

@@ -7,8 +7,11 @@ import {
   SALARY,
   SPACES,
   START_MONEY,
-  STORM_TURNS,
-  TAX,
+  FUND_FEE,
+  SHIP_TOLL,
+  TRAVEL_FEE,
+  destination,
+  travel,
   buildCost,
   createGame,
   decide,
@@ -57,6 +60,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     generation = 0,
     thinking = false,
     announced = false,
+    // A golden key is turning over; the state whose choice has already been put to me.
+    revealing = false,
+    asked: State | null = null,
     lockedUntil = 0;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
@@ -108,7 +114,13 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $("tour-again").onclick = start;
     $("tour-roll").onclick = () => act((s) => roll(s, random));
     // If the card was closed without its button, it is carried out from here.
-    $("tour-key").onclick = () => (state.phase === "card" ? act((s) => follow(s)) : drawKey());
+    $("tour-key").onclick = () => {
+      if (state.phase === "card") act((s) => follow(s));
+      else if (state.phase === "travel") {
+        asked = null;
+        ask();
+      } else drawKey();
+    };
     $("tour-yes").onclick = () => act((s) => decide(s, true));
     $("tour-no").onclick = () => act((s) => decide(s, false));
     try {
@@ -132,9 +144,10 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     present();
   }
   const busy = () =>
-    !!view?.animating || state !== shown || thinking || performance.now() < lockedUntil || !!document.querySelector("dialog[open]");
+    !!view?.animating || state !== shown || thinking || revealing || performance.now() < lockedUntil || !!document.querySelector("dialog[open]");
   function apply(next: State) {
     if (next.rollId !== state.rollId && next.path.length) sound.dice(2);
+    view?.hideCard();
     state = next;
     if (view) view.sync(state);
     else present();
@@ -158,16 +171,54 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     sound.unlock();
     sound.card();
     state = shown = drawn;
+    revealing = true;
     update();
-    modal("황금열쇠", `<p class="key-card">${LUCK[drawn.card].text}</p>`, [
-      {
-        text: "확인",
-        action: () => {
-          const next = follow(state);
-          if (next) apply(next);
-        },
-      },
-    ]);
+    const open = () => {
+      revealing = false;
+      modal("황금열쇠", `<p class="key-card">${LUCK[drawn.card].text}</p>`, [{ text: "확인", action: () => act((s) => follow(s)) }]);
+    };
+    // The card turns over on the board before its text is shown.
+    if (view) view.revealCard(open);
+    else open();
+  }
+  /** The choices of my turn come up as dialogs: buy, build, or where to travel. */
+  function ask() {
+    if (state.turn !== 0 || state !== shown || asked === state || document.querySelector("dialog[open]")) return;
+    const me = state.players[0],
+      space = SPACES[me.at];
+    if (state.phase === "buy" || state.phase === "build") {
+      asked = state;
+      const building = state.phase === "build",
+        level = state.levels[me.at] + 1,
+        cost = building ? buildCost(space, level) : space.price,
+        detail =
+          space.kind === "ship"
+            ? `<p>다른 여행자가 이 칸에 서면 통행료 ${won(SHIP_TOLL)}, 우주여행을 떠날 때마다 ${won(TRAVEL_FEE)}을 받습니다.</p>`
+            : `<dl class="piece-moves">${[0, 1, 2, 3].map((l) => `<dt>${LEVELS[l]}${l === (building ? level : 0) ? " ◀" : ""}</dt><dd>숙박료 ${won(feeOf(space, l))}</dd>`).join("")}</dl>`;
+      modal(
+        building ? `${space.name}에 ${LEVELS[level]}을(를) 지을까요?` : `${space.name}을(를) 살까요?`,
+        `<p><b>${building ? "짓는 값" : "값"} ${won(cost)}</b> · 가진 돈 ${won(me.money)}</p>${detail}`,
+        [
+          { text: "지나치기", action: () => act((s) => decide(s, false)) },
+          { text: building ? `짓기 (${won(cost)})` : `사기 (${won(cost)})`, action: () => act((s) => decide(s, true)) },
+        ],
+      );
+    } else if (state.phase === "travel") {
+      asked = state;
+      let to = (me.at + 1) % SPACES.length;
+      const ship = SPACES.findIndex((s) => s.kind === "ship"),
+        owner = state.owners[ship],
+        fee = owner > 0 ? `${NAMES[owner]}의 ${SPACES[ship].name}를 타므로 ${won(TRAVEL_FEE)}을 냅니다.` : "지금은 요금이 없습니다.",
+        // Listed in the order they lie ahead.
+        ahead = SPACES.map((_, k) => (me.at + 1 + k) % SPACES.length).slice(0, -1);
+      modal(
+        "우주여행 — 어디로 갈까요?",
+        `<p>앞으로 어느 칸이든 갈 수 있습니다. 출발을 지나면 월급을 받습니다. ${fee}</p><label class="setting">도착할 칸<select id="tour-dest">${ahead.map((i) => `<option value="${i}">${SPACES[i].name}${SPACES[i].kind === "city" || SPACES[i].kind === "ship" ? (state.owners[i] === -1 ? ` · ${won(SPACES[i].price)}` : ` · ${NAMES[state.owners[i]]}`) : ""}${i < me.at ? " (월급)" : ""}</option>`).join("")}</select></label>`,
+        [{ text: "떠나기", action: () => act((s) => travel(s, to)) }],
+      );
+      const select = document.getElementById("tour-dest") as HTMLSelectElement | null;
+      if (select) select.onchange = () => (to = Number(select.value));
+    }
   }
   /** The computers roll and decide one visible step at a time. */
   function computer() {
@@ -178,11 +229,28 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     later(() => {
       thinking = false;
       if (current !== generation || state.turn === 0 || state.phase === "over") return;
+      if (state.phase === "key") {
+        // The computer's card turns over too; it is carried out on the next step.
+        const drawn = draw(state, random);
+        if (!drawn) return;
+        sound.card();
+        state = shown = drawn;
+        thinking = true;
+        update();
+        // Once it lies open the next step carries it out.
+        const read = () => {
+          thinking = false;
+          later(computer, 900);
+        };
+        if (view) view.revealCard(read);
+        else read();
+        return;
+      }
       const next =
         state.phase === "roll"
           ? roll(state, random)
-          : state.phase === "key"
-            ? draw(state, random)
+          : state.phase === "travel"
+            ? travel(state, destination(state))
             : state.phase === "card"
               ? follow(state)
               : decide(state, wants(state));
@@ -199,6 +267,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       else sound.lose();
     }
     computer();
+    ask();
   }
   function update() {
     if (disposed || !document.getElementById("tour-roll")) return;
@@ -227,11 +296,13 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
             ? "황금열쇠 더미를 눌러 카드를 뽑으세요."
             : s.phase === "card"
               ? `황금열쇠 — ${LUCK[s.card]?.text ?? ""}`
-              : s.phase === "roll"
-            ? me.wait > 0
-              ? "무인도에 있습니다. 주사위를 눌러 차례를 넘기세요."
-              : "내 차례 — 주사위를 굴리세요."
-            : `내 차례 — ${offer}`
+              : s.phase === "travel"
+                ? "우주여행 — 갈 곳을 고르세요."
+                : s.phase === "roll"
+                  ? me.wait > 0
+                    ? "무인도에 있습니다. 주사위를 굴려 더블이 나오면 탈출합니다."
+                    : "내 차례 — 주사위를 굴리세요."
+                  : `내 차례 — ${offer}`
           : `${NAMES[s.turn]} 차례…`;
     s.players.forEach((player, i) => {
       const cities = s.owners.filter((owner) => owner === i).length;
@@ -242,8 +313,8 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     });
     $<HTMLButtonElement>("tour-roll").hidden = s.phase !== "roll" && !over;
     $<HTMLButtonElement>("tour-roll").disabled = waiting || !mine || s.phase !== "roll";
-    $("tour-key").hidden = !(mine && (s.phase === "key" || s.phase === "card"));
-    $("tour-key").textContent = s.phase === "card" ? "카드대로 하기" : "황금열쇠 뽑기";
+    $("tour-key").hidden = !(mine && (s.phase === "key" || s.phase === "card" || s.phase === "travel"));
+    $("tour-key").textContent = s.phase === "card" ? "카드대로 하기" : s.phase === "travel" ? "갈 곳 고르기" : "황금열쇠 뽑기";
     $<HTMLButtonElement>("tour-key").disabled = waiting;
     $("tour-offer").hidden = !(mine && (s.phase === "buy" || s.phase === "build"));
     $("tour-yes").textContent = s.phase === "buy" ? `사기 (${won(space.price)})` : s.phase === "build" ? `짓기 (${won(buildCost(space, s.levels[me.at] + 1))})` : "";
@@ -257,7 +328,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     const example = SPACES.find((space) => space.name === "파리")!;
     modal(
       "도시를 사고, 건물을 올리고, 숙박료를 받으세요",
-      `<ol><li>차례가 오면 주사위 두 개를 굴려 나온 만큼 시계 방향으로 갑니다. <b>같은 눈 두 개</b>가 나오면 한 번 더 굴립니다. 같은 눈이 세 번 이어지면 무인도로 갑니다.</li><li><b>주인 없는 도시</b>에 서면 표시된 값에 살 수 있습니다.</li><li><b>내 도시</b>에 다시 서면 건물을 한 단계 올릴 수 있습니다.</li><li><b>남의 도시</b>에 서면 주인에게 숙박료를 냅니다. 건물이 높을수록 비쌉니다.</li><li>낼 돈이 모자라면 가진 도시를 값싼 것부터 반값에 팔아 메웁니다. 그래도 모자라면 <b>파산</b>해 탈락합니다.</li><li>혼자 남으면 이깁니다. ${ROUNDS}바퀴가 끝나면 <b>가진 돈 + 도시와 건물에 쓴 돈의 절반</b>이 가장 많은 사람이 이깁니다.</li></ol><h3>건물 (예: ${example.name}, 땅값 ${won(example.price)})</h3><dl class="piece-moves">${[0, 1, 2, 3].map((level) => `<dt>${LEVELS[level]}</dt><dd>${level ? `짓는 값 ${won(buildCost(example, level))} · ` : "깃발만 꽂힌 땅 · "}숙박료 ${won(feeOf(example, level))}</dd>`).join("")}</dl><h3>특별한 칸</h3><dl class="piece-moves"><dt>출발</dt><dd>지나가거나 설 때마다 월급 ${won(SALARY)}을 받습니다.</dd><dt>황금열쇠</dt><dd>판 위의 황금열쇠 더미를 눌러 카드 한 장을 뽑고, 내용을 확인한 뒤 따릅니다. 돈을 받거나 내고, 다른 칸으로 가기도 합니다.</dd><dt>세금</dt><dd>${won(TAX)}을 냅니다.</dd><dt>무인도</dt><dd>${STORM_TURNS}번 쉽니다.</dd><dt>축제</dt><dd>아무 일도 없이 쉬어 갑니다.</dd><dt>공항</dt><dd>비행기로 출발 칸에 가서 월급을 받습니다.</dd></dl><p>판이나 <b>주사위 굴리기</b> 버튼을 눌러 굴립니다. 컴퓨터는 숙박료로 낼 돈을 남겨 두고 사고 짓습니다. 저장과 무르기는 없습니다.</p>`,
+      `<ol><li>차례가 오면 주사위 두 개를 굴려 나온 만큼 시계 방향으로 갑니다. <b>같은 눈 두 개</b>가 나오면 한 번 더 굴립니다. 같은 눈이 세 번 이어지면 무인도로 갑니다.</li><li><b>주인 없는 도시</b>에 서면 표시된 값에 살 수 있습니다.</li><li><b>내 도시</b>에 다시 서면 건물을 한 단계 올릴 수 있습니다.</li><li><b>남의 도시</b>에 서면 주인에게 숙박료를 냅니다. 건물이 높을수록 비쌉니다.</li><li>낼 돈이 모자라면 가진 도시를 값싼 것부터 반값에 팔아 메웁니다. 그래도 모자라면 <b>파산</b>해 탈락합니다.</li><li>혼자 남으면 이깁니다. ${ROUNDS}바퀴가 끝나면 <b>가진 돈 + 도시와 건물에 쓴 돈의 절반</b>이 가장 많은 사람이 이깁니다.</li></ol><h3>건물 (예: ${example.name}, 땅값 ${won(example.price)})</h3><dl class="piece-moves">${[0, 1, 2, 3].map((level) => `<dt>${LEVELS[level]}</dt><dd>${level ? `짓는 값 ${won(buildCost(example, level))} · ` : "깃발만 꽂힌 땅 · "}숙박료 ${won(feeOf(example, level))}</dd>`).join("")}</dl><h3>특별한 칸</h3><dl class="piece-moves"><dt>출발</dt><dd>지나가거나 설 때마다 월급 ${won(SALARY)}을 받습니다.</dd><dt>황금열쇠</dt><dd>판 위의 황금열쇠 더미를 눌러 카드 한 장을 뽑고, 내용을 확인한 뒤 따릅니다. 돈을 받거나 내고, 다른 칸으로 가기도 합니다.</dd><dt>무인도</dt><dd>한 차례 쉽니다. 다만 그 차례에 주사위를 굴려 같은 눈이 나오면 바로 탈출해 그만큼 갑니다.</dd><dt>우주여행</dt><dd>그 자리에서 앞으로 어느 칸이든 골라 갑니다. 출발을 지나면 월급을 받습니다. 콜롬비아호에 주인이 있으면 그 사람에게 ${won(TRAVEL_FEE)}을 냅니다.</dd><dt>콜롬비아호</dt><dd>${won(SPACES.find((space) => space.kind === "ship")!.price)}에 살 수 있는 우주선입니다. 건물은 지을 수 없고, 남이 이 칸에 서면 통행료 ${won(SHIP_TOLL)}, 남이 우주여행을 떠날 때마다 ${won(TRAVEL_FEE)}을 받습니다.</dd><dt>인류평화기금</dt><dd>이 칸에 서면 ${won(FUND_FEE)}을 기금으로 냅니다.</dd><dt>기금 수령</dt><dd>이 칸에 서면 그동안 모인 인류평화기금을 모두 받습니다.</dd></dl><p>판이나 <b>주사위 굴리기</b> 버튼을 눌러 굴립니다. 사기·짓기·우주여행의 갈 곳은 창이 떠서 묻습니다. 컴퓨터는 숙박료로 낼 돈을 남겨 두고 사고 짓습니다. 저장과 무르기는 없습니다.</p>`,
     );
   }
   const dialogClosed = () => later(update, 0);

@@ -281,8 +281,9 @@ describe("World tour", () => {
   const dice = (...faces: number[]) => die(...faces);
   it("lays out 36 spaces, ten to a side, with cities whose fees rise with every building", () => {
     expect(T.SPACES).toHaveLength(36);
-    expect(T.SPACES.filter((s) => s.kind === "city")).toHaveLength(27);
-    expect([0, 9, 18, 27].map((i) => T.SPACES[i].name)).toEqual(["출발", "무인도", "축제", "공항"]);
+    expect(T.SPACES.filter((s) => s.kind === "city")).toHaveLength(26);
+    expect([0, 9, 18, 27].map((i) => T.SPACES[i].name)).toEqual(["출발", "무인도", "인류평화기금", "우주여행"]);
+    expect([T.SPACES[5].name, T.SPACES[28].name, T.SPACES[29].name]).toEqual(["기금 수령", "뉴욕", "콜롬비아호"]);
     expect(T.SPACES.filter((s) => s.name === "황금열쇠")).toHaveLength(4);
     const seoul = T.SPACES[35];
     expect([0, 1, 2, 3].map((level) => T.feeOf(seoul, level))).toEqual([90, 270, 590, 1130]);
@@ -311,23 +312,62 @@ describe("World tour", () => {
     const passed = T.decide({ ...T.roll(T.createGame(2), dice(1, 2))! }, false)!;
     expect([passed.owners[3], passed.turn]).toEqual([-1, 1]);
   });
-  it("pays the salary past the start, taxes, waits on the island and flies from the airport", () => {
+  it("pays the salary past the start; the peace fund is paid in and taken out whole", () => {
     let s = T.createGame(2);
-    s.players[0].at = 34;
+    s.players[0].at = 16;
+    s = T.roll(s, dice(1, 1))!;
+    // The fund space takes 150; the double rolls again.
+    expect([s.players[0].at, s.players[0].money, s.fund, s.turn]).toEqual([18, 1850, 150, 0]);
+    s.players[1].at = 34;
+    s.turn = 1;
     s = T.roll(s, dice(3, 4))!;
-    // 34 → 5 passes the start (+200) and lands on the tax (−100).
-    expect([s.players[0].at, s.players[0].money]).toEqual([5, 2100]);
-    s = T.createGame(2);
+    // 34 → 5 passes the start (+200) and collects the fund (+150).
+    expect([s.players[1].at, s.players[1].money, s.fund]).toEqual([5, 2350, 0]);
+  });
+  it("holds a traveller on the island for one turn unless a double is rolled", () => {
+    let s = T.createGame(2);
     s.players[0].at = 6;
     s = T.roll(s, dice(1, 2))!;
-    expect([s.players[0].at, s.players[0].wait, s.turn]).toEqual([9, 2, 1]);
-    // The other traveller declines Jakarta; then the island costs one of the two turns.
-    s = T.roll(T.decide(T.roll(s, dice(1, 3))!, false)!, dice(2, 3))!;
-    expect([s.players[0].at, s.players[0].wait]).toEqual([9, 1]);
-    s = T.createGame(2);
+    expect([s.players[0].at, s.players[0].wait, s.turn]).toEqual([9, 1, 1]);
+    // The other traveller declines Jakarta; no double: the turn is spent on the island.
+    const waited = T.roll(T.decide(T.roll(s, dice(1, 3))!, false)!, dice(2, 3))!;
+    expect([waited.players[0].at, waited.players[0].wait, waited.turn]).toEqual([9, 0, 1]);
+    // A double leaves at once by that roll, and earns no further roll.
+    const escaped = T.roll(T.decide(T.roll(s, dice(1, 3))!, false)!, dice(2, 2))!;
+    expect([escaped.players[0].at, escaped.players[0].wait, escaped.phase, escaped.turn]).toEqual([13, 0, "buy", 0]);
+    expect(T.decide(escaped, false)!.turn).toBe(1);
+  });
+  it("travels from the space port to any space ahead, paying the ship's owner and taking the salary", () => {
+    let s = T.createGame(2);
     s.players[0].at = 23;
     s = T.roll(s, dice(1, 3))!;
-    expect([s.players[0].at, s.players[0].money]).toEqual([0, 2200]);
+    expect([s.players[0].at, s.phase]).toEqual([27, "travel"]);
+    expect(T.travel(s, 27)).toBeNull();
+    expect(T.travel(s, 36)).toBeNull();
+    expect(T.roll(s, dice(1, 1))).toBeNull();
+    // Nobody owns the ship: the journey is free. Bangkok lies past the start.
+    const free = T.travel(s, 3)!;
+    expect([free.players[0].at, free.players[0].money, free.phase, free.path]).toEqual([3, 2200, "buy", [3]]);
+    // With the ship in the other traveller's hands the journey costs 200.
+    s.owners[29] = 1;
+    const paid = T.travel(s, 35)!;
+    expect([paid.players[0].at, paid.players[0].money, paid.players[1].money, paid.phase]).toEqual([35, 1800, 2200, "buy"]);
+    // Landing on the ship itself costs its toll; it can be bought but not built on.
+    let t = T.createGame(2);
+    t.players[0].at = 27;
+    t.owners[29] = 1;
+    t = T.roll(t, dice(1, 1))!;
+    expect([t.players[0].money, t.players[1].money]).toEqual([1800, 2200]);
+    let u = T.createGame(2);
+    u.players[0].at = 26;
+    u = T.decide(T.roll(u, dice(1, 2))!, true)!;
+    expect([u.owners[29], u.players[0].money]).toEqual([0, 1600]);
+    u.turn = 0;
+    u.players[0].at = 26;
+    u.phase = "roll";
+    expect(T.roll(u, dice(1, 2))!.phase).toBe("roll");
+    // A computer flies to the dearest place it can afford.
+    expect(T.destination(s)).toBe(35);
   });
   it("waits for a golden key to be drawn and read before it takes effect", () => {
     let s = T.createGame(2);
@@ -345,7 +385,7 @@ describe("World tour", () => {
     // A card that sends the traveller to the island ends the turn there.
     let t = T.roll(T.createGame(2), dice(1, 1))!;
     t = T.follow(T.draw(t, feed([7.5 / T.LUCK.length]))!)!;
-    expect([t.players[0].at, t.players[0].wait, t.turn]).toEqual([T.ISLAND, 2, 1]);
+    expect([t.players[0].at, t.players[0].wait, t.turn]).toEqual([T.ISLAND, 1, 1]);
   });
   it("sends a traveller to the island on the third double in a row", () => {
     let s = T.createGame(2);
@@ -357,7 +397,7 @@ describe("World tour", () => {
     s = T.decide(T.roll(s, dice(2, 2))!, false)!;
     expect([s.players[0].at, s.turn, s.doubles]).toEqual([22, 0, 2]);
     s = T.roll(s, dice(5, 5))!;
-    expect([s.players[0].at, s.players[0].wait, s.turn, s.doubles]).toEqual([T.ISLAND, 2, 1, 0]);
+    expect([s.players[0].at, s.players[0].wait, s.turn, s.doubles]).toEqual([T.ISLAND, 1, 1, 0]);
     expect(s.note).toContain("무인도로 갑니다");
   });
   it("sells cities to cover a debt, and the last traveller with money wins", () => {
@@ -386,6 +426,8 @@ describe("World tour", () => {
               ? T.roll(s, random)
               : s.phase === "key"
                 ? T.draw(s, random)
+                : s.phase === "travel"
+                  ? T.travel(s, T.destination(s))
                 : s.phase === "card"
                   ? T.follow(s)
                   : T.decide(s, T.wants(s));
