@@ -24,3 +24,15 @@ new MutationObserver(watchLayout).observe(root, { childList: true });
 window.addEventListener("resize", fitBoard);
 window.visualViewport?.addEventListener("resize", fitBoard);
 watchLayout();
+
+// Phones play in landscape. A page cannot turn the screen by itself except in full screen, and not on every phone:
+// the button tries that, and where it is refused the notice asks for the phone to be turned.
+document.getElementById("rotate-go")?.addEventListener("click", async () => {
+  const help = document.getElementById("rotate-help")!;
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    await (screen.orientation as ScreenOrientation & { lock(orientation: string): Promise<void> }).lock("landscape");
+  } catch {
+    help.textContent = "이 브라우저는 화면을 대신 돌려 주지 못합니다. 화면 회전 잠금을 풀고 휴대폰을 가로로 돌려 주세요.";
+  }
+});

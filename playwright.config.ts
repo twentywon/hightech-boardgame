@@ -31,6 +31,7 @@ export default defineConfig({
         viewport: { width: 1440, height: 1000 },
       },
     },
-    { name: "mobile", use: { ...devices["Pixel 7"] } },
+    // Phones play in landscape (a phone held upright is asked to turn).
+    { name: "mobile", use: { ...devices["Pixel 7 landscape"] } },
   ],
 });
