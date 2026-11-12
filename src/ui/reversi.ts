@@ -320,6 +320,8 @@ export function mountReversi(
     $("pass-notice").textContent = state.lastPassed
       ? `${state.lastPassed === 1 ? "흑" : "백"}돌은 둘 곳이 없어 자동 패스했습니다.`
       : "";
+    // Where the next disc would go, now that no button names it.
+    if (view) view.renderer.domElement.dataset.candidate = candidate && isLegal(candidate) ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}` : "";
     // Enabled again by onSettled once the discs stop flipping.
     $<HTMLButtonElement>("undo").disabled = !undoTarget() || !!view?.animating;
     const legal =

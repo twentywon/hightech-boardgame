@@ -40,7 +40,7 @@ for (const game of ["gomoku", "reversi"] as const) {
     await page.mouse.move(p.x, p.y);
     await page.mouse.down();
     await page.locator("canvas").dispatchEvent("pointercancel", { pointerId: 1, pointerType: "mouse", isPrimary: true });
-    await expect(page.locator("#confirm")).toBeDisabled();
+    await expect(page.locator("canvas")).toHaveAttribute("data-candidate", "");
     await page.mouse.up();
     await expect(page.locator("#move-count")).toHaveText("0수");
     expect(errors).toEqual([]);
@@ -52,11 +52,11 @@ for (const game of ["gomoku", "reversi"] as const) {
     const p = await opening(page, game);
     if (info.project.name === "mobile") await page.touchscreen.tap(p.x, p.y);
     else await page.mouse.move(p.x, p.y);
-    await expect(page.locator("#confirm")).toBeEnabled();
+    await expect(page.locator("canvas")).not.toHaveAttribute("data-candidate", "");
     const box = (await page.locator("canvas").boundingBox())!;
     if (info.project.name === "mobile") await page.touchscreen.tap(box.x + 5, box.y + 5);
     else await page.mouse.move(box.x + 5, box.y + 5);
-    await expect(page.locator("#confirm")).toBeDisabled();
+    await expect(page.locator("canvas")).toHaveAttribute("data-candidate", "");
     await expect(page.locator("#move-count")).toHaveText("0수");
   });
 
@@ -103,7 +103,7 @@ test("gomoku: game result survives page suspension while settings are open", asy
   }
   await page.waitForTimeout(450);
   await page.keyboard.press("ArrowLeft");
-  await expect(page.locator("#confirm")).toContainText("G8");
+  await expect(page.locator("canvas")).toHaveAttribute("data-candidate", "G8");
   // Open settings in the same task as the winning keypress. Software WebGL can
   // delay a later Playwright click until after the 850ms result timer fires.
   await page.evaluate(() => {

@@ -2255,3 +2255,6 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
 }
 /* The status line over the table stands clear of the buttons in the corner. */
 .board-area > .board-hint { bottom: 56px; }
+.game-sidebar .side-setup [hidden] { display: none !important; }
+/* The spider's stock lies in the lower right corner of its table: its buttons stand in the left one. */
+.spider-game .board-area .board-controls { right: auto; left: 12px; bottom: 36px; justify-content: flex-start; }

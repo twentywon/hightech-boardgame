@@ -697,6 +697,8 @@ function update() {
     $("turn").append(retry);
   }
   $("move-count").textContent = `${state.moves.length}수`;
+  // Where the next stone would go, now that no button names it.
+  if (view) view.renderer.domElement.dataset.candidate = candidate ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}` : "";
   $<HTMLButtonElement>("undo").disabled = !undoCount();
 }
 function showResult() {

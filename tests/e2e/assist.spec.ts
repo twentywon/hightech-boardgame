@@ -19,12 +19,11 @@ async function enter(page: Page, moves: string) {
     await expect(count(page)).toHaveText(moves, { timeout: 500 });
   }).toPass({ timeout: 15000 });
 }
-/** Moves the keyboard cursor until the confirm button names `square`. */
+/** Moves the keyboard cursor until the board names `square` as the point to play. */
 async function aim(page: Page, key: string, square: string) {
-  const confirm = page.getByRole("button", { name: /착수 확정|위치를 선택/ });
   await expect(async () => {
     await page.keyboard.press(key);
-    await expect(confirm).toContainText(square, { timeout: 300 });
+    await expect(page.locator("canvas")).toHaveAttribute("data-candidate", square, { timeout: 300 });
   }).toPass({ timeout: 15000 });
 }
 
@@ -168,7 +167,8 @@ test("Chess undo: take back a move, alone and against the computer", async ({
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
   await expect(confirm).toHaveText("E2 → E4 이동 확정");
-  await confirm.click();
+  // The confirm button is not shown any more; it is still there for the keyboard.
+  await confirm.evaluate((button: HTMLElement) => button.click());
   await expect(count(page)).toHaveText("1수");
   await expect(page.locator("#chess-history")).toHaveCount(0);
   await expect(async () => {

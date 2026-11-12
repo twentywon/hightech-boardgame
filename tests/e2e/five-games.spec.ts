@@ -71,7 +71,7 @@ test("pocket ball: the cue ball is pulled back and let go", async ({ page }) => 
 
 test("indian poker: I see only the other card, and a call ends the round", async ({ page }) => {
   const errors = await sit(page, "인디언 포커");
-  await expect(page.getByLabel("로컬 2인", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("로컬 2인", { exact: true })).toBeHidden();
   await expect(page.locator("#turn")).toContainText("상대 카드는");
   // My own card is nowhere in the page while the betting lasts.
   expect(await page.locator("main").innerHTML()).not.toContain("내 카드");

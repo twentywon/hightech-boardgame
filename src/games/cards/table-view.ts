@@ -15,6 +15,8 @@ export interface CardSkin {
   lines: [string, string];
   /** Seats hold only a few cards, so the table can be drawn closer. */
   compact?: boolean;
+  /** Seat 0's cards that the others cannot see are gathered at the left of its row. */
+  secretLeft?: boolean;
 }
 const FONT =
   '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif';
@@ -488,7 +490,7 @@ export class CardTableView {
         // A folded hand is squared up into a small pile.
         gap = seat.folded ? 0.1 * scale : this.gap(seat.cards.length, width, scale);
       // My own cards that the others cannot see lie together at the left of my row.
-      const cards = s === 0 ? [...seat.cards].sort((a, b) => Number(!!b.secret) - Number(!!a.secret)) : seat.cards;
+      const cards = s === 0 && this.skin.secretLeft ? [...seat.cards].sort((a, b) => Number(!!b.secret) - Number(!!a.secret)) : seat.cards;
       cards.forEach((card, i) =>
         targets.set(card.id, {
           face: card.face,
