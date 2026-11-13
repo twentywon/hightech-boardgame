@@ -5,8 +5,6 @@ import * as merge from "../src/games/merge/rules";
 import * as blocks from "../src/games/blocks/rules";
 import * as bricks from "../src/games/bricks/rules";
 import { BAT_Z, DT, HALF_X, HALF_Z, R, batHalf, createWorld, launch, speedOf, step } from "../src/games/bricks/sim";
-import * as mazeRules from "../src/games/maze/rules";
-import { MOUSE_SPEED, catSpeed, createWorld as createMaze, scaredFor, step as stepMaze } from "../src/games/maze/sim";
 import * as marbleRules from "../src/games/marble/rules";
 import * as crateRules from "../src/games/crate/rules";
 
@@ -444,108 +442,12 @@ describe("falling blocks: levels", () => {
   });
 });
 
-describe("mouse maze", () => {
-  test("every maze is walled round, mirrored, joined up and free of dead ends", () => {
-    for (let level = 1; level <= mazeRules.LEVELS; level++) {
-      const wall = mazeRules.buildMaze(level),
-        { W, H, DX, DY } = mazeRules,
-        open = wall.flatMap((solid, i) => (solid ? [] : [i]));
-      expect(wall).toEqual(mazeRules.buildMaze(level));
-      for (let x = 0; x < W; x++) expect(wall[x] && wall[(H - 1) * W + x]).toBe(true);
-      for (let y = 0; y < H; y++) {
-        expect(wall[y * W] && wall[y * W + W - 1]).toBe(true);
-        for (let x = 0; x < W; x++) expect(wall[y * W + x]).toBe(wall[y * W + (W - 1 - x)]);
-      }
-      // Every open square can be reached from the mouse's start.
-      const seen = new Set([mazeRules.START.y * W + mazeRules.START.x]),
-        queue = [...seen];
-      while (queue.length) {
-        const at = queue.pop()!;
-        for (let d = 0; d < 4; d++) {
-          const next = at + DX[d] + DY[d] * W;
-          if (!wall[next] && !seen.has(next)) {
-            seen.add(next);
-            queue.push(next);
-          }
-        }
-      }
-      expect(seen.size).toBe(open.length);
-      for (const at of open) expect([0, 1, 2, 3].filter((d) => !wall[at + DX[d] + DY[d] * W]).length, `level ${level} square ${at}`).toBeGreaterThan(1);
-      for (const p of [mazeRules.START, mazeRules.DEN, ...mazeRules.PEPPERS]) expect(wall[p.y * W + p.x]).toBe(false);
-    }
-    expect(mazeRules.buildMaze(1)).not.toEqual(mazeRules.buildMaze(2));
-  });
-  test("turning is no event; crumbs, chillies and cats score; three catches end it; the fifth maze wins", () => {
-    let state = mazeRules.createGame();
-    state = mazeRules.play(state, to(1))!;
-    expect([state.want, state.ply]).toEqual([1, 0]);
-    state = mazeRules.play(state, to(mazeRules.CRUMB))!;
-    state = mazeRules.play(state, to(mazeRules.PEPPER))!;
-    state = mazeRules.play(state, to(mazeRules.CAT))!;
-    expect([state.score, state.ply]).toEqual([260, 3]);
-    state = mazeRules.play(state, to(mazeRules.CLEAR))!;
-    expect([state.level, state.score, state.want]).toEqual([2, 760, -1]);
-    for (let level = 2; level <= mazeRules.LEVELS; level++) state = mazeRules.play(state, to(mazeRules.CLEAR))!;
-    expect(state.winner).toBe(0);
-    let lost = mazeRules.createGame(4);
-    expect(lost.level).toBe(4);
-    for (let i = 0; i < mazeRules.LIVES; i++) lost = mazeRules.play(lost, to(mazeRules.CAUGHT))!;
-    expect([lost.lives, lost.winner]).toEqual([0, 1]);
-    expect(mazeRules.play(lost, to(0))).toBeNull();
-  });
-  test("the mouse runs the passages, stops at walls and picks up what it passes", () => {
-    const world = createMaze(1, seededRandom(1)),
-      { W, DX, DY } = mazeRules;
-    world.cats = [];
-    world.hold = 0;
-    const way = [0, 1, 2, 3].find((d) => !world.wall[world.mouse.y * W + world.mouse.x + DX[d] + DY[d] * W])!,
-      crumbs = world.left;
-    let seen: string[] = [];
-    for (let i = 0; i < 600; i++) seen = seen.concat(stepMaze(world, way));
-    // It has gone as far as the passage runs and stands there, on a square that is no wall.
-    expect(world.mouse.dir).toBe(-1);
-    expect(world.wall[world.mouse.y * W + world.mouse.x]).toBe(false);
-    expect(seen.filter((e) => e === "crumb").length).toBeGreaterThan(0);
-    expect(world.left).toBe(crumbs - seen.filter((e) => e === "crumb").length);
-  });
-  test("a cat that reaches the mouse catches it, unless a chilli has been eaten", () => {
-    const meet = (scared: number) => {
-      const world = createMaze(1, seededRandom(5));
-      world.hold = 0;
-      world.scared = scared;
-      world.cats = [{ x: world.mouse.x, y: world.mouse.y, dir: -1, t: 0, wait: 0, kind: 0 }];
-      return { world, events: stepMaze(world, -1) };
-    };
-    const caught = meet(0);
-    expect(caught.events).toContain("caught");
-    // Everyone is back where they started, and the cats wait in their basket again.
-    expect([caught.world.mouse.x, caught.world.mouse.y]).toEqual([mazeRules.START.x, mazeRules.START.y]);
-    expect(caught.world.cats[0].wait).toBeGreaterThan(0);
-    const chased = meet(3);
-    expect(chased.events).toEqual(["cat"]);
-    expect([chased.world.cats[0].y, chased.world.cats[0].wait]).toEqual([mazeRules.DEN.y, 3]);
-    // More cats, and faster, at the later levels; the chilli lasts less long.
-    expect(createMaze(1).cats.length).toBeLessThan(createMaze(4).cats.length);
-    expect(catSpeed(5)).toBeGreaterThan(catSpeed(1));
-    expect(scaredFor(5)).toBeLessThan(scaredFor(1));
-    expect(catSpeed(mazeRules.LEVELS)).toBeLessThan(MOUSE_SPEED);
-  });
-  test("the same inputs give the same game, and the cats never walk through walls", () => {
-    const run = () => {
-      const world = createMaze(3, seededRandom(11)),
-        seen: string[] = [];
-      for (let i = 0; i < 1500; i++) {
-        seen.push(...stepMaze(world, i % 240 < 120 ? 1 : 0));
-        for (const cat of world.cats) expect(world.wall[cat.y * mazeRules.W + cat.x]).toBe(false);
-      }
-      return seen.join();
-    };
-    expect(run()).toBe(run());
-  });
-});
-
 describe("marble shooting", () => {
-  const tray = (marbles: [number, number][]): marbleRules.State => ({ cells: Array.from({ length: marbleRules.W * marbleRules.H }, (_, i) => marbles.some(([x, y]) => y * marbleRules.W + x === i)), winner: null, size: marbles.length, last: null, ply: 0 }),
+  const tray = (marbles: [number, number][]): marbleRules.State => {
+      const cells = Array.from({ length: marbleRules.W * marbleRules.H }, (_, i) => marbles.some(([x, y]) => y * marbleRules.W + x === i));
+      // Each marble's colour is its place in the list, so that it can be followed.
+      return { cells, tints: cells.map((_, i) => 1 + marbles.findIndex(([x, y]) => y * marbleRules.W + x === i)), winner: null, size: marbles.length, last: null, ply: 0 };
+    },
     at = (x: number, y: number) => y * marbleRules.W + x;
   test("a marble is shot at one at least a hollow away, stops beside it, and that one rolls off", () => {
     const state = tray([[0, 0], [3, 0], [0, 1]]);
@@ -562,6 +464,9 @@ describe("marble shooting", () => {
     // Shot from the left: it stops at 2, the two that touch pass the knock on, the one at 6 is struck by the one from 4.
     const next = marbleRules.play(tray([[0, 2], [3, 2], [4, 2], [6, 2]]), { from: at(0, 2), to: at(3, 2), extra: -1 })!;
     expect([0, 1, 2, 3, 4, 5, 6].filter((x) => next.cells[at(x, 2)])).toEqual([2, 3, 5]);
+    // Each marble keeps its colour: the first is now at 2, the second has not moved, the third is at 5, the fourth is gone.
+    expect([2, 3, 5].map((x) => next.tints[at(x, 2)])).toEqual([1, 2, 3]);
+    expect(next.tints.filter(Boolean).length).toBe(3);
     expect(next.last!.rolls).toEqual([{ from: at(0, 2), to: at(2, 2) }, { from: at(4, 2), to: at(5, 2) }, { from: at(6, 2), to: -1 }]);
   });
   test("one marble left wins; marbles that cannot reach each other lose", () => {
@@ -577,6 +482,7 @@ describe("marble shooting", () => {
       for (const seed of [1, 2, 3]) {
         const start = marbleRules.createGame(size, seededRandom(seed * 31 + size));
         expect(marbleRules.count(start)).toBe(size);
+        expect(start.tints.every((tint, i) => (start.cells[i] ? tint >= 1 && tint <= marbleRules.COLOURS : tint === 0))).toBe(true);
         expect(start.winner).toBeNull();
         // A search finds a way down to one.
         const dead = new Set<string>(),

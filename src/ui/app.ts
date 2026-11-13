@@ -32,7 +32,6 @@ import { blocksConfig } from "../games/blocks/config";
 import { mergeConfig } from "../games/merge/config";
 import { bricksConfig } from "../games/bricks/config";
 import { pegConfig } from "../games/peg/config";
-import { mazeConfig } from "../games/maze/config";
 import { marbleConfig } from "../games/marble/config";
 import { crateConfig } from "../games/crate/config";
 import type { PointConfig } from "./point-game";
@@ -144,7 +143,6 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "2048": { config: mergeConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "brick-breaker": { config: bricksConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "peg-solitaire": { config: pegConfig, options: { mode: "ai", variant: "full", level: "normal" } },
-  "mouse-maze": { config: mazeConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "marble-shot": { config: marbleConfig, options: { mode: "ai", variant: "6", level: "normal" } },
   "warehouse-keeper": { config: crateConfig, options: { mode: "ai", variant: "3", level: "normal" } },
 };
@@ -270,7 +268,6 @@ type GameSelection =
   | "2048"
   | "brick-breaker"
   | "peg-solitaire"
-  | "mouse-maze"
   | "marble-shot"
   | "warehouse-keeper"
   | null;

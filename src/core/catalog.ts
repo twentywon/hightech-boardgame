@@ -304,14 +304,6 @@ export const games = [
     available: true,
   },
   {
-    name: "생쥐 미로",
-    en: "MOUSE MAZE",
-    category: "퍼즐게임",
-    players: "1인용",
-    icon: "▚",
-    available: true,
-  },
-  {
     name: "구슬치기",
     en: "MARBLE SHOT",
     category: "퍼즐게임",

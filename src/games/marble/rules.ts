@@ -12,9 +12,13 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 export const W = 7,
   H = 8,
   DX = [0, 1, 0, -1],
-  DY = [-1, 0, 1, 0];
+  DY = [-1, 0, 1, 0],
+  /** How many colours the marbles come in. */
+  COLOURS = 3;
 export interface State {
   cells: boolean[];
+  /** The colour of the marble in each hollow (1–3), 0 where there is none; a marble keeps its colour as it rolls. */
+  tints: number[];
   winner: Winner;
   /** How many marbles the tray began with. */
   size: number;
@@ -78,7 +82,12 @@ export function play(state: State, move: Move): State | null {
   if (state.winner !== null || move.extra !== -1 || !moves(state).some((m) => m.from === move.from && m.to === move.to)) return null;
   const dir = direction(move.from, move.to),
     { cells, rolls } = shoot(state.cells, move.from, dir),
-    next: State = { ...state, cells, winner: null, last: { dir, rolls }, ply: state.ply + 1 };
+    tints = state.tints.slice();
+  for (const roll of rolls) {
+    if (roll.to >= 0) tints[roll.to] = tints[roll.from];
+    tints[roll.from] = 0;
+  }
+  const next: State = { ...state, cells, tints, winner: null, last: { dir, rolls }, ply: state.ply + 1 };
   next.winner = count(next) === 1 ? 0 : moves(next).length ? null : 1;
   return next;
 }
@@ -117,12 +126,12 @@ export function createGame(size = 6, random: Random = cryptoRandom): State {
       if (!undone.length) stuck = true;
       else cells = undone[Math.floor(random() * undone.length)];
     }
-    if (!stuck) return { cells, winner: null, size: want, last: null, ply: 0 };
+    if (!stuck) return { cells, tints: cells.map((marble) => (marble ? 1 + Math.floor(random() * COLOURS) : 0)), winner: null, size: want, last: null, ply: 0 };
   }
   // Never reached in practice: two marbles in a row with a gap.
   const cells: boolean[] = Array(W * H).fill(false);
   cells[0] = cells[2] = true;
-  return { cells, winner: null, size: 2, last: null, ply: 0 };
+  return { cells, tints: cells.map((marble) => (marble ? 1 : 0)), winner: null, size: 2, last: null, ply: 0 };
 }
 const effect = (): Effect | null => null;
 export const marble: PointGame<State> = {

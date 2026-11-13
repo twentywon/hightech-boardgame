@@ -216,36 +216,6 @@ test("brick breaker: the ball is sent off and knocks a brick out", async ({ page
   expect(errors).toEqual([]);
 });
 
-test("mouse maze: the mouse runs where it is sent, the arrows steer it, and it can be paused", async ({ page }) => {
-  const errors = await sit(page, "생쥐 미로");
-  await expect(page.locator(".solo-stat")).toHaveCount(3);
-  await expect(page.locator("#turn")).toContainText("남은 목숨 3");
-  // It stands until it is sent somewhere; then it picks up crumbs as it goes.
-  await page.waitForTimeout(600);
-  expect(await score(page)).toBe(0);
-  for (const key of ["ArrowLeft", "ArrowUp", "ArrowRight"]) {
-    await page.keyboard.press(key);
-    await page.waitForTimeout(500);
-  }
-  await expect.poll(() => score(page), { timeout: 15000 }).toBeGreaterThan(0);
-  const tools = page.locator(".board-area .pg-tools");
-  await expect(tools.getByRole("button", { name: "위로" })).toBeVisible();
-  await tools.getByRole("button", { name: "왼쪽으로" }).click();
-  // Paused, nothing moves and nothing is scored.
-  await page.locator("#pg-pause").click();
-  await expect(page.locator("#turn")).toContainText("일시정지");
-  const held = await count(page).innerText();
-  await page.waitForTimeout(1500);
-  await expect(count(page)).toHaveText(held);
-  await page.locator("#pg-pause").click();
-  // 새 게임 shows the five mazes.
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await expect(page.getByRole("dialog").locator(".stage-card svg")).toHaveCount(5);
-  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "3단계" }).click();
-  await expect(page.locator("#turn")).toContainText("3/5단계", { timeout: 20000 });
-  expect(errors).toEqual([]);
-});
-
 test("marble shooting: a marble is shot from the keyboard, the shot is taken back, and 새 게임 asks how many", async ({ page }) => {
   // The tray is laid at random; with the platform's generator replaced by a known one, the test can lay the same tray.
   await page.addInitScript(() => {

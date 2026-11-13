@@ -9,9 +9,9 @@ function sizeArt(size: number) {
   const dots = Array.from({ length: size }, (_, i) => {
     const x = 28 + (i % 4) * 28,
       y = 34 + Math.floor(i / 4) * 28;
-    return `<circle cx="${x}" cy="${y}" r="10" fill="#e6f1ee" stroke="#2f9f8f" stroke-width="3"/><path d="M${x - 6} ${y + 2} q6 -9 12 -3" fill="none" stroke="#e0a92a" stroke-width="3"/>`;
+    return `<circle cx="${x}" cy="${y}" r="11" fill="${["#149aa3", "#7a3fb5", "#c9342c"][i % 3]}"/><circle cx="${x - 3.5}" cy="${y - 4}" r="3" fill="#ffffff" opacity="0.85"/>`;
   }).join("");
-  return `<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="128" height="128" rx="14" fill="#c99a5e" stroke="#8a5a2b" stroke-width="3"/>${dots}</svg>`;
+  return `<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="5" width="130" height="130" rx="12" fill="#d3a877" stroke="#4a2f22" stroke-width="6"/>${dots}</svg>`;
 }
 export const marbleConfig: PointConfig<State> = {
   game: marble,
@@ -27,7 +27,7 @@ export const marbleConfig: PointConfig<State> = {
   name: "구슬치기",
   english: "Marble Shot",
   number: "NO. 40 — KNOCK THEM OFF",
-  intro: `<p>나무 쟁반 위의 유리구슬들.<br>구슬로 구슬을 쳐서 하나씩 쟁반 밖으로 내보내고, 마지막 한 개만 남기세요. 판은 할 때마다 새로 만들어집니다.</p>`,
+  intro: `<p>나무판 위의 알록달록한 구슬들.<br>구슬로 구슬을 쳐서 하나씩 쟁반 밖으로 내보내고, 마지막 한 개만 남기세요. 판은 할 때마다 새로 만들어집니다.</p>`,
   meta: "1인 · 7×8 · 판은 무작위",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>KNOCK THEM OFF</span>`,
   artClass: "morris-art",
