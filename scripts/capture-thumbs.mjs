@@ -203,6 +203,35 @@ const play = {
     await page.keyboard.press("Escape");
     await wait(300);
   },
+  "tower-of-hanoi": async () => {
+    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await wait(500);
+    await page.locator("canvas").focus();
+    await keys(["ArrowLeft", "ArrowLeft", "Enter", "ArrowRight", "ArrowRight", "Enter"], 260);
+    await wait(700);
+    await keys(["ArrowLeft", "ArrowLeft", "Enter", "ArrowRight", "Enter"], 260);
+    await wait(700);
+  },
+  "lights-off": async () => {
+    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await wait(500);
+  },
+  minesweeper: async () => {
+    await page.locator("canvas").focus();
+    await keys(["ArrowRight", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowRight", "ArrowRight", "ArrowRight", "Enter"], 120);
+    await wait(400);
+  },
+  "fruit-merge": async () => {
+    await page.locator("canvas").focus();
+    for (let i = 0; i < 22; i++) {
+      const way = i % 3 === 0 ? "ArrowLeft" : "ArrowRight";
+      await page.keyboard.down(way);
+      await wait(110 + (i % 4) * 90);
+      await page.keyboard.up(way);
+      await page.keyboard.press(" ");
+      await wait(700);
+    }
+  },
   "river-crossing": async () => {
     await page.keyboard.press("Escape");
     await wait(300);

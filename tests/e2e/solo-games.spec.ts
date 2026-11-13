@@ -5,6 +5,9 @@ import { CENTRE, HOLES, SIZE, holeAt } from "../../src/games/peg/rules";
 import { W as TRAY_W, createGame as layTray, solve as solveTray } from "../../src/games/marble/rules";
 import { createGame as layJugs, solve as solveJugs } from "../../src/games/pour/rules";
 import { createGame as gather, solve as ferry } from "../../src/games/river/rules";
+import * as tower from "../../src/games/hanoi/rules";
+import * as lamps from "../../src/games/lights/rules";
+import * as field from "../../src/games/mines/rules";
 import { selectGame } from "./library";
 
 const count = (page: Page) => page.locator("#move-count");
@@ -451,5 +454,195 @@ test("river crossing: a wrong crossing is shown as a failure and taken back, and
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await panel.locator("#pz-next").click();
   await expect(panel.locator("#pz-stage")).toHaveText("양과 늑대 · 스테이지 2");
+  expect(errors).toEqual([]);
+});
+
+/** Replaces the platform's generator with a known one, and gives the same numbers to the test. */
+async function seeded(page: Page, start: number) {
+  await page.addInitScript((first) => {
+    let seed = first;
+    crypto.getRandomValues = ((buffer: Uint32Array) => {
+      for (let i = 0; i < buffer.length; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        buffer[i] = seed * 2;
+      }
+      return buffer;
+    }) as typeof crypto.getRandomValues;
+  }, start);
+  let seed = start;
+  return () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed * 2) / 4294967296;
+  };
+}
+/** Walks the keyboard over a board of `cols` columns: `home` goes to its first point, `go` to a point and presses it. */
+function walker(page: Page, cols: number, rows: number) {
+  let cursor = 0;
+  return {
+    home: async () => {
+      await page.locator("canvas").focus();
+      for (let i = 0; i <= cols; i++) await page.keyboard.press("ArrowLeft");
+      for (let i = 0; i <= rows; i++) await page.keyboard.press("ArrowUp");
+      cursor = 0;
+    },
+    go: async (to: number) => {
+      const dc = (to % cols) - (cursor % cols),
+        dr = Math.floor(to / cols) - Math.floor(cursor / cols);
+      for (let i = 0; i < Math.abs(dc); i++) await page.keyboard.press(dc > 0 ? "ArrowRight" : "ArrowLeft");
+      for (let i = 0; i < Math.abs(dr); i++) await page.keyboard.press(dr > 0 ? "ArrowDown" : "ArrowUp");
+      cursor = to;
+      await page.keyboard.press("Enter");
+    },
+  };
+}
+test("tower of Hanoi: discs are chosen, a move is taken back, and the tower is moved in the fewest", async ({ page }) => {
+  const errors = await sit(page, "하노이의 탑");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(6);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "원판 3개" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  await expect(page.locator("#turn")).toContainText("최소 7번");
+  const panel = page.locator(".puzzle-panel"),
+    pegs = walker(page, 3, 0);
+  let state = tower.createGame(3);
+  await panel.getByRole("button", { name: "힌트", exact: true }).click();
+  await expect(page.locator("#turn")).toContainText("화살표");
+  await pegs.home();
+  for (let n = 0; state.winner === null; n++) {
+    const move = tower.hint(state)!;
+    await pegs.go(move.from);
+    await pegs.go(move.to);
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+    if (n === 0) {
+      await panel.getByRole("button", { name: "무르기", exact: true }).click();
+      await expect(count(page)).toHaveText("0수");
+      await pegs.home();
+      await pegs.go(move.from);
+      await pegs.go(move.to);
+      await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+      await rest(page);
+    }
+    state = tower.play(state, move)!;
+  }
+  await expect(page.locator("#turn")).toContainText("7번 만에");
+  await expect(page.locator("#turn")).toContainText("가장 적게");
+  await page.waitForTimeout(1600);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(panel.locator("#pz-next")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+test("lights off: a board laid at random is put out in the fewest presses", async ({ page }) => {
+  const random = await seeded(page, 31),
+    errors = await sit(page, "불 끄기");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "4×4" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  // Boards were laid when the game was looked at and when sitting down; the third is the one chosen.
+  lamps.createGame(1, random);
+  lamps.createGame(1, random);
+  let state = lamps.createGame(2, random);
+  const way = lamps.solve(state.size, state.on)!,
+    board = walker(page, 4, 4);
+  await expect(page.locator("#turn")).toContainText(`최소 ${state.best}번`);
+  await expect(page.locator("#turn")).toContainText(`켜진 불 ${state.on.filter(Boolean).length}개`);
+  await board.home();
+  for (const [n, cell] of way.entries()) {
+    await board.go(cell);
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+    state = lamps.play(state, { from: -1, to: cell, extra: -1 })!;
+    if (state.winner === null) await expect(page.locator("#turn")).toContainText(`켜진 불 ${state.on.filter(Boolean).length}개`);
+  }
+  await expect(page.locator("#turn")).toContainText("성공!");
+  await expect(page.locator("#turn")).toContainText("가장 적게");
+  await page.waitForTimeout(1600);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await page.locator(".puzzle-panel #pz-next").click();
+  await expect(page.locator("#pz-stage")).toHaveText("4×4 · 스테이지 2");
+  expect(errors).toEqual([]);
+});
+test("minesweeper: the first square is safe, a flag guards a mine, and the cleared field is told in a window", async ({ page }) => {
+  const random = await seeded(page, 57),
+    errors = await sit(page, "지뢰찾기");
+  await rest(page);
+  await expect(page.locator("#turn")).toContainText("첫 칸은 안전합니다");
+  const board = walker(page, 8, 8),
+    first = 27;
+  await board.home();
+  await board.go(first);
+  await expect(count(page)).toHaveText("1수");
+  await rest(page);
+  // The mines are laid by the first square opened, from the generator the test shares.
+  let state = field.play(field.createGame(1), { from: -1, to: first, extra: -1 }, random)!;
+  const safe = state.rows * state.cols - state.mines,
+    mined = state.mine!.findIndex(Boolean);
+  await expect(page.locator(".solo-stat").nth(1)).toContainText(`${field.opened(state)}/${safe}`);
+  // Nothing of where the mines lie is written into the page.
+  expect(await page.locator("main").innerHTML()).not.toMatch(/data-mine|mine=/);
+  // F turns to flagging: a flag on a mine counts it off, and the square cannot then be opened.
+  await page.keyboard.press("f");
+  await expect(page.locator("#turn")).toContainText("깃발 꽂기");
+  await expect(page.locator("#pg-tool-0")).toHaveText("깃발 끄기");
+  await board.go(mined);
+  await expect(page.locator(".solo-stat").first()).toContainText(String(state.mines - 1));
+  await rest(page);
+  await page.keyboard.press("f");
+  await expect(page.locator("#pg-tool-0")).toHaveText("깃발 꽂기");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  await expect(page.locator("#turn")).not.toContainText("밟았습니다");
+  // Every other safe square is opened; ground that opens by itself is skipped.
+  for (let cell = 0; cell < state.open.length; cell++) {
+    if (state.open[cell] || state.mine![cell]) continue;
+    await board.go(cell);
+    state = field.play(state, { from: -1, to: cell, extra: -1 })!;
+    await expect(page.locator(".solo-stat").nth(1)).toContainText(`${field.opened(state)}/${safe}`, { timeout: 20000 });
+    await rest(page);
+  }
+  expect(state.winner).toBe(0);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("성공!", { timeout: 20000 });
+  await dialog.getByRole("button", { name: "확인" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  // 새 게임 offers the three fields.
+  await page.locator("#restart").click();
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(3);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "어려움" }).click();
+  await expect(page.locator(".solo-stat").first()).toContainText("40");
+  expect(errors).toEqual([]);
+});
+test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops while it is", async ({ page }) => {
+  const errors = await sit(page, "과일 합치기"),
+    drops = page.locator(".solo-stat").nth(2).locator("b");
+  await expect(drops).toHaveText("0");
+  await page.locator("canvas").focus();
+  await page.keyboard.press(" ");
+  await expect(drops).toHaveText("1");
+  // The next fruit comes to hand after a moment.
+  await page.waitForTimeout(900);
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(300);
+  await page.keyboard.up("ArrowRight");
+  await page.keyboard.press(" ");
+  await expect(drops).toHaveText("2");
+  await page.waitForTimeout(900);
+  // Stopped: the key drops nothing.
+  await page.locator("#pg-pause").click();
+  await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "계속하기");
+  await page.locator("canvas").focus();
+  await page.keyboard.press(" ");
+  await page.waitForTimeout(400);
+  await expect(drops).toHaveText("2");
+  await page.keyboard.press("p");
+  await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "일시정지");
+  await page.keyboard.press(" ");
+  await expect(drops).toHaveText("3");
+  // A tap on the box drops too.
+  await page.waitForTimeout(900);
+  const box = (await page.locator("canvas").boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.5);
+  await expect(drops).toHaveText("4");
   expect(errors).toEqual([]);
 });

@@ -8,6 +8,11 @@ import { BAT_Z, DT, HALF_X, HALF_Z, R, batHalf, createWorld, launch, speedOf, st
 import * as marbleRules from "../src/games/marble/rules";
 import * as pour from "../src/games/pour/rules";
 import * as river from "../src/games/river/rules";
+import * as hanoi from "../src/games/hanoi/rules";
+import * as lights from "../src/games/lights/rules";
+import * as mines from "../src/games/mines/rules";
+import * as fruit from "../src/games/fruit/rules";
+import * as box from "../src/games/fruit/sim";
 
 const to = (point: number) => ({ from: -1, to: point, extra: -1 });
 
@@ -627,5 +632,194 @@ describe("river crossing", () => {
       }
     // From a failed state there is no hint.
     expect(river.hint(go(river.createGame(1, seededRandom(1)), [0, 1]))).toBeNull();
+  });
+});
+
+describe("tower of Hanoi", () => {
+  test("only the top disc moves, never onto a smaller one", () => {
+    const start = hanoi.createGame(3);
+    expect([start.pegs, start.best]).toEqual([[[3, 2, 1], [], []], 7]);
+    expect(hanoi.moves(start).map((m) => [m.from, m.to])).toEqual([[0, 1], [0, 2]]);
+    const one = hanoi.play(start, { from: 0, to: 2, extra: -1 })!;
+    expect(one.pegs).toEqual([[3, 2], [], [1]]);
+    // The second disc cannot go onto the smallest, and an empty peg gives nothing.
+    expect(hanoi.play(one, { from: 0, to: 2, extra: -1 })).toBeNull();
+    expect(hanoi.play(one, { from: 1, to: 0, extra: -1 })).toBeNull();
+    expect(start.pegs[0]).toEqual([3, 2, 1]);
+    expect([hanoi.createGame(1).discs, hanoi.createGame(99).discs]).toEqual([hanoi.MIN, hanoi.MAX]);
+  });
+  test("following the hint moves every tower in the fewest moves, from a detour as well", () => {
+    for (let discs = hanoi.MIN; discs <= hanoi.MAX; discs++) {
+      let state = hanoi.createGame(discs);
+      while (state.winner === null) state = hanoi.play(state, hanoi.hint(state)!)!;
+      expect([discs, state.ply, state.pegs[2].length]).toEqual([discs, 2 ** discs - 1, discs]);
+      expect(hanoi.hint(state)).toBeNull();
+      expect(hanoi.hanoi.reason(state)).toMatch(/^성공!.*가장 적게/);
+    }
+    // After a wrong first move the hint still leads home.
+    let state = hanoi.play(hanoi.createGame(4), { from: 0, to: 2, extra: -1 })!;
+    for (let i = 0; i < 40 && state.winner === null; i++) state = hanoi.play(state, hanoi.hint(state)!)!;
+    expect(state.winner).toBe(0);
+  });
+});
+describe("lights off", () => {
+  test("a press turns over a lamp and those beside it, and twice undoes itself", () => {
+    expect(lights.reach(3, 4).sort()).toEqual([1, 3, 4, 5, 7]);
+    expect(lights.reach(3, 0).sort()).toEqual([0, 1, 3]);
+    const dark = { size: 3, on: new Array(9).fill(false), best: 0, last: null, winner: null, ply: 0 } as lights.State,
+      once = lights.play(dark, to(4))!;
+    expect(once.on.flatMap((lit, i) => (lit ? [i] : []))).toEqual([1, 3, 4, 5, 7]);
+    expect(once.winner).toBeNull();
+    const twice = lights.play(once, to(4))!;
+    expect([twice.on.some(Boolean), twice.winner]).toEqual([false, 0]);
+    expect(lights.play(once, to(9))).toBeNull();
+    expect(dark.on.some(Boolean)).toBe(false);
+  });
+  test("every board laid can be put out, in exactly the fewest presses it names", () => {
+    for (let stage = 1; stage <= lights.SIZES.length; stage++)
+      for (const seed of [1, 2, 3]) {
+        let state = lights.createGame(stage, seededRandom(seed));
+        const way = lights.solve(state.size, state.on)!;
+        expect([state.size, state.on.some(Boolean)]).toEqual([lights.SIZES[stage - 1], true]);
+        expect(way.length).toBe(state.best);
+        expect(state.best).toBeGreaterThanOrEqual(state.size);
+        // The hint is followed to the end.
+        while (state.winner === null) state = lights.play(state, lights.hint(state)!)!;
+        expect([stage, seed, state.ply]).toEqual([stage, seed, state.best]);
+      }
+  });
+  test("the fewest presses are found where a board has more than one way", () => {
+    // On the four by four pressing every lamp of a row but one edge pattern is the same as doing nothing: the search must not count such presses.
+    const on = new Array(16).fill(false);
+    for (const lamp of lights.reach(4, 5)) on[lamp] = !on[lamp];
+    expect(lights.solve(4, on)).toEqual([5]);
+    // A single lit lamp in the corner of the five by five cannot be put out.
+    const corner = new Array(25).fill(false);
+    corner[0] = true;
+    expect(lights.solve(5, corner)).toBeNull();
+  });
+});
+describe("minesweeper", () => {
+  test("the first square is safe with those round it, and opening spreads over empty ground", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const start = mines.createGame(1),
+        first = mines.play(start, to(27), seededRandom(seed))!;
+      expect(start.mine).toBeNull();
+      expect(first.mine!.filter(Boolean).length).toBe(10);
+      expect([27, ...mines.around(first, 27)].some((i) => first.mine![i])).toBe(false);
+      // At least the nine squares are open, and no mine among the open.
+      expect(mines.opened(first)).toBeGreaterThanOrEqual(9);
+      expect(first.open.some((o, i) => o && first.mine![i])).toBe(false);
+      // Every opened square with nothing round it has all its neighbours open.
+      first.open.forEach((o, i) => {
+        if (o && mines.near(first, i) === 0) expect(mines.around(first, i).every((j) => first.open[j])).toBe(true);
+      });
+    }
+    expect([mines.createGame(2).cols, mines.createGame(3).mines, mines.createGame(9).rows]).toEqual([12, 40, 12]);
+  });
+  test("flags guard a square, a mine ends the game, and opening everything else wins", () => {
+    const first = mines.play(mines.createGame(1), to(0), seededRandom(5))!,
+      mined = first.mine!.flatMap((m, i) => (m ? [i] : []));
+    // Flag mode: the switch is no move; a flagged square cannot be opened.
+    const mode = mines.play(first, to(mines.FLAG))!;
+    expect([mode.flagging, mode.ply]).toEqual([true, first.ply]);
+    const flagged = mines.play(mode, to(mined[0]))!,
+      back = mines.play(flagged, to(mines.FLAG))!;
+    expect([flagged.flag[mined[0]], mines.flags(flagged), back.flagging]).toEqual([true, 1, false]);
+    expect(mines.play(back, to(mined[0]))).toBeNull();
+    expect(mines.mines.hint(back)).toMatch(/남은 지뢰 9개/);
+    // Stepping on another mine loses.
+    const lost = mines.play(back, to(mined[1]))!;
+    expect([lost.winner, lost.boom]).toEqual([1, mined[1]]);
+    expect(mines.moves(lost)).toEqual([]);
+    expect(mines.mines.reason(lost)).toMatch(/^지뢰를 밟았습니다/);
+    // Opening every safe square wins.
+    let state = first;
+    for (let i = 0; i < state.open.length; i++) if (!state.mine![i] && !state.open[i]) state = mines.play(state, to(i))!;
+    expect([state.winner, mines.opened(state)]).toEqual([0, 54]);
+    expect(first.open).not.toBe(state.open);
+  });
+  test("a number with its flags in place opens the rest round it", () => {
+    const first = mines.play(mines.createGame(1), to(0), seededRandom(5))!,
+      // An open number with closed squares round it.
+      cell = first.open.findIndex((o, i) => o && mines.near(first, i) > 0 && mines.around(first, i).some((j) => !first.open[j] && !first.mine![j])),
+      round = mines.around(first, cell);
+    // Without its flags it does nothing.
+    expect(mines.play(first, to(cell))).toBeNull();
+    let state = mines.play(first, to(mines.FLAG))!;
+    for (const i of round) if (first.mine![i]) state = mines.play(state, to(i))!;
+    state = mines.play(mines.play(state, to(mines.FLAG))!, to(cell))!;
+    expect(round.every((i) => state.open[i] || state.flag[i])).toBe(true);
+    expect(state.winner).not.toBe(1);
+  });
+});
+describe("fruit merge", () => {
+  const run = (world: box.World, seconds: number, aim = 0) => {
+    const heard: box.Happening[] = [];
+    for (let i = 0; i < seconds / box.DT; i++) heard.push(...box.step(world, aim));
+    return heard;
+  };
+  test("the score grows with what merges, and the box overflowing ends the game", () => {
+    let state = fruit.createGame();
+    state = fruit.play(state, to(fruit.DROP))!;
+    expect([state.drops, state.score]).toEqual([1, 0]);
+    state = fruit.play(state, to(fruit.MERGE + 0))!;
+    expect([state.score, state.largest]).toEqual([fruit.worth(0), 1]);
+    // Two watermelons vanish: the largest kind stays the watermelon.
+    state = fruit.play(state, to(fruit.MERGE + fruit.KINDS - 1))!;
+    expect(state.largest).toBe(fruit.KINDS - 1);
+    expect(fruit.play(state, to(fruit.MERGE + fruit.KINDS))).toBeNull();
+    const over = fruit.play(state, to(fruit.OVER))!;
+    expect([over.winner, fruit.moves(over)]).toEqual([1, []]);
+    expect(fruit.fruit.reason(over)).toMatch(/^점수 \d+점!/);
+    expect(fruit.RADII.every((r, i) => i === 0 || r > fruit.RADII[i - 1])).toBe(true);
+  });
+  test("two of a kind dropped on one another become the next kind, and the heap stays in the box", () => {
+    // The hand always holds the smallest.
+    const world = box.createWorld(() => 0);
+    expect(box.drop(world)).toEqual([{ kind: "drop" }]);
+    // Not again at once.
+    expect(box.drop(world)).toEqual([]);
+    run(world, 1.5);
+    expect(world.fruits).toHaveLength(1);
+    expect(world.fruits[0].y).toBeCloseTo(fruit.RADII[0], 1);
+    box.drop(world);
+    const heard = run(world, 1.5);
+    expect(heard.filter((h) => h.kind === "merge")).toHaveLength(1);
+    expect(world.fruits.map((f) => f.kind)).toEqual([1]);
+    // Many drops in one place: everything stays between the walls and above the floor.
+    for (let i = 0; i < 14; i++) {
+      box.drop(world);
+      run(world, 0.8, (i % 5) - 2);
+    }
+    for (const f of world.fruits) {
+      expect(Math.abs(f.x)).toBeLessThanOrEqual(box.HALF - fruit.RADII[f.kind] + 1e-6);
+      expect(f.y).toBeGreaterThanOrEqual(fruit.RADII[f.kind] - 1e-6);
+    }
+    // Nothing overlaps much once it has come to rest.
+    run(world, 2);
+    world.fruits.forEach((a, i) =>
+      world.fruits.slice(i + 1).forEach((b) => expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan((fruit.RADII[a.kind] + fruit.RADII[b.kind]) * 0.9)),
+    );
+  });
+  test("fruit that stays above the line ends the game, and the same drops give the same box", () => {
+    const play = () => {
+      // Kinds that never match their neighbours pile up in one column.
+      const kinds = [4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3];
+      let k = 0;
+      const world = box.createWorld(() => kinds[k++ % kinds.length] / box.HANDED + 0.01),
+        heard: box.Happening[] = [];
+      for (let i = 0; i < 40 && !world.ended; i++) {
+        box.drop(world);
+        heard.push(...run(world, 0.9, i % 2 ? 0.6 : -0.6));
+      }
+      return { world, heard };
+    };
+    const one = play(),
+      two = play();
+    expect(one.world.ended).toBe(true);
+    expect(one.heard.filter((h) => h.kind === "over")).toHaveLength(1);
+    expect(box.drop(one.world)).toEqual([]);
+    expect(two.world.fruits.map((f) => [f.kind, f.x, f.y])).toEqual(one.world.fruits.map((f) => [f.kind, f.x, f.y]));
   });
 });
