@@ -105,15 +105,31 @@ export class PourView extends TableView<State> {
         ctx.strokeStyle = "#8e1f2f";
         ctx.lineWidth = 8;
         ctx.strokeRect(4, 4, w - 8, h - 8);
+        // The amount large, the size of the vessel small beside it; both are made to fit the card whatever the numbers.
+        const big = String(now),
+          small = `/ ${state.caps[i]}리터`,
+          room = w - 36;
+        let size = 104;
+        const widths = () => {
+          ctx.font = `800 ${size}px "Helvetica Neue", Arial, sans-serif`;
+          const a = ctx.measureText(big).width;
+          ctx.font = `700 ${Math.round(size * 0.42)}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+          return [a, ctx.measureText(small).width];
+        };
+        let [a, b] = widths();
+        while (a + 12 + b > room && size > 40) {
+          size -= 4;
+          [a, b] = widths();
+        }
+        const left = (w - (a + 12 + b)) / 2;
         ctx.textBaseline = "middle";
-        ctx.textAlign = "right";
-        ctx.fillStyle = "#8e1f2f";
-        ctx.font = '800 104px "Helvetica Neue", Arial, sans-serif';
-        ctx.fillText(String(now), w * 0.46, h * 0.54);
         ctx.textAlign = "left";
+        ctx.fillStyle = "#8e1f2f";
+        ctx.font = `800 ${size}px "Helvetica Neue", Arial, sans-serif`;
+        ctx.fillText(big, left, h * 0.54);
         ctx.fillStyle = "#5c5a55";
-        ctx.font = '700 44px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif';
-        ctx.fillText(`/ ${state.caps[i]}리터`, w * 0.5, h * 0.58);
+        ctx.font = `700 ${Math.round(size * 0.42)}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+        ctx.fillText(small, left + a + 12, h * 0.6);
       });
     });
     this.write(this.slate, goalText(state), (ctx, w, h) => {
@@ -125,7 +141,10 @@ export class PourView extends TableView<State> {
       ctx.fillStyle = "#f4f1e6";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.font = '700 64px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif';
+      // The longest goal must fit the slate as well as the shortest.
+      let size = 64;
+      do ctx.font = `700 ${size}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+      while (ctx.measureText(`목표: ${goalText(state)}`).width > w - 60 && (size -= 3) > 30);
       ctx.fillText(`목표: ${goalText(state)}`, w / 2, h / 2 + 4);
     });
   }
