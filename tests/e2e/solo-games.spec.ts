@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { PerspectiveCamera, Vector3 } from "three";
 import { FOV, cameraDistance } from "../../src/engine/camera";
 import { CENTRE, HOLES, SIZE, holeAt } from "../../src/games/peg/rules";
-import { W as TRAY_W, createGame as layTray, moves as trayMoves } from "../../src/games/marble/rules";
+import { W as TRAY_W, createGame as layTray, solve as solveTray } from "../../src/games/marble/rules";
 import { selectGame } from "./library";
 
 const count = (page: Page) => page.locator("#move-count");
@@ -216,7 +216,7 @@ test("brick breaker: the ball is sent off and knocks a brick out", async ({ page
   expect(errors).toEqual([]);
 });
 
-test("marble shooting: a marble is shot from the keyboard, the shot is taken back, and 새 게임 asks how many", async ({ page }) => {
+test("marble shooting: the difficulty is asked on sitting down, and the panel hints, undoes, starts over, lays another and goes on", async ({ page }) => {
   // The tray is laid at random; with the platform's generator replaced by a known one, the test can lay the same tray.
   await page.addInitScript(() => {
     let seed = 2024;
@@ -234,62 +234,79 @@ test("marble shooting: a marble is shot from the keyboard, the shot is taken bac
     return (seed * 2) / 4294967296;
   };
   const errors = await sit(page, "구슬치기");
+  // The difficulties come up in a window as soon as one sits down.
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator(".stage-card")).toHaveCount(5);
+  await dialog.locator(".stage-card").filter({ hasText: "아주 쉬움" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await rest(page);
-  await expect(page.locator("#turn")).toContainText("구슬 6개");
-  // One tray is laid when the game is looked at in the collection, and the one played when sitting down.
+  await expect(page.locator("#turn")).toContainText("구슬 4개");
+  // The panel: which stage this is, the difficulties, and the four buttons.
+  const panel = page.locator(".puzzle-panel");
+  await expect(panel.locator("#pz-stage")).toHaveText("아주 쉬움 · 스테이지 1");
+  await expect(panel.locator(".puzzle-level")).toHaveCount(5);
+  await expect(panel.locator('.puzzle-level[aria-pressed="true"]')).toContainText("아주 쉬움");
+  for (const name of ["힌트", "무르기", "처음부터", "다른 퍼즐"]) await expect(panel.getByRole("button", { name, exact: true })).toBeVisible();
+  await expect(panel.locator("#pz-next")).toBeHidden();
+  // Trays were laid when the game was looked at in the collection and when sitting down; the third is the one chosen.
   layTray(6, random);
-  const tray = layTray(6, random),
-    shot = trayMoves(tray)[0],
-    walk = async (from: number, to: number) => {
-      const dx = (to % TRAY_W) - (from % TRAY_W),
-        dy = Math.floor(to / TRAY_W) - Math.floor(from / TRAY_W);
+  layTray(6, random);
+  let tray = layTray(4, random),
+    cursor = 0;
+  const way = solveTray(tray)!,
+    walk = async (to: number) => {
+      const dx = (to % TRAY_W) - (cursor % TRAY_W),
+        dy = Math.floor(to / TRAY_W) - Math.floor(cursor / TRAY_W);
       for (let i = 0; i < Math.abs(dx); i++) await page.keyboard.press(dx > 0 ? "ArrowRight" : "ArrowLeft");
       for (let i = 0; i < Math.abs(dy); i++) await page.keyboard.press(dy > 0 ? "ArrowDown" : "ArrowUp");
+      cursor = to;
+    },
+    shoot = async (shot: { from: number; to: number }) => {
+      await walk(shot.from);
+      await page.keyboard.press("Enter");
+      await walk(shot.to);
+      await page.keyboard.press("Enter");
     };
+  // A hint says what to do and a shot is made; undo and 처음부터 both bring the tray back.
+  await panel.getByRole("button", { name: "힌트", exact: true }).click();
+  await expect(page.locator("#turn")).toContainText("힌트");
   await page.locator("canvas").focus();
-  // The first arrow puts the keyboard on the first hollow; from there it walks to the marble, then to the one it strikes.
   await page.keyboard.press("ArrowRight");
-  await walk(0, shot.from);
-  await page.keyboard.press("Enter");
-  await walk(shot.from, shot.to);
-  await page.keyboard.press("Enter");
+  await shoot(way[0]);
   await expect(count(page)).toHaveText("1수", { timeout: 20000 });
   await rest(page);
-  await expect(page.locator("#turn")).toContainText("구슬 5개");
-  await page.locator(".board-controls").getByRole("button", { name: "무르기", exact: true }).click();
-  await expect(page.locator("#turn")).toContainText("구슬 6개");
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
-  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "구슬 10개" }).click();
-  await expect(page.locator("#turn")).toContainText("구슬 10개", { timeout: 20000 });
-  expect(errors).toEqual([]);
-});
-
-test("warehouse keeper: the keeper walks by key and by button, a step is taken back, and 새 게임 asks how many crates", async ({ page }) => {
-  const errors = await sit(page, "창고지기");
-  await expect(page.locator("#turn")).toContainText("상자 3개");
-  // One of the four ways is always open at the start of a warehouse that can be solved.
-  for (const key of ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"]) {
-    await page.keyboard.press(key);
+  await expect(page.locator("#turn")).toContainText("구슬 3개");
+  await panel.getByRole("button", { name: "무르기", exact: true }).click();
+  await expect(page.locator("#turn")).toContainText("구슬 4개");
+  await page.locator("canvas").focus();
+  await shoot(way[0]);
+  await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+  await rest(page);
+  await panel.getByRole("button", { name: "처음부터", exact: true }).click();
+  await expect(count(page)).toHaveText("0수");
+  await expect(page.locator("#turn")).toContainText("구슬 4개");
+  // Solved: no window comes up; the panel offers the next stage.
+  await page.locator("canvas").focus();
+  for (const shot of way) {
+    const before = await count(page).innerText();
+    await shoot(shot);
+    await expect(count(page)).not.toHaveText(before, { timeout: 20000 });
     await rest(page);
   }
-  await expect(count(page)).not.toHaveText("0수");
-  const steps = Number.parseInt(await count(page).innerText());
-  await page.locator(".board-controls").getByRole("button", { name: "무르기", exact: true }).click();
-  await expect(count(page)).toHaveText(`${steps - 1}수`);
-  // The arrow buttons stand at the lower left; whichever is open takes a step.
-  const tools = page.locator(".board-area .pg-tools");
-  for (const name of ["위로", "왼쪽으로", "아래로", "오른쪽으로"]) {
-    const button = tools.getByRole("button", { name });
-    if (await button.isEnabled()) {
-      await button.click();
-      break;
-    }
-  }
-  await expect(count(page)).toHaveText(`${steps}수`);
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "상자 5개" }).click();
-  await expect(page.locator("#turn")).toContainText("상자 5개", { timeout: 20000 });
-  await expect(count(page)).toHaveText("0수");
+  await expect(page.locator("#turn")).toContainText("성공");
+  await expect(panel.locator("#pz-next")).toBeVisible();
+  await page.waitForTimeout(1600);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await panel.locator("#pz-next").click();
+  await expect(panel.locator("#pz-stage")).toHaveText("아주 쉬움 · 스테이지 2");
+  await expect(page.locator("#turn")).toContainText("구슬 4개", { timeout: 20000 });
+  await expect(panel.locator("#pz-next")).toBeHidden();
+  // Another tray of the same stage, and another difficulty from the panel.
+  await panel.getByRole("button", { name: "다른 퍼즐", exact: true }).click();
+  await expect(panel.locator("#pz-stage")).toHaveText("아주 쉬움 · 스테이지 2");
+  await panel.locator(".puzzle-level").filter({ hasText: "어려움" }).first().click();
+  await expect(page.locator("#turn")).toContainText("구슬 10개", { timeout: 20000 });
+  await expect(panel.locator("#pz-stage")).toHaveText("어려움 · 스테이지 1");
   expect(errors).toEqual([]);
 });

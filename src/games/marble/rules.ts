@@ -133,6 +133,24 @@ export function createGame(size = 6, random: Random = cryptoRandom): State {
   cells[0] = cells[2] = true;
   return { cells, tints: cells.map((marble) => (marble ? 1 : 0)), winner: null, size: 2, last: null, ply: 0 };
 }
+/** The shots that bring a tray down to one marble, or null when it cannot be done from here. */
+export function solve(state: State): Move[] | null {
+  const dead = new Set<string>(),
+    path: Move[] = [],
+    go = (at: State): boolean => {
+      if (at.winner === 0) return true;
+      const key = at.cells.map((c) => (c ? 1 : 0)).join("");
+      if (at.winner !== null || dead.has(key)) return false;
+      for (const move of moves(at)) {
+        path.push(move);
+        if (go(play(at, move)!)) return true;
+        path.pop();
+      }
+      dead.add(key);
+      return false;
+    };
+  return go(state) ? path : null;
+}
 const effect = (): Effect | null => null;
 export const marble: PointGame<State> = {
   create: (variant) => createGame(Number(variant) || 6),

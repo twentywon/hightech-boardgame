@@ -2551,3 +2551,31 @@ dialog .stage-grid:has(.stage-card:nth-child(7)) .stage-card { padding:8px 4px 8
 dialog .stage-grid:has(.stage-card:nth-child(7)) .stage-card b { font-size:13.5px; }
 dialog .stage-card small { text-align:center;word-break:keep-all; }
 
+/* ── The result window: what happened, brief and large; the rest small under it ───────── */
+dialog .result-text { margin:2px 0 0;text-align:center; }
+dialog .result-text b { display:block;font-size:26px;line-height:1.3;font-weight:800;color:var(--ink, #16181a);word-break:keep-all; }
+dialog .result-text span { display:block;margin-top:8px;font-size:14px;line-height:1.6;color:var(--ink-soft, #5c5a55);word-break:keep-all; }
+dialog .result-art + p:not(.result-text) { text-align:center;font-size:15px;color:var(--ink-soft, #5c5a55); }
+dialog .result-art + p:not(.result-text)::first-line { font-size:24px;font-weight:800;color:var(--ink, #16181a); }
+@media (orientation: landscape) and (max-height: 540px) { dialog .result-text b { font-size:21px; } dialog .result-art + p:not(.result-text)::first-line { font-size:20px; } }
+
+/* ── A puzzle's panel: its stage, the difficulties, and the buttons that help ───────── */
+.puzzle-panel { display:grid;gap:10px;margin-top:12px; }
+.puzzle-stage { margin:0;font-size:15px;font-weight:700;color:var(--ink, #16181a); }
+.puzzle-levels { display:grid;grid-template-columns:repeat(auto-fit, minmax(84px, 1fr));gap:6px; }
+.puzzle-level { display:grid;gap:1px;justify-items:center;min-height:0;padding:8px 4px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;cursor:pointer; }
+.puzzle-level b { font-size:13.5px;word-break:keep-all; }
+.puzzle-level small { font-size:11.5px;color:var(--ink-soft, #5c5a55); }
+.puzzle-level[aria-pressed="true"] { background:#16181a;border-color:#16181a;color:#fff; }
+.puzzle-level[aria-pressed="true"] small { color:#ffffffb0; }
+.puzzle-actions { display:grid;grid-template-columns:1fr 1fr;gap:6px; }
+.puzzle-actions button { min-height:40px;border-radius:12px; }
+.puzzle-panel #pz-next { min-height:46px;font-size:16px; }
+.puzzle-panel #pz-next[hidden] { display:none; }
+@media (orientation: landscape) and (max-height: 540px) {
+  .puzzle-panel { gap:6px;margin-top:6px; }
+  .puzzle-level { padding:5px 2px; }
+  .puzzle-actions button { min-height:32px; }
+  .puzzle-panel #pz-next { min-height:36px;font-size:14px; }
+}
+

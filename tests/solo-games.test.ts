@@ -6,7 +6,6 @@ import * as blocks from "../src/games/blocks/rules";
 import * as bricks from "../src/games/bricks/rules";
 import { BAT_Z, DT, HALF_X, HALF_Z, R, batHalf, createWorld, launch, speedOf, step } from "../src/games/bricks/sim";
 import * as marbleRules from "../src/games/marble/rules";
-import * as crateRules from "../src/games/crate/rules";
 
 const to = (point: number) => ({ from: -1, to: point, extra: -1 });
 
@@ -498,68 +497,15 @@ describe("marble shooting", () => {
       }
     expect(marbleRules.createGame(8, seededRandom(5)).cells).not.toEqual(marbleRules.createGame(8, seededRandom(6)).cells);
   });
-});
-
-describe("warehouse keeper", () => {
-  /** A warehouse from a drawing: # wall, . floor, o goal, c crate, k keeper, * crate on a goal. */
-  const room = (rows: string[]): crateRules.State => {
-    const { W, H } = crateRules,
-      mark = (i: number) => rows[Math.floor(i / W)]?.[i % W] ?? "#",
-      all = Array.from({ length: W * H }, (_, i) => i);
-    return { wall: all.map((i) => mark(i) === "#"), goals: all.filter((i) => "o*".includes(mark(i))), crates: all.filter((i) => "c*".includes(mark(i))), keeper: all.find((i) => mark(i) === "k")!, face: 2, winner: null, last: null, ply: 0 };
-  };
-  test("the keeper walks, pushes one crate, and is stopped by walls and by two crates in a row", () => {
-    const state = room(["#########", "#k.c.o..#", "#.cc....#", "#########"]);
-    // Up is a wall; right and down are free.
-    expect(crateRules.moves(state).map((m) => m.to)).toEqual([1, 2]);
-    let next = crateRules.play(crateRules.play(state, to(1))!, to(1))!;
-    expect([next.keeper % crateRules.W, next.crates.includes(crateRules.W + 4), next.last!.pushed]).toEqual([3, true, true]);
-    next = crateRules.play(next, to(1))!;
-    expect([next.crates.includes(crateRules.W + 5), crateRules.home(next), next.winner]).toEqual([true, 1, null]);
-    // Down from the start, then right: two crates stand in a row and do not move.
-    const below = crateRules.play(state, to(2))!;
-    expect(crateRules.play(below, to(1))).toBeNull();
-    expect(state.keeper).toBe(crateRules.W + 1);
-  });
-  test("every crate on its mark wins", () => {
-    const won = crateRules.play(room(["#########", "#kco....#", "#########"]), to(1))!;
-    expect([won.winner, crateRules.home(won)]).toEqual([0, 1]);
-    expect(crateRules.moves(won)).toEqual([]);
-    expect(crateRules.crate.reason(won)).toMatch(/1걸음/);
-  });
-  test("every warehouse laid out at random is closed in, has its crates off their marks and can be solved", () => {
-    const { W, H, DX, DY } = crateRules;
-    for (const count of [2, 3, 4, 5])
-      for (const seed of [1, 2]) {
-        const start = crateRules.createGame(count, seededRandom(seed * 17 + count));
-        expect([start.crates.length, start.goals.length]).toEqual([count, count]);
-        expect(new Set([...start.crates, start.keeper]).size).toBe(count + 1);
-        expect(start.crates.some((c) => start.goals.includes(c))).toBe(false);
-        for (const at of [...start.crates, ...start.goals, start.keeper]) expect(start.wall[at]).toBe(false);
-        for (let x = 0; x < W; x++) expect(start.wall[x] && start.wall[(H - 1) * W + x]).toBe(true);
-        for (let y = 0; y < H; y++) expect(start.wall[y * W] && start.wall[y * W + W - 1]).toBe(true);
-        void DX;
-        void DY;
-        // A breadth-first search over keeper and crates finds a way to put them all home (small warehouses only).
-        if (count > 3) continue;
-        const key = (s: crateRules.State) => `${s.keeper}:${[...s.crates].sort((a, b) => a - b).join()}`,
-          seen = new Set([key(start)]);
-        let frontier = [start],
-          solved = false;
-        while (frontier.length && !solved && seen.size < 400000) {
-          const next: crateRules.State[] = [];
-          for (const state of frontier)
-            for (const move of crateRules.moves(state)) {
-              const after = crateRules.play(state, move)!;
-              if (after.winner === 0) solved = true;
-              if (!seen.has(key(after))) {
-                seen.add(key(after));
-                next.push(after);
-              }
-            }
-          frontier = next;
-        }
-        expect(solved, `count ${count} seed ${seed}`).toBe(true);
-      }
+  test("a hint is the first shot of a way down to one, and there is none once the tray is lost", () => {
+    const start = marbleRules.createGame(8, seededRandom(21)),
+      way = marbleRules.solve(start)!;
+    expect(way.length).toBe(7);
+    let state = start;
+    for (const shot of way) state = marbleRules.play(state, shot)!;
+    expect([marbleRules.count(state), state.winner]).toEqual([1, 0]);
+    // From a tray that cannot be solved any more, nothing is offered.
+    expect(marbleRules.solve(tray([[0, 0], [4, 0], [6, 5]]))).toBeNull();
+    expect(marbleRules.solve(tray([[1, 1], [1, 4]]))).toEqual([{ from: at(1, 1), to: at(1, 4), extra: -1 }]);
   });
 });

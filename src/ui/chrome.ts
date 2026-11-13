@@ -101,8 +101,15 @@ export function announce(text: () => string, setup?: (host: HTMLElement) => void
     }
     const line = text();
     if (!line) return;
-    const body = document.createElement("p");
-    body.textContent = line;
+    // Brief and large: the first sentence is the result, the rest stands small under it.
+    const cut = /^(.*?[.!?])\s+(.+)$/s.exec(line),
+      body = document.createElement("p"),
+      head = document.createElement("b"),
+      rest = document.createElement("span");
+    body.className = "result-text";
+    head.textContent = cut ? cut[1] : line;
+    rest.textContent = cut ? cut[2] : "";
+    body.append(head, ...(cut ? [rest] : []));
     modal("게임 결과", resultArt(outcome()) + body.outerHTML, [
       { text: "확인", action: () => {} },
       ...(setup ? [{ text: "새 게임", action: () => setupDialog(setup) }] : []),

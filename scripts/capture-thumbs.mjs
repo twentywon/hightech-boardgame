@@ -203,8 +203,9 @@ const play = {
     await page.keyboard.press("Escape");
     await wait(300);
   },
-  "warehouse-keeper": async () => {
-    await keys(["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"], 260);
+  "marble-shot": async () => {
+    await page.keyboard.press("Escape");
+    await wait(300);
   },
   "brick-breaker": async () => {
     await keys([" "]);

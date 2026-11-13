@@ -311,12 +311,4 @@ export const games = [
     icon: "●",
     available: true,
   },
-  {
-    name: "창고지기",
-    en: "WAREHOUSE KEEPER",
-    category: "퍼즐게임",
-    players: "1인용",
-    icon: "▣",
-    available: true,
-  },
 ];
