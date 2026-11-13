@@ -2579,3 +2579,14 @@ dialog .result-art + p:not(.result-text)::first-line { font-size:24px;font-weigh
   .puzzle-panel #pz-next { min-height:36px;font-size:14px; }
 }
 
+
+/* ── Icons before the words on buttons that take a move back or begin again (every game) ───────── */
+#undo::before, #pg-undo::before, #sp-undo::before,
+#pz-restart::before, #restart::before, #pg-again::before, #yut-again::before, #jg-again::before, #yd-again::before {
+  content:"";display:inline-block;width:1.05em;height:1.05em;margin-right:0.4em;vertical-align:-0.16em;background:currentColor;
+  -webkit-mask:var(--button-icon) center / contain no-repeat;mask:var(--button-icon) center / contain no-repeat;
+}
+/* Take back: an arrow curving round to the left. */
+#undo, #pg-undo, #sp-undo { --button-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14 4 9l5-5'/%3E%3Cpath d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/%3E%3C/svg%3E"); }
+/* Begin again: an arrow going round in a circle. */
+#pz-restart, #restart, #pg-again, #yut-again, #jg-again, #yd-again { --button-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 3-6.7'/%3E%3Cpath d='M3 4v5h5'/%3E%3C/svg%3E"); }
