@@ -260,15 +260,15 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   await page.getByRole("button", { name: /여행 떠나기/ }).click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await settled(page);
-  await expect(page.locator("#tour-money-0")).toContainText("2,000 · 도시 0 · 출발");
+  await expect(page.locator("#tour-money-0")).toHaveText("2,000만원");
   await expect(page.locator("#tour-offer")).toBeHidden();
   await page.locator("#tour-roll").click();
   await settled(page);
   // The offer comes up as a dialog.
   await expect(page.getByRole("heading", { name: "방콕을(를) 살까요?" })).toBeVisible();
-  await expect(turn(page)).toContainText("방콕을(를) 80에 살 수 있습니다");
+  await expect(turn(page)).toContainText("방콕을(를) 80만원에 살 수 있습니다");
   await page.locator("dialog").getByRole("button", { name: "사기 (80)" }).click();
-  await expect(page.locator("#tour-money-0")).toContainText("1,920 · 도시 1 · 방콕");
+  await expect(page.locator("#tour-money-0")).toHaveText("1,920만원");
   // The turn is mine until I end it: the deeds can be opened and a place sold.
   const end = page.locator("#tour-end");
   await expect(end).toBeVisible();
@@ -277,7 +277,7 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   await expect(page.locator("dialog .deed-list li")).toHaveCount(1);
   await expect(page.locator("dialog .deed-list")).toContainText("방콕");
   // Bare land in Bangkok: the stay costs one and a half times its price.
-  await expect(page.locator("dialog .deed-list")).toContainText("숙박료 120");
+  await expect(page.locator("dialog .deed-list")).toContainText("숙박료 120만원");
   await expect(page.locator("dialog [data-sell]")).toHaveCount(1);
   await page.locator("dialog").getByRole("button", { name: "닫기" }).click();
   // The button lies inside the board.
@@ -290,7 +290,7 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   await end.click();
   await expect(end).toBeHidden();
   // The computer rolls by itself and reaches the empty fund.
-  await expect(page.locator("#tour-money-1")).toContainText("2,000 · 도시 0 · 기금 수령", { timeout: 20000 });
+  await expect(page.locator("#tour-money-1")).toHaveText("2,000만원", { timeout: 20000 });
   await expect(page.locator("#tour-roll")).toBeEnabled({ timeout: 20000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   // Play on, buying, building and drawing golden keys, into the next round.
