@@ -1,3 +1,4 @@
+import stamp from "../assets/bankrupt.webp?inline";
 /**
  * Repeats the status line inside the game screen, on the player's side of
  * the table, so the game can be followed without looking at the side panel.
@@ -37,4 +38,23 @@ export function cheer(text: string) {
   el.innerHTML = `<span>${text}</span>${Array.from({ length: 12 }, (_, i) => `<i style="--a:${i * 30}deg"></i>`).join("")}`;
   board.append(el);
   setTimeout(() => el.remove(), 1900);
+}
+
+/**
+ * The 파산 stamp (the user's own picture) for a player who has run out of
+ * money. Without a target it comes down large in the middle of the table and
+ * fades after a few seconds; with one (a player's row in the panel) it stays
+ * there, small, as that player's mark.
+ */
+export function bankrupt(target?: HTMLElement) {
+  if (capturing()) return;
+  const host = target ?? document.querySelector<HTMLElement>(".board-area");
+  if (!host || host.querySelector(".bankrupt-stamp")) return;
+  const el = document.createElement("img");
+  el.className = `bankrupt-stamp${target ? " small" : ""}`;
+  el.src = stamp;
+  el.alt = "";
+  el.setAttribute("aria-hidden", "true");
+  host.append(el);
+  if (!target) setTimeout(() => el.remove(), 3600);
 }

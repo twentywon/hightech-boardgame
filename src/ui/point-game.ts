@@ -1,5 +1,5 @@
 import { dress } from "./chrome";
-import { capturing, cheer, mirrorStatus } from "./banner";
+import { bankrupt, capturing, cheer, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
 import type { Move, PointGame } from "../games/points/types";
@@ -43,6 +43,8 @@ export interface PointConfig<S> {
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
   tools?: { label: string; point: number; onBoard?: boolean }[];
+  /** True when the game has ended with side 0 out of money: the 파산 stamp is shown. */
+  bankrupt?: (state: S) => boolean;
   /** A line to flash over the table for what a move has just done (a piece taken), or null. */
   cheer?: (before: S, state: S, mode: "local" | "ai") => string | null;
   /** No table for two: one side's pieces are hidden from the other. */
@@ -385,6 +387,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     update();
     if (over() && !announced) {
       announced = true;
+      if (config.bankrupt?.(state)) bankrupt();
       if (mode === "ai" && game.winner(state) === 1) sound.lose();
       else sound.win();
     }

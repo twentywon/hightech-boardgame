@@ -10,6 +10,7 @@ export const indianConfig: PointConfig<State> = {
   // Each sees only the other's card: one screen cannot serve two.
   computerOnly: true,
   noUndo: true,
+  bankrupt: (state) => state.chips[0] === 0,
   tools: [
     { label: "콜 · 체크", point: CALL },
     { label: "+1 올리기", point: RAISE + 1 },

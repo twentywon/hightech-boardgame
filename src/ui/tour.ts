@@ -1,6 +1,6 @@
 import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
-import { mirrorStatus } from "./banner";
+import { bankrupt, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { PLAYER_COLORS, TourView } from "../games/tour/view";
 import { drawFlag } from "../games/tour/flags";
@@ -80,6 +80,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     generation = 0,
     thinking = false,
     announced = false,
+    stamped = new Set<number>(),
     // A golden key is turning over; the state whose choice has already been put to me.
     revealing = false,
     asked: State | null = null,
@@ -113,6 +114,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
   function start() {
     state = shown = createGame(preferences.opponents + 1);
     announced = false;
+    stamped = new Set();
     lockedUntil = 0;
     sound.enabled = settings.sound;
     sound.unlock();
@@ -422,6 +424,11 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         ? "파산"
         : `${won(player.money)} · 도시 ${cities} · ${SPACES[player.at].name}${player.wait ? ` (쉼 ${player.wait})` : ""}${player.tickets ? ` · 탈출권 ${player.tickets}` : ""}${player.waivers ? ` · 우대권 ${player.waivers}` : ""}`;
       $(`tour-player-${i}`).classList.toggle("active", !over && s.turn === i);
+      // Out of money: I get the stamp across the table, another traveller on their own row.
+      if (player.out && !stamped.has(i)) {
+        stamped.add(i);
+        bankrupt(i === 0 ? undefined : $(`tour-player-${i}`));
+      }
     });
     $<HTMLButtonElement>("tour-roll").hidden = s.phase !== "roll" && !over;
     $<HTMLButtonElement>("tour-roll").disabled = waiting || !mine || s.phase !== "roll";

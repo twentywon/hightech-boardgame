@@ -1,6 +1,6 @@
 import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
-import { mirrorStatus } from "./banner";
+import { bankrupt, mirrorStatus } from "./banner";
 import {
   MAX_BET,
   MIN_BET,
@@ -249,12 +249,16 @@ export function mountBlackjack(
       $(target)?.focus({ preventScroll: true });
     }
   }
+  let wasBroke = false;
   function update() {
     if (disposed || !document.getElementById("bj-chips")) return;
     mirrorStatus();
     const s = shown,
       waiting = busy() || state !== shown,
       broke = isBroke(s);
+    // Out of chips: the stamp comes down once.
+    if (broke && !wasBroke) bankrupt();
+    wasBroke = broke;
     $("board").dataset.animating = String(!!view?.animating || state !== shown);
     $("move-count").textContent = `${s.round}라운드`;
     $("bj-chips").textContent = chips(s.chips);

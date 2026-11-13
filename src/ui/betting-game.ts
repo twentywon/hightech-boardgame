@@ -1,5 +1,5 @@
 import { dress } from "./chrome";
-import { mirrorStatus } from "./banner";
+import { bankrupt, mirrorStatus } from "./banner";
 import type { Action } from "../games/cards/betting";
 import type { BettingGame, TableView } from "../games/cards/game";
 import { CardTableView, type CardSkin } from "../games/cards/table-view";
@@ -79,6 +79,7 @@ export function mountBettingGame<S>(
     lockedUntil = 0,
     thinking = false,
     soundedRound = -1,
+    stampedOver = false,
     // Cards dealt face down to seat 0 that the person has uncovered.
     peeked = new Set<number>(),
     // Cards tapped on the table toward a choice that needs more than one.
@@ -288,6 +289,11 @@ export function mountBettingGame<S>(
     update();
     const phase = game.phase(state),
       result = game.result(state);
+    // My chips are gone: the stamp comes down once for the session.
+    if (phase === "sessionOver" && !game.won(state)) {
+      if (!stampedOver) bankrupt();
+      stampedOver = true;
+    } else stampedOver = false;
     if ((phase === "handOver" || phase === "sessionOver") && result && !result.rematch && soundedRound !== game.round(state)) {
       soundedRound = game.round(state);
       const net = result.rows.find((row) => row.name === "나")?.net ?? 0;
