@@ -615,34 +615,37 @@ test("minesweeper: the first square is safe, a flag guards a mine, and the clear
 });
 test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops while it is", async ({ page }) => {
   const errors = await sit(page, "과일 합치기"),
-    drops = page.locator(".solo-stat").nth(2).locator("b");
+    drops = page.locator(".solo-stat").nth(2).locator("b"),
+    // The hand needs a moment (of the box's own time, which runs slow on a busy machine) before it holds the next fruit: the key is pressed until it lets go.
+    dropTo = (total: number) =>
+      expect(async () => {
+        await page.keyboard.press(" ");
+        await expect(drops).toHaveText(String(total), { timeout: 400 });
+      }).toPass({ timeout: 20000 });
   await expect(drops).toHaveText("0");
   await page.locator("canvas").focus();
-  await page.keyboard.press(" ");
-  await expect(drops).toHaveText("1");
-  // The next fruit comes to hand after a moment.
-  await page.waitForTimeout(900);
+  await dropTo(1);
   await page.keyboard.down("ArrowRight");
   await page.waitForTimeout(300);
   await page.keyboard.up("ArrowRight");
-  await page.keyboard.press(" ");
-  await expect(drops).toHaveText("2");
-  await page.waitForTimeout(900);
-  // Stopped: the key drops nothing.
+  await dropTo(2);
+  // Stopped: the key drops nothing, however often it is pressed.
   await page.locator("#pg-pause").click();
   await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "계속하기");
   await page.locator("canvas").focus();
-  await page.keyboard.press(" ");
-  await page.waitForTimeout(400);
+  for (let i = 0; i < 5; i++) {
+    await page.keyboard.press(" ");
+    await page.waitForTimeout(300);
+  }
   await expect(drops).toHaveText("2");
   await page.keyboard.press("p");
   await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "일시정지");
-  await page.keyboard.press(" ");
-  await expect(drops).toHaveText("3");
+  await dropTo(3);
   // A tap on the box drops too.
-  await page.waitForTimeout(900);
   const box = (await page.locator("canvas").boundingBox())!;
-  await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.5);
-  await expect(drops).toHaveText("4");
+  await expect(async () => {
+    await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.5);
+    await expect(drops).toHaveText("4", { timeout: 400 });
+  }).toPass({ timeout: 20000 });
   expect(errors).toEqual([]);
 });
