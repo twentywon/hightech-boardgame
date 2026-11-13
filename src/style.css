@@ -2487,3 +2487,24 @@ dialog .dialog-body:has(.result-art) { overflow-x:hidden; }
   .solo-stat { padding:7px 12px; }
   .solo-stat b { font-size:22px; }
 }
+
+/* ── A table stopped by its pause button: dimmed until it goes on ───────── */
+#board[data-paused="true"] canvas { filter: saturate(0.5) brightness(0.68); transition: filter 0.15s; }
+
+/* ── Stages chosen from pictures, in the new-game window ────────────────── */
+dialog.setup-dialog:has(.stage-grid) { width:min(94vw, 640px); }
+dialog .stage-grid { display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:12px;padding:4px 2px 2px; }
+dialog .stage-card { display:flex;flex-direction:column;align-items:center;gap:2px;min-height:0;padding:12px 8px 10px;border:1.5px solid var(--line, #d9d3c4);border-radius:16px;background:#fffdf7;color:var(--ink, #16181a);cursor:pointer;font:inherit; }
+dialog .stage-card:hover, dialog .stage-card:focus-visible { border-color:var(--ink, #16181a);background:#fff8e6; }
+dialog .stage-card.current { border-color:#1d3f93;box-shadow:0 0 0 2px #1d3f9333; }
+dialog .stage-art { display:block;width:min(100%, 132px);aspect-ratio:1; }
+dialog .stage-art svg { display:block;width:100%;height:100%; }
+dialog .stage-card b { margin-top:6px;font-size:15px; }
+dialog .stage-card small { font-size:12px;color:var(--ink-soft, #5c5a55); }
+@media (orientation: landscape) and (max-height: 540px) {
+  dialog.setup-dialog:has(.stage-grid) { width:min(96vw, 720px); }
+  dialog .stage-grid { grid-template-columns:repeat(6, minmax(0, 1fr));gap:6px; }
+  dialog .stage-card { padding:6px 4px; }
+  dialog .stage-card b { margin-top:2px;font-size:12px;white-space:nowrap;letter-spacing:-0.02em; }
+  dialog .stage-card small { font-size:11px; }
+}

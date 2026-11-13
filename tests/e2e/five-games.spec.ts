@@ -155,6 +155,16 @@ test("table soccer: the ball runs by itself and my rods follow the keys", async 
   await page.keyboard.up("ArrowDown");
   await expect.poll(async () => Number(await canvas.getAttribute("data-slide")), { timeout: 10000 }).toBeGreaterThan(0.5);
   await expect.poll(() => canvas.getAttribute("data-ball"), { timeout: 10000 }).not.toBe(before);
+  // The pause button stops the table where it is; pressed again, the ball runs on.
+  const tools = page.locator(".board-area .pg-tools");
+  await tools.getByRole("button", { name: "일시정지" }).click();
+  await expect(page.locator("#turn")).toContainText("일시정지");
+  await page.waitForTimeout(300);
+  const stopped = await canvas.getAttribute("data-ball");
+  await page.waitForTimeout(1200);
+  expect(await canvas.getAttribute("data-ball")).toBe(stopped);
+  await tools.getByRole("button", { name: "계속하기" }).click();
+  await expect.poll(() => canvas.getAttribute("data-ball"), { timeout: 10000 }).not.toBe(stopped);
   await page.getByRole("button", { name: "게임 방법" }).click();
   await expect(page.locator("dialog[open]")).toContainText("골키퍼");
   expect(errors).toEqual([]);

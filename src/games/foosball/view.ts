@@ -202,6 +202,11 @@ export class FoosballView extends TableView<State> {
   get animating() {
     return false;
   }
+  private paused = false;
+  setPaused(paused: boolean) {
+    this.paused = paused;
+    this.held = 0;
+  }
   /** The rods go exactly as far as the hand does. */
   private push(by: number) {
     this.target = Math.max(-MAX_SLIDE, Math.min(MAX_SLIDE, this.target + by));
@@ -225,7 +230,11 @@ export class FoosballView extends TableView<State> {
     const real = Math.min(0.3, (now - this.last) / 1000),
       passed = Math.min(0.05, real);
     this.last = now;
-    if (!this.state || this.state.winner !== null || document.hidden || document.querySelector("dialog[open]")) return;
+    if (!this.state || this.state.winner !== null || this.paused || document.hidden || document.querySelector("dialog[open]")) {
+      // Nothing pressed while the table stands still is kept for later.
+      this.kick = false;
+      return;
+    }
     if (this.held) this.push(this.held * 4.5 * real);
     if (this.wait > 0) {
       this.wait -= passed;

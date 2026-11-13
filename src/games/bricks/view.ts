@@ -145,10 +145,24 @@ export class BricksView extends TableView<State> {
       this.scene.add(prize);
     }
     // The balls still to come wait in a dish beside the table.
-    this.add(new T.CylinderGeometry(0.75, 0.6, 0.12, 28), this.standard({ color: "#d8cfbd", roughness: 0.6 }), HALF_X + 1.5, -0.34, BAT_Z - 0.4);
+    // A bowl turned on a wheel: a foot, a wall that rises to a rolled rim, and a deep hollow in which the balls lie.
+    const profile = [[0, 0], [0.4, 0], [0.47, 0.04], [0.7, 0.22], [0.9, 0.44], [0.98, 0.54], [0.99, 0.58], [0.95, 0.6], [0.9, 0.56], [0.8, 0.44], [0.62, 0.26], [0.44, 0.13], [0, 0.1]].map(([r, y]) => new T.Vector2(r, y)),
+      dish = new T.Mesh(this.own(new T.LatheGeometry(profile, 48)), this.standard({ color: "#f3efe4", roughness: 0.28, side: T.DoubleSide }));
+    dish.position.set(HALF_X + 1.5, -0.4, BAT_Z - 0.4);
+    dish.castShadow = dish.receiveShadow = true;
+    this.scene.add(dish);
+    // A painted line inside the rim.
+    for (const [radius, height] of [[0.86, 0.5], [0.5, 0.165]]) {
+      const band = new T.Mesh(this.own(new T.TorusGeometry(radius, 0.014, 8, 48)), this.standard({ color: "#1d3f93", roughness: 0.4 }));
+      band.rotation.x = Math.PI / 2;
+      band.position.set(HALF_X + 1.5, -0.4 + height, BAT_Z - 0.4);
+      this.scene.add(band);
+    }
     for (let i = 0; i < MAX_LIVES - 1; i++) {
       const spare = new T.Mesh(sphere, steel);
-      spare.position.set(HALF_X + 1.5 + ((i % 2) - 0.5) * 0.42, -0.28 + R, BAT_Z - 0.4 + (Math.floor(i / 2) - 0.5) * 0.42);
+      // They lie in the hollow of the bowl: two side by side in the middle, the others before and behind, a little up its wall.
+      const [dx, dz, up] = [[-0.19, 0, 0], [0.19, 0, 0], [0, -0.33, 0.05], [0, 0.33, 0.05]][i];
+      spare.position.set(HALF_X + 1.5 + dx, -0.4 + 0.115 + R + up, BAT_Z - 0.4 + dz);
       spare.castShadow = true;
       this.spares.push(spare);
       this.scene.add(spare);
@@ -184,8 +198,13 @@ export class BricksView extends TableView<State> {
   get animating() {
     return false;
   }
+  private paused = false;
+  setPaused(paused: boolean) {
+    this.paused = paused;
+    this.held = 0;
+  }
   private running() {
-    return !!this.state && this.state.winner === null && !document.hidden && !document.querySelector("dialog[open]");
+    return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
   }
   /** Sends the resting ball off. */
   private send() {

@@ -198,6 +198,11 @@ const play = {
   2048: async () => {
     await keys(["ArrowLeft", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowRight", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowRight", "ArrowDown", "ArrowLeft", "ArrowDown"], 330);
   },
+  // The stage window that opens over the board is closed: the whole board stays.
+  "peg-solitaire": async () => {
+    await page.keyboard.press("Escape");
+    await wait(300);
+  },
   "brick-breaker": async () => {
     await keys([" "]);
     await wait(2300);

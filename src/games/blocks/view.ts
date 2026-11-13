@@ -31,6 +31,7 @@ export class BlocksView implements PointView<State> {
   private ticker = 0;
   private since = performance.now();
   private dirty = true;
+  private paused = false;
   private observer: ResizeObserver;
   /** Rows just taken out, shown as a fading band until `until`. */
   private flash: { rows: number[]; until: number } | null = null;
@@ -73,7 +74,7 @@ export class BlocksView implements PointView<State> {
       }
       if (this.dirty || this.flash) this.draw(now);
       // The clock stands while a window is open, the page is hidden or the game is over.
-      if (!state || state.winner !== null || document.hidden || document.querySelector("dialog[open]")) {
+      if (!state || state.winner !== null || this.paused || document.hidden || document.querySelector("dialog[open]")) {
         this.since = now;
         return;
       }
@@ -103,6 +104,10 @@ export class BlocksView implements PointView<State> {
     this.resize();
   }
   setMarks(_marks: Marks) {}
+  setPaused(paused: boolean) {
+    this.paused = paused;
+    this.since = performance.now();
+  }
   sync(state: State) {
     if (this.disposed) return;
     const before = this.state;

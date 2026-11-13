@@ -26,6 +26,12 @@ const score = async (page: Page) => Number(/점수 (\d+)/.exec(await page.locato
 
 test("peg solitaire: a marble jumps into the middle, and the jump is taken back", async ({ page }) => {
   const errors = await sit(page, "페그 솔리테어");
+  // The stages come up in a window over the board; the whole board is the first card.
+  const cards = page.getByRole("dialog").locator(".stage-card");
+  await expect(cards).toHaveCount(6);
+  await cards.filter({ hasText: "기본" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await rest(page);
   const subject = { half: 3.7, halfZ: 3.7, height: 0.7, lookY: 0, tilt: (58 * Math.PI) / 180 },
     at = async (hole: number) => {
@@ -54,21 +60,31 @@ test("peg solitaire: a marble jumps into the middle, and the jump is taken back"
   expect(errors).toEqual([]);
 });
 
-test("peg solitaire: a stage with fewer marbles is chosen before sitting down", async ({ page }) => {
+test("peg solitaire: the stage is chosen from pictures in a window after sitting down", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, "페그 솔리테어");
-  // The whole board and five set problems.
-  await expect(page.locator("#pg-variant option")).toHaveCount(6);
-  await page.locator("#pg-variant").selectOption("cross");
+  // Nothing is chosen in the collection: no list of stages there.
+  await expect(page.locator("#pg-variant")).toHaveCount(0);
   await page.locator(".game-stage button.primary").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("스테이지 선택");
+  // A card for each stage, with its picture, name and number of marbles.
+  await expect(dialog.locator(".stage-card")).toHaveCount(6);
+  await expect(dialog.locator(".stage-card svg")).toHaveCount(6);
+  await expect(dialog.locator(".stage-card").filter({ hasText: "십자가" })).toContainText("구슬 6개");
+  await dialog.locator(".stage-card").filter({ hasText: "십자가" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await expect(page.locator("#turn")).toContainText("구슬 6개");
-  // The new-game window offers the stages again.
+  // 새 게임 brings the same window; the stage being played is marked, and closing it keeps the game.
   await page.getByRole("button", { name: "새 게임", exact: true }).click();
-  await page.getByRole("dialog").locator("#pg-variant").selectOption("diamond");
-  await page.getByRole("dialog").locator("#pg-start").click();
+  await expect(page.getByRole("dialog").locator(".stage-card.current")).toContainText("십자가");
+  await page.getByRole("dialog").getByRole("button", { name: "계속하기" }).click();
+  await expect(page.locator("#turn")).toContainText("구슬 6개");
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "다이아몬드" }).click();
   await expect(page.locator("#turn")).toContainText("구슬 24개", { timeout: 20000 });
   expect(errors).toEqual([]);
 });
@@ -128,6 +144,25 @@ test("falling blocks: the clock brings the piece down, a key drops it, and an op
   await page.keyboard.press("Escape");
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await expect(count(page)).not.toHaveText(held, { timeout: 10000 });
+  // The pause button stops the clock and the keys; pressed again, the game goes on.
+  const pause = tools.getByRole("button", { name: "일시정지" });
+  await pause.click();
+  await expect(page.locator("#board")).toHaveAttribute("data-paused", "true");
+  await expect(page.locator("#turn")).toContainText("일시정지");
+  const stopped = await count(page).innerText();
+  await page.locator("canvas").focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press(" ");
+  await page.waitForTimeout(2200);
+  await expect(count(page)).toHaveText(stopped);
+  await tools.getByRole("button", { name: "계속하기" }).click();
+  await expect(page.locator("#board")).toHaveAttribute("data-paused", "false");
+  await expect(count(page)).not.toHaveText(stopped, { timeout: 10000 });
+  // The P key does the same.
+  await page.keyboard.press("p");
+  await expect(tools.getByRole("button", { name: "계속하기" })).toBeVisible();
+  await page.keyboard.press("p");
+  await expect(tools.getByRole("button", { name: "일시정지" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -139,6 +174,15 @@ test("brick breaker: the ball is sent off and knocks a brick out", async ({ page
   await page.waitForTimeout(1200);
   await expect(count(page)).toHaveText("0수");
   await page.locator("canvas").focus();
+  // Paused, the ball cannot even be sent off.
+  const pause = page.locator(".board-area .pg-tools").getByRole("button", { name: "일시정지" });
+  await pause.click();
+  await expect(page.locator("#turn")).toContainText("일시정지");
+  await page.locator("canvas").focus();
+  await page.keyboard.press(" ");
+  await page.waitForTimeout(2500);
+  await expect(count(page)).toHaveText("0수");
+  await page.locator(".board-area .pg-tools").getByRole("button", { name: "계속하기" }).click();
   await page.keyboard.press(" ");
   await expect.poll(() => score(page), { timeout: 20000 }).toBeGreaterThan(0);
   expect(errors).toEqual([]);
