@@ -203,6 +203,10 @@ const play = {
     await page.keyboard.press("Escape");
     await wait(300);
   },
+  "river-crossing": async () => {
+    await page.keyboard.press("Escape");
+    await wait(300);
+  },
   "water-pouring": async () => {
     await page.keyboard.press("Escape");
     await wait(300);

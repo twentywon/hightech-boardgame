@@ -319,4 +319,12 @@ export const games = [
     icon: "◔",
     available: true,
   },
+  {
+    name: "강 건너기",
+    en: "RIVER CROSSING",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "≈",
+    available: true,
+  },
 ];

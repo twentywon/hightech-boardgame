@@ -4,6 +4,7 @@ import { FOV, cameraDistance } from "../../src/engine/camera";
 import { CENTRE, HOLES, SIZE, holeAt } from "../../src/games/peg/rules";
 import { W as TRAY_W, createGame as layTray, solve as solveTray } from "../../src/games/marble/rules";
 import { createGame as layJugs, solve as solveJugs } from "../../src/games/pour/rules";
+import { createGame as gather, solve as ferry } from "../../src/games/river/rules";
 import { selectGame } from "./library";
 
 const count = (page: Page) => page.locator("#move-count");
@@ -387,3 +388,55 @@ test("water pouring: the level is asked, pours are counted against the fewest, a
   expect(errors).toEqual([]);
 });
 
+
+test("river crossing: a wrong crossing is shown as a failure and taken back, and the company is brought over in the fewest", async ({ page }) => {
+  const errors = await sit(page, "강 건너기");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(4);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "양과 늑대" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await rest(page);
+  // This stage is always the same company: three sheep, three wolves, two to the boat.
+  const puzzle = gather(2, Math.random),
+    way = ferry(puzzle)!,
+    sheep = puzzle.actors.findIndex((actor) => actor.role === "sheep");
+  expect(way).toHaveLength(puzzle.best);
+  await expect(page.locator("#turn")).toContainText(`최소 ${puzzle.best}번`);
+  const panel = page.locator(".puzzle-panel"),
+    launch = page.locator("#pg-tool-0");
+  // An empty boat does not cross.
+  await expect(launch).toBeDisabled();
+  let cursor = 0;
+  const board = async (to: number) => {
+    for (let i = 0; i < Math.abs(to - cursor); i++) await page.keyboard.press(to > cursor ? "ArrowRight" : "ArrowLeft");
+    cursor = to;
+    await page.keyboard.press("Enter");
+  };
+  await page.locator("canvas").focus();
+  await page.keyboard.press("ArrowRight");
+  // One sheep alone leaves two with three wolves: a failure, told, with no window; it is taken back and play goes on.
+  await board(sheep);
+  await expect(launch).toBeEnabled();
+  await launch.click();
+  await expect(page.locator("#turn")).toContainText("실패!", { timeout: 20000 });
+  await expect(page.locator("#turn")).toContainText("무르기");
+  await page.waitForTimeout(1600);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await panel.locator("#pz-restart").click();
+  await expect(page.locator("#turn")).toContainText("0번 건넘");
+  await rest(page);
+  await page.locator("canvas").focus();
+  for (const [n, crew] of way.entries()) {
+    for (const rider of crew) await board(rider);
+    await launch.click();
+    await expect(page.locator(".solo-stat").first()).toContainText(String(n + 1), { timeout: 20000 });
+    await rest(page);
+  }
+  await expect(page.locator("#turn")).toContainText("성공!");
+  await expect(page.locator("#turn")).toContainText(`${puzzle.best}번 만에`);
+  await page.waitForTimeout(1600);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await panel.locator("#pz-next").click();
+  await expect(panel.locator("#pz-stage")).toHaveText("양과 늑대 · 스테이지 2");
+  expect(errors).toEqual([]);
+});

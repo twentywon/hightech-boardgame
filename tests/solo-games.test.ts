@@ -7,6 +7,7 @@ import * as bricks from "../src/games/bricks/rules";
 import { BAT_Z, DT, HALF_X, HALF_Z, R, batHalf, createWorld, launch, speedOf, step } from "../src/games/bricks/sim";
 import * as marbleRules from "../src/games/marble/rules";
 import * as pour from "../src/games/pour/rules";
+import * as river from "../src/games/river/rules";
 
 const to = (point: number) => ({ from: -1, to: point, extra: -1 });
 
@@ -560,5 +561,67 @@ describe("water pouring", () => {
       }
     // Both kinds of goal come up.
     expect([...kinds].sort()).toEqual(["make", "split"]);
+  });
+});
+
+describe("river crossing", () => {
+  const go = (state: river.State, crew: number[]) => {
+    for (const i of crew) state = river.play(state, to(i))!;
+    return river.play(state, to(river.GO))!;
+  };
+  test("the farmer rows; nothing crosses without him, and the boat holds him and one load", () => {
+    const start = river.createGame(1, seededRandom(1));
+    expect(start.actors.map((a) => a.role)[0]).toBe("farmer");
+    expect([start.actors.length, start.seats, start.best]).toEqual([4, 2, 7]);
+    // An empty boat does not leave, nor one with only a load in it.
+    expect(river.moves(start).some((m) => m.to === river.GO)).toBe(false);
+    let state = river.play(start, to(1))!;
+    expect([state.aboard, state.ply, river.moves(state).some((m) => m.to === river.GO)]).toEqual([[1], 0, false]);
+    state = river.play(state, to(0))!;
+    // Full: a third cannot get in, but one may get out again.
+    expect(river.play(state, to(2))).toBeNull();
+    expect(river.play(state, to(1))!.aboard).toEqual([0]);
+    expect(start.aboard).toEqual([]);
+  });
+  test("leaving the eater with what it eats is a failure, told and able to be taken back; the right way wins in seven", () => {
+    const start = river.createGame(1, seededRandom(1)),
+      failed = go(start, [0, 1]);
+    // The farmer took the first load: the second is left with the third, which it eats.
+    expect([failed.winner, failed.crossings]).toEqual([1, 1]);
+    expect(river.river.reason(failed)).toMatch(/^실패! 농부가 없는 사이에/);
+    expect(river.moves(failed)).toEqual([]);
+    let state = start;
+    for (const crew of river.solve(start)!) state = go(state, crew);
+    expect([state.winner, state.crossings, state.actors.every((a) => a.side === 1)]).toEqual([0, 7, true]);
+    expect(river.river.reason(state)).toMatch(/7번 만에.*가장 적게/);
+  });
+  test("wolves must not outnumber sheep on either bank, and couples must not be parted wrongly", () => {
+    const flock = river.createGame(2, seededRandom(1)),
+      wolves = flock.actors.flatMap((a, i) => (a.role === "wolf" ? [i] : [])),
+      sheep = flock.actors.flatMap((a, i) => (a.role === "sheep" ? [i] : []));
+    expect([flock.best, flock.seats]).toEqual([11, 2]);
+    // Two sheep go: one sheep is left with three wolves.
+    expect(go(flock, sheep.slice(0, 2)).trouble).toMatch(/늑대 3마리가 양 1마리보다/);
+    expect(go(flock, wolves.slice(0, 2)).winner).toBeNull();
+    const pairs = river.createGame(3, seededRandom(1));
+    expect(pairs.best).toBe(11);
+    // A husband crosses with another's wife: in the boat she is with a husband not her own.
+    expect(go(pairs, [0, 3]).trouble).toMatch(/부인이 남편 없이/);
+    // Two husbands cross: their wives stay with the third husband.
+    expect(go(pairs, [0, 2]).trouble).toMatch(/부인이 남편 없이/);
+    expect(go(pairs, [1, 3]).winner).toBeNull();
+  });
+  test("every stage can be solved in the fewest crossings it names, and the hint leads there", () => {
+    for (const stage of [1, 2, 3, 4])
+      for (const seed of [1, 2, 3, 4]) {
+        let state = river.createGame(stage, seededRandom(seed * 5 + stage));
+        const best = state.best;
+        expect(best).toBeGreaterThan(0);
+        // Following the hint, press by press, to the end.
+        for (let presses = 0; state.winner === null && presses < 400; presses++) state = river.play(state, river.hint(state)!)!;
+        expect([state.winner, state.crossings]).toEqual([0, best]);
+      }
+    // From a failed state there is no hint.
+    expect(river.hint(go(river.createGame(1, seededRandom(1)), [0, 1]))).toBeNull();
   });
 });
