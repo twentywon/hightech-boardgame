@@ -267,7 +267,7 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   // The offer comes up as a dialog.
   await expect(page.getByRole("heading", { name: "방콕을(를) 살까요?" })).toBeVisible();
   await expect(turn(page)).toContainText("방콕을(를) 80만원에 살 수 있습니다");
-  await page.locator("dialog").getByRole("button", { name: "사기 (80)" }).click();
+  await page.locator("dialog").getByRole("button", { name: "사기 (80만원)" }).click();
   await expect(page.locator("#tour-money-0")).toHaveText("1,920만원");
   // The turn is mine until I end it: the deeds can be opened and a place sold.
   const end = page.locator("#tour-end");
