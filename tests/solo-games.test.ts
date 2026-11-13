@@ -6,6 +6,7 @@ import * as blocks from "../src/games/blocks/rules";
 import * as bricks from "../src/games/bricks/rules";
 import { BAT_Z, DT, HALF_X, HALF_Z, R, batHalf, createWorld, launch, speedOf, step } from "../src/games/bricks/sim";
 import * as marbleRules from "../src/games/marble/rules";
+import * as pour from "../src/games/pour/rules";
 
 const to = (point: number) => ({ from: -1, to: point, extra: -1 });
 
@@ -507,5 +508,57 @@ describe("marble shooting", () => {
     // From a tray that cannot be solved any more, nothing is offered.
     expect(marbleRules.solve(tray([[0, 0], [4, 0], [6, 5]]))).toBeNull();
     expect(marbleRules.solve(tray([[1, 1], [1, 4]]))).toEqual([{ from: at(1, 1), to: at(1, 4), extra: -1 }]);
+  });
+});
+
+describe("water pouring", () => {
+  const classic = (): pour.State => ({ caps: [8, 5, 3], amounts: [8, 0, 0], goal: { kind: "split", amount: 4 }, best: 7, winner: null, last: null, ply: 0 });
+  test("a pour goes on until the one is empty or the other full, and nothing is lost", () => {
+    let state = classic();
+    expect(pour.moves(state)).toEqual([{ from: 0, to: 1, extra: -1 }, { from: 0, to: 2, extra: -1 }]);
+    state = pour.play(state, { from: 0, to: 1, extra: -1 })!;
+    expect(state.amounts).toEqual([3, 5, 0]);
+    state = pour.play(state, { from: 1, to: 2, extra: -1 })!;
+    expect([state.amounts, state.last, state.ply]).toEqual([[3, 2, 3], { from: 1, to: 2, amount: 3 }, 2]);
+    // Into a full vessel, from an empty one, or into itself: no pour.
+    expect(pour.play(state, { from: 0, to: 2, extra: -1 })).toBeNull();
+    expect(pour.play(classic(), { from: 1, to: 0, extra: -1 })).toBeNull();
+    expect(pour.play(state, { from: 0, to: 0, extra: -1 })).toBeNull();
+    expect(state.amounts.reduce((a, b) => a + b)).toBe(8);
+  });
+  test("eight, five and three are shared four and four in seven pours, and no fewer", () => {
+    let state = classic();
+    const way = pour.solve(state)!;
+    expect(way.length).toBe(7);
+    for (const move of way) state = pour.play(state, move)!;
+    expect([state.amounts, state.winner, state.ply]).toEqual([[4, 4, 0], 0, 7]);
+    expect(pour.pouring.reason(state)).toMatch(/7번 만에.*가장 적게/);
+    expect(pour.moves(state)).toEqual([]);
+    // An amount in any vessel is the other kind of goal.
+    const make: pour.State = { ...classic(), goal: { kind: "make", amount: 2 }, best: 2 };
+    expect(pour.solve(make)!.length).toBe(2);
+    const done = pour.solve(make)!.reduce((s, move) => pour.play(s, move)!, make);
+    expect([done.winner, done.amounts.includes(2)]).toEqual([0, true]);
+    expect(pour.goalText(make)).toBe("어느 그릇에든 2리터 만들기");
+    expect(pour.goalText(classic())).toBe("8리터와 5리터 그릇에 4리터씩 나누기");
+  });
+  test("every puzzle drawn at random can be solved in the fewest pours it names, within its level's band", () => {
+    const kinds = new Set<string>();
+    for (let level = 1; level <= pour.BANDS.length; level++)
+      for (let seed = 1; seed <= 12; seed++) {
+        const start = pour.createGame(level, seededRandom(seed * 7 + level)),
+          [low, high] = pour.BANDS[level - 1],
+          way = pour.solve(start)!;
+        kinds.add(start.goal.kind);
+        expect(start.amounts).toEqual([start.caps[0], 0, 0]);
+        expect(start.caps[0] > start.caps[1] && start.caps[1] > start.caps[2] && start.caps[2] >= 2).toBe(true);
+        expect([way.length, start.best >= low && start.best <= high]).toEqual([start.best, true]);
+        const end = way.reduce((s, move) => pour.play(s, move)!, start);
+        expect(end.winner).toBe(0);
+        if (start.goal.kind === "split") expect(end.amounts.slice(0, 2)).toEqual([start.caps[0] / 2, start.caps[0] / 2]);
+        else expect(end.amounts).toContain(start.goal.amount);
+      }
+    // Both kinds of goal come up.
+    expect([...kinds].sort()).toEqual(["make", "split"]);
   });
 });

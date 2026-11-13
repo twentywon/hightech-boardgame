@@ -3,6 +3,7 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { FOV, cameraDistance } from "../../src/engine/camera";
 import { CENTRE, HOLES, SIZE, holeAt } from "../../src/games/peg/rules";
 import { W as TRAY_W, createGame as layTray, solve as solveTray } from "../../src/games/marble/rules";
+import { createGame as layJugs, solve as solveJugs } from "../../src/games/pour/rules";
 import { selectGame } from "./library";
 
 const count = (page: Page) => page.locator("#move-count");
@@ -314,3 +315,75 @@ test("marble shooting: the difficulty is asked on sitting down, and the panel hi
   await expect(panel.locator("#pz-stage")).toHaveText("어려움 · 스테이지 1");
   expect(errors).toEqual([]);
 });
+
+test("water pouring: the level is asked, pours are counted against the fewest, and the solved puzzle offers the next", async ({ page }) => {
+  // The puzzle is drawn at random; with the platform's generator replaced by a known one, the test can draw the same.
+  await page.addInitScript(() => {
+    let seed = 77;
+    crypto.getRandomValues = ((buffer: Uint32Array) => {
+      for (let i = 0; i < buffer.length; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        buffer[i] = seed * 2;
+      }
+      return buffer;
+    }) as typeof crypto.getRandomValues;
+  });
+  let seed = 77;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed * 2) / 4294967296;
+  };
+  const errors = await sit(page, "물 나누기");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(3);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "쉬움" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await rest(page);
+  // Puzzles were drawn when the game was looked at and when sitting down; the third is the one chosen.
+  layJugs(1, random);
+  layJugs(1, random);
+  const puzzle = layJugs(1, random),
+    way = solveJugs(puzzle)!;
+  await expect(page.locator("#turn")).toContainText(`최소 ${puzzle.best}번`);
+  await expect(page.locator("#turn")).toContainText("목표:");
+  await expect(page.locator(".solo-stat")).toHaveCount(2);
+  await expect(page.locator(".solo-stat").nth(1)).toContainText(String(puzzle.best));
+  const panel = page.locator(".puzzle-panel");
+  await panel.getByRole("button", { name: "힌트", exact: true }).click();
+  await expect(page.locator("#turn")).toContainText("화살표");
+  // The vessels are walked by the arrow keys: the first press stands on the first, then one step a vessel.
+  let cursor = 0;
+  const go = async (to: number) => {
+    for (let i = 0; i < Math.abs(to - cursor); i++) await page.keyboard.press(to > cursor ? "ArrowRight" : "ArrowLeft");
+    cursor = to;
+    await page.keyboard.press("Enter");
+  };
+  await page.locator("canvas").focus();
+  await page.keyboard.press("ArrowRight");
+  for (const [n, move] of way.entries()) {
+    await go(move.from);
+    await go(move.to);
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+    if (n === 0) {
+      // One pour can be taken back.
+      await panel.getByRole("button", { name: "무르기", exact: true }).click();
+      await expect(count(page)).toHaveText("0수");
+      await page.locator("canvas").focus();
+      await go(move.from);
+      await go(move.to);
+      await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+      await rest(page);
+    }
+  }
+  // Solved in the fewest pours: said so, no window, and the next stage is offered.
+  await expect(page.locator("#turn")).toContainText(`${puzzle.best}번 만에`);
+  await expect(page.locator("#turn")).toContainText("가장 적게");
+  await page.waitForTimeout(1600);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await panel.locator("#pz-next").click();
+  await expect(panel.locator("#pz-stage")).toHaveText("쉬움 · 스테이지 2");
+  await expect(count(page)).toHaveText("0수");
+  expect(errors).toEqual([]);
+});
+

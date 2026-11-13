@@ -2569,13 +2569,13 @@ dialog .result-art + p:not(.result-text)::first-line { font-size:24px;font-weigh
 .puzzle-level[aria-pressed="true"] { background:#16181a;border-color:#16181a;color:#fff; }
 .puzzle-level[aria-pressed="true"] small { color:#ffffffb0; }
 .puzzle-actions { display:grid;grid-template-columns:1fr 1fr;gap:6px; }
-.puzzle-actions button { min-height:40px;border-radius:12px; }
+.puzzle-actions button { min-height:40px;border-radius:12px;white-space:nowrap;padding:0 6px; }
 .puzzle-panel #pz-next { min-height:46px;font-size:16px; }
 .puzzle-panel #pz-next[hidden] { display:none; }
 @media (orientation: landscape) and (max-height: 540px) {
   .puzzle-panel { gap:6px;margin-top:6px; }
   .puzzle-level { padding:5px 2px; }
-  .puzzle-actions button { min-height:32px; }
+  .puzzle-actions button { min-height:32px;font-size:13px; }
   .puzzle-panel #pz-next { min-height:36px;font-size:14px; }
 }
 

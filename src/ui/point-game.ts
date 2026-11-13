@@ -76,7 +76,7 @@ export interface PointConfig<S> {
    * 처음부터, 다른 퍼즐) instead of the table's corner; no result window comes up, and a solved puzzle
    * offers 다음 스테이지. `hint` is the next move of a way to solve the state, or null when there is none.
    */
-  puzzle?: { hint: (state: S) => Move | null };
+  puzzle?: { hint: (state: S) => Move | null; hintText?: string };
   /** The stage window comes up as soon as one sits down, not only from 새 게임. */
   stagesFirst?: boolean;
   /** The tools stand at the lower left as the arrow keys of a keyboard do; each names its place with `area` (up, left, down, right, or drop beside them). */
@@ -565,10 +565,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       : config.puzzle
       ? done
         ? game.winner(s) === 0
-          ? "성공! '다음 스테이지'를 누르세요."
+          ? `${game.reason(s)} '다음 스테이지'를 누르세요.`
           : `${game.reason(s)} 무르기나 처음부터를 눌러 다시 해 보세요.`
         : hinted
-          ? "힌트 — 금색 고리의 구슬을 화살표 쪽으로 치세요."
+          ? (config.puzzle.hintText ?? "힌트 — 금색 고리의 구슬을 화살표 쪽으로 치세요.")
           : game.hint(s)
       : solo
       ? done

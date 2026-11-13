@@ -164,5 +164,5 @@ export const marble: PointGame<State> = {
   evaluate: (s) => -count(s),
   hint: (s) => `구슬 ${count(s)}개 · 구슬을 다른 구슬 쪽으로 쳐서 하나만 남기세요.`,
   tally: (s) => [`남은 구슬 ${count(s)}`, ""],
-  reason: (s) => (s.winner === 0 ? `구슬 ${s.size}개를 하나만 남기고 모두 쳐 냈습니다!` : `더 칠 수 있는 구슬이 없습니다. 구슬 ${count(s)}개가 남았습니다.`),
+  reason: (s) => (s.winner === 0 ? `성공! 구슬 ${s.size}개를 하나만 남기고 모두 쳐 냈습니다.` : `더 칠 수 있는 구슬이 없습니다. 구슬 ${count(s)}개가 남았습니다.`),
 };
