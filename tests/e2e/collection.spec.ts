@@ -55,7 +55,9 @@ test("collection preserves filters, supports keyboard/touch and resets on home o
   await expect(gomoku).toHaveAttribute("aria-expanded", "false");
   const reversi = page.getByRole("button", { name: "리버시 살펴보기" });
   if (info.project.name === "mobile") {
-    // The page glides to a panel that opens; a tap is aimed only once it has come to rest.
+    // The page went down to the panel that opened, and on a short screen the first row is now above it:
+    // the tile is brought back into view, and the tap is aimed once the page has come to rest.
+    await reversi.scrollIntoViewIfNeeded();
     await page.waitForFunction(() => new Promise<boolean>((done) => { const y = scrollY; setTimeout(() => done(scrollY === y), 300); }));
     const box = (await reversi.boundingBox())!;
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
@@ -70,7 +72,9 @@ test("collection preserves filters, supports keyboard/touch and resets on home o
   // The games lie in a grid, row under row, not in one line to be scrolled sideways.
   const rows = await page.locator(".game-entry:not([hidden])").evaluateAll((tiles) => new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top))).size);
   expect(rows).toBeGreaterThan(2);
-  expect(await page.locator("#game-rail").evaluate((grid) => grid.scrollWidth <= grid.clientWidth + 1)).toBe(true);
+  // It is no strip to be scrolled sideways: every tile lies within the width of the page.
+  expect(await page.locator("#game-rail").evaluate((grid) => getComputedStyle(grid).overflowX)).toBe("visible");
+  expect(await page.locator(".game-entry:not([hidden])").evaluateAll((tiles) => tiles.every((t) => t.getBoundingClientRect().left >= 0 && t.getBoundingClientRect().right <= innerWidth + 1))).toBe(true);
   // The chosen game's panel opens under its own row, across the whole grid.
   const panel = (await page.locator(".game-stage").boundingBox())!,
     tile = (await reversi.boundingBox())!,
