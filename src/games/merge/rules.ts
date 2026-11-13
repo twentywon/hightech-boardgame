@@ -96,7 +96,8 @@ export const merge: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => s.score,
-  hint: (s) => `점수 ${s.score} · 가장 큰 수 ${best(s)} · 타일을 한쪽으로 밀어 같은 수끼리 합치세요.`,
+  // The score stands on its own card on the desk; the line over the table says only what to do.
+  hint: () => "타일을 한쪽으로 밀어 같은 수끼리 합치세요.",
   tally: (s) => [`점수 ${s.score} · 가장 큰 수 ${best(s)}`, ""],
   reason: (s) => (s.winner === 0 ? `${GOAL}을 만들었습니다! 점수 ${s.score}.` : `더 밀 수 있는 곳이 없습니다. 가장 큰 수 ${best(s)}, 점수 ${s.score}.`),
 };

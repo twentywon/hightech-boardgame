@@ -56,7 +56,10 @@ test("peg solitaire: a marble jumps into the middle, and the jump is taken back"
 
 test("2048: the arrow keys and a swipe slide the tiles", async ({ page }) => {
   const errors = await sit(page, "2048");
+  // No panel beside the table; the figures stay in the page for readers.
+  await expect(page.locator(".game-layout")).toHaveClass(/no-panel/);
   await expect(page.locator(".solo-stat")).toHaveCount(2);
+  expect((await page.locator(".game-sidebar").boundingBox())!.width).toBeLessThanOrEqual(1);
   await expect(page.getByRole("button", { name: "무르기", exact: true })).toBeHidden();
   // Two tiles on sixteen squares: at least one of the four ways moves something.
   for (const key of ["ArrowLeft", "ArrowDown", "ArrowRight", "ArrowUp"]) {
@@ -77,7 +80,8 @@ test("2048: the arrow keys and a swipe slide the tiles", async ({ page }) => {
     await rest(page);
   }
   await expect(count(page)).not.toHaveText(before);
-  await expect(page.locator("#turn")).toContainText("가장 큰 수");
+  await expect(page.locator("#turn")).toContainText("같은 수끼리 합치세요");
+  await expect(page.locator("#pg-count-0")).toContainText("가장 큰 수");
   expect(errors).toEqual([]);
 });
 

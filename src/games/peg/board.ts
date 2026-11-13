@@ -23,13 +23,26 @@ export const pegBoard = (): BoardSpec => ({
     ctx.stroke();
     for (const p of points) {
       const [cx, cy] = px(p.x, p.z),
-        shade = ctx.createRadialGradient(cx, cy - unit * 0.05, unit * 0.04, cx, cy, unit * 0.27);
-      shade.addColorStop(0, "rgba(30, 18, 8, 0.75)");
-      shade.addColorStop(1, "rgba(30, 18, 8, 0.25)");
+        r = unit * 0.28,
+        // Darkest under the far lip, where the light does not reach, and paler toward the near side.
+        shade = ctx.createRadialGradient(cx, cy - r * 0.38, r * 0.08, cx, cy, r);
+      shade.addColorStop(0, "rgba(22, 12, 5, 0.92)");
+      shade.addColorStop(0.6, "rgba(30, 18, 8, 0.66)");
+      shade.addColorStop(1, "rgba(30, 18, 8, 0.38)");
       ctx.fillStyle = shade;
       ctx.beginPath();
-      ctx.arc(cx, cy, unit * 0.27, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
+      // The lip: a dark edge on the far side and a line of light on the near one.
+      ctx.lineWidth = unit * 0.022;
+      ctx.strokeStyle = "rgba(18, 9, 3, 0.55)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255, 236, 200, 0.5)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, Math.PI * 0.12, Math.PI * 0.88);
+      ctx.stroke();
     }
     ctx.restore();
   },
