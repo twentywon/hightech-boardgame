@@ -15,8 +15,11 @@ export interface CardSkin {
   lines: [string, string];
   /** Seats hold only a few cards, so the table can be drawn closer. */
   compact?: boolean;
-  /** Seat 0's cards that the others cannot see are gathered at the left of its row. */
-  secretLeft?: boolean;
+  /**
+   * How many cards open a hand (two in seotda, three in stud). Those of them that stay hidden are gathered at
+   * the left of the row; a card dealt face down later keeps its place at the right.
+   */
+  secretLeft?: number;
 }
 const FONT =
   '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif';
@@ -516,8 +519,8 @@ export class CardTableView {
         gap = seat.folded ? 0.1 * scale : this.gap(seat.cards.length, width, scale);
       // The cards dealt face down at the start lie together at the left of the row, mine and the other seats' alike
       // (as I see them). A card dealt face down later (the last one) keeps its place at the right.
-      const last = seat.cards.length - 1,
-        hidden = (card: (typeof seat.cards)[number], i: number) => i < last && (s === 0 ? !!card.secret : card.face === null),
+      const opening = this.skin.secretLeft ?? 0,
+        hidden = (card: (typeof seat.cards)[number], i: number) => i < opening && (s === 0 ? !!card.secret : card.face === null),
         order = seat.cards.map((card, i) => ({ card, left: hidden(card, i) })),
         cards = this.skin.secretLeft ? [...order.filter((o) => o.left), ...order.filter((o) => !o.left)].map((o) => o.card) : seat.cards;
       cards.forEach((card, i) =>

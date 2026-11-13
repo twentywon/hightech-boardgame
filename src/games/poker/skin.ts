@@ -7,7 +7,7 @@ import { ANTE, START_CHIPS, type State } from "./rules";
 
 /** The shared deck (see `../cards/faces.ts`). */
 export const pokerSkin: CardSkin = {
-  secretLeft: true,
+  secretLeft: 3,
   ...CARD,
   lines: ["세븐 포커", "일곱 장 가운데 다섯 장으로 겨룹니다"],
   back: drawBack,
