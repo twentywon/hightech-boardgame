@@ -125,13 +125,22 @@ test("battleship: I lay my fleet, a shot lands in the other waters, the computer
   await expect(count(page)).toHaveText("0수");
   // The keyboard now starts in the waters I fire at.
   await page.locator("canvas").focus();
+  // A hit earns another shot, for me and for the computer alike, so the count after a volley is not fixed:
+  // it is read once the table has come to rest with the turn mine again.
+  const mine = async () => {
+    await expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 30000 });
+    await expect(page.locator("#turn")).toContainText(/쏠 칸|한 번 더/, { timeout: 30000 });
+    return Number((await count(page).textContent())!.replace("수", ""));
+  };
   await keys(page, ["ArrowRight", "Enter"]);
-  await expect(count(page)).toHaveText("2수", { timeout: 20000 });
+  await expect(count(page)).not.toHaveText("0수", { timeout: 20000 });
+  const after = await mine();
   // The same square cannot be fired at twice.
   await keys(page, ["Enter"]);
-  await expect(count(page)).toHaveText("2수");
+  expect(await mine()).toBe(after);
   await keys(page, ["ArrowDown", "Enter"]);
-  await expect(count(page)).toHaveText("4수", { timeout: 20000 });
+  await expect(count(page)).not.toHaveText(`${after}수`, { timeout: 20000 });
+  await mine();
   // Nothing about where the fleets lie is written over the table (the panel only names the ships still afloat).
   const html = await page.locator(".board-area").innerHTML();
   expect(html).not.toMatch(/항공모함|순양함|잠수함|구축함/);
