@@ -81,6 +81,8 @@ export interface PointConfig<S> {
   stagesFirst?: boolean;
   /** The tools stand at the lower left as the arrow keys of a keyboard do; each names its place with `area` (up, left, down, right, or drop beside them). */
   toolsLayout?: "arrows";
+  /** What the button over the table that starts anew is called, and the heading of its window, when it is not 새 게임. */
+  newGameLabel?: string;
   /** A key that is a whole move (an arrow that slides the tiles), or null for the usual walk over the points. */
   keyMove?: (key: string, state: S) => Move | null;
   /** The names and colours of the two sides, when they depend on the variant. */
@@ -221,7 +223,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function stagePicker(host: HTMLElement) {
     const dialog = host.closest("dialog");
     if (dialog) {
-      dialog.querySelector("h2")!.textContent = "스테이지 선택";
+      dialog.querySelector("h2")!.textContent = config.newGameLabel ?? "스테이지 선택";
       dialog.querySelector(".setup-note")!.textContent = "하고 싶은 배치를 고르세요. 하던 게임은 끝내고 새로 시작합니다.";
     }
     host.innerHTML = `<div class="stage-grid">${config.stages!.map((stage) => `<button class="stage-card${stage.value === variant ? " current" : ""}" data-stage="${stage.value}"><span class="stage-art" aria-hidden="true">${stage.art}</span><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div>`;
@@ -312,6 +314,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     // On a table that runs by itself a button is a move at once, whatever else is going on.
     (config.tools ?? []).forEach((tool, i) => ($(`pg-tool-${i}`).onclick = () => (config.live ? commit({ from: -1, to: tool.point, extra: -1 }) : pick(tool.point))));
     if (config.pausable) $("pg-pause").onclick = togglePause;
+    if (config.newGameLabel) $("restart").textContent = config.newGameLabel;
     try {
       if (config.view) view = config.view($("board"), settings.quality, variant, mode, level);
       else {
@@ -565,7 +568,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
           ? "성공! '다음 스테이지'를 누르세요."
           : `${game.reason(s)} 무르기나 처음부터를 눌러 다시 해 보세요.`
         : hinted
-          ? "힌트 — 금색 고리의 구슬로 흰 고리의 구슬을 치세요."
+          ? "힌트 — 금색 고리의 구슬을 화살표 쪽으로 치세요."
           : game.hint(s)
       : solo
       ? done
@@ -618,10 +621,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
             ? [chosen.from]
             : [],
       selected: shown0 ? shown0.from : (chosen.from ?? null),
-      targets: shown0 ? [shown0.to] : next?.field === "to" ? next.points : [],
+      targets: shown0 ? [] : next?.field === "to" ? next.points : [],
       removable: next?.field === "extra" ? next.points : [],
       cursor: view && document.activeElement === view.renderer.domElement ? cursor : null,
       pending: next?.field === "extra" ? (chosen.to ?? null) : null,
+      hint: shown0 ? { from: shown0.from, to: shown0.to } : null,
     };
     view?.setMarks(capturing() ? { movable: [], selected: null, targets: [], removable: [], cursor: null } : marks);
 

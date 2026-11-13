@@ -179,8 +179,10 @@ test("falling blocks: the clock brings the piece down, a key drops it, and an op
   await expect(pause).toHaveAttribute("aria-label", "계속하기");
   await page.keyboard.press("p");
   await expect(pause).toHaveAttribute("aria-label", "일시정지");
-  // 새 게임 asks which level to begin at; from the fifth, rubble comes up from the floor.
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  // 레벨 선택 (where other games say 새 게임) asks which level to begin at; from the fifth, rubble comes up from the floor.
+  await expect(page.getByRole("button", { name: "새 게임", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "레벨 선택", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("레벨 선택");
   await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(8);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "레벨 5" }).click();
   await expect(page.locator("#turn")).toContainText("레벨 5", { timeout: 20000 });
@@ -206,8 +208,8 @@ test("brick breaker: the ball is sent off and knocks a brick out", async ({ page
   await pause.click();
   await page.keyboard.press(" ");
   await expect.poll(() => score(page), { timeout: 20000 }).toBeGreaterThan(0);
-  // 새 게임 shows the ten walls; a later one may be begun at once.
-  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  // 레벨 선택 shows the ten walls; a later one may be begun at once.
+  await page.getByRole("button", { name: "레벨 선택", exact: true }).click();
   const walls = page.getByRole("dialog").locator(".stage-card");
   await expect(walls).toHaveCount(10);
   await expect(page.getByRole("dialog").locator(".stage-card svg")).toHaveCount(10);
@@ -270,7 +272,9 @@ test("marble shooting: the difficulty is asked on sitting down, and the panel hi
     };
   // A hint says what to do and a shot is made; undo and 처음부터 both bring the tray back.
   await panel.getByRole("button", { name: "힌트", exact: true }).click();
-  await expect(page.locator("#turn")).toContainText("힌트");
+  await expect(page.locator("#turn")).toContainText("화살표");
+  // The panel does not count the marbles.
+  await expect(page.locator(".solo-stat")).toHaveCount(0);
   await page.locator("canvas").focus();
   await page.keyboard.press("ArrowRight");
   await shoot(way[0]);

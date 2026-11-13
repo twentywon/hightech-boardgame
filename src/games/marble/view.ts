@@ -38,6 +38,9 @@ export class MarbleView extends TableView<State> {
   private chosen: T.Mesh;
   private aims: T.Mesh[] = [];
   private cursor: T.Mesh;
+  /** The arrow of a hint: a shaft and a head, lying over the marbles from the one to shoot toward the one to strike. */
+  private arrow = new T.Group();
+  private shaft: T.Mesh;
   private from: { point: number; x: number; z: number } | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#e9eef0");
@@ -78,7 +81,17 @@ export class MarbleView extends TableView<State> {
     this.chosen = ringMesh(own, R * 1.12, R * 1.36, "#ffd24a");
     this.cursor = ringMesh(own, R * 1.12, R * 1.36, "#3f8cff");
     for (let i = 0; i < 4; i++) this.aims.push(ringMesh(own, R * 1.12, R * 1.36, "#ffffff"));
-    this.scene.add(this.chosen, this.cursor, ...this.aims);
+    const gold = this.own(new T.MeshBasicMaterial({ color: "#ffc21a", depthTest: false, transparent: true, opacity: 0.95, side: T.DoubleSide })),
+      head = new T.Shape([new T.Vector2(0, 0), new T.Vector2(-0.42, 0.3), new T.Vector2(-0.42, -0.3)]),
+      tip = new T.Mesh(this.own(new T.ShapeGeometry(head)), gold);
+    this.shaft = new T.Mesh(this.own(new T.PlaneGeometry(1, 0.2)), gold);
+    // Both lie flat, pointing along +x; the group is turned to the way of the shot.
+    this.shaft.rotation.x = tip.rotation.x = -Math.PI / 2;
+    tip.name = "tip";
+    this.shaft.renderOrder = tip.renderOrder = 9;
+    this.arrow.add(this.shaft, tip);
+    this.arrow.visible = false;
+    this.scene.add(this.chosen, this.cursor, ...this.aims, this.arrow);
     this.begin();
   }
   protected subject(aspect: number): TableSubject {
@@ -145,5 +158,17 @@ export class MarbleView extends TableView<State> {
     put(this.chosen, marks.selected);
     put(this.cursor, marks.cursor);
     this.aims.forEach((ring, i) => put(ring, marks.targets[i]));
+    // A hint: an arrow from just past the marble to shoot up to the marble it strikes.
+    const hint = marks.hint;
+    this.arrow.visible = !!hint;
+    if (hint) {
+      const dir = direction(hint.from, hint.to),
+        length = Math.hypot(cx(hint.to) - cx(hint.from), cz(hint.to) - cz(hint.from)) - R * 2;
+      this.arrow.position.set(cx(hint.from) + DX[dir] * R, R * 2 + 0.05, cz(hint.from) + DY[dir] * R);
+      this.arrow.rotation.y = -Math.atan2(DY[dir], DX[dir]);
+      this.shaft.scale.x = Math.max(0.05, length - 0.4);
+      this.shaft.position.x = Math.max(0.05, length - 0.4) / 2;
+      this.arrow.getObjectByName("tip")!.position.x = length;
+    }
   }
 }

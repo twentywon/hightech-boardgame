@@ -48,6 +48,8 @@ export interface Marks {
   cursor: number | null;
   /** A destination already chosen while a further choice is awaited. */
   pending?: number | null;
+  /** A move a hint points out: from which point toward which. */
+  hint?: { from: number; to: number } | null;
 }
 /** Strokes the straight lines of a board. */
 export function strokeLines(
