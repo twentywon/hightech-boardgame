@@ -209,6 +209,9 @@ test("running out of chips offers a fresh session; leaving and new sessions drop
   }
   await expect(button(page, "다음 라운드")).toBeHidden();
   await expect(page.locator("#bj-note")).toContainText("최소 베팅 10보다 적습니다");
+  // Being out of chips is told in a window first.
+  await expect(page.getByRole("dialog")).toContainText("칩을 모두 잃었습니다", { timeout: 10000 });
+  await page.getByRole("dialog").getByRole("button", { name: "확인" }).click();
   await button(page, "칩 다시 받기").click();
   await settled(page);
   await expect(chips(page)).toHaveText("1,000");

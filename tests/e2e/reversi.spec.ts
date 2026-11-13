@@ -151,7 +151,8 @@ async function provoke(page: Page, game: "오목" | "리버시") {
     await expect(page.locator("#move-count")).not.toHaveText("0수", { timeout: 500 });
   }).toPass({ timeout: 15000 });
 }
-test("actual Workers stay responsive and are cancelled when switching both games", async ({
+// @alone: it counts animation frames while a Worker thinks, which other browsers running beside it would spoil.
+test("actual Workers stay responsive and are cancelled when switching both games @alone", async ({
   page,
 }, info) => {
   test.setTimeout(90000);
