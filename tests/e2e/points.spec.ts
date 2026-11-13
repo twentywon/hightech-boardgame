@@ -121,7 +121,7 @@ test("gonu: three boards in the yard, each with its own rules", async ({ page },
   // Well gonu: the opening move that would shut white in is not offered.
   let board = gonuBoard("well");
   await sit(page, "고누", "local", "well");
-  await expect(page.locator(".board-label")).toContainText("우물고누");
+  await expect(page.locator(".side-mode")).toContainText("우물고누");
   await tap(page, board, 3, mobile);
   await tap(page, board, 4, mobile);
   await expect(moves(page)).toHaveText("0수");
@@ -133,7 +133,7 @@ test("gonu: three boards in the yard, each with its own rules", async ({ page },
   // Line gonu: a step forward.
   board = gonuBoard("line");
   await sit(page, "고누", "local", "line");
-  await expect(page.locator(".board-label")).toContainText("네줄고누");
+  await expect(page.locator(".side-mode")).toContainText("네줄고누");
   await expect(page.locator("#pg-count-0")).toHaveText("말 4개");
   await tap(page, board, 13, mobile);
   await tap(page, board, 9, mobile);
@@ -141,7 +141,7 @@ test("gonu: three boards in the yard, each with its own rules", async ({ page },
   // Pumpkin gonu: only the middle piece can leave home first.
   board = gonuBoard("pumpkin");
   await sit(page, "고누", "local", "pumpkin");
-  await expect(page.locator(".board-label")).toContainText("호박고누");
+  await expect(page.locator(".side-mode")).toContainText("호박고누");
   await tap(page, board, 8, mobile);
   await tap(page, board, 9, mobile);
   await expect(moves(page)).toHaveText("0수");
@@ -151,7 +151,7 @@ test("gonu: three boards in the yard, each with its own rules", async ({ page },
   // Cham gonu: pieces are placed, and the corner line 0-8-16 takes a piece.
   board = gonuBoard("cham");
   await sit(page, "고누", "local", "cham");
-  await expect(page.locator(".board-label")).toContainText("참고누");
+  await expect(page.locator(".side-mode")).toContainText("참고누");
   for (const point of [0, 1, 8, 2, 16]) {
     await tap(page, board, point, mobile);
     await settled(page);
@@ -162,7 +162,7 @@ test("gonu: three boards in the yard, each with its own rules", async ({ page },
   await expect(page.locator("#pg-count-1")).toHaveText("판 위 1 · 남은 말 10");
   // A hexa map other than the first: the wall across the middle.
   await sit(page, "헥사 세균전", "local", "wall");
-  await expect(page.locator(".board-label")).toContainText("맵 · 장벽");
+  await expect(page.locator(".side-mode")).toContainText("맵 · 장벽");
   expect(errors).toEqual([]);
 });
 

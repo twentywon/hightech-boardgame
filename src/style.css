@@ -2358,3 +2358,27 @@ html { -webkit-tap-highlight-color: transparent; }
 .yut-sides li > .bankrupt-stamp.small { position:absolute;right:8px;top:50%;width:74px;height:auto;translate:0 -50%;rotate:-10deg;pointer-events:none;animation:stamp-small .5s cubic-bezier(.2,1.4,.3,1) both; }
 @keyframes stamp-small { 0% { scale:2.4;opacity:0; } 100% { scale:1;opacity:1; } }
 @media (prefers-reduced-motion: reduce) { .bankrupt-stamp { animation-duration:3.6s !important;animation-timing-function:step-end !important; } .yut-sides li > .bankrupt-stamp.small { animation:none; } }
+
+/* Round buttons in the table's corner: a true circle whatever the page gives buttons. */
+.board-area .board-icon { flex:0 0 38px;width:38px !important;height:38px !important;min-width:0 !important;min-height:0 !important;aspect-ratio:1;box-sizing:border-box;border-radius:50% !important; }
+@media (orientation: landscape) and (max-height: 540px) { .board-area .board-icon { flex-basis:32px;width:32px !important;height:32px !important; } }
+/* How the game was set up, at the head of the panel. */
+.game-sidebar .side-mode { order:-2;margin:0 0 10px;padding:7px 12px;border-radius:10px;background:#e7e0d0;color:#4b4a43;font-size:12.5px;font-weight:600;line-height:1.4; }
+.board-area .board-controls { }
+.game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area .board-controls { top:12px; }
+@media (orientation: landscape) and (max-height: 540px) { .game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area .board-controls { top:6px; } }
+/* A fleet in the panel: each ship a row of squares. */
+.fleet-count { display:block;margin-bottom:6px; }
+.fleet { display:grid;gap:4px; }
+.fleet .ship { display:flex;align-items:center;gap:3px; }
+.fleet .ship i { width:13px;height:13px;border-radius:3px;background:#4f6d8f;box-shadow:inset 0 -2px 0 #0003; }
+.fleet .ship b { margin-left:6px;font-size:11.5px;font-weight:600;color:#55584f; }
+.fleet .ship.sunk i { background:#c9c3b4;box-shadow:none; }
+.fleet .ship.sunk b { color:#a39c8b;text-decoration:line-through; }
+.fleet .ship.waiting { opacity:.4; }
+#pg-side-1 .fleet .ship:not(.sunk) i { background:#b3473a; }
+/* Names of the travellers in the tour's setup form. */
+.tour-names { display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px 12px;max-width:360px;margin:0 0 16px; }
+.tour-names label { display:grid;gap:4px;font-size:12px;color:#6b6a62; }
+.tour-names input { width:100%;min-height:40px;padding:0 12px;border:1.5px solid #cfc6b2;border-radius:10px;background:#fff;color:#16181a;font:inherit;font-size:15px; }
+.tour-names input:focus-visible { outline:3px solid var(--brass, #c9a85c);outline-offset:1px; }

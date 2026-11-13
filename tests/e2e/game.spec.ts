@@ -230,7 +230,7 @@ test("with the double three refused, the meeting point of two open threes cannot
   await selectGame(page);
   await page.getByLabel("삼삼(3-3) 허용").uncheck();
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
-  await expect(page.locator(".board-label")).toContainText("삼삼 금지");
+  await expect(page.locator(".side-mode")).toContainText("삼삼 금지");
   await page.locator("canvas").focus();
   const count = page.locator("#move-count");
   /** Walks the cursor from the centre and places a stone there. */

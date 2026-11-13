@@ -93,7 +93,7 @@ test("the notebook: dots and boxes closes a box for another turn, hex colours a 
     await settled(page);
   };
   await sit(page, "도츠 앤 박시스", "local", "3");
-  await expect(page.locator(".board-label")).toContainText("네모 3 × 3");
+  await expect(page.locator(".side-mode")).toContainText("네모 3 × 3");
   const lines = dotsPoints(3);
   // Lines 0, 3 and 12 leave box 0 open on its right side (13).
   for (const line of [0, 3, 12]) await mark(lines[line]);
@@ -110,7 +110,7 @@ test("the notebook: dots and boxes closes a box for another turn, hex colours a 
   await expect(page.locator("#pg-count-1")).toHaveText("네모 0");
   await page.screenshot({ path: `test-results/${info.project.name}-dots.png`, fullPage: true });
   await sit(page, "헥스", "ai", "7");
-  await expect(page.locator(".board-label")).toContainText("7 × 7");
+  await expect(page.locator(".side-mode")).toContainText("7 × 7");
   await mark(hexLayout(7).points[24], true);
   await expect(moves(page)).toHaveText("2수", { timeout: 30000 });
   await expect(page.locator("#pg-count-0")).toHaveText("칸 1");

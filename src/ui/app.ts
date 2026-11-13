@@ -106,7 +106,7 @@ let points: PointController | null = null;
 let spider: SpiderController | null = null;
 let spiderOptions: SpiderOptions = { suits: "1" };
 let tour: TourController | null = null;
-let tourOptions: TourOptions = { opponents: 1 };
+let tourOptions: TourOptions = { opponents: 1, humans: 1, names: [] };
 /** The games that share the point-board screen, and what was last chosen for each. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pointGames: Record<string, { config: PointConfig<any>; options: PointOptions }> = {

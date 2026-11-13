@@ -35,6 +35,16 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   }
   board.append(nav);
   main.querySelector(".game-top h1")?.classList.add("sr-only");
+  // No English title and no small print over the table: what the game was set up as is told in the panel.
+  const label = board.querySelector(".board-label"),
+    mode = label?.querySelector("span:last-child")?.textContent?.trim();
+  label?.remove();
+  if (mode) {
+    const line = document.createElement("p");
+    line.className = "side-mode";
+    line.textContent = mode;
+    side.prepend(line);
+  }
   // 새 게임 stays with the other screen buttons over the table and opens the game's own setup in a dialog.
   const restart = main.querySelector<HTMLButtonElement>("#restart");
   if (restart) restart.onclick = () => setupDialog(setup);

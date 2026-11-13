@@ -43,6 +43,8 @@ export interface PointConfig<S> {
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
   tools?: { label: string; point: number; onBoard?: boolean }[];
+  /** The two tallies as markup, for a game that draws them; it must tell no more than `tally` does. */
+  tallyHtml?: (state: S) => [string, string];
   /** True when the game has ended with side 0 out of money: the 파산 stamp is shown. */
   bankrupt?: (state: S) => boolean;
   /** A line to flash over the table for what a move has just done (a piece taken), or null. */
@@ -419,7 +421,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
               : `${who(turn)} 차례 — ${game.hint(s)}`;
     const tally = game.tally(s);
     for (const p of [0, 1]) {
-      $(`pg-count-${p}`).textContent = tally[p];
+      // A game may draw its tally (a fleet) instead of writing it.
+      const drawn = config.tallyHtml?.(s);
+      if (drawn) $(`pg-count-${p}`).innerHTML = drawn[p];
+      else $(`pg-count-${p}`).textContent = tally[p];
       $(`pg-side-${p}`).classList.toggle("active", !done && turn === p);
     }
     $<HTMLButtonElement>("pg-undo").disabled = waiting || !past.length;
