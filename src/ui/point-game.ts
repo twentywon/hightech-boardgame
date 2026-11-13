@@ -330,8 +330,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (!next) return;
     sound.unlock();
     if (config.live) return apply(next);
-    // A choice that is not yet a move (a bet being set, a ball put down by hand) is neither kept for undo nor followed by a pause.
-    if (game.ply(next) !== game.ply(state)) {
+    // In a game without undo, a choice that is not yet a move (a bet being set, a ball put down by hand) is followed by no pause.
+    // Where undo exists everything is kept for it, moves that leave the count alone included (ships being laid).
+    if (!config.noUndo || game.ply(next) !== game.ply(state)) {
       past.push(state);
       lockedUntil = performance.now() + 200;
       later(update, 220);
