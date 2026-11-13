@@ -122,7 +122,7 @@ describe("Seven-card stud rounds", () => {
     const order = "2S 2H 3D 3C 10S 10H JD JC QS QH KD KC AS AH";
     let s = begin(P.createSession(1), dealing(order));
     while (s.phase === "betting") s = P.act(s, "call")!;
-    expect(s.result!.shown).toEqual(["스트레이트", "스트레이트"]);
+    expect(s.result!.shown).toEqual(["A 스트레이트", "A 스트레이트"]);
     expect(s.result).toMatchObject({ winners: [0, 1], net: [0, 0] });
   });
   it("runs the remaining cards out when everyone is all in", () => {
@@ -195,7 +195,7 @@ describe("Seven-card stud rounds", () => {
     view = poker.view(s);
     expect(view.pot).toBe(0);
     expect(view.seats[2].cards.every((c) => c.face && c.text)).toBe(true);
-    expect(view.seats[2].note).toBe(P.evaluate(s.hands[2]).name);
+    expect(view.seats[2].note).toBe(P.evaluate(s.hands[2]).detail);
     expect(view.seats[1].cards.every((c) => c.face === null)).toBe(true);
   });
   it("marks the seventh card as one seat 0 uncovers by hand", () => {
@@ -254,4 +254,16 @@ describe("Poker computer", () => {
     expect(edge("expert", "beginner")).toBeGreaterThan(10);
     expect(edge("hard", "normal")).toBeGreaterThan(5);
   }, 240000);
+});
+
+describe("Hands are named with the ranks that make them", () => {
+  it.each([
+    ["2S 2H 4D 4C 9S", "2, 4 투페어"],
+    ["KS KH 3D 7C 9S", "K 원페어"],
+    ["5S 5H 5D 9C 9S", "5, 9 풀하우스"],
+    ["JS JH JD 2C 9S", "J 트리플"],
+    ["AS QH 7D 4C 2S", "A 하이카드"],
+  ])("%s is %s", (text, expected) => {
+    expect(P.evaluate(cards(text)).detail).toBe(expected);
+  });
 });

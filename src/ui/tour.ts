@@ -90,6 +90,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     thinking = false,
     announced = false,
     stamped = new Set<number>(),
+    toldOf = "",
     // A golden key is turning over; the state whose choice has already been put to me.
     revealing = false,
     asked: State | null = null,
@@ -411,7 +412,22 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       else sound.lose();
     }
     computer();
+    told();
     ask();
+  }
+  /** A person who has landed on another's place is told in a window what it cost. */
+  function told() {
+    const paid = state.paid;
+    const key = paid ? `${state.rollId}:${paid.by}:${paid.place}:${paid.amount}` : "";
+    if (!paid || key === toldOf || !human(paid.by) || state !== shown || document.querySelector("dialog[open]")) return;
+    toldOf = key;
+    const space = SPACES[paid.place],
+      ship = space.kind === "ship";
+    modal(
+      `${safe[paid.to]}의 ${space.name}`,
+      `<p><b>${ship ? "통행료" : "숙박료"} ${won(paid.amount)}</b>을 ${safe[paid.to]}에게 냈습니다.</p><p>${ship ? "" : `${LEVELS[state.levels[paid.place]]}이(가) 있는 곳입니다. `}남은 돈 ${won(state.players[paid.by].money)}${state.players[paid.by].out ? " — 파산했습니다." : ""}</p>`,
+      [{ text: "확인", action: () => later(present, 50) }],
+    );
   }
   function update() {
     if (disposed || !document.getElementById("tour-roll")) return;

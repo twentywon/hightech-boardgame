@@ -193,6 +193,8 @@ export interface State {
   fund: number;
   /** Winner once the game is over; several when they are level. */
   winners: number[];
+  /** The fee the traveller who has just landed paid to another, or null. */
+  paid: { by: number; to: number; amount: number; place: number } | null;
 }
 export function createGame(players: number): State {
   const n = Math.max(2, Math.min(4, players));
@@ -212,6 +214,7 @@ export function createGame(players: number): State {
     card: -1,
     fund: 0,
     winners: [],
+    paid: null,
   };
 }
 /** What was spent on a space: its price and every building on it. */
@@ -362,6 +365,7 @@ function arrive(s: State): boolean {
       const fee = space.kind === "ship" ? SHIP_TOLL : feeOf(space, s.levels[p.at]),
         paid = charge(s, me, fee);
       s.players[owner].money += paid;
+      s.paid = { by: me, to: owner, amount: paid, place: p.at };
       s.note += ` ${space.name}의 ${space.kind === "ship" ? "통행료" : "숙박료"} ${paid}을(를) 냈습니다.`;
     }
   } else if (space.kind === "fund") {
@@ -395,6 +399,7 @@ export function roll(state: State, random: Random): State | null {
     p = s.players[me];
   s.rollId++;
   s.path = [];
+  s.paid = null;
   s.note = "";
   s.actor = me;
   s.dice = [1 + Math.floor(random() * 6), 1 + Math.floor(random() * 6)];

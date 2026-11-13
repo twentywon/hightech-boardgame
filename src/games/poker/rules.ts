@@ -42,13 +42,26 @@ export interface Strength {
   /** Comparable across hands: category first, then the deciding ranks. */
   score: number;
   name: string;
+  /** The name with the ranks that make it: "2, 4 투페어", "K 원페어". */
+  detail: string;
 }
 const pack = (category: number, ranks: number[]) =>
   ranks.reduce((score, r) => score * 15 + r, category) * 15 ** (5 - ranks.length);
+const RANK: Record<number, string> = { 11: "J", 12: "Q", 13: "K", 14: "A" };
+const rank = (v: number) => RANK[v] ?? String(v);
+/** Which ranks make the hand: both pairs (low first), the trips and the pair of a full house, otherwise the deciding rank. */
+function detail(category: number, t: number[]) {
+  const name = CATEGORIES[category];
+  if (category === 9 || !t.length) return name;
+  if (category === 2) return `${rank(Math.min(t[0], t[1]))}, ${rank(Math.max(t[0], t[1]))} ${name}`;
+  if (category === 6) return `${rank(t[0])}, ${rank(t[1])} ${name}`;
+  return `${rank(t[0])} ${name}`;
+}
 const make = (category: number, tiebreak: number[]): Strength => ({
   category,
   score: pack(category, tiebreak),
   name: CATEGORIES[category],
+  detail: detail(category, tiebreak),
 });
 /** Highest card of a five-card run in a bit set of ranks; the ace also plays low. */
 function runHigh(mask: number) {
@@ -196,7 +209,7 @@ function finish(s: State) {
   s.result = {
     winners: won.flatMap((w, i) => (w > 0 ? [i] : [])),
     net: won.map((w, i) => w - before[i]),
-    shown: b.seats.map((_, i) => (showdown && live.includes(i) ? evaluate(s.hands[i]).name : null)),
+    shown: b.seats.map((_, i) => (showdown && live.includes(i) ? evaluate(s.hands[i]).detail : null)),
     reason: showdown ? "족보 대결" : "모두 다이",
   };
   for (const seat of b.seats) seat.out = seat.chips <= 0;

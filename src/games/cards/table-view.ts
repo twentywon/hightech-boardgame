@@ -169,8 +169,16 @@ interface Layout {
   rivalWidth: number[];
   rivalScale: number[];
   mineWidth: number;
+  /** Seat 0's card scale; 1 when left out. */
+  mineScale?: number;
+  /** Where the opposing rows lie from front to back, by how many there are; all at the back when left out. */
+  rivalZ?: number[][];
+  /** Row widths seat by seat, where they differ. */
+  rivalWidths?: number[][];
   deck: T.Vector3;
   discard: T.Vector3;
+  /** Deck and discard for a number of rivals whose rows would lie over the usual places. */
+  corner?: { rivals: number; deck: T.Vector3; discard: T.Vector3 };
 }
 const LAYOUTS: Record<"wide" | "square" | "compact" | "compactSquare", Layout> = {
   compact: {
@@ -193,21 +201,33 @@ const LAYOUTS: Record<"wide" | "square" | "compact" | "compactSquare", Layout> =
   },
   wide: {
     subject: SUBJECTS.cardsWide,
-    rivals: [[0], [-2.7, 2.7], [-3.9, 0, 3.9]],
-    rivalWidth: [5, 4.4, 3.4],
-    rivalScale: [0.85, 0.85, 0.82],
-    mineWidth: 6.4,
+    // The whole table is used so that the cards can be large: with three across from me, two sit at the sides
+    // and one at the far end, each with a row wide enough to read.
+    rivals: [[0], [-2.75, 2.75], [-3.8, 0, 3.8]],
+    rivalWidth: [6.2, 5, 4],
+    rivalScale: [1, 0.95, 0.94],
+    rivalZ: [[-1.9], [-1.9, -1.9], [-0.5, -2.45, -0.5]],
+    rivalWidths: [[6.2], [5, 5], [3.9, 5.6, 3.9]],
+    mineWidth: 7.4,
+    mineScale: 1.12,
     deck: new T.Vector3(4.9, 0.12, 0.1),
     discard: new T.Vector3(-4.9, 0.02, 0.1),
+    corner: { rivals: 3, deck: new T.Vector3(4.75, 0.12, -2.55), discard: new T.Vector3(-4.75, 0.02, -2.55) },
   },
   square: {
     subject: SUBJECTS.cardsSquare,
-    rivals: [[0], [-1.8, 1.8], [-2.45, 0, 2.45]],
-    rivalWidth: [5, 3.2, 2.15],
-    rivalScale: [0.8, 0.76, 0.66],
-    mineWidth: 6.2,
+    // A squarer screen has room from front to back: three rivals sit left, far and right here too, so that
+    // their cards are not crowded into a third of the width each.
+    rivals: [[0], [-1.85, 1.85], [-2.3, 0, 2.3]],
+    rivalWidth: [5.4, 3.4, 2.9],
+    rivalScale: [0.95, 0.84, 0.86],
+    rivalZ: [[-1.9], [-1.9, -1.9], [-0.55, -2.6, -0.55]],
+    rivalWidths: [[5.4], [3.4, 3.4], [2.85, 5.2, 2.85]],
+    mineWidth: 6.6,
+    mineScale: 1.05,
     deck: new T.Vector3(2.9, 0.12, 0.1),
     discard: new T.Vector3(-2.9, 0.02, 0.1),
+    corner: { rivals: 3, deck: new T.Vector3(3.25, 0.12, -2.75), discard: new T.Vector3(-3.25, 0.02, -2.75) },
   },
 };
 const MINE_Z = 1.85,
@@ -392,7 +412,7 @@ export class CardTableView {
       if (pointing !== this.arrow.visible) this.dirty = true;
       this.arrow.visible = pointing;
       if (pointing) {
-        const { deck } = this.layout;
+        const { deck } = this.piles();
         this.arrow.position.set(deck.x, deck.y + 0.75 + Math.sin(now / 260) * 0.12, deck.z);
         this.arrow.rotation.y = now / 700;
       }
@@ -445,7 +465,7 @@ export class CardTableView {
       distance = cameraDistance(this.camera.aspect, false, subject);
     this.camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
     this.camera.lookAt(0, 0, 0);
-    this.deck.position.copy(this.layout.deck);
+    this.deck.position.copy(this.piles().deck);
     // A new shape moves every target: place the current table without animation.
     this.sync(this.model, false);
   }
@@ -456,13 +476,18 @@ export class CardTableView {
   /** Row centre, width and card scale of a seat. */
   private row(seat: number) {
     const rivals = this.model.seats.length - 1;
-    if (seat === 0) return { x: 0, z: MINE_Z, width: this.layout.mineWidth, scale: 1 };
+    if (seat === 0) return { x: 0, z: MINE_Z, width: this.layout.mineWidth, scale: this.layout.mineScale ?? 1 };
     return {
       x: this.layout.rivals[rivals - 1][seat - 1],
-      z: RIVAL_Z,
-      width: this.layout.rivalWidth[rivals - 1],
+      z: this.layout.rivalZ?.[rivals - 1]?.[seat - 1] ?? RIVAL_Z,
+      width: this.layout.rivalWidths?.[rivals - 1]?.[seat - 1] ?? this.layout.rivalWidth[rivals - 1],
       scale: this.layout.rivalScale[rivals - 1],
     };
+  }
+  /** Where the deck and the discards lie for the seats now at the table. */
+  private piles() {
+    const corner = this.layout.corner;
+    return corner && this.model.seats.length - 1 === corner.rivals ? corner : this.layout;
   }
   private gap(n: number, width: number, scale: number) {
     const w = this.skin.width * scale;
@@ -479,7 +504,7 @@ export class CardTableView {
     this.dirty = true;
     const quick = !animate || this.reducedMotion,
       now = performance.now(),
-      { deck, discard } = this.layout;
+      { deck, discard } = this.piles();
     this.finish();
     const targets = new Map<
       number,
@@ -489,10 +514,12 @@ export class CardTableView {
       const { x, z, width, scale } = this.row(s),
         // A folded hand is squared up into a small pile.
         gap = seat.folded ? 0.1 * scale : this.gap(seat.cards.length, width, scale);
-      // My own cards that the others cannot see lie together at the left of my row.
-      // The other seats' face-down cards are gathered at my left of their row in the same way.
-      const hidden = (card: (typeof seat.cards)[number]) => (s === 0 ? !!card.secret : card.face === null),
-        cards = this.skin.secretLeft ? [...seat.cards].sort((a, b) => Number(hidden(b)) - Number(hidden(a))) : seat.cards;
+      // The cards dealt face down at the start lie together at the left of the row, mine and the other seats' alike
+      // (as I see them). A card dealt face down later (the last one) keeps its place at the right.
+      const last = seat.cards.length - 1,
+        hidden = (card: (typeof seat.cards)[number], i: number) => i < last && (s === 0 ? !!card.secret : card.face === null),
+        order = seat.cards.map((card, i) => ({ card, left: hidden(card, i) })),
+        cards = this.skin.secretLeft ? [...order.filter((o) => o.left), ...order.filter((o) => !o.left)].map((o) => o.card) : seat.cards;
       cards.forEach((card, i) =>
         targets.set(card.id, {
           face: card.face,
@@ -805,29 +832,24 @@ export class CardTableView {
   /** The pot and the outline of the seat to act follow the table at once. */
   private dressTable() {
     this.chips.clear();
-    let rest = this.model.pot,
-      placed = 0;
-    const total = CHIPS.reduce((n, chip) => {
-      const count = Math.floor(rest / chip.value);
+    // One stack for each kind of chip, side by side; a tall stack goes on in a second one beside it.
+    const STACK = 10,
+      stacks: { kind: number; count: number }[] = [];
+    let rest = this.model.pot;
+    for (const [kind, chip] of CHIPS.entries()) {
+      let count = Math.floor(rest / chip.value);
       rest %= chip.value;
-      return n + count;
-    }, 0),
-      columns = Math.ceil(total / 7);
-    rest = this.model.pot;
-    for (const [kind, chip] of CHIPS.entries())
-      while (rest >= chip.value) {
-        rest -= chip.value;
-        const mesh = new T.Mesh(this.chipGeometry, this.chipMaterials[kind]);
-        mesh.position.set(
-          (Math.floor(placed / 7) - (columns - 1) / 2) * 0.52,
-          0.035 + (placed % 7) * 0.062,
-          POT_Z,
-        );
+      for (; count > 0; count -= STACK) stacks.push({ kind, count: Math.min(STACK, count) });
+    }
+    stacks.forEach((stack, column) => {
+      for (let i = 0; i < stack.count; i++) {
+        const mesh = new T.Mesh(this.chipGeometry, this.chipMaterials[stack.kind]);
+        mesh.position.set((column - (stacks.length - 1) / 2) * 0.56, 0.035 + i * 0.062, POT_Z);
         mesh.rotation.y = Math.PI / 2;
         mesh.castShadow = true;
         this.chips.add(mesh);
-        placed++;
       }
+    });
     const active = this.model.seats.findIndex((seat) => seat.active);
     this.glow.visible = active >= 0;
     if (active >= 0) {
@@ -868,13 +890,17 @@ export class CardTableView {
     this.model.seats.forEach((seat, s) => {
       const { x, z, scale } = this.row(s),
         reach = (this.skin.height * scale) / 2 + 0.34 * Math.max(0.8, scale);
-      add(
-        seat.out ? `${seat.name} · 탈락` : seat.note ? `${seat.name} · ${seat.note}` : seat.name,
-        seat.tone,
-        x,
-        s === 0 ? z + reach : z - reach,
-        s === 0 ? 1 : Math.max(0.72, scale),
-      );
+      // The name and what the seat holds (its hand) are two labels: across the table the name lies beyond the row and the hand on the near side of it.
+      const size = s === 0 ? 1 : Math.max(0.72, scale);
+      const note = !seat.out && seat.note ? seat.note : "";
+      if (s === 0) {
+        // Mine stand side by side under my row: the pot's label lies above it.
+        add(seat.out ? `${seat.name} · 탈락` : seat.name, seat.tone, note ? x - 1.22 : x, z + reach, size);
+        add(note, seat.tone, x + 1.22, z + reach, size);
+      } else {
+        add(seat.out ? `${seat.name} · 탈락` : seat.name, seat.tone, x, z - reach, size);
+        add(note, seat.tone, x, z + reach, size);
+      }
     });
     if (this.model.pot > 0)
       add(`판돈 ${this.model.pot.toLocaleString("ko-KR")}`, "neutral", 0, POT_LABEL_Z, 0.8);

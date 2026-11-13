@@ -259,11 +259,11 @@ test("three-card seotda: show one, bet, uncover the third by sliding, bet again,
   await page.screenshot({ path: `test-results/${info.project.name}-seotda-covered.png`, fullPage: true });
   if (info.project.name === "mobile") await button(page, "세 번째 패 확인").click();
   else {
-    // My hidden cards lie at the left of my row, the one I showed at the right: the third card is in the middle. A short slide springs back …
+    // The third card lies to the right of my two (only the card hidden from the start is moved to the left). A short slide springs back …
     await page.locator("canvas").scrollIntoViewIfNeeded();
-    const from = await onTable(page, 0, 1.85),
-      near = await onTable(page, 0, 2.2),
-      far = await onTable(page, 0, 3.1);
+    const from = await onTable(page, 0.945, 1.85),
+      near = await onTable(page, 0.945, 2.2),
+      far = await onTable(page, 0.945, 3.1);
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(near.x, near.y, { steps: 5 });
@@ -299,8 +299,8 @@ test("three-card seotda: show one, bet, uncover the third by sliding, bet again,
     await expect(page.locator("#board")).toHaveAttribute("data-picked", "1");
     await expect(prompt(page)).toHaveCount(3);
     await settled(page);
-    // The card I showed (8광) lies at the right of my row; the hidden ones are gathered at the left.
-    await tap(0.945, 1.7);
+    // My row is 3광 (hidden from the start, at the left), 8광 (the one I showed), then the third card.
+    await tap(0, 1.55);
   } else await button(page, "3광 · 8광 — 38광땡").click();
   // The pick ends the hand: the cards are shown at once.
   await handOver(page);

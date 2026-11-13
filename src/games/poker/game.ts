@@ -85,7 +85,7 @@ export const poker: BettingGame<State> = {
           note: seat.folded
             ? "다이"
             : (i === 0 || revealed) && cards.length
-              ? evaluate(cards).name
+              ? evaluate(cards).detail
               : seat.allIn && cards.length
                 ? "올인"
                 : "",

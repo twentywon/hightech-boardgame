@@ -2382,3 +2382,21 @@ html { -webkit-tap-highlight-color: transparent; }
 .tour-names label { display:grid;gap:4px;font-size:12px;color:#6b6a62; }
 .tour-names input { width:100%;min-height:40px;padding:0 12px;border:1.5px solid #cfc6b2;border-radius:10px;background:#fff;color:#16181a;font:inherit;font-size:15px; }
 .tour-names input:focus-visible { outline:3px solid var(--brass, #c9a85c);outline-offset:1px; }
+
+/* A choice made by tapping the table: its buttons are not shown. They stay, a pixel each and clear of the
+   visible buttons, for the keyboard, readers and the tests. */
+.board-area .board-controls .tap-only { position:absolute !important;left:-16px;bottom:0;width:1px;height:1px;margin:0;padding:0;opacity:0;overflow:visible;display:block !important; }
+.board-area .board-controls .tap-only::before { display:none !important; }
+.board-area .board-controls .tap-only[hidden] { display:none !important; }
+.board-area .board-controls .tap-only button { position:absolute !important;top:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none;padding:0 !important;border:0 !important;overflow:hidden;flex:none !important; }
+.board-area .board-controls .tap-only button:nth-child(1) { left:0; }
+.board-area .board-controls .tap-only button:nth-child(2) { left:-3px; }
+.board-area .board-controls .tap-only button:nth-child(3) { left:-6px; }
+.board-area .board-controls .tap-only button:nth-child(4) { left:-9px; }
+.board-area .board-controls .tap-only button:nth-child(5) { left:-12px; }
+.board-area .board-controls .tap-only button:nth-child(6) { left:-15px; }
+.board-area .board-controls .tap-only button:nth-child(7) { left:-18px; }
+.board-area .board-controls .tap-only button:nth-child(8) { left:-21px; }
+.board-area .board-controls .tap-only button:nth-child(n+9) { left:-24px; }
+.board-area .board-controls #yut-moves.tap-only { left:-16px;bottom:8px; }
+.board-area .board-controls #bg-peeking.tap-only { left:-16px;bottom:16px; }
