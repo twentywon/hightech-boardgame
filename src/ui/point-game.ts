@@ -58,6 +58,12 @@ export interface PointConfig<S> {
   cheer?: (before: S, state: S, mode: "local" | "ai") => string | null;
   /** No table for two: one side's pieces are hidden from the other. */
   computerOnly?: boolean;
+  /** A game for one: no other side, no computer, no level. `winner` 0 is a game won and 1 a game lost; the result is told by `reason` alone. */
+  solo?: boolean;
+  /** The table runs in real time: what it reports is never refused for being busy, and nothing is kept for undo. */
+  live?: boolean;
+  /** A key that is a whole move (an arrow that slides the tiles), or null for the usual walk over the points. */
+  keyMove?: (key: string, state: S) => Move | null;
   /** The names and colours of the two sides, when they depend on the variant. */
   sidesOf?: (variant: string) => [string, string];
   colorsOf?: (variant: string) => [string, string];
@@ -146,10 +152,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     timers.add(timer);
   };
   const over = (s: S = state) => game.winner(s) !== null;
-  const computerTurn = (s: S = state) => mode === "ai" && game.turn(s) === 1 && !over(s);
+  const solo = !!config.solo,
+    alone = solo || !!config.computerOnly;
+  const computerTurn = (s: S = state) => mode === "ai" && !solo && game.turn(s) === 1 && !over(s);
   const sides = () => config.sidesOf?.(variant) ?? config.sides;
   const who = (player: number) =>
-    mode === "local" ? `${sides()[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${sides()[0]})` : `컴퓨터 · ${LEVELS[level].label} (${sides()[1]})`;
+    solo ? "나" : mode === "local" ? `${sides()[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${sides()[0]})` : `컴퓨터 · ${LEVELS[level].label} (${sides()[1]})`;
   function stop() {
     generation++;
     thinking = false;
@@ -160,7 +168,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${config.computerOnly ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
     const remember = () => {
       preferences = {
@@ -168,21 +176,21 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         variant: document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant,
         level: $<HTMLSelectElement>("pg-level").value as Level,
       };
-      $("pg-options").hidden = $("pg-level-field").hidden = preferences.mode !== "ai";
+      $("pg-options").hidden = $("pg-level-field").hidden = solo || preferences.mode !== "ai";
       nav.remember({ ...preferences });
     };
-    if (config.computerOnly) preferences = { ...preferences, mode: "ai" };
+    if (alone) preferences = { ...preferences, mode: "ai" };
     radios.forEach((r) => {
       r.checked = r.value === preferences.mode;
       r.onchange = remember;
     });
     if (document.getElementById("pg-variant")) $("pg-variant").onchange = remember;
     $("pg-level").onchange = remember;
-    $("pg-options").hidden = $("pg-level-field").hidden = preferences.mode !== "ai";
+    $("pg-options").hidden = $("pg-level-field").hidden = solo || preferences.mode !== "ai";
     $("pg-start").onclick = start;
   }
   function start() {
-    mode = config.computerOnly ? "ai" : preferences.mode;
+    mode = alone ? "ai" : preferences.mode;
     variant = preferences.variant;
     level = preferences.level;
     state = shown = game.create(variant);
@@ -200,10 +208,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function screen() {
     stop();
     const side = (p: number) =>
-      `<li id="pg-side-${p}"><i class="yut-dot" style="background:${(spec?.colors ?? config.colorsOf?.(variant) ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
+      `<li id="pg-side-${p}"${solo && p ? " hidden" : ""}><i class="yut-dot" style="background:${(spec?.colors ?? config.colorsOf?.(variant) ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}" hidden>${tool.label}</button>`).join("")}</div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}" hidden>${tool.label}</button>`).join("")}</div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
@@ -211,7 +219,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $("pg-again").onclick = () => setupDialog(setup);
     $("pg-undo").onclick = undo;
     if (config.action) $("pg-action").onclick = () => pick(game.moves(state)[0]?.to ?? -1);
-    (config.tools ?? []).forEach((tool, i) => ($(`pg-tool-${i}`).onclick = () => pick(tool.point)));
+    // On a table that runs by itself a button is a move at once, whatever else is going on.
+    (config.tools ?? []).forEach((tool, i) => ($(`pg-tool-${i}`).onclick = () => (config.live ? commit({ from: -1, to: tool.point, extra: -1 }) : pick(tool.point))));
     try {
       if (config.view) view = config.view($("board"), settings.quality, variant, mode, level);
       else {
@@ -245,6 +254,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       canvas.setAttribute("aria-label", `${config.name} 판`);
       canvas.addEventListener("keydown", key);
       view.sync(state, false);
+      // Keys that are moves must work from the start, without a first click on the table.
+      if (config.keyMove || config.live) canvas.focus({ preventScroll: true });
     } catch {
       view?.dispose();
       view = null;
@@ -314,10 +325,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   /** Plays a move of mine. */
   function commit(move: Move) {
-    if (busy() || computerTurn() || over()) return;
+    if ((!config.live && busy()) || computerTurn() || over()) return;
     const next = game.play(state, move, cryptoRandom);
     if (!next) return;
     sound.unlock();
+    if (config.live) return apply(next);
     // A choice that is not yet a move (a bet being set, a ball put down by hand) is neither kept for undo nor followed by a pause.
     if (game.ply(next) !== game.ply(state)) {
       past.push(state);
@@ -328,6 +340,13 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   /** Arrow keys walk the points of the board; Enter taps the one under the cursor. */
   function key(e: KeyboardEvent) {
+    const direct = config.keyMove?.(e.key, state);
+    if (direct) {
+      e.preventDefault();
+      e.stopPropagation();
+      commit(direct);
+      return;
+    }
     const steps: Record<string, [number, number]> = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
     if (e.key === "Escape") {
       chosen = {};
@@ -418,7 +437,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $("board").dataset.turn = String(turn);
     $("move-count").textContent = `${game.ply(s)}수`;
     $("turn").dataset.player = String(turn);
-    $("turn").textContent = done
+    $("turn").textContent = solo
+      ? done
+        ? "게임이 끝났습니다."
+        : game.hint(s)
+      : done
       ? "대국이 끝났습니다."
       : state !== shown
         ? "말이 움직이는 중…"
@@ -468,8 +491,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $("pg-result").hidden = !done;
     if (done) {
       const winner = game.winner(s);
-      $("pg-final").textContent =
-        winner === "draw"
+      $("pg-final").textContent = solo
+        ? game.reason(s)
+        : winner === "draw"
           ? `비겼습니다. ${game.reason(s)}`
           : `${mode === "ai" ? (winner === 0 ? "이겼습니다!" : "컴퓨터가 이겼습니다.") : `${who(winner as number)} 승리!`} ${game.reason(s)}`;
     }
@@ -493,6 +517,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     }
   };
   const dialogClosed = () => later(update, 0);
+  /** Keys that are moves are taken from the page as well, when nothing else has the focus. */
+  const pageKey = (e: KeyboardEvent) => {
+    if (config.keyMove && (e.target === document.body || e.target === document.documentElement) && document.getElementById("pg-undo") && !document.querySelector("dialog[open]")) key(e);
+  };
+  document.addEventListener("keydown", pageKey);
   document.addEventListener("close", dialogClosed, true);
   document.addEventListener("cancel", dialogClosed, true);
   document.addEventListener("click", dialogClosed, true);
@@ -504,6 +533,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       disposed = true;
       stop();
       sound.dispose();
+      document.removeEventListener("keydown", pageKey);
       document.removeEventListener("close", dialogClosed, true);
       document.removeEventListener("cancel", dialogClosed, true);
       document.removeEventListener("click", dialogClosed, true);

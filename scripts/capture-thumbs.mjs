@@ -191,6 +191,17 @@ const play = {
   "table-soccer": async () => {
     await wait(2600);
   },
+  "falling-blocks": async () => {
+    await keys(["ArrowLeft", "ArrowLeft", "ArrowLeft", " ", "ArrowRight", "ArrowRight", "ArrowUp", " ", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", " ", "ArrowLeft", " ", "ArrowUp"], 90);
+    await wait(900);
+  },
+  2048: async () => {
+    await keys(["ArrowLeft", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowRight", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowRight", "ArrowDown", "ArrowLeft", "ArrowDown"], 330);
+  },
+  "brick-breaker": async () => {
+    await keys([" "]);
+    await wait(2300);
+  },
 };
 const only = process.argv[3];
 for (const game of games) {
@@ -211,7 +222,7 @@ for (const game of games) {
   await page.locator("h1").first().click();
   await wait(400);
   // Only the table: captions, the status line and buttons over it are hidden.
-  await page.addStyleTag({ content: ".board-label, .board-nav, .board-controls, .board-bottom, .board-hint, .bg-acting, .pg-tools, .tour-end, .tour-toast { display: none !important; }" });
+  await page.addStyleTag({ content: ".board-label, .board-nav, .board-controls, .board-bottom, .board-hint, .bg-acting, .pg-tools, .tour-end, .tour-toast { display: none !important; } html[data-capture] .game-layout .board-area > .board-hint { display: none !important; }" });
   await wait(200);
   await page.locator("canvas").screenshot({ path: `${out}/${id}.png` });
   console.log(id);

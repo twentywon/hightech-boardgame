@@ -25,6 +25,8 @@ export interface BoardSpec {
   space?: boolean;
   /** Radius of a piece. */
   radius: number;
+  /** The pieces are glass marbles (whole spheres) instead of the theme's own. */
+  marbles?: boolean;
   colors: [string, string];
   subject: Subject & { tilt: number };
 }
@@ -210,16 +212,18 @@ export class PointBoardView {
     drawing.anisotropy = 4;
     flat(side, side, this.own(new T.MeshBasicMaterial({ map: this.own(drawing), transparent: true, depthWrite: false })), 0.004);
     // Pieces: pebbles in the yard, discs on wood, glossy germs on the bench.
-    this.height = theme === "wood" ? 0.16 : radius * (theme === "lab" ? 1.1 : 0.8);
+    this.height = spec.marbles ? radius * 2 : theme === "wood" ? 0.16 : radius * (theme === "lab" ? 1.1 : 0.8);
     this.geometry = this.own(
-      theme === "wood"
+      spec.marbles
+        ? new T.SphereGeometry(radius, 28, 20)
+        : theme === "wood"
         ? new T.CylinderGeometry(radius, radius * 1.04, this.height, 32)
         : new T.SphereGeometry(radius, 28, 16).scale(1, this.height / (radius * 2), 1),
     );
     this.materials = spec.colors.map((color) =>
       standard({
         color,
-        roughness: theme === "lab" ? 0.2 : theme === "yard" ? 0.75 : 0.4,
+        roughness: spec.marbles ? 0.12 : theme === "lab" ? 0.2 : theme === "yard" ? 0.75 : 0.4,
         emissive: theme === "lab" ? color : "#000000",
         emissiveIntensity: theme === "lab" ? 0.22 : 0,
       }),

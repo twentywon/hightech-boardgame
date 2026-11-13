@@ -3,7 +3,7 @@ import { wood } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { CARD, drawBack, drawFace } from "../cards/faces";
-import { pot, type State } from "./rules";
+import { ROUNDS, pot, type State } from "./rules";
 
 export const CHIP_COLORS: [string, string] = ["#c8321f", "#2f62c0"];
 const UP = new T.Vector3(0, 1, 0),
@@ -43,7 +43,9 @@ export class IndianView extends TableView<State> {
   private paints: T.Material[];
   private chips: T.Mesh[] = [];
   /** A small board standing by the pot that says how much lies in it. */
-  private sign: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; mesh: T.Mesh; said: number };
+  private sign: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
+  /** Another that says which round of the ten this is. */
+  private count: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#1a1d22");
     this.scene.add(new T.HemisphereLight("#dfe6f0", "#2a2622", 1.5));
@@ -119,26 +121,30 @@ export class IndianView extends TableView<State> {
     this.mine.rotation.x = 0.45;
     this.mine.scale.setScalar(0.44);
     this.camera.add(this.mine);
-    const canvas = document.createElement("canvas");
-    canvas.width = 384;
-    canvas.height = 160;
-    const texture = this.own(new T.CanvasTexture(canvas));
-    texture.colorSpace = T.SRGBColorSpace;
-    texture.anisotropy = 4;
-    const board = new T.Mesh(this.own(new T.PlaneGeometry(1.8, 0.75)), this.own(new T.MeshBasicMaterial({ map: texture })));
-    // On a post behind the pot, above the piles of chips, so that nothing on the table stands before it.
-    board.position.set(-1.5, TABLE + 1.36, -0.9);
-    board.rotation.y = 0.12;
+    // Two boards on posts, either side of the figure and above the piles of chips, so that nothing on the table stands before them.
     const dark = this.standard({ color: "#15181c", roughness: 0.6 }),
-      post = new T.Mesh(this.own(new T.CylinderGeometry(0.035, 0.035, 1.0, 10)), dark),
-      foot = new T.Mesh(this.own(new T.CylinderGeometry(0.26, 0.3, 0.06, 20)), dark),
-      backing = new T.Mesh(this.own(new T.BoxGeometry(1.86, 0.81, 0.05)), dark);
-    post.position.set(0, -0.86, -0.04);
-    foot.position.set(0, -1.33, -0.04);
-    backing.position.z = -0.03;
-    board.add(post, foot, backing);
-    this.scene.add(board);
-    this.sign = { canvas, texture, mesh: board, said: -1 };
+      post = (x: number, turn: number) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 384;
+        canvas.height = 160;
+        const texture = this.own(new T.CanvasTexture(canvas));
+        texture.colorSpace = T.SRGBColorSpace;
+        texture.anisotropy = 4;
+        const board = new T.Mesh(this.own(new T.PlaneGeometry(1.62, 0.675)), this.own(new T.MeshBasicMaterial({ map: texture }))),
+          stem = new T.Mesh(this.own(new T.CylinderGeometry(0.035, 0.035, 1.0, 10)), dark),
+          foot = new T.Mesh(this.own(new T.CylinderGeometry(0.26, 0.3, 0.06, 20)), dark),
+          backing = new T.Mesh(this.own(new T.BoxGeometry(1.68, 0.735, 0.05)), dark);
+        board.position.set(x, TABLE + 1.36, -0.9);
+        board.rotation.y = turn;
+        stem.position.set(0, -0.84, -0.04);
+        foot.position.set(0, -1.33, -0.04);
+        backing.position.z = -0.03;
+        board.add(stem, foot, backing);
+        this.scene.add(board);
+        return { canvas, texture, said: "" };
+      };
+    this.sign = post(-2.3, 0.16);
+    this.count = post(2.3, -0.16);
     this.chip = this.own(new T.CylinderGeometry(0.24, 0.24, 0.07, 22));
     this.paints = [...CHIP_COLORS, "#e0b020"].map((color) => this.standard({ color, roughness: 0.4 }));
     this.begin();
@@ -223,12 +229,11 @@ export class IndianView extends TableView<State> {
     }
     return used;
   }
-  /** Writes the pot on the board beside it. */
-  private say(amount: number) {
-    if (this.sign.said === amount) return;
-    this.sign.said = amount;
-    const { canvas, texture } = this.sign,
-      ctx = canvas.getContext("2d")!;
+  /** Writes a word and a figure on one of the boards. */
+  private say(sign: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string }, label: string, value: string) {
+    if (sign.said === label + value) return;
+    sign.said = label + value;
+    const ctx = sign.canvas.getContext("2d")!;
     ctx.fillStyle = "#e0b020";
     ctx.fillRect(0, 0, 384, 160);
     ctx.fillStyle = "#15181c";
@@ -239,12 +244,12 @@ export class IndianView extends TableView<State> {
     ctx.textAlign = "left";
     ctx.fillStyle = "#cfc6ae";
     ctx.font = '700 70px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif';
-    ctx.fillText("판돈", 30, 84);
+    ctx.fillText(label, 30, 84);
     ctx.textAlign = "right";
     ctx.fillStyle = "#ffd24a";
-    ctx.font = '800 104px "Helvetica Neue", Arial, sans-serif';
-    ctx.fillText(String(amount), 352, 88);
-    texture.needsUpdate = true;
+    ctx.font = `800 ${value.length > 3 ? 84 : 104}px "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillText(value, 354, 88);
+    sign.texture.needsUpdate = true;
   }
   protected place(state: State) {
     const showing = state.phase === "show" || state.winner !== null,
@@ -262,7 +267,8 @@ export class IndianView extends TableView<State> {
     let used = this.pile(state.chips[0], this.paints[0], -2.9, 2.6, 0);
     used = this.pile(state.chips[1], this.paints[1], 1.7, -2.6, used);
     used = this.pile(pot(state), this.paints[2], -0.8, -0.2, used);
-    this.say(pot(state));
+    this.say(this.sign, "판돈", String(pot(state)));
+    this.say(this.count, "판", `${state.round}/${ROUNDS}`);
     for (let i = used; i < this.chips.length; i++) this.chips[i].visible = false;
   }
   protected animate(before: State, state: State) {

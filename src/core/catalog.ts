@@ -237,4 +237,32 @@ export const games = [
     icon: "⚽",
     available: true,
   },
+  {
+    name: "블록 내리기",
+    en: "FALLING BLOCKS",
+    category: "퍼즐게임",
+    icon: "▦",
+    available: true,
+  },
+  {
+    name: "2048",
+    en: "2048",
+    category: "퍼즐게임",
+    icon: "▣",
+    available: true,
+  },
+  {
+    name: "벽돌깨기",
+    en: "BRICK BREAKER",
+    category: "퍼즐게임",
+    icon: "▬",
+    available: true,
+  },
+  {
+    name: "페그 솔리테어",
+    en: "PEG SOLITAIRE",
+    category: "퍼즐게임",
+    icon: "◉",
+    available: true,
+  },
 ];

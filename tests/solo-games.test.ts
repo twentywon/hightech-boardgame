@@ -1,0 +1,270 @@
+import { describe, expect, test } from "vitest";
+import { seededRandom } from "../src/core/ai";
+import * as peg from "../src/games/peg/rules";
+import * as merge from "../src/games/merge/rules";
+import * as blocks from "../src/games/blocks/rules";
+import * as bricks from "../src/games/bricks/rules";
+import { BAT_Z, HALF_X, HALF_Z, R, createWorld, launch, step } from "../src/games/bricks/sim";
+
+const to = (point: number) => ({ from: -1, to: point, extra: -1 });
+
+describe("peg solitaire", () => {
+  test("thirty-two marbles round an empty middle, and four jumps into it", () => {
+    const state = peg.createGame();
+    expect(peg.HOLES.length).toBe(33);
+    expect(peg.left(state)).toBe(32);
+    expect(state.pegs[peg.CENTRE]).toBe(false);
+    expect(peg.moves(state).map((m) => m.to)).toEqual([peg.CENTRE, peg.CENTRE, peg.CENTRE, peg.CENTRE]);
+  });
+  test("a jump takes off the marble jumped over, and nothing else is a move", () => {
+    const state = peg.createGame(),
+      from = peg.holeAt(3, 1),
+      next = peg.play(state, { from, to: peg.CENTRE, extra: -1 })!;
+    expect([next.pegs[from], next.pegs[peg.holeAt(3, 2)], next.pegs[peg.CENTRE], peg.left(next)]).toEqual([false, false, true, 31]);
+    expect(peg.peg.effect(next)).toMatchObject({ kind: "jump", removed: [peg.holeAt(3, 2)] });
+    // Not diagonally, not over an empty hole, not onto a marble.
+    expect(peg.play(state, { from: peg.holeAt(2, 2), to: peg.CENTRE, extra: -1 })).toBeNull();
+    expect(peg.play(next, { from: peg.holeAt(3, 0), to: peg.holeAt(3, 2), extra: -1 })).toBeNull();
+    expect(peg.play(next, { from: peg.holeAt(1, 2), to: peg.holeAt(3, 2), extra: -1 })).not.toBeNull();
+    expect(peg.play(next, { from: peg.holeAt(3, 3), to: peg.holeAt(3, 1), extra: -1 })).toBeNull();
+    expect(state.pegs[from]).toBe(true);
+  });
+  test("the board can be played down to one marble, and a dead end is a loss", () => {
+    // The board can be solved: a search finds the jumps, and playing them leaves one marble.
+    let state = peg.createGame();
+    const found = solve(state);
+    expect(found).not.toBeNull();
+    for (const move of found!) state = peg.play(state, move)!;
+    expect([peg.left(state), state.winner]).toEqual([1, 0]);
+    // Jumps made carelessly run out with marbles to spare.
+    let stuck = peg.createGame();
+    while (stuck.winner === null) stuck = peg.play(stuck, peg.moves(stuck)[0])!;
+    expect(stuck.winner).toBe(1);
+    expect(peg.left(stuck)).toBeGreaterThan(1);
+    expect(peg.peg.reason(stuck)).toMatch(/남았습니다/);
+  });
+});
+/** Depth-first search with the positions already known to fail left out. */
+function solve(start: peg.State) {
+  const dead = new Set<string>(),
+    path: { from: number; to: number; extra: number }[] = [];
+  const go = (state: peg.State): boolean => {
+    if (state.winner === 0) return true;
+    const key = state.pegs.map((p) => (p ? 1 : 0)).join("");
+    if (state.winner !== null || dead.has(key)) return false;
+    for (const move of peg.moves(state)) {
+      path.push(move);
+      if (go(peg.play(state, move)!)) return true;
+      path.pop();
+    }
+    dead.add(key);
+    return false;
+  };
+  return go(start) ? path : null;
+}
+
+describe("2048", () => {
+  const board = (cells: number[]): merge.State => ({ cells, score: 0, winner: null, last: null, ply: 0 });
+  test("two tiles to start with, each a 2 or a 4", () => {
+    const state = merge.createGame(seededRandom(3)),
+      tiles = state.cells.filter(Boolean);
+    expect(tiles.length).toBe(2);
+    expect(tiles.every((v) => v === 2 || v === 4)).toBe(true);
+  });
+  test("tiles slide to the edge and equal ones join once a move", () => {
+    // 2 2 2 2 to the left is 4 4, not 8; 2 2 2 is 4 2; 4 2 2 is 4 4.
+    const { cells, gained, merged } = merge.slide([2, 2, 2, 2, 0, 2, 2, 2, 4, 2, 2, 0, 2, 0, 0, 2], merge.LEFT);
+    expect(cells).toEqual([4, 4, 0, 0, 4, 2, 0, 0, 4, 4, 0, 0, 4, 0, 0, 0]);
+    expect(gained).toBe(4 + 4 + 4 + 4 + 4);
+    expect(merged.sort((a, b) => a - b)).toEqual([0, 1, 4, 9, 12]);
+    expect(merge.slide([2, 0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0], merge.DOWN).cells).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 8, 0, 0, 0]);
+    expect(merge.slide([0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], merge.RIGHT).cells.slice(0, 4)).toEqual([0, 0, 0, 4]);
+  });
+  test("a move that shifts nothing is refused; a move adds one tile and the score of what joined", () => {
+    const state = board([2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(merge.play(state, to(merge.UP), seededRandom(1))).toBeNull();
+    expect(merge.moves(state).map((m) => m.to).sort()).toEqual([merge.RIGHT, merge.DOWN, merge.LEFT].sort());
+    const next = merge.play(state, to(merge.LEFT), seededRandom(1))!;
+    expect(next.cells[0]).toBe(4);
+    expect(next.score).toBe(4);
+    expect(next.cells.filter(Boolean).length).toBe(2);
+    expect(next.last!.spawn).not.toBe(0);
+    expect(state.cells[0]).toBe(2);
+  });
+  test("making 2048 wins, and a full board with nothing to join loses", () => {
+    const won = merge.play(board([1024, 1024, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), to(merge.LEFT), seededRandom(2))!;
+    expect([won.winner, merge.best(won)]).toEqual([0, 2048]);
+    expect(merge.moves(won)).toEqual([]);
+    // One move is left; after it the board is full and nothing matches.
+    const lost = merge.play(board([2, 4, 2, 4, 4, 2, 4, 2, 8, 4, 2, 4, 16, 32, 8, 0]), to(merge.RIGHT), () => 0)!;
+    expect(lost.cells.slice(12)).toEqual([2, 16, 32, 8]);
+    expect(lost.winner).toBe(1);
+    expect(merge.merge.reason(lost)).toMatch(/더 밀 수 있는 곳이 없습니다/);
+  });
+  test("a game played at random always ends", () => {
+    const random = seededRandom(7);
+    let state = merge.createGame(random);
+    for (let i = 0; i < 5000 && state.winner === null; i++) {
+      const legal = merge.moves(state);
+      state = merge.play(state, legal[Math.floor(random() * legal.length)], random)!;
+    }
+    expect(state.winner).not.toBeNull();
+  });
+});
+
+describe("falling blocks", () => {
+  const empty = (): blocks.State => ({ ...blocks.createGame(seededRandom(1)), grid: Array(blocks.W * blocks.H).fill(0) });
+  test("every piece is four squares, and a turn four times round comes back", () => {
+    for (let kind = 0; kind < blocks.KINDS; kind++) {
+      const piece = { kind, rot: 0, x: 3, y: 5 },
+        key = (p: blocks.Piece) => blocks.cells(p).map(([x, y]) => `${x},${y}`).sort().join(" ");
+      expect(blocks.cells(piece).length).toBe(4);
+      expect(new Set(blocks.cells(piece).map(([x, y]) => `${x},${y}`)).size).toBe(4);
+      expect(key({ ...piece, rot: 4 % 4 })).toBe(key(piece));
+    }
+  });
+  test("a piece slides until the wall and falls until the floor, where it stays", () => {
+    let state: blocks.State = { ...empty(), piece: { kind: 1, rot: 0, x: 4, y: 0 } };
+    for (let i = 0; i < 20; i++) state = blocks.play(state, to(blocks.LEFT)) ?? state;
+    expect(state.piece!.x).toBe(0);
+    expect(blocks.play(state, to(blocks.LEFT))).toBeNull();
+    expect(blocks.moves(state).some((m) => m.to === blocks.LEFT)).toBe(false);
+    for (let i = 0; i < blocks.H - 2; i++) state = blocks.play(state, to(blocks.TICK), seededRandom(2))!;
+    expect(state.piece!.y).toBe(blocks.H - 2);
+    expect(state.last!.locked).toBe(false);
+    // The next fall of the clock finds no room: the square piece stays, and a new one comes in at the top.
+    state = blocks.play(state, to(blocks.TICK), seededRandom(2))!;
+    expect(state.last!.locked).toBe(true);
+    expect(state.grid.filter(Boolean).length).toBe(4);
+    expect([state.grid[(blocks.H - 1) * blocks.W], state.grid[(blocks.H - 2) * blocks.W + 1]]).toEqual([2, 2]);
+    expect(state.piece!.y).toBeLessThanOrEqual(0);
+  });
+  test("a full row goes, what lay above comes down, and the score counts the level", () => {
+    const state = empty(),
+      grid = state.grid.slice();
+    // The bottom row full but for its two left squares, and one square above it at the right.
+    for (let x = 2; x < blocks.W; x++) grid[(blocks.H - 1) * blocks.W + x] = 3;
+    grid[(blocks.H - 2) * blocks.W + 9] = 5;
+    const dropped = blocks.play({ ...state, grid, piece: { kind: 1, rot: 0, x: 0, y: 0 }, lines: 9 }, to(blocks.DROP), seededRandom(4))!;
+    expect(dropped.last).toEqual({ locked: true, cleared: [blocks.H - 1] });
+    expect(dropped.lines).toBe(10);
+    // Level 1 when the row went: 100, and two points a row for the drop of sixteen rows.
+    expect(dropped.score).toBe(100 + 16 * 2);
+    expect(blocks.level(dropped)).toBe(2);
+    expect(blocks.interval(2)).toBeLessThan(blocks.interval(1));
+    // What is left of the square piece and the lone square have come down a row.
+    expect(dropped.grid[(blocks.H - 1) * blocks.W]).toBe(2);
+    expect(dropped.grid[(blocks.H - 1) * blocks.W + 9]).toBe(5);
+    expect(dropped.grid.filter(Boolean).length).toBe(3);
+  });
+  test("a turn against the wall is nudged aside, and a heap to the top ends the game", () => {
+    // The bar upright against the right wall cannot lie down where it is; it is moved in.
+    const upright: blocks.State = { ...empty(), piece: { kind: 0, rot: 1, x: 7, y: 4 } };
+    expect(blocks.cells(upright.piece!).every(([x]) => x === 9)).toBe(true);
+    const turned = blocks.play(upright, to(blocks.TURN))!;
+    expect(turned).not.toBeNull();
+    expect(blocks.cells(turned.piece!).every(([x]) => x >= 0 && x < blocks.W)).toBe(true);
+    let state = blocks.createGame(seededRandom(5));
+    const random = seededRandom(6);
+    for (let i = 0; i < 400 && state.winner === null; i++) state = blocks.play(state, to(blocks.DROP), random)!;
+    expect(state.winner).toBe(1);
+    expect(state.piece).toBeNull();
+    expect(blocks.moves(state)).toEqual([]);
+    expect(blocks.blocks.reason(state)).toMatch(/꼭대기까지/);
+  });
+  test("the seven pieces all come before any comes again", () => {
+    const random = seededRandom(9);
+    let state = blocks.createGame(random);
+    const seen = [state.piece!.kind];
+    while (seen.length < 14) {
+      state = blocks.play({ ...state, grid: Array(blocks.W * blocks.H).fill(0) }, to(blocks.DROP), random)!;
+      seen.push(state.piece!.kind);
+    }
+    expect([...seen.slice(0, 7)].sort()).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect([...seen.slice(7)].sort()).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+});
+
+describe("brick breaker", () => {
+  test("five walls, each with bricks inside the table; the hard ones take two hits", () => {
+    for (let level = 1; level <= bricks.LEVELS; level++) {
+      const wall = bricks.layout(level);
+      expect(wall.length).toBeGreaterThan(15);
+      expect(wall.every((b) => b.col >= 0 && b.col < bricks.COLS && b.row >= 0 && b.row < bricks.ROWS && (b.hits === 1 || b.hits === 2))).toBe(true);
+    }
+    expect(bricks.layout(1).every((b) => b.hits === 1)).toBe(true);
+    expect(bricks.layout(4).some((b) => b.hits === 2)).toBe(true);
+  });
+  test("a brick scores by the level, a lost ball costs one of three, the fifth wall wins", () => {
+    let state = bricks.createGame();
+    state = bricks.play(state, to(bricks.BRICK))!;
+    expect(state.score).toBe(10);
+    state = bricks.play(state, to(bricks.CLEAR))!;
+    expect([state.level, state.score, state.winner]).toEqual([2, 110, null]);
+    state = bricks.play(state, to(bricks.BRICK))!;
+    expect(state.score).toBe(130);
+    for (let level = 2; level <= bricks.LEVELS; level++) state = bricks.play(state, to(bricks.CLEAR))!;
+    expect([state.level, state.winner]).toEqual([bricks.LEVELS, 0]);
+    let lost = bricks.createGame();
+    for (let i = 0; i < bricks.LIVES; i++) lost = bricks.play(lost, to(bricks.LOST))!;
+    expect([lost.lives, lost.winner]).toEqual([0, 1]);
+    expect(bricks.play(lost, to(bricks.BRICK))).toBeNull();
+  });
+  test("the ball rests on the bat until sent off, stays inside the walls and knocks bricks out", () => {
+    const world = createWorld(1);
+    step(world, 2);
+    expect([world.held, world.ball.x]).toEqual([true, 2]);
+    launch(world);
+    expect(world.held).toBe(false);
+    expect(world.ball.vz).toBeLessThan(0);
+    let gone = 0,
+      lost = false;
+    // The bat follows the ball, so nothing is lost; ten seconds are enough to break something.
+    for (let i = 0; i < 1200; i++)
+      for (const event of step(world, world.ball.x)) {
+        if (event.kind === "brick" && event.gone) gone++;
+        if (event.kind === "lost") lost = true;
+        expect(Math.abs(world.ball.x)).toBeLessThanOrEqual(HALF_X - R + 1e-9);
+        expect(world.ball.z).toBeGreaterThanOrEqual(-HALF_Z + R - 1e-9);
+      }
+    expect(lost).toBe(false);
+    expect(gone).toBeGreaterThan(0);
+    expect(world.bricks.filter((b) => !b.hits).length).toBe(gone);
+    // The speed never changes, whatever it bounces off.
+    expect(Math.hypot(world.ball.vx, world.ball.vz)).toBeCloseTo(world.speed, 6);
+  });
+  test("a ball that passes the bat is lost and comes back to rest on it; the same inputs give the same game", () => {
+    const run = () => {
+      const world = createWorld(2);
+      launch(world);
+      const seen: string[] = [];
+      for (let i = 0; i < 3000 && !seen.includes("lost"); i++) for (const event of step(world, -HALF_X)) seen.push(event.kind);
+      return { world, seen };
+    };
+    const a = run(),
+      b = run();
+    expect(a.seen).toContain("lost");
+    expect(a.world.held).toBe(true);
+    step(a.world, 1);
+    expect([a.world.ball.x, a.world.ball.z < BAT_Z]).toEqual([1, true]);
+    expect(a.seen).toEqual(b.seen);
+  });
+  test("the hard brick is only cracked by the first hit, and the last brick clears the wall", () => {
+    const world = createWorld(3),
+      hard = world.bricks.findIndex((b) => b.hard);
+    // All but that brick are taken away, and the ball is set just under it, going up.
+    world.bricks.forEach((b, i) => (b.hits = i === hard ? 2 : 0));
+    const send = () => {
+      world.held = false;
+      world.ball = { x: world.bricks[hard].x, z: world.bricks[hard].z + 0.6, vx: 0, vz: -world.speed };
+      for (let i = 0; i < 60; i++) {
+        const events = step(world, 0);
+        if (events.length) return events;
+      }
+      return [];
+    };
+    expect(send()).toEqual([{ kind: "brick", index: hard, gone: false }]);
+    expect(world.ball.vz).toBeGreaterThan(0);
+    expect(send()).toEqual([{ kind: "brick", index: hard, gone: true }, { kind: "clear" }]);
+  });
+});
