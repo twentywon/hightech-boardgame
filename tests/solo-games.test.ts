@@ -588,6 +588,9 @@ describe("river crossing", () => {
       failed = go(start, [0, 1]);
     // The farmer took the first load: the second is left with the third, which it eats.
     expect([failed.winner, failed.crossings]).toEqual([1, 1]);
+    // Those it concerns are named for the table to point at: the eater and the eaten.
+    expect(failed.culprits).toEqual([2, 3]);
+    expect(start.culprits).toEqual([]);
     expect(river.river.reason(failed)).toMatch(/^실패! 농부가 없는 사이에/);
     expect(river.moves(failed)).toEqual([]);
     let state = start;
@@ -602,6 +605,7 @@ describe("river crossing", () => {
     expect([flock.best, flock.seats]).toEqual([11, 2]);
     // Two sheep go: one sheep is left with three wolves.
     expect(go(flock, sheep.slice(0, 2)).trouble).toMatch(/늑대 3마리가 양 1마리보다/);
+    expect(go(flock, sheep.slice(0, 2)).culprits).toEqual([...wolves, sheep[2]]);
     expect(go(flock, wolves.slice(0, 2)).winner).toBeNull();
     const pairs = river.createGame(3, seededRandom(1));
     expect(pairs.best).toBe(11);

@@ -33,6 +33,8 @@ export interface State {
   crossings: number;
   /** What went wrong, once a crossing has broken the rule. */
   trouble: string;
+  /** Those the trouble is about (the eater and the eaten, the wolves and the sheep, the wife and the husbands), for the table to point at. */
+  culprits: number[];
   winner: Winner;
   last: { riders: number[]; from: 0 | 1 } | null;
   ply: number;
@@ -47,35 +49,40 @@ export const LOADS: [string, string][][] = [
 ];
 const object = (name: string) => `${name}${(name.charCodeAt(name.length - 1) - 0xac00) % 28 ? "을" : "를"}`,
   subject = (name: string) => `${name}${(name.charCodeAt(name.length - 1) - 0xac00) % 28 ? "이" : "가"}`;
-/** What is wrong with those who are together in one place (a bank, or the boat for the couples), or "". */
-function wrong(state: Pick<State, "kind" | "actors" | "eats">, group: number[]): string {
-  const there = group.map((i) => state.actors[i]),
-    has = (role: string) => there.some((a) => a.role === role);
+interface Trouble {
+  text: string;
+  who: number[];
+}
+/** What is wrong with those who are together in one place (a bank, or the boat for the couples), and whom it concerns; null when all is well. */
+function wrong(state: Pick<State, "kind" | "actors" | "eats">, group: number[]): Trouble | null {
+  const role = (i: number) => state.actors[i].role,
+    of = (wanted: string) => group.filter((i) => role(i) === wanted);
   if (state.kind === "farmer") {
-    if (has("farmer")) return "";
-    for (const [eater, eaten] of state.eats)
-      if (has(eater) && has(eaten)) {
-        const a = there.find((x) => x.role === eater)!,
-          b = there.find((x) => x.role === eaten)!;
-        return `농부가 없는 사이에 ${subject(a.name)} ${object(b.name)} 먹어 버렸습니다.`;
-      }
-    return "";
+    if (of("farmer").length) return null;
+    for (const [eater, eaten] of state.eats) {
+      const [a] = of(eater),
+        [b] = of(eaten);
+      if (a !== undefined && b !== undefined) return { text: `농부가 없는 사이에 ${subject(state.actors[a].name)} ${object(state.actors[b].name)} 먹어 버렸습니다.`, who: [a, b] };
+    }
+    return null;
   }
   if (state.kind === "flock") {
-    const sheep = there.filter((a) => a.role === "sheep").length,
-      wolves = there.filter((a) => a.role === "wolf").length;
-    return sheep > 0 && wolves > sheep ? `늑대 ${wolves}마리가 양 ${sheep}마리보다 많아져 양을 덮쳤습니다.` : "";
+    const sheep = of("sheep"),
+      wolves = of("wolf");
+    return sheep.length > 0 && wolves.length > sheep.length ? { text: `늑대 ${wolves.length}마리가 양 ${sheep.length}마리보다 많아져 양을 덮쳤습니다.`, who: [...wolves, ...sheep] } : null;
   }
-  for (const wife of there.filter((a) => a.role === "wife"))
-    if (!there.some((a) => a.role === "husband" && a.pair === wife.pair) && has("husband")) return `${wife.name}이 남편 없이 다른 남편과 함께 있게 되었습니다.`;
-  return "";
+  const husbands = of("husband");
+  for (const wife of of("wife"))
+    if (husbands.length && !husbands.some((i) => state.actors[i].pair === state.actors[wife].pair)) return { text: `${state.actors[wife].name}이 남편 없이 다른 남편과 함께 있게 되었습니다.`, who: [wife, ...husbands] };
+  return null;
 }
 const drives = (state: Pick<State, "kind" | "actors">, riders: number[]) => riders.length > 0 && (state.kind !== "farmer" || riders.some((i) => state.actors[i].role === "farmer"));
 /** The trouble a crossing with these riders leads to, or "". */
 function crossed(state: State, riders: number[]) {
   const sides = state.actors.map((a, i) => (riders.includes(i) ? ((1 - a.side) as 0 | 1) : a.side)),
     bank = (side: number) => sides.flatMap((s, i) => (s === side ? [i] : []));
-  return { sides, trouble: (state.kind === "couples" ? wrong(state, riders) : "") || wrong(state, bank(0)) || wrong(state, bank(1)) };
+  const found = (state.kind === "couples" ? wrong(state, riders) : null) ?? wrong(state, bank(0)) ?? wrong(state, bank(1));
+  return { sides, trouble: found?.text ?? "", culprits: found?.who ?? [] };
 }
 /** Every set of riders the boat could take from its bank. */
 function crews(state: Pick<State, "kind" | "actors" | "seats">, sides: number[], boat: number) {
@@ -136,7 +143,7 @@ export function play(state: State, move: Move): State | null {
   if (!moves(state).some((m) => m.to === move.to) || move.from !== -1 || move.extra !== -1) return null;
   // Getting in and out is no crossing: the count stays.
   if (move.to !== GO) return { ...state, aboard: state.aboard.includes(move.to) ? state.aboard.filter((i) => i !== move.to) : [...state.aboard, move.to], last: null };
-  const { sides, trouble } = crossed(state, state.aboard),
+  const { sides, trouble, culprits } = crossed(state, state.aboard),
     actors = state.actors.map((a, i) => ({ ...a, side: sides[i] }));
   return {
     ...state,
@@ -145,6 +152,7 @@ export function play(state: State, move: Move): State | null {
     aboard: [],
     crossings: state.crossings + 1,
     trouble,
+    culprits,
     winner: trouble ? 1 : actors.every((a) => a.side === 1) ? 0 : null,
     last: { riders: state.aboard, from: state.boat },
     ply: state.ply + 1,
@@ -189,7 +197,7 @@ export function createGame(stage = 1, random: Random = cryptoRandom): State {
       actors: [{ role: "farmer", name: "농부", pair: -1, side: 0 }, ...loads.map(([role, name]) => ({ role, name, pair: -1, side: 0 as const }))],
     };
   }
-  const state: State = { ...setup, boat: 0, aboard: [], best: 0, crossings: 0, trouble: "", winner: null, last: null, ply: 0 };
+  const state: State = { ...setup, boat: 0, aboard: [], best: 0, crossings: 0, trouble: "", culprits: [], winner: null, last: null, ply: 0 };
   return { ...state, best: solve(state)?.length ?? 0 };
 }
 export const ruleText = (s: State) =>
