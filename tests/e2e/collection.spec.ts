@@ -55,6 +55,8 @@ test("collection preserves filters, supports keyboard/touch and resets on home o
   await expect(gomoku).toHaveAttribute("aria-expanded", "false");
   const reversi = page.getByRole("button", { name: "리버시 살펴보기" });
   if (info.project.name === "mobile") {
+    // The page glides to a panel that opens; a tap is aimed only once it has come to rest.
+    await page.waitForFunction(() => new Promise<boolean>((done) => { const y = scrollY; setTimeout(() => done(scrollY === y), 300); }));
     const box = (await reversi.boundingBox())!;
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
   } else await reversi.click();
