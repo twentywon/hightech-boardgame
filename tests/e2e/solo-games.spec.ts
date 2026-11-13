@@ -390,6 +390,8 @@ test("water pouring: the level is asked, pours are counted against the fewest, a
 
 
 test("river crossing: a wrong crossing is shown as a failure and taken back, and the company is brought over in the fewest", async ({ page }) => {
+  // Eleven crossings, each rowed across in full.
+  test.setTimeout(120000);
   const errors = await sit(page, "강 건너기");
   await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(4);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "양과 늑대" }).click();
@@ -411,24 +413,35 @@ test("river crossing: a wrong crossing is shown as a failure and taken back, and
     for (let i = 0; i < Math.abs(to - cursor); i++) await page.keyboard.press(to > cursor ? "ArrowRight" : "ArrowLeft");
     cursor = to;
     await page.keyboard.press("Enter");
+    // Stepping into the boat takes a moment, and nothing else is heard meanwhile.
+    await page.waitForTimeout(120);
+    await rest(page);
   };
-  await page.locator("canvas").focus();
-  await page.keyboard.press("ArrowRight");
+  // The company stands in a line for the keyboard: going left to the end is the first of it, wherever the place was.
+  const home = async () => {
+    await page.locator("canvas").focus();
+    for (let i = 0; i <= puzzle.actors.length; i++) await page.keyboard.press("ArrowLeft");
+    cursor = 0;
+  };
+  await home();
   // One sheep alone leaves two with three wolves: a failure, told, with no window; it is taken back and play goes on.
   await board(sheep);
   await expect(launch).toBeEnabled();
   await launch.click();
   await expect(page.locator("#turn")).toContainText("실패!", { timeout: 20000 });
   await expect(page.locator("#turn")).toContainText("무르기");
+  await rest(page);
   await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await panel.locator("#pz-restart").click();
   await expect(page.locator("#turn")).toContainText("0번 건넘");
   await rest(page);
-  await page.locator("canvas").focus();
+  await home();
   for (const [n, crew] of way.entries()) {
     for (const rider of crew) await board(rider);
     await launch.click();
+    // The press took the keyboard to the button: give it back to the table.
+    await page.locator("canvas").focus();
     await expect(page.locator(".solo-stat").first()).toContainText(String(n + 1), { timeout: 20000 });
     await rest(page);
   }
