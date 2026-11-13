@@ -241,7 +241,7 @@ test("chess underpromotion can be cancelled; reload has no saved game or prefere
   await expect(page.locator("#move-count")).toHaveText("8수");
   await page.keyboard.press("Escape");
   await expect(page.locator("dialog")).toHaveCount(0);
-  await tap(page, "b7", info);
+  // The pawn is still picked up (pressing it again would put it down): the square is chosen once more.
   await tap(page, "a8", info);
   await page.getByRole("button", { name: /나이트/ }).click();
   await expect(page.locator("#move-count")).toHaveText("9수");

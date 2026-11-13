@@ -132,8 +132,8 @@ test("battleship: I lay my fleet, a shot lands in the other waters, the computer
   await expect(count(page)).toHaveText("2수");
   await keys(page, ["ArrowDown", "Enter"]);
   await expect(count(page)).toHaveText("4수", { timeout: 20000 });
-  // Nothing about the fleets is written into the page.
-  const html = await page.locator("main").innerHTML();
+  // Nothing about where the fleets lie is written over the table (the panel only names the ships still afloat).
+  const html = await page.locator(".board-area").innerHTML();
   expect(html).not.toMatch(/항공모함|순양함|잠수함|구축함/);
   await page.screenshot({ path: `test-results/${info.project.name}-battleship.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

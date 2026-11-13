@@ -2348,3 +2348,4 @@ html { -webkit-tap-highlight-color: transparent; }
 }
 /* The hidden home button must stay on top to be pressable. */
 #app:has(> .game-layout) > header { position: relative; z-index: 20; }
+#app:has(> .game-layout) > header .brand { left: 0; top: 0; width: 2px !important; height: 2px !important; }
