@@ -320,6 +320,8 @@ export function mountChess(
       !hidden
     );
   }
+  /** Whether the press under way began on the piece already chosen; undefined when no press came first (the keyboard). */
+  let armed: boolean | undefined;
   function clearSelection() {
     selected = target = cursor = null;
     update();
@@ -338,10 +340,16 @@ export function mountChess(
     const game = engine(),
       piece = game.get(square);
     if (piece?.color === game.turn()) {
-      // The piece already picked up, pressed again, is put back.
-      if (square === selected) {
-        clearSelection();
-        return;
+      // The piece already picked up, pressed again, is put back. A press reports the square twice
+      // (down, then up): only a press that began on the piece already chosen lets go of it.
+      if (!commit) armed = square === selected;
+      else {
+        const again = square === selected && armed !== false;
+        armed = undefined;
+        if (again) {
+          clearSelection();
+          return;
+        }
       }
       selected = square;
       target = null;

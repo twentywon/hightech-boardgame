@@ -2346,3 +2346,5 @@ html { -webkit-tap-highlight-color: transparent; }
   .board-area .board-label { display:none; }
   .game-layout:not(.yacht-game):not(.blackjack-game):not(.betting-game) .board-area .board-controls { top:44px; }
 }
+/* The hidden home button must stay on top to be pressable. */
+#app:has(> .game-layout) > header { position: relative; z-index: 20; }

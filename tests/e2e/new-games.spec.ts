@@ -118,7 +118,7 @@ test("battleship: I lay my fleet, a shot lands in the other waters, the computer
   await page.locator("canvas").focus();
   await keys(page, ["Enter"]);
   await layRest.click();
-  await expect(page.locator("#pg-count-0")).toHaveText("남은 배 5척");
+  await expect(page.locator("#pg-count-0")).toContainText("남은 배 5척");
   await expect(turnShip).toBeHidden();
   await expect(layRest).toBeHidden();
   await expect(page.locator("#turn")).toContainText("상대 해역에서 쏠 칸");

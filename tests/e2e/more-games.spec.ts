@@ -162,7 +162,8 @@ test("snakes and ladders: the die walks the token and a ladder lifts it", async 
   await expect(page.locator("#pg-count-0")).toHaveText("22번 칸");
   await expect(turn(page)).toContainText("파랑 (플레이어 2) 차례");
   // A tap on the board rolls as well.
-  await page.locator("canvas").click({ position: { x: 40, y: 40 } });
+  // Clear of the back and settings buttons in the corner.
+  await page.locator("canvas").click({ position: { x: 240, y: 160 } });
   await settled(page);
   await expect(page.locator("#pg-count-1")).toHaveText("6번 칸");
   await expect(turn(page)).toContainText("6이 나왔습니다. 한 번 더 굴리세요.");
