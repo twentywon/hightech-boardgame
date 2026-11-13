@@ -5,6 +5,7 @@ import { PITS, STONES, mancala, type State } from "./rules";
 
 export const mancalaConfig: PointConfig<State> = {
   game: mancala,
+  panel: "big",
   view: (host, quality) => new MancalaView(host, quality),
   colors: ["#c99a66", "#8e2f2a"],
   keyPoints: () => Array.from({ length: 14 }, (_, pit) => pitAt(pit)),

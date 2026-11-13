@@ -474,9 +474,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
             : `${names[s.turn]} 차례…`;
     s.players.forEach((player, i) => {
       const cities = s.owners.filter((owner) => owner === i).length;
-      $(`tour-money-${i}`).textContent = player.out
-        ? "파산"
-        : `${won(player.money)} · 도시 ${cities} · ${SPACES[player.at].name}${player.wait ? ` (쉼 ${player.wait})` : ""}${player.tickets ? ` · 탈출권 ${player.tickets}` : ""}${player.waivers ? ` · 우대권 ${player.waivers}` : ""}`;
+      // Only the money, large; a wait or a ticket in hand is noted small beside it.
+      const extra = [player.wait ? `쉼 ${player.wait}` : "", player.tickets ? `탈출권 ${player.tickets}` : "", player.waivers ? `우대권 ${player.waivers}` : ""].filter(Boolean).join(" · ");
+      $(`tour-money-${i}`).textContent = player.out ? "파산" : `${won(player.money)}${extra ? ` · ${extra}` : ""}`;
       $(`tour-player-${i}`).classList.toggle("active", !over && s.turn === i);
       // Out of money: I get the stamp across the table, another traveller on their own row.
       if (player.out && !stamped.has(i)) {

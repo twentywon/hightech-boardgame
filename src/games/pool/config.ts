@@ -5,10 +5,10 @@ import { POOL_COLORS, PoolView } from "./view";
 
 export const poolConfig: PointConfig<State> = {
   game: pool,
+  noPanel: true,
   view: (host, quality) => new PoolView(host, quality),
   colors: POOL_COLORS,
   noUndo: true,
-  shape: "tall",
   // Balls click against each other.
   contact: (sound) => sound.plastic(),
   name: "포켓볼",

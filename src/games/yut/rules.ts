@@ -31,9 +31,10 @@ export interface Move {
   path: number[];
 }
 export interface State {
-  turn: 0 | 1;
-  /** Station of each piece, `WAITING` or `FINISHED`. */
-  pieces: [number[], number[]];
+  /** Whose turn it is: two to four players take turns in order. */
+  turn: number;
+  /** Station of each piece, `WAITING` or `FINISHED`, player by player. */
+  pieces: number[][];
   /** Throws the player to move still has. */
   throwsLeft: number;
   /** Thrown results not yet used for a move. */
@@ -43,16 +44,17 @@ export interface State {
   thrown: Result | null;
   throwId: number;
   moveId: number;
-  last: { player: 0 | 1; move: Move; count: number; captured: number } | null;
+  last: { player: number; move: Move; count: number; captured: number } | null;
   /** Results the previous player had to give up because no piece could use them. */
   forfeited: Result[];
-  winner: 0 | 1 | null;
+  winner: number | null;
 }
 
-export function createGame(): State {
+export const MAX_PLAYERS = 4;
+export function createGame(players = 2): State {
   return {
     turn: 0,
-    pieces: [Array(PIECES).fill(WAITING), Array(PIECES).fill(WAITING)],
+    pieces: Array.from({ length: Math.max(2, Math.min(MAX_PLAYERS, players)) }, () => Array<number>(PIECES).fill(WAITING)),
     throwsLeft: 1,
     pending: [],
     sticks: [false, false, false, false],
@@ -136,7 +138,7 @@ function settle(state: State): State {
     ...state,
     forfeited: state.pending,
     pending: [],
-    turn: state.turn === 0 ? 1 : 0,
+    turn: (state.turn + 1) % state.pieces.length,
     throwsLeft: 1,
   };
 }
@@ -157,7 +159,7 @@ export function throwSticks(state: State, random: Random): State | null {
 }
 /**
  * Moves `piece` (and the pieces stacked with it) by one pending `result`.
- * Landing on the other side's pieces sends them back and earns a throw.
+ * Landing on another player's pieces sends them back and earns a throw.
  */
 export function move(state: State, piece: number, result: Result): State | null {
   const mine = state.pieces[state.turn],
@@ -166,14 +168,22 @@ export function move(state: State, piece: number, result: Result): State | null 
   const { from, to } = chosen,
     movers = from === WAITING ? [chosen.piece] : mine.flatMap((p, i) => (p === from ? [i] : [])),
     moved = mine.map((p, i) => (movers.includes(i) ? to : p)),
-    theirs = state.pieces[1 - state.turn],
-    captured = to === FINISHED ? 0 : theirs.filter((p) => p === to).length,
-    sent = theirs.map((p) => (captured && p === to ? WAITING : p)),
     pending = [...state.pending];
+  // Every other player's pieces standing where the move ends go back to wait.
+  let captured = 0;
+  const pieces = state.pieces.map((list, player) =>
+    player === state.turn
+      ? moved
+      : list.map((p) => {
+          if (to === FINISHED || p !== to) return p;
+          captured++;
+          return WAITING;
+        }),
+  );
   pending.splice(pending.indexOf(result), 1);
   return settle({
     ...state,
-    pieces: state.turn === 0 ? [moved, sent] : [sent, moved],
+    pieces,
     pending,
     throwsLeft: captured ? 1 : 0,
     moveId: state.moveId + 1,

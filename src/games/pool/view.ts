@@ -78,7 +78,11 @@ export class PoolView extends FlickView<State> {
     lamp.shadow.normalBias = 0.02;
     this.own(lamp.shadow);
     this.scene.add(lamp, lamp.target);
-    pub(this.scene, (r) => this.own(r), HALF_X + 0.7, 3.4);
+    // The table is seen from its long side, so the room is turned to keep its wall behind it.
+    const room = new T.Group();
+    room.rotation.y = Math.PI / 2;
+    this.scene.add(room);
+    pub(room, (r) => this.own(r), HALF_Z + 0.9, 3.4);
     // The table: a slate bed under green cloth, wooden rails with cushions, and legs.
     const rail = this.standard({ map: this.own(wood(true)), roughness: 0.45 }),
       cushion = this.standard({ color: "#17643f", roughness: 0.9 }),
@@ -137,8 +141,10 @@ export class PoolView extends FlickView<State> {
     this.scene.add(this.cue);
     this.begin();
   }
+  // The length of the table lies across the screen: the white ball's end at the left.
+  protected orbit = Math.PI / 2;
   protected subject(): TableSubject {
-    return { half: 4.2, halfZ: 6.2, height: 0.6, lookY: 0, tilt: 1.02 };
+    return { half: 6.3, halfZ: 4.1, height: 0.6, lookY: 0, tilt: 1.02 };
   }
   protected discs(state: State): Disc[] {
     return state.discs;

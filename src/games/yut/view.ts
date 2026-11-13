@@ -6,14 +6,15 @@ import { FINISHED, PIECES, WAITING } from "./rules";
 
 /** What the yard shows. The view draws stations; it knows no rules. */
 export interface YardModel {
-  pieces: [number[], number[]];
+  /** Stations of each player's pieces: two to four players. */
+  pieces: number[][];
   /** True where a stick lies flat side up. */
   sticks: boolean[];
   /** Changes with every throw, so a redraw is not mistaken for one. */
   throwId: number;
   /** Changes with every move; `walk` is the road the moved pieces took. */
   moveId: number;
-  walk: { player: 0 | 1; from: number; path: number[] } | null;
+  walk: { player: number; from: number; path: number[] } | null;
 }
 export interface Marks {
   /** Stations (or `WAITING`) holding pieces that may be picked up. */
@@ -21,7 +22,7 @@ export interface Marks {
   selected: number | null;
   /** Stations (or `FINISHED`) the selected pieces may go to. */
   targets: number[];
-  turn: 0 | 1;
+  turn: number;
   /** The sticks may be tapped to throw them. */
   canThrow?: boolean;
 }
@@ -37,7 +38,10 @@ const BOARD_Z = 0.25,
   PIECE_H = 0.13,
   STICK_R = 0.17,
   STICK_L = 1.55;
-export const COLORS = ["#2f5fa8", "#c23b2b"];
+/** Blue, red, green and yellow: one colour a player. */
+export const COLORS = ["#2f5fa8", "#c23b2b", "#2f8a4f", "#d9a521"];
+/** Where a player's waiting pieces begin, across the yard: the first two beside the throwing strip, the next two between it and them. */
+const waitX = (player: number) => (player % 2 ? 1 : -1) * (player < 2 ? WAIT_X : 1.74);
 /** Where a station lies on the ground. */
 export function stationAt(station: number): { x: number; z: number } {
   const at = (x: number, z: number) => ({ x, z: z + BOARD_Z });
@@ -54,10 +58,11 @@ export function stationAt(station: number): { x: number; z: number } {
 export const EXIT = { x: REACH + 0.95, z: REACH + BOARD_Z };
 /** Where a player's waiting or finished pieces are set down. */
 function restAt(player: number, index: number, finished: boolean) {
-  const side = player === 0 ? -1 : 1;
+  const side = player % 2 ? 1 : -1;
   return finished
-    ? { x: side * (REACH + 0.95), z: HOME_Z + index * 0.62 }
-    : { x: side * (WAIT_X + (index % 2) * 0.62), z: THROW_Z - 0.35 + Math.floor(index / 2) * 0.62 };
+    ? // Pieces that are home stand in a line beside the board; the third and fourth players' below the first two's.
+      { x: side * (REACH + 0.95), z: HOME_Z + (index + (player < 2 ? 0 : PIECES)) * 0.62 }
+    : { x: waitX(player) + side * (index % 2) * 0.62, z: THROW_Z - 0.35 + Math.floor(index / 2) * 0.62 };
 }
 function canvas(width: number, height: number) {
   const c = document.createElement("canvas");
@@ -230,7 +235,7 @@ export class YutView {
   private readyFlag = false;
   private cancelReady: (() => void) | null = null;
   private owned: { dispose(): void }[] = [];
-  private pieces: T.Mesh[][] = [[], []];
+  private pieces: T.Mesh[][] = COLORS.map(() => []);
   private sticks: T.Group[] = [];
   private stickYaw = [0.2, -0.3, 0.1, -0.15];
   private rings = new T.Group();
@@ -412,7 +417,9 @@ export class YutView {
     if (best !== null) return best;
     if (Math.hypot(EXIT.x - hit.x, EXIT.z - hit.z) < 0.55) return FINISHED;
     // The waiting places lie beside the throwing strip, one on each side.
-    return Math.abs(hit.z - THROW_Z) < 0.95 && Math.abs(Math.abs(hit.x) - WAIT_X - 0.31) < 0.75 ? WAITING : null;
+    const turn = this.marks.turn,
+      middle = waitX(turn) + (turn % 2 ? 0.31 : -0.31);
+    return Math.abs(hit.z - THROW_Z) < 0.95 && Math.abs(hit.x - middle) < (turn < 2 ? 0.75 : 0.62) ? WAITING : null;
   }
   private resize() {
     if (this.disposed) return;
@@ -504,6 +511,8 @@ export class YutView {
           });
       });
     } else if (model.throwId === 0 && (!before || before.throwId !== 0)) this.placeSticks(model.sticks, true);
+    // Only the players at the table have pieces out.
+    this.pieces.forEach((list, player) => list.forEach((mesh) => (mesh.visible = player < model.pieces.length)));
     const places = this.places(model);
     let delay = 0;
     places.forEach((spots, player) =>
@@ -556,7 +565,7 @@ export class YutView {
       station === FINISHED
         ? EXIT
         : station === WAITING
-          ? { x: (this.marks.turn === 0 ? -1 : 1) * (WAIT_X + 0.31), z: THROW_Z - 0.04 }
+          ? { x: waitX(this.marks.turn) + (this.marks.turn % 2 ? 0.31 : -0.31), z: THROW_Z - 0.04 }
           : stationAt(station);
     for (const station of this.marks.movable) {
       const p = spot(station),

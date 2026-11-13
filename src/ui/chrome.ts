@@ -42,6 +42,8 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   if (mode) {
     const line = document.createElement("p");
     line.className = "side-mode";
+    // Not shown: the user asked for the panel to open with what is going on, not with a line about the rules.
+    line.hidden = true;
     line.textContent = mode;
     side.prepend(line);
   }

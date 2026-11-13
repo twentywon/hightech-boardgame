@@ -5,6 +5,7 @@ import { STAR_COLORS, StarHopView, holeAt } from "./view";
 
 export const starHopConfig: PointConfig<State> = {
   game: starHop,
+  noPanel: true,
   view: (host, quality) => new StarHopView(host, quality),
   colors: STAR_COLORS,
   keyPoints: () => HOLES.map((_, i) => holeAt(i)),

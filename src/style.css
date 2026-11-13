@@ -2400,3 +2400,38 @@ html { -webkit-tap-highlight-color: transparent; }
 .board-area .board-controls .tap-only button:nth-child(n+9) { left:-24px; }
 .board-area .board-controls #yut-moves.tap-only { left:-16px;bottom:8px; }
 .board-area .board-controls #bg-peeking.tap-only { left:-16px;bottom:16px; }
+
+/* Panels ----------------------------------------------------------------------
+   Text kept for readers only. */
+.sr-text { position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0; }
+/* A table with no panel: the table takes the whole width. The panel stays in the page, unseen. */
+.game-layout.no-panel .table-layout { grid-template-columns:minmax(0, 1fr) !important;display:grid !important; }
+.game-layout.no-panel .table-layout > aside.game-sidebar { position:absolute !important;width:1px !important;height:1px !important;min-height:0 !important;max-height:none !important;padding:0 !important;margin:0 !important;overflow:hidden !important;opacity:0;pointer-events:none; }
+/* Tallies written large at the right of each side. */
+.game-layout.panel-big .yut-sides li { grid-template-columns:auto minmax(0, 1fr) auto;align-items:center; }
+.game-layout.panel-big .yut-sides li > span[id^="pg-count-"] { grid-column:3;grid-row:1 / span 2;font-size:30px;font-weight:800;line-height:1;color:#16181a;font-family:var(--mono, ui-monospace, monospace);white-space:nowrap; }
+/* A stadium board: the two sides against each other in lit figures. */
+.game-layout.panel-scoreboard .yut-sides { display:grid;grid-template-columns:1fr 1fr;gap:0;padding:14px 10px 16px;border-radius:14px;background:#101214;border:3px solid #2a2d31;box-shadow:inset 0 0 24px #000a;position:relative; }
+.game-layout.panel-scoreboard .yut-sides::after { content:":";position:absolute;left:50%;bottom:20px;translate:-50% 0;color:#ffb21a;font:800 44px/1 var(--mono, ui-monospace, monospace);text-shadow:0 0 12px #ff9d00; }
+.game-layout.panel-scoreboard .yut-sides li { display:flex;flex-direction:column;align-items:center;gap:8px;padding:0;border:0;background:none;box-shadow:none; }
+.game-layout.panel-scoreboard .yut-sides li.active { background:none;border:0; }
+.game-layout.panel-scoreboard .yut-sides li .yut-dot { width:10px;height:10px; }
+.game-layout.panel-scoreboard .yut-sides li b { color:#d8d4c8;font-size:12px;font-weight:600;letter-spacing:.04em;text-align:center; }
+.game-layout.panel-scoreboard .yut-sides li > span[id^="pg-count-"] { color:#ffb21a;font:800 62px/1 var(--mono, ui-monospace, monospace);text-shadow:0 0 14px #ff9d00, 0 0 2px #fff3; }
+/* World tour: the money large at the right of each traveller. */
+.tour-sidebar .tour-deeds { display:grid;grid-template-columns:auto minmax(0, 1fr) auto;align-items:center;column-gap:10px;width:100%; }
+.tour-sidebar .tour-deeds b { text-align:left; }
+.tour-sidebar .tour-deeds span[id^="tour-money-"] { grid-column:3;grid-row:1;font-size:20px;font-weight:800;color:#16181a;font-family:var(--mono, ui-monospace, monospace);text-align:right;white-space:nowrap; }
+/* Yut: a dot for each of four colours, and the four pieces of each player drawn. */
+.yut-dot.p2 { background:#2f8a4f; }
+.yut-dot.p3 { background:#d9a521; }
+.yut-pips { display:inline-flex;gap:5px;margin-top:4px; }
+.yut-pips i { width:16px;height:16px;border-radius:50%;box-sizing:border-box;border:2.5px solid var(--pip, #2f5fa8); }
+.yut-pips.p1 { --pip:#c23b2b; }
+.yut-pips.p2 { --pip:#2f8a4f; }
+.yut-pips.p3 { --pip:#d9a521; }
+.yut-pips i.out { background:var(--pip, #2f5fa8); }
+.yut-pips i.home { background:var(--pip, #2f5fa8);opacity:.35;position:relative; }
+.yut-pips i.home::after { content:"✓";position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:900;opacity:1; }
+/* Battleship: the fleets alone. */
+.fleet { margin-top:2px; }

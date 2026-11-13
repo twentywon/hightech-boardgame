@@ -101,7 +101,7 @@ const bettingOptions: Record<string, BettingOptions> = {
 // Kept for this page only, like the chess preferences.
 let yachtOptions: YachtOptions = { mode: "solo" };
 let yut: YutController | null = null;
-let yutOptions: YutOptions = { mode: "ai" };
+let yutOptions: YutOptions = { mode: "ai", players: 2, names: [] };
 let points: PointController | null = null;
 let spider: SpiderController | null = null;
 let spiderOptions: SpiderOptions = { suits: "1" };

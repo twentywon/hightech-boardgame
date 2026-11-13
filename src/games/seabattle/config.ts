@@ -4,10 +4,9 @@ import { CELLS, FLEET, LAY_REST, TURN_SHIP, seaBattle, type State } from "./rule
 import { sunk as shipSunk } from "./rules";
 /** A side's fleet drawn as rows of squares, one row a ship; a sunk ship is struck out. Where the ships lie is not told. */
 function fleetHtml(state: State, side: number) {
-  if (state.phase === "place" && side === 1) return "배치 완료";
   const laid = state.fleets[side],
     left = laid.filter((ship) => !shipSunk(state, side, ship)).length;
-  return `<span class="fleet-count">${state.phase === "place" ? `배 ${laid.length} / ${FLEET.length}척 배치` : `남은 배 ${left}척`}</span><span class="fleet" role="img" aria-label="${FLEET.map(([name, length], i) => `${name} ${length}칸 ${!laid[i] ? "아직 안 놓음" : shipSunk(state, side, laid[i]) ? "격침" : "건재"}`).join(", ")}">${FLEET.map(([name, length], i) => `<span class="ship${!laid[i] ? " waiting" : shipSunk(state, side, laid[i]) ? " sunk" : ""}" title="${name}">${"<i></i>".repeat(length)}<b>${name}</b></span>`).join("")}</span>`;
+  return `<span class="fleet-count sr-text">${state.phase === "place" ? `배 ${laid.length} / ${FLEET.length}척 배치` : `남은 배 ${left}척`}</span><span class="fleet" role="img" aria-label="${FLEET.map(([name, length], i) => `${name} ${length}칸 ${!laid[i] ? "아직 안 놓음" : shipSunk(state, side, laid[i]) ? "격침" : "건재"}`).join(", ")}">${FLEET.map(([name, length], i) => `<span class="ship${!laid[i] ? " waiting" : shipSunk(state, side, laid[i]) ? " sunk" : ""}" title="${name}">${"<i></i>".repeat(length)}</span>`).join("")}</span>`;
 }
 import { SEA_COLORS, SeaBattleView, seaPoints } from "./view";
 

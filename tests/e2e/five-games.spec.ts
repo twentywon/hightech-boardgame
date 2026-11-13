@@ -21,12 +21,13 @@ async function sit(page: Page, name: string) {
   return errors;
 }
 type Subject = { half: number; halfZ: number; height: number; lookY: number; tilt: number };
-async function onScreen(page: Page, subject: Subject, x: number, y: number, z: number) {
+async function onScreen(page: Page, subject: Subject, x: number, y: number, z: number, orbit = 0) {
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
     distance = cameraDistance(aspect, false, subject),
     camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
-  camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
+  const flat = Math.cos(subject.tilt) * distance;
+  camera.position.set(Math.sin(orbit) * flat, Math.sin(subject.tilt) * distance, Math.cos(orbit) * flat);
   camera.lookAt(0, subject.lookY, 0);
   camera.updateMatrixWorld();
   const v = new Vector3(x, y, z).project(camera);
@@ -57,9 +58,10 @@ test("ludo: the die is rolled from the button on the board", async ({ page }) =>
 
 test("pocket ball: the cue ball is pulled back and let go", async ({ page }) => {
   const errors = await sit(page, "포켓볼");
-  const subject = { half: 4.2, halfZ: 6.2, height: 0.6, lookY: 0, tilt: 1.02 },
-    from = await onScreen(page, subject, 0, 0.15, 2.9),
-    to = await onScreen(page, subject, 0, 0, 4.4);
+  // The table is seen from its long side (a quarter turn round it).
+  const subject = { half: 6.3, halfZ: 4.1, height: 0.6, lookY: 0, tilt: 1.02 },
+    from = await onScreen(page, subject, 0, 0.15, 2.9, Math.PI / 2),
+    to = await onScreen(page, subject, 0, 0, 4.4, Math.PI / 2);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 });

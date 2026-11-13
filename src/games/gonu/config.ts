@@ -5,6 +5,7 @@ import { NAMES, QUIET_LIMIT, VARIANTS, gonu, type State, type Variant } from "./
 
 export const gonuConfig: PointConfig<State> = {
   game: gonu,
+  noPanel: true,
   board: gonuBoard,
   name: "고누",
   english: "Gonu",

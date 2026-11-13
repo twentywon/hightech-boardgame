@@ -5,6 +5,7 @@ import { QUIET_LIMIT, checkers, type State } from "./rules";
 
 export const checkersConfig: PointConfig<State> = {
   game: checkers,
+  noPanel: true,
   board: checkersBoard,
   name: "체커",
   english: "Checkers",

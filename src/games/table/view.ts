@@ -177,6 +177,8 @@ export abstract class TableView<S> implements PointView<S> {
   protected abstract animate(before: S, state: S): boolean;
   /** Draws the marks of the screen: what can be chosen, and the keyboard's place. */
   protected abstract mark(marks: Marks): void;
+  /** From which side the table is seen, as an angle round it: 0 from the near side, a quarter turn from its right end. */
+  protected orbit = 0;
   /** The plane a dragged pointer is followed on. */
   protected floor = new T.Plane(new T.Vector3(0, 1, 0), 0);
   /** A press on `point` (or -1) at a place on the floor; true to follow it as a drag instead of a pick. */
@@ -226,7 +228,8 @@ export abstract class TableView<S> implements PointView<S> {
     this.layout(this.camera.aspect);
     const subject = this.subject(this.camera.aspect),
       distance = cameraDistance(this.camera.aspect, false, subject);
-    this.camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
+    const flat = Math.cos(subject.tilt) * distance;
+    this.camera.position.set(Math.sin(this.orbit) * flat, Math.sin(subject.tilt) * distance, Math.cos(this.orbit) * flat);
     this.camera.lookAt(0, subject.lookY, 0);
     if (this.state) this.place(this.state);
     this.mark(this.marks);

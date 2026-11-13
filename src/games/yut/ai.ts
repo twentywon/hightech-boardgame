@@ -21,7 +21,7 @@ function threat(rivals: number[], station: number) {
 /** How good `m` looks one move deep: progress, captures, stacking and exposure. */
 export function value(state: State, m: Move): number {
   const mine = state.pieces[state.turn],
-    theirs = state.pieces[1 - state.turn],
+    theirs = state.pieces.flatMap((list, player) => (player === state.turn ? [] : list)),
     count = m.from === WAITING ? 1 : mine.filter((p) => p === m.from).length,
     joined = m.to === FINISHED ? 0 : mine.filter((p) => p === m.to).length,
     worth = (pos: number, n: number) => n * (START - remaining(pos)) + (n - 1) * 3;

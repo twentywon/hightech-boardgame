@@ -5,6 +5,7 @@ import { MEN, QUIET_LIMIT, morris, type State } from "./rules";
 
 export const morrisConfig: PointConfig<State> = {
   game: morris,
+  noPanel: true,
   board: morrisBoard,
   name: "나인 멘스 모리스",
   english: "Nine Men's Morris",

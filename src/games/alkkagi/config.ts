@@ -5,6 +5,7 @@ import { AlkkagiView, PIECE_COLORS, STONE_COLORS } from "./view";
 
 export const alkkagiConfig: PointConfig<State> = {
   game: alkkagi,
+  noPanel: true,
   view: (host, quality, variant) => new AlkkagiView(host, quality, variant === "janggi" ? "janggi" : "go"),
   colors: STONE_COLORS,
   colorsOf: (variant) => (variant === "janggi" ? PIECE_COLORS : STONE_COLORS),

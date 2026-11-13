@@ -5,6 +5,7 @@ import { LUDO_COLORS, LudoView } from "./view";
 
 export const ludoConfig: PointConfig<State> = {
   game: ludo,
+  noPanel: true,
   view: (host, quality) => new LudoView(host, quality),
   colors: LUDO_COLORS,
   autoSingle: true,

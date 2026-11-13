@@ -5,6 +5,7 @@ import { DOMINO_COLORS, DominoView } from "./view";
 
 export const dominoConfig: PointConfig<State> = {
   game: domino,
+  noPanel: true,
   view: (host, quality) => new DominoView(host, quality),
   colors: DOMINO_COLORS,
   // The keyboard walks my hand and the two ends of the line.

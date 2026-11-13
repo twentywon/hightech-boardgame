@@ -5,6 +5,7 @@ import { RACK_COLORS, TileRummyView } from "./view";
 
 export const tileRummyConfig: PointConfig<State> = {
   game: tileRummy,
+  noPanel: true,
   view: (host, quality) => new TileRummyView(host, quality),
   colors: RACK_COLORS,
   // The other rack and the pool are hidden: against the computer only, and nothing is taken back but this turn's own work.

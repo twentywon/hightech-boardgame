@@ -5,6 +5,7 @@ import { MARBLE_COLORS, TwistView, twistPoints } from "./view";
 
 export const twistConfig: PointConfig<State> = {
   game: twist,
+  noPanel: true,
   view: (host, quality) => new TwistView(host, quality),
   colors: MARBLE_COLORS,
   keyPoints: twistPoints,

@@ -78,6 +78,7 @@ const paper: PaperGame<State> = {
 };
 export const hexConfig: PointConfig<State> = {
   game: hex,
+  noPanel: true,
   view: (host, quality) => new PaperView(host, quality, paper),
   colors: PENCILS as [string, string],
   keyPoints: (s) => hexLayout(s.size).points,

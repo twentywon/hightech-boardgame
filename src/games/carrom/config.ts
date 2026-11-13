@@ -5,6 +5,7 @@ import { CarromView, MEN_COLORS } from "./view";
 
 export const carromConfig: PointConfig<State> = {
   game: carrom,
+  noPanel: true,
   view: (host, quality) => new CarromView(host, quality),
   colors: MEN_COLORS,
   noUndo: true,

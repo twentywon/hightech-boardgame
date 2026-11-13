@@ -5,6 +5,7 @@ import { HARE_COLORS, HareView, placeAt } from "./view";
 
 export const hareConfig: PointConfig<State> = {
   game: hare,
+  noPanel: true,
   view: (host, quality) => new HareView(host, quality),
   colors: HARE_COLORS,
   keyPoints: () => PLACES.map((_, i) => placeAt(i)),

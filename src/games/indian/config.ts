@@ -5,6 +5,9 @@ import { CHIP_COLORS, IndianView } from "./view";
 
 export const indianConfig: PointConfig<State> = {
   game: indian,
+  panel: "big",
+  // Only the chips each has left.
+  tallyHtml: (state) => [0, 1].map((p) => `<span class="sr-text">칩 </span>${state.chips[p]}`) as [string, string],
   view: (host, quality) => new IndianView(host, quality),
   colors: CHIP_COLORS,
   // Each sees only the other's card: one screen cannot serve two.

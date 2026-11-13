@@ -5,6 +5,7 @@ import { DISC_COLORS, FourRowView, cellAt } from "./view";
 
 export const fourRowConfig: PointConfig<State> = {
   game: fourRow,
+  noPanel: true,
   view: (host, quality) => new FourRowView(host, quality),
   shape: "tall",
   // A plastic disc dropping into a plastic rack.

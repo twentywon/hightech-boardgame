@@ -897,9 +897,9 @@ export class CardTableView {
       const size = s === 0 ? 1 : Math.max(0.72, scale);
       const note = !seat.out && seat.note ? seat.note : "";
       if (s === 0) {
-        // Mine stand side by side under my row: the pot's label lies above it.
-        add(seat.out ? `${seat.name} · 탈락` : seat.name, seat.tone, note ? x - 1.22 : x, z + reach, size);
-        add(note, seat.tone, x + 1.22, z + reach, size);
+        // Mine stand one under the other below my row (the pot's label lies above it): the name, then the hand.
+        add(seat.out ? `${seat.name} · 탈락` : seat.name, seat.tone, x, z + reach, size);
+        add(note, seat.tone, x, z + reach + 0.5 * size, size);
       } else {
         add(seat.out ? `${seat.name} · 탈락` : seat.name, seat.tone, x, z - reach, size);
         add(note, seat.tone, x, z + reach, size);

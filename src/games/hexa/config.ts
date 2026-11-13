@@ -5,6 +5,7 @@ import { MAPS, hexa, mapOf, type State } from "./rules";
 
 export const hexaConfig: PointConfig<State> = {
   game: hexa,
+  panel: "big",
   board: hexaBoard,
   name: "헥사 세균전",
   english: "Hexa Germ War",

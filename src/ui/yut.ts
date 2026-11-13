@@ -3,6 +3,7 @@ import { part, steps, notes, table } from "./guide";
 import { capturing, cheer, mirrorStatus } from "./banner";
 import {
   FINISHED,
+  MAX_PLAYERS,
   PIECES,
   RESULT_NAMES,
   WAITING,
@@ -23,6 +24,9 @@ import type { Settings } from "../core/storage";
 export type YutMode = "local" | "ai";
 export interface YutOptions {
   mode: YutMode;
+  /** People at a shared table (two to four) and the names they gave. Against the computer it is one against one. */
+  players?: number;
+  names?: string[];
 }
 interface Navigation {
   header: () => string;
@@ -37,7 +41,8 @@ export interface YutController {
   dispose(): void;
   setSettings(settings: Settings): void;
 }
-const SIDES = ["청", "홍"];
+const SIDES = ["청", "홍", "녹", "황"];
+const escape = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 /** A station in words, for the buttons and the status line. */
 function place(station: number) {
   if (station === WAITING) return "대기";
@@ -84,8 +89,11 @@ export function mountYut(
     timers.add(timer);
   };
   const computerTurn = (s: State = state) => mode === "ai" && s.turn === 1 && s.winner === null;
+  /** How many sit at a shared table, by the form. */
+  const seats = () => Math.max(2, Math.min(MAX_PLAYERS, preferences.players ?? 2));
+  let names: string[] = [];
   const who = (player: number) =>
-    mode === "local" ? `${SIDES[player]} (플레이어 ${player + 1})` : player === 0 ? "나 (청)" : "컴퓨터 (홍)";
+    mode === "local" ? (names[player] ? `${names[player]} (${SIDES[player]})` : `${SIDES[player]} (플레이어 ${player + 1})`) : player === 0 ? "나 (청)" : "컴퓨터 (홍)";
   function stop() {
     generation++;
     thinking = false;
@@ -96,23 +104,45 @@ export function mountYut(
   }
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 09 — FOUR STICKS</span><h2>윷놀이 <span>Yut Nori</span></h2><p>마당에 멍석을 깔고 윷가락 네 개를 던집니다.<br>말 네 개를 먼저 모두 내면 이깁니다.</p><div class="game-meta">2인 · 말 4개 · 윷가락 4개</div><div class="mode-select"><label><input type="radio" name="yut-mode" value="local"> 로컬 2인</label><label><input type="radio" name="yut-mode" value="ai"> 컴퓨터 대전</label></div><small id="yut-options" class="session-note" hidden>컴퓨터 대전에서는 내가 청으로 먼저 던집니다.</small><button id="yut-start" class="primary">마당에 앉기 <span>↗</span></button></div><div class="feature-art yut-art" role="img" aria-label="윷놀이 마당 미리보기"><div class="yut-mini">${[0, 1, 2, 3].map((i) => `<i class="yut-mini-stick s${i}"></i>`).join("")}</div><span>FOUR STICKS, ONE YARD</span></div></section>`;
+    setupForm(host);
+  }
+  function setupForm(host: HTMLElement) {
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 09 — FOUR STICKS</span><h2>윷놀이 <span>Yut Nori</span></h2><p>마당에 멍석을 깔고 윷가락 네 개를 던집니다.<br>말 네 개를 먼저 모두 내면 이깁니다.</p><div class="game-meta">2–4인 · 말 4개 · 윷가락 4개</div><div class="mode-select"><label><input type="radio" name="yut-mode" value="local"> 로컬 2–4인</label><label><input type="radio" name="yut-mode" value="ai"> 컴퓨터 대전</label></div><small id="yut-options" class="session-note" hidden>컴퓨터 대전에서는 내가 청으로 먼저 던집니다.</small><div id="yut-people" hidden><div class="ai-options"><label>인원<select id="yut-players">${[2, 3, 4].map((n) => `<option value="${n}" ${seats() === n ? "selected" : ""}>${n}명</option>`).join("")}</select></label></div><div class="tour-names" role="group" aria-label="플레이어 이름">${Array.from({ length: seats() }, (_, i) => `<label>${SIDES[i]} 이름<input class="yut-name" maxlength="8" autocomplete="off" placeholder="플레이어 ${i + 1}" value="${escape(preferences.names?.[i] ?? "")}"></label>`).join("")}</div></div><button id="yut-start" class="primary">마당에 앉기 <span>↗</span></button></div><div class="feature-art yut-art" role="img" aria-label="윷놀이 마당 미리보기"><div class="yut-mini">${[0, 1, 2, 3].map((i) => `<i class="yut-mini-stick s${i}"></i>`).join("")}</div><span>FOUR STICKS, ONE YARD</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=yut-mode]");
     const remember = () => {
-      preferences = { mode: [...radios].find((r) => r.checked)!.value as YutMode };
+      const typed = [...host.querySelectorAll<HTMLInputElement>(".yut-name")].map((input) => input.value);
+      preferences = {
+        mode: [...radios].find((r) => r.checked)!.value as YutMode,
+        players: Number($<HTMLSelectElement>("yut-players").value),
+        names: [...typed, ...(preferences.names ?? []).slice(typed.length)],
+      };
       $("yut-options").hidden = preferences.mode !== "ai";
+      $("yut-people").hidden = preferences.mode !== "local";
       nav.remember({ ...preferences });
+    };
+    host.querySelectorAll<HTMLInputElement>(".yut-name").forEach((input) => (input.oninput = remember));
+    // More or fewer people: the form is drawn again with a name field for each.
+    $("yut-players").onchange = () => {
+      remember();
+      const begin = host.querySelector<HTMLButtonElement>("#yut-start")?.textContent;
+      setupForm(host);
+      const button = host.querySelector<HTMLButtonElement>("#yut-start");
+      if (button && begin) button.textContent = begin;
     };
     radios.forEach((r) => {
       r.checked = r.value === preferences.mode;
       r.onchange = remember;
     });
     $("yut-options").hidden = preferences.mode !== "ai";
+    $("yut-people").hidden = preferences.mode !== "local";
     $("yut-start").onclick = start;
   }
   function start() {
     mode = preferences.mode;
-    state = shown = createGame();
+    const count = mode === "local" ? seats() : 2;
+    // A name is kept as typed; it is escaped where it enters markup.
+    names = mode === "local" ? Array.from({ length: count }, (_, i) => preferences.names?.[i]?.trim() ?? "") : [];
+    state = shown = createGame(count);
     announced = false;
     selected = null;
     lockedUntil = 0;
@@ -130,10 +160,10 @@ export function mountYut(
   function screen() {
     stop();
     const side = (p: number) =>
-      `<li id="yut-side-${p}"><i class="yut-dot p${p}"></i><b>${who(p)}</b><span id="yut-count-${p}"></span></li>`;
+      `<li id="yut-side-${p}"><i class="yut-dot p${p}"></i><b>${escape(who(p))}</b><span id="yut-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game yut-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>윷놀이 <small>YUT NORI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE YARD</span><span>말 4개 · 윷가락 4개</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar yut-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls"><button id="yut-throw" class="primary sr-only">윷 던지기</button><div id="yut-pending" class="yut-pending" aria-label="쓸 수 있는 윷패"></div><div id="yut-moves" class="yut-moves tap-only" role="group" aria-label="옮길 수 있는 말"></div><p id="yut-note" class="input-help"></p></div><div id="yut-result" class="yd-result" hidden><p id="yut-final"></p><button id="yut-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game yut-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>윷놀이 <small>YUT NORI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE YARD</span><span>말 4개 · 윷가락 4개</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar yut-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${state.pieces.map((_, p) => side(p)).join("")}</ul><div class="yd-controls"><button id="yut-throw" class="primary sr-only">윷 던지기</button><div id="yut-pending" class="yut-pending" aria-label="쓸 수 있는 윷패"></div><div id="yut-moves" class="yut-moves tap-only" role="group" aria-label="옮길 수 있는 말"></div><p id="yut-note" class="input-help"></p></div><div id="yut-result" class="yd-result" hidden><p id="yut-final"></p><button id="yut-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
@@ -281,8 +311,15 @@ export function mountYut(
               : `${name} 차례 — ${thrown} 옮길 말을 고르세요.`;
     s.pieces.forEach((stations, p) => {
       const count = (station: number) => stations.filter((x) => x === station).length;
-      $(`yut-count-${p}`).textContent =
-        `대기 ${count(WAITING)} · 말판 ${PIECES - count(WAITING) - count(FINISHED)} · 난 말 ${count(FINISHED)}`;
+      // The four pieces drawn: waiting ones hollow, those on the board filled, those home ticked. The words stay for readers.
+      const waitingCount = count(WAITING),
+        home = count(FINISHED),
+        text = `대기 ${waitingCount} · 말판 ${PIECES - waitingCount - home} · 난 말 ${home}`,
+        key = `${waitingCount}:${home}`;
+      if ($(`yut-count-${p}`).dataset.key !== key) {
+        $(`yut-count-${p}`).dataset.key = key;
+        $(`yut-count-${p}`).innerHTML = `<span class="sr-text">${text}</span><span class="yut-pips p${p}" aria-hidden="true">${Array.from({ length: PIECES }, (_, i) => `<i class="${i < home ? "home" : i < PIECES - waitingCount ? "out" : "waiting"}"></i>`).join("")}</span>`;
+      }
       $(`yut-side-${p}`).classList.toggle("active", !over && s.turn === p);
     });
     const throwButton = $<HTMLButtonElement>("yut-throw");
