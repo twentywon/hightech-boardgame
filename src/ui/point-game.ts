@@ -42,7 +42,8 @@ export interface PointConfig<S> {
   /** A table that needs more height on a narrow screen: an upright rack, or two boards one above the other. */
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
-  tools?: { label: string; point: number; onBoard?: boolean }[];
+  /** `show` keeps a tool in place (greyed) while its move is not legal; `text` rewrites its label for the state. */
+  tools?: { label: string; point: number; onBoard?: boolean; show?: (state: S) => boolean; text?: (state: S) => string }[];
   /** Extra time, in milliseconds, the computer takes over the move it is about to make. */
   ponder?: (state: S) => number;
   /** No panel beside the table: the table takes the whole width (the panel stays in the page, unseen, for readers). */
@@ -317,9 +318,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const next = game.play(state, move, cryptoRandom);
     if (!next) return;
     sound.unlock();
-    past.push(state);
-    lockedUntil = performance.now() + 200;
-    later(update, 220);
+    // A choice that is not yet a move (a bet being set, a ball put down by hand) is neither kept for undo nor followed by a pause.
+    if (game.ply(next) !== game.ply(state)) {
+      past.push(state);
+      lockedUntil = performance.now() + 200;
+      later(update, 220);
+    }
     apply(next);
   }
   /** Arrow keys walk the points of the board; Enter taps the one under the cursor. */
@@ -438,8 +442,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     // A tool is offered only while the move it stands for is legal.
     (config.tools ?? []).forEach((tool, i) => {
       const button = $<HTMLButtonElement>(`pg-tool-${i}`);
-      button.hidden = done || !game.moves(s).some((m) => m.to === tool.point);
-      button.disabled = waiting || bot;
+      const legal = game.moves(s).some((m) => m.to === tool.point);
+      button.hidden = done || !(tool.show ? tool.show(s) : legal);
+      button.disabled = waiting || bot || !legal;
+      if (tool.text) button.textContent = tool.text(s);
     });
     $("pg-note").textContent = "";
     const marks: Marks = {

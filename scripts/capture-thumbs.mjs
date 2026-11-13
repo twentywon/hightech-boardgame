@@ -183,7 +183,10 @@ const play = {
     }
   },
   "indian-poker": async () => {
-    await wait(800);
+    // The cards are raised before the picture is taken.
+    await wait(600);
+    await page.evaluate(() => [...document.querySelectorAll(".pg-tools button")].find((b) => b.textContent.includes("이마에 얹기"))?.click());
+    await wait(1800);
   },
   "table-soccer": async () => {
     await wait(2600);

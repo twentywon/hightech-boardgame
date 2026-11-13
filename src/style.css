@@ -2269,6 +2269,8 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
   flex:1 1 calc(50% - 3px) !important;width:auto !important;min-width:0;padding:6px 10px;justify-content:center;text-align:center;white-space:normal;line-height:1.2;border-radius:12px !important;pointer-events:auto;
 }
 .board-area .board-controls .hint-toggle { min-height:36px;justify-content:center; }
+/* A label that does not fit breaks between words, never inside one. */
+.board-area .board-controls button { word-break:keep-all; }
 /* Three abreast where a row of three belongs together, and one to a row where the text is long. */
 .board-area .board-controls #bj-betting button { flex-basis:calc(33.333% - 4px) !important; }
 .board-area .board-controls .yut-moves button, .board-area .board-controls .bg-prompt button { flex-basis:100% !important; }
@@ -2440,7 +2442,9 @@ html { -webkit-tap-highlight-color: transparent; }
 dialog:has(.result-art) { overflow:hidden; }
 dialog:has(.result-art.win) { box-shadow:0 0 0 4px #f2c14e, 0 0 90px 20px #f2c14e88, 0 30px 80px #0006; }
 dialog:has(.result-art.lose) { box-shadow:0 0 0 4px #5a6475, 0 30px 80px #000a;filter:saturate(.92); }
-.result-art { position:relative;height:190px;margin:-6px -8px 14px;border-radius:16px;display:grid;place-items:center;overflow:hidden;isolation:isolate; }
+/* No side margins beyond the window's body: they made it scroll sideways. */
+dialog .dialog-body:has(.result-art) { overflow-x:hidden; }
+.result-art { position:relative;height:190px;margin:-6px 0 14px;border-radius:16px;display:grid;place-items:center;overflow:hidden;isolation:isolate; }
 .result-art.win { background:radial-gradient(circle at 50% 55%, #fff6cf 0, #ffd95e 34%, #f08a1c 100%); }
 .result-art.lose { background:linear-gradient(#27303f, #10151d); }
 .result-art.draw { background:radial-gradient(circle at 50% 55%, #f3f5f8 0, #c9d3df 100%); }

@@ -5,7 +5,7 @@ import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { FlickView } from "../flick/view";
 import { copy, shotCode, shotOf, strike, type Disc } from "../flick/physics";
-import { ARENA, CUE, EIGHT, HALF_X, HALF_Z, R, cueSpeed, kind, type State } from "./rules";
+import { ARENA, CUE, EIGHT, HALF_X, HALF_Z, R, cueSpeed, kind, placeCode, spotFor, type State } from "./rules";
 
 export const POOL_COLORS: [string, string] = ["#e0b020", "#2f62c0"];
 const BALLS = ["#f6f3ea", "#e7b416", "#2456b8", "#c8321f", "#5a2d91", "#e0701c", "#1f7a45", "#7a1f1f", "#16181a"];
@@ -67,7 +67,11 @@ function numberDisc(id: number) {
 export class PoolView extends FlickView<State> {
   private meshes: T.Object3D[] = [];
   private ring: T.Mesh;
+  /** A wider white ring round the cue ball while it may be put down by hand. */
+  private halo: T.Mesh;
   private cue = new T.Group();
+  /** The cue ball is being carried: where it would be set down, and how far its middle is from the finger. */
+  private carried: { x: number; z: number; dx: number; dz: number } | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#16110d");
     this.scene.add(new T.HemisphereLight("#d8cdb8", "#221a14", 1.5));
@@ -118,7 +122,8 @@ export class PoolView extends FlickView<State> {
     }
     this.top = R;
     this.ring = ringMesh(<X extends { dispose(): void }>(r: X) => this.own(r), 0.26, 0.33, "#ffd24a");
-    this.scene.add(this.ring);
+    this.halo = ringMesh(<X extends { dispose(): void }>(r: X) => this.own(r), 0.4, 0.45, "#ffffff");
+    this.scene.add(this.ring, this.halo);
     // The cue: pale ash with a dark butt and a blue tip, lying behind the white ball along the line of the shot.
     const stick = new T.Group(),
       length = 5.2,
@@ -169,6 +174,38 @@ export class PoolView extends FlickView<State> {
     const cue = this.state?.discs[CUE];
     return cue && point === CUE && this.mine() ? { x: cue.x, z: cue.z } : null;
   }
+  /** Ball in hand: until it has been set down any press carries the white ball; afterwards a press away from it sets it down again. */
+  protected dragStart(point: number, at: { x: number; z: number }) {
+    const state = this.state,
+      cue = state?.discs[CUE];
+    if (!state || !cue || !state.hand || !this.mine() || (state.placed && point === CUE)) return super.dragStart(point, at);
+    if (point !== CUE && (Math.abs(at.x) > HALF_X + 0.4 || Math.abs(at.z) > HALF_Z + 0.4)) return false;
+    // Taken by the ball itself it keeps its place under the finger; a press elsewhere brings it there.
+    this.carried = { x: cue.x, z: cue.z, dx: point === CUE ? cue.x - at.x : 0, dz: point === CUE ? cue.z - at.z : 0 };
+    this.dragMove(at);
+    return true;
+  }
+  protected dragMove(at: { x: number; z: number }) {
+    const carried = this.carried;
+    if (!carried || !this.state) return super.dragMove(at);
+    const spot = spotFor(this.state, at.x + carried.dx, at.z + carried.dz);
+    if (!spot) return;
+    carried.x = spot.x;
+    carried.z = spot.z;
+    // Held a little above the cloth while it is carried.
+    this.meshes[CUE].position.set(spot.x, R + 0.1, spot.z);
+    this.ring.position.set(spot.x, 0.012, spot.z);
+    this.halo.position.set(spot.x, 0.013, spot.z);
+  }
+  protected dragEnd(at: { x: number; z: number } | null) {
+    const carried = this.carried;
+    if (!carried) return super.dragEnd(at);
+    this.carried = null;
+    if (at) this.onMove({ from: CUE, to: placeCode(carried.x, carried.z), extra: -1 });
+    // Refused or abandoned, the ball goes back to where the rules have it.
+    if (this.state) this.place(this.state);
+    this.mark(this.marks);
+  }
   protected shoot(_point: number, degrees: number, power: number) {
     this.onMove({ from: CUE, to: shotCode(degrees, power), extra: -1 });
   }
@@ -196,5 +233,7 @@ export class PoolView extends FlickView<State> {
     const cue = this.state?.discs[CUE];
     this.ring.visible = !!cue && this.mine();
     if (cue && this.ring.visible) this.ring.position.set(cue.x, 0.012, cue.z);
+    this.halo.visible = this.ring.visible && !!this.state?.hand;
+    if (cue && this.halo.visible) this.halo.position.set(cue.x, 0.013, cue.z);
   }
 }

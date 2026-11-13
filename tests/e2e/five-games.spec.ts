@@ -83,9 +83,63 @@ test("indian poker: I see only the other card, and a call ends the round", async
   expect(await page.locator("#turn").innerHTML()).not.toContain("내 카드");
   expect(await page.locator(".yut-sides").innerHTML()).not.toContain("내 카드");
   await expect(page.getByRole("button", { name: "무르기", exact: true })).toBeHidden();
-  await page.locator(".board-area .pg-tools").getByRole("button", { name: "콜 · 체크" }).click();
-  await expect(count(page)).not.toHaveText("0수", { timeout: 30000 });
+  // The bet is set up and down, and nothing is made of it until 결정 is pressed.
+  const tools = page.locator(".board-area .pg-tools"),
+    decide = tools.getByRole("button", { name: /^결정/ }),
+    moved = await count(page).innerText();
+  await expect(decide).toHaveText("결정 · 체크");
+  await expect(tools.getByRole("button", { name: "− 내리기" })).toBeDisabled();
+  for (let i = 0; i < 3; i++) await tools.getByRole("button", { name: "+ 올리기" }).click();
+  await tools.getByRole("button", { name: "− 내리기" }).click();
+  await expect(decide).toHaveText("결정 · 베팅 2");
+  await expect(page.locator("#turn")).toContainText("내 베팅 2");
+  await expect(count(page)).toHaveText(moved);
+  await decide.click();
+  await expect(count(page)).not.toHaveText(moved, { timeout: 30000 });
   await rest(page);
+  expect(errors).toEqual([]);
+});
+
+test("pocket ball: after the white ball goes down the next player sets it where they like", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "포켓볼");
+  await page.getByLabel("로컬 2인", { exact: true }).check({ force: true });
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await rest(page);
+  const subject = { half: 6.3, halfZ: 4.1, height: 0.6, lookY: 0, tilt: 1.02 },
+    drag = async (from: [number, number], to: [number, number]) => {
+      const a = await onScreen(page, subject, from[0], 0, from[1], Math.PI / 2),
+        b = await onScreen(page, subject, to[0], 0, to[1], Math.PI / 2);
+      await page.mouse.move(a.x, a.y);
+      await page.mouse.down();
+      await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+      await page.mouse.move(b.x, b.y, { steps: 4 });
+      await page.mouse.up();
+    },
+    // Straight at the near right corner pocket: the pull goes the other way.
+    dx = 2.54,
+    dz = 4.94 - 2.9,
+    d = Math.hypot(dx, dz);
+  await drag([0, 2.9], [(-dx / d) * 1.4, 2.9 - (dz / d) * 1.4]);
+  await expect(count(page)).toHaveText("1수", { timeout: 30000 });
+  await rest(page);
+  await expect(page.locator("#turn")).toContainText("흰 공을 끌어 원하는 곳에 놓으세요");
+  // Carried from the head spot to the middle; it is no shot, and the turn stays.
+  await drag([0, 2.9], [-1.2, 0.6]);
+  await expect(page.locator("#turn")).toContainText("다른 곳을 누르면 다시 놓습니다");
+  await expect(count(page)).toHaveText("1수");
+  // A tap elsewhere sets it down again, and a pull on it there is a shot.
+  const again = await onScreen(page, subject, 1, 0, 1.5, Math.PI / 2);
+  await page.mouse.click(again.x, again.y);
+  await page.waitForTimeout(300);
+  await expect(count(page)).toHaveText("1수");
+  await drag([1, 1.5], [1, 2.8]);
+  await expect(count(page)).toHaveText("2수", { timeout: 30000 });
+  await rest(page);
+  await expect(page.locator("#turn")).not.toContainText("다시 놓습니다");
   expect(errors).toEqual([]);
 });
 

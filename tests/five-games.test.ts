@@ -3,8 +3,8 @@ import type { Move, PointGame } from "../src/games/points/types";
 import { choose } from "../src/games/points/ai";
 import { HOLES, HOME, starHop, createGame as createStar, moves as starMoves, play as starPlay } from "../src/games/starhop/rules";
 import { ludo, createGame as createLudo, moves as ludoMoves, play as ludoPlay } from "../src/games/ludo/rules";
-import { pool, createGame as createPool, moves as poolMoves, CUE } from "../src/games/pool/rules";
-import { indian, createGame as createIndian, pot, CALL, FOLD, NEXT, READY, ROUNDS, START_CHIPS } from "../src/games/indian/rules";
+import { pool, createGame as createPool, moves as poolMoves, CUE, HEAD, free, placeCode, placeOf, spotFor } from "../src/games/pool/rules";
+import { indian, createGame as createIndian, pot, most, CALL, DECIDE, DOWN, FOLD, NEXT, READY, ROUNDS, START_CHIPS, UP } from "../src/games/indian/rules";
 import { foosball, createGame as createFoosball, play as goal, moves as goalMoves, GOALS } from "../src/games/foosball/rules";
 import { BALL_R, HALF_X, HALF_Z, MAX_SLIDE, RODS, createWorld, foot, offset, steer, step, SWING } from "../src/games/foosball/sim";
 
@@ -120,12 +120,69 @@ describe("pocket ball", () => {
       expect(Math.abs(d.z)).toBeLessThanOrEqual(5.01);
     }
   });
+  test("after the cue ball goes down the next player sets it where they like", () => {
+    // The cue ball beside a corner pocket, struck straight into it.
+    const start = createPool(),
+      discs = start.discs.map((d) => (d.id === CUE ? { ...d, x: 1.9, z: 4.3 } : { ...d })),
+      fouled = pool.play({ ...start, discs }, { from: CUE, to: 1000 + 45 * 32 + 8, extra: -1 })!;
+    expect([fouled.foul, fouled.turn, fouled.hand, fouled.placed]).toEqual([true, 1, true, false]);
+    expect(fouled.discs[CUE].on).toBe(true);
+    expect([fouled.discs[CUE].x, fouled.discs[CUE].z]).toEqual([HEAD.x, HEAD.z]);
+    // Anywhere free on the cloth will do, as often as wished; the turn stays.
+    const spot = spotFor(fouled, -1.2, 0.5)!,
+      placed = pool.play(fouled, { from: CUE, to: placeCode(spot.x, spot.z), extra: -1 })!;
+    expect([placed.turn, placed.hand, placed.placed, placed.ply]).toEqual([1, true, true, fouled.ply]);
+    expect(placed.discs[CUE].x).toBeCloseTo(-1.2, 5);
+    expect(placed.discs[CUE].z).toBeCloseTo(0.5, 5);
+    expect(placeOf(placeCode(spot.x, spot.z))!.x).toBeCloseTo(spot.x, 9);
+    const again = pool.play(placed, { from: CUE, to: placeCode(1, -1), extra: -1 })!;
+    expect(again.discs[CUE].x).toBeCloseTo(1, 5);
+    // Not on another ball, not in a pocket, not off the cloth; and near a ball the nearest free place is offered.
+    const eight = fouled.discs[8];
+    expect(pool.play(fouled, { from: CUE, to: placeCode(eight.x, eight.z), extra: -1 })).toBeNull();
+    expect(pool.play(fouled, { from: CUE, to: placeCode(2.54, 4.94), extra: -1 })).toBeNull();
+    const near = spotFor(fouled, eight.x, eight.z)!;
+    expect(free(fouled.discs, near.x, near.z)).toBe(true);
+    // Without the foul nothing may be moved by hand.
+    expect(pool.play(start, { from: CUE, to: placeCode(0, 0), extra: -1 })).toBeNull();
+    // The shot that follows ends the hand; the computer sets the ball down before it shoots.
+    const set = pool.choose!(fouled, "hard", seeded(3))!;
+    expect(set.to).toBeGreaterThanOrEqual(1_000_000);
+    const ready = pool.play(fouled, set)!,
+      shot = pool.choose!(ready, "hard", seeded(3))!;
+    expect(shot.to).toBeLessThan(1_000_000);
+    const after = pool.play(ready, shot)!;
+    expect(after.placed).toBe(false);
+    expect(after.hand).toBe(after.foul);
+  });
   test("two computers can play shots in turn", () => {
     const { plies } = playOut(pool, createPool(), 12, seeded(9));
     expect(plies).toBeGreaterThan(0);
   });
 });
 describe("indian poker", () => {
+  test("a bet is set up and down without a chip moving, and made with one press", () => {
+    const to = (point: number) => ({ from: -1, to: point, extra: -1 });
+    let state = indian.play(createIndian(seeded(5)), to(READY))!;
+    const start = state;
+    expect(state.turn).toBe(0);
+    expect(indian.moves(state).some((m) => m.to === DOWN)).toBe(false);
+    for (let i = 0; i < 5; i++) state = indian.play(state, to(UP))!;
+    state = indian.play(state, to(DOWN))!;
+    // Nothing has been put in and the turn has not passed.
+    expect([state.wager, state.ply, state.turn, pot(state), state.chips[0]]).toEqual([4, start.ply, 0, pot(start), start.chips[0]]);
+    expect(indian.hint(state)).toMatch(/내 베팅 4/);
+    state = indian.play(state, to(DECIDE))!;
+    expect([state.wager, state.ply, state.turn, pot(state), state.chips[0]]).toEqual([0, start.ply + 1, 1, pot(start) + 4, start.chips[0] - 4]);
+    // It cannot go above what both can cover.
+    let high = start;
+    while (indian.moves(high).some((m) => m.to === UP)) high = indian.play(high, to(UP))!;
+    expect(high.wager).toBe(most(start));
+    expect(indian.play(high, to(UP))).toBeNull();
+    // Made without a raise, it is a check: the word passes.
+    const checked = indian.play(start, to(DECIDE))!;
+    expect([checked.checked, checked.turn, pot(checked)]).toEqual([true, 1, pot(start)]);
+  });
   test("the chips on the table and in hand always add up", () => {
     const random = seeded(4);
     let state = createIndian(random);
@@ -138,25 +195,50 @@ describe("indian poker", () => {
       expect(state.chips[0] + state.chips[1] + pot(state)).toBe(START_CHIPS * 2);
     }
   });
-  test("a game is one pack: ten rounds, however the chips stand", () => {
+  test("a game is one pack of ten rounds when both only ever check", () => {
     for (const seed of [1, 2, 3]) {
       const random = seeded(seed);
       let state = createIndian(random),
         rounds = 1;
-      // I raise all I can and the computer calls everything, so that someone runs dry early.
       while (indian.winner(state) === null) {
         const legal = indian.moves(state),
           before = state.round,
-          pick = legal.find((m) => m.to === NEXT) ?? (state.turn === 0 ? legal[legal.length - 1] : legal.find((m) => m.to === CALL)!);
+          pick = legal.find((m) => m.to === NEXT) ?? legal.find((m) => m.to === READY) ?? legal.find((m) => m.to === (state.turn === 0 ? DECIDE : CALL))!;
         state = indian.play(state, pick, random)!;
         if (state.round !== before) rounds++;
-        expect(state.chips[0]).toBeGreaterThanOrEqual(0);
-        expect(state.chips[1]).toBeGreaterThanOrEqual(0);
         expect(state.chips[0] + state.chips[1] + pot(state)).toBe(START_CHIPS * 2);
       }
       expect(rounds).toBe(ROUNDS);
       expect(state.deck.length).toBe(0);
     }
+  });
+  test("whoever has no chip left to bet is bankrupt, and the game ends there", () => {
+    let ended = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const random = seeded(seed);
+      let state = createIndian(random);
+      // I bet all I can and the computer calls everything.
+      while (indian.winner(state) === null) {
+        const legal = indian.moves(state),
+          pick = legal.find((m) => m.to === NEXT) ?? (state.turn === 0 ? (legal.find((m) => m.to === UP) ?? legal.find((m) => m.to === DECIDE) ?? legal[0]) : legal.find((m) => m.to === CALL)!);
+        state = indian.play(state, pick, random)!;
+        expect(state.chips[0]).toBeGreaterThanOrEqual(0);
+        expect(state.chips[1]).toBeGreaterThanOrEqual(0);
+        expect(state.chips[0] + state.chips[1] + pot(state)).toBe(START_CHIPS * 2);
+        // Out of chips after a tie is not out of the game: the pot still lies on the table.
+        if (state.winner === null && state.phase === "show" && (state.chips[0] === 0 || state.chips[1] === 0)) expect(state.carry).toBeGreaterThan(0);
+      }
+      if (state.deck.length >= 2) {
+        ended++;
+        const broke = state.chips[0] === 0 ? 0 : 1;
+        expect(state.chips[broke]).toBe(0);
+        expect(state.winner).toBe(broke ? 0 : 1);
+        expect(state.phase).toBe("show");
+        expect(indian.moves(state)).toEqual([]);
+        expect(indian.reason!(state)).toMatch(/칩이 모두 떨어졌습니다/);
+      }
+    }
+    expect(ended).toBeGreaterThan(0);
   });
   test("a round begins with the cards raised, and a fold is remembered until the next deal", () => {
     let state = createIndian(seeded(5));
@@ -168,7 +250,7 @@ describe("indian poker", () => {
     expect([state.phase, state.turn, state.folded]).toEqual(["bet", state.first, null]);
     expect(indian.hint(state)).toMatch(/상대 카드는/);
     // I raise, the computer folds.
-    state = indian.play(state, indian.moves(state).find((m) => m.to !== CALL && m.to !== FOLD)!)!;
+    state = indian.play(state, indian.moves(state).find((m) => m.to !== CALL && m.to !== FOLD && m.to < READY)!)!;
     state = indian.play(state, { from: -1, to: FOLD, extra: -1 })!;
     expect([state.phase, state.folded]).toEqual(["show", 1]);
     state = indian.play(state, { from: -1, to: NEXT, extra: -1 })!;
