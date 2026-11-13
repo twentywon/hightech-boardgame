@@ -54,6 +54,25 @@ test("peg solitaire: a marble jumps into the middle, and the jump is taken back"
   expect(errors).toEqual([]);
 });
 
+test("peg solitaire: a stage with fewer marbles is chosen before sitting down", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "페그 솔리테어");
+  // The whole board and five set problems.
+  await expect(page.locator("#pg-variant option")).toHaveCount(6);
+  await page.locator("#pg-variant").selectOption("cross");
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(page.locator("#turn")).toContainText("구슬 6개");
+  // The new-game window offers the stages again.
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await page.getByRole("dialog").locator("#pg-variant").selectOption("diamond");
+  await page.getByRole("dialog").locator("#pg-start").click();
+  await expect(page.locator("#turn")).toContainText("구슬 24개", { timeout: 20000 });
+  expect(errors).toEqual([]);
+});
+
 test("2048: the arrow keys and a swipe slide the tiles", async ({ page }) => {
   const errors = await sit(page, "2048");
   // No panel beside the table; the figures stay in the page for readers.

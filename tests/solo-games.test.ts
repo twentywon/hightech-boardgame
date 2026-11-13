@@ -4,11 +4,25 @@ import * as peg from "../src/games/peg/rules";
 import * as merge from "../src/games/merge/rules";
 import * as blocks from "../src/games/blocks/rules";
 import * as bricks from "../src/games/bricks/rules";
-import { BAT_Z, HALF_X, HALF_Z, R, createWorld, launch, step } from "../src/games/bricks/sim";
+import { BAT_Z, DT, HALF_X, HALF_Z, R, batHalf, createWorld, launch, speedOf, step } from "../src/games/bricks/sim";
 
 const to = (point: number) => ({ from: -1, to: point, extra: -1 });
 
 describe("peg solitaire", () => {
+  test("every stage has its marbles and can be brought down to one", () => {
+    const counts = Object.fromEntries(Object.keys(peg.STAGES).map((stage) => [stage, peg.left(peg.createGame(stage))]));
+    expect(counts).toEqual({ full: 32, cross: 6, plus: 9, hearth: 11, pyramid: 16, diamond: 24 });
+    for (const stage of Object.keys(peg.STAGES)) {
+      let state = peg.createGame(stage);
+      expect(peg.STAGES[stage].rows.every((row) => row.length === peg.SIZE)).toBe(true);
+      const found = solve(state);
+      expect(found, stage).not.toBeNull();
+      for (const move of found!) state = peg.play(state, move)!;
+      expect([stage, peg.left(state), state.winner]).toEqual([stage, 1, 0]);
+    }
+    // An unknown stage is the whole board.
+    expect(peg.left(peg.createGame("nothing"))).toBe(32);
+  });
   test("thirty-two marbles round an empty middle, and four jumps into it", () => {
     const state = peg.createGame();
     expect(peg.HOLES.length).toBe(33);
@@ -186,16 +200,38 @@ describe("falling blocks", () => {
 });
 
 describe("brick breaker", () => {
-  test("five walls, each with bricks inside the table; the hard ones take two hits", () => {
+  test("ten walls inside the table, each with something to break; bat and ball get harder", () => {
+    expect(bricks.WALLS.length).toBe(bricks.LEVELS);
     for (let level = 1; level <= bricks.LEVELS; level++) {
       const wall = bricks.layout(level);
-      expect(wall.length).toBeGreaterThan(15);
-      expect(wall.every((b) => b.col >= 0 && b.col < bricks.COLS && b.row >= 0 && b.row < bricks.ROWS && (b.hits === 1 || b.hits === 2))).toBe(true);
+      expect(bricks.wall(level).rows.length).toBe(bricks.ROWS);
+      expect(bricks.wall(level).rows.every((row) => row.length === bricks.COLS)).toBe(true);
+      expect(wall.filter((b) => b.kind !== "s").length).toBeGreaterThan(15);
+      expect(wall.every((b) => b.col >= 0 && b.col < bricks.COLS && b.row >= 0 && b.row < bricks.ROWS && "phtsb".includes(b.kind))).toBe(true);
+      if (level > 1) {
+        expect(bricks.wall(level).speed).toBeGreaterThan(bricks.wall(level - 1).speed);
+        expect(bricks.wall(level).bat).toBeLessThan(bricks.wall(level - 1).bat);
+      }
+      // A row that slides keeps clear of the side walls.
+      const world = createWorld(level, () => 0.99);
+      for (let i = 0; i < 1500; i++) {
+        world.time += DT * 4;
+        for (const brick of world.bricks) {
+          const x = brick.home + brick.sway * Math.sin(world.time * 0.9);
+          expect(Math.abs(x) + 0.47).toBeLessThanOrEqual(HALF_X + 1e-9);
+        }
+      }
     }
-    expect(bricks.layout(1).every((b) => b.hits === 1)).toBe(true);
-    expect(bricks.layout(4).some((b) => b.hits === 2)).toBe(true);
+    expect(bricks.layout(1).every((b) => b.kind === "p")).toBe(true);
+    // The gimmicks come in one after another: hard bricks, bombs, steel, sliding rows, tough bricks.
+    const first = (test: (level: number) => boolean) => Array.from({ length: bricks.LEVELS }, (_, i) => i + 1).find(test);
+    expect(first((l) => bricks.layout(l).some((b) => b.kind === "h"))).toBe(3);
+    expect(first((l) => bricks.layout(l).some((b) => b.kind === "b"))).toBe(4);
+    expect(first((l) => bricks.layout(l).some((b) => b.kind === "s"))).toBe(5);
+    expect(first((l) => bricks.layout(l).some((b) => b.sway !== 0))).toBe(6);
+    expect(first((l) => bricks.layout(l).some((b) => b.kind === "t"))).toBe(7);
   });
-  test("a brick scores by the level, a lost ball costs one of three, the fifth wall wins", () => {
+  test("a brick scores by the level, a lost ball costs one of three, a prize is worth fifty, the tenth wall wins", () => {
     let state = bricks.createGame();
     state = bricks.play(state, to(bricks.BRICK))!;
     expect(state.score).toBe(10);
@@ -203,39 +239,48 @@ describe("brick breaker", () => {
     expect([state.level, state.score, state.winner]).toEqual([2, 110, null]);
     state = bricks.play(state, to(bricks.BRICK))!;
     expect(state.score).toBe(130);
+    state = bricks.play(state, to(bricks.ITEM + bricks.WIDE))!;
+    expect([state.score, state.lives, state.item]).toEqual([180, 3, bricks.WIDE]);
+    expect(bricks.bricks.hint(state)).toMatch(/넓은 막대/);
+    // A spare ball is kept, five at the most.
+    for (let i = 0; i < 4; i++) state = bricks.play(state, to(bricks.ITEM + bricks.LIFE))!;
+    expect(state.lives).toBe(bricks.MAX_LIVES);
+    expect(bricks.play(state, to(bricks.ITEM + 6))).toBeNull();
     for (let level = 2; level <= bricks.LEVELS; level++) state = bricks.play(state, to(bricks.CLEAR))!;
-    expect([state.level, state.winner]).toEqual([bricks.LEVELS, 0]);
+    expect([state.level, state.winner, state.item]).toEqual([bricks.LEVELS, 0, null]);
     let lost = bricks.createGame();
     for (let i = 0; i < bricks.LIVES; i++) lost = bricks.play(lost, to(bricks.LOST))!;
     expect([lost.lives, lost.winner]).toEqual([0, 1]);
     expect(bricks.play(lost, to(bricks.BRICK))).toBeNull();
   });
   test("the ball rests on the bat until sent off, stays inside the walls and knocks bricks out", () => {
-    const world = createWorld(1);
+    // No prize falls when the die never comes in under the chance.
+    const world = createWorld(1, () => 0.99);
     step(world, 2);
-    expect([world.held, world.ball.x]).toEqual([true, 2]);
+    expect([world.held, world.balls[0].x]).toEqual([true, 2]);
     launch(world);
     expect(world.held).toBe(false);
-    expect(world.ball.vz).toBeLessThan(0);
+    expect(world.balls[0].vz).toBeLessThan(0);
     let gone = 0,
       lost = false;
     // The bat follows the ball, so nothing is lost; ten seconds are enough to break something.
     for (let i = 0; i < 1200; i++)
-      for (const event of step(world, world.ball.x)) {
+      for (const event of step(world, world.balls[0].x)) {
         if (event.kind === "brick" && event.gone) gone++;
         if (event.kind === "lost") lost = true;
-        expect(Math.abs(world.ball.x)).toBeLessThanOrEqual(HALF_X - R + 1e-9);
-        expect(world.ball.z).toBeGreaterThanOrEqual(-HALF_Z + R - 1e-9);
+        expect(Math.abs(world.balls[0].x)).toBeLessThanOrEqual(HALF_X - R + 1e-9);
+        expect(world.balls[0].z).toBeGreaterThanOrEqual(-HALF_Z + R - 1e-9);
       }
     expect(lost).toBe(false);
     expect(gone).toBeGreaterThan(0);
+    expect(world.items).toEqual([]);
     expect(world.bricks.filter((b) => !b.hits).length).toBe(gone);
     // The speed never changes, whatever it bounces off.
-    expect(Math.hypot(world.ball.vx, world.ball.vz)).toBeCloseTo(world.speed, 6);
+    expect(Math.hypot(world.balls[0].vx, world.balls[0].vz)).toBeCloseTo(speedOf(world), 6);
   });
   test("a ball that passes the bat is lost and comes back to rest on it; the same inputs give the same game", () => {
     const run = () => {
-      const world = createWorld(2);
+      const world = createWorld(2, seededRandom(4));
       launch(world);
       const seen: string[] = [];
       for (let i = 0; i < 3000 && !seen.includes("lost"); i++) for (const event of step(world, -HALF_X)) seen.push(event.kind);
@@ -246,25 +291,102 @@ describe("brick breaker", () => {
     expect(a.seen).toContain("lost");
     expect(a.world.held).toBe(true);
     step(a.world, 1);
-    expect([a.world.ball.x, a.world.ball.z < BAT_Z]).toEqual([1, true]);
+    expect([a.world.balls.length, a.world.balls[0].x, a.world.balls[0].z < BAT_Z]).toEqual([1, 1, true]);
     expect(a.seen).toEqual(b.seen);
   });
-  test("the hard brick is only cracked by the first hit, and the last brick clears the wall", () => {
-    const world = createWorld(3),
-      hard = world.bricks.findIndex((b) => b.hard);
-    // All but that brick are taken away, and the ball is set just under it, going up.
-    world.bricks.forEach((b, i) => (b.hits = i === hard ? 2 : 0));
-    const send = () => {
-      world.held = false;
-      world.ball = { x: world.bricks[hard].x, z: world.bricks[hard].z + 0.6, vx: 0, vz: -world.speed };
-      for (let i = 0; i < 60; i++) {
-        const events = step(world, 0);
-        if (events.length) return events;
-      }
-      return [];
-    };
-    expect(send()).toEqual([{ kind: "brick", index: hard, gone: false }]);
-    expect(world.ball.vz).toBeGreaterThan(0);
-    expect(send()).toEqual([{ kind: "brick", index: hard, gone: true }, { kind: "clear" }]);
+  /** Sets one ball just under a brick, going straight up, and runs until something happens. */
+  const strike = (world: ReturnType<typeof createWorld>, index: number) => {
+    world.held = false;
+    world.balls = [{ x: world.bricks[index].x, z: world.bricks[index].z + 0.6, vx: 0, vz: -speedOf(world) }];
+    for (let i = 0; i < 60; i++) {
+      const events = step(world, 0);
+      if (events.length) return events;
+    }
+    return [];
+  };
+  test("hard and tough bricks take two and three hits, steel none, and the last breakable brick clears the wall", () => {
+    const world = createWorld(7, () => 0.99),
+      tough = world.bricks.findIndex((b) => b.kind === "t" && b.row === 4),
+      steel = world.bricks.findIndex((b) => b.kind === "s");
+    // All but one tough brick and the steel are taken away.
+    world.bricks.forEach((b, i) => (b.hits = i === tough ? 3 : b.kind === "s" ? 1 : 0));
+    expect(strike(world, tough)).toEqual([{ kind: "brick", index: tough, gone: false }]);
+    expect(world.balls[0].vz).toBeGreaterThan(0);
+    expect(strike(world, tough)).toEqual([{ kind: "brick", index: tough, gone: false }]);
+    // Steel throws the ball back and stays; it does not keep the wall from being cleared.
+    expect(strike(world, steel)).toEqual([{ kind: "wall" }]);
+    expect(world.bricks[steel].hits).toBe(1);
+    expect(strike(world, tough)).toEqual([{ kind: "brick", index: tough, gone: true }, { kind: "clear" }]);
+  });
+  test("a bomb takes the bricks round it, and bombs set each other off", () => {
+    const world = createWorld(4, () => 0.99),
+      bomb = world.bricks.findIndex((b) => b.kind === "b" && b.col === 4 && b.row === 1),
+      before = world.bricks.filter((b) => b.hits > 0).length;
+    // The bricks under it are taken away so that the ball reaches it.
+    world.bricks.forEach((b) => b.col === 4 && b.row > 1 && (b.hits = 0));
+    const under = world.bricks.filter((b) => b.col === 4 && b.row > 1).length,
+      round = world.bricks.filter((b) => b.hits > 0 && Math.abs(b.col - 4) <= 1 && Math.abs(b.row - 1) <= 1).length,
+      events = strike(world, bomb).filter((e) => e.kind === "brick");
+    expect(round).toBeGreaterThan(1);
+    expect(events.length).toBe(round);
+    expect(world.bricks.filter((b) => b.hits > 0).length).toBe(before - under - round);
+    // On the eighth wall the bombs stand close enough to go off one after another.
+    const chain = createWorld(8, () => 0.99),
+      start = chain.bricks.findIndex((b) => b.kind === "b" && b.row === 2 && b.col === 3);
+    chain.bricks.forEach((b) => b.sway = 0);
+    chain.bricks.forEach((b) => (b.x = b.home));
+    chain.bricks.forEach((b) => b.col === 3 && b.row > 2 && (b.hits = 0));
+    const fuses = chain.bricks.filter((b) => b.kind === "b" && b.col <= 3 && b.row <= 2);
+    expect(fuses.length).toBe(3);
+    strike(chain, start);
+    expect(fuses.filter((b) => b.hits > 0).length).toBe(0);
+  });
+  test("prizes fall from broken bricks, are caught on the bat and do what they say", () => {
+    // The die always comes in under the chance and picks the first prize: the wide bat.
+    const world = createWorld(1, () => 0),
+      index = world.bricks.findIndex((b) => b.row === 4 && b.col === 4),
+      events = strike(world, index);
+    expect(events).toEqual([{ kind: "brick", index, gone: true }, { kind: "drop", item: bricks.WIDE }]);
+    expect(world.items.length).toBe(1);
+    const narrow = batHalf(world);
+    let caught: number | null = null;
+    for (let i = 0; i < 1200 && caught === null; i++) for (const event of step(world, world.items[0]?.x ?? 0)) if (event.kind === "item") caught = event.item;
+    expect(caught).toBe(bricks.WIDE);
+    expect(batHalf(world)).toBeGreaterThan(narrow * 1.4);
+    // It lasts a while and then wears off.
+    world.wide = DT * 2;
+    step(world, 0);
+    step(world, 0);
+    step(world, 0);
+    expect(batHalf(world)).toBeCloseTo(narrow, 9);
+    // A prize that is not caught is gone.
+    const missed = createWorld(1, () => 0);
+    strike(missed, missed.bricks.findIndex((b) => b.row === 4 && b.col === 0));
+    for (let i = 0; i < 800; i++) step(missed, HALF_X);
+    expect(missed.items.every((item) => item.x !== missed.bricks[0].home || item.z < HALF_Z + 0.6)).toBe(true);
+    expect(missed.wide).toBe(0);
+  });
+  test("three balls from one, a ball that pierces, and nothing lost while one ball is left", () => {
+    const world = createWorld(3, () => 0.99);
+    launch(world);
+    for (let i = 0; i < 30; i++) step(world, 0);
+    world.items.push({ kind: bricks.MULTI, x: world.bat, z: BAT_Z - 0.3 });
+    const events = Array.from({ length: 40 }, () => step(world, world.bat)).flat();
+    expect(events).toContainEqual({ kind: "item", item: bricks.MULTI });
+    expect(world.balls.length).toBe(3);
+    // Two of them are let go by; the game goes on with the third.
+    world.balls[1].z = world.balls[2].z = HALF_Z + 1;
+    expect(step(world, world.balls[0].x).some((e) => e.kind === "lost")).toBe(false);
+    expect(world.balls.length).toBe(1);
+    // A piercing ball goes through the hard cap of the pyramid and the bricks behind it without turning back.
+    const pierce = createWorld(3, () => 0.99),
+      column = pierce.bricks.filter((b) => b.col === 4).length;
+    pierce.held = false;
+    pierce.pierce = 5;
+    pierce.balls = [{ x: 0, z: 0, vx: 0, vz: -speedOf(pierce) }];
+    let broken = 0;
+    for (let i = 0; i < 120 && pierce.balls[0].vz < 0; i++) broken += step(pierce, 0).filter((e) => e.kind === "brick" && e.gone).length;
+    expect(broken).toBe(column);
+    expect(pierce.bricks.filter((b) => b.col === 4 && b.hits > 0).length).toBe(0);
   });
 });

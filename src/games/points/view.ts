@@ -27,6 +27,8 @@ export interface BoardSpec {
   radius: number;
   /** The pieces are glass marbles (whole spheres) instead of the theme's own. */
   marbles?: boolean;
+  /** Paints the skin of the marbles, wrapped round each (the top edge of the picture is the top of the marble). */
+  marblePaint?: (ctx: CanvasRenderingContext2D, width: number, height: number) => void;
   colors: [string, string];
   subject: Subject & { tilt: number };
 }
@@ -220,9 +222,21 @@ export class PointBoardView {
         ? new T.CylinderGeometry(radius, radius * 1.04, this.height, 32)
         : new T.SphereGeometry(radius, 28, 16).scale(1, this.height / (radius * 2), 1),
     );
+    let skin: T.CanvasTexture | null = null;
+    if (spec.marbles && spec.marblePaint) {
+      const picture = document.createElement("canvas");
+      picture.width = 1024;
+      picture.height = 512;
+      spec.marblePaint(picture.getContext("2d")!, picture.width, picture.height);
+      skin = this.own(new T.CanvasTexture(picture));
+      skin.colorSpace = T.SRGBColorSpace;
+      skin.wrapS = T.RepeatWrapping;
+      skin.anisotropy = 4;
+    }
     this.materials = spec.colors.map((color) =>
       standard({
-        color,
+        color: skin ? "#ffffff" : color,
+        map: skin,
         roughness: spec.marbles ? 0.12 : theme === "lab" ? 0.2 : theme === "yard" ? 0.75 : 0.4,
         emissive: theme === "lab" ? color : "#000000",
         emissiveIntensity: theme === "lab" ? 0.22 : 0,

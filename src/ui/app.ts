@@ -140,7 +140,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "falling-blocks": { config: blocksConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "2048": { config: mergeConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "brick-breaker": { config: bricksConfig, options: { mode: "ai", variant: "", level: "normal" } },
-  "peg-solitaire": { config: pegConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "peg-solitaire": { config: pegConfig, options: { mode: "ai", variant: "full", level: "normal" } },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();

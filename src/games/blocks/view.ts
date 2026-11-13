@@ -1,78 +1,77 @@
-import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import type { PointView } from "../../ui/point-game";
+import type { Move } from "../points/types";
 import type { Marks } from "../points/view";
-import { TableView, type Spot, type TableSubject } from "../table/view";
 import { DOWN, DROP, H, LEFT, RIGHT, TICK, TURN, W, cells, interval, landing, level, type Piece, type State } from "./rules";
 
 export const BLOCK_COLORS: [string, string] = ["#d9614c", "#b9b3a4"];
-/** The side of a square, and the paint of each of the seven pieces: toy blocks, not neon. */
-const CELL = 0.6,
-  PAINT = ["#d9614c", "#2f9f8f", "#e0a92a", "#4b5fb5", "#7a9a3a", "#8a4f9a", "#3f9ad0"];
-const cx = (x: number) => (x - (W - 1) / 2) * CELL,
-  cz = (y: number) => (y - (H - 1) / 2) * CELL;
+/** The paint of each of the seven pieces: toy-box colours, not neon. */
+const PAINT = ["#d9614c", "#2f9f8f", "#e0a92a", "#4b5fb5", "#7a9a3a", "#8a4f9a", "#3f9ad0"];
+/** A colour made lighter (amount above 0) or darker (below). */
+function shade(hex: string, amount: number) {
+  const n = parseInt(hex.slice(1), 16),
+    mix = (c: number) => Math.round(amount > 0 ? c + (255 - c) * amount : c * (1 + amount));
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+}
 /**
- * The well lies on a play mat, seen from above: its top is the far end and
- * the pieces come down toward me. The view keeps the clock (a fall every so
- * often, sooner at higher levels) and turns swipes into moves.
+ * The well drawn flat, as a picture: upright, the pieces coming down the
+ * screen. Nothing here is three-dimensional; it is painted on one canvas.
+ * The view keeps the clock (a fall every so often, sooner at higher levels)
+ * and turns swipes and taps into moves.
  */
-export class BlocksView extends TableView<State> {
-  private box: T.BufferGeometry;
-  private paints: T.Material[];
-  private ghostPaint: T.Material;
-  private heap: T.Mesh[] = [];
-  private falling: T.Mesh[] = [];
-  private ghost: T.Mesh[] = [];
-  private coming: T.Mesh[] = [];
+export class BlocksView implements PointView<State> {
+  readonly renderer: { domElement: HTMLCanvasElement };
+  onContact: () => void = () => {};
+  onSettled: () => void = () => {};
+  onPick: (point: number) => void = () => {};
+  onMove: (move: Move) => void = () => {};
+  private canvas = document.createElement("canvas");
+  private state: State | null = null;
+  private disposed = false;
+  private ratio = 1;
   private ticker = 0;
   private since = performance.now();
+  private dirty = true;
+  private observer: ResizeObserver;
+  /** Rows just taken out, shown as a fading band until `until`. */
+  private flash: { rows: number[]; until: number } | null = null;
+  /** Where the well is on the canvas, in its own pixels: left, top and the side of a square. */
+  private box = { x: 0, y: 0, cell: 1 };
   /** A drag in progress: where it began, when, and how many squares of it have been made into moves. */
-  private drag: { x: number; z: number; at: number; across: number; down: number; moved: boolean } | null = null;
-  constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#d8d2c4");
-    this.daylight("#ffffff", "#9a9488", "#fff2d8", 9, 2.0);
-    // A nursery floor and a felt mat; the well is a shallow wooden tray open at the far end.
-    const boards = this.own(wood());
-    boards.repeat.set(5, 5);
-    this.add(new T.BoxGeometry(60, 0.4, 44), this.standard({ map: boards, color: "#e6d2ae", roughness: 0.7 }), 0, -0.52, 0).castShadow = false;
-    this.add(new T.BoxGeometry(W * CELL + 7.4, 0.06, H * CELL + 1.6), this.standard({ color: "#5d7f8c", roughness: 1 }), 1.2, -0.29, 0).castShadow = false;
-    const rail = this.standard({ map: this.own(wood(true)), roughness: 0.5 }),
-      wide = W * CELL,
-      deep = H * CELL;
-    this.add(new T.BoxGeometry(wide, 0.1, deep), this.standard({ color: "#f4efe2", roughness: 0.9 }), 0, -0.21, 0).castShadow = false;
-    for (const side of [-1, 1]) this.add(new T.BoxGeometry(0.22, 0.5, deep + 0.22), rail, side * (wide / 2 + 0.11), -0.01, 0.11);
-    this.add(new T.BoxGeometry(wide + 0.44, 0.5, 0.22), rail, 0, -0.01, deep / 2 + 0.11);
-    // Faint lines between the columns help to see where a piece will come down.
-    const line = this.standard({ color: "#d9d2bf", roughness: 1 });
-    for (let x = 1; x < W; x++) this.add(new T.BoxGeometry(0.02, 0.01, deep), line, (x - W / 2) * CELL, -0.155, 0).castShadow = false;
-    // Where the next piece waits: a small tray beside the well.
-    this.add(new T.BoxGeometry(3.2, 0.1, 2.6), this.standard({ color: "#f4efe2", roughness: 0.9 }), wide / 2 + 2.6, -0.21, -deep / 2 + 2.2).castShadow = false;
-    this.box = this.own(new T.BoxGeometry(CELL * 0.94, CELL * 0.8, CELL * 0.94));
-    this.paints = PAINT.map((color) => this.standard({ color, roughness: 0.45 }));
-    this.ghostPaint = this.standard({ color: "#3a4a52", transparent: true, opacity: 0.18, depthWrite: false });
-    const block = (paint: T.Material, shadow = true) => {
-      const mesh = new T.Mesh(this.box, paint);
-      mesh.castShadow = shadow;
-      mesh.receiveShadow = true;
-      mesh.visible = false;
-      this.scene.add(mesh);
-      return mesh;
+  private drag: { id: number; x: number; y: number; at: number; across: number; down: number; moved: boolean } | null = null;
+  private listeners: [string, (e: PointerEvent) => void][] = [];
+  constructor(
+    private host: HTMLElement,
+    private quality: "high" | "low",
+  ) {
+    const el = this.canvas;
+    this.renderer = { domElement: el };
+    el.style.cssText = "display:block;width:100%;height:100%;touch-action:none;cursor:pointer;outline-offset:-3px";
+    host.append(el);
+    const on = (name: string, fn: (e: PointerEvent) => void) => {
+      el.addEventListener(name, fn as EventListener);
+      this.listeners.push([name, fn]);
     };
-    for (let i = 0; i < W * H; i++) {
-      const mesh = block(this.paints[0]);
-      mesh.position.set(cx(i % W), CELL * 0.4 - 0.16, cz(Math.floor(i / W)));
-      this.heap.push(mesh);
-    }
-    for (let i = 0; i < 4; i++) {
-      this.ghost.push(block(this.ghostPaint, false));
-      this.falling.push(block(this.paints[0]));
-      this.coming.push(block(this.paints[0]));
-    }
-    this.begin();
+    on("pointerdown", (e) => {
+      if ((e.pointerType === "mouse" && e.button !== 0) || this.disposed) return;
+      this.drag = { id: e.pointerId, x: e.offsetX, y: e.offsetY, at: performance.now(), across: 0, down: 0, moved: false };
+      el.setPointerCapture(e.pointerId);
+    });
+    on("pointermove", (e) => this.dragged(e));
+    on("pointerup", (e) => this.released(e));
+    on("pointercancel", () => (this.drag = null));
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(host);
+    this.resize();
     const tick = () => {
       if (this.disposed) return;
       this.ticker = requestAnimationFrame(tick);
       const now = performance.now(),
         state = this.state;
+      if (this.flash && now >= this.flash.until) {
+        this.flash = null;
+        this.dirty = true;
+      }
+      if (this.dirty || this.flash) this.draw(now);
       // The clock stands while a window is open, the page is hidden or the game is over.
       if (!state || state.winner !== null || document.hidden || document.querySelector("dialog[open]")) {
         this.since = now;
@@ -89,53 +88,41 @@ export class BlocksView extends TableView<State> {
   get animating() {
     return false;
   }
-  protected subject(aspect: number): TableSubject {
-    return { half: aspect < 1 ? 4.4 : 6.4, halfZ: H * CELL * 0.5 + 0.5, height: 0.6, lookY: 0, tilt: 1.3 };
+  private resize() {
+    if (this.disposed) return;
+    const w = this.host.clientWidth,
+      h = this.host.clientHeight;
+    if (!w || !h) return;
+    this.ratio = Math.min(devicePixelRatio || 1, this.quality === "high" ? 2 : 1);
+    this.canvas.width = Math.round(w * this.ratio);
+    this.canvas.height = Math.round(h * this.ratio);
+    this.dirty = true;
   }
-  protected spots(): Spot[] {
-    return [];
+  setQuality(quality: "high" | "low") {
+    this.quality = quality;
+    this.resize();
   }
-  private lay(meshes: T.Mesh[], piece: Piece | null, paint: T.Material | null, dx = 0, dz = 0) {
-    const squares = piece ? cells(piece) : [];
-    meshes.forEach((mesh, i) => {
-      const square = squares[i];
-      // A square still above the top of the well is not drawn.
-      mesh.visible = !!square && (dx !== 0 || square[1] >= 0);
-      if (!square) return;
-      if (paint) mesh.material = paint;
-      mesh.position.set(cx(square[0]) + dx, CELL * 0.4 - 0.16, cz(square[1]) + dz);
-    });
-  }
-  protected place(state: State) {
-    state.grid.forEach((kind, i) => {
-      this.heap[i].visible = kind > 0;
-      if (kind) this.heap[i].material = this.paints[kind - 1];
-    });
-    const rest = landing(state);
-    this.lay(this.ghost, rest && state.piece && rest.y !== state.piece.y ? rest : null, null);
-    this.lay(this.falling, state.piece, state.piece ? this.paints[state.piece.kind] : null);
-    // The next piece, in the middle of its tray.
-    const size = state.next === 0 ? 4 : state.next === 1 ? 2 : 3;
-    this.lay(this.coming, state.winner === null ? { kind: state.next, rot: 0, x: 0, y: 0 } : null, this.paints[state.next], (W * CELL) / 2 + 2.6 - cx((size - 1) / 2), (-H * CELL) / 2 + 2.2 - cz(state.next === 0 ? 1 : 0.5));
-  }
-  protected animate(before: State, state: State) {
-    // Nothing is drawn out in time; a piece coming to rest is heard, and the clock starts again for the new one.
-    if (state.last?.locked && state.ply === before.ply + 1) {
+  setMarks(_marks: Marks) {}
+  sync(state: State) {
+    if (this.disposed) return;
+    const before = this.state;
+    this.state = state;
+    this.dirty = true;
+    // A piece coming to rest is heard, and the clock starts again for the new one; rows taken out flash as they go.
+    if (before && state.last?.locked && state.ply === before.ply + 1) {
       this.onContact();
       this.since = performance.now();
+      if (state.last.cleared.length) this.flash = { rows: state.last.cleared, until: performance.now() + 240 };
     }
-    return false;
+    this.onSettled();
   }
-  /** A finger on the mat: across moves the piece column by column, toward me brings it down, a flick toward me drops it, a tap turns it. */
-  protected dragStart(_point: number, at: { x: number; z: number }) {
-    this.drag = { ...at, at: performance.now(), across: 0, down: 0, moved: false };
-    return true;
-  }
-  protected dragMove(at: { x: number; z: number }) {
+  /** A finger on the picture: across moves the piece column by column, downward brings it down, a flick downward drops it, a tap turns it. */
+  private dragged(e: PointerEvent) {
     const drag = this.drag;
-    if (!drag) return;
-    const across = Math.round((at.x - drag.x) / CELL),
-      down = Math.max(0, Math.floor((at.z - drag.z) / CELL));
+    if (!drag || drag.id !== e.pointerId) return;
+    const cell = this.box.cell / this.ratio,
+      across = Math.round((e.offsetX - drag.x) / cell),
+      down = Math.max(0, Math.floor((e.offsetY - drag.y) / cell));
     while (drag.across !== across) {
       const way = across > drag.across ? 1 : -1;
       drag.across += way;
@@ -149,18 +136,142 @@ export class BlocksView extends TableView<State> {
       this.onMove({ from: -1, to: DOWN, extra: -1 });
     }
   }
-  protected dragEnd(at: { x: number; z: number } | null) {
+  private released(e: PointerEvent) {
     const drag = this.drag;
     this.drag = null;
-    if (!drag || !at) return;
-    const dx = at.x - drag.x,
-      dz = at.z - drag.z;
-    if (performance.now() - drag.at <= 220 && dz > CELL * 2.5 && dz > Math.abs(dx) * 1.5) this.onMove({ from: -1, to: DROP, extra: -1 });
-    else if (!drag.moved && Math.hypot(dx, dz) < CELL * 0.6) this.onMove({ from: -1, to: TURN, extra: -1 });
+    if (!drag || drag.id !== e.pointerId) return;
+    const cell = this.box.cell / this.ratio,
+      dx = e.offsetX - drag.x,
+      dy = e.offsetY - drag.y;
+    if (performance.now() - drag.at <= 220 && dy > cell * 2.5 && dy > Math.abs(dx) * 1.5) this.onMove({ from: -1, to: DROP, extra: -1 });
+    else if (!drag.moved && Math.hypot(dx, dy) < cell * 0.6) this.onMove({ from: -1, to: TURN, extra: -1 });
   }
-  protected mark(_marks: Marks) {}
+  /** One square of a piece: a flat tile with a pale upper edge and a dark lower one. */
+  private tile(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string) {
+    const gap = Math.max(1, size * 0.04),
+      s = size - gap * 2,
+      r = s * 0.16,
+      band = s * 0.14;
+    ctx.fillStyle = shade(color, -0.28);
+    ctx.beginPath();
+    ctx.roundRect(x + gap, y + gap, s, s, r);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(x + gap, y + gap, s, s - band, r);
+    ctx.fill();
+    ctx.fillStyle = shade(color, 0.32);
+    ctx.beginPath();
+    ctx.roundRect(x + gap + band, y + gap + band * 0.7, s - band * 2, band * 0.9, band * 0.45);
+    ctx.fill();
+  }
+  private piece(ctx: CanvasRenderingContext2D, piece: Piece, x: number, y: number, size: number, color: string, hollow = false) {
+    for (const [cx, cy] of cells(piece)) {
+      if (!hollow) this.tile(ctx, x + cx * size, y + cy * size, size, color);
+      else {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.34)";
+        ctx.lineWidth = Math.max(1, size * 0.06);
+        ctx.beginPath();
+        ctx.roundRect(x + cx * size + size * 0.1, y + cy * size + size * 0.1, size * 0.8, size * 0.8, size * 0.14);
+        ctx.stroke();
+      }
+    }
+  }
+  private draw(now: number) {
+    const el = this.canvas,
+      ctx = el.getContext("2d")!,
+      w = el.width,
+      h = el.height,
+      k = this.ratio,
+      state = this.state;
+    this.dirty = false;
+    // A sheet of pale paper with a faint weave.
+    const paper = ctx.createLinearGradient(0, 0, 0, h);
+    paper.addColorStop(0, "#efe9dc");
+    paper.addColorStop(1, "#dfe6e4");
+    ctx.fillStyle = paper;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(60, 70, 80, 0.05)";
+    for (let y = 0; y < h; y += 22 * k) for (let x = (y / (22 * k)) % 2 ? 11 * k : 0; x < w; x += 22 * k) ctx.fillRect(x, y, 2 * k, 2 * k);
+    // The well stands in the middle, under the status line; the next piece waits in a box at its upper right.
+    const top = 50 * k,
+      bottom = 12 * k,
+      cell = Math.max(4, Math.floor(Math.min((h - top - bottom) / H, (w - 24 * k) / (W + 12)))),
+      x0 = Math.round((w - W * cell) / 2),
+      y0 = Math.round(top + (h - top - bottom - H * cell) / 2);
+    this.box = { x: x0, y: y0, cell };
+    const rim = cell * 0.22;
+    ctx.fillStyle = "#c9c1ae";
+    ctx.beginPath();
+    ctx.roundRect(x0 - rim, y0 - rim, W * cell + rim * 2, H * cell + rim * 2, cell * 0.3);
+    ctx.fill();
+    ctx.fillStyle = "#273540";
+    ctx.beginPath();
+    ctx.roundRect(x0, y0, W * cell, H * cell, cell * 0.12);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.055)";
+    ctx.lineWidth = Math.max(1, k);
+    ctx.beginPath();
+    for (let x = 1; x < W; x++) {
+      ctx.moveTo(x0 + x * cell, y0);
+      ctx.lineTo(x0 + x * cell, y0 + H * cell);
+    }
+    for (let y = 1; y < H; y++) {
+      ctx.moveTo(x0, y0 + y * cell);
+      ctx.lineTo(x0 + W * cell, y0 + y * cell);
+    }
+    ctx.stroke();
+    const nx = x0 + W * cell + cell * 0.9,
+      nw = cell * 5,
+      nh = cell * 4.4;
+    ctx.fillStyle = "#c9c1ae";
+    ctx.beginPath();
+    ctx.roundRect(nx - rim, y0 - rim, nw + rim * 2, nh + rim * 2, cell * 0.3);
+    ctx.fill();
+    ctx.fillStyle = "#273540";
+    ctx.beginPath();
+    ctx.roundRect(nx, y0, nw, nh, cell * 0.12);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.font = `700 ${Math.round(cell * 0.56)}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("다음", nx + nw / 2, y0 + cell * 0.7);
+    if (state) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y0, W * cell, H * cell);
+      ctx.clip();
+      state.grid.forEach((kind, i) => kind && this.tile(ctx, x0 + (i % W) * cell, y0 + Math.floor(i / W) * cell, cell, PAINT[kind - 1]));
+      const rest = landing(state);
+      if (state.piece && rest && rest.y !== state.piece.y) this.piece(ctx, rest, x0, y0, cell, "", true);
+      if (state.piece) this.piece(ctx, state.piece, x0, y0, cell, PAINT[state.piece.kind]);
+      if (this.flash) {
+        // The rows that have just gone: a band of light that fades.
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, (this.flash.until - now) / 240) * 0.8})`;
+        for (const row of this.flash.rows) ctx.fillRect(x0, y0 + row * cell, W * cell, cell);
+      }
+      if (state.winner !== null) {
+        ctx.fillStyle = "rgba(20, 28, 34, 0.5)";
+        ctx.fillRect(x0, y0, W * cell, H * cell);
+      }
+      ctx.restore();
+      if (state.winner === null) {
+        // The next piece, in the middle of its box.
+        const size = state.next === 0 ? 4 : state.next === 1 ? 2 : 3,
+          rows = state.next === 0 ? 1 : 2,
+          first = state.next === 0 ? 1 : 0;
+        this.piece(ctx, { kind: state.next, rot: 0, x: 0, y: 0 }, nx + (nw - size * cell) / 2, y0 + cell * 1.3 + (nh - cell * 1.3 - rows * cell) / 2 - first * cell, cell, PAINT[state.next]);
+      }
+    }
+    if (!el.dataset.ready) el.dataset.ready = "true";
+  }
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
     cancelAnimationFrame(this.ticker);
-    super.dispose();
+    this.observer.disconnect();
+    for (const [name, fn] of this.listeners) this.canvas.removeEventListener(name, fn as EventListener);
+    this.canvas.remove();
   }
 }

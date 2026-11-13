@@ -34,7 +34,23 @@ export interface State {
   last: { from: number; over: number; to: number } | null;
   ply: number;
 }
-export const createGame = (): State => ({ pegs: HOLES.map((_, i) => i !== CENTRE), winner: null, last: null, ply: 0 });
+/**
+ * Where the marbles stand at the start of each stage, row by row from the
+ * far side ("o" a marble). "full" is the whole board but the middle; the
+ * others are the old set problems, each of which can be brought down to one.
+ */
+export const STAGES: Record<string, { name: string; rows: string[] }> = {
+  full: { name: "기본", rows: ["  ooo  ", "  ooo  ", "ooooooo", "ooo.ooo", "ooooooo", "  ooo  ", "  ooo  "] },
+  cross: { name: "십자가", rows: ["  ...  ", "  .o.  ", "..ooo..", "...o...", "...o...", "  ...  ", "  ...  "] },
+  plus: { name: "더하기", rows: ["  ...  ", "  .o.  ", "...o...", ".ooooo.", "...o...", "  .o.  ", "  ...  "] },
+  hearth: { name: "벽난로", rows: ["  ...  ", "  ...  ", ".......", "..o.o..", "..ooo..", "  ooo  ", "  ooo  "] },
+  pyramid: { name: "피라미드", rows: ["  ...  ", "  .o.  ", "..ooo..", ".ooooo.", "ooooooo", "  ...  ", "  ...  "] },
+  diamond: { name: "다이아몬드", rows: ["  .o.  ", "  ooo  ", ".ooooo.", "ooo.ooo", ".ooooo.", "  ooo  ", "  .o.  "] },
+};
+export const createGame = (stage = "full"): State => {
+  const rows = (STAGES[stage] ?? STAGES.full).rows;
+  return { pegs: HOLES.map(({ x, z }) => rows[z][x] === "o"), winner: null, last: null, ply: 0 };
+};
 export const left = (state: State) => state.pegs.filter(Boolean).length;
 const open = (pegs: boolean[]) => JUMPS.filter(([from, over, to]) => pegs[from] && pegs[over] && !pegs[to]);
 export const moves = (state: State): Move[] => (state.winner !== null ? [] : open(state.pegs).map(([from, , to]) => ({ from, to, extra: -1 })));
@@ -52,7 +68,7 @@ export function play(state: State, move: Move): State | null {
 }
 const effect = (state: State): Effect | null => (state.last ? { kind: "jump", from: state.last.from, to: state.last.to, converted: [], removed: [state.last.over] } : null);
 export const peg: PointGame<State> = {
-  create: () => createGame(),
+  create: (variant) => createGame(variant),
   moves,
   play: (state, move) => play(state, move),
   turn: () => 0,
