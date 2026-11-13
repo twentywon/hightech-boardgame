@@ -74,7 +74,11 @@ test("pocket ball: the cue ball is pulled back and let go", async ({ page }) => 
 test("indian poker: I see only the other card, and a call ends the round", async ({ page }) => {
   const errors = await sit(page, "인디언 포커");
   await expect(page.getByLabel("로컬 2인", { exact: true })).toBeHidden();
-  await expect(page.locator("#turn")).toContainText("상대 카드는");
+  // The round begins when I raise my card to my forehead; until then the other card is not told.
+  await expect(page.locator("#turn")).toContainText("이마에 얹기");
+  await expect(page.locator("#turn")).not.toContainText("상대 카드는");
+  await page.locator(".board-area .pg-tools").getByRole("button", { name: "이마에 얹기" }).click();
+  await expect(page.locator("#turn")).toContainText("상대 카드는", { timeout: 20000 });
   // My own card is nowhere in the page while the betting lasts.
   expect(await page.locator("#turn").innerHTML()).not.toContain("내 카드");
   expect(await page.locator(".yut-sides").innerHTML()).not.toContain("내 카드");

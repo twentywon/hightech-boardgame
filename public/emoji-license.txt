@@ -1,0 +1,8 @@
+The trophy, crying face and handshake pictures shown in the result window
+(src/assets/result/win.svg, lose.svg, draw.svg) are from Twemoji 15.0.0
+(https://github.com/jdecked/twemoji, npm package @twemoji/svg).
+
+Copyright 2019 Twitter, Inc and other contributors.
+Graphics licensed under CC-BY 4.0: https://creativecommons.org/licenses/by/4.0/
+
+They are used unchanged apart from being inlined into the page.

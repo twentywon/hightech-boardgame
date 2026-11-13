@@ -3,9 +3,11 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { SET_BASE, TILE_COUNT, TO_RACK, colourOf, isJoker, numberOf, valid, type State } from "./rules";
 
-const W = 0.68,
-  D = 0.95,
-  PITCH = 0.72,
+// Tiles large enough to read at a glance; a rack row holds eighteen of them.
+const W = 0.8,
+  D = 1.12,
+  PITCH = 0.85,
+  PER_ROW = 18,
   ROW_WIDTH = 15.6,
   SUBJECT: TableSubject = { half: 8.4, halfZ: 6.6, height: 0.5, lookY: 0, tilt: 1.12 };
 export const RACK_COLORS: [string, string] = ["#f4ead2", "#9aa3ad"];
@@ -185,12 +187,12 @@ export class TileRummyView extends TableView<State> {
       slots = new Map<number, { x: number; z: number }>(),
       bounds: { x: number; z: number; w: number }[] = [];
     let x = -ROW_WIDTH / 2,
-      z = -4.0;
+      z = -4.3;
     state.table.forEach((set, i) => {
       const width = (set.length + 1) * PITCH;
       if (x + width > ROW_WIDTH / 2) {
         x = -ROW_WIDTH / 2;
-        z += D + 0.2;
+        z += D + 0.14;
       }
       shown(set).forEach((tile, k) => poses.set(tile, { x: x + (k + 0.5) * PITCH, z, up: true }));
       slots.set(SET_BASE + i, { x: x + (set.length + 0.5) * PITCH, z });
@@ -199,16 +201,16 @@ export class TileRummyView extends TableView<State> {
     });
     const rack = (tiles: number[], z0: number, up: boolean) => {
       const sorted = [...tiles].sort((a, b) => (isJoker(a) ? 99 : colourOf(a)) - (isJoker(b) ? 99 : colourOf(b)) || numberOf(a) - numberOf(b)),
-        perRow = 21;
+        perRow = PER_ROW;
       sorted.forEach((tile, k) => {
         const row = Math.floor(k / perRow),
           inRow = Math.min(perRow, sorted.length - row * perRow);
         poses.set(tile, { x: ((k % perRow) - (inRow - 1) / 2) * PITCH, z: z0 + row * (D + 0.12) * (up ? 1 : -1), up });
       });
     };
-    rack(state.racks[0], 4.7, true);
+    rack(state.racks[0], 4.5, true);
     rack(state.racks[1], -6.0, state.winner !== null);
-    slots.set(TO_RACK, { x: Math.min(7.6, (Math.min(21, state.racks[0].length) / 2 + 0.8) * PITCH), z: 4.7 });
+    slots.set(TO_RACK, { x: Math.min(7.9, (Math.min(PER_ROW, state.racks[0].length) / 2 + 0.8) * PITCH), z: 4.5 });
     state.pool.forEach((tile, k) => poses.set(tile, { x: 7.9 - (k % 3) * 0.05, z: -2 + (k % 3) * 0.04, up: false }));
     return { poses, slots, bounds };
   }

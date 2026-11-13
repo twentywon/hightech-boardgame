@@ -1,4 +1,7 @@
 import { modal, setupDialog } from "./dialog";
+import winArt from "../assets/result/win.svg?raw";
+import loseArt from "../assets/result/lose.svg?raw";
+import drawArt from "../assets/result/draw.svg?raw";
 /**
  * How every table screen is laid out, whatever the game: the buttons that
  * act on the game lie over the table, in a corner of it, and the panel beside
@@ -55,7 +58,11 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
       if (result.hidden) delete result.dataset.told;
       else if (!result.dataset.told) {
         result.dataset.told = "1";
-        announce(() => (result.isConnected && !result.hidden ? (result.querySelector("p")?.textContent ?? "") : ""), setup);
+        announce(
+          () => (result.isConnected && !result.hidden ? (result.querySelector("p")?.textContent ?? "") : ""),
+          setup,
+          () => (result.dataset.outcome as Outcome | undefined) ?? "win",
+        );
       }
     }).observe(result, { attributes: true, attributeFilter: ["hidden"] });
   // 새 게임 stays with the other screen buttons over the table and opens the game's own setup in a dialog.
@@ -63,12 +70,30 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   if (restart) restart.onclick = () => setupDialog(setup);
 }
 
+export type Outcome = "win" | "lose" | "draw";
+const ART: Record<Outcome, { picture: string; word: string }> = {
+  win: { picture: winArt, word: "승리" },
+  lose: { picture: loseArt, word: "패배" },
+  draw: { picture: drawArt, word: "무승부" },
+};
+/**
+ * The picture that heads a result window: a trophy in a burst of light and
+ * confetti for a win, a crying face under falling rain for a loss, a
+ * handshake for a draw. The pictures are Twemoji (CC BY 4.0, see
+ * `public/emoji-license.txt`), inlined.
+ */
+export function resultArt(outcome: Outcome) {
+  const { picture, word } = ART[outcome],
+    bits = Array.from({ length: outcome === "draw" ? 0 : 18 }, (_, i) => `<i style="--i:${i};--x:${(i * 37) % 100}"></i>`).join("");
+  return `<div class="result-art ${outcome}" aria-hidden="true"><span class="result-glow"></span>${bits}<span class="result-picture">${picture}</span><b class="result-word">${word}</b></div>`;
+}
 /**
  * Says how a game ended in a window, once the table has come to rest and no
  * other window is open. `text` is asked for at that moment and may answer
- * with nothing when the result no longer stands (a move taken back).
+ * with nothing when the result no longer stands (a move taken back);
+ * `outcome` says, for the person at the screen, whether to cheer or to mourn.
  */
-export function announce(text: () => string, setup?: (host: HTMLElement) => void, title = "게임 결과") {
+export function announce(text: () => string, setup?: (host: HTMLElement) => void, outcome: () => Outcome = () => "win") {
   const show = () => {
     if (document.querySelector("dialog[open]")) {
       setTimeout(show, 400);
@@ -78,7 +103,7 @@ export function announce(text: () => string, setup?: (host: HTMLElement) => void
     if (!line) return;
     const body = document.createElement("p");
     body.textContent = line;
-    modal(title, body.outerHTML, [
+    modal("게임 결과", resultArt(outcome()) + body.outerHTML, [
       { text: "확인", action: () => {} },
       ...(setup ? [{ text: "새 게임", action: () => setupDialog(setup) }] : []),
     ]);

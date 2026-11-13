@@ -68,6 +68,7 @@ export abstract class FlickView<S> extends TableView<S> {
             fell = falling.get(disc.id);
           if (fell === undefined) {
             mesh.visible = disc.on;
+            this.rolled(disc.id, mesh, disc.x - mesh.position.x, disc.z - mesh.position.z);
             // A disc struck too hard sails over the others in an arc.
             mesh.position.set(disc.x, this.top + lift(disc) * 1.5, disc.z);
           } else {
@@ -128,6 +129,8 @@ export abstract class FlickView<S> extends TableView<S> {
     this.aimed(null);
     if (aim && at && aim.power >= 1) this.shoot(aim.point, aim.degrees, aim.power);
   }
+  /** A disc has gone this far along the table since the last frame of a shot: for a view whose discs are balls that roll. */
+  protected rolled(_id: number, _mesh: T.Object3D, _dx: number, _dz: number) {}
   /** Told where a pull is aiming and how hard, or null when there is none: for a view that shows something of its own. */
   protected aimed(_aim: { x: number; z: number; angle: number; power: number } | null) {}
   protected abstract mark(marks: Marks): void;

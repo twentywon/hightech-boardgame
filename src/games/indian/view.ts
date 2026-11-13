@@ -35,10 +35,9 @@ export class IndianView extends TableView<State> {
   private fore: T.Mesh;
   private elbow: T.Mesh;
   private hand: T.Mesh;
-  /** The round whose card has been raised, or is being raised. */
-  private raised = 0;
   private mine: T.Mesh;
   private shown: T.Mesh;
+  private waiting: T.Mesh;
   private back: T.Material;
   private chip: T.BufferGeometry;
   private paints: T.Material[];
@@ -106,7 +105,13 @@ export class IndianView extends TableView<State> {
     this.shown.rotation.x = -Math.PI / 2;
     this.shown.position.set(0, TABLE + 0.03, 1.6);
     this.shown.scale.setScalar(1.5);
-    this.scene.add(this.shown, this.camera);
+    // My card as it is dealt: face down on the table before me.
+    this.waiting = new T.Mesh(card, this.back);
+    this.waiting.rotation.x = -Math.PI / 2;
+    this.waiting.position.set(0, TABLE + 0.03, 1.6);
+    this.waiting.scale.setScalar(1.5);
+    this.waiting.visible = false;
+    this.scene.add(this.shown, this.waiting, this.camera);
     // Fixed before my eyes, so that it stays at the top of the view whatever the shape of the screen.
     this.mine.position.set(0, 0.66, -1.9);
     this.mine.rotation.x = 0.45;
@@ -122,13 +127,15 @@ export class IndianView extends TableView<State> {
     mesh.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
   }
   /** The card and the arm that holds it, from lying on the table (0) to standing on the forehead (1). */
-  private pose(p: number) {
+  private pose(p: number, faceUp = false) {
     const e = p * p * (3 - 2 * p),
       card = this.theirs.position.lerpVectors(DOWN, HELD, e);
     // It comes up in an arc, turning its face to me as it goes.
     card.y += Math.sin(Math.PI * e) * 0.35;
     card.z += Math.sin(Math.PI * e) * 0.5;
-    this.theirs.rotation.x = Math.PI / 2 + (-0.1 - Math.PI / 2) * e;
+    // On the table it lies face down, or face up when it has been laid down to give the round up.
+    const flat = faceUp ? -Math.PI / 2 : Math.PI / 2;
+    this.theirs.rotation.x = flat + (-0.1 - flat) * e;
     const hand = card.clone().add(new T.Vector3().lerpVectors(GRIP_DOWN, GRIP_HELD, e)),
       reach = hand.clone().sub(SHOULDER),
       d = Math.min(reach.length(), UPPER + FORE - 0.02),
@@ -143,15 +150,15 @@ export class IndianView extends TableView<State> {
     this.hand.position.copy(wrist);
   }
   /** The figure picks its new card up from the table and raises it to its forehead. */
-  private lift(round: number) {
-    this.raised = round;
+  /** The figure picks its card up from the table and raises it to its forehead. */
+  private lift() {
     this.pose(0);
     this.tween(180, 1100, (p) => this.pose(p));
   }
-  sync(state: State, animate = true) {
-    const first = !this.state;
-    super.sync(state, animate);
-    if (first && animate && !this.reducedMotion && state.winner === null) this.lift(state.round);
+  /** It gives the round up: the card comes down from the forehead and is laid on the table, face up. */
+  private layDown() {
+    this.pose(1);
+    this.tween(120, 900, (p) => this.pose(1 - p, true));
   }
   private texture(paint: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
     const canvas = document.createElement("canvas");
@@ -195,11 +202,16 @@ export class IndianView extends TableView<State> {
     return used;
   }
   protected place(state: State) {
-    const showing = state.phase === "show" || state.winner !== null;
+    const showing = state.phase === "show" || state.winner !== null,
+      ready = state.phase === "ready" && state.winner === null;
     this.theirFace.material = this.face(state.cards[1]);
-    this.pose(1);
-    // My own card stays face down until the round is decided.
-    this.mine.visible = !showing;
+    // Before the round the cards lie face down; a card given up lies face up; otherwise it is on the forehead.
+    if (ready) this.pose(0);
+    else if (showing && state.folded === 1) this.pose(0, true);
+    else this.pose(1);
+    // My own card: face down before me, then on my forehead (its back at the top of my view), then laid open.
+    this.waiting.visible = ready;
+    this.mine.visible = !showing && !ready;
     this.shown.visible = showing;
     if (showing) this.shown.material = this.face(state.cards[0]);
     let used = this.pile(state.chips[0], this.paints[0], -2.9, 2.6, 0);
@@ -210,8 +222,9 @@ export class IndianView extends TableView<State> {
   protected animate(before: State, state: State) {
     if (state.ply !== before.ply + 1) return false;
     this.place(state);
-    // A new round: the figure raises its new card.
-    if (state.round !== this.raised && state.phase === "bet" && state.winner === null) this.lift(state.round);
+    // The cards are raised when I say so; the figure lays its own down when it gives the round up.
+    if (before.phase === "ready" && state.phase === "bet") this.lift();
+    else if (before.phase === "bet" && state.phase === "show" && state.folded === 1) this.layDown();
     // Chips clack as they are put in; a card laid down is heard too.
     this.tween(0, 260, (p) => {
       if (p === 1) this.onContact();

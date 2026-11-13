@@ -440,6 +440,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     $<HTMLButtonElement>("hint").disabled = hinting || !!state.outcome || aiTurn() || !view;
     $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";
     // History: one line per pair of moves, replayed for the piece names.
+    $("jg-result").dataset.outcome = !state.outcome?.winner ? "draw" : mode === "ai" && state.outcome.winner === other(human) ? "lose" : "win";
     $("jg-result").hidden = !state.outcome;
     if (state.outcome) {
       $("jg-final").textContent = state.outcome.winner

@@ -18,6 +18,8 @@ export const START_CHIPS = 30,
   /** Raising by one, two or three: points 2, 3 and 4. */
   RAISE = 1,
   NEXT = 5,
+  /** Both raise the cards they have been dealt to their foreheads: the round begins. */
+  READY = 6,
   /** A pack of twenty gives ten rounds. */
   ROUNDS = 10;
 export interface State {
@@ -29,7 +31,10 @@ export interface State {
   carry: number;
   turn: 0 | 1;
   /** "show" once the round is decided: both cards are seen and side 0 deals the next. */
-  phase: "bet" | "show";
+  /** "ready": the cards lie face down, not yet raised; "bet"; "show" once the round is decided. */
+  phase: "ready" | "bet" | "show";
+  /** Who folded this round, or null. */
+  folded: 0 | 1 | null;
   /** Who bets first this round, and whether that side has checked. */
   first: 0 | 1;
   checked: boolean;
@@ -46,7 +51,8 @@ function deal(state: State): State {
     // Whoever has nothing left still gets a card: the pack is played out.
     bets: [number, number] = [Math.min(ANTE, state.chips[0]), Math.min(ANTE, state.chips[1])],
     chips: [number, number] = [state.chips[0] - bets[0], state.chips[1] - bets[1]];
-  return { ...state, deck, cards, chips, bets, turn: state.first, phase: "bet", checked: false, result: "" };
+  // Nothing is seen yet: I raise the cards (mine and, with it, the figure its own) before anyone bets.
+  return { ...state, deck, cards, chips, bets, turn: 0, phase: "ready", folded: null, checked: false, result: "" };
 }
 export function createGame(random: Random = cryptoRandom): State {
   const deck = Array.from({ length: 20 }, (_, i) => (i % 10) + 1);
@@ -54,7 +60,7 @@ export function createGame(random: Random = cryptoRandom): State {
     const j = Math.floor(random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
-  return deal({ deck, cards: [0, 0], chips: [START_CHIPS, START_CHIPS], bets: [0, 0], carry: 0, turn: 0, phase: "bet", first: 0, checked: false, round: 1, result: "", winner: null, ply: 0 });
+  return deal({ deck, cards: [0, 0], chips: [START_CHIPS, START_CHIPS], bets: [0, 0], carry: 0, turn: 0, phase: "bet", folded: null, first: 0, checked: false, round: 1, result: "", winner: null, ply: 0 });
 }
 export const pot = (state: State) => state.bets[0] + state.bets[1] + state.carry;
 /** What the mover must add to stay in. */
@@ -63,6 +69,7 @@ export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
   const to = (point: number): Move => ({ from: -1, to: point, extra: -1 });
   if (state.phase === "show") return [to(NEXT)];
+  if (state.phase === "ready") return [to(READY)];
   const me = state.turn,
     out = [to(CALL)],
     due = owed(state);
@@ -89,7 +96,9 @@ export function play(state: State, move: Move): State | null {
     }
     return deal({ ...next, first: state.first ? 0 : 1, round: state.round + 1 });
   }
+  if (move.to === READY) return { ...next, phase: "bet", turn: state.first };
   if (move.to === FOLD) {
+    next.folded = me;
     // Folding the ten costs dear.
     const penalty = state.cards[me] === 10 ? Math.min(TEN_PENALTY, next.chips[me]) : 0;
     next.chips[me] -= penalty;
@@ -123,7 +132,7 @@ export function play(state: State, move: Move): State | null {
 export function chooseBet(state: State, level: Level, random: Random = Math.random): Move | null {
   const legal = moves(state);
   if (!legal.length) return null;
-  if (state.phase === "show") return legal[0];
+  if (state.phase !== "bet") return legal[0];
   const has = (point: number) => legal.find((m) => m.to === point),
     seen = state.cards[state.turn ? 0 : 1],
     // The chance that an unseen card beats the one it sees.
@@ -157,7 +166,9 @@ export const indian: PointGame<State> = {
   hint: (s) =>
     s.phase === "show"
       ? `${s.result} 내 카드 ${s.cards[0]}, 상대 카드 ${s.cards[1]}. ${s.deck.length < 2 ? "마지막 판이었습니다. 결과를 확인하세요." : "다음 판을 받으세요."}`
-      : `${s.round}/${ROUNDS}판 · 상대 카드는 ${s.cards[1]}입니다. 판돈 ${pot(s)}${owed(s) > 0 ? ` · 따라가려면 ${owed(s)}` : ""}.`,
+      : s.phase === "ready"
+        ? `${s.round}/${ROUNDS}판 · 카드를 받았습니다. '이마에 얹기'를 눌러 시작하세요.`
+        : `${s.round}/${ROUNDS}판 · 상대 카드는 ${s.cards[1]}입니다. 판돈 ${pot(s)}${owed(s) > 0 ? ` · 따라가려면 ${owed(s)}` : ""}.`,
   tally: (s) => [0, 1].map((p) => `칩 ${s.chips[p]}${s.phase === "bet" ? ` · 건 칩 ${s.bets[p]}` : ""}`) as [string, string],
   reason: (s) => `한 덱 ${s.round}판을 모두 마쳤습니다. 칩 ${s.chips[0]} 대 ${s.chips[1]}.`,
 };

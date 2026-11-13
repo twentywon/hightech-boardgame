@@ -43,6 +43,8 @@ export interface PointConfig<S> {
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
   tools?: { label: string; point: number; onBoard?: boolean }[];
+  /** Extra time, in milliseconds, the computer takes over the move it is about to make. */
+  ponder?: (state: S) => number;
   /** No panel beside the table: the table takes the whole width (the panel stays in the page, unseen, for readers). */
   noPanel?: boolean;
   /** How the panel shows the two tallies: "big" writes them large at the right of each side; "scoreboard" sets the two sides against each other like a stadium board. */
@@ -384,7 +386,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       }
       past.push(state);
       apply(next);
-    }, 450);
+    }, 450 + (config.ponder?.(state) ?? 0));
   }
   /** Everything has come to rest: describe the current state. */
   function present() {
@@ -455,6 +457,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     };
     view?.setMarks(capturing() ? { movable: [], selected: null, targets: [], removable: [], cursor: null } : marks);
 
+    // Whether the person at the screen won, lost or drew: two at one screen always have a winner to cheer.
+    $("pg-result").dataset.outcome = game.winner(s) === "draw" ? "draw" : mode === "ai" && game.winner(s) === 1 ? "lose" : "win";
     $("pg-result").hidden = !done;
     if (done) {
       const winner = game.winner(s);

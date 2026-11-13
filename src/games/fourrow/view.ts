@@ -144,7 +144,8 @@ export class FourRowView extends TableView<State> {
   }
   protected subject(aspect: number): TableSubject {
     // Looked at from the front, a little from above; a narrow screen needs only the rack.
-    return { half: aspect < 1 ? 4.1 : 6.4, halfZ: 0.6, height: aspect < 1 ? 9.4 : 7.6, lookY: aspect < 1 ? 3.9 : 3.2, tilt: 0.3 };
+    // Close enough for the rack to fill the screen.
+    return { half: aspect < 1 ? 3.9 : 4.6, halfZ: 0.4, height: aspect < 1 ? 8.6 : 6.3, lookY: aspect < 1 ? 3.7 : 3.05, tilt: 0.24 };
   }
   protected spots(): Spot[] {
     const out: Spot[] = [];

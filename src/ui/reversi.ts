@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { dress } from "./chrome";
+import { dress, resultArt } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import {
   createGame,
@@ -409,7 +409,7 @@ export function mountReversi(
       state.winner === "draw"
         ? "멋진 승부, 무승부!"
         : `${state.winner === 1 ? "흑돌" : "백돌"}이 승리했습니다!`,
-      `<p>흑 ${c.black} : 백 ${c.white}<br>빈 칸 ${c.empty}개 · 실제 돌 개수로 판정했습니다.</p>`,
+      `${resultArt(state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win")}<p>흑 ${c.black} : 백 ${c.white}<br>빈 칸 ${c.empty}개 · 실제 돌 개수로 판정했습니다.</p>`,
       [
         { text: "게임판 보기", action: () => {} },
         { text: "새 게임", action: () => setupDialog(setup) },

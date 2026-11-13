@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { dress } from "./chrome";
+import { dress, resultArt } from "./chrome";
 import {
   type AIOptions,
   type Difficulty,
@@ -631,7 +631,7 @@ export function mountChess(
       state.outcome.winner
         ? `${state.outcome.winner === "w" ? "백" : "흑"}이 승리했습니다!`
         : "무승부입니다",
-      `<p>${state.outcome.reason}<br>${state.moves.length}수의 대국을 마쳤습니다.</p>`,
+      `${resultArt(!state.outcome.winner ? "draw" : mode === "ai" && state.outcome.winner !== human ? "lose" : "win")}<p>${state.outcome.reason}<br>${state.moves.length}수의 대국을 마쳤습니다.</p>`,
       [
         { text: "게임판 보기", action: () => {} },
         { text: "새 게임", action: () => setupDialog(setup) },

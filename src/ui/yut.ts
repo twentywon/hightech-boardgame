@@ -365,6 +365,7 @@ export function mountYut(
     },
     );
 
+    $("yut-result").dataset.outcome = mode === "ai" && s.winner === 1 ? "lose" : "win";
     $("yut-result").hidden = !over;
     if (over)
       $("yut-final").textContent =

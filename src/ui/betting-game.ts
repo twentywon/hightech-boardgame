@@ -293,7 +293,7 @@ export function mountBettingGame<S>(
     if (phase === "sessionOver") {
       if (!stampedOver) {
         if (!game.won(state)) bankrupt();
-        announce(() => (game.phase(state) === "sessionOver" ? (game.won(state) ? "상대의 칩을 모두 땄습니다!" : "칩을 모두 잃었습니다.") : ""), setup);
+        announce(() => (game.phase(state) === "sessionOver" ? (game.won(state) ? "상대의 칩을 모두 땄습니다!" : "칩을 모두 잃었습니다.") : ""), setup, () => (game.won(state) ? "win" : "lose"));
       }
       stampedOver = true;
     } else stampedOver = false;

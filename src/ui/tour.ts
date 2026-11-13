@@ -27,6 +27,7 @@ import {
   LUCK,
   roll,
   wants,
+  won,
   worth,
   type State,
 } from "../games/tour/rules";
@@ -71,7 +72,6 @@ function flagImage(country: string) {
 /** At most four travellers. */
 const SEATS = 4;
 const escape = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const won = (n: number) => n.toLocaleString("ko-KR");
 /** Mounts the world tour. `random` rolls the dice and draws the cards. */
 export function mountTour(root: HTMLElement, nav: Navigation, random: Random = cryptoRandom): TourController {
   const sound = new Sound();
@@ -498,6 +498,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $<HTMLButtonElement>("tour-yes").disabled =
       waiting || me.money < (s.phase === "buy" ? space.price : s.phase === "build" ? buildCost(space, s.levels[me.at] + 1) : 0);
     $("tour-note").textContent = s.note ? `${names[s.actor]}: ${s.note}` : "";
+    $("tour-result").dataset.outcome = humans === 1 && !s.winners.includes(0) ? "lose" : "win";
     $("tour-result").hidden = !over;
     if (over)
       $("tour-final").textContent = `${s.winners.map((i) => names[i]).join(", ")} 승리 — ${s.players.map((_, i) => `${names[i]} ${won(worth(s, i))}`).join(" · ")}`;

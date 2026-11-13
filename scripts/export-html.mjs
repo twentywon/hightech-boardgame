@@ -52,7 +52,7 @@ for (const match of html.matchAll(cssTag)) {
 // Third-party notices travel with the single file: chess.js and the hwatu images.
 const notice = (
   await Promise.all(
-    ["chess-license.txt", "hwatu-license.txt", "cards-license.txt", "sound-license.txt"].map((name) =>
+    ["chess-license.txt", "hwatu-license.txt", "cards-license.txt", "sound-license.txt", "emoji-license.txt"].map((name) =>
       readFile(resolve(root, name), "utf8"),
     ),
   )

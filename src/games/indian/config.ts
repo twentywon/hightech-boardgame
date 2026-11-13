@@ -1,6 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { ANTE, CALL, FOLD, NEXT, RAISE, START_CHIPS, TEN_PENALTY, indian, type State } from "./rules";
+import { READY, ANTE, CALL, FOLD, NEXT, RAISE, START_CHIPS, TEN_PENALTY, indian, type State } from "./rules";
 import { CHIP_COLORS, IndianView } from "./view";
 
 export const indianConfig: PointConfig<State> = {
@@ -14,7 +14,10 @@ export const indianConfig: PointConfig<State> = {
   computerOnly: true,
   noUndo: true,
   bankrupt: (state) => state.chips[0] === 0,
+  // The computer sometimes takes its time, as someone weighing a bet does.
+  ponder: (state) => (state.phase === "bet" && Math.random() < 0.5 ? 600 + Math.random() * 1900 : 0),
   tools: [
+    { label: "이마에 얹기", point: READY },
     { label: "콜 · 체크", point: CALL },
     { label: "+1 올리기", point: RAISE + 1 },
     { label: "+2 올리기", point: RAISE + 2 },

@@ -4,7 +4,7 @@ import { choose } from "../src/games/points/ai";
 import { HOLES, HOME, starHop, createGame as createStar, moves as starMoves, play as starPlay } from "../src/games/starhop/rules";
 import { ludo, createGame as createLudo, moves as ludoMoves, play as ludoPlay } from "../src/games/ludo/rules";
 import { pool, createGame as createPool, moves as poolMoves, CUE } from "../src/games/pool/rules";
-import { indian, createGame as createIndian, pot, CALL, NEXT, ROUNDS, START_CHIPS } from "../src/games/indian/rules";
+import { indian, createGame as createIndian, pot, CALL, FOLD, NEXT, READY, ROUNDS, START_CHIPS } from "../src/games/indian/rules";
 import { foosball, createGame as createFoosball, play as goal, moves as goalMoves, GOALS } from "../src/games/foosball/rules";
 import { BALL_R, HALF_X, HALF_Z, MAX_SLIDE, RODS, createWorld, foot, offset, steer, step, SWING } from "../src/games/foosball/sim";
 
@@ -158,8 +158,25 @@ describe("indian poker", () => {
       expect(state.deck.length).toBe(0);
     }
   });
+  test("a round begins with the cards raised, and a fold is remembered until the next deal", () => {
+    let state = createIndian(seeded(5));
+    expect(state.phase).toBe("ready");
+    expect(indian.moves(state).map((m) => m.to)).toEqual([READY]);
+    // Nothing of the other card is told before the cards are up.
+    expect(indian.hint(state)).not.toMatch(/상대 카드는/);
+    state = indian.play(state, { from: -1, to: READY, extra: -1 })!;
+    expect([state.phase, state.turn, state.folded]).toEqual(["bet", state.first, null]);
+    expect(indian.hint(state)).toMatch(/상대 카드는/);
+    // I raise, the computer folds.
+    state = indian.play(state, indian.moves(state).find((m) => m.to !== CALL && m.to !== FOLD)!)!;
+    state = indian.play(state, { from: -1, to: FOLD, extra: -1 })!;
+    expect([state.phase, state.folded]).toEqual(["show", 1]);
+    state = indian.play(state, { from: -1, to: NEXT, extra: -1 })!;
+    expect([state.phase, state.folded]).toEqual(["ready", null]);
+  });
   test("the computer decides the same whatever its own card is", () => {
-    const state = createIndian(seeded(8)),
+    // The cards are raised first; then it is the computer that weighs a bet.
+    const state = indian.play(createIndian(seeded(8)), { from: -1, to: READY, extra: -1 })!,
       waiting = { ...state, turn: 1 as const },
       other = { ...waiting, cards: [waiting.cards[0], waiting.cards[1] === 10 ? 1 : 10] as [number, number] };
     expect(indian.choose!(waiting, "hard", seeded(1))).toEqual(indian.choose!(other, "hard", seeded(1)));

@@ -259,7 +259,7 @@ export function mountBlackjack(
     // Out of chips: the stamp comes down once.
     if (broke && !wasBroke) {
       bankrupt();
-      announce(() => (isBroke(state) ? "칩을 모두 잃었습니다. 칩을 다시 받아 새로 시작할 수 있습니다." : ""), setup);
+      announce(() => (isBroke(state) ? "칩을 모두 잃었습니다. 칩을 다시 받아 새로 시작할 수 있습니다." : ""), setup, () => "lose");
     }
     wasBroke = broke;
     $("board").dataset.animating = String(!!view?.animating || state !== shown);

@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { dress } from "./chrome";
+import { dress, resultArt } from "./chrome";
 import { mountChess, type ChessController } from "./chess";
 import { mountBlackjack, type BlackjackController } from "./blackjack";
 import { mountYacht, type YachtController, type YachtOptions } from "./yacht";
@@ -719,7 +719,7 @@ function showResult() {
     state.winner === "draw"
       ? "멋진 승부, 무승부!"
       : `${state.winner === 1 ? "흑돌" : "백돌"}이 승리했습니다!`,
-    `<p>${state.moves.length}수의 이야기가 완성되었습니다.<br>테이블에서 한 판 더 만나볼까요?</p>${mode === "ai" ? `<p class="stats">${profiles[difficulty].label} 전적 · ${tally(getStats()[difficulty])}</p>` : ""}`,
+    `${resultArt(state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win")}<p>${state.moves.length}수의 이야기가 완성되었습니다.<br>테이블에서 한 판 더 만나볼까요?</p>${mode === "ai" ? `<p class="stats">${profiles[difficulty].label} 전적 · ${tally(getStats()[difficulty])}</p>` : ""}`,
     [
       { text: "게임판 보기", action: () => {} },
       { text: "새 게임", action: askNewGame },

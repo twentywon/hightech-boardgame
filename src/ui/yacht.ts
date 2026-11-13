@@ -320,6 +320,7 @@ export function mountYacht(
         .querySelectorAll<HTMLElement>(`.yd-sheet tr > :nth-child(${s.turn + 2})`)
         .forEach((cell) => cell.classList.add("current"));
     // Result, in the page rather than a dialog.
+    $("yd-result").dataset.outcome = winner(s) === "draw" ? "draw" : mode === "ai" && winner(s) === 1 ? "lose" : "win";
     $("yd-result").hidden = !s.over;
     if (s.over) {
       const [a, b] = s.cards.map((card) => totals(card).total),

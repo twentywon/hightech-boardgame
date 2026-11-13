@@ -176,6 +176,14 @@ export class PoolView extends FlickView<State> {
     const cue = this.state?.discs[CUE];
     return cue && this.mine() ? [{ x: cue.x, y: R, z: cue.z, r: 0.5, point: CUE }] : [];
   }
+  /** A ball turns as it rolls: about the level axis across its way, by the distance gone over its radius. */
+  private turn = new T.Quaternion();
+  private axis = new T.Vector3();
+  protected rolled(_id: number, mesh: T.Object3D, dx: number, dz: number) {
+    const gone = Math.hypot(dx, dz);
+    if (gone < 1e-6 || gone > 1) return;
+    mesh.quaternion.premultiply(this.turn.setFromAxisAngle(this.axis.set(dz / gone, 0, -dx / gone), gone / R));
+  }
   protected aimed(aim: { x: number; z: number; angle: number; power: number } | null) {
     this.cue.visible = !!aim;
     if (!aim) return;
