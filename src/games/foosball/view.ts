@@ -44,6 +44,7 @@ function pitch() {
 }
 /** The rod football table: the view plays the table in real time and reports each goal as a move. */
 export class FoosballView extends TableView<State> {
+  private root = new T.Group();
   private world: World = createWorld(0, (Math.random() - 0.5) * 0.6);
   private rods: { group: T.Group; figures: T.Group }[] = [];
   private ball: T.Mesh;
@@ -74,32 +75,38 @@ export class FoosballView extends TableView<State> {
     lamp.shadow.normalBias = 0.02;
     this.own(lamp.shadow);
     this.scene.add(lamp, lamp.target);
-    pub(this.scene, this.own_, HALF_X + 0.9, 3.6);
+    pub(this.scene, this.own_, HALF_Z + 1.2, 3.6);
+    // The table lies across the screen, as one stands at it: my goal at the left, the other at the right,
+    // and the rods running toward me. Everything of the table is built lengthwise and turned as one.
+    const root = this.root;
+    root.rotation.y = -Math.PI / 2;
+    this.scene.add(root);
+    const put = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x = 0, y = 0, z = 0) => this.add(geometry, material, x, y, z, root);
     const timber = this.standard({ map: this.own(wood(true)), roughness: 0.5 }),
       dark = this.standard({ color: "#141414", roughness: 0.6 }),
       steel = this.standard({ color: "#c9ccd0", roughness: 0.25, metalness: 0.9 }),
       grip = this.standard({ color: "#18181a", roughness: 0.7 });
     // The pitch and the cabinet round it.
-    const field = this.add(new T.PlaneGeometry(HALF_X * 2, HALF_Z * 2), this.standard({ map: this.own(pitch()), roughness: 0.85 }));
+    const field = put(new T.PlaneGeometry(HALF_X * 2, HALF_Z * 2), this.standard({ map: this.own(pitch()), roughness: 0.85 }));
     field.rotation.x = -Math.PI / 2;
     field.castShadow = false;
     const thick = 0.32,
       body = WALL + 0.9;
-    for (const side of [-1, 1]) this.add(new T.BoxGeometry(thick, body, HALF_Z * 2 + thick * 2), timber, side * (HALF_X + thick / 2), WALL - body / 2, 0);
+    for (const side of [-1, 1]) put(new T.BoxGeometry(thick, body, HALF_Z * 2 + thick * 2), timber, side * (HALF_X + thick / 2), WALL - body / 2, 0);
     for (const end of [-1, 1]) {
       const z = end * (HALF_Z + thick / 2),
         wing = HALF_X - GOAL;
-      for (const side of [-1, 1]) this.add(new T.BoxGeometry(wing, body, thick), timber, side * (GOAL + wing / 2), WALL - body / 2, z);
+      for (const side of [-1, 1]) put(new T.BoxGeometry(wing, body, thick), timber, side * (GOAL + wing / 2), WALL - body / 2, z);
       // Over and under the goal mouth, and the box the ball drops into.
-      this.add(new T.BoxGeometry(GOAL * 2, WALL - 0.5, thick), timber, 0, 0.5 + (WALL - 0.5) / 2, z);
-      this.add(new T.BoxGeometry(GOAL * 2, 0.9, thick), timber, 0, -0.45, z);
-      this.add(new T.BoxGeometry(GOAL * 2, 0.5, 0.05), dark, 0, 0.25, z + end * 0.1);
+      put(new T.BoxGeometry(GOAL * 2, WALL - 0.5, thick), timber, 0, 0.5 + (WALL - 0.5) / 2, z);
+      put(new T.BoxGeometry(GOAL * 2, 0.9, thick), timber, 0, -0.45, z);
+      put(new T.BoxGeometry(GOAL * 2, 0.5, 0.05), dark, 0, 0.25, z + end * 0.1);
     }
-    this.add(new T.BoxGeometry(HALF_X * 2 + thick * 2, 0.2, HALF_Z * 2 + thick * 2), timber, 0, -0.8, 0);
+    put(new T.BoxGeometry(HALF_X * 2 + thick * 2, 0.2, HALF_Z * 2 + thick * 2), timber, 0, -0.8, 0);
     for (const x of [-1, 1])
       for (const z of [-1, 1]) {
-        this.add(new T.BoxGeometry(0.45, 2.8, 0.45), dark, x * (HALF_X - 0.1), -2.2, z * (HALF_Z - 0.4));
-        this.add(new T.CylinderGeometry(0.3, 0.3, 0.08, 20), steel, x * (HALF_X - 0.1), -3.56, z * (HALF_Z - 0.4));
+        put(new T.BoxGeometry(0.45, 2.8, 0.45), dark, x * (HALF_X - 0.1), -2.2, z * (HALF_Z - 0.4));
+        put(new T.CylinderGeometry(0.3, 0.3, 0.08, 20), steel, x * (HALF_X - 0.1), -3.56, z * (HALF_Z - 0.4));
       }
     // The rods: steel through the walls, a grip on the player's own side, and the figures.
     const colours = FOOSBALL_COLORS.map((color) => this.standard({ color, roughness: 0.45 })),
@@ -139,22 +146,22 @@ export class FoosballView extends TableView<State> {
         figures.add(figure);
       }
       group.add(figures);
-      this.scene.add(group);
+      root.add(group);
       this.rods.push({ group, figures });
     }
-    this.ball = this.add(new T.SphereGeometry(BALL_R, 24, 16), this.standard({ color: "#f4f1e6", roughness: 0.35 }));
+    this.ball = put(new T.SphereGeometry(BALL_R, 24, 16), this.standard({ color: "#f4f1e6", roughness: 0.35 }));
     // The counters: five beads on a wire over each goal, pushed across as goals are scored.
     const bead = this.own(new T.BoxGeometry(0.16, 0.2, 0.2));
     for (const side of [0, 1]) {
       const z = (side === 0 ? 1 : -1) * (HALF_Z + thick / 2),
-        wire = this.add(new T.CylinderGeometry(0.02, 0.02, 2.6, 8), steel, 0, WALL + 0.2, z);
+        wire = put(new T.CylinderGeometry(0.02, 0.02, 2.6, 8), steel, 0, WALL + 0.2, z);
       wire.rotation.z = Math.PI / 2;
-      for (const x of [-1.3, 1.3]) this.add(new T.BoxGeometry(0.06, 0.26, 0.06), steel, x, WALL + 0.1, z);
+      for (const x of [-1.3, 1.3]) put(new T.BoxGeometry(0.06, 0.26, 0.06), steel, x, WALL + 0.1, z);
       for (let i = 0; i < GOALS; i++) {
         const mesh = new T.Mesh(bead, colours[side]);
         mesh.position.set(0, WALL + 0.2, z);
         mesh.castShadow = true;
-        this.scene.add(mesh);
+        root.add(mesh);
         this.beads[side].push(mesh);
       }
     }
@@ -166,17 +173,17 @@ export class FoosballView extends TableView<State> {
       if (e.pointerType !== "mouse" || this.disposed) return;
       aim(ray, e, el, this.camera);
       if (!ray.ray.intersectPlane(this.floor, hit)) return;
-      // A mouse needs no button held: wherever it goes, the rods go as far.
-      if (this.grip !== null && e.buttons === 0) this.push(hit.x - this.grip);
-      if (e.buttons === 0) this.grip = hit.x;
+      // A mouse needs no button held: wherever it goes (toward me or away), the rods go as far.
+      if (this.grip !== null && e.buttons === 0) this.push(hit.z - this.grip);
+      if (e.buttons === 0) this.grip = hit.z;
     });
     el.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft") this.held = -1;
-      else if (e.key === "ArrowRight") this.held = 1;
-      else if (e.key === " " || e.key === "Enter" || e.key === "ArrowUp") this.kick = true;
+      if (e.key === "ArrowUp") this.held = -1;
+      else if (e.key === "ArrowDown") this.held = 1;
+      else if (e.key === " " || e.key === "Enter") this.kick = true;
     });
     el.addEventListener("keyup", (e) => {
-      if ((e.key === "ArrowLeft" && this.held < 0) || (e.key === "ArrowRight" && this.held > 0)) this.held = 0;
+      if ((e.key === "ArrowUp" && this.held < 0) || (e.key === "ArrowDown" && this.held > 0)) this.held = 0;
     });
     el.addEventListener("blur", () => (this.held = 0));
     el.addEventListener("pointerleave", (e) => {
@@ -201,13 +208,13 @@ export class FoosballView extends TableView<State> {
   }
   private grip: number | null = null;
   protected dragStart(_point: number, at: { x: number; z: number }) {
-    this.grip = at.x;
+    this.grip = at.z;
     this.kick = true;
     return true;
   }
   protected dragMove(at: { x: number; z: number }) {
-    if (this.grip !== null) this.push(at.x - this.grip);
-    this.grip = at.x;
+    if (this.grip !== null) this.push(at.z - this.grip);
+    this.grip = at.z;
   }
   protected dragEnd() {
     this.grip = null;
@@ -266,7 +273,8 @@ export class FoosballView extends TableView<State> {
     }
   }
   protected subject(aspect: number): TableSubject {
-    return { half: aspect < 0.8 ? HALF_X + 1.5 : HALF_X + 2.2, halfZ: HALF_Z + 0.9, height: WALL, lookY: 0.2, tilt: 1.0 };
+    // The length of the table across the screen; the rods and their grips reach toward me and away.
+    return { half: HALF_Z + (aspect < 1.2 ? 0.9 : 1.6), halfZ: HALF_X + 2.3, height: WALL, lookY: 0.2, tilt: 1.02 };
   }
   protected spots(): Spot[] {
     return [];

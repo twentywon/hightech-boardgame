@@ -1,4 +1,4 @@
-import { setupDialog } from "./dialog";
+import { modal, setupDialog } from "./dialog";
 /**
  * How every table screen is laid out, whatever the game: the buttons that
  * act on the game lie over the table, in a corner of it, and the panel beside
@@ -45,7 +45,41 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
     line.textContent = mode;
     side.prepend(line);
   }
+  // When the game is over its result comes up in a window, with a way to another game. The panel's own
+  // result block (shown at that moment) is what is read.
+  const result = side.querySelector<HTMLElement>(".yd-result");
+  if (result)
+    new MutationObserver(() => {
+      if (result.hidden) delete result.dataset.told;
+      else if (!result.dataset.told) {
+        result.dataset.told = "1";
+        announce(() => (result.isConnected && !result.hidden ? (result.querySelector("p")?.textContent ?? "") : ""), setup);
+      }
+    }).observe(result, { attributes: true, attributeFilter: ["hidden"] });
   // 새 게임 stays with the other screen buttons over the table and opens the game's own setup in a dialog.
   const restart = main.querySelector<HTMLButtonElement>("#restart");
   if (restart) restart.onclick = () => setupDialog(setup);
+}
+
+/**
+ * Says how a game ended in a window, once the table has come to rest and no
+ * other window is open. `text` is asked for at that moment and may answer
+ * with nothing when the result no longer stands (a move taken back).
+ */
+export function announce(text: () => string, setup?: (host: HTMLElement) => void, title = "게임 결과") {
+  const show = () => {
+    if (document.querySelector("dialog[open]")) {
+      setTimeout(show, 400);
+      return;
+    }
+    const line = text();
+    if (!line) return;
+    const body = document.createElement("p");
+    body.textContent = line;
+    modal(title, body.outerHTML, [
+      { text: "확인", action: () => {} },
+      ...(setup ? [{ text: "새 게임", action: () => setupDialog(setup) }] : []),
+    ]);
+  };
+  setTimeout(show, 900);
 }

@@ -122,7 +122,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "four-in-a-row": { config: fourRowConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "twist-five": { config: twistConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "hare-and-hounds": { config: hareConfig, options: { mode: "ai", variant: "hounds", level: "normal" } },
-  "hit-and-blow": { config: hitBlowConfig, options: { mode: "ai", variant: "3", level: "normal" } },
+  "number-baseball": { config: hitBlowConfig, options: { mode: "ai", variant: "3", level: "normal" } },
   "wall-race": { config: wallRaceConfig, options: { mode: "ai", variant: "", level: "normal" } },
   dominoes: { config: dominoConfig, options: { mode: "ai", variant: "", level: "normal" } },
   alkkagi: { config: alkkagiConfig, options: { mode: "ai", variant: "go-5", level: "normal" } },
@@ -241,7 +241,7 @@ type GameSelection =
   | "four-in-a-row"
   | "twist-five"
   | "hare-and-hounds"
-  | "hit-and-blow"
+  | "number-baseball"
   | "wall-race"
   | "dominoes"
   | "alkkagi"

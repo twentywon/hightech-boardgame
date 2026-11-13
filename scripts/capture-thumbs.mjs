@@ -124,7 +124,7 @@ const play = {
       await wait(2600);
     }
   },
-  "hit-and-blow": async () => {
+  "number-baseball": async () => {
     for (const walk of [["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], Array(6).fill("ArrowRight").concat("Enter"), Array(9).fill("ArrowLeft").concat("Enter"), ["ArrowRight", "Enter"], ["ArrowRight", "Enter"], Array(9).fill("ArrowRight").concat("Enter"), Array(8).fill("ArrowLeft").concat("Enter"), ["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], Array(6).fill("ArrowRight").concat("Enter")]) {
       await keys(walk, 60);
       await wait(700);

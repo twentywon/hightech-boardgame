@@ -66,6 +66,32 @@ function boardTexture() {
     }
     ctx.fill();
   }
+  // Where the road turns a corner an arrow shows the way on.
+  ctx.fillStyle = "rgba(40,30,20,0.6)";
+  ROAD.forEach(([col, row], i) => {
+    const [pc, pr] = ROAD[(i + ROAD.length - 1) % ROAD.length],
+      [nc, nr] = ROAD[(i + 1) % ROAD.length],
+      dx = nc - col,
+      dy = nr - row;
+    if ((col - pc === dx && row - pr === dy) || SAFE.includes(i)) return;
+    const x = col * u + 35,
+      y = row * u + 35,
+      a = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(-4, -17);
+    ctx.lineTo(-4, -7);
+    ctx.lineTo(-22, -7);
+    ctx.lineTo(-22, 7);
+    ctx.lineTo(-4, 7);
+    ctx.lineTo(-4, 17);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
   // The middle: four triangles meeting.
   [[ARMS[3], 6, 9, 9, 9], [ARMS[1], 6, 6, 9, 6], [ARMS[0], 6, 6, 6, 9], [ARMS[2], 9, 6, 9, 9]].forEach(([color, c1, r1, c2, r2]) => {
     ctx.fillStyle = color as string;

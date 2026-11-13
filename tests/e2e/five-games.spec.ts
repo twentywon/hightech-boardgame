@@ -89,10 +89,10 @@ test("table soccer: the ball runs by itself and my rods follow the keys", async 
   await expect(page.getByRole("button", { name: "무르기", exact: true })).toBeHidden();
   await expect(canvas).toHaveAttribute("data-ball", /,/, { timeout: 10000 });
   const before = await canvas.getAttribute("data-ball");
-  await page.keyboard.down("ArrowRight");
+  await page.keyboard.down("ArrowDown");
   await page.waitForTimeout(900);
   await page.keyboard.press(" ");
-  await page.keyboard.up("ArrowRight");
+  await page.keyboard.up("ArrowDown");
   await expect.poll(async () => Number(await canvas.getAttribute("data-slide")), { timeout: 10000 }).toBeGreaterThan(0.5);
   await expect.poll(() => canvas.getAttribute("data-ball"), { timeout: 10000 }).not.toBe(before);
   await page.getByRole("button", { name: "게임 방법" }).click();

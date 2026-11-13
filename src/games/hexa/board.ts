@@ -10,6 +10,7 @@ export const hexaBoard = (variant: string): BoardSpec => ({
   half: 4.6,
   centreZ: 0,
   theme: "lab",
+  space: true,
   radius: 0.34,
   colors: ["#3f8cff", "#ff5a4a"],
   subject: { half: 4.3, halfZ: 4.5, height: 1.6, lookY: 0, tilt: 1.02 },

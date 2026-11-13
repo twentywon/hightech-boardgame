@@ -21,6 +21,8 @@ export interface BoardSpec {
   paint: Paint;
   /** yard: scratched into the earth of a Korean yard; wood: a board on a table; lab: tiles on a dark bench. */
   theme: "yard" | "wood" | "lab";
+  /** The lab's tiles hang in space, among stars, instead of lying on a bench. */
+  space?: boolean;
   /** Radius of a piece. */
   radius: number;
   colors: [string, string];
@@ -153,6 +155,44 @@ export class PointBoardView {
       slab.position.set(0, -0.152, centreZ);
       slab.castShadow = slab.receiveShadow = true;
       this.scene.add(slab);
+    } else if (spec.space) {
+      // Deep space: a painted sky behind everything, and two worlds far off.
+      const sky = document.createElement("canvas");
+      sky.width = 2048;
+      sky.height = 1024;
+      const c = sky.getContext("2d")!,
+        glow = (x: number, y: number, r: number, color: string) => {
+          const g = c.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, color);
+          g.addColorStop(1, "rgba(0,0,0,0)");
+          c.fillStyle = g;
+          c.fillRect(x - r, y - r, r * 2, r * 2);
+        };
+      c.fillStyle = "#04060f";
+      c.fillRect(0, 0, 2048, 1024);
+      glow(500, 300, 520, "rgba(70,40,140,0.5)");
+      glow(1500, 700, 600, "rgba(20,90,140,0.42)");
+      glow(1100, 200, 380, "rgba(150,50,110,0.3)");
+      // Stars from a fixed sequence, so that the sky is the same every time.
+      let seed = 7;
+      const next = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+      for (let i = 0; i < 1500; i++) {
+        const x = next() * 2048,
+          y = next() * 1024,
+          r = next() < 0.04 ? 2.2 : next() * 1.2 + 0.3;
+        c.fillStyle = `rgba(${220 + Math.floor(next() * 35)},${220 + Math.floor(next() * 35)},255,${0.45 + next() * 0.55})`;
+        c.beginPath();
+        c.arc(x, y, r, 0, Math.PI * 2);
+        c.fill();
+      }
+      const stars = this.own(new T.CanvasTexture(sky));
+      stars.colorSpace = T.SRGBColorSpace;
+      this.scene.background = stars;
+      for (const [x, y, z, r, color, emissive] of [[-11, -9, -9, 5, "#3b6fb5", "#0d1f3a"], [12, -12, 2, 3.2, "#b56a3b", "#2a1408"]] as [number, number, number, number, string, string][]) {
+        const world = new T.Mesh(this.own(new T.SphereGeometry(r, 40, 28)), standard({ color, emissive, emissiveIntensity: 0.6, roughness: 0.9 }));
+        world.position.set(x, y, z + centreZ);
+        this.scene.add(world);
+      }
     } else {
       flat(90, 90, standard({ map: this.own(speckled("#262d33", ["rgba(0,0,0,0.3)", "rgba(150,170,180,0.12)"], 5, 16)), roughness: 0.6 }), -0.02);
     }

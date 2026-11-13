@@ -1,4 +1,4 @@
-import { dress } from "./chrome";
+import { announce, dress } from "./chrome";
 import { bankrupt, mirrorStatus } from "./banner";
 import type { Action } from "../games/cards/betting";
 import type { BettingGame, TableView } from "../games/cards/game";
@@ -290,8 +290,11 @@ export function mountBettingGame<S>(
     const phase = game.phase(state),
       result = game.result(state);
     // My chips are gone: the stamp comes down once for the session.
-    if (phase === "sessionOver" && !game.won(state)) {
-      if (!stampedOver) bankrupt();
+    if (phase === "sessionOver") {
+      if (!stampedOver) {
+        if (!game.won(state)) bankrupt();
+        announce(() => (game.phase(state) === "sessionOver" ? (game.won(state) ? "상대의 칩을 모두 땄습니다!" : "칩을 모두 잃었습니다.") : ""), setup);
+      }
       stampedOver = true;
     } else stampedOver = false;
     if ((phase === "handOver" || phase === "sessionOver") && result && !result.rematch && soundedRound !== game.round(state)) {

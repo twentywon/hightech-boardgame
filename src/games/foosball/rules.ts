@@ -34,7 +34,7 @@ export const foosball: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s, player) => s.score[player] - s.score[player ? 0 : 1],
-  hint: (s) => `${s.last !== null ? `골! ${s.score[0]} 대 ${s.score[1]}. ` : ""}막대를 좌우로 움직이고, 눌러서 공을 차세요.`,
+  hint: (s) => `${s.last !== null ? `골! ${s.score[0]} 대 ${s.score[1]}. ` : ""}막대를 위아래로 움직이고, 눌러서 공을 차세요.`,
   tally: (s) => [0, 1].map((p) => `${s.score[p]}골`) as [string, string],
   reason: (s) => `${s.score[0]} 대 ${s.score[1]}. ${GOALS}골을 먼저 넣었습니다.`,
 };

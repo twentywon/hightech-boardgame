@@ -161,8 +161,8 @@ export const games = [
     available: true,
   },
   {
-    name: "히트 앤 블로",
-    en: "HIT AND BLOW",
+    name: "숫자야구",
+    en: "NUMBER BASEBALL",
     category: "보드게임",
     icon: "⚾",
     available: true,
