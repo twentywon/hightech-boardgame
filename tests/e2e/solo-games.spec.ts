@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { PerspectiveCamera, Vector3 } from "three";
 import { FOV, cameraDistance } from "../../src/engine/camera";
 import { CENTRE, HOLES, SIZE, holeAt } from "../../src/games/peg/rules";
+import { W as TRAY_W, createGame as layTray, moves as trayMoves } from "../../src/games/marble/rules";
 import { selectGame } from "./library";
 
 const count = (page: Page) => page.locator("#move-count");
@@ -130,9 +131,17 @@ test("falling blocks: the clock brings the piece down, a key drops it, and an op
   await expect.poll(() => score(page), { timeout: 10000 }).toBeGreaterThan(0);
   // The buttons on the table move the piece too.
   const tools = page.locator(".board-area .pg-tools");
-  await tools.getByRole("button", { name: "→" }).click();
-  await tools.getByRole("button", { name: "돌리기" }).click();
-  await tools.getByRole("button", { name: "떨어뜨리기" }).click();
+  // They stand as the arrow keys do, at the lower left, with the drop beside them.
+  const right = tools.getByRole("button", { name: "오른쪽", exact: true }),
+    turn = tools.getByRole("button", { name: "돌리기" }),
+    drop = tools.getByRole("button", { name: "떨어뜨리기" });
+  await right.click();
+  await turn.click();
+  await drop.click();
+  const [up, side, fall, board] = await Promise.all([turn.boundingBox(), right.boundingBox(), drop.boundingBox(), page.locator(".board-area").boundingBox()]);
+  expect(up!.y).toBeLessThan(side!.y);
+  expect(fall!.x).toBeGreaterThan(side!.x);
+  expect(side!.x + side!.width).toBeLessThan(board!.x + board!.width / 2);
   const dropped = await score(page);
   expect(dropped).toBeGreaterThan(0);
   // While the rules are open nothing falls.
@@ -145,7 +154,13 @@ test("falling blocks: the clock brings the piece down, a key drops it, and an op
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await expect(count(page)).not.toHaveText(held, { timeout: 10000 });
   // The pause button stops the clock and the keys; pressed again, the game goes on.
-  const pause = tools.getByRole("button", { name: "일시정지" });
+  // Two bars in the table's upper right corner.
+  const pause = page.locator("#pg-pause");
+  await expect(pause).toHaveAttribute("aria-label", "일시정지");
+  const corner = (await pause.boundingBox())!,
+    area = (await page.locator(".board-area").boundingBox())!;
+  expect(corner.x).toBeGreaterThan(area.x + area.width * 0.8);
+  expect(corner.y).toBeLessThan(area.y + area.height * 0.2);
   await pause.click();
   await expect(page.locator("#board")).toHaveAttribute("data-paused", "true");
   await expect(page.locator("#turn")).toContainText("일시정지");
@@ -155,14 +170,20 @@ test("falling blocks: the clock brings the piece down, a key drops it, and an op
   await page.keyboard.press(" ");
   await page.waitForTimeout(2200);
   await expect(count(page)).toHaveText(stopped);
-  await tools.getByRole("button", { name: "계속하기" }).click();
+  await expect(pause).toHaveAttribute("aria-label", "계속하기");
+  await pause.click();
   await expect(page.locator("#board")).toHaveAttribute("data-paused", "false");
   await expect(count(page)).not.toHaveText(stopped, { timeout: 10000 });
   // The P key does the same.
   await page.keyboard.press("p");
-  await expect(tools.getByRole("button", { name: "계속하기" })).toBeVisible();
+  await expect(pause).toHaveAttribute("aria-label", "계속하기");
   await page.keyboard.press("p");
-  await expect(tools.getByRole("button", { name: "일시정지" })).toBeVisible();
+  await expect(pause).toHaveAttribute("aria-label", "일시정지");
+  // 새 게임 asks which level to begin at; from the fifth, rubble comes up from the floor.
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(8);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "레벨 5" }).click();
+  await expect(page.locator("#turn")).toContainText("레벨 5", { timeout: 20000 });
   expect(errors).toEqual([]);
 });
 
@@ -175,15 +196,130 @@ test("brick breaker: the ball is sent off and knocks a brick out", async ({ page
   await expect(count(page)).toHaveText("0수");
   await page.locator("canvas").focus();
   // Paused, the ball cannot even be sent off.
-  const pause = page.locator(".board-area .pg-tools").getByRole("button", { name: "일시정지" });
+  const pause = page.locator("#pg-pause");
   await pause.click();
   await expect(page.locator("#turn")).toContainText("일시정지");
   await page.locator("canvas").focus();
   await page.keyboard.press(" ");
   await page.waitForTimeout(2500);
   await expect(count(page)).toHaveText("0수");
-  await page.locator(".board-area .pg-tools").getByRole("button", { name: "계속하기" }).click();
+  await pause.click();
   await page.keyboard.press(" ");
   await expect.poll(() => score(page), { timeout: 20000 }).toBeGreaterThan(0);
+  // 새 게임 shows the ten walls; a later one may be begun at once.
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  const walls = page.getByRole("dialog").locator(".stage-card");
+  await expect(walls).toHaveCount(10);
+  await expect(page.getByRole("dialog").locator(".stage-card svg")).toHaveCount(10);
+  await walls.filter({ hasText: "7단계" }).click();
+  await expect(page.locator("#turn")).toContainText("7/10단계", { timeout: 20000 });
+  expect(errors).toEqual([]);
+});
+
+test("mouse maze: the mouse runs where it is sent, the arrows steer it, and it can be paused", async ({ page }) => {
+  const errors = await sit(page, "생쥐 미로");
+  await expect(page.locator(".solo-stat")).toHaveCount(3);
+  await expect(page.locator("#turn")).toContainText("남은 목숨 3");
+  // It stands until it is sent somewhere; then it picks up crumbs as it goes.
+  await page.waitForTimeout(600);
+  expect(await score(page)).toBe(0);
+  for (const key of ["ArrowLeft", "ArrowUp", "ArrowRight"]) {
+    await page.keyboard.press(key);
+    await page.waitForTimeout(500);
+  }
+  await expect.poll(() => score(page), { timeout: 15000 }).toBeGreaterThan(0);
+  const tools = page.locator(".board-area .pg-tools");
+  await expect(tools.getByRole("button", { name: "위로" })).toBeVisible();
+  await tools.getByRole("button", { name: "왼쪽으로" }).click();
+  // Paused, nothing moves and nothing is scored.
+  await page.locator("#pg-pause").click();
+  await expect(page.locator("#turn")).toContainText("일시정지");
+  const held = await count(page).innerText();
+  await page.waitForTimeout(1500);
+  await expect(count(page)).toHaveText(held);
+  await page.locator("#pg-pause").click();
+  // 새 게임 shows the five mazes.
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await expect(page.getByRole("dialog").locator(".stage-card svg")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "3단계" }).click();
+  await expect(page.locator("#turn")).toContainText("3/5단계", { timeout: 20000 });
+  expect(errors).toEqual([]);
+});
+
+test("marble shooting: a marble is shot from the keyboard, the shot is taken back, and 새 게임 asks how many", async ({ page }) => {
+  // The tray is laid at random; with the platform's generator replaced by a known one, the test can lay the same tray.
+  await page.addInitScript(() => {
+    let seed = 2024;
+    crypto.getRandomValues = ((buffer: Uint32Array) => {
+      for (let i = 0; i < buffer.length; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        buffer[i] = seed * 2;
+      }
+      return buffer;
+    }) as typeof crypto.getRandomValues;
+  });
+  let seed = 2024;
+  const random = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed * 2) / 4294967296;
+  };
+  const errors = await sit(page, "구슬치기");
+  await rest(page);
+  await expect(page.locator("#turn")).toContainText("구슬 6개");
+  // One tray is laid when the game is looked at in the collection, and the one played when sitting down.
+  layTray(6, random);
+  const tray = layTray(6, random),
+    shot = trayMoves(tray)[0],
+    walk = async (from: number, to: number) => {
+      const dx = (to % TRAY_W) - (from % TRAY_W),
+        dy = Math.floor(to / TRAY_W) - Math.floor(from / TRAY_W);
+      for (let i = 0; i < Math.abs(dx); i++) await page.keyboard.press(dx > 0 ? "ArrowRight" : "ArrowLeft");
+      for (let i = 0; i < Math.abs(dy); i++) await page.keyboard.press(dy > 0 ? "ArrowDown" : "ArrowUp");
+    };
+  await page.locator("canvas").focus();
+  // The first arrow puts the keyboard on the first hollow; from there it walks to the marble, then to the one it strikes.
+  await page.keyboard.press("ArrowRight");
+  await walk(0, shot.from);
+  await page.keyboard.press("Enter");
+  await walk(shot.from, shot.to);
+  await page.keyboard.press("Enter");
+  await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+  await rest(page);
+  await expect(page.locator("#turn")).toContainText("구슬 5개");
+  await page.locator(".board-controls").getByRole("button", { name: "무르기", exact: true }).click();
+  await expect(page.locator("#turn")).toContainText("구슬 6개");
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "구슬 10개" }).click();
+  await expect(page.locator("#turn")).toContainText("구슬 10개", { timeout: 20000 });
+  expect(errors).toEqual([]);
+});
+
+test("warehouse keeper: the keeper walks by key and by button, a step is taken back, and 새 게임 asks how many crates", async ({ page }) => {
+  const errors = await sit(page, "창고지기");
+  await expect(page.locator("#turn")).toContainText("상자 3개");
+  // One of the four ways is always open at the start of a warehouse that can be solved.
+  for (const key of ["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"]) {
+    await page.keyboard.press(key);
+    await rest(page);
+  }
+  await expect(count(page)).not.toHaveText("0수");
+  const steps = Number.parseInt(await count(page).innerText());
+  await page.locator(".board-controls").getByRole("button", { name: "무르기", exact: true }).click();
+  await expect(count(page)).toHaveText(`${steps - 1}수`);
+  // The arrow buttons stand at the lower left; whichever is open takes a step.
+  const tools = page.locator(".board-area .pg-tools");
+  for (const name of ["위로", "왼쪽으로", "아래로", "오른쪽으로"]) {
+    const button = tools.getByRole("button", { name });
+    if (await button.isEnabled()) {
+      await button.click();
+      break;
+    }
+  }
+  await expect(count(page)).toHaveText(`${steps}수`);
+  await page.getByRole("button", { name: "새 게임", exact: true }).click();
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "상자 5개" }).click();
+  await expect(page.locator("#turn")).toContainText("상자 5개", { timeout: 20000 });
+  await expect(count(page)).toHaveText("0수");
   expect(errors).toEqual([]);
 });

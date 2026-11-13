@@ -26,6 +26,7 @@ export const pegConfig: PointConfig<State> = {
   noPanel: true,
   showMovable: false,
   // The stages: the whole board, and five set problems with fewer marbles.
+  stagesFirst: true,
   stages: Object.entries(STAGES).map(([value, stage]) => ({ value, name: stage.name, note: `구슬 ${left(createGame(value))}개`, art: picture(value) })),
   autoSingle: false,
   name: "페그 솔리테어",

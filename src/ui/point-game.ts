@@ -45,7 +45,7 @@ export interface PointConfig<S> {
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
   /** `show` keeps a tool in place (greyed) while its move is not legal; `text` rewrites its label for the state. */
-  tools?: { label: string; point: number; onBoard?: boolean; show?: (state: S) => boolean; text?: (state: S) => string }[];
+  tools?: { label: string; point: number; onBoard?: boolean; show?: (state: S) => boolean; text?: (state: S) => string; area?: string; name?: string }[];
   /** Extra time, in milliseconds, the computer takes over the move it is about to make. */
   ponder?: (state: S) => number;
   /** No panel beside the table: the table takes the whole width (the panel stays in the page, unseen, for readers). */
@@ -71,6 +71,10 @@ export interface PointConfig<S> {
    * each (`art` is markup, a small picture) instead of a list in the setup panel. `value` is the variant.
    */
   stages?: { value: string; name: string; note: string; art: string }[];
+  /** The stage window comes up as soon as one sits down, not only from 새 게임. */
+  stagesFirst?: boolean;
+  /** The tools stand at the lower left as the arrow keys of a keyboard do; each names its place with `area` (up, left, down, right, or drop beside them). */
+  toolsLayout?: "arrows";
   /** A key that is a whole move (an arrow that slides the tiles), or null for the usual walk over the points. */
   keyMove?: (key: string, state: S) => Move | null;
   /** The names and colours of the two sides, when they depend on the variant. */
@@ -219,7 +223,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         }),
     );
   }
-  function start(pick = !!config.stages) {
+  function start(pick = !!config.stages && !!config.stagesFirst) {
     mode = alone ? "ai" : preferences.mode;
     variant = preferences.variant;
     level = preferences.level;
@@ -244,7 +248,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       `<li id="pg-side-${p}"${solo && p ? " hidden" : ""}><i class="yut-dot" style="background:${(spec?.colors ?? config.colorsOf?.(variant) ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}" hidden>${tool.label}</button>`).join("")}${config.pausable ? `<button id="pg-pause" class="pg-tool">일시정지</button>` : ""}</div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.toolsLayout ? ` tools-${config.toolsLayout}` : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}"${tool.area ? ` style="grid-area:${tool.area}"` : ""}${tool.name ? ` aria-label="${tool.name}"` : ""} hidden>${tool.label}</button>`).join("")}</div>${config.pausable ? `<div class="board-pause"><button id="pg-pause" class="board-icon pause-icon" aria-label="일시정지"><i aria-hidden="true"></i></button></div>` : ""}<div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul><div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button><p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
@@ -490,11 +494,13 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $("board").dataset.paused = String(paused && !done);
     if (config.pausable) {
       $("pg-pause").hidden = done;
-      $("pg-pause").textContent = paused ? "계속하기" : "일시정지";
+      // Two bars while the game runs, an arrowhead while it stands still.
+      $("pg-pause").setAttribute("aria-label", paused ? "계속하기" : "일시정지");
+      $("pg-pause").classList.toggle("paused", paused);
       $("pg-pause").setAttribute("aria-pressed", String(paused));
     }
     $("turn").textContent = paused && !done
-      ? "일시정지 — '계속하기'를 누르면 이어집니다."
+      ? "일시정지 — 오른쪽 위 ▶ 버튼을 누르면 이어집니다."
       : solo
       ? done
         ? "게임이 끝났습니다."

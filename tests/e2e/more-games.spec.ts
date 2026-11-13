@@ -92,7 +92,7 @@ test("the notebook: dots and boxes closes a box for another turn, hex colours a 
     await tap(page, paperSubject(corner), p.x, p.z, mobile, 0.07);
     await settled(page);
   };
-  await sit(page, "도츠 앤 박시스", "local", "3");
+  await sit(page, "닷츠 앤 박시스", "local", "3");
   await expect(page.locator(".side-mode")).toContainText("네모 3 × 3");
   const lines = dotsPoints(3);
   // Lines 0, 3 and 12 leave box 0 open on its right side (13).

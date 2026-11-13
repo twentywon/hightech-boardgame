@@ -65,6 +65,30 @@ test("collection preserves filters, supports keyboard/touch and resets on home o
   await page.getByRole("button", { name: "전체", exact: true }).click();
   await expect(page.getByRole("region", { name: "리버시 대국 설정" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  // The games lie in a grid, row under row, not in one line to be scrolled sideways.
+  const rows = await page.locator(".game-entry:not([hidden])").evaluateAll((tiles) => new Set(tiles.map((t) => Math.round(t.getBoundingClientRect().top))).size);
+  expect(rows).toBeGreaterThan(2);
+  expect(await page.locator("#game-rail").evaluate((grid) => grid.scrollWidth <= grid.clientWidth + 1)).toBe(true);
+  // The chosen game's panel opens under its own row, across the whole grid.
+  const panel = (await page.locator(".game-stage").boundingBox())!,
+    tile = (await reversi.boundingBox())!,
+    grid = (await page.locator("#game-rail").boundingBox())!;
+  expect(panel.y).toBeGreaterThanOrEqual(tile.y + tile.height - 12);
+  expect(panel.width).toBeGreaterThan(grid.width * 0.9);
+  // Games for one and games for two can be told apart, and looked at separately.
+  await page.getByRole("button", { name: "인원 1인용" }).click();
+  await expect(page.getByRole("region", { name: "리버시 대국 설정" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "스파이더 살펴보기" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "오목 살펴보기", exact: true })).toBeHidden();
+  await page.getByRole("button", { name: "퍼즐게임", exact: true }).click();
+  await expect(page.getByRole("button", { name: "스파이더 살펴보기" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "2048 살펴보기" })).toBeVisible();
+  await page.getByRole("button", { name: "인원 2인용" }).click();
+  await expect(page.locator(".game-entry:not([hidden])")).toHaveCount(0);
+  await page.getByRole("button", { name: "전체", exact: true }).click();
+  await expect(page.getByRole("button", { name: "오목 살펴보기", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "오목 살펴보기", exact: true })).toContainText("2인용");
+  await page.getByRole("button", { name: "인원 전체" }).click();
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
   await expect(page.locator(".featured")).toHaveCount(0);
   await selectGame(page);

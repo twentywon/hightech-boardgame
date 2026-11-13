@@ -66,7 +66,8 @@ export interface State {
   item: number | null;
   ply: number;
 }
-export const createGame = (): State => ({ score: 0, lives: LIVES, level: 1, winner: null, last: null, item: null, ply: 0 });
+/** A game may begin at any wall. */
+export const createGame = (start = 1): State => ({ score: 0, lives: LIVES, level: Math.max(1, Math.min(LEVELS, Math.round(start) || 1)), winner: null, last: null, item: null, ply: 0 });
 export const moves = (state: State): Move[] =>
   state.winner !== null ? [] : [BRICK, LOST, CLEAR, ...ITEM_NAMES.map((_, kind) => ITEM + kind)].map((to) => ({ from: -1, to, extra: -1 }));
 export function play(state: State, move: Move): State | null {
@@ -83,7 +84,7 @@ export function play(state: State, move: Move): State | null {
 }
 const effect = (): Effect | null => null;
 export const bricks: PointGame<State> = {
-  create: () => createGame(),
+  create: (variant) => createGame(Number(variant) || 1),
   moves,
   play: (state, move) => play(state, move),
   turn: () => 0,

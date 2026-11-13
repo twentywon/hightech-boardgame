@@ -5,7 +5,7 @@ import { DOWN, DROP, H, LEFT, RIGHT, TICK, TURN, W, cells, interval, landing, le
 
 export const BLOCK_COLORS: [string, string] = ["#d9614c", "#b9b3a4"];
 /** The paint of each of the seven pieces: toy-box colours, not neon. */
-const PAINT = ["#d9614c", "#2f9f8f", "#e0a92a", "#4b5fb5", "#7a9a3a", "#8a4f9a", "#3f9ad0"];
+const PAINT = ["#d9614c", "#2f9f8f", "#e0a92a", "#4b5fb5", "#7a9a3a", "#8a4f9a", "#3f9ad0", "#8b9198"];
 /** A colour made lighter (amount above 0) or darker (below). */
 function shade(hex: string, amount: number) {
   const n = parseInt(hex.slice(1), 16),

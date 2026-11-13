@@ -2508,3 +2508,46 @@ dialog .stage-card small { font-size:12px;color:var(--ink-soft, #5c5a55); }
   dialog .stage-card b { margin-top:2px;font-size:12px;white-space:nowrap;letter-spacing:-0.02em; }
   dialog .stage-card small { font-size:11px; }
 }
+
+/* ── The collection as a grid, row under row; a chosen game opens under its own row ───────── */
+.library .game-list.game-grid { display:grid;grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));grid-auto-flow:row dense;gap:4px 6px;padding:18px 0 26px;overflow:visible;scroll-snap-type:none; }
+.library .game-grid .game-entry { min-width:0;scroll-snap-align:none; }
+.library .game-grid .game-entry.expanded { grid-column:auto; }
+.library .game-grid .game-card { width:100%; }
+.library .game-grid .game-stage { grid-column:1 / -1;margin:2px 0 14px; }
+.library .collection-heading { flex-wrap:wrap;row-gap:10px; }
+.library .filters.people { flex-basis:100%;justify-content:flex-end; }
+@media (max-width: 760px) {
+  .library .game-list.game-grid { grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); }
+  .library .filters.people { justify-content:flex-start; }
+}
+@media (orientation: landscape) and (max-height: 540px) {
+  .library .game-list.game-grid { grid-template-columns:repeat(auto-fill, minmax(124px, 1fr)); }
+}
+
+/* ── Pause: a round button in the table's upper right corner, two bars (an arrowhead while paused) ─── */
+.board-area .board-pause { position:absolute;right:10px;top:10px;z-index:4; }
+.board-area .pause-icon i { display:block;width:12px;height:14px;border-left:4px solid #16181a;border-right:4px solid #16181a;box-sizing:border-box; }
+.board-area .pause-icon.paused i { width:0;height:0;border-style:solid;border-width:8px 0 8px 13px;border-color:transparent transparent transparent #16181a;margin-left:3px; }
+.board-area .pause-icon.paused { background:#ffd24a; }
+.board-area .pause-icon[hidden] { display:none; }
+@media (orientation: landscape) and (max-height: 540px) { .board-area .board-pause { right:6px;top:6px; } }
+
+/* ── Tools laid out as the arrow keys are, at the table's lower left, with one more beside them ─── */
+.game-layout.tools-arrows .board-area .board-controls { left:12px;right:auto;bottom:38px;width:auto;max-width:none;display:grid;grid-template-columns:repeat(3, 54px) auto;grid-template-rows:46px 46px;grid-template-areas:". up . drop" "left down right drop";gap:6px;justify-content:start;align-items:stretch; }
+.game-layout.tools-arrows .board-area .board-controls button.pg-tool { flex:none !important;width:100% !important;max-width:none !important;height:100%;min-height:0 !important;padding:0 6px;border-radius:14px !important;font-size:18px;font-weight:700; }
+.game-layout.tools-arrows .board-area .board-controls button.pg-tool[style*="drop"] { align-self:end;height:46px;font-size:15px;padding:0 18px;white-space:nowrap; }
+.game-layout.tools-arrows .board-area .board-controls button.pg-tool[hidden] { display:block !important;visibility:hidden; }
+@media (orientation: landscape) and (max-height: 540px) {
+  .game-layout.tools-arrows .board-area .board-controls { left:8px;bottom:30px;grid-template-columns:repeat(3, 46px) auto;grid-template-rows:38px 38px;gap:4px; }
+  .game-layout.tools-arrows .board-area .board-controls button.pg-tool[style*="drop"] { height:38px;font-size:13px; }
+}
+/* 무르기 stands beside the arrows, where a game has it. */
+.game-layout.tools-arrows .board-area .board-controls #pg-undo { grid-area:drop;align-self:end;height:46px;width:auto !important;max-width:none !important;flex:none !important;padding:0 16px;border-radius:14px !important;white-space:nowrap; }
+@media (orientation: landscape) and (max-height: 540px) { .game-layout.tools-arrows .board-area .board-controls #pg-undo { height:38px; } }
+/* Many stages: smaller cards, five abreast. */
+dialog .stage-grid:has(.stage-card:nth-child(7)) { grid-template-columns:repeat(5, minmax(0, 1fr));gap:8px; }
+dialog .stage-grid:has(.stage-card:nth-child(7)) .stage-card { padding:8px 4px 8px; }
+dialog .stage-grid:has(.stage-card:nth-child(7)) .stage-card b { font-size:13.5px; }
+dialog .stage-card small { text-align:center;word-break:keep-all; }
+

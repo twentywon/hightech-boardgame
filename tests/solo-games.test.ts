@@ -5,6 +5,10 @@ import * as merge from "../src/games/merge/rules";
 import * as blocks from "../src/games/blocks/rules";
 import * as bricks from "../src/games/bricks/rules";
 import { BAT_Z, DT, HALF_X, HALF_Z, R, batHalf, createWorld, launch, speedOf, step } from "../src/games/bricks/sim";
+import * as mazeRules from "../src/games/maze/rules";
+import { MOUSE_SPEED, catSpeed, createWorld as createMaze, scaredFor, step as stepMaze } from "../src/games/maze/sim";
+import * as marbleRules from "../src/games/marble/rules";
+import * as crateRules from "../src/games/crate/rules";
 
 const to = (point: number) => ({ from: -1, to: point, extra: -1 });
 
@@ -160,7 +164,7 @@ describe("falling blocks", () => {
     for (let x = 2; x < blocks.W; x++) grid[(blocks.H - 1) * blocks.W + x] = 3;
     grid[(blocks.H - 2) * blocks.W + 9] = 5;
     const dropped = blocks.play({ ...state, grid, piece: { kind: 1, rot: 0, x: 0, y: 0 }, lines: 9 }, to(blocks.DROP), seededRandom(4))!;
-    expect(dropped.last).toEqual({ locked: true, cleared: [blocks.H - 1] });
+    expect(dropped.last).toMatchObject({ locked: true, cleared: [blocks.H - 1] });
     expect(dropped.lines).toBe(10);
     // Level 1 when the row went: 100, and two points a row for the drop of sixteen rows.
     expect(dropped.score).toBe(100 + 16 * 2);
@@ -388,5 +392,268 @@ describe("brick breaker", () => {
     for (let i = 0; i < 120 && pierce.balls[0].vz < 0; i++) broken += step(pierce, 0).filter((e) => e.kind === "brick" && e.gone).length;
     expect(broken).toBe(column);
     expect(pierce.bricks.filter((b) => b.col === 4 && b.hits > 0).length).toBe(0);
+  });
+});
+
+describe("falling blocks: levels", () => {
+  test("the fall gets faster up to the fifth level and no faster after it", () => {
+    for (let lv = 2; lv <= blocks.TOP_SPEED; lv++) expect(blocks.interval(lv)).toBeLessThan(blocks.interval(lv - 1));
+    expect(blocks.interval(9)).toBe(blocks.interval(blocks.TOP_SPEED));
+    expect(blocks.risePeriod(4)).toBe(0);
+    expect(blocks.risePeriod(5)).toBeGreaterThan(blocks.risePeriod(8));
+    expect(blocks.risePeriod(20)).toBe(3);
+  });
+  test("a game may begin at a higher level, and below the fifth no rubble comes", () => {
+    const random = seededRandom(3);
+    let state = blocks.createGame(random, 3);
+    expect(blocks.level(state)).toBe(3);
+    for (let i = 0; i < 8; i++) state = blocks.play({ ...state, grid: state.grid.map((v) => (v === blocks.RUBBLE ? v : 0)) }, to(blocks.DROP), random)!;
+    expect(state.grid.includes(blocks.RUBBLE)).toBe(false);
+    expect(blocks.level(blocks.createGame(random, 99))).toBe(blocks.START_LEVELS);
+  });
+  test("from the fifth level a row of rubble with one gap comes up every so many pieces", () => {
+    const random = seededRandom(8);
+    let state = blocks.createGame(random, 5),
+      rows = 0;
+    const period = blocks.risePeriod(5);
+    for (let i = 1; i <= period * 2; i++) {
+      // Only the rubble is kept, so that the heap never reaches the top.
+      state = blocks.play({ ...state, grid: state.grid.map((v) => (v === blocks.RUBBLE ? v : 0)) }, to(blocks.DROP), random)!;
+      if (state.last!.risen) rows++;
+      expect(!!state.last!.risen).toBe(i % period === 0);
+    }
+    expect(rows).toBe(2);
+    // Two rows at the floor, each full but for one square.
+    for (const y of [blocks.H - 1, blocks.H - 2]) {
+      const row = state.grid.slice(y * blocks.W, y * blocks.W + blocks.W);
+      expect(row.filter((v) => v === blocks.RUBBLE).length).toBe(blocks.W - 1);
+      expect(row.filter((v) => v === 0).length).toBe(1);
+    }
+    expect(state.winner).toBeNull();
+  });
+  test("rubble that pushes the heap out of the top ends the game", () => {
+    const random = seededRandom(2);
+    let state = blocks.createGame(random, 5);
+    // A column standing to the very top, away from where the pieces come in.
+    const grid = state.grid.slice();
+    for (let y = 0; y < blocks.H; y++) grid[y * blocks.W] = 3;
+    state = { ...state, grid, rise: blocks.risePeriod(5) - 1, piece: { kind: 1, rot: 0, x: 7, y: 0 } };
+    state = blocks.play(state, to(blocks.DROP), random)!;
+    expect(state.last!.risen).toBe(true);
+    expect(state.winner).toBe(1);
+  });
+});
+
+describe("mouse maze", () => {
+  test("every maze is walled round, mirrored, joined up and free of dead ends", () => {
+    for (let level = 1; level <= mazeRules.LEVELS; level++) {
+      const wall = mazeRules.buildMaze(level),
+        { W, H, DX, DY } = mazeRules,
+        open = wall.flatMap((solid, i) => (solid ? [] : [i]));
+      expect(wall).toEqual(mazeRules.buildMaze(level));
+      for (let x = 0; x < W; x++) expect(wall[x] && wall[(H - 1) * W + x]).toBe(true);
+      for (let y = 0; y < H; y++) {
+        expect(wall[y * W] && wall[y * W + W - 1]).toBe(true);
+        for (let x = 0; x < W; x++) expect(wall[y * W + x]).toBe(wall[y * W + (W - 1 - x)]);
+      }
+      // Every open square can be reached from the mouse's start.
+      const seen = new Set([mazeRules.START.y * W + mazeRules.START.x]),
+        queue = [...seen];
+      while (queue.length) {
+        const at = queue.pop()!;
+        for (let d = 0; d < 4; d++) {
+          const next = at + DX[d] + DY[d] * W;
+          if (!wall[next] && !seen.has(next)) {
+            seen.add(next);
+            queue.push(next);
+          }
+        }
+      }
+      expect(seen.size).toBe(open.length);
+      for (const at of open) expect([0, 1, 2, 3].filter((d) => !wall[at + DX[d] + DY[d] * W]).length, `level ${level} square ${at}`).toBeGreaterThan(1);
+      for (const p of [mazeRules.START, mazeRules.DEN, ...mazeRules.PEPPERS]) expect(wall[p.y * W + p.x]).toBe(false);
+    }
+    expect(mazeRules.buildMaze(1)).not.toEqual(mazeRules.buildMaze(2));
+  });
+  test("turning is no event; crumbs, chillies and cats score; three catches end it; the fifth maze wins", () => {
+    let state = mazeRules.createGame();
+    state = mazeRules.play(state, to(1))!;
+    expect([state.want, state.ply]).toEqual([1, 0]);
+    state = mazeRules.play(state, to(mazeRules.CRUMB))!;
+    state = mazeRules.play(state, to(mazeRules.PEPPER))!;
+    state = mazeRules.play(state, to(mazeRules.CAT))!;
+    expect([state.score, state.ply]).toEqual([260, 3]);
+    state = mazeRules.play(state, to(mazeRules.CLEAR))!;
+    expect([state.level, state.score, state.want]).toEqual([2, 760, -1]);
+    for (let level = 2; level <= mazeRules.LEVELS; level++) state = mazeRules.play(state, to(mazeRules.CLEAR))!;
+    expect(state.winner).toBe(0);
+    let lost = mazeRules.createGame(4);
+    expect(lost.level).toBe(4);
+    for (let i = 0; i < mazeRules.LIVES; i++) lost = mazeRules.play(lost, to(mazeRules.CAUGHT))!;
+    expect([lost.lives, lost.winner]).toEqual([0, 1]);
+    expect(mazeRules.play(lost, to(0))).toBeNull();
+  });
+  test("the mouse runs the passages, stops at walls and picks up what it passes", () => {
+    const world = createMaze(1, seededRandom(1)),
+      { W, DX, DY } = mazeRules;
+    world.cats = [];
+    world.hold = 0;
+    const way = [0, 1, 2, 3].find((d) => !world.wall[world.mouse.y * W + world.mouse.x + DX[d] + DY[d] * W])!,
+      crumbs = world.left;
+    let seen: string[] = [];
+    for (let i = 0; i < 600; i++) seen = seen.concat(stepMaze(world, way));
+    // It has gone as far as the passage runs and stands there, on a square that is no wall.
+    expect(world.mouse.dir).toBe(-1);
+    expect(world.wall[world.mouse.y * W + world.mouse.x]).toBe(false);
+    expect(seen.filter((e) => e === "crumb").length).toBeGreaterThan(0);
+    expect(world.left).toBe(crumbs - seen.filter((e) => e === "crumb").length);
+  });
+  test("a cat that reaches the mouse catches it, unless a chilli has been eaten", () => {
+    const meet = (scared: number) => {
+      const world = createMaze(1, seededRandom(5));
+      world.hold = 0;
+      world.scared = scared;
+      world.cats = [{ x: world.mouse.x, y: world.mouse.y, dir: -1, t: 0, wait: 0, kind: 0 }];
+      return { world, events: stepMaze(world, -1) };
+    };
+    const caught = meet(0);
+    expect(caught.events).toContain("caught");
+    // Everyone is back where they started, and the cats wait in their basket again.
+    expect([caught.world.mouse.x, caught.world.mouse.y]).toEqual([mazeRules.START.x, mazeRules.START.y]);
+    expect(caught.world.cats[0].wait).toBeGreaterThan(0);
+    const chased = meet(3);
+    expect(chased.events).toEqual(["cat"]);
+    expect([chased.world.cats[0].y, chased.world.cats[0].wait]).toEqual([mazeRules.DEN.y, 3]);
+    // More cats, and faster, at the later levels; the chilli lasts less long.
+    expect(createMaze(1).cats.length).toBeLessThan(createMaze(4).cats.length);
+    expect(catSpeed(5)).toBeGreaterThan(catSpeed(1));
+    expect(scaredFor(5)).toBeLessThan(scaredFor(1));
+    expect(catSpeed(mazeRules.LEVELS)).toBeLessThan(MOUSE_SPEED);
+  });
+  test("the same inputs give the same game, and the cats never walk through walls", () => {
+    const run = () => {
+      const world = createMaze(3, seededRandom(11)),
+        seen: string[] = [];
+      for (let i = 0; i < 1500; i++) {
+        seen.push(...stepMaze(world, i % 240 < 120 ? 1 : 0));
+        for (const cat of world.cats) expect(world.wall[cat.y * mazeRules.W + cat.x]).toBe(false);
+      }
+      return seen.join();
+    };
+    expect(run()).toBe(run());
+  });
+});
+
+describe("marble shooting", () => {
+  const tray = (marbles: [number, number][]): marbleRules.State => ({ cells: Array.from({ length: marbleRules.W * marbleRules.H }, (_, i) => marbles.some(([x, y]) => y * marbleRules.W + x === i)), winner: null, size: marbles.length, last: null, ply: 0 }),
+    at = (x: number, y: number) => y * marbleRules.W + x;
+  test("a marble is shot at one at least a hollow away, stops beside it, and that one rolls off", () => {
+    const state = tray([[0, 0], [3, 0], [0, 1]]);
+    // The one below is touching: it cannot be shot at; the one three along can.
+    expect(marbleRules.moves(state)).toEqual([{ from: at(0, 0), to: at(3, 0), extra: -1 }, { from: at(3, 0), to: at(0, 0), extra: -1 }]);
+    const next = marbleRules.play(state, { from: at(0, 0), to: at(3, 0), extra: -1 })!;
+    expect(next.cells[at(2, 0)] && next.cells[at(0, 1)]).toBe(true);
+    expect(marbleRules.count(next)).toBe(2);
+    expect(next.last).toEqual({ dir: 1, rolls: [{ from: at(0, 0), to: at(2, 0) }, { from: at(3, 0), to: -1 }] });
+    expect(marbleRules.play(state, { from: at(0, 0), to: at(0, 1), extra: -1 })).toBeNull();
+    expect(state.cells[at(0, 0)]).toBe(true);
+  });
+  test("the knock runs down a line: touching marbles pass it on, the last one leaves", () => {
+    // Shot from the left: it stops at 2, the two that touch pass the knock on, the one at 6 is struck by the one from 4.
+    const next = marbleRules.play(tray([[0, 2], [3, 2], [4, 2], [6, 2]]), { from: at(0, 2), to: at(3, 2), extra: -1 })!;
+    expect([0, 1, 2, 3, 4, 5, 6].filter((x) => next.cells[at(x, 2)])).toEqual([2, 3, 5]);
+    expect(next.last!.rolls).toEqual([{ from: at(0, 2), to: at(2, 2) }, { from: at(4, 2), to: at(5, 2) }, { from: at(6, 2), to: -1 }]);
+  });
+  test("one marble left wins; marbles that cannot reach each other lose", () => {
+    const won = marbleRules.play(tray([[1, 1], [1, 4]]), { from: at(1, 1), to: at(1, 4), extra: -1 })!;
+    expect([marbleRules.count(won), won.winner]).toEqual([1, 0]);
+    // After the shot the two that are left stand on different rows and columns.
+    const lost = marbleRules.play(tray([[0, 0], [4, 0], [6, 5]]), { from: at(0, 0), to: at(4, 0), extra: -1 })!;
+    expect([marbleRules.count(lost), lost.winner]).toEqual([2, 1]);
+    expect(marbleRules.marble.reason(lost)).toMatch(/2개가 남았습니다/);
+  });
+  test("every tray laid at random has its marbles and can be solved", () => {
+    for (const size of [4, 6, 8, 10, 12])
+      for (const seed of [1, 2, 3]) {
+        const start = marbleRules.createGame(size, seededRandom(seed * 31 + size));
+        expect(marbleRules.count(start)).toBe(size);
+        expect(start.winner).toBeNull();
+        // A search finds a way down to one.
+        const dead = new Set<string>(),
+          solve = (state: marbleRules.State): boolean => {
+            if (state.winner === 0) return true;
+            const key = state.cells.map((c) => (c ? 1 : 0)).join("");
+            if (state.winner !== null || dead.has(key)) return false;
+            if (marbleRules.moves(state).some((move) => solve(marbleRules.play(state, move)!))) return true;
+            dead.add(key);
+            return false;
+          };
+        expect(solve(start), `size ${size} seed ${seed}`).toBe(true);
+      }
+    expect(marbleRules.createGame(8, seededRandom(5)).cells).not.toEqual(marbleRules.createGame(8, seededRandom(6)).cells);
+  });
+});
+
+describe("warehouse keeper", () => {
+  /** A warehouse from a drawing: # wall, . floor, o goal, c crate, k keeper, * crate on a goal. */
+  const room = (rows: string[]): crateRules.State => {
+    const { W, H } = crateRules,
+      mark = (i: number) => rows[Math.floor(i / W)]?.[i % W] ?? "#",
+      all = Array.from({ length: W * H }, (_, i) => i);
+    return { wall: all.map((i) => mark(i) === "#"), goals: all.filter((i) => "o*".includes(mark(i))), crates: all.filter((i) => "c*".includes(mark(i))), keeper: all.find((i) => mark(i) === "k")!, face: 2, winner: null, last: null, ply: 0 };
+  };
+  test("the keeper walks, pushes one crate, and is stopped by walls and by two crates in a row", () => {
+    const state = room(["#########", "#k.c.o..#", "#.cc....#", "#########"]);
+    // Up is a wall; right and down are free.
+    expect(crateRules.moves(state).map((m) => m.to)).toEqual([1, 2]);
+    let next = crateRules.play(crateRules.play(state, to(1))!, to(1))!;
+    expect([next.keeper % crateRules.W, next.crates.includes(crateRules.W + 4), next.last!.pushed]).toEqual([3, true, true]);
+    next = crateRules.play(next, to(1))!;
+    expect([next.crates.includes(crateRules.W + 5), crateRules.home(next), next.winner]).toEqual([true, 1, null]);
+    // Down from the start, then right: two crates stand in a row and do not move.
+    const below = crateRules.play(state, to(2))!;
+    expect(crateRules.play(below, to(1))).toBeNull();
+    expect(state.keeper).toBe(crateRules.W + 1);
+  });
+  test("every crate on its mark wins", () => {
+    const won = crateRules.play(room(["#########", "#kco....#", "#########"]), to(1))!;
+    expect([won.winner, crateRules.home(won)]).toEqual([0, 1]);
+    expect(crateRules.moves(won)).toEqual([]);
+    expect(crateRules.crate.reason(won)).toMatch(/1걸음/);
+  });
+  test("every warehouse laid out at random is closed in, has its crates off their marks and can be solved", () => {
+    const { W, H, DX, DY } = crateRules;
+    for (const count of [2, 3, 4, 5])
+      for (const seed of [1, 2]) {
+        const start = crateRules.createGame(count, seededRandom(seed * 17 + count));
+        expect([start.crates.length, start.goals.length]).toEqual([count, count]);
+        expect(new Set([...start.crates, start.keeper]).size).toBe(count + 1);
+        expect(start.crates.some((c) => start.goals.includes(c))).toBe(false);
+        for (const at of [...start.crates, ...start.goals, start.keeper]) expect(start.wall[at]).toBe(false);
+        for (let x = 0; x < W; x++) expect(start.wall[x] && start.wall[(H - 1) * W + x]).toBe(true);
+        for (let y = 0; y < H; y++) expect(start.wall[y * W] && start.wall[y * W + W - 1]).toBe(true);
+        void DX;
+        void DY;
+        // A breadth-first search over keeper and crates finds a way to put them all home (small warehouses only).
+        if (count > 3) continue;
+        const key = (s: crateRules.State) => `${s.keeper}:${[...s.crates].sort((a, b) => a - b).join()}`,
+          seen = new Set([key(start)]);
+        let frontier = [start],
+          solved = false;
+        while (frontier.length && !solved && seen.size < 400000) {
+          const next: crateRules.State[] = [];
+          for (const state of frontier)
+            for (const move of crateRules.moves(state)) {
+              const after = crateRules.play(state, move)!;
+              if (after.winner === 0) solved = true;
+              if (!seen.has(key(after))) {
+                seen.add(key(after));
+                next.push(after);
+              }
+            }
+          frontier = next;
+        }
+        expect(solved, `count ${count} seed ${seed}`).toBe(true);
+      }
   });
 });
