@@ -27,7 +27,8 @@ export default defineConfig({
   webServer: {
     command: "npm run build && npm run preview -- --port 4174",
     url: "http://127.0.0.1:4174",
-    reuseExistingServer: false,
+    // PW_REUSE=1 lets a second run (the watching window beside a plain run) share the server already up.
+    reuseExistingServer: !!process.env.PW_REUSE,
   },
   projects: [
     {

@@ -80,6 +80,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     preferences = { ...nav.preferences },
     humans = 1,
     names: string[] = ["나", "컴퓨터 1"],
+    safe: string[] = ["나", "컴퓨터 1"],
     state = createGame(preferences.opponents + 1),
     // What the panel describes: the last state whose pieces have come to rest.
     shown = state,
@@ -142,9 +143,11 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     const computers = Math.max(humans === 1 ? 1 : 0, Math.min(SEATS - humans, preferences.opponents));
     // People sit first, in the order they gave their names; computers after them.
     names = [
-      ...Array.from({ length: humans }, (_, i) => escape(preferences.names?.[i]?.trim() || (humans === 1 ? "나" : `플레이어 ${i + 1}`))),
+      ...Array.from({ length: humans }, (_, i) => preferences.names?.[i]?.trim() || (humans === 1 ? "나" : `플레이어 ${i + 1}`)),
       ...Array.from({ length: computers }, (_, i) => `컴퓨터 ${i + 1}`),
     ];
+    // A name is what its owner typed: written as text it goes in as it is, into markup only escaped.
+    safe = names.map(escape);
     state = shown = createGame(humans + computers);
     announced = false;
     stamped = new Set();
@@ -157,7 +160,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game tour-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>세계 일주 <small>WORLD TOUR</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WORLD BOARD</span><span>${SPACES.length}칸 · ${ROUNDS}바퀴</span></div><div id="board"></div><div id="tour-toast" class="tour-toast" aria-hidden="true" hidden>더블!</div><button id="tour-end" class="tour-end primary" hidden>턴 종료</button><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / ${ROUNDS} 바퀴</span></div></section><aside class="game-sidebar yd-sidebar tour-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides" id="tour-players">${state.players.map((_, i) => `<li id="tour-player-${i}"><button class="tour-deeds" data-player="${i}" aria-label="${names[i]}의 땅 증서 보기"><i class="yut-dot" style="background:${PLAYER_COLORS[i]}"></i><b>${names[i]}</b><span id="tour-money-${i}"></span></button></li>`).join("")}</ul><div class="yd-controls"><button id="tour-roll" class="primary sr-only">주사위 굴리기</button><button id="tour-key" class="primary sr-only" hidden>황금열쇠 뽑기</button><div class="bj-row" id="tour-offer" hidden><button id="tour-yes" class="primary"></button><button id="tour-no">지나치기</button></div><p id="tour-note" class="input-help"></p></div><div id="tour-result" class="yd-result" hidden><p id="tour-final"></p><button id="tour-again" class="primary">새 여행</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game tour-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>세계 일주 <small>WORLD TOUR</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WORLD BOARD</span><span>${SPACES.length}칸 · ${ROUNDS}바퀴</span></div><div id="board"></div><div id="tour-toast" class="tour-toast" aria-hidden="true" hidden>더블!</div><button id="tour-end" class="tour-end primary" hidden>턴 종료</button><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">1 / ${ROUNDS} 바퀴</span></div></section><aside class="game-sidebar yd-sidebar tour-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides" id="tour-players">${state.players.map((_, i) => `<li id="tour-player-${i}"><button class="tour-deeds" data-player="${i}" aria-label="${safe[i]}의 땅 증서 보기"><i class="yut-dot" style="background:${PLAYER_COLORS[i]}"></i><b>${safe[i]}</b><span id="tour-money-${i}"></span></button></li>`).join("")}</ul><div class="yd-controls"><button id="tour-roll" class="primary sr-only">주사위 굴리기</button><button id="tour-key" class="primary sr-only" hidden>황금열쇠 뽑기</button><div class="bj-row" id="tour-offer" hidden><button id="tour-yes" class="primary"></button><button id="tour-no">지나치기</button></div><p id="tour-note" class="input-help"></p></div><div id="tour-result" class="yd-result" hidden><p id="tour-final"></p><button id="tour-again" class="primary">새 여행</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
@@ -264,7 +267,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         })
         .join("");
     modal(
-      `${names[player]}의 땅 증서`,
+      `${safe[player]}의 땅 증서`,
       `<p>가진 돈 ${won(state.players[player].money)} · 증서 ${owned.length}장</p>${owned.length ? `<ul class="deed-list">${rows}</ul>` : "<p>가진 땅이 없습니다.</p>"}${player === 0 ? `<p class="credit">${selling ? "팔면 들인 돈의 절반을 은행에서 돌려받습니다." : "내 차례에, 턴 종료를 누르기 전까지 팔 수 있습니다."}</p>` : ""}`,
       [{ text: "닫기", action: () => later(ask, 0) }],
     );
@@ -331,7 +334,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       let to = (me.at + 1) % SPACES.length;
       const ship = SPACES.findIndex((s) => s.kind === "ship"),
         owner = state.owners[ship],
-        fee = owner >= 0 && owner !== state.turn ? `${names[owner]}의 ${SPACES[ship].name}를 타므로 ${won(TRAVEL_FEE)}을 냅니다.` : "지금은 요금이 없습니다.",
+        fee = owner >= 0 && owner !== state.turn ? `${safe[owner]}의 ${SPACES[ship].name}를 타므로 ${won(TRAVEL_FEE)}을 냅니다.` : "지금은 요금이 없습니다.",
         // Listed in the order they lie ahead.
         ahead = SPACES.map((_, k) => (me.at + 1 + k) % SPACES.length).slice(0, -1);
       modal(
@@ -363,7 +366,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         // The card is shown to everyone; it closes by itself after a moment, and then it is carried out.
         const read = () => {
           thinking = false;
-          modal(`${names[drawn.turn]}의 황금열쇠`, `<p class="key-card">${LUCK[drawn.card].text}</p>`, [{ text: "확인", action: () => later(computer, 200) }]);
+          modal(`${safe[drawn.turn]}의 황금열쇠`, `<p class="key-card">${LUCK[drawn.card].text}</p>`, [{ text: "확인", action: () => later(computer, 200) }]);
           const shownCard = document.querySelector("dialog");
           later(() => {
             if (shownCard?.isConnected) shownCard.querySelector<HTMLButtonElement>("button")?.click();

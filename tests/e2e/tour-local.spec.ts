@@ -22,16 +22,16 @@ test("world tour for several people: names are asked for, and each takes a turn 
   await expect(page.locator("#turn")).toContainText("철수 차례");
   // 철수 plays until the dice pass: whatever is offered is passed over, and the turn is ended.
   await expect(async () => {
-    for (const id of ["#tour-roll", "#tour-end"]) {
+    for (const id of ["#tour-roll", "#tour-key", "#tour-end"]) {
       const button = page.locator(id);
       if ((await button.count()) && !(await button.isHidden()) && (await button.isEnabled())) await button.evaluate((b: HTMLElement) => b.click());
     }
     const pass = page.locator("dialog[open] .dialog-actions button").first();
     if (await pass.count()) await pass.click({ timeout: 500 });
-    await expect(page.locator("#turn")).toContainText("영희 차례", { timeout: 700 });
+    await expect(page.locator("#turn")).toContainText("<영희> 차례", { timeout: 700 });
   }).toPass({ timeout: 90000, intervals: [200] });
   // The second person is a person too: the dice wait for them.
   await expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 20000 });
-  await expect(page.locator("#turn")).toContainText("영희 차례");
+  await expect(page.locator("#turn")).toContainText("<영희> 차례 — 주사위를 굴리세요.");
   expect(errors).toEqual([]);
 });

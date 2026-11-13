@@ -256,7 +256,7 @@ test("world tour: buy a city, the computer takes its turn, a building goes up", 
   await loadShuffles(page, die(1, 2, 2, 3));
   await page.goto("/");
   await selectGame(page, "세계 일주");
-  await page.getByLabel("상대 수").selectOption("1");
+  await page.getByLabel("컴퓨터 수").selectOption("1");
   await page.getByRole("button", { name: /여행 떠나기/ }).click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await settled(page);

@@ -102,19 +102,19 @@ test("battleship: I lay my fleet, a shot lands in the other waters, the computer
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await page.locator("canvas").focus();
   await expect(page.locator("#turn")).toContainText("항공모함(5칸)을 내 해역에 놓으세요 — 가로");
-  await expect(page.locator("#pg-count-0")).toHaveText("배 0 / 5척 배치");
+  await expect(page.locator("#pg-count-0 .fleet-count")).toHaveText("배 0 / 5척 배치");
   const turnShip = page.getByRole("button", { name: /배 돌리기/ }),
     layRest = page.getByRole("button", { name: "남은 배 무작위로 놓기" });
   // The keyboard starts in my own waters: the carrier goes down where it stands.
   await keys(page, ["ArrowRight", "ArrowLeft", "Enter"]);
-  await expect(page.locator("#pg-count-0")).toHaveText("배 1 / 5척 배치");
+  await expect(page.locator("#pg-count-0 .fleet-count")).toHaveText("배 1 / 5척 배치");
   await expect(page.locator("#turn")).toContainText("전함(4칸)");
   await turnShip.click();
   await expect(page.locator("#turn")).toContainText("세로로 놓입니다");
   // Undo lifts the carrier again.
   await page.getByRole("button", { name: "무르기", exact: true }).click();
   await page.getByRole("button", { name: "무르기", exact: true }).click();
-  await expect(page.locator("#pg-count-0")).toHaveText("배 0 / 5척 배치");
+  await expect(page.locator("#pg-count-0 .fleet-count")).toHaveText("배 0 / 5척 배치");
   await page.locator("canvas").focus();
   await keys(page, ["Enter"]);
   await layRest.click();
