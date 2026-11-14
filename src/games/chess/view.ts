@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
-import { wood, disposeScene, afterGPUFrame, aim } from "../../engine/scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism } from "../../engine/scene-utils";
 import { toWorld, fromWorld, squares } from "./coordinates";
 import {
   FOV,
@@ -86,6 +86,7 @@ export class ChessView {
     });
     sun.shadow.normalBias = 0.025;
     this.scene.add(sun);
+    this.reflected = realism(this.renderer, this.scene);
     const table = new T.Mesh(
       new T.BoxGeometry(80, 0.2, 80),
       new T.MeshStandardMaterial({ map: wood(true), roughness: 0.8 }),
@@ -546,12 +547,14 @@ export class ChessView {
     );
     this.resize(true);
   }
+  private reflected?: T.Texture;
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.observer.disconnect();
     this.cancelGPU();
+    this.reflected?.dispose();
     disposeScene(this.scene);
     disposeScene(this.templates);
     this.tokens.clear();

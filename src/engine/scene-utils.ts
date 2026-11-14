@@ -1,4 +1,5 @@
 import * as T from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 const ndc = new T.Vector2();
 /** Points `ray` from the camera through the pointer's place on the canvas. */
 export function aim(ray: T.Raycaster, e: PointerEvent, canvas: HTMLCanvasElement, camera: T.Camera) {
@@ -95,4 +96,37 @@ export function wood(dark = false, grain = 1) {
   texture.colorSpace = T.SRGBColorSpace;
   texture.wrapS = texture.wrapT = T.RepeatWrapping;
   return texture;
+}
+
+/**
+ * A more photographic light for a table. A room is reflected in whatever shines (china, metal, glass, glazed
+ * pieces), highlights roll off as on film instead of clipping, shadows have soft edges, and a weak light from the
+ * far side and one from behind give the pieces a second lit edge.
+ */
+export function realism(renderer: T.WebGLRenderer, scene: T.Scene, exposure = 1) {
+  renderer.toneMapping = T.NeutralToneMapping;
+  renderer.toneMappingExposure = exposure;
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  const pmrem = new T.PMREMGenerator(renderer),
+    room = new RoomEnvironment(),
+    reflected = pmrem.fromScene(room, 0.04).texture;
+  scene.environment = reflected;
+  scene.environmentIntensity = 0.32;
+  room.dispose();
+  pmrem.dispose();
+  scene.traverse((thing) => {
+    // The room now lights the shaded sides: the flat sky light gives way to it.
+    if (thing instanceof T.HemisphereLight) thing.intensity *= 0.62;
+    else if (thing instanceof T.DirectionalLight && thing.castShadow) {
+      thing.shadow.mapSize.set(2048, 2048);
+      thing.shadow.radius = 5;
+      thing.shadow.blurSamples = 16;
+    }
+  });
+  const fill = new T.DirectionalLight("#cfe0ff", 0.22),
+    rim = new T.DirectionalLight("#fff0d8", 0.4);
+  fill.position.set(7, 5, 3);
+  rim.position.set(2, 6, -9);
+  scene.add(fill, rim);
+  return reflected;
 }

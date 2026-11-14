@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, realism } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -137,7 +137,12 @@ export abstract class TableView<S> implements PointView<S> {
     this.observer.observe(host);
   }
   /** Starts drawing; called by the game's view once its scene is built. */
+  /** Whether the table is lit the more photographic way (`realism`): a reflected room, film-like highlights, soft shadows. */
+  protected photographic() {
+    return false;
+  }
   protected begin() {
+    if (this.photographic()) this.own(realism(this.renderer, this.scene));
     this.resize();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);

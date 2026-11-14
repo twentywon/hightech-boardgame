@@ -65,6 +65,9 @@ function numberDisc(id: number) {
 }
 /** A pool table under a lamp in a pub. */
 export class PoolView extends FlickView<State> {
+  protected photographic() {
+    return true;
+  }
   /** White against the cloth. */
   protected aimColor() {
     return "#ffffff";

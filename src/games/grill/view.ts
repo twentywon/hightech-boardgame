@@ -279,6 +279,9 @@ interface Model {
  * dragged off to be eaten or onto the wrap plate.
  */
 export class GrillView extends TableView<State> {
+  protected photographic() {
+    return true;
+  }
   private world: World = createWorld();
   private skins = new Map<number, T.CanvasTexture>();
   private faces: { top: T.BufferGeometry; bottom: T.BufferGeometry; rim: T.BufferGeometry }[] = [];
