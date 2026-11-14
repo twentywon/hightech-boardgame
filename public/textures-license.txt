@@ -6,3 +6,18 @@ under Creative Commons Zero (CC0),
 https://creativecommons.org/publicdomain/zero/1.0/
 
 Changes: reduced to 768 x 768 and stored as WebP (src/games/grill/table.webp).
+
+The raw flesh of four of its cuts is cut out of three photographs from the
+WordPress Photo Directory (https://wordpress.org/photos/), all released
+under Creative Commons Zero (CC0):
+
+- pork belly: photograph by Yam B Chhetri,
+  https://wordpress.org/photos/photo/5306a119c9/
+- marinated rib: photograph by Yam B Chhetri,
+  https://wordpress.org/photos/photo/3076a11a25/
+- brisket and neck: photograph by Vishnu Chandra,
+  https://wordpress.org/photos/photo/9496a09869/
+
+Changes: a square of flesh taken from each, reduced to 320 x 320 and stored
+as WebP (src/games/grill/belly.webp, rib.webp, brisket.webp, neck.webp); the
+neck made paler; the colour of cooking is laid over them by the game.

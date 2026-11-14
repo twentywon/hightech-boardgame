@@ -5,6 +5,10 @@ import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view
 import { BEST, BURN, DRESS, EAT, FLIP, LAY, TICK, WRAP, type State } from "./rules";
 import { CHARRED, COAL, CUTS, DT, FILLING, GOOD, OVER, PORTION, RAW, RELISHES, SLOTS, createWorld, down, eatWrap, fill, flip, lay, leaf, relish, shift, step, take, type Happening, type Piece, type World } from "./sim";
 import tableUrl from "./table.webp?inline";
+import bellyUrl from "./belly.webp?inline";
+import ribUrl from "./rib.webp?inline";
+import brisketUrl from "./brisket.webp?inline";
+import neckUrl from "./neck.webp?inline";
 
 export const GRILL_COLORS: [string, string] = ["#c8553a", "#b9b3a4"];
 /** The grate's radius, the brazier's, how far from the middle the six outer places lie, and how high the grate stands. */
@@ -50,6 +54,16 @@ const FLESH: { lean: [Rgb, Rgb]; fat: [Rgb, Rgb] }[] = [
   { lean: [[204, 86, 92], [148, 88, 54]], fat: [[248, 234, 224], [226, 186, 122]] },
   { lean: [[240, 230, 208], [188, 138, 82]], fat: [[250, 246, 234], [212, 168, 108]] },
 ];
+/**
+ * Photographs of the raw flesh of the four meats (CC0, see `public/textures-license.txt`), one to a cut; the mushroom
+ * has none and stays painted. Until a photograph has come the cut is painted as well.
+ */
+const PHOTOS: (HTMLImageElement | null)[] = [bellyUrl, ribUrl, brisketUrl, neckUrl, null].map((url) => {
+  if (!url || typeof Image === "undefined") return null;
+  const photo = new Image();
+  photo.src = url;
+  return photo;
+});
 /** The edge of a cut seen from above, within a square of side 1: an oval or a rounded oblong whose line wanders a little. */
 function outline(cut: number) {
   const random = sequence(cut * 17 + 3),
@@ -82,7 +96,7 @@ function side(cut: number, done: number) {
   pen.fillRect(0, 0, S, S);
   pen.lineCap = "round";
   // The grain of the flesh: fine darker and lighter threads running one way.
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 260 && !(PHOTOS[cut]?.complete && PHOTOS[cut]!.naturalWidth); i++) {
     const x = random() * S,
       y = random() * S;
     pen.strokeStyle = i % 2 ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.06)";
@@ -92,9 +106,28 @@ function side(cut: number, done: number) {
     pen.lineTo(x + 14 + random() * 20, y + (random() - 0.5) * 6);
     pen.stroke();
   }
+  const photo = PHOTOS[cut],
+    shown = !!photo && photo.complete && photo.naturalWidth > 0;
+  if (shown) {
+    // The photograph of the raw flesh, then the colour heat gives it: its hue goes to brown while light and dark stay
+    // where they were, and the whole grows darker.
+    pen.drawImage(photo, 0, 0, S, S);
+    const heat = Math.min(1, done);
+    if (heat > 0) {
+      pen.globalCompositeOperation = "color";
+      pen.fillStyle = css(cooked(...FLESH[cut].lean, 1), heat * 0.9);
+      pen.fillRect(0, 0, S, S);
+      pen.globalCompositeOperation = "multiply";
+      pen.fillStyle = css(mix([255, 255, 255], [196, 160, 124], heat));
+      pen.fillRect(0, 0, S, S);
+      pen.globalCompositeOperation = "source-over";
+    }
+  }
   pen.strokeStyle = pen.fillStyle = fat;
   soft(1.2);
-  if (cut === 0) {
+  if (shown) {
+    // Nothing is painted over a photograph but what the fire does.
+  } else if (cut === 0) {
     // Pork belly: bands of fat and lean along the strip, none quite straight.
     for (const y of [0.1, 0.38, 0.66, 0.92]) {
       pen.beginPath();
@@ -255,6 +288,7 @@ export class GrillView extends TableView<State> {
       top.map = photo;
       top.needsUpdate = true;
     });
+    for (const photo of PHOTOS) if (photo && !photo.complete) photo.addEventListener("load", () => this.skins.size && this.developed(), { once: true });
     this.brazier();
     this.crockery();
     // The shapes of the cuts: an upper face, an under face and the rim between them.
@@ -531,6 +565,14 @@ export class GrillView extends TableView<State> {
     this.add(new T.BoxGeometry(0.16, 0.07, 0.4), china, 1.7, 0.035, 4.5);
   }
   /** The paint of a side of a cut when it is `done` so far; made once for each shade. */
+  /** Paints again every side made before its photograph had come. */
+  private developed() {
+    if (this.disposed) return;
+    for (const [key, texture] of this.skins) {
+      texture.image = side(Math.floor(key / 100), (key % 100) / SHADES);
+      texture.needsUpdate = true;
+    }
+  }
   private skin(cut: number, done: number) {
     const shade = Math.round(Math.min(COAL, done) * SHADES),
       key = cut * 100 + shade;
