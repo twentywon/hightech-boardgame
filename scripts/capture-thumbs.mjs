@@ -223,10 +223,10 @@ const play = {
   },
   "meat-grill": async () => {
     await page.locator("canvas").focus();
-    // A piece from each plate, the first ones turned once they have browned.
-    await keys(["ArrowRight", "Enter", "ArrowRight", "Enter", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter"], 80);
-    await wait(5200);
-    await keys(["ArrowRight", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "Enter"], 80);
+    // A piece from each plate, a wrap begun on the large plate, the first pieces turned once they have browned.
+    await keys(["ArrowRight", "Enter", "ArrowRight", "Enter", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter", "l", "1", "2"], 80);
+    await wait(6500);
+    await keys(["ArrowRight", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "Enter", "ArrowLeft", "s"], 80);
     await wait(2200);
     await page.locator("canvas").blur();
   },

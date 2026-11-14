@@ -650,28 +650,30 @@ test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops w
   expect(errors).toEqual([]);
 });
 
-test("meat grill: pieces are laid from the plates, turned and eaten, and nothing happens while it is stopped", async ({ page }) => {
+test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens while it is stopped; a meal may be without a clock", async ({ page }) => {
   const errors = await sit(page, "고기 굽기"),
-    eaten = page.locator(".solo-stat").nth(2).locator("b"),
-    left = page.locator(".solo-stat").nth(1).locator("b"),
+    figure = (n: number) => page.locator(".solo-stat").nth(n).locator("b"),
     keys = async (...list: string[]) => {
       for (const key of list) await page.keyboard.press(key);
     };
-  await expect(eaten).toHaveText("0/25");
-  await expect(left).toHaveText("120초");
+  await expect(figure(1)).toHaveText("120초");
+  await expect(figure(2)).toHaveText("0");
+  // A tap on a plate lays nothing: a piece must be carried to the grill.
+  const box = (await page.locator("canvas").boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.12, box.y + box.height * 0.5);
+  await page.waitForTimeout(400);
   await page.locator("canvas").focus();
   // The keyboard stands on the first plate, then the next: a piece from each of two plates is laid.
   await keys("ArrowRight", "Enter", "ArrowRight", "Enter");
-  await expect(count(page)).not.toHaveText("0수");
   // The clock runs.
-  await expect(left).not.toHaveText("120초", { timeout: 20000 });
-  // After the five plates come the seven places: every place is turned, then taken off; what lay there is eaten (raw, for nothing).
+  await expect(figure(1)).not.toHaveText("120초", { timeout: 20000 });
+  // After the five plates come the seven places: every place is turned, then taken off; the two that lay there are eaten (raw, for nothing), and no more.
   await keys("ArrowRight", "ArrowRight", "ArrowRight");
   for (let slot = 0; slot < 7; slot++) await keys("ArrowRight", "Enter");
   for (let slot = 0; slot < 7; slot++) await keys("ArrowLeft", " ");
   await keys(" ");
-  await expect(eaten).toHaveText("2/25");
-  await expect(page.locator(".solo-stat").first().locator("b")).toHaveText("0");
+  await expect(figure(2)).toHaveText("2");
+  await expect(figure(0)).toHaveText("0");
   // Stopped: nothing is laid and the clock stands.
   await page.locator("#pg-pause").click();
   await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "계속하기");
@@ -683,5 +685,20 @@ test("meat grill: pieces are laid from the plates, turned and eaten, and nothing
   await page.keyboard.press("p");
   await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "일시정지");
   await expect(count(page)).not.toHaveText(before, { timeout: 20000 });
+  // A wrap: a leaf and a relish on the large plate, a piece from the grill onto it, and the plate eaten.
+  await keys("Enter", "ArrowRight", "ArrowRight", "ArrowRight", "l", "2", "s");
+  for (let i = 0; i < 6; i++) await keys("ArrowRight");
+  await expect(figure(3)).toHaveText("0");
+  await keys("Enter");
+  await expect(figure(3)).toHaveText("1");
+  await expect(figure(2)).toHaveText("2");
+  // 새 게임 offers the two kinds of meal; without a clock the time counts up.
+  await page.locator("#restart").click();
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(2);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "무제한" }).click();
+  await expect(page.locator(".solo-stat").nth(1)).toContainText("지난 시간");
+  await expect(figure(1)).toHaveText("0:00");
+  await expect(figure(1)).not.toHaveText("0:00", { timeout: 20000 });
+  await expect(figure(3)).toHaveText("0");
   expect(errors).toEqual([]);
 });

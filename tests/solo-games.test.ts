@@ -832,6 +832,13 @@ describe("meat grill", () => {
     for (let i = 0; i < Math.round(seconds / fire.DT); i++) heard.push(...fire.step(world));
     return heard;
   };
+  /** Cooks the piece on a place until both sides are just right. */
+  const cook = (world: fire.World, slot: number) => {
+    const seconds = (fire.CUTS[world.slots[slot]!.cut].seconds / fire.HEAT[slot]) * 0.9;
+    wait(world, seconds);
+    fire.flip(world, slot);
+    wait(world, seconds);
+  };
   test("a piece is taken from its plate, cooks on the side that lies down, is turned and eaten for what both sides are worth", () => {
     const world = fire.createWorld(),
       seconds = fire.CUTS[0].seconds;
@@ -854,10 +861,10 @@ describe("meat grill", () => {
     expect(fire.flip(world, 1)).toEqual([]);
     expect([0.2, 0.6, 0.9, 1.2, 1.4].map(fire.grade)).toEqual([0, 1, 3, 1, 0]);
   });
-  test("a piece may be turned again and again, laid where one likes and moved; the middle is hotter", () => {
+  test("a piece may be turned again and again, laid where one likes and moved; the middle is hotter; an emptied plate is filled again", () => {
     const world = fire.createWorld();
     expect(fire.lay(world, 2, 0)).toEqual([{ kind: "lay", slot: 0 }]);
-    // Not onto a place that is taken, nor from an empty plate.
+    // Not onto a place that is taken.
     expect(fire.lay(world, 1, 0)).toEqual([]);
     fire.lay(world, 2, 3);
     wait(world, 2);
@@ -871,10 +878,12 @@ describe("meat grill", () => {
     expect(fire.shift(world, 3, 0)).toBe(false);
     expect(fire.shift(world, 3, 5)).toBe(true);
     expect([world.slots[3], world.slots[5]!.cut]).toEqual([null, 2]);
-    world.plates[4] = 0;
-    expect(fire.lay(world, 4)).toEqual([]);
+    // The plate's last piece brings a fresh plateful.
+    world.plates[4] = 1;
+    expect(fire.lay(world, 4)).toHaveLength(1);
+    expect(world.plates[4]).toBe(fire.PORTION);
   });
-  test("a raw side is worth nothing, a piece left burns where it lies, and the empty table is told", () => {
+  test("a raw side is worth nothing, and a piece left burns where it lies", () => {
     const world = fire.createWorld();
     fire.lay(world, 0, 1);
     wait(world, fire.CUTS[0].seconds * 0.9);
@@ -883,32 +892,70 @@ describe("meat grill", () => {
     fire.lay(world, 0, 1);
     const heard = wait(world, fire.CUTS[0].seconds * fire.BURNT + 0.5);
     expect(heard.filter((h) => h.kind !== "second")).toEqual([{ kind: "burn", slot: 1 }]);
-    // It stays, charred, taking up its place, until it is thrown away.
+    // It stays, charred, taking up its place, until it is thrown away; it does not go into a wrap.
     expect(world.slots[1]!.burnt).toBe(true);
     wait(world, 30);
     expect(world.slots[1]!.done[0]).toBe(fire.COAL);
+    expect(fire.fill(world, 1)).toEqual([]);
     expect(fire.take(world, 1)).toEqual([{ kind: "discard", slot: 1 }]);
     // A second is told each second.
     expect(wait(fire.createWorld(), 3).filter((h) => h.kind === "second")).toHaveLength(3);
-    const last = fire.createWorld();
-    last.plates = [1, 0, 0, 0, 0];
-    fire.lay(last, 0);
-    expect(fire.finished(last)).toBe(false);
-    expect(fire.take(last, 1).map((h) => h.kind)).toEqual(["eat", "done"]);
   });
-  test("the meal is scored piece by piece and ends when the time is up or the table is empty", () => {
+  test("a wrap is worth its pieces, and more for the leaf and each relish", () => {
+    const world = fire.createWorld();
+    // Nothing on the plate: nothing to eat.
+    expect(fire.eatWrap(world)).toEqual([]);
+    fire.lay(world, 0, 1);
+    fire.lay(world, 2, 2);
+    cook(world, 1);
+    expect(fire.worth(world.slots[1]!)).toBe(grill.BEST);
+    expect(fire.leaf(world)).toEqual([{ kind: "dress" }]);
+    // One leaf, each relish once, two pieces at most.
+    expect(fire.leaf(world)).toEqual([]);
+    expect(fire.fill(world, 1)).toEqual([{ kind: "dress" }]);
+    expect(world.slots[1]).toBeNull();
+    expect(fire.relish(world, 1)).toEqual([{ kind: "dress" }]);
+    expect(fire.relish(world, 1)).toEqual([]);
+    expect(fire.relish(world, 9)).toEqual([]);
+    fire.relish(world, 0);
+    // Six for the piece, two for the wrap, one for each of two relishes.
+    expect(fire.eatWrap(world)).toEqual([{ kind: "wrap", points: 10, meats: 1, leaf: true }]);
+    expect(world.wrap).toEqual({ leaf: false, meats: [], relishes: [] });
+    // Without a leaf the piece is worth only itself; a leaf with nothing cooked in it is worth nothing.
+    world.slots[2] = { cut: 2, done: [0.9, 0.9], turned: true, burnt: false, age: 9, since: 1 };
+    fire.fill(world, 2);
+    fire.relish(world, 3);
+    expect(fire.eatWrap(world)[0]).toMatchObject({ points: grill.BEST, leaf: false });
+    fire.leaf(world);
+    fire.relish(world, 2);
+    expect(fire.eatWrap(world)[0]).toMatchObject({ points: 0, meats: 0 });
+    for (const slot of [3, 4, 5]) world.slots[slot] = { cut: 0, done: [0.9, 0.9], turned: false, burnt: false, age: 9, since: 1 };
+    fire.fill(world, 3);
+    fire.fill(world, 4);
+    expect(fire.fill(world, 5)).toEqual([]);
+    fire.leaf(world);
+    for (let k = 0; k < fire.RELISHES.length; k++) fire.relish(world, k);
+    // The most a wrap can be worth.
+    expect(fire.eatWrap(world)[0]).toMatchObject({ points: grill.FEAST });
+  });
+  test("a meal by the clock ends when the time is up; one without a clock goes on", () => {
     let state = grill.createGame();
     state = grill.play(state, to(grill.LAY))!;
     state = grill.play(state, to(grill.FLIP))!;
+    state = grill.play(state, to(grill.DRESS))!;
     state = grill.play(state, to(grill.EAT + grill.BEST))!;
     state = grill.play(state, to(grill.EAT + 2))!;
+    state = grill.play(state, to(grill.WRAP + 10))!;
     state = grill.play(state, to(grill.BURN))!;
-    expect([state.score, state.eaten, state.perfect, state.burnt, state.winner]).toEqual([8, 2, 1, 1, null]);
+    expect([state.score, state.eaten, state.perfect, state.wraps, state.burnt, state.winner]).toEqual([18, 2, 1, 1, 1, null]);
     expect(grill.play(state, to(grill.EAT + grill.BEST + 1))).toBeNull();
-    const done = grill.play(state, to(grill.DONE))!;
-    expect([done.winner, grill.moves(done)]).toEqual([0, []]);
+    expect(grill.play(state, to(grill.WRAP + grill.FEAST + 1))).toBeNull();
     for (let i = 0; i < grill.SECONDS; i++) state = grill.play(state, to(grill.TICK))!;
     expect([state.left, state.winner]).toEqual([0, 0]);
-    expect(grill.grill.reason(state)).toMatch(/^점수 8점!/);
+    expect(grill.grill.reason(state)).toMatch(/^점수 18점!/);
+    let free = grill.createGame("2");
+    for (let i = 0; i < grill.SECONDS + 75; i++) free = grill.play(free, to(grill.TICK))!;
+    expect([free.endless, free.winner, free.gone, grill.clock(free.gone)]).toEqual([true, null, 195, "3:15"]);
+    expect(grill.grill.hint(free)).toMatch(/지난 시간 3:15/);
   });
 });

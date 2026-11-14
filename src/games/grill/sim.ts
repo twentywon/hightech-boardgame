@@ -1,12 +1,12 @@
 /**
- * The grill and the plates round it, free of Three.js and DOM: seven places
- * over the coals, the middle one hottest. A piece cooks on the side that
- * lies down. Stepped in fixed slices so that the same presses always give
- * the same meal.
+ * The grill, the plates round it and the wrap plate, free of Three.js and
+ * DOM: seven places over the coals, the middle one hottest. A piece cooks
+ * on the side that lies down. Stepped in fixed slices so that the same
+ * presses always give the same meal.
  */
 export const SLOTS = 7,
   DT = 1 / 60,
-  /** How many pieces a plate holds to begin with. */
+  /** How many pieces a plate holds; an emptied plate is filled again at once. */
   PORTION = 5,
   /** How done a side is: under RAW it is raw, from GOOD it is just right, over OVER it is overdone, from BURNT the piece is spoilt. */
   RAW = 0.5,
@@ -15,15 +15,19 @@ export const SLOTS = 7,
   CHARRED = 1.3,
   BURNT = 1.55,
   /** A side goes no further than this: charcoal. */
-  COAL = 1.9;
+  COAL = 1.9,
+  /** How many pieces a wrap takes. */
+  FILLING = 2;
 /** What is grilled, a plate of each: its name and the seconds one side takes to be done over an ordinary place. */
 export const CUTS: { name: string; seconds: number }[] = [
-  { name: "삼겹살", seconds: 7 },
-  { name: "양념갈비", seconds: 8 },
-  { name: "차돌박이", seconds: 4.2 },
-  { name: "목살", seconds: 9.5 },
-  { name: "새송이버섯", seconds: 6 },
+  { name: "삼겹살", seconds: 8.5 },
+  { name: "양념갈비", seconds: 9.5 },
+  { name: "차돌박이", seconds: 5 },
+  { name: "목살", seconds: 11.5 },
+  { name: "새송이버섯", seconds: 7 },
 ];
+/** What may go on a wrap beside the meat. */
+export const RELISHES = ["김치", "쌈장", "마늘·고추", "기름장"];
 /** How hot each place is: the middle, then the six round it. */
 export const HEAT = [1.35, 1, 1, 1, 1, 1, 1];
 /** The order in which a piece laid without a place being named finds one: round the edge first, the hot middle last. */
@@ -39,10 +43,17 @@ export interface Piece {
   /** Seconds since it was last turned, for the picture. */
   since: number;
 }
+/** What lies on the wrap plate: a leaf, up to two pieces off the grill, and relishes. */
+export interface Wrap {
+  leaf: boolean;
+  meats: Piece[];
+  relishes: number[];
+}
 export interface World {
   slots: (Piece | null)[];
   /** Pieces left on each plate. */
   plates: number[];
+  wrap: Wrap;
   time: number;
 }
 export type Happening =
@@ -52,19 +63,19 @@ export type Happening =
   | { kind: "eat"; slot: number; points: number; raw: boolean }
   | { kind: "discard"; slot: number }
   | { kind: "burn"; slot: number }
-  | { kind: "done" };
+  | { kind: "dress" }
+  | { kind: "wrap"; points: number; meats: number; leaf: boolean };
 /** What a side is worth when the piece is eaten. */
 export const grade = (done: number) => (done < RAW ? 0 : done < GOOD ? 1 : done <= OVER ? 3 : done < CHARRED ? 1 : 0);
+/** What a piece is worth: nothing while a side is raw. */
+export const worth = (piece: Pick<Piece, "done">) => (piece.done.some((side) => side < RAW) ? 0 : grade(piece.done[0]) + grade(piece.done[1]));
 /** The side that lies on the grill. */
 export const down = (piece: Piece) => (piece.turned ? 1 : 0);
-export const createWorld = (): World => ({ slots: new Array(SLOTS).fill(null), plates: CUTS.map(() => PORTION), time: 0 });
-/** True when nothing is left to grill or to eat. */
-export const finished = (world: World) => world.plates.every((left) => left === 0) && world.slots.every((piece) => !piece);
-const ended = (world: World): Happening[] => (finished(world) ? [{ kind: "done" }] : []);
-/** A piece is taken from a plate and laid on a place (the first free one when none is named). */
+export const createWorld = (): World => ({ slots: new Array(SLOTS).fill(null), plates: CUTS.map(() => PORTION), wrap: { leaf: false, meats: [], relishes: [] }, time: 0 });
+/** A piece is taken from a plate and laid on a place (the first free one when none is named); the plate's last piece brings a fresh plateful. */
 export function lay(world: World, cut: number, slot = ORDER.find((s) => !world.slots[s]) ?? -1): Happening[] {
   if (!(world.plates[cut] > 0) || slot < 0 || slot >= SLOTS || world.slots[slot]) return [];
-  world.plates[cut]--;
+  world.plates[cut] = world.plates[cut] > 1 ? world.plates[cut] - 1 : PORTION;
   world.slots[slot] = { cut, done: [0, 0], turned: false, burnt: false, age: 0, since: 0 };
   return [{ kind: "lay", slot }];
 }
@@ -88,9 +99,42 @@ export function take(world: World, slot: number): Happening[] {
   const piece = world.slots[slot];
   if (!piece) return [];
   world.slots[slot] = null;
-  if (piece.burnt) return [{ kind: "discard", slot }, ...ended(world)];
-  const raw = piece.done.some((side) => side < RAW);
-  return [{ kind: "eat", slot, raw, points: raw ? 0 : grade(piece.done[0]) + grade(piece.done[1]) }, ...ended(world)];
+  if (piece.burnt) return [{ kind: "discard", slot }];
+  return [{ kind: "eat", slot, raw: worth(piece) === 0 && piece.done.some((side) => side < RAW), points: worth(piece) }];
+}
+/** A leaf is laid on the wrap plate. */
+export function leaf(world: World): Happening[] {
+  if (world.wrap.leaf) return [];
+  world.wrap.leaf = true;
+  return [{ kind: "dress" }];
+}
+/** A piece goes from the grill onto the wrap plate; a burnt one is not taken. */
+export function fill(world: World, slot: number): Happening[] {
+  const piece = world.slots[slot];
+  if (!piece || piece.burnt || world.wrap.meats.length >= FILLING) return [];
+  world.slots[slot] = null;
+  world.wrap.meats.push(piece);
+  return [{ kind: "dress" }];
+}
+/** A relish is added to the wrap plate, once each. */
+export function relish(world: World, which: number): Happening[] {
+  if (!(which >= 0 && which < RELISHES.length) || world.wrap.relishes.includes(which)) return [];
+  world.wrap.relishes.push(which);
+  return [{ kind: "dress" }];
+}
+/**
+ * What is on the wrap plate is eaten: its pieces for what they are worth,
+ * and, when they lie in a leaf and are worth something, two more for the
+ * wrap and one for each relish up to three.
+ */
+export function eatWrap(world: World): Happening[] {
+  const { wrap } = world;
+  if (!wrap.leaf && !wrap.meats.length && !wrap.relishes.length) return [];
+  const meat = wrap.meats.reduce((sum, piece) => sum + worth(piece), 0),
+    points = meat + (wrap.leaf && meat > 0 ? 2 + Math.min(3, wrap.relishes.length) : 0),
+    told: Happening = { kind: "wrap", points, meats: wrap.meats.length, leaf: wrap.leaf };
+  world.wrap = { leaf: false, meats: [], relishes: [] };
+  return [told];
 }
 /** One slice of time: what lies down cooks, and what is left too long burns where it lies. */
 export function step(world: World): Happening[] {

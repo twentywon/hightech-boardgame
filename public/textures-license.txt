@@ -1,0 +1,8 @@
+Photographed textures
+
+The table top of the meat grill is the diffuse map of "Wood Table" by
+Dimitrios Savva (Poly Haven, https://polyhaven.com/a/wood_table), released
+under Creative Commons Zero (CC0),
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Changes: reduced to 768 x 768 and stored as WebP (src/games/grill/table.webp).
