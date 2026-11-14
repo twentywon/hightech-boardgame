@@ -686,7 +686,11 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
   await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "일시정지");
   await expect(count(page)).not.toHaveText(before, { timeout: 20000 });
   // A wrap: a leaf and a relish on the large plate, a piece from the grill onto it, and the plate eaten.
-  await keys("Enter", "ArrowRight", "ArrowRight", "ArrowRight", "l", "2", "s");
+  // Pressing the pause button took the keyboard off the table, which forgets its place: two steps back from nowhere is the
+  // last place, and two steps on from there is the first plate. Its piece goes to the first place round the edge, six steps on.
+  await keys("ArrowRight", "ArrowRight", "Enter");
+  for (let i = 0; i < 6; i++) await keys("ArrowRight");
+  await keys("l", "2", "s");
   for (let i = 0; i < 6; i++) await keys("ArrowRight");
   await expect(figure(3)).toHaveText("0");
   await keys("Enter");
