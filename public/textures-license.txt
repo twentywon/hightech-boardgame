@@ -21,3 +21,15 @@ under Creative Commons Zero (CC0):
 Changes: a square of flesh taken from each, reduced to 320 x 320 and stored
 as WebP (src/games/grill/belly.webp, rib.webp, brisket.webp, neck.webp); the
 neck made paler; the colour of cooking is laid over them by the game.
+
+The lettuce and the four relishes are cut out of two more photographs from
+the WordPress Photo Directory, both CC0:
+
+- kimchi, bean paste, garlic with green chilli, salt in oil: photograph by
+  Yam B Chhetri, https://wordpress.org/photos/photo/3226a9519c/
+- lettuce (the basket and the leaf of a wrap): photograph by Bigul Malayi,
+  https://wordpress.org/photos/photo/326901e913/
+
+Changes: a square taken from each, reduced and stored as WebP
+(src/games/grill/kimchi.webp, paste.webp, garlic.webp, oil.webp,
+lettuce.webp, leaf.webp); the oil and the lettuce made lighter.

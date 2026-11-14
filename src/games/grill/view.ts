@@ -9,6 +9,14 @@ import bellyUrl from "./belly.webp?inline";
 import ribUrl from "./rib.webp?inline";
 import brisketUrl from "./brisket.webp?inline";
 import neckUrl from "./neck.webp?inline";
+import kimchiUrl from "./kimchi.webp?inline";
+import pasteUrl from "./paste.webp?inline";
+import garlicUrl from "./garlic.webp?inline";
+import oilUrl from "./oil.webp?inline";
+import lettuceUrl from "./lettuce.webp?inline";
+import leafUrl from "./leaf.webp?inline";
+/** Photographs of the four relishes, in the order the wrap counts them, and the colour each has until its picture comes. */
+const RELISH_PHOTOS: [string, string][] = [[kimchiUrl, "#d0603a"], [pasteUrl, "#9a4a22"], [garlicUrl, "#a8c070"], [oilUrl, "#c8b888"]];
 
 export const GRILL_COLORS: [string, string] = ["#c8553a", "#b9b3a4"];
 /** The grate's radius, the brazier's, how far from the middle the six outer places lie, and how high the grate stands. */
@@ -64,6 +72,15 @@ const PHOTOS: (HTMLImageElement | null)[] = [bellyUrl, ribUrl, brisketUrl, neckU
   photo.src = url;
   return photo;
 });
+/** A low dome of radius 1 at its rim, its rim at height 0, with a picture laid over it as seen from above. */
+function dome(spread: number, tall: number, segments = 32) {
+  const cap = new T.SphereGeometry(1, segments, 8, 0, Math.PI * 2, 0, spread),
+    rim = Math.sin(spread),
+    at = cap.getAttribute("position"),
+    uv = cap.getAttribute("uv");
+  for (let i = 0; i < at.count; i++) uv.setXY(i, 0.5 + at.getX(i) / rim / 2, 0.5 - at.getZ(i) / rim / 2);
+  return cap.translate(0, -Math.cos(spread), 0).scale(1 / rim, tall / (1 - Math.cos(spread)), 1 / rim);
+}
 /** The edge of a cut seen from above, within a square of side 1: an oval or a rounded oblong whose line wanders a little. */
 function outline(cut: number) {
   const random = sequence(cut * 17 + 3),
@@ -252,6 +269,8 @@ export class GrillView extends TableView<State> {
   private puffs: T.Mesh[] = [];
   private coals!: T.MeshBasicMaterial;
   private ember!: T.PointLight;
+  private relishPaint: T.MeshStandardMaterial[] = [];
+  private heapShape!: T.BufferGeometry;
   private leafOnBoard!: T.Mesh;
   private leafInHand!: T.Mesh;
   /** The relishes as they lie on a wrap, and as they are carried to it. */
@@ -465,22 +484,27 @@ export class GrillView extends TableView<State> {
   /** A relish as a small heap: kimchi, bean paste, garlic and chilli, salt in sesame oil. */
   private dab(which: number) {
     const heap = new T.Group(),
-      bit = (geometry: T.BufferGeometry, color: string, x: number, y: number, z: number, turn = 0) => {
-        const mesh = new T.Mesh(this.own(geometry), this.standard({ color, roughness: 0.4 }));
-        mesh.position.set(x, y, z);
-        mesh.rotation.y = turn;
-        mesh.castShadow = true;
-        heap.add(mesh);
-      };
-    if (which === 0) for (const [x, z, color, turn] of [[-0.1, -0.06, "#e8d9b0", 0.4], [0.08, 0.08, "#d8402a", -0.5], [0.04, -0.1, "#c2321e", 1.1]] as const) bit(new T.BoxGeometry(0.26, 0.05, 0.18), color, x, 0.03, z, turn);
-    else if (which === 1) bit(new T.SphereGeometry(0.16, 14, 10).scale(1, 0.5, 1), "#9a5226", 0, 0.05, 0);
-    else if (which === 2) {
-      for (const [x, z] of [[-0.09, 0], [0.07, 0.07]]) bit(new T.CylinderGeometry(0.08, 0.08, 0.03, 12), "#f3ecd6", x, 0.02, z);
-      bit(new T.TorusGeometry(0.06, 0.022, 6, 12).rotateX(Math.PI / 2), "#4f9a34", 0.03, 0.03, -0.09);
-    } else bit(new T.CylinderGeometry(0.17, 0.17, 0.012, 20), "#e2c85a", 0, 0.01, 0);
+      mesh = new T.Mesh(this.heapShape, this.relishPaint[which]);
+    mesh.position.y = 0.02;
+    mesh.castShadow = true;
+    heap.add(mesh);
     heap.visible = false;
     this.scene.add(heap);
     return heap;
+  }
+  /** A paint that shows a photograph once it has come, and a plain colour until then. */
+  private pictured(url: string, color: string, roughness: number, both = false) {
+    const paint = this.standard({ color, roughness, side: both ? T.DoubleSide : T.FrontSide });
+    new T.TextureLoader().load(url, (photo) => {
+      if (this.disposed) return photo.dispose();
+      photo.colorSpace = T.SRGBColorSpace;
+      photo.anisotropy = 4;
+      this.own(photo);
+      paint.map = photo;
+      paint.color.set("#ffffff");
+      paint.needsUpdate = true;
+    });
+    return paint;
   }
   /** The plates, the wrap plate, the relishes, the basket of leaves and a pair of chopsticks. */
   private crockery() {
@@ -492,48 +516,19 @@ export class GrillView extends TableView<State> {
         this.add(new T.TorusGeometry(r * 0.88, 0.012, 6, 56).rotateX(Math.PI / 2), line, x, 0.01 + deep * 0.82, z).castShadow = false;
       },
       fillWith = (x: number, z: number, r: number, color: string, y = 0.1) => (this.add(new T.CircleGeometry(r, 32).rotateX(-Math.PI / 2), this.standard({ color, roughness: 0.3 }), x, y, z).castShadow = false);
+    this.relishPaint = RELISH_PHOTOS.map(([url, color]) => this.pictured(url, color, 0.38));
+    this.heapShape = this.own(dome(0.8, 0.3, 20).scale(0.2, 0.2, 0.2));
     for (const [x, z, r] of PLATES) dish(x, z, r);
     dish(BOARD[0], BOARD[1], BOARD[2]);
     // The relishes along the far edge, in the order the wrap counts them.
     DISHES.forEach(([x, z], which) => {
       dish(x, z, which ? 0.5 : 0.62, which ? 0.18 : 0.2);
-      if (which === 0) {
-        fillWith(x, z, 0.5, "#c23a26", 0.15);
-        for (const [dx, dz, color] of [[-0.15, -0.1, "#e8d9b0"], [0.12, 0.12, "#e04a30"], [0.1, -0.16, "#f0e2c0"], [-0.1, 0.15, "#b02a1c"]] as const) this.add(new T.BoxGeometry(0.3, 0.05, 0.2), this.standard({ color, roughness: 0.4 }), x + dx, 0.19, z + dz).rotation.y = dx * 6;
-      } else if (which === 1) fillWith(x, z, 0.4, "#9a5226", 0.14);
-      else if (which === 2) for (let i = 0; i < 7; i++) this.add(new T.CylinderGeometry(0.09, 0.09, 0.03, 12), this.standard({ color: i % 3 ? "#f3ecd6" : "#5fa83a", roughness: 0.5 }), x + Math.cos(i * 0.9) * 0.2, 0.15, z + Math.sin(i * 0.9) * 0.2).castShadow = false;
-      else fillWith(x, z, 0.4, "#d8c468", 0.14);
+      // What is in the bowl is a photograph laid on its floor, a little domed so that it catches the light as a heap does.
+      this.add(this.own(dome(0.6, 0.07)), this.relishPaint[which], x, which ? 0.13 : 0.15, z).scale.setScalar(which ? 0.4 : 0.5);
       this.dabs.push(this.dab(which));
       this.dabsInHand.push(this.dab(which));
     });
-    // Lettuce: a ruffled leaf with a pale rib and veins, painted once and used for every leaf.
-    const random = sequence(77),
-      green = document.createElement("canvas");
-    green.width = green.height = 256;
-    const pen = green.getContext("2d")!,
-      wash = pen.createRadialGradient(128, 150, 10, 128, 128, 150);
-    wash.addColorStop(0, "#b6dc7a");
-    wash.addColorStop(0.6, "#74b848");
-    wash.addColorStop(1, "#4f9a34");
-    pen.fillStyle = wash;
-    pen.fillRect(0, 0, 256, 256);
-    pen.strokeStyle = "rgba(232,246,200,0.75)";
-    pen.lineCap = "round";
-    pen.lineWidth = 7;
-    pen.beginPath();
-    pen.moveTo(128, 250);
-    pen.lineTo(128, 40);
-    pen.stroke();
-    pen.lineWidth = 2;
-    for (let y = 230; y > 50; y -= 22)
-      for (const way of [-1, 1]) {
-        pen.beginPath();
-        pen.moveTo(128, y);
-        pen.quadraticCurveTo(128 + way * 50, y - 20 - random() * 14, 128 + way * (88 + random() * 30), y - 50 - random() * 20);
-        pen.stroke();
-      }
-    const veins = this.own(new T.CanvasTexture(green));
-    veins.colorSpace = T.SRGBColorSpace;
+    // Lettuce: a ruffled leaf cut out of a photograph, used for every leaf, and a heap of them in the basket.
     const ruffled = Array.from({ length: 64 }, (_, i) => {
         const a = (i / 64) * Math.PI * 2,
           r = 0.5 * (1 + 0.06 * Math.sin(a * 9) + 0.04 * Math.sin(a * 17 + 1));
@@ -543,7 +538,7 @@ export class GrillView extends TableView<State> {
       uv = blade.getAttribute("uv");
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) + 0.5, uv.getY(i) + 0.5);
     this.own(blade.rotateX(-Math.PI / 2));
-    const leafPaint = this.standard({ map: veins, roughness: 0.6, side: T.DoubleSide }),
+    const leafPaint = this.pictured(leafUrl, "#6aa840", 0.6, true),
       grow = (x: number, y: number, z: number, size: number, turn: number) => {
         const mesh = new T.Mesh(blade, leafPaint);
         mesh.position.set(x, y, z);
@@ -555,7 +550,7 @@ export class GrillView extends TableView<State> {
       };
     this.add(new T.CylinderGeometry(0.98, 0.82, 0.22, 36), this.standard({ color: "#b98a4e", roughness: 0.85 }), BASKET[0], 0.11, BASKET[1]);
     this.add(new T.TorusGeometry(0.98, 0.045, 8, 40).rotateX(Math.PI / 2), this.standard({ color: "#9a6e3a", roughness: 0.8 }), BASKET[0], 0.22, BASKET[1]).castShadow = false;
-    for (let i = 0; i < 5; i++) grow(BASKET[0] + Math.cos(i * 1.26) * 0.22, 0.25 + i * 0.02, BASKET[1] + Math.sin(i * 1.26) * 0.18, 1.5, i * 1.4);
+    this.add(this.own(dome(0.7, 0.16, 40)), this.pictured(lettuceUrl, "#5a9a38", 0.65), BASKET[0], 0.2, BASKET[1]).scale.setScalar(0.93);
     this.leafOnBoard = grow(BOARD[0], 0.14, BOARD[1], 2.7, 0.5);
     this.leafInHand = grow(0, 0, 0, 2.2, 0.3);
     this.leafOnBoard.visible = this.leafInHand.visible = false;
