@@ -153,7 +153,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "water-pouring": { config: pourConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "river-crossing": { config: riverConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "tower-of-hanoi": { config: hanoiConfig, options: { mode: "ai", variant: "3", level: "normal" } },
-  "lights-off": { config: lightsConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "lights-on": { config: lightsConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -284,7 +284,7 @@ type GameSelection =
   | "water-pouring"
   | "river-crossing"
   | "tower-of-hanoi"
-  | "lights-off"
+  | "lights-on"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"
@@ -333,7 +333,7 @@ function askNewGame() {
 function menu(selected: GameSelection = null, category = "전체", people = "전체") {
   clear();
   app.innerHTML = header() +
-    `<main class="library"><section class="hero"><div class="hero-copy"><div class="eyebrow">The world, at your table</div><h1>함께 앉으면,<br>즐거움이 <em>시작</em>됩니다.</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p></div></section><div class="collection-heading"><h2>게임 컬렉션 <span>${String(games.filter(g => g.available).length).padStart(2,"0")} / ${String(games.length).padStart(2,"0")}</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임", "퍼즐게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-label="${x}" aria-pressed="${x === category}">${x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.category === x).length}</span></button>`).join("")}</div><div class="filters people" role="group" aria-label="인원">${["전체", "1인용", "2인용"].map((x) => `<button class="filter ${x === people ? "active" : ""}" data-players="${x}" aria-label="인원 ${x}" aria-pressed="${x === people}">${x === "전체" ? "인원 전체" : x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.players === x).length}</span></button>`).join("")}</div></div><div class="collection game-list game-grid" id="game-rail">${games.map((g, i) => {
+    `<main class="library"><section class="hero"><div class="hero-copy"><div class="eyebrow">The world, at your table</div><h1>World <em>Table</em> Games</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p></div></section><div class="collection-heading"><h2>게임 컬렉션 <span>${String(games.filter(g => g.available).length).padStart(2,"0")} / ${String(games.length).padStart(2,"0")}</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임", "퍼즐게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-label="${x}" aria-pressed="${x === category}">${x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.category === x).length}</span></button>`).join("")}</div><div class="filters people" role="group" aria-label="인원">${["전체", "1인용", "2인용"].map((x) => `<button class="filter ${x === people ? "active" : ""}" data-players="${x}" aria-label="인원 ${x}" aria-pressed="${x === people}">${x === "전체" ? "인원 전체" : x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.players === x).length}</span></button>`).join("")}</div></div><div class="collection game-list game-grid" id="game-rail">${games.map((g, i) => {
       const id = g.en.toLowerCase().replaceAll(" ", "-"), expanded = selected === id;
       const out = (category !== "전체" && category !== g.category) || (people !== "전체" && people !== g.players);
       return `<article class="game-entry ${expanded ? "expanded" : ""}" data-game="${id}" data-category="${g.category}" data-players="${g.players}" ${out ? "hidden" : ""}><button class="game-card" id="select-game-${i}" ${g.available ? `aria-label="${g.name} 살펴보기" aria-expanded="${expanded}" ${expanded ? 'aria-controls="game-detail"' : ""}` : `disabled aria-label="${g.name} 개발 예정"`}><span class="card-index" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span><span class="game-icon icon-${i}${thumb(id) ? " shot" : ""}" aria-hidden="true">${thumb(id) ? `<img src="${thumb(id)}" alt="" loading="lazy">` : g.icon}</span><span class="card-copy"><span class="card-title">${g.name}</span><small>${g.en}</small></span><span class="card-category">${g.available ? `${g.category} · ${g.players}` : "개발 예정"}</span></button></article>${
@@ -342,6 +342,8 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
       }`;
     }).join("")}</div>${selected ? "" : `<p class="rail-hint">게임을 누르면 설명과 시작 버튼이 그 줄 아래에 펼쳐집니다.</p>`}<footer><span>World Table Games</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
   bindHeader();
+  // The collection has no bar across its top: the settings button stands in the corner of the title block instead.
+  document.querySelector(".hero")?.append($("settings"));
   const rail = $("game-rail"),
     tiles = () => [...rail.querySelectorAll<HTMLButtonElement>(".game-entry:not([hidden]) .game-card")];
   /** Points the setup panel's notch at the chosen tile. */

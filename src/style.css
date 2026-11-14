@@ -2600,3 +2600,22 @@ dialog .stage-card small, dialog .stage-card b { word-break:keep-all; }
   dialog .stage-card small { white-space:nowrap; }
 }
 @media (orientation: landscape) and (max-height: 540px) { dialog .stage-art { width:min(100%, 84px); } }
+
+/* The collection has no header bar (the user asked): the bar collapses to nothing, its home button stays as a
+   pixel for readers, the keyboard and the tests, and the settings button stands in the title block's corner. */
+#app:has(> .library) > header { height:0 !important;min-height:0 !important;padding:0 !important;border:0 !important;overflow:visible;background:none;pointer-events:none;position:relative;z-index:20; }
+#app:has(> .library) > header .brand { position:absolute !important;left:0;top:0;width:2px !important;height:2px !important;min-height:0 !important;padding:0 !important;overflow:hidden;opacity:0;pointer-events:auto; }
+.library .hero { position:relative; }
+.library .hero > #settings { position:absolute;top:clamp(14px, 2.4vw, 26px);right:0; }
+.library .hero h1 { letter-spacing:-0.02em; }
+/* The chosen game's panel opens smoothly under its row (the user asked): it grows down from the row and fades in. */
+@keyframes stage-open {
+  0% { max-height:0;opacity:0;transform:translateY(-10px);overflow:hidden; }
+  60% { opacity:1; }
+  99% { max-height:760px;transform:none;overflow:hidden; }
+  100% { max-height:none;opacity:1;transform:none;overflow:visible; }
+}
+.library .game-grid .game-stage:not([hidden]) { animation:stage-open .46s cubic-bezier(.22,.8,.3,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .library .game-grid .game-stage:not([hidden]) { animation:none; }
+}

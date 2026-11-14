@@ -336,8 +336,8 @@ export const games = [
     available: true,
   },
   {
-    name: "불 끄기",
-    en: "LIGHTS OFF",
+    name: "불 켜기",
+    en: "LIGHTS ON",
     category: "퍼즐게임",
     players: "1인용",
     icon: "✺",

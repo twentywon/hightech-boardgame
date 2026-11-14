@@ -664,40 +664,41 @@ describe("tower of Hanoi", () => {
     expect(state.winner).toBe(0);
   });
 });
-describe("lights off", () => {
+describe("lights on", () => {
   test("a press turns over a lamp and those beside it, and twice undoes itself", () => {
     expect(lights.reach(3, 4).sort()).toEqual([1, 3, 4, 5, 7]);
     expect(lights.reach(3, 0).sort()).toEqual([0, 1, 3]);
-    const dark = { size: 3, on: new Array(9).fill(false), best: 0, last: null, winner: null, ply: 0 } as lights.State,
-      once = lights.play(dark, to(4))!;
-    expect(once.on.flatMap((lit, i) => (lit ? [i] : []))).toEqual([1, 3, 4, 5, 7]);
+    const lit = { size: 3, on: new Array(9).fill(true), best: 0, last: null, winner: null, ply: 0 } as lights.State,
+      once = lights.play(lit, to(4))!;
+    expect(once.on.flatMap((on, i) => (on ? [] : [i]))).toEqual([1, 3, 4, 5, 7]);
     expect(once.winner).toBeNull();
+    // Every lamp lit again: that is the end.
     const twice = lights.play(once, to(4))!;
-    expect([twice.on.some(Boolean), twice.winner]).toEqual([false, 0]);
+    expect([twice.on.every(Boolean), twice.winner]).toEqual([true, 0]);
     expect(lights.play(once, to(9))).toBeNull();
-    expect(dark.on.some(Boolean)).toBe(false);
+    expect(lit.on.every(Boolean)).toBe(true);
   });
-  test("every board laid can be put out, in exactly the fewest presses it names", () => {
+  test("every board laid can be lit, in exactly the fewest presses it names", () => {
     for (let stage = 1; stage <= lights.SIZES.length; stage++)
       for (const seed of [1, 2, 3]) {
         let state = lights.createGame(stage, seededRandom(seed));
         const way = lights.solve(state.size, state.on)!;
-        expect([state.size, state.on.some(Boolean)]).toEqual([lights.SIZES[stage - 1], true]);
+        expect([state.size, state.on.every(Boolean)]).toEqual([lights.SIZES[stage - 1], false]);
         expect(way.length).toBe(state.best);
         expect(state.best).toBeGreaterThanOrEqual(state.size);
         // The hint is followed to the end.
         while (state.winner === null) state = lights.play(state, lights.hint(state)!)!;
-        expect([stage, seed, state.ply]).toEqual([stage, seed, state.best]);
+        expect([stage, seed, state.ply, state.on.every(Boolean)]).toEqual([stage, seed, state.best, true]);
       }
   });
   test("the fewest presses are found where a board has more than one way", () => {
-    // On the four by four pressing every lamp of a row but one edge pattern is the same as doing nothing: the search must not count such presses.
-    const on = new Array(16).fill(false);
+    // On the four by four some sets of presses change nothing: the search must not count such presses.
+    const on = new Array(16).fill(true);
     for (const lamp of lights.reach(4, 5)) on[lamp] = !on[lamp];
     expect(lights.solve(4, on)).toEqual([5]);
-    // A single lit lamp in the corner of the five by five cannot be put out.
-    const corner = new Array(25).fill(false);
-    corner[0] = true;
+    // A single dark lamp in the corner of the five by five cannot be lit.
+    const corner = new Array(25).fill(true);
+    corner[0] = false;
     expect(lights.solve(5, corner)).toBeNull();
   });
 });

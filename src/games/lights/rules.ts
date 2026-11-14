@@ -2,10 +2,10 @@ import { cryptoRandom, type Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 
 /**
- * Lights off: a square of lamps, some lit. Pressing a lamp turns it over
+ * Lights on: a square of lamps, some dark. Pressing a lamp turns it over
  * together with the lamps beside, above and below it; every lamp is to be
- * put out. A puzzle is made by pressing lamps of a dark board at random, so
- * it can always be solved, and its fewest presses are found by solving the
+ * lit. A puzzle is made by pressing lamps of a lit board at random, so it
+ * can always be solved, and its fewest presses are found by solving the
  * presses as equations over two values.
  */
 export const SIZES = [3, 4, 5, 6, 7];
@@ -30,7 +30,7 @@ export function reach(size: number, cell: number) {
   return out;
 }
 /**
- * The fewest presses that put every lamp out, as the cells to press, or null
+ * The fewest presses that light every lamp, as the cells to press, or null
  * when none do. Pressing twice undoes itself and the order does not matter,
  * so each cell is pressed once or not at all: a set of equations, one a
  * lamp, solved by elimination; where presses are left free, every choice of
@@ -42,7 +42,8 @@ export function solve(size: number, on: boolean[]): number[] | null {
     rows = Array.from({ length: n }, (_, lamp) => {
       const row = new Uint8Array(n + 1);
       for (const cell of reach(size, lamp)) row[cell] = 1;
-      row[n] = on[lamp] ? 1 : 0;
+      // A lamp must be turned over an odd number of times when it is dark.
+      row[n] = on[lamp] ? 0 : 1;
       return row;
     }),
     pivots: number[] = [];
@@ -76,19 +77,19 @@ export function play(state: State, move: Move): State | null {
   if (state.winner !== null || move.from !== -1 || move.extra !== -1 || !Number.isInteger(move.to) || move.to < 0 || move.to >= state.on.length) return null;
   const on = [...state.on];
   for (const cell of reach(state.size, move.to)) on[cell] = !on[cell];
-  return { ...state, on, last: move.to, ply: state.ply + 1, winner: on.some(Boolean) ? null : 0 };
+  return { ...state, on, last: move.to, ply: state.ply + 1, winner: on.every(Boolean) ? 0 : null };
 }
 /** A puzzle of a stage (1 the three by three, up to 5 the seven by seven), needing at least as many presses as the board is wide. */
 export function createGame(stage = 1, random: Random = cryptoRandom): State {
   const size = SIZES[Math.max(1, Math.min(SIZES.length, Math.round(stage) || 1)) - 1];
   for (let attempt = 0; attempt < 200; attempt++) {
-    const on = new Array<boolean>(size * size).fill(false);
+    const on = new Array<boolean>(size * size).fill(true);
     for (let cell = 0; cell < on.length; cell++) if (random() < 0.45) for (const lamp of reach(size, cell)) on[lamp] = !on[lamp];
     const best = solve(size, on)?.length ?? 0;
     if (best >= size) return { size, on, best, last: null, winner: null, ply: 0 };
   }
-  // Never reached in practice: every lamp lit.
-  const on = new Array<boolean>(size * size).fill(true);
+  // Never reached in practice: every lamp dark.
+  const on = new Array<boolean>(size * size).fill(false);
   return { size, on, best: solve(size, on)?.length ?? 0, last: null, winner: null, ply: 0 };
 }
 export function hint(state: State): Move | null {
@@ -106,7 +107,7 @@ export const lights: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => -s.ply,
-  hint: (s) => `불을 모두 끄세요 · 켜진 불 ${s.on.filter(Boolean).length}개 · ${s.ply}번 누름 (최소 ${s.best}번)`,
+  hint: (s) => `불을 모두 켜세요 · 꺼진 불 ${s.on.filter((lit) => !lit).length}개 · ${s.ply}번 누름 (최소 ${s.best}번)`,
   tally: (s) => [`${s.ply}번 누름 · 최소 ${s.best}번`, ""],
-  reason: (s) => `성공! ${s.ply}번 만에 불을 모두 껐습니다. 최소 횟수는 ${s.best}번${s.ply === s.best ? "으로, 가장 적게 눌렀습니다!" : "입니다."}`,
+  reason: (s) => `성공! ${s.ply}번 만에 불을 모두 켰습니다. 최소 횟수는 ${s.best}번${s.ply === s.best ? "으로, 가장 적게 눌렀습니다!" : "입니다."}`,
 };

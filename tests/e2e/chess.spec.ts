@@ -68,7 +68,7 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
   await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(0);
   await selectGame(page, "체스");
   await expect(
-    page.getByRole("heading", { name: /함께 앉으면/ }),
+    page.getByRole("heading", { name: "World Table Games", level: 1 }),
   ).toBeVisible();
   await expect(
     page.getByRole("img", { name: "체스판 미리보기" }),

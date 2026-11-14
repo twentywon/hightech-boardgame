@@ -18,7 +18,7 @@ test("collection starts collapsed and switches game details inline without navig
   await page.screenshot({ path: `test-results/${info.project.name}-collection-collapsed.png`, fullPage: true });
 
   await selectGame(page, "리버시");
-  await expect(page.getByRole("heading", { name: /함께 앉으면/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "World Table Games", level: 1 })).toBeVisible();
   await expect(page.getByRole("region", { name: "리버시 대국 설정" })).toBeVisible();
   await expect(page.getByRole("img", { name: "리버시판 미리보기" })).toBeVisible();
   await expect(page.getByRole("button", { name: "테이블에 앉기" })).toHaveCount(1);

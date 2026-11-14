@@ -532,9 +532,9 @@ test("tower of Hanoi: discs are chosen, a move is taken back, and the tower is m
   await expect(panel.locator("#pz-next")).toBeVisible();
   expect(errors).toEqual([]);
 });
-test("lights off: a board laid at random is put out in the fewest presses", async ({ page }) => {
+test("lights on: a board laid at random is lit in the fewest presses", async ({ page }) => {
   const random = await seeded(page, 31),
-    errors = await sit(page, "불 끄기");
+    errors = await sit(page, "불 켜기");
   await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "4×4" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
@@ -546,14 +546,14 @@ test("lights off: a board laid at random is put out in the fewest presses", asyn
   const way = lamps.solve(state.size, state.on)!,
     board = walker(page, 4, 4);
   await expect(page.locator("#turn")).toContainText(`최소 ${state.best}번`);
-  await expect(page.locator("#turn")).toContainText(`켜진 불 ${state.on.filter(Boolean).length}개`);
+  await expect(page.locator("#turn")).toContainText(`꺼진 불 ${state.on.filter((lit) => !lit).length}개`);
   await board.home();
   for (const [n, cell] of way.entries()) {
     await board.go(cell);
     await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
     await rest(page);
     state = lamps.play(state, { from: -1, to: cell, extra: -1 })!;
-    if (state.winner === null) await expect(page.locator("#turn")).toContainText(`켜진 불 ${state.on.filter(Boolean).length}개`);
+    if (state.winner === null) await expect(page.locator("#turn")).toContainText(`꺼진 불 ${state.on.filter((lit) => !lit).length}개`);
   }
   await expect(page.locator("#turn")).toContainText("성공!");
   await expect(page.locator("#turn")).toContainText("가장 적게");

@@ -212,7 +212,7 @@ const play = {
     await keys(["ArrowLeft", "ArrowLeft", "Enter", "ArrowRight", "Enter"], 260);
     await wait(700);
   },
-  "lights-off": async () => {
+  "lights-on": async () => {
     await page.locator("dialog[open] .stage-card").nth(2).click();
     await wait(500);
   },

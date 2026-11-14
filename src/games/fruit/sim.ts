@@ -21,7 +21,10 @@ export const HALF = 3.4,
   SPILL = 1.8,
   /** The kinds that come to hand: the five smallest. */
   HANDED = 5,
-  MAX = 90;
+  MAX = 90,
+  /** How much of its speed a fruit keeps from one slice to the next, and how much of its roll the floor takes: the skins are slippery (the user asked for far less friction). */
+  SLIDE = 0.9993,
+  FLOOR = 0.006;
 export interface Fruit {
   id: number;
   kind: number;
@@ -73,8 +76,8 @@ export function step(world: World, aim: number): Happening[] {
   for (const f of world.fruits) {
     const r = RADII[f.kind],
       limit = r * 0.45,
-      vx = Math.max(-limit, Math.min(limit, (f.x - f.px) * 0.995)),
-      vy = Math.max(-limit, Math.min(limit, (f.y - f.py) * 0.995 - GRAVITY * DT * DT));
+      vx = Math.max(-limit, Math.min(limit, (f.x - f.px) * SLIDE)),
+      vy = Math.max(-limit, Math.min(limit, (f.y - f.py) * SLIDE - GRAVITY * DT * DT));
     f.px = f.x;
     f.py = f.y;
     f.x += vx;
@@ -130,8 +133,8 @@ export function step(world: World, aim: number): Happening[] {
       else if (f.x > HALF - r) f.x = HALF - r;
       if (f.y < r) {
         f.y = r;
-        // The floor takes some of the roll out.
-        f.px += (f.x - f.px) * 0.06;
+        // The floor takes a little of the roll out.
+        f.px += (f.x - f.px) * FLOOR;
       }
     }
     if (pass === 0 && (gone.size || born.length)) {
