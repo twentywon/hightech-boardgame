@@ -547,7 +547,7 @@ export class ChessView {
     );
     this.resize(true);
   }
-  private reflected?: T.Texture;
+  private reflected: T.Texture | null = null;
   dispose() {
     if (this.disposed) return;
     this.disposed = true;

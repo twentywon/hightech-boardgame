@@ -107,16 +107,25 @@ export function realism(renderer: T.WebGLRenderer, scene: T.Scene, exposure = 1)
   renderer.toneMapping = T.NeutralToneMapping;
   renderer.toneMappingExposure = exposure;
   renderer.shadowMap.type = T.PCFSoftShadowMap;
-  const pmrem = new T.PMREMGenerator(renderer),
-    room = new RoomEnvironment(),
+  // Building the reflected room compiles heavy shaders: a moment on a graphics card, seconds where the picture is
+  // drawn by the processor alone (which is also how the browser tests run). There the table goes without it.
+  const gl = renderer.getContext(),
+    info = gl.getExtension("WEBGL_debug_renderer_info"),
+    drawnBy = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "",
+    slow = /swiftshader|llvmpipe|software|basic render/i.test(drawnBy) && !document.documentElement.dataset.capture && !location.search.includes("reflect=1");
+  let reflected: T.Texture | null = null;
+  if (!slow) {
+    const pmrem = new T.PMREMGenerator(renderer),
+      room = new RoomEnvironment();
     reflected = pmrem.fromScene(room, 0.04).texture;
-  scene.environment = reflected;
-  scene.environmentIntensity = 0.32;
-  room.dispose();
-  pmrem.dispose();
+    scene.environment = reflected;
+    scene.environmentIntensity = 0.32;
+    room.dispose();
+    pmrem.dispose();
+  }
   scene.traverse((thing) => {
-    // The room now lights the shaded sides: the flat sky light gives way to it.
-    if (thing instanceof T.HemisphereLight) thing.intensity *= 0.62;
+    // The room lights the shaded sides, so the flat sky light gives way to it.
+    if (thing instanceof T.HemisphereLight) thing.intensity *= reflected ? 0.62 : 0.85;
     else if (thing instanceof T.DirectionalLight && thing.castShadow) {
       thing.shadow.mapSize.set(2048, 2048);
       thing.shadow.radius = 5;

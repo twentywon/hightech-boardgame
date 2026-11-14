@@ -142,7 +142,10 @@ export abstract class TableView<S> implements PointView<S> {
     return false;
   }
   protected begin() {
-    if (this.photographic()) this.own(realism(this.renderer, this.scene));
+    if (this.photographic()) {
+      const reflected = realism(this.renderer, this.scene);
+      if (reflected) this.own(reflected);
+    }
     this.resize();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
