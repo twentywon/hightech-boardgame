@@ -1,334 +1,595 @@
-import { cryptoRandom } from "../../core/random";
-import { FlatView, rounded } from "../flat/view";
-import { BEST, BURN, FLIP, LIVES, SERVE, type State } from "./rules";
-import { BURNT, CHARRED, DT, GOOD, OVER, RAW, SLOTS, createWorld, down, press, step, type Piece, type World } from "./sim";
+import * as T from "three";
+import { wood } from "../../engine/scene-utils";
+import type { Marks } from "../points/view";
+import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
+import { BEST, BURN, DONE, EAT, FLIP, LAY, TICK, type State } from "./rules";
+import { BURNT, CHARRED, COAL, CUTS, DT, GOOD, OVER, PORTION, RAW, SLOTS, createWorld, down, flip, lay, shift, step, take, type Happening, type Piece, type World } from "./sim";
 
 export const GRILL_COLORS: [string, string] = ["#c8553a", "#b9b3a4"];
+/** The grate's radius, the brazier's, how far from the middle the six outer places lie, and how high the grate stands. */
+const GRATE = 2.75,
+  RIM = 3.4,
+  REACH = 1.72,
+  TOP = 0.46;
+/** Where the seven places are: the middle, then six round it. */
+const PLACES = [[0, 0], ...Array.from({ length: 6 }, (_, i) => [Math.cos((i * Math.PI) / 3 - Math.PI / 2) * REACH, Math.sin((i * Math.PI) / 3 - Math.PI / 2) * REACH])];
+/** Where the five plates of meat stand, and my own plate. */
+const PLATES = [[-6.1, -3], [-6.1, 0], [-6.1, 3], [6.1, 0.1], [6.1, 3.1]],
+  MINE = [6.1, -3];
+/** How each cut is shaped: its length and breadth, its thickness, and whether it is rounded. */
+const SHAPES = [
+  { w: 1.5, d: 0.56, tall: 0.1, round: false },
+  { w: 1.3, d: 0.84, tall: 0.12, round: false },
+  { w: 1.12, d: 0.86, tall: 0.05, round: true },
+  { w: 1.3, d: 1.02, tall: 0.14, round: true },
+  { w: 1.25, d: 0.6, tall: 0.1, round: true },
+];
+/** The points the table knows, kept clear of the numbers the rules use for their own moves. */
+const PLACE = 300,
+  PLATE = 400;
+/** How finely a side's colour follows its cooking. */
+const SHADES = 14,
+  ARCS = 36;
 type Rgb = [number, number, number];
 const mix = (a: Rgb, b: Rgb, t: number): Rgb => [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * Math.max(0, Math.min(1, t)))) as Rgb,
-  css = ([r, g, b]: Rgb, alpha = 1) => `rgba(${r},${g},${b},${alpha})`;
-/** A colour as a side cooks: raw, done, then charred. */
-const cooked = (raw: Rgb, ready: Rgb, done: number) => (done <= 1 ? mix(raw, ready, done) : mix(ready, [38, 26, 20], (done - 1) / (BURNT - 1)));
-/** Where the seven places are, in units of the grill's radius: the middle, then six round it. */
-const PLACES = [[0, 0], ...Array.from({ length: 6 }, (_, i) => [Math.cos((i * Math.PI) / 3 - Math.PI / 2) * 0.62, Math.sin((i * Math.PI) / 3 - Math.PI / 2) * 0.62])];
+  css = ([r, g, b]: Rgb, alpha = 1) => `rgba(${r},${g},${b},${alpha})`,
+  /** A colour as a side cooks: raw, done, then charred. */
+  cooked = (raw: Rgb, ready: Rgb, done: number) => (done <= 1 ? mix(raw, ready, done) : mix(ready, [34, 24, 20], (done - 1) / (COAL - 1))),
+  sequence = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+/** The lean and the fat of each cut, raw and done. */
+const FLESH: { lean: [Rgb, Rgb]; fat: [Rgb, Rgb] }[] = [
+  { lean: [[224, 104, 110], [156, 92, 54]], fat: [[250, 234, 226], [232, 190, 122]] },
+  { lean: [[150, 52, 40], [104, 56, 30]], fat: [[196, 120, 84], [150, 96, 50]] },
+  { lean: [[226, 84, 88], [150, 98, 66]], fat: [[252, 240, 234], [226, 196, 150]] },
+  { lean: [[214, 92, 96], [150, 90, 56]], fat: [[248, 232, 222], [228, 188, 124]] },
+  { lean: [[240, 228, 204], [190, 140, 84]], fat: [[250, 244, 230], [214, 170, 110]] },
+];
+/** One side of a cut, painted as it looks when it is `done` so far. */
+function side(cut: number, done: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 128;
+  const pen = canvas.getContext("2d")!,
+    random = sequence(cut * 31 + 7),
+    lean = css(cooked(...FLESH[cut].lean, done)),
+    fat = css(cooked(...FLESH[cut].fat, done));
+  pen.fillStyle = lean;
+  pen.fillRect(0, 0, 128, 128);
+  pen.strokeStyle = pen.fillStyle = fat;
+  pen.lineCap = "round";
+  if (cut === 0) {
+    // Pork belly: bands of fat and lean along the strip.
+    for (const y of [14, 50, 86, 118]) {
+      pen.beginPath();
+      pen.moveTo(0, y);
+      for (let x = 0; x <= 128; x += 8) pen.lineTo(x, y + Math.sin(x * 0.09 + y) * 4);
+      pen.lineWidth = 15;
+      pen.stroke();
+    }
+  } else if (cut === 1) {
+    // Marinated rib: scored across, with sesame on it.
+    pen.strokeStyle = css(cooked([110, 34, 28], [70, 36, 20], done));
+    pen.lineWidth = 4;
+    for (let x = -100; x < 128; x += 22) {
+      pen.beginPath();
+      pen.moveTo(x, 0);
+      pen.lineTo(x + 70, 128);
+      pen.stroke();
+    }
+    pen.fillStyle = css(cooked([240, 226, 190], [214, 184, 130], done));
+    for (let i = 0; i < 26; i++) {
+      pen.beginPath();
+      pen.ellipse(random() * 128, random() * 128, 3.2, 1.8, random() * 3, 0, Math.PI * 2);
+      pen.fill();
+    }
+  } else if (cut === 2 || cut === 3) {
+    // Brisket is laced with fat all through; the neck has fewer, thicker seams.
+    const seams = cut === 2 ? 46 : 22;
+    for (let i = 0; i < seams; i++) {
+      const x = random() * 128,
+        y = random() * 128,
+        a = random() * Math.PI;
+      pen.lineWidth = cut === 2 ? 2 + random() * 3 : 2 + random() * 4;
+      pen.beginPath();
+      pen.moveTo(x, y);
+      pen.quadraticCurveTo(x + Math.cos(a) * 22 + (random() - 0.5) * 20, y + Math.sin(a) * 22 + (random() - 0.5) * 20, x + Math.cos(a) * 44, y + Math.sin(a) * 44);
+      pen.stroke();
+    }
+  } else {
+    // A slice of king oyster mushroom: fine fibres along it.
+    pen.strokeStyle = css(cooked([222, 206, 176], [164, 116, 66], done));
+    pen.lineWidth = 1.5;
+    for (let y = 4; y < 128; y += 5) {
+      pen.beginPath();
+      pen.moveTo(0, y + random() * 3);
+      pen.lineTo(128, y + random() * 3);
+      pen.stroke();
+    }
+  }
+  // The marks of the grate on a side that has been down, and char over all once it goes too far.
+  if (done > 0.3) {
+    pen.strokeStyle = `rgba(46,26,16,${Math.min(0.6, (done - 0.3) * 0.7)})`;
+    pen.lineWidth = 6;
+    for (let x = -120; x < 128; x += 30) {
+      pen.beginPath();
+      pen.moveTo(x, 128);
+      pen.lineTo(x + 128, 0);
+      pen.stroke();
+    }
+  }
+  if (done > OVER) {
+    pen.fillStyle = `rgba(24,18,16,${Math.min(0.85, ((done - OVER) / (COAL - OVER)) * 0.9)})`;
+    pen.fillRect(0, 0, 128, 128);
+  }
+  return canvas;
+}
+/** A piece as it is shown: a slab or a rounded slice, with a paint for the side that lies up first, one for the side that lies down first, and one for its edge. */
+interface Model {
+  group: T.Group;
+  slab: T.Mesh;
+  slice: T.Mesh;
+  upper: T.MeshStandardMaterial;
+  under: T.MeshStandardMaterial;
+  edge: T.MeshStandardMaterial;
+}
 /**
- * A round charcoal grill seen from above, drawn flat. The view plays the
- * grill in real time: a press on a piece turns it or takes it off, and each
- * turning, each piece taken off and each piece burnt is reported as a move.
+ * A grill table seen from above: a charcoal brazier let into the wood,
+ * plates of raw meat on either side, my own plate, and side dishes. The
+ * view plays the table in real time: a tap on a plate lays a piece, a tap
+ * on a piece turns it, and a piece dragged off the grill is eaten.
  */
-export class GrillView extends FlatView<State> {
-  private world: World = createWorld(cryptoRandom);
-  /** Words that rise from a place and fade: what a piece taken off was. */
-  private words: { slot: number; text: string; color: string; at: number }[] = [];
+export class GrillView extends TableView<State> {
+  private world: World = createWorld();
+  private skins = new Map<number, T.CanvasTexture>();
+  private pieces: Model[] = [];
+  private stock: T.Mesh[][] = [];
+  private gauges: T.Mesh[] = [];
+  private arcs: T.BufferGeometry[] = [];
+  private zones: T.MeshBasicMaterial[];
+  private puffs: T.Mesh[] = [];
+  private coals!: T.MeshBasicMaterial;
+  private ember!: T.PointLight;
+  private words: { sprite: T.Sprite; x: number; z: number; at: number }[] = [];
+  private signs = new Map<string, T.SpriteMaterial>();
+  private cursorRing: T.Mesh;
+  /** Where the keyboard stands: a plate (0–4) or a place (5–11), or nowhere. */
   private cursor = -1;
+  /** What the pointer holds: the plate or place it went down on, where it is now, when it went down, and whether it has moved. */
+  private grab: { point: number; x: number; z: number; from: { x: number; z: number }; at: number; moved: boolean } | null = null;
   private last = performance.now();
   private left = 0;
   private paused = false;
-  /** The grill's centre and radius on the canvas. */
-  private fit = { x: 0, y: 0, r: 1 };
-  private keys: [string, (e: Event) => void][] = [];
+  /** How many moves the state last shown had. */
+  private shown = 0;
+  private ticker = 0;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality);
-    const on = (name: string, fn: (e: Event) => void) => {
-      this.canvas.addEventListener(name, fn);
-      this.keys.push([name, fn]);
-    };
-    // The keyboard walks round the places and presses the one it stands on.
-    on("keydown", (event) => {
-      const e = event as KeyboardEvent;
-      if (e.key === "ArrowRight" || e.key === "ArrowDown") this.cursor = (this.cursor + 1) % SLOTS;
-      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") this.cursor = (this.cursor + SLOTS - 1 + (this.cursor < 0 ? 1 : 0)) % SLOTS;
-      else if ((e.key === " " || e.key === "Enter") && this.cursor >= 0) this.tap(this.cursor);
+    super(host, quality, "#c8a074");
+    this.daylight("#fff4e6", "#8a6a48", "#ffe9c8", 9, 2.0);
+    const table = this.own(wood(false, 0.7));
+    table.repeat.set(3, 2);
+    this.add(new T.PlaneGeometry(60, 40).rotateX(-Math.PI / 2), this.standard({ map: table, roughness: 0.72 }), 0, 0, 0).castShadow = false;
+    this.brazier();
+    this.crockery();
+    // The pieces on the grill (and one more for a piece carried from its plate), and the pieces waiting on the plates.
+    const slab = this.own(new T.BoxGeometry(1, 1, 1)),
+      slice = this.own(new T.CylinderGeometry(0.5, 0.5, 1, 32));
+    for (let i = 0; i <= SLOTS; i++) {
+      const upper = this.standard({ map: this.skin(0, 0), roughness: 0.55 }),
+        under = this.standard({ map: this.skin(0, 0), roughness: 0.55 }),
+        edge = this.standard({ color: "#d06068", roughness: 0.6 }),
+        group = new T.Group(),
+        box = new T.Mesh(slab, [edge, edge, upper, under, edge, edge]),
+        disc = new T.Mesh(slice, [edge, upper, under]);
+      box.castShadow = disc.castShadow = true;
+      group.add(box, disc);
+      group.visible = false;
+      this.scene.add(group);
+      this.pieces.push({ group, slab: box, slice: disc, upper, under, edge });
+    }
+    CUTS.forEach((_, cut) => {
+      const shape = SHAPES[cut],
+        raw = this.standard({ map: this.skin(cut, 0), roughness: 0.5 }),
+        edge = this.standard({ color: css(FLESH[cut].lean[0]), roughness: 0.6 });
+      this.stock.push(
+        Array.from({ length: PORTION }, (_, i) => {
+          const mesh = new T.Mesh(shape.round ? slice : slab, shape.round ? [edge, raw, raw] : [edge, edge, raw, raw, edge, edge]);
+          mesh.scale.set(shape.w, shape.tall, shape.d);
+          // Laid one over the next across the plate.
+          mesh.position.set(PLATES[cut][0] + (i - 2) * 0.05, 0.13 + shape.tall / 2 + i * 0.035, PLATES[cut][1] + (i - 2) * 0.33);
+          mesh.rotation.set(0.07, (i % 2 ? 0.1 : -0.08) + (cut % 2 ? 0.12 : -0.1), 0);
+          mesh.castShadow = mesh.receiveShadow = true;
+          this.scene.add(mesh);
+          return mesh;
+        }),
+      );
+    });
+    // A ring under each piece that fills as the side lying down cooks.
+    for (let k = 0; k <= ARCS; k++) this.arcs.push(this.own(new T.RingGeometry(0.8, 0.89, 44, 1, Math.PI / 2, -Math.max(0.001, (k / ARCS) * Math.PI * 2)).rotateX(-Math.PI / 2)));
+    this.zones = ["#f2ece0", "#5fc46a", "#ffc93a", "#ff8a2a", "#ff3b2e"].map((color) => this.own(new T.MeshBasicMaterial({ color, side: T.DoubleSide })));
+    const smoke = document.createElement("canvas");
+    smoke.width = smoke.height = 64;
+    const pen = smoke.getContext("2d")!,
+      fade = pen.createRadialGradient(32, 32, 2, 32, 32, 32);
+    fade.addColorStop(0, "rgba(255,255,255,0.9)");
+    fade.addColorStop(1, "rgba(255,255,255,0)");
+    pen.fillStyle = fade;
+    pen.fillRect(0, 0, 64, 64);
+    const haze = this.own(new T.CanvasTexture(smoke)),
+      sheet = this.own(new T.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
+    for (let slot = 0; slot < SLOTS; slot++) {
+      const gauge = new T.Mesh(this.arcs[0], this.zones[0]);
+      gauge.position.set(PLACES[slot][0], TOP + 0.03, PLACES[slot][1]);
+      gauge.visible = false;
+      this.gauges.push(gauge);
+      this.scene.add(gauge);
+      for (let k = 0; k < 2; k++) {
+        const puff = new T.Mesh(sheet, this.own(new T.MeshBasicMaterial({ map: haze, transparent: true, depthWrite: false, opacity: 0 })));
+        puff.visible = false;
+        puff.renderOrder = 6;
+        this.puffs.push(puff);
+        this.scene.add(puff);
+      }
+    }
+    this.cursorRing = ringMesh(<R extends { dispose(): void }>(r: R) => this.own(r), 0.92, 1.02, "#3f8cff");
+    this.scene.add(this.cursorRing);
+    // The keyboard walks the plates and then the places.
+    const el = this.renderer.domElement;
+    el.addEventListener("keydown", (e) => {
+      const all = PLATES.length + SLOTS;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") this.cursor = (this.cursor + 1) % all;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") this.cursor = (Math.max(0, this.cursor) + all - 1) % all;
+      else if (this.cursor < 0 || !this.running()) return;
+      else if (e.key === "Enter") this.report(this.cursor < PLATES.length ? lay(this.world, this.cursor) : flip(this.world, this.cursor - PLATES.length));
+      else if ((e.key === " " || e.key === "e" || e.key === "E" || e.key === "ㄷ") && this.cursor >= PLATES.length) this.report(take(this.world, this.cursor - PLATES.length));
       else return;
       e.preventDefault();
-      this.dirty = true;
     });
-    on("blur", () => {
-      this.cursor = -1;
-      this.dirty = true;
-    });
+    el.addEventListener("blur", () => (this.cursor = -1));
+    this.pose(performance.now());
     this.begin();
+    const tick = () => {
+      if (this.disposed) return;
+      this.ticker = requestAnimationFrame(tick);
+      this.advance(performance.now());
+    };
+    this.ticker = requestAnimationFrame(tick);
+  }
+  /** The brazier: an iron collar, a bed of coals that glows most in the middle, and a wire grate over it. */
+  private brazier() {
+    const iron = this.standard({ color: "#2b2d31", roughness: 0.55, metalness: 0.6 }),
+      collar = [[GRATE, TOP - 0.04], [GRATE + 0.07, TOP + 0.04], [RIM - 0.12, TOP + 0.04], [RIM, TOP - 0.06], [RIM + 0.06, 0]].map(([r, y]) => new T.Vector2(r, y));
+    this.add(new T.LatheGeometry(collar, 72), iron);
+    this.add(new T.CylinderGeometry(GRATE, GRATE, TOP, 64, 1, true), this.standard({ color: "#17181a", roughness: 0.9, side: T.BackSide }), 0, TOP / 2, 0).castShadow = false;
+    // A band of copper round the collar, and four bolts.
+    const copper = this.standard({ color: "#b8733a", roughness: 0.35, metalness: 0.8 });
+    this.add(new T.TorusGeometry(RIM - 0.32, 0.035, 8, 72).rotateX(Math.PI / 2), copper, 0, TOP + 0.05, 0).castShadow = false;
+    for (let i = 0; i < 4; i++) this.add(new T.CylinderGeometry(0.07, 0.07, 0.05, 12), copper, Math.cos(i * 1.5708 + 0.785) * (RIM - 0.16), TOP + 0.06, Math.sin(i * 1.5708 + 0.785) * (RIM - 0.16)).castShadow = false;
+    const random = sequence(41),
+      bed = document.createElement("canvas");
+    bed.width = bed.height = 256;
+    const pen = bed.getContext("2d")!;
+    pen.fillStyle = "#1a1210";
+    pen.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 150; i++) {
+      // Lumps of charcoal: ash-grey at the edge, red within, brightest toward the middle of the bed.
+      const x = random() * 256,
+        y = random() * 256,
+        r = 9 + random() * 14,
+        heat = Math.max(0, 1 - Math.hypot(x - 128, y - 128) / 150) * (0.5 + random() * 0.5),
+        lump = pen.createRadialGradient(x, y, 1, x, y, r);
+      lump.addColorStop(0, css(mix([120, 40, 20], [255, 190, 70], heat)));
+      lump.addColorStop(0.6, css(mix([70, 30, 22], [226, 80, 26], heat)));
+      lump.addColorStop(1, css(mix([52, 46, 44], [96, 86, 82], random())));
+      pen.fillStyle = lump;
+      pen.beginPath();
+      pen.arc(x, y, r, 0, Math.PI * 2);
+      pen.fill();
+    }
+    const embers = this.own(new T.CanvasTexture(bed));
+    embers.colorSpace = T.SRGBColorSpace;
+    this.coals = this.own(new T.MeshBasicMaterial({ map: embers }));
+    this.add(new T.CircleGeometry(GRATE, 64).rotateX(-Math.PI / 2), this.coals, 0, 0.08, 0).castShadow = false;
+    this.ember = new T.PointLight("#ff8a3a", 7, 8, 1.6);
+    this.ember.position.set(0, 1.5, 0);
+    this.scene.add(this.ember);
+    // The grate: wires crossing at right angles, with a wire ring round them.
+    const wire = document.createElement("canvas");
+    wire.width = wire.height = 512;
+    const ink = wire.getContext("2d")!;
+    for (const [color, width, shift_] of [["#3a3d42", 7, 2], ["#d3d8de", 4, 0]] as const) {
+      ink.strokeStyle = color;
+      ink.lineWidth = width;
+      for (let at = 16; at < 512; at += 32) {
+        ink.beginPath();
+        ink.moveTo(at + shift_, 0);
+        ink.lineTo(at + shift_, 512);
+        ink.moveTo(0, at + shift_);
+        ink.lineTo(512, at + shift_);
+        ink.stroke();
+      }
+    }
+    const mesh = this.own(new T.CanvasTexture(wire));
+    mesh.colorSpace = T.SRGBColorSpace;
+    mesh.anisotropy = 4;
+    const grate = this.add(new T.CircleGeometry(GRATE, 64).rotateX(-Math.PI / 2), this.standard({ map: mesh, transparent: true, alphaTest: 0.5, metalness: 0.7, roughness: 0.35 }), 0, TOP, 0);
+    grate.castShadow = false;
+    this.add(new T.TorusGeometry(GRATE - 0.04, 0.045, 8, 72).rotateX(Math.PI / 2), this.standard({ color: "#c9ced6", metalness: 0.8, roughness: 0.3 }), 0, TOP + 0.01, 0).castShadow = false;
+  }
+  /** The plates, my own plate with its chopsticks, and the side dishes. */
+  private crockery() {
+    const china = this.standard({ color: "#f7f4ec", roughness: 0.25 }),
+      line = this.standard({ color: "#2a4f9a", roughness: 0.4 }),
+      dish = (x: number, z: number, r: number, deep = 0.1) => {
+        const profile = [[0, 0], [r * 0.72, 0], [r * 0.96, deep * 0.7], [r, deep], [r * 0.95, deep * 0.92], [r * 0.7, 0.05], [0, 0.05]].map(([radius, y]) => new T.Vector2(radius, y));
+        this.add(new T.LatheGeometry(profile, 56), china, x, 0.01, z);
+        this.add(new T.TorusGeometry(r * 0.88, 0.012, 6, 56).rotateX(Math.PI / 2), line, x, 0.01 + deep * 0.82, z).castShadow = false;
+      },
+      fill = (x: number, z: number, r: number, color: string, y = 0.1) => (this.add(new T.CircleGeometry(r, 32).rotateX(-Math.PI / 2), this.standard({ color, roughness: 0.3 }), x, y, z).castShadow = false);
+    for (const [x, z] of PLATES) dish(x, z, 1.5);
+    dish(MINE[0], MINE[1], 1.3);
+    // Chopsticks beside my plate, on a rest.
+    const stick = this.standard({ color: "#5a3a26", roughness: 0.5 });
+    for (const dx of [-0.07, 0.07]) this.add(new T.CylinderGeometry(0.03, 0.022, 2.4, 8).rotateX(Math.PI / 2), stick, MINE[0] - 1.75 + dx, 0.08, MINE[1]).rotation.y = dx;
+    this.add(new T.BoxGeometry(0.4, 0.07, 0.16), china, MINE[0] - 1.75, 0.035, MINE[1] - 0.9);
+    // Side dishes along the far edge: kimchi, a seasoned bean paste, sliced garlic and green chilli, salt in sesame oil; and a basket of lettuce near me.
+    dish(-2.1, -4.3, 0.62, 0.2);
+    fill(-2.1, -4.3, 0.5, "#c23a26", 0.15);
+    for (const [dx, dz, color] of [[-0.15, -0.1, "#e8d9b0"], [0.12, 0.12, "#e04a30"], [0.1, -0.16, "#f0e2c0"], [-0.1, 0.15, "#b02a1c"]] as const) this.add(new T.BoxGeometry(0.3, 0.05, 0.2), this.standard({ color, roughness: 0.4 }), -2.1 + dx, 0.19, -4.3 + dz).rotation.y = dx * 6;
+    dish(-0.7, -4.3, 0.5, 0.18);
+    fill(-0.7, -4.3, 0.4, "#9a5226", 0.14);
+    dish(0.7, -4.3, 0.5, 0.18);
+    for (let i = 0; i < 7; i++) this.add(new T.CylinderGeometry(0.09, 0.09, 0.03, 12), this.standard({ color: i % 3 ? "#f3ecd6" : "#5fa83a", roughness: 0.5 }), 0.7 + Math.cos(i * 0.9) * 0.2, 0.15, -4.3 + Math.sin(i * 0.9) * 0.2).castShadow = false;
+    dish(2.1, -4.3, 0.5, 0.18);
+    fill(2.1, -4.3, 0.4, "#d8c468", 0.14);
+    const basket = this.standard({ color: "#b98a4e", roughness: 0.8 });
+    this.add(new T.CylinderGeometry(0.95, 0.8, 0.22, 36), basket, -1.4, 0.11, 4.45);
+    for (let i = 0; i < 6; i++) {
+      const leaf = this.add(new T.SphereGeometry(0.5, 14, 8), this.standard({ color: ["#6fb84a", "#86c85a", "#5aa23c"][i % 3], roughness: 0.7 }), -1.4 + Math.cos(i * 1.05) * 0.3, 0.26 + i * 0.012, 4.45 + Math.sin(i * 1.05) * 0.25);
+      leaf.scale.set(1.25, 0.06, 0.95);
+      leaf.rotation.y = i * 1.3;
+    }
+  }
+  /** The paint of a side of a cut when it is `done` so far; made once for each shade. */
+  private skin(cut: number, done: number) {
+    const shade = Math.round(Math.min(COAL, done) * SHADES),
+      key = cut * 100 + shade;
+    let texture = this.skins.get(key);
+    if (!texture) {
+      texture = this.own(new T.CanvasTexture(side(cut, shade / SHADES)));
+      texture.colorSpace = T.SRGBColorSpace;
+      this.skins.set(key, texture);
+    }
+    return texture;
+  }
+  /** A line of words that rises from a place and fades. */
+  private say(text: string, color: string, x: number, z: number, now: number) {
+    let paint = this.signs.get(text);
+    if (!paint) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 384;
+      canvas.height = 112;
+      const pen = canvas.getContext("2d")!;
+      pen.font = `900 62px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif`;
+      pen.textAlign = "center";
+      pen.textBaseline = "middle";
+      pen.lineJoin = "round";
+      pen.lineWidth = 14;
+      pen.strokeStyle = "#241c18";
+      pen.strokeText(text, 192, 58);
+      pen.fillStyle = color;
+      pen.fillText(text, 192, 58);
+      const map = this.own(new T.CanvasTexture(canvas));
+      map.colorSpace = T.SRGBColorSpace;
+      paint = this.own(new T.SpriteMaterial({ map, depthTest: false, transparent: true }));
+      this.signs.set(text, paint);
+    }
+    const sprite = new T.Sprite(paint.clone());
+    this.own(sprite.material);
+    sprite.scale.set(3.3, 0.96, 1);
+    sprite.renderOrder = 10;
+    this.scene.add(sprite);
+    this.words.push({ sprite, x, z, at: now });
+  }
+  /** The table never makes the screen wait. */
+  get animating() {
+    return false;
   }
   setPaused(paused: boolean) {
     this.paused = paused;
+    this.grab = null;
   }
   private running() {
     return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
   }
-  private report(events: ReturnType<typeof step>, now: number) {
+  /** Tells the screen what has happened on the table. */
+  private report(events: Happening[]) {
+    const now = performance.now(),
+      move = (to: number) => this.onMove({ from: -1, to, extra: -1 });
     for (const event of events) {
-      if (event.kind === "flip") this.onMove({ from: -1, to: FLIP, extra: -1 });
+      if (event.kind === "second") {
+        move(TICK);
+        continue;
+      }
+      if (event.kind === "done") {
+        move(DONE);
+        continue;
+      }
+      const [x, z] = PLACES[event.slot];
+      if (event.kind === "lay") move(LAY);
+      else if (event.kind === "flip") move(FLIP);
       else if (event.kind === "burn") {
-        this.words.push({ slot: event.slot, text: "탔다!", color: "#e2362c", at: now });
-        this.onMove({ from: -1, to: BURN, extra: -1 });
-      } else if (event.kind === "serve") {
-        const [text, color] = event.raw ? ["덜 익었어요", "#6f7a86"] : event.points === BEST ? ["완벽!", "#e09a12"] : event.points >= 4 ? ["맛있어요", "#2f9a4a"] : event.points >= 2 ? ["괜찮아요", "#3f7fc0"] : ["아쉬워요", "#8a6a4a"];
-        this.words.push({ slot: event.slot, text: event.raw ? text : `${text} +${event.points}`, color, at: now });
-        this.onMove({ from: -1, to: SERVE + event.points, extra: -1 });
-      } else continue;
+        this.say("탔어요!", "#ff6a5a", x, z, now);
+        move(BURN);
+      } else if (event.kind === "discard") this.say("버렸어요", "#dfe6ee", x, z, now);
+      else {
+        const [text, color] = event.raw ? ["덜 익었어요", "#dfe6ee"] : event.points === BEST ? ["완벽!", "#ffd24a"] : event.points >= 4 ? ["맛있어요", "#8be08f"] : event.points >= 2 ? ["괜찮아요", "#9fd0ff"] : ["아쉬워요", "#f0cfa6"];
+        this.say(event.raw ? text : `${text} +${event.points}`, color, x, z, now);
+        move(EAT + event.points);
+      }
       this.onContact();
     }
   }
-  private tap(slot: number) {
-    if (this.running()) this.report(press(this.world, slot), performance.now());
-  }
-  protected released(x: number, y: number) {
-    const { r } = this.fit;
+  /** The place nearest a point of the table, if it is near enough. */
+  private placeAt(at: { x: number; z: number }) {
     let best = -1,
-      near = r * 0.3;
-    PLACES.forEach(([px, py], slot) => {
-      const far = Math.hypot(x - (this.fit.x + px * r), y - (this.fit.y + py * r));
+      near = 0.95;
+    PLACES.forEach(([x, z], slot) => {
+      const far = Math.hypot(at.x - x, at.z - z);
       if (far < near) {
         near = far;
         best = slot;
       }
     });
-    if (best >= 0) this.tap(best);
+    return best;
   }
-  protected changed(_before: State | null, state: State) {
-    // A new game clears the grill.
-    if (state.ply === 0 && this.world.time > 0) {
-      this.world = createWorld(cryptoRandom);
-      this.words = [];
-    }
-  }
-  protected frame(now: number) {
-    const real = Math.min(0.3, (now - this.last) / 1000);
-    this.last = now;
-    if (!this.running()) return this.words.length > 0;
-    this.left += Math.min(0.05, real);
-    while (this.left >= DT && this.state?.winner === null) {
-      this.left -= DT;
-      this.report(step(this.world), now);
-    }
+  protected dragStart(point: number, at: { x: number; z: number }) {
+    if (!this.running()) return false;
+    const held = point >= PLATE ? this.world.plates[point - PLATE] > 0 : point >= PLACE && !!this.world.slots[point - PLACE];
+    if (!held) return false;
+    this.grab = { point, x: at.x, z: at.z, from: at, at: performance.now(), moved: false };
     return true;
   }
-  /** A piece as it lies: its upper side is the one seen. */
-  private meat(pen: CanvasRenderingContext2D, piece: Piece, s: number) {
-    const top = piece.done[1 - down(piece)],
-      lean = css(cooked([226, 96, 104], [150, 86, 48], top)),
-      fat = css(cooked([250, 232, 226], [226, 180, 110], top)),
-      edge = css(cooked([170, 60, 70], [96, 52, 28], top));
-    pen.lineWidth = s * 0.035;
-    pen.strokeStyle = edge;
-    if (piece.cut === 0) {
-      // Pork belly: a strip in bands of fat and lean.
-      rounded(pen, -s * 0.5, -s * 0.24, s, s * 0.48, s * 0.1);
-      pen.fillStyle = lean;
-      pen.fill();
-      pen.save();
-      pen.clip();
-      pen.fillStyle = fat;
-      for (const y of [-0.2, -0.02, 0.15]) pen.fillRect(-s * 0.5, y * s, s, s * 0.075);
-      pen.restore();
-      pen.stroke();
-    } else if (piece.cut === 1) {
-      // Brisket: a thin curled slice, marbled.
-      pen.beginPath();
-      pen.ellipse(0, 0, s * 0.44, s * 0.3, 0.3, 0, Math.PI * 2);
-      pen.fillStyle = lean;
-      pen.fill();
-      pen.stroke();
-      pen.strokeStyle = fat;
-      pen.lineWidth = s * 0.06;
-      pen.beginPath();
-      pen.ellipse(0, 0, s * 0.3, s * 0.17, 0.3, 0.4, Math.PI * 1.7);
-      pen.stroke();
-      pen.beginPath();
-      pen.arc(s * 0.02, s * 0.01, s * 0.07, 0, Math.PI * 2);
-      pen.stroke();
-    } else if (piece.cut === 2) {
-      // A rib: a thick piece of meat on its bone.
-      rounded(pen, -s * 0.5, -s * 0.11, s * 0.36, s * 0.22, s * 0.1);
-      pen.fillStyle = css(cooked([246, 240, 226], [222, 204, 170], top));
-      pen.fill();
-      pen.stroke();
-      rounded(pen, -s * 0.24, -s * 0.3, s * 0.74, s * 0.6, s * 0.16);
-      pen.fillStyle = css(cooked([196, 70, 62], [122, 66, 36], top));
-      pen.fill();
-      pen.stroke();
-      // Scored across, as ribs are.
-      pen.strokeStyle = css(cooked([150, 44, 44], [84, 44, 24], top));
-      pen.lineWidth = s * 0.03;
-      for (const x of [-0.08, 0.1, 0.28]) {
-        pen.beginPath();
-        pen.moveTo(x * s - s * 0.06, -s * 0.2);
-        pen.lineTo(x * s + s * 0.06, s * 0.2);
-        pen.stroke();
-      }
-    } else {
-      // A mushroom cap, scored with a cross.
-      pen.beginPath();
-      pen.arc(0, 0, s * 0.34, 0, Math.PI * 2);
-      pen.fillStyle = css(cooked([236, 222, 196], [176, 126, 76], top));
-      pen.fill();
-      pen.strokeStyle = css(cooked([170, 146, 110], [110, 72, 40], top));
-      pen.stroke();
-      pen.lineWidth = s * 0.05;
-      for (const a of [0.5, 2.07]) {
-        pen.beginPath();
-        pen.moveTo(Math.cos(a) * s * 0.2, Math.sin(a) * s * 0.2);
-        pen.lineTo(-Math.cos(a) * s * 0.2, -Math.sin(a) * s * 0.2);
-        pen.stroke();
-      }
-    }
-    // The marks of the grate on a side that has been down.
-    if (top > 0.3) {
-      pen.strokeStyle = `rgba(52,30,18,${Math.min(0.55, top * 0.4)})`;
-      pen.lineWidth = s * 0.035;
-      for (const x of [-0.2, 0, 0.2]) {
-        pen.beginPath();
-        pen.moveTo(x * s - s * 0.08, -s * 0.16);
-        pen.lineTo(x * s + s * 0.08, s * 0.16);
-        pen.stroke();
-      }
-    }
+  protected dragMove(at: { x: number; z: number }) {
+    const grab = this.grab;
+    if (!grab) return;
+    grab.x = at.x;
+    grab.z = at.z;
+    if (Math.hypot(at.x - grab.from.x, at.z - grab.from.z) > 0.45) grab.moved = true;
   }
-  protected paint(pen: CanvasRenderingContext2D, w: number, h: number, now: number) {
-    const top = 56 * this.ratio,
-      foot = 30 * this.ratio,
-      r = Math.min((h - top - foot) / 2, w * 0.36) * 0.98,
-      cx = w / 2,
-      cy = top + (h - top - foot) / 2;
-    this.fit = { x: cx, y: cy, r };
-    // A wooden table.
-    pen.fillStyle = "#c79a66";
-    pen.fillRect(0, 0, w, h);
-    pen.strokeStyle = "rgba(120,80,40,0.18)";
-    pen.lineWidth = 2 * this.ratio;
-    for (let y = (cy % (r * 0.5)) - r * 0.5; y < h; y += r * 0.5) {
-      pen.beginPath();
-      pen.moveTo(0, y);
-      pen.lineTo(w, y);
-      pen.stroke();
+  protected dragEnd(at: { x: number; z: number } | null) {
+    const grab = this.grab;
+    this.grab = null;
+    if (!grab || !at || !this.running()) return;
+    const cut = grab.point - PLATE,
+      slot = grab.point - PLACE;
+    if (!grab.moved) {
+      // A tap on a plate lays a piece; a tap on a piece turns it; a piece held a while and let go is taken off.
+      if (cut >= 0) this.report(lay(this.world, cut));
+      else this.report(performance.now() - grab.at > 450 ? take(this.world, slot) : flip(this.world, slot));
+      return;
     }
-    // The grill: a rim, the coals glowing most in the middle, and the grate over them.
-    pen.fillStyle = "rgba(0,0,0,0.22)";
-    pen.beginPath();
-    pen.arc(cx + r * 0.03, cy + r * 0.05, r * 1.04, 0, Math.PI * 2);
-    pen.fill();
-    pen.fillStyle = "#3a3d42";
-    pen.beginPath();
-    pen.arc(cx, cy, r, 0, Math.PI * 2);
-    pen.fill();
-    const coals = pen.createRadialGradient(cx, cy, r * 0.05, cx, cy, r * 0.9),
-      flicker = 0.06 * Math.sin(now / 260) + 0.04 * Math.sin(now / 97);
-    coals.addColorStop(0, css([255, 170, 60], 0.95 + flicker));
-    coals.addColorStop(0.45, css([226, 84, 30], 0.85 + flicker));
-    coals.addColorStop(1, "#2a1c18");
-    pen.fillStyle = coals;
-    pen.beginPath();
-    pen.arc(cx, cy, r * 0.9, 0, Math.PI * 2);
-    pen.fill();
-    pen.save();
-    pen.clip();
-    pen.strokeStyle = "#1c1e22";
-    pen.lineWidth = r * 0.022;
-    for (let x = -0.9; x <= 0.9; x += 0.12) {
-      pen.beginPath();
-      pen.moveTo(cx + x * r, cy - r);
-      pen.lineTo(cx + x * r, cy + r);
-      pen.stroke();
-    }
-    pen.restore();
-    pen.strokeStyle = "#6a6f78";
-    pen.lineWidth = r * 0.05;
-    pen.beginPath();
-    pen.arc(cx, cy, r * 0.93, 0, Math.PI * 2);
-    pen.stroke();
-    const size = r * 0.5;
-    this.world.slots.forEach((piece, slot) => {
-      const x = cx + PLACES[slot][0] * r,
-        y = cy + PLACES[slot][1] * r;
-      if (slot === this.cursor) {
-        pen.strokeStyle = "#6fb0ff";
-        pen.lineWidth = 3.5 * this.ratio;
-        pen.beginPath();
-        pen.arc(x, y, r * 0.29, 0, Math.PI * 2);
-        pen.stroke();
+    const place = this.placeAt(at),
+      over = Math.hypot(at.x, at.z) < RIM;
+    if (cut >= 0) {
+      // Carried from its plate to a place of the grill, or anywhere over it.
+      if (place >= 0 && !this.world.slots[place]) this.report(lay(this.world, cut, place));
+      else if (over) this.report(lay(this.world, cut));
+    } else if (!over) this.report(take(this.world, slot));
+    else if (place >= 0) shift(this.world, slot, place);
+  }
+  private advance(now: number) {
+    const real = Math.min(0.3, (now - this.last) / 1000);
+    this.last = now;
+    if (this.running()) {
+      this.left += Math.min(0.05, real);
+      while (this.left >= DT && this.state?.winner === null) {
+        this.left -= DT;
+        this.report(step(this.world));
       }
+    }
+    this.pose(now);
+    this.redraw();
+  }
+  /** Shows a model as a piece of a cut with its two sides done so far. */
+  private dress(model: Model, piece: Pick<Piece, "cut" | "done">) {
+    const shape = SHAPES[piece.cut],
+      mesh = shape.round ? model.slice : model.slab;
+    model.slab.visible = !shape.round;
+    model.slice.visible = shape.round;
+    mesh.scale.set(shape.w, shape.tall, shape.d);
+    model.under.map = this.skin(piece.cut, piece.done[0]);
+    model.upper.map = this.skin(piece.cut, piece.done[1]);
+    model.edge.color.set(css(cooked(...FLESH[piece.cut].lean, (piece.done[0] + piece.done[1]) / 2)).replace(/rgba\((\d+),(\d+),(\d+),1\)/, "rgb($1,$2,$3)"));
+  }
+  /** Puts everything where the table has it. */
+  private pose(now: number) {
+    const { world, grab } = this,
+      carried = grab?.moved ? grab : null;
+    this.coals.color.setScalar(0.86 + 0.1 * Math.sin(now / 240) + 0.04 * Math.sin(now / 83));
+    this.ember.intensity = 6 + Math.sin(now / 240);
+    this.stock.forEach((meshes, cut) => meshes.forEach((mesh, i) => (mesh.visible = i < world.plates[cut] - (carried?.point === PLATE + cut ? 1 : 0))));
+    world.slots.forEach((piece, slot) => {
+      const model = this.pieces[slot],
+        gauge = this.gauges[slot],
+        held = carried?.point === PLACE + slot;
+      model.group.visible = !!piece;
+      gauge.visible = !!piece && !held;
+      for (const k of [0, 1]) this.puffs[slot * 2 + k].visible = false;
       if (!piece) return;
+      this.dress(model, piece);
+      const [x, z] = held ? [carried!.x, carried!.z] : PLACES[slot],
+        tall = SHAPES[piece.cut].tall,
+        // Turning: it rises, goes over, and comes down on its other side.
+        turning = piece.age - piece.since > 1e-6 ? Math.min(1, piece.since / 0.24) : 1,
+        settle = Math.min(1, piece.age / 0.16);
+      model.group.position.set(x, TOP + 0.03 + tall / 2 + Math.sin(turning * Math.PI) * 0.55 + (held ? 0.7 : 0) + (1 - settle) * 0.4, z);
+      model.group.rotation.set((piece.turned ? 0 : Math.PI) + Math.PI * turning, ((slot * 1.9) % 0.9) - 0.45, 0);
       const under = piece.done[down(piece)];
-      // How done the side lying down is: a ring that fills, green when done, gold when just right, red when it is about to burn.
-      pen.lineCap = "round";
-      pen.lineWidth = r * 0.045;
-      pen.strokeStyle = "rgba(0,0,0,0.35)";
-      pen.beginPath();
-      pen.arc(x, y, r * 0.27, 0, Math.PI * 2);
-      pen.stroke();
-      pen.strokeStyle = under < RAW ? "#e8e2d6" : under < GOOD ? "#5fc46a" : under <= OVER ? "#ffc93a" : under < CHARRED ? "#ff8a2a" : "#ff3b2e";
-      pen.beginPath();
-      pen.arc(x, y, r * 0.27, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, under / BURNT));
-      pen.stroke();
-      // Smoke, thicker the nearer it is to burning.
-      if (under > GOOD) {
+      gauge.geometry = this.arcs[Math.max(1, Math.round(Math.min(1, under / BURNT) * ARCS))];
+      gauge.material = this.zones[under < RAW ? 0 : under < GOOD ? 1 : under <= OVER ? 2 : under < CHARRED ? 3 : 4];
+      // Smoke, thicker and darker the nearer it is to burning.
+      if (under > GOOD && !held) {
         const thick = Math.min(1, (under - GOOD) / (BURNT - GOOD));
-        for (let k = 0; k < 3; k++) {
-          const p = (now / 900 + k / 3 + slot * 0.37) % 1;
-          pen.fillStyle = `rgba(${under > OVER ? "70,70,74" : "236,236,236"},${(1 - p) * (0.2 + thick * 0.4)})`;
-          pen.beginPath();
-          pen.arc(x + Math.sin(p * 5 + k * 2) * r * 0.06, y - r * 0.1 - p * r * 0.42, r * (0.05 + p * 0.09), 0, Math.PI * 2);
-          pen.fill();
+        for (const k of [0, 1]) {
+          const puff = this.puffs[slot * 2 + k],
+            p = (now / 1100 + k / 2 + slot * 0.37) % 1,
+            paint = puff.material as T.MeshBasicMaterial;
+          puff.visible = true;
+          puff.position.set(x + Math.sin(p * 5 + k * 2) * 0.2, TOP + 0.5 + p, z - p * 0.5);
+          puff.scale.setScalar(0.5 + p * 1.1);
+          paint.opacity = (1 - p) * (0.18 + thick * 0.4);
+          paint.color.set(under > OVER ? "#5a5a60" : "#ffffff");
         }
       }
-      pen.save();
-      pen.translate(x, y);
-      pen.rotate((slot * 1.9) % 0.9 - 0.45);
-      // A piece just laid or just turned settles into place.
-      const settle = Math.min(1, piece.age / 0.18);
-      pen.scale(0.7 + settle * 0.3, 0.7 + settle * 0.3);
-      this.meat(pen, piece, size);
-      pen.restore();
-      if (!piece.turned) {
-        // Not yet turned: a small mark says so.
-        pen.fillStyle = "rgba(255,255,255,0.92)";
-        pen.font = `800 ${r * 0.11}px system-ui, sans-serif`;
-        pen.textAlign = "center";
-        pen.textBaseline = "middle";
-        pen.fillText("↻", x + r * 0.2, y - r * 0.2);
-      }
     });
-    // What the pieces just taken off were, rising and fading.
-    this.words = this.words.filter((word) => now - word.at < 900);
-    pen.textAlign = "center";
-    pen.textBaseline = "middle";
-    pen.lineJoin = "round";
-    pen.font = `900 ${r * 0.11}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif`;
-    for (const word of this.words) {
-      const p = (now - word.at) / 900,
-        x = cx + PLACES[word.slot][0] * r,
-        y = cy + PLACES[word.slot][1] * r - r * 0.1 - p * r * 0.3;
-      pen.globalAlpha = 1 - p * p;
-      pen.lineWidth = r * 0.022;
-      pen.strokeStyle = "#ffffff";
-      pen.strokeText(word.text, x, y);
-      pen.fillStyle = word.color;
-      pen.fillText(word.text, x, y);
-      pen.globalAlpha = 1;
+    // A piece carried from its plate hangs under the pointer.
+    const spare = this.pieces[SLOTS];
+    spare.group.visible = !!carried && carried.point >= PLATE;
+    if (spare.group.visible) {
+      this.dress(spare, { cut: carried!.point - PLATE, done: [0, 0] });
+      spare.group.position.set(carried!.x, TOP + 0.8, carried!.z);
+      spare.group.rotation.set(0, 0.2, 0);
     }
-    // The burnt pieces so far, as crosses in the corner beside the grill.
-    const burnt = this.state?.burnt ?? 0;
-    for (let i = 0; i < LIVES; i++) {
-      const x = cx + [-0.93, -0.82, -0.67][i] * r,
-        y = cy + [0.6, 0.78, 0.92][i] * r;
-      pen.fillStyle = i < burnt ? "#2a1c18" : "rgba(255,255,255,0.4)";
-      pen.beginPath();
-      pen.arc(x, y, r * 0.085, 0, Math.PI * 2);
-      pen.fill();
-      if (i < burnt) {
-        pen.strokeStyle = "#ff5a3c";
-        pen.lineWidth = r * 0.035;
-        pen.beginPath();
-        pen.moveTo(x - r * 0.035, y - r * 0.035);
-        pen.lineTo(x + r * 0.035, y + r * 0.035);
-        pen.moveTo(x + r * 0.035, y - r * 0.035);
-        pen.lineTo(x - r * 0.035, y + r * 0.035);
-        pen.stroke();
+    this.words = this.words.filter((word) => {
+      const p = (now - word.at) / 1300;
+      if (p >= 1) {
+        this.scene.remove(word.sprite);
+        return false;
       }
+      word.sprite.position.set(word.x, TOP + 1.2, word.z - 0.5 - p * 0.9);
+      word.sprite.material.opacity = 1 - p * p;
+      return true;
+    });
+    const at = this.cursor < 0 ? null : this.cursor < PLATES.length ? PLATES[this.cursor] : PLACES[this.cursor - PLATES.length];
+    this.cursorRing.visible = !!at;
+    if (at) {
+      this.cursorRing.position.set(at[0], this.cursor < PLATES.length ? 0.2 : TOP + 0.05, at[1]);
+      this.cursorRing.scale.setScalar(this.cursor < PLATES.length ? 1.5 : 1);
     }
   }
+  protected subject(aspect: number): TableSubject {
+    return { half: aspect < 1 ? 5.6 : 7.9, halfZ: 4.85, height: 0.7, lookY: 0, tilt: 1.38 };
+  }
+  protected spots(): Spot[] {
+    return [...PLACES.map(([x, z], slot) => ({ x, y: TOP, z, r: 0.86, point: PLACE + slot })), ...PLATES.map(([x, z], cut) => ({ x, y: 0.1, z, r: 1.45, point: PLATE + cut }))];
+  }
+  protected place(state: State) {
+    // A new meal, known by the count of moves going back to nothing: the plates are full again and the grill is clear.
+    // (Not by the table's own clock: the screen shows the state once more before each move it is told of.)
+    const anew = state.ply === 0 && this.shown > 0;
+    this.shown = state.ply;
+    if (anew) {
+      this.world = createWorld();
+      for (const word of this.words) this.scene.remove(word.sprite);
+      this.words = [];
+    }
+    this.pose(performance.now());
+  }
+  protected animate() {
+    return false;
+  }
+  protected mark(_marks: Marks) {}
   dispose() {
-    for (const [name, fn] of this.keys) this.canvas.removeEventListener(name, fn);
+    cancelAnimationFrame(this.ticker);
     super.dispose();
   }
 }

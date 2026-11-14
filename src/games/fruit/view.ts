@@ -270,9 +270,10 @@ export class FruitView extends FlatView<State> {
     this.target = this.across(x);
     this.send();
   }
-  protected changed(_before: State | null, state: State) {
-    // A new game empties the box.
-    if (state.ply === 0 && (this.world.fruits.length || this.world.ended || this.world.wait > 0)) {
+  protected changed(before: State | null, state: State) {
+    // A new game, known by the count of moves going back to nothing, empties the box.
+    // (Not by what lies in the box: the screen shows the state once more before each move it is told of.)
+    if (state.ply === 0 && before && before.ply > 0) {
       this.world = createWorld(cryptoRandom);
       this.born.clear();
       this.pops = [];
