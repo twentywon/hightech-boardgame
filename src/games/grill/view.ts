@@ -675,7 +675,8 @@ export class GrillView extends TableView<State> {
     const real = Math.min(0.3, (now - this.last) / 1000);
     this.last = now;
     if (this.running()) {
-      this.left += Math.min(0.05, real);
+      // The table's clock keeps the wall clock's time even when frames are few: a slow screen must not make the meal run slow.
+      this.left += real;
       while (this.left >= DT && this.state?.winner === null) {
         this.left -= DT;
         this.report(step(this.world));

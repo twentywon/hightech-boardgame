@@ -658,7 +658,8 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
     keys = async (...list: string[]) => {
       for (const key of list) await page.keyboard.press(key);
     };
-  await expect(figure(1)).toHaveText("120초");
+  // The clock may already have ticked.
+  await expect(figure(1)).toHaveText(/^1[12]\d초$/);
   await expect(figure(2)).toHaveText("0");
   // A tap on a plate lays nothing: a piece must be carried to the grill.
   const box = (await page.locator("canvas").boundingBox())!;
@@ -703,7 +704,7 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
   await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(2);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "무제한" }).click();
   await expect(page.locator(".solo-stat").nth(1)).toContainText("지난 시간");
-  await expect(figure(1)).toHaveText("0:00");
+  await expect(figure(1)).toHaveText(/^0:0\d$/);
   await expect(figure(1)).not.toHaveText("0:00", { timeout: 20000 });
   await expect(figure(3)).toHaveText("0");
   expect(errors).toEqual([]);

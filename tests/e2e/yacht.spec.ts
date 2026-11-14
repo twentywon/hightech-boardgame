@@ -124,7 +124,8 @@ test("yacht dice opens inline; roll, keep, score, and a whole solo game", async 
     await page.locator(".yd-pick").first().click();
     await settled(page);
   }
-  await expect(turn(page)).toContainText("게임이 끝났습니다");
+  // With no window at the end, the status line tells the result itself.
+  await expect(turn(page)).toContainText("총점 170점");
   // All sixes: sixes 30, choice 30, four of a kind 30; no bonus at 30 upper points.
   await expect(page.locator("#yd-upper-0")).toHaveText("30 / 63");
   await expect(page.locator("#yd-bonus-0")).toHaveText("0");
