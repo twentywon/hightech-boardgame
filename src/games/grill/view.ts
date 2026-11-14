@@ -279,7 +279,7 @@ interface Model {
  * dragged off to be eaten or onto the wrap plate.
  */
 export class GrillView extends TableView<State> {
-  protected photographic() {
+  protected filmic() {
     return true;
   }
   private world: World = createWorld();

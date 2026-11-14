@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { speckled } from "../../engine/scenery";
 import type { PointView } from "../../ui/point-game";
@@ -87,6 +87,7 @@ export class MancalaView implements PointView<State> {
     sun.shadow.normalBias = 0.02;
     this.own(sun.shadow);
     this.scene.add(sun);
+    realism(this.renderer, this.scene);
     this.buildMarket();
     this.stoneGeometry = this.own(new T.SphereGeometry(0.15, 14, 10));
     this.stoneMaterials = STONES.map((color) => this.own(new T.MeshStandardMaterial({ color, roughness: 0.15, metalness: 0.1 })));

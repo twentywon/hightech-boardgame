@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, realism } from "../../engine/scene-utils";
 import { FOV, cameraDistance } from "../../engine/camera";
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import { RANK_NAMES, faceOf, type Card, type State } from "./rules";
@@ -91,6 +91,7 @@ export class SpiderView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
+    realism(this.renderer, this.scene);
     const felt = new T.Mesh(
       this.own(new T.PlaneGeometry(90, 90)),
       this.own(new T.MeshStandardMaterial({ color: "#24604d", roughness: 0.95 })),

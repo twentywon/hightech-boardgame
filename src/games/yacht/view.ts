@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import { cabin } from "../../engine/scenery";
 
@@ -176,6 +176,7 @@ export class YachtView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
+    realism(this.renderer, this.scene);
     // Half sizes of the felt inside the tray's rim.
     const half = 3.5,
       depth = 2.75;

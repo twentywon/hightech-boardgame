@@ -137,15 +137,16 @@ export abstract class TableView<S> implements PointView<S> {
     this.observer.observe(host);
   }
   /** Starts drawing; called by the game's view once its scene is built. */
-  /** Whether the table is lit the more photographic way (`realism`): a reflected room, film-like highlights, soft shadows. */
+  /** Whether the table is lit the more photographic way (`realism`); a view whose scene does not bear it says no. */
   protected photographic() {
+    return true;
+  }
+  /** Whether highlights roll off as on film; it greys what is white, so a table asks for it only when that suits it. */
+  protected filmic() {
     return false;
   }
   protected begin() {
-    if (this.photographic()) {
-      const reflected = realism(this.renderer, this.scene);
-      if (reflected) this.own(reflected);
-    }
+    if (this.photographic()) realism(this.renderer, this.scene, this.filmic());
     this.resize();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);

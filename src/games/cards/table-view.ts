@@ -1,6 +1,6 @@
 import { capturing } from "../../ui/banner";
 import * as T from "three";
-import { afterGPUFrame, aim } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, realism } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { TableView, Tone } from "./game";
 
@@ -338,6 +338,7 @@ export class CardTableView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
+    realism(this.renderer, this.scene);
     const felt = new T.Mesh(
       this.own(new T.PlaneGeometry(60, 60)),
       this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95 })),

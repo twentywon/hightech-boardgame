@@ -86,7 +86,7 @@ export class ChessView {
     });
     sun.shadow.normalBias = 0.025;
     this.scene.add(sun);
-    this.reflected = realism(this.renderer, this.scene);
+    realism(this.renderer, this.scene, true);
     const table = new T.Mesh(
       new T.BoxGeometry(80, 0.2, 80),
       new T.MeshStandardMaterial({ map: wood(true), roughness: 0.8 }),
@@ -547,14 +547,12 @@ export class ChessView {
     );
     this.resize(true);
   }
-  private reflected: T.Texture | null = null;
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.observer.disconnect();
     this.cancelGPU();
-    this.reflected?.dispose();
     disposeScene(this.scene);
     disposeScene(this.templates);
     this.tokens.clear();

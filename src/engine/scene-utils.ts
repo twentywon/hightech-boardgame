@@ -100,32 +100,31 @@ export function wood(dark = false, grain = 1) {
 
 /**
  * A more photographic light for a table. A room is reflected in whatever shines (china, metal, glass, glazed
- * pieces), highlights roll off as on film instead of clipping, shadows have soft edges, and a weak light from the
+ * pieces), shadows have soft edges, highlights roll off as on film instead of clipping where `filmic` asks, and a weak light from the
  * far side and one from behind give the pieces a second lit edge.
  */
-export function realism(renderer: T.WebGLRenderer, scene: T.Scene, exposure = 1) {
-  renderer.toneMapping = T.NeutralToneMapping;
-  renderer.toneMappingExposure = exposure;
-  renderer.shadowMap.type = T.PCFSoftShadowMap;
-  // Building the reflected room compiles heavy shaders: a moment on a graphics card, seconds where the picture is
-  // drawn by the processor alone (which is also how the browser tests run). There the table goes without it.
+export function realism(renderer: T.WebGLRenderer, scene: T.Scene, filmic = false) {
+  // All of this is for a graphics card. Where the picture is drawn by the processor alone (which is also how the
+  // browser tests run) the reflected room's shaders took seconds to build and the softer shadows cost a third of the
+  // frames: there the table keeps its plain light.
   const gl = renderer.getContext(),
     info = gl.getExtension("WEBGL_debug_renderer_info"),
-    drawnBy = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "",
-    slow = /swiftshader|llvmpipe|software|basic render/i.test(drawnBy) && !document.documentElement.dataset.capture && !location.search.includes("reflect=1");
-  let reflected: T.Texture | null = null;
-  if (!slow) {
-    const pmrem = new T.PMREMGenerator(renderer),
-      room = new RoomEnvironment();
+    drawnBy = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+  if (/swiftshader|llvmpipe|software|basic render/i.test(drawnBy) && !document.documentElement.dataset.capture && !location.search.includes("reflect=1")) return;
+  // Film-like highlights take the white out of white things (cards, paper, a white table turn cream), so only the
+  // tables that were looked at with them ask for them.
+  if (filmic) renderer.toneMapping = T.NeutralToneMapping;
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  const pmrem = new T.PMREMGenerator(renderer),
+    room = new RoomEnvironment(),
     reflected = pmrem.fromScene(room, 0.04).texture;
-    scene.environment = reflected;
-    scene.environmentIntensity = 0.32;
-    room.dispose();
-    pmrem.dispose();
-  }
+  scene.environment = reflected;
+  scene.environmentIntensity = 0.32;
+  room.dispose();
+  pmrem.dispose();
   scene.traverse((thing) => {
     // The room lights the shaded sides, so the flat sky light gives way to it.
-    if (thing instanceof T.HemisphereLight) thing.intensity *= reflected ? 0.62 : 0.85;
+    if (thing instanceof T.HemisphereLight) thing.intensity *= 0.62;
     else if (thing instanceof T.DirectionalLight && thing.castShadow) {
       thing.shadow.mapSize.set(2048, 2048);
       thing.shadow.radius = 5;
@@ -137,5 +136,10 @@ export function realism(renderer: T.WebGLRenderer, scene: T.Scene, exposure = 1)
   fill.position.set(7, 5, 3);
   rim.position.set(2, 6, -9);
   scene.add(fill, rim);
-  return reflected;
+  // The reflected room goes when the renderer does, whichever view owns it.
+  const free = renderer.dispose.bind(renderer);
+  renderer.dispose = () => {
+    reflected.dispose();
+    free();
+  };
 }

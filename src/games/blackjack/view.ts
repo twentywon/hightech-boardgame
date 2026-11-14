@@ -1,6 +1,6 @@
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import * as T from "three";
-import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { Card } from "./shoe";
 
@@ -331,6 +331,7 @@ export class BlackjackView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
+    realism(this.renderer, this.scene);
     this.marking = new T.Mesh(
       this.own(new T.PlaneGeometry(1, 0.25)),
       this.own(

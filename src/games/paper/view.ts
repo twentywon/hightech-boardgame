@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -137,6 +137,7 @@ export class PaperView<S> implements PointView<S> {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
+    realism(this.renderer, this.scene);
     const standard = (options: T.MeshStandardMaterialParameters) =>
       this.own(new T.MeshStandardMaterial({ roughness: 0.8, ...options }));
     const add = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number) => {

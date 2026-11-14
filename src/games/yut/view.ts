@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import { hanokYard } from "../../engine/scenery";
 import { FINISHED, PIECES, WAITING } from "./rules";
@@ -303,6 +303,7 @@ export class YutView {
     sun.shadow.normalBias = 0.02;
     this.own(sun.shadow);
     this.scene.add(sun);
+    realism(this.renderer, this.scene);
     this.buildYard();
     this.ringGeometry = this.own(new T.RingGeometry(0.33, 0.43, 40));
     this.ringMaterials = ["#f4d06a", "#ffffff", "#7fe0a2", "#e3261c"].map((color) =>

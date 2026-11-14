@@ -6,7 +6,7 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-import { wood, disposeScene, afterGPUFrame, aim } from "./scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism } from "./scene-utils";
 import { parkBench } from "./scenery";
 import {
   FOV,
@@ -134,6 +134,7 @@ export class BoardView {
     light.shadow.camera.bottom = -6;
     light.shadow.normalBias = 0.025;
     this.scene.add(light);
+    realism(this.renderer, this.scene);
     if (this.variant === "gomoku") {
       // Gomoku is played on a park bench; `dispose` walks the scene for its resources.
       this.renderer.setClearColor("#5f8a45");

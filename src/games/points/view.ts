@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
@@ -142,6 +142,7 @@ export class PointBoardView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
+    realism(this.renderer, this.scene);
     const own = <R extends { dispose(): void }>(resource: R) => this.own(resource),
       standard = (options: T.MeshStandardMaterialParameters) =>
         this.own(new T.MeshStandardMaterial({ roughness: 0.8, ...options }));
