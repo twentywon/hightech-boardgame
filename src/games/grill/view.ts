@@ -28,8 +28,7 @@ const SHAPES = [
 const PLACE = 300,
   PLATE = 400;
 /** How finely a side's colour follows its cooking. */
-const SHADES = 14,
-  ARCS = 36;
+const SHADES = 14;
 type Rgb = [number, number, number];
 const mix = (a: Rgb, b: Rgb, t: number): Rgb => [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * Math.max(0, Math.min(1, t)))) as Rgb,
   css = ([r, g, b]: Rgb, alpha = 1) => `rgba(${r},${g},${b},${alpha})`,
@@ -142,9 +141,6 @@ export class GrillView extends TableView<State> {
   private skins = new Map<number, T.CanvasTexture>();
   private pieces: Model[] = [];
   private stock: T.Mesh[][] = [];
-  private gauges: T.Mesh[] = [];
-  private arcs: T.BufferGeometry[] = [];
-  private zones: T.MeshBasicMaterial[];
   private puffs: T.Mesh[] = [];
   private coals!: T.MeshBasicMaterial;
   private ember!: T.PointLight;
@@ -202,26 +198,19 @@ export class GrillView extends TableView<State> {
         }),
       );
     });
-    // A ring under each piece that fills as the side lying down cooks.
-    for (let k = 0; k <= ARCS; k++) this.arcs.push(this.own(new T.RingGeometry(0.8, 0.89, 44, 1, Math.PI / 2, -Math.max(0.001, (k / ARCS) * Math.PI * 2)).rotateX(-Math.PI / 2)));
-    this.zones = ["#f2ece0", "#5fc46a", "#ffc93a", "#ff8a2a", "#ff3b2e"].map((color) => this.own(new T.MeshBasicMaterial({ color, side: T.DoubleSide })));
     const smoke = document.createElement("canvas");
     smoke.width = smoke.height = 64;
     const pen = smoke.getContext("2d")!,
       fade = pen.createRadialGradient(32, 32, 2, 32, 32, 32);
-    fade.addColorStop(0, "rgba(255,255,255,0.9)");
+    fade.addColorStop(0, "rgba(255,255,255,1)");
+    fade.addColorStop(0.55, "rgba(255,255,255,0.7)");
     fade.addColorStop(1, "rgba(255,255,255,0)");
     pen.fillStyle = fade;
     pen.fillRect(0, 0, 64, 64);
     const haze = this.own(new T.CanvasTexture(smoke)),
       sheet = this.own(new T.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
     for (let slot = 0; slot < SLOTS; slot++) {
-      const gauge = new T.Mesh(this.arcs[0], this.zones[0]);
-      gauge.position.set(PLACES[slot][0], TOP + 0.03, PLACES[slot][1]);
-      gauge.visible = false;
-      this.gauges.push(gauge);
-      this.scene.add(gauge);
-      for (let k = 0; k < 2; k++) {
+      for (let k = 0; k < 3; k++) {
         const puff = new T.Mesh(sheet, this.own(new T.MeshBasicMaterial({ map: haze, transparent: true, depthWrite: false, opacity: 0 })));
         puff.visible = false;
         puff.renderOrder = 6;
@@ -490,15 +479,17 @@ export class GrillView extends TableView<State> {
     this.redraw();
   }
   /** Shows a model as a piece of a cut with its two sides done so far. */
-  private dress(model: Model, piece: Pick<Piece, "cut" | "done">) {
+  private dress(model: Model, piece: Pick<Piece, "cut" | "done"> & { burnt?: boolean }) {
+    // A burnt piece is blackened all over, whichever side lay down.
+    const done = piece.burnt ? piece.done.map((side) => Math.max(side, CHARRED + 0.15)) : piece.done;
     const shape = SHAPES[piece.cut],
       mesh = shape.round ? model.slice : model.slab;
     model.slab.visible = !shape.round;
     model.slice.visible = shape.round;
     mesh.scale.set(shape.w, shape.tall, shape.d);
-    model.under.map = this.skin(piece.cut, piece.done[0]);
-    model.upper.map = this.skin(piece.cut, piece.done[1]);
-    model.edge.color.set(css(cooked(...FLESH[piece.cut].lean, (piece.done[0] + piece.done[1]) / 2)).replace(/rgba\((\d+),(\d+),(\d+),1\)/, "rgb($1,$2,$3)"));
+    model.under.map = this.skin(piece.cut, done[0]);
+    model.upper.map = this.skin(piece.cut, done[1]);
+    model.edge.color.set(css(cooked(...FLESH[piece.cut].lean, (done[0] + done[1]) / 2)).replace(/rgba\((\d+),(\d+),(\d+),1\)/, "rgb($1,$2,$3)"));
   }
   /** Puts everything where the table has it. */
   private pose(now: number) {
@@ -509,11 +500,9 @@ export class GrillView extends TableView<State> {
     this.stock.forEach((meshes, cut) => meshes.forEach((mesh, i) => (mesh.visible = i < world.plates[cut] - (carried?.point === PLATE + cut ? 1 : 0))));
     world.slots.forEach((piece, slot) => {
       const model = this.pieces[slot],
-        gauge = this.gauges[slot],
         held = carried?.point === PLACE + slot;
       model.group.visible = !!piece;
-      gauge.visible = !!piece && !held;
-      for (const k of [0, 1]) this.puffs[slot * 2 + k].visible = false;
+      for (const k of [0, 1, 2]) this.puffs[slot * 3 + k].visible = false;
       if (!piece) return;
       this.dress(model, piece);
       const [x, z] = held ? [carried!.x, carried!.z] : PLACES[slot],
@@ -524,20 +513,19 @@ export class GrillView extends TableView<State> {
       model.group.position.set(x, TOP + 0.03 + tall / 2 + Math.sin(turning * Math.PI) * 0.55 + (held ? 0.7 : 0) + (1 - settle) * 0.4, z);
       model.group.rotation.set((piece.turned ? 0 : Math.PI) + Math.PI * turning, ((slot * 1.9) % 0.9) - 0.45, 0);
       const under = piece.done[down(piece)];
-      gauge.geometry = this.arcs[Math.max(1, Math.round(Math.min(1, under / BURNT) * ARCS))];
-      gauge.material = this.zones[under < RAW ? 0 : under < GOOD ? 1 : under <= OVER ? 2 : under < CHARRED ? 3 : 4];
-      // Smoke, thicker and darker the nearer it is to burning.
-      if (under > GOOD && !held) {
-        const thick = Math.min(1, (under - GOOD) / (BURNT - GOOD));
-        for (const k of [0, 1]) {
-          const puff = this.puffs[slot * 2 + k],
-            p = (now / 1100 + k / 2 + slot * 0.37) % 1,
+      // Nothing but the smoke tells how the side lying down is doing: a thin wisp once it is cooked through,
+      // full white smoke while it is just right, grey when it is overdone, dark and thick before it burns.
+      if (under >= RAW && !held) {
+        const thick = under < GOOD ? 0.4 : under <= OVER ? 0.7 : under < CHARRED ? 0.75 : 0.95;
+        for (const k of [0, 1, 2]) {
+          const puff = this.puffs[slot * 3 + k],
+            p = (now / 1300 + k / 3 + slot * 0.37) % 1,
             paint = puff.material as T.MeshBasicMaterial;
           puff.visible = true;
           puff.position.set(x + Math.sin(p * 5 + k * 2) * 0.2, TOP + 0.5 + p, z - p * 0.5);
-          puff.scale.setScalar(0.5 + p * 1.1);
-          paint.opacity = (1 - p) * (0.18 + thick * 0.4);
-          paint.color.set(under > OVER ? "#5a5a60" : "#ffffff");
+          puff.scale.setScalar((under < GOOD ? 0.5 : 0.9) + p * 1.4);
+          paint.opacity = (1 - p) * thick;
+          paint.color.set(under <= OVER ? "#ffffff" : under < CHARRED ? "#9a9aa0" : "#2c2c30");
         }
       }
     });
