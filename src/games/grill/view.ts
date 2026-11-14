@@ -81,6 +81,25 @@ function dome(spread: number, tall: number, segments = 32) {
   for (let i = 0; i < at.count; i++) uv.setXY(i, 0.5 + at.getX(i) / rim / 2, 0.5 - at.getZ(i) / rim / 2);
   return cap.translate(0, -Math.cos(spread), 0).scale(1 / rim, tall / (1 - Math.cos(spread)), 1 / rim);
 }
+/**
+ * A helping of something soft taken from a bowl: a low dome whose edge wanders, showing only the middle of the
+ * bowl's photograph (`zoom` of it), so that no rim of the bowl comes with it.
+ */
+function blot(seed: number, wide: number, deep: number, tall: number, zoom: number) {
+  const shape = dome(0.9, 1, 24),
+    random = sequence(seed),
+    phases = [random() * 6, random() * 6, random() * 6],
+    at = shape.getAttribute("position"),
+    uv = shape.getAttribute("uv");
+  for (let i = 0; i < at.count; i++) {
+    const a = Math.atan2(at.getZ(i), at.getX(i)),
+      swell = 1 + 0.16 * Math.sin(2 * a + phases[0]) + 0.1 * Math.sin(3 * a + phases[1]) + 0.07 * Math.sin(5 * a + phases[2]);
+    at.setXYZ(i, at.getX(i) * swell * wide, at.getY(i) * tall, at.getZ(i) * swell * deep);
+    uv.setXY(i, 0.5 + (uv.getX(i) - 0.5) * zoom, 0.5 + (uv.getY(i) - 0.5) * zoom);
+  }
+  shape.computeVertexNormals();
+  return shape;
+}
 /** The edge of a cut seen from above, within a square of side 1: an oval or a rounded oblong whose line wanders a little. */
 function outline(cut: number) {
   const random = sequence(cut * 17 + 3),
@@ -270,7 +289,6 @@ export class GrillView extends TableView<State> {
   private coals!: T.MeshBasicMaterial;
   private ember!: T.PointLight;
   private relishPaint: T.MeshStandardMaterial[] = [];
-  private heapShape!: T.BufferGeometry;
   private leafOnBoard!: T.Mesh;
   private leafInHand!: T.Mesh;
   /** The relishes as they lie on a wrap, and as they are carried to it. */
@@ -484,10 +502,28 @@ export class GrillView extends TableView<State> {
   /** A relish as a small heap: kimchi, bean paste, garlic and chilli, salt in sesame oil. */
   private dab(which: number) {
     const heap = new T.Group(),
-      mesh = new T.Mesh(this.heapShape, this.relishPaint[which]);
-    mesh.position.y = 0.02;
-    mesh.castShadow = true;
-    heap.add(mesh);
+      put = (geometry: T.BufferGeometry, paint: T.Material, x: number, y: number, z: number, turn = 0) => {
+        const mesh = new T.Mesh(this.own(geometry), paint);
+        mesh.position.set(x, y, z);
+        mesh.rotation.y = turn;
+        mesh.castShadow = true;
+        heap.add(mesh);
+      };
+    if (which === 0) {
+      // Kimchi: two folded pieces of leaf, one over the other.
+      put(blot(11, 0.24, 0.13, 0.06, 0.5), this.relishPaint[0], -0.04, 0.02, 0.02, 0.5);
+      put(blot(12, 0.2, 0.11, 0.06, 0.42), this.relishPaint[0], 0.06, 0.05, -0.03, -0.7);
+    } else if (which === 1) put(blot(21, 0.15, 0.13, 0.1, 0.45), this.relishPaint[1], 0, 0.02, 0);
+    else if (which === 2) {
+      // Two slices of garlic and a ring of green chilli, as they are cut.
+      const garlic = this.standard({ color: "#f1e8cf", roughness: 0.45 }),
+        chilli = this.standard({ color: "#5c9a34", roughness: 0.4 });
+      put(blot(31, 0.1, 0.07, 0.035, 1), garlic, -0.08, 0.02, 0.02, 0.3);
+      put(blot(32, 0.095, 0.065, 0.035, 1), garlic, 0.06, 0.03, 0.07, -0.9);
+      put(new T.TorusGeometry(0.055, 0.022, 6, 14).rotateX(Math.PI / 2), chilli, 0.04, 0.035, -0.08);
+    }
+    // Salt in oil: a thin wet patch with the grains in it.
+    else put(blot(41, 0.17, 0.15, 0.015, 0.5), this.relishPaint[3], 0, 0.02, 0);
     heap.visible = false;
     this.scene.add(heap);
     return heap;
@@ -517,7 +553,6 @@ export class GrillView extends TableView<State> {
       },
       fillWith = (x: number, z: number, r: number, color: string, y = 0.1) => (this.add(new T.CircleGeometry(r, 32).rotateX(-Math.PI / 2), this.standard({ color, roughness: 0.3 }), x, y, z).castShadow = false);
     this.relishPaint = RELISH_PHOTOS.map(([url, color]) => this.pictured(url, color, 0.38));
-    this.heapShape = this.own(dome(0.8, 0.3, 20).scale(0.2, 0.2, 0.2));
     for (const [x, z, r] of PLATES) dish(x, z, r);
     dish(BOARD[0], BOARD[1], BOARD[2]);
     // The relishes along the far edge, in the order the wrap counts them.
