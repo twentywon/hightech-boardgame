@@ -1,5 +1,12 @@
 import * as T from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import woodDarkUrl from "../assets/tex/wood-dark.webp?inline";
+import woodLightUrl from "../assets/tex/wood-light.webp?inline";
+import woodNormalUrl from "../assets/tex/wood-normal.webp?inline";
+import woodRoughUrl from "../assets/tex/wood-rough.webp?inline";
+import clothNormalUrl from "../assets/tex/cloth-normal.webp?inline";
+import mapleUrl from "../assets/tex/maple.webp?inline";
+import walnutUrl from "../assets/tex/walnut.webp?inline";
 const ndc = new T.Vector2();
 /** Points `ray` from the camera through the pointer's place on the canvas. */
 export function aim(ray: T.Raycaster, e: PointerEvent, canvas: HTMLCanvasElement, camera: T.Camera) {
@@ -64,38 +71,100 @@ export function afterGPUFrame(
     gl.deleteSync(sync);
   };
 }
-/** A wood texture; `grain` below 1 thins the streaks out for a calmer surface. */
+/** Photographs that surfaces are made of, decoded once for the whole page. */
+const photos = new Map<string, HTMLImageElement>();
+/** Calls `ready` with a photograph: at once when it has been decoded already, otherwise when it has. */
+function photo(url: string, ready?: (image: HTMLImageElement) => void) {
+  let image = photos.get(url);
+  if (!image) {
+    image = new Image();
+    image.src = url;
+    photos.set(url, image);
+  }
+  if (!ready) return;
+  if (image.complete && image.naturalWidth) ready(image);
+  else image.addEventListener("load", () => ready(image), { once: true });
+}
+// They are asked for as the page opens, so that a table finds them ready.
+if (typeof Image !== "undefined") for (const url of [woodDarkUrl, woodLightUrl, woodNormalUrl, woodRoughUrl, clothNormalUrl, mapleUrl, walnutUrl]) photo(url);
+const SOFTWARE = /swiftshader|llvmpipe|software|basic render/i;
+let drawnBySoftware: boolean | undefined;
+/**
+ * Whether a graphics card draws the page. Where the processor does it alone (which is also how the browser tests
+ * run) tables keep to what is cheap: no reflected room, no relief, no lacquer. A capture and `?reflect=1` ask for
+ * everything all the same.
+ */
+export function capable() {
+  if (typeof document === "undefined") return false;
+  if (document.documentElement.dataset.capture || location.search.includes("reflect=1")) return true;
+  if (drawnBySoftware === undefined) {
+    const canvas = document.createElement("canvas"),
+      gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl"),
+      info = gl?.getExtension("WEBGL_debug_renderer_info");
+    drawnBySoftware = !gl || SOFTWARE.test(info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "");
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  }
+  return !drawnBySoftware;
+}
+/**
+ * Wood, from a photograph graded to the colour the tables were painted in (dark: Poly Haven's "Dark Wood"; pale:
+ * "Oak Veneer 01", both CC0); `grain` below 1 fades the figure of the wood for a calmer surface. Until the
+ * photograph has come the texture is the plain colour.
+ */
 export function wood(dark = false, grain = 1) {
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = dark ? "#543a28" : "#c89a60";
+  canvas.width = canvas.height = 512;
+  const ctx = canvas.getContext("2d")!,
+    plain = dark ? "#58321f" : "#c89a60";
+  ctx.fillStyle = plain;
   ctx.fillRect(0, 0, 512, 512);
-  let seed = 42;
-  const rand = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  for (let i = 0; i < 1000 * grain; i++) {
-    const y = rand() * 512;
-    ctx.strokeStyle = dark
-      ? `rgba(18,9,4,${rand() * 0.13 * grain})`
-      : `rgba(77,41,14,${rand() * 0.15 * grain})`;
-    ctx.lineWidth = rand() * 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    for (let x = 0; x <= 512; x += 16)
-      ctx.lineTo(
-        x,
-        y + Math.sin(x * 0.012 + y) * 2 + Math.sin(x * 0.032) * 0.8,
-      );
-    ctx.stroke();
-  }
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
   texture.wrapS = texture.wrapT = T.RepeatWrapping;
+  texture.anisotropy = 4;
+  photo(dark ? woodDarkUrl : woodLightUrl, (image) => {
+    ctx.drawImage(image, 0, 0, 512, 512);
+    if (grain < 1) {
+      ctx.globalAlpha = Math.min(0.85, (1 - grain) * 0.9);
+      ctx.fillRect(0, 0, 512, 512);
+      ctx.globalAlpha = 1;
+    }
+    texture.needsUpdate = true;
+  });
   return texture;
+}
+/** A photographed surface tiled `across` by `down`: a picture of colour, or of numbers (`data`: a normal or roughness map). */
+export function surface(url: string, across = 1, down = across, data = false) {
+  const texture = new T.Texture();
+  texture.wrapS = texture.wrapT = T.RepeatWrapping;
+  texture.repeat.set(across, down);
+  texture.anisotropy = 8;
+  if (!data) texture.colorSpace = T.SRGBColorSpace;
+  photo(url, (image) => {
+    texture.image = image;
+    texture.needsUpdate = true;
+  });
+  return texture;
+}
+type Keep = <R extends { dispose(): void }>(resource: R) => R;
+/**
+ * The top of a wooden table, tiled `across` by `down` (a tile is about eight units of a table): photographed dark
+ * wood, with its relief and its sheen where a graphics card draws.
+ */
+export function planks(across: number, keep: Keep = (r) => r, down = across): T.MeshStandardMaterialParameters {
+  const map = keep(surface(woodDarkUrl, across, down));
+  if (!capable()) return { map, roughness: 0.8 };
+  return { map, normalMap: keep(surface(woodNormalUrl, across, down, true)), roughnessMap: keep(surface(woodRoughUrl, across, down, true)), roughness: 0.9 };
+}
+/** The weave of a cloth, for a felt: nothing where no graphics card draws. */
+export function weave(across: number, down = across, keep: Keep = (r) => r, depth = 0.9): T.MeshStandardMaterialParameters {
+  return capable() ? { normalMap: keep(surface(clothNormalUrl, across, down, true)), normalScale: new T.Vector2(depth, depth) } : {};
+}
+/** Veneer for inlaid squares: pale maple and brown walnut (Poly Haven, CC0). */
+export const veneer = (dark: boolean) => surface(dark ? walnutUrl : mapleUrl);
+/** A lacquered or glazed thing (a stone, a marble, a ball, a die): a clear coat over it where a graphics card draws. */
+export function glossy(options: T.MeshStandardMaterialParameters, coat = 1): T.MeshStandardMaterial {
+  return capable() ? new T.MeshPhysicalMaterial({ ...options, clearcoat: coat, clearcoatRoughness: 0.06 }) : new T.MeshStandardMaterial(options);
 }
 
 /**
@@ -107,10 +176,7 @@ export function realism(renderer: T.WebGLRenderer, scene: T.Scene, filmic = fals
   // All of this is for a graphics card. Where the picture is drawn by the processor alone (which is also how the
   // browser tests run) the reflected room's shaders took seconds to build and the softer shadows cost a third of the
   // frames: there the table keeps its plain light.
-  const gl = renderer.getContext(),
-    info = gl.getExtension("WEBGL_debug_renderer_info"),
-    drawnBy = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
-  if (/swiftshader|llvmpipe|software|basic render/i.test(drawnBy) && !document.documentElement.dataset.capture && !location.search.includes("reflect=1")) return;
+  if (!capable()) return;
   // Film-like highlights take the white out of white things (cards, paper, a white table turn cream), so only the
   // tables that were looked at with them ask for them.
   if (filmic) renderer.toneMapping = T.NeutralToneMapping;

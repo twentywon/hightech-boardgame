@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { glossy, planks, weave } from "../../engine/scene-utils";
 import { pub } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -95,12 +95,20 @@ export class PoolView extends FlickView<State> {
     this.scene.add(room);
     pub(room, (r) => this.own(r), HALF_Z + 0.9, 3.4);
     // The table: a slate bed under green cloth, wooden rails with cushions, and legs.
-    const rail = this.standard({ map: this.own(wood(true)), roughness: 0.45 }),
-      cushion = this.standard({ color: "#17643f", roughness: 0.9 }),
+    // The grain runs along a rail: the short rails turn the picture a quarter round. The bed and the cushions have the weave of a cloth.
+    const keep = <X extends { dispose(): void }>(r: X) => this.own(r),
+      timber = (turned: boolean) => {
+        const wood = planks(3, keep, 0.3);
+        if (turned) for (const map of [wood.map, wood.normalMap, wood.roughnessMap]) if (map) map.rotation = Math.PI / 2;
+        return this.standard({ ...wood, color: "#e2c4ae" });
+      },
+      rail = timber(false),
+      railAcross = timber(true),
+      cushion = this.standard({ color: "#17643f", roughness: 0.95, ...weave(5, 9, keep) }),
       side = this.standard({ color: "#3a2a1c", roughness: 0.6 });
-    this.add(new T.BoxGeometry(HALF_X * 2, 0.4, HALF_Z * 2), [side, side, this.standard({ map: this.own(felt()), roughness: 0.95 }), side, side, side], 0, -0.2, 0);
+    this.add(new T.BoxGeometry(HALF_X * 2, 0.4, HALF_Z * 2), [side, side, this.standard({ map: this.own(felt()), roughness: 0.95, ...weave(5, 9, keep) }), side, side, side], 0, -0.2, 0);
     for (const [x, z, w, d] of [[0, HALF_Z + 0.33, HALF_X * 2 + 1.3, 0.66], [0, -HALF_Z - 0.33, HALF_X * 2 + 1.3, 0.66], [HALF_X + 0.33, 0, 0.66, HALF_Z * 2], [-HALF_X - 0.33, 0, 0.66, HALF_Z * 2]])
-      this.add(new T.BoxGeometry(w, 0.75, d), rail, x, -0.08, z);
+      this.add(new T.BoxGeometry(w, 0.75, d), w > d ? rail : railAcross, x, -0.08, z);
     for (const [x, z, w, d] of [[0, HALF_Z + 0.02, HALF_X * 2 - 0.9, 0.1], [0, -HALF_Z - 0.02, HALF_X * 2 - 0.9, 0.1]]) this.add(new T.BoxGeometry(w, 0.3, d), cushion, x, 0.14, z);
     for (const x of [HALF_X + 0.02, -HALF_X - 0.02]) for (const z of [HALF_Z / 2, -HALF_Z / 2]) this.add(new T.BoxGeometry(0.1, 0.3, HALF_Z - 0.9), cushion, x, 0.14, z);
     for (const x of [-1, 1]) for (const z of [-1, 1]) this.add(new T.BoxGeometry(0.7, 3.1, 0.7), side, x * (HALF_X - 0.3), -1.9, z * (HALF_Z - 0.6));
@@ -109,10 +117,11 @@ export class PoolView extends FlickView<State> {
     const sphere = this.own(new T.SphereGeometry(R, 28, 20)),
       band = this.own(new T.SphereGeometry(R * 1.012, 28, 12, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.4)),
       spot = this.own(new T.CircleGeometry(R * 0.5, 20)),
-      white = this.standard({ color: BALLS[0], roughness: 0.12 });
+      ball = (color: string) => this.own(glossy({ color, roughness: 0.25 })),
+      white = ball(BALLS[0]);
     for (let id = 0; id <= 15; id++) {
       const g = new T.Group(),
-        colour = this.standard({ color: id === EIGHT ? BALLS[8] : BALLS[id > 8 ? id - 8 : id], roughness: 0.12 }),
+        colour = ball(id === EIGHT ? BALLS[8] : BALLS[id > 8 ? id - 8 : id]),
         body = new T.Mesh(sphere, kind(id) === 1 ? white : colour);
       body.castShadow = true;
       g.add(body);

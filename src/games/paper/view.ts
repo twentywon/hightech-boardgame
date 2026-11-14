@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -148,7 +148,7 @@ export class PaperView<S> implements PointView<S> {
       return mesh;
     };
     // The desk, the notebook and its spiral.
-    add(new T.PlaneGeometry(90, 90), standard({ map: this.own(wood(true)) }), 0, -0.02, 0).rotation.x = -Math.PI / 2;
+    add(new T.PlaneGeometry(90, 90), standard(planks(11, (r) => this.own(r))), 0, -0.02, 0).rotation.x = -Math.PI / 2;
     const side = game.half * 2;
     add(new T.BoxGeometry(side + 0.7, 0.08, side + 0.5), standard({ color: "#2f5d8a", roughness: 0.6 }), PAGE_X - 0.1, 0.02, 0);
     this.page = document.createElement("canvas");

@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { SPACES, type State } from "./rules";
 import { drawFlag } from "./flags";
@@ -327,7 +327,7 @@ export class TourView {
     realism(this.renderer, this.scene);
     const standard = (options: T.MeshStandardMaterialParameters) =>
       this.own(new T.MeshStandardMaterial({ roughness: 0.75, ...options }));
-    const table = new T.Mesh(this.own(new T.PlaneGeometry(120, 120)), standard({ map: this.own(wood(true)) }));
+    const table = new T.Mesh(this.own(new T.PlaneGeometry(120, 120)), standard(planks(15, (r) => this.own(r))));
     table.rotation.x = -Math.PI / 2;
     table.position.y = -0.16;
     table.receiveShadow = true;

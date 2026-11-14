@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, disposeScene, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, disposeScene, wood, realism, planks } from "../../engine/scene-utils";
 import {
   FOV,
   OVERHEAD,
@@ -149,7 +149,7 @@ export class JanggiView {
     realism(this.renderer, this.scene);
     const table = new T.Mesh(
       new T.BoxGeometry(80, 0.2, 80),
-      new T.MeshStandardMaterial({ map: wood(true), roughness: 0.8 }),
+      new T.MeshStandardMaterial(planks(12)),
     );
     table.position.y = -0.3;
     table.receiveShadow = true;

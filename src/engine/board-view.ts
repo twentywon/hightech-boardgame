@@ -6,7 +6,7 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-import { wood, disposeScene, afterGPUFrame, aim, realism } from "./scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism, planks, weave, glossy } from "./scene-utils";
 import { parkBench } from "./scenery";
 import {
   FOV,
@@ -142,7 +142,7 @@ export class BoardView {
     } else {
       const table = new T.Mesh(
         new T.BoxGeometry(100, 0.2, 100),
-        new T.MeshStandardMaterial({ map: wood(true), roughness: 0.8 }),
+        new T.MeshStandardMaterial(planks(12)),
       );
       table.position.y = -0.34;
       table.receiveShadow = true;
@@ -164,7 +164,7 @@ export class BoardView {
     if (this.variant === "reversi") {
       const felt = new T.Mesh(
         new T.BoxGeometry(5.82, 0.025, 5.82),
-        new T.MeshStandardMaterial({ color: "#204e43", roughness: 0.94 }),
+        new T.MeshStandardMaterial({ color: "#204e43", roughness: 0.94, ...weave(5) }),
       );
       felt.position.y = 0.17;
       felt.receiveShadow = true;
@@ -438,22 +438,14 @@ export class BoardView {
           : new T.SphereGeometry(1, 32, 20),
         stoneMaterial: reversi
           ? [
-              new T.MeshStandardMaterial({ color: "#35383a", roughness: 0.35 }),
-              new T.MeshStandardMaterial({ color: "#202226", roughness: 0.26 }),
-              new T.MeshStandardMaterial({ color: "#f6f0e4", roughness: 0.25 }),
+              glossy({ color: "#35383a", roughness: 0.35 }, 0.5),
+              glossy({ color: "#202226", roughness: 0.3 }),
+              glossy({ color: "#f6f0e4", roughness: 0.3 }),
             ]
-          : new T.MeshStandardMaterial({
-              color: "#202226",
-              roughness: 0.24,
-              metalness: 0.04,
-            }),
+          : glossy({ color: "#202226", roughness: 0.3, metalness: 0.04 }),
         white: reversi
           ? null
-          : new T.MeshStandardMaterial({
-              color: "#f6f0e4",
-              roughness: 0.2,
-              metalness: 0.04,
-            }),
+          : glossy({ color: "#f6f0e4", roughness: 0.28, metalness: 0.04 }),
         ring: new Map(),
       };
     }

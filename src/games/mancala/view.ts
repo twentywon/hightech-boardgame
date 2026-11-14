@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, glossy } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { speckled } from "../../engine/scenery";
 import type { PointView } from "../../ui/point-game";
@@ -90,7 +90,7 @@ export class MancalaView implements PointView<State> {
     realism(this.renderer, this.scene);
     this.buildMarket();
     this.stoneGeometry = this.own(new T.SphereGeometry(0.15, 14, 10));
-    this.stoneMaterials = STONES.map((color) => this.own(new T.MeshStandardMaterial({ color, roughness: 0.15, metalness: 0.1 })));
+    this.stoneMaterials = STONES.map((color) => this.own(glossy({ color, roughness: 0.2, metalness: 0.1 })));
     // The number of stones in each pit, painted beside it.
     this.counts = document.createElement("canvas");
     this.counts.width = 1024;

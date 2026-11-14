@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
-import { wood, disposeScene, afterGPUFrame, aim, realism } from "../../engine/scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism, planks, veneer, glossy } from "../../engine/scene-utils";
 import { toWorld, fromWorld, squares } from "./coordinates";
 import {
   FOV,
@@ -89,7 +89,7 @@ export class ChessView {
     realism(this.renderer, this.scene, true);
     const table = new T.Mesh(
       new T.BoxGeometry(80, 0.2, 80),
-      new T.MeshStandardMaterial({ map: wood(true), roughness: 0.8 }),
+      new T.MeshStandardMaterial(planks(10)),
     );
     table.position.y = -0.35;
     table.receiveShadow = true;
@@ -100,16 +100,23 @@ export class ChessView {
     );
     rim.castShadow = rim.receiveShadow = true;
     this.scene.add(rim);
-    const light = new T.MeshStandardMaterial({
-        color: "#e8dfc6",
-        roughness: 0.77,
-      }),
-      dark = new T.MeshStandardMaterial({ color: "#28594c", roughness: 0.76 });
-    const tile = new T.BoxGeometry(0.78, 0.035, 0.78);
+    // Squares of maple and walnut veneer, each cut from another part of its sheet so that no two have the same grain.
+    const light = new T.MeshStandardMaterial({ map: veneer(false), roughness: 0.38, color: "#fff4e0" }),
+      dark = new T.MeshStandardMaterial({ map: veneer(true), roughness: 0.38, color: "#9a7458" });
+    let cut = 7;
+    const sheet = () => (cut = (cut * 1664525 + 1013904223) >>> 0) / 4294967296,
+      square = () => {
+        const tile = new T.BoxGeometry(0.78, 0.035, 0.78),
+          uv = tile.getAttribute("uv"),
+          u0 = sheet() * 0.5,
+          v0 = sheet() * 0.5;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * 0.5, v0 + uv.getY(i) * 0.5);
+        return tile;
+      };
     for (const s of squares) {
       const p = toWorld(s),
         m = new T.Mesh(
-          tile,
+          square(),
           (s.charCodeAt(0) - 97 + Number(s[1]) - 1) % 2 === 0 ? dark : light,
         );
       m.position.set(p.x, 0.192, p.z);
@@ -233,10 +240,10 @@ export class ChessView {
       cached = this.prototypes.get(key);
     if (cached) return cached;
     const g = new T.Group(),
-      mat = new T.MeshStandardMaterial({
-        color: color === "w" ? "#f2ecdb" : "#22292b",
-        roughness: 0.28,
-        metalness: 0.09,
+      mat = glossy({
+        // Lacquered boxwood and ebony.
+        color: color === "w" ? "#ecdcb4" : "#1d1a18",
+        roughness: 0.4,
         // The turned bodies are open shells: drawn one-sided, their far wall showed through the near one.
         side: T.DoubleSide,
       });

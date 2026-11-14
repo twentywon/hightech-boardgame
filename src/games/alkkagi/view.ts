@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, planks, glossy } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { FlickView } from "../flick/view";
@@ -96,7 +96,7 @@ export class AlkkagiView extends FlickView<State> {
   ) {
     super(host, quality, "#2c2119");
     this.daylight("#fff4dc", "#3a2c22", "#fff0d2", 9);
-    const floor = this.add(new T.PlaneGeometry(90, 90), this.standard({ map: this.own(wood(true)) }), 0, -1.2, 0);
+    const floor = this.add(new T.PlaneGeometry(90, 90), this.standard(planks(11, (r) => this.own(r))), 0, -1.2, 0);
     floor.rotation.x = -Math.PI / 2;
     floor.castShadow = false;
     const arena = arenaOf(mode),
@@ -115,7 +115,7 @@ export class AlkkagiView extends FlickView<State> {
       }
     }
     this.stone = this.own(new T.SphereGeometry(1, 28, 18));
-    this.paints = STONE_COLORS.map((color) => this.standard({ color, roughness: 0.25 }));
+    this.paints = STONE_COLORS.map((color) => this.own(glossy({ color, roughness: 0.3 })));
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     for (let i = 0; i < 16; i++) {
       const ring = ringMesh(own, 0.3, 0.37, "#ffd24a");

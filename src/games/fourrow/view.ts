@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, weave, glossy } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { COLS, ROWS, freeRow, type State } from "./rules";
@@ -78,7 +78,7 @@ export class FourRowView extends TableView<State> {
     const hand = this.standard({ color: "#2b2622" });
     this.add(new T.BoxGeometry(0.06, 0.7, 0.04), hand, 5.6, 7.72, -8.72);
     this.add(new T.BoxGeometry(0.5, 0.06, 0.04), hand, 5.82, 7.4, -8.72);
-    const top = this.add(new T.PlaneGeometry(60, 30), this.standard({ map: this.own(cloth()), roughness: 1 }), 0, 0, 4);
+    const top = this.add(new T.PlaneGeometry(60, 30), this.standard({ map: this.own(cloth()), roughness: 1, ...weave(46, 23, (r) => this.own(r), 0.6) }), 0, 0, 4);
     top.rotation.x = -Math.PI / 2;
     top.castShadow = false;
     // On the table: a cup of tea, reading glasses, a week's pill box, a ball of yarn.
@@ -126,7 +126,7 @@ export class FourRowView extends TableView<State> {
     }
     this.add(new T.BoxGeometry(w, 0.12, DEPTH), blue, 0, y0 - 0.02, 0);
     this.disc = this.own(new T.CylinderGeometry(0.455, 0.455, 0.2, 40));
-    this.paints = DISC_COLORS.map((color) => this.standard({ color, roughness: 0.35 }));
+    this.paints = DISC_COLORS.map((color) => this.own(glossy({ color, roughness: 0.4 }, 0.5)));
     // Marks: an arrow over each column that can take a disc, and a halo round the winning discs.
     const cone = this.own(new T.ConeGeometry(0.22, 0.4, 20)),
       gold = this.own(new T.MeshBasicMaterial({ color: "#ffd24a" })),

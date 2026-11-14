@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, glossy } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { MAX, PEGS, type State } from "./rules";
@@ -43,7 +43,7 @@ export class HanoiView extends TableView<State> {
       this.add(new T.CylinderGeometry(0.3, 0.34, 0.08, 28), brass, x, BASE + 0.04, 0);
     }
     for (let i = 0; i < MAX; i++) {
-      const disc = new T.Mesh(this.lathe(1), this.standard({ color: GLAZE[i], roughness: 0.25 }));
+      const disc = new T.Mesh(this.lathe(1), this.own(glossy({ color: GLAZE[i], roughness: 0.3 })));
       disc.castShadow = disc.receiveShadow = true;
       disc.visible = false;
       this.discs.push(disc);

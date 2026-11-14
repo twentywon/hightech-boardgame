@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, glossy } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
@@ -157,7 +157,7 @@ export class PointBoardView {
       };
     if (theme === "yard") hanokYard(this.scene, own);
     else if (theme === "wood") {
-      flat(90, 90, standard({ map: this.own(wood(true)) }), -0.3);
+      flat(90, 90, standard(planks(11, (r) => this.own(r))), -0.3);
       const slab = new T.Mesh(this.own(new T.BoxGeometry(side, 0.3, side)), standard({ map: this.own(wood()), roughness: 0.55 }));
       slab.position.set(0, -0.152, centreZ);
       slab.castShadow = slab.receiveShadow = true;
@@ -236,15 +236,17 @@ export class PointBoardView {
       skin.wrapS = T.RepeatWrapping;
       skin.anisotropy = 4;
     }
-    this.materials = spec.colors.map((color) =>
-      standard({
+    // Stones of the yard are plain pebbles; everything else is glazed, lacquered or glass.
+    this.materials = spec.colors.map((color) => {
+      const paint: T.MeshStandardMaterialParameters = {
         color: skin ? "#ffffff" : color,
         map: skin,
-        roughness: spec.marbles ? 0.12 : theme === "lab" ? 0.2 : theme === "yard" ? 0.75 : 0.4,
+        roughness: spec.marbles ? 0.2 : theme === "lab" ? 0.25 : theme === "yard" ? 0.75 : 0.4,
         emissive: theme === "lab" ? color : "#000000",
         emissiveIntensity: theme === "lab" ? 0.22 : 0,
-      }),
-    );
+      };
+      return theme === "yard" ? standard(paint) : this.own(glossy(paint, spec.marbles ? 1 : 0.6));
+    });
     this.ringGeometry = this.own(new T.RingGeometry(radius * 1.12, radius * 1.42, 40));
     this.ringMaterials = ["#f4d06a", "#ffffff", "#7fe0a2", "#f0604a", "#9fc6ff"].map((color) =>
       this.own(new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false })),

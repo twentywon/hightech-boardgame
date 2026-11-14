@@ -33,3 +33,23 @@ the WordPress Photo Directory, both CC0:
 Changes: a square taken from each, reduced and stored as WebP
 (src/games/grill/kimchi.webp, paste.webp, garlic.webp, oil.webp,
 lettuce.webp, leaf.webp); the oil and the lettuce made lighter.
+
+Wood, veneer and cloth of the other tables are Poly Haven textures
+(https://polyhaven.com), all released under Creative Commons Zero (CC0),
+https://creativecommons.org/publicdomain/zero/1.0/
+
+- "Dark Wood" by Dario Barresi, Dimitrios Savva and Rico Cilliers
+  (https://polyhaven.com/a/dark_wood): colour, normal and roughness maps
+  (src/assets/tex/wood-dark.webp, wood-normal.webp, wood-rough.webp)
+- "Oak Veneer 01" by Jenelle van Heerden
+  (https://polyhaven.com/a/oak_veneer_01): colour (wood-light.webp)
+- "White Maple Veneer" by Jenelle van Heerden
+  (https://polyhaven.com/a/white_maple_veneer): colour (maple.webp)
+- "Black Walnut Veneer 01" by Jenelle van Heerden
+  (https://polyhaven.com/a/black_walnut_veneer_01): colour (walnut.webp)
+- "Caban" by colormass and Rico Cilliers
+  (https://polyhaven.com/a/caban): normal map (cloth-normal.webp)
+
+Changes: reduced to 512 or 768 pixels and stored as WebP; the two woods
+graded to the colours the tables were painted in, the oak turned a quarter
+round; the veneers are tinted by the game.

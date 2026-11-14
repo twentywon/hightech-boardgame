@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, planks } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CELLS, FLEET, SIZE, span, sunk, type Ship, type State } from "./rules";
@@ -127,7 +127,7 @@ export class SeaBattleView extends TableView<State> {
     for (const [x, y] of [[-6.6, 6.3], [-4.9, 5.4], [-3.6, 6.5]])
       this.add(new T.SphereGeometry(0.1, 10, 8), this.standard({ color: "#c8321f" }), x, y, -8.72);
     // The table and what lies on it: a radio, a telephone, a mug, a ruler and pencil.
-    const top = this.add(new T.BoxGeometry(26, 0.5, 13), this.standard({ map: this.own(wood(true)), roughness: 0.7 }), 0, -0.45, 0);
+    const top = this.add(new T.BoxGeometry(26, 0.5, 13), this.standard(planks(3.2, (r) => this.own(r), 1.6)), 0, -0.45, 0);
     top.castShadow = false;
     for (const x of [-12, 12]) for (const z of [-5.6, 5.6]) this.add(new T.BoxGeometry(0.7, 3.8, 0.7), iron, x, -2.5, z);
     const olive = this.standard({ color: "#4a5a3c", roughness: 0.7 });

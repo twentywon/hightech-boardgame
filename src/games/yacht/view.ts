@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, weave } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import { cabin } from "../../engine/scenery";
 
@@ -184,7 +184,7 @@ export class YachtView {
     cabin(this.scene, (resource) => this.own(resource), half + 0.25, depth + 0.25, -0.12);
     const felt = new T.Mesh(
       this.own(new T.PlaneGeometry(half * 2, depth * 2)),
-      this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95 })),
+      this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95, ...weave(half * 1.5, depth * 1.5, (r) => this.own(r)) })),
     );
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;

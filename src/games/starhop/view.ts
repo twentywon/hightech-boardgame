@@ -1,3 +1,4 @@
+import { glossy } from "../../engine/scene-utils";
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -64,7 +65,7 @@ export class StarHopView extends TableView<State> {
     face.rotation.x = -Math.PI / 2;
     face.castShadow = false;
     this.ball = this.own(new T.SphereGeometry(0.24, 26, 18));
-    this.paints = STAR_COLORS.map((color) => this.standard({ color, roughness: 0.15, metalness: 0.1 }));
+    this.paints = STAR_COLORS.map((color) => this.own(glossy({ color, roughness: 0.2, metalness: 0.1 })));
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     for (let i = 0; i < 40; i++) {
       const ring = ringMesh(own, 0.2, 0.27, "#ffd24a");

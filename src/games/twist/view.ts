@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, planks, glossy } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CELLS, SIZE, TURN_BASE, quarterCells, twistOf, type State } from "./rules";
@@ -90,7 +90,7 @@ export class TwistView extends TableView<State> {
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#3d2c20");
     this.daylight("#fff3dc", "#3a2c22", "#ffe9c4", 9, 2.1);
-    const desk = this.add(new T.PlaneGeometry(90, 90), this.standard({ map: this.own(wood(true)), roughness: 0.6 }), 0, -0.3, 0);
+    const desk = this.add(new T.PlaneGeometry(90, 90), this.standard(planks(11, (r) => this.own(r))), 0, -0.3, 0);
     desk.rotation.x = -Math.PI / 2;
     desk.castShadow = false;
     // On the desk: a lamp, books, a cup of pencils, a notebook and a mug.
@@ -134,7 +134,7 @@ export class TwistView extends TableView<State> {
       this.scene.add(mesh);
     }
     this.ball = this.own(new T.SphereGeometry(0.36, 28, 20));
-    this.paints = MARBLE_COLORS.map((color) => this.standard({ color, roughness: 0.18, metalness: 0.1 }));
+    this.paints = MARBLE_COLORS.map((color) => this.own(glossy({ color, roughness: 0.22, metalness: 0.1 })));
     const disc = this.own(new T.CircleGeometry(0.52, 36));
     for (let t = 0; t < 8; t++) {
       const button = new T.Mesh(disc, this.own(new T.MeshBasicMaterial({ map: this.own(buttonTexture(t % 2 === 0)), transparent: true })));

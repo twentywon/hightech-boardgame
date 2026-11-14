@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, glossy } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { FlickView } from "../flick/view";
@@ -135,7 +135,7 @@ export class CarromView extends FlickView<State> {
     for (const [x, z, w, d] of [[0, HALF + 0.3, HALF * 2 + 1.2, 0.6], [0, -HALF - 0.3, HALF * 2 + 1.2, 0.6], [HALF + 0.3, 0, 0.6, HALF * 2], [-HALF - 0.3, 0, 0.6, HALF * 2]])
       this.add(new T.BoxGeometry(w, 0.62, d), timber, x, -0.1, z);
     const man = this.own(new T.CylinderGeometry(1, 1, 0.14, 32)),
-      paints = [...MEN_COLORS, "#b3262b", "#dfe9f5"].map((color) => this.standard({ color, roughness: 0.3 }));
+      paints = [...MEN_COLORS, "#b3262b", "#dfe9f5"].map((color) => this.own(glossy({ color, roughness: 0.35 }, 0.6)));
     for (let id = 0; id <= STRIKER; id++) {
       const r = id === STRIKER ? 0.31 : 0.23,
         mesh = new T.Mesh(man, paints[id === STRIKER ? 3 : id === QUEEN ? 2 : owner(id)!]);

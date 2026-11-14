@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, wood, realism, planks } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -204,7 +204,7 @@ export class SnakesView implements PointView<State> {
     realism(this.renderer, this.scene);
     const standard = (options: T.MeshStandardMaterialParameters) =>
       this.own(new T.MeshStandardMaterial({ roughness: 0.8, ...options }));
-    const table = new T.Mesh(this.own(new T.PlaneGeometry(90, 90)), standard({ map: this.own(wood(true)) }));
+    const table = new T.Mesh(this.own(new T.PlaneGeometry(90, 90)), standard(planks(11, (r) => this.own(r))));
     table.rotation.x = -Math.PI / 2;
     table.position.y = -0.1;
     table.receiveShadow = true;

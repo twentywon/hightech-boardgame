@@ -1,6 +1,6 @@
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, weave } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { Card } from "./shoe";
 
@@ -462,7 +462,7 @@ export class BlackjackView {
     cloth.repeat.set(0.4, 0.4);
     const felt = new T.Mesh(
       this.own(new T.ShapeGeometry(outline(new T.Shape(), 0.02), 24)),
-      this.own(new T.MeshStandardMaterial({ map: cloth, roughness: 0.95 })),
+      this.own(new T.MeshStandardMaterial({ map: cloth, roughness: 0.95, ...weave(0.75, 0.75, (r) => this.own(r)) })),
     );
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;

@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, planks } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { LINKS, PLACES, type State } from "./rules";
@@ -60,7 +60,7 @@ export class HareView extends TableView<State> {
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#4b3626");
     this.daylight("#fff6e0", "#4a3a2c", "#fff1d6", 8);
-    const table = this.add(new T.PlaneGeometry(90, 90), this.standard({ map: this.own(wood(true)) }), 0, -0.2, 0);
+    const table = this.add(new T.PlaneGeometry(90, 90), this.standard(planks(11, (r) => this.own(r))), 0, -0.2, 0);
     table.rotation.x = -Math.PI / 2;
     table.castShadow = false;
     const edge = this.standard({ color: "#6a4a2c", roughness: 0.6 });

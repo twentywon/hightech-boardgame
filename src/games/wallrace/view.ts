@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, planks } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CELLS, G, H_BASE, N, V_BASE, type State } from "./rules";
@@ -32,7 +32,7 @@ export class WallRaceView extends TableView<State> {
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#3b2a1e");
     this.daylight("#fff4dc", "#3a2c22", "#fff0d2", 9);
-    const table = this.add(new T.PlaneGeometry(90, 90), this.standard({ map: this.own(wood(true)) }), 0, -0.3, 0);
+    const table = this.add(new T.PlaneGeometry(90, 90), this.standard(planks(11, (r) => this.own(r))), 0, -0.3, 0);
     table.rotation.x = -Math.PI / 2;
     table.castShadow = false;
     this.add(new T.BoxGeometry(N * STEP + 0.5, 0.2, N * STEP + 0.5), this.standard({ color: "#2b1d14", roughness: 0.6 }), 0, -0.2, 0);

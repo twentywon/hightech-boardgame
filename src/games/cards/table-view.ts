@@ -1,6 +1,6 @@
 import { capturing } from "../../ui/banner";
 import * as T from "three";
-import { afterGPUFrame, aim, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, realism, weave } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { TableView, Tone } from "./game";
 
@@ -341,7 +341,7 @@ export class CardTableView {
     realism(this.renderer, this.scene);
     const felt = new T.Mesh(
       this.own(new T.PlaneGeometry(60, 60)),
-      this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95 })),
+      this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95, ...weave(45, 45, (r) => this.own(r)) })),
     );
     felt.rotation.x = -Math.PI / 2;
     felt.receiveShadow = true;
