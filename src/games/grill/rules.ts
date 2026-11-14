@@ -16,6 +16,9 @@ export const SECONDS = 120,
   BURN = 3,
   /** A leaf, a piece or a relish set on the wrap plate. */
   DRESS = 4,
+  /** A whole wrap eaten (leaf, a piece worth something, a relish): the clock gives `EXTRA` seconds back. */
+  BONUS = 5,
+  EXTRA = 5,
   /** A piece eaten is a move to `EAT + points`, 0 (a side still raw) to 6 (both sides just right). */
   EAT = 10,
   BEST = 6,
@@ -41,12 +44,13 @@ export interface State {
 /** A meal by the clock ("1") or without one ("2"). */
 export const createGame = (variant = "1"): State => ({ endless: variant === "2", score: 0, eaten: 0, perfect: 0, wraps: 0, burnt: 0, left: SECONDS, gone: 0, winner: null, last: null, ply: 0 });
 const span = (from: number, count: number) => Array.from({ length: count + 1 }, (_, i) => from + i);
-export const moves = (state: State): Move[] => (state.winner !== null ? [] : [TICK, LAY, FLIP, BURN, DRESS, ...span(EAT, BEST), ...span(WRAP, FEAST)].map((to) => ({ from: -1, to, extra: -1 })));
+export const moves = (state: State): Move[] => (state.winner !== null ? [] : [TICK, LAY, FLIP, BURN, DRESS, BONUS, ...span(EAT, BEST), ...span(WRAP, FEAST)].map((to) => ({ from: -1, to, extra: -1 })));
 export function play(state: State, move: Move): State | null {
   if (state.winner !== null || move.from !== -1 || move.extra !== -1) return null;
   const next = { ...state, last: move.to, ply: state.ply + 1 };
   if (move.to === TICK) return state.endless ? { ...next, gone: state.gone + 1 } : { ...next, gone: state.gone + 1, left: state.left - 1, winner: state.left <= 1 ? 0 : null };
   if (move.to === LAY || move.to === FLIP || move.to === DRESS) return next;
+  if (move.to === BONUS) return state.endless ? next : { ...next, left: state.left + EXTRA };
   if (move.to === BURN) return { ...next, burnt: state.burnt + 1 };
   if (Number.isInteger(move.to) && move.to >= WRAP && move.to <= WRAP + FEAST) return { ...next, score: state.score + move.to - WRAP, wraps: state.wraps + 1 };
   const points = move.to - EAT;

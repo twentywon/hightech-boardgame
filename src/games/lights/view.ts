@@ -64,23 +64,15 @@ export class LightsView extends FlatView<State> {
     });
     s.on.forEach((lit, i) => {
       const { x, y } = at(i),
-        inset = cell * (0.08 + (this.dip?.cell === i ? 0.05 * Math.sin((1 - (this.dip.until - now) / 160) * Math.PI) : 0)),
-        size = cell - inset * 2,
-        face = pen.createLinearGradient(0, y, 0, y + cell);
-      if (lit) {
-        face.addColorStop(0, "#ffe07a");
-        face.addColorStop(1, "#ffb22e");
-      } else {
-        face.addColorStop(0, "#3d4656");
-        face.addColorStop(1, "#2c3340");
-      }
-      rounded(pen, x + inset, y + inset, size, size, size * 0.18);
-      pen.fillStyle = face;
+        press = this.dip?.cell === i ? 1 - 0.1 * Math.sin((1 - (this.dip.until - now) / 160) * Math.PI) : 1;
+      // The socket each bulb sits in: a shallow square of the panel.
+      rounded(pen, x + cell * 0.06, y + cell * 0.06, cell * 0.88, cell * 0.88, cell * 0.16);
+      pen.fillStyle = lit ? "#3a3626" : "#1b1f26";
       pen.fill();
-      // A lit edge above and a shaded one below make it a button.
-      pen.strokeStyle = lit ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.1)";
+      pen.strokeStyle = "rgba(255,255,255,0.07)";
       pen.lineWidth = 1.5 * this.ratio;
       pen.stroke();
+      this.bulb(pen, x + cell / 2, y + cell / 2, cell * 0.8 * press, lit);
     });
     const ring = (cell_: number | null | undefined, color: string, width: number) => {
       if (cell_ === null || cell_ === undefined || cell_ < 0 || cell_ >= s.on.length) return;
@@ -92,5 +84,71 @@ export class LightsView extends FlatView<State> {
     };
     ring(this.marks.hint?.to, "#ff4f38", 5);
     ring(this.marks.cursor, "#6fb0ff", 3.5);
+  }
+  /** A light bulb standing on its cap, `size` tall, lit or dark. */
+  private bulb(pen: CanvasRenderingContext2D, cx: number, cy: number, size: number, lit: boolean) {
+    const r = size * 0.33,
+      gy = cy - size * 0.13,
+      neck = size * 0.15,
+      capTop = gy + r * 0.86,
+      capTall = size * 0.2,
+      glass = pen.createRadialGradient(cx - r * 0.3, gy - r * 0.35, r * 0.05, cx, gy, r * 1.05);
+    if (lit) {
+      glass.addColorStop(0, "#fffbe6");
+      glass.addColorStop(0.45, "#ffe27a");
+      glass.addColorStop(1, "#ffa726");
+    } else {
+      glass.addColorStop(0, "#8a94a6");
+      glass.addColorStop(0.5, "#596274");
+      glass.addColorStop(1, "#3a4252");
+    }
+    // The glass: a ball drawn down into a neck.
+    pen.beginPath();
+    pen.arc(cx, gy, r, Math.PI * 0.72, Math.PI * 0.28, false);
+    pen.quadraticCurveTo(cx + neck * 1.25, capTop - size * 0.02, cx + neck, capTop + size * 0.02);
+    pen.lineTo(cx - neck, capTop + size * 0.02);
+    pen.quadraticCurveTo(cx - neck * 1.25, capTop - size * 0.02, cx + Math.cos(Math.PI * 0.72) * r, gy + Math.sin(Math.PI * 0.72) * r);
+    pen.closePath();
+    pen.fillStyle = glass;
+    pen.fill();
+    pen.strokeStyle = lit ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.16)";
+    pen.lineWidth = 1.5 * this.ratio;
+    pen.stroke();
+    // The filament: two posts and a coil between them.
+    pen.strokeStyle = lit ? "#fffef2" : "#252b36";
+    pen.lineWidth = Math.max(1, size * 0.022);
+    pen.lineCap = "round";
+    pen.beginPath();
+    pen.moveTo(cx - neck * 0.55, capTop);
+    pen.lineTo(cx - r * 0.34, gy + r * 0.05);
+    for (let k = 1; k <= 6; k++) pen.lineTo(cx - r * 0.34 + (r * 0.68 * k) / 6, gy + r * 0.05 + (k % 2 ? -r * 0.16 : 0));
+    pen.lineTo(cx + neck * 0.55, capTop);
+    pen.stroke();
+    // A glint on the glass.
+    pen.beginPath();
+    pen.ellipse(cx - r * 0.42, gy - r * 0.42, r * 0.2, r * 0.1, -0.8, 0, Math.PI * 2);
+    pen.fillStyle = lit ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)";
+    pen.fill();
+    // The screw cap and its contact.
+    const metal = pen.createLinearGradient(cx - neck, 0, cx + neck, 0);
+    metal.addColorStop(0, "#6f7682");
+    metal.addColorStop(0.45, "#d9dee6");
+    metal.addColorStop(1, "#5d6470");
+    rounded(pen, cx - neck, capTop + size * 0.015, neck * 2, capTall, size * 0.03);
+    pen.fillStyle = metal;
+    pen.fill();
+    pen.strokeStyle = "rgba(20,24,30,0.55)";
+    pen.lineWidth = Math.max(1, size * 0.016);
+    for (let k = 1; k <= 3; k++) {
+      const y = capTop + size * 0.015 + (capTall * k) / 4;
+      pen.beginPath();
+      pen.moveTo(cx - neck, y + size * 0.012);
+      pen.lineTo(cx + neck, y - size * 0.012);
+      pen.stroke();
+    }
+    pen.beginPath();
+    pen.ellipse(cx, capTop + size * 0.015 + capTall + size * 0.012, neck * 0.42, size * 0.028, 0, 0, Math.PI * 2);
+    pen.fillStyle = "#2a2f38";
+    pen.fill();
   }
 }

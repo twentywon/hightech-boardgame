@@ -2,8 +2,8 @@ import * as T from "three";
 import { wood } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { BEST, BURN, DRESS, EAT, FLIP, LAY, TICK, WRAP, type State } from "./rules";
-import { CHARRED, COAL, CUTS, DT, FILLING, GOOD, OVER, PORTION, RAW, RELISHES, SLOTS, createWorld, down, eatWrap, fill, flip, lay, leaf, relish, shift, step, take, type Happening, type Piece, type World } from "./sim";
+import { BEST, BONUS, BURN, DRESS, EAT, EXTRA, FLIP, LAY, TICK, WRAP, type State } from "./rules";
+import { CHARRED, COAL, CUTS, DT, FILLING, GOOD, OVER, PORTION, RAW, RELISHES, SLOTS, createWorld, down, eatWrap, flip, lay, leaf, relish, serve, shift, step, take, type Happening, type Piece, type World } from "./sim";
 import tableUrl from "./table.webp?inline";
 import bellyUrl from "./belly.webp?inline";
 import ribUrl from "./rib.webp?inline";
@@ -420,8 +420,7 @@ export class GrillView extends TableView<State> {
       else if (e.key >= "1" && e.key <= String(RELISHES.length)) this.report(relish(this.world, Number(e.key) - 1));
       else if (this.cursor < 0) return;
       else if (e.key === "Enter") this.report(this.cursor < PLATES.length ? lay(this.world, this.cursor) : place ? flip(this.world, slot) : eatWrap(this.world));
-      else if ((e.key === " " || e.key === "e" || e.key === "E" || e.key === "ㄷ") && place) this.report(take(this.world, slot));
-      else if ((e.key === "s" || e.key === "S" || e.key === "ㄴ") && place) this.report(fill(this.world, slot));
+      else if ((e.key === " " || e.key === "e" || e.key === "E" || e.key === "ㄷ" || e.key === "s" || e.key === "S" || e.key === "ㄴ") && place) this.report(serve(this.world, slot));
       else return;
       e.preventDefault();
     });
@@ -669,9 +668,11 @@ export class GrillView extends TableView<State> {
       }
       if (event.kind === "dress") move(DRESS);
       else if (event.kind === "wrap") {
-        const text = event.meats === 0 ? "채소만 먹었어요" : event.points === 0 ? "덜 익었어요" : event.leaf ? `쌈 +${event.points}` : `+${event.points}`;
-        this.say(text, event.leaf && event.points > 0 ? "#ffd24a" : "#dfe6ee", BOARD[0], BOARD[1], now);
+        const timed = event.bonus && !this.state?.endless,
+          text = event.meats === 0 ? "채소만 먹었어요" : event.points === 0 ? "덜 익었어요" : `쌈 +${event.points}${timed ? ` · 시간 +${EXTRA}초` : ""}`;
+        this.say(text, event.points > 0 ? "#ffd24a" : "#dfe6ee", BOARD[0], BOARD[1], now);
         move(WRAP + event.points);
+        if (event.bonus) move(BONUS);
       } else {
         const [x, z] = PLACES[event.slot];
         if (event.kind === "lay") move(LAY);
@@ -724,9 +725,9 @@ export class GrillView extends TableView<State> {
       onBoard = Math.hypot(at.x - BOARD[0], at.z - BOARD[1]) < BOARD[2] + 0.25,
       over = Math.hypot(at.x, at.z) < RIM;
     if (!grab.moved) {
-      // Nothing is laid by a tap: only a piece already on the grill answers one (it turns, or, held a while, is taken off), and the wrap plate (what is on it is eaten).
+      // Nothing is laid by a tap: only a piece already on the grill answers one (it turns), and the wrap plate (what is on it is eaten).
       if (point === WRAPPING) this.report(eatWrap(this.world));
-      else if (point >= PLACE && point < PLATE) this.report(performance.now() - grab.at > 450 ? take(this.world, point - PLACE) : flip(this.world, point - PLACE));
+      else if (point >= PLACE && point < PLATE) this.report(flip(this.world, point - PLACE));
       return;
     }
     if (point >= DISH && point < WRAPPING) {
@@ -741,8 +742,10 @@ export class GrillView extends TableView<State> {
     } else if (point >= PLACE && point < PLATE) {
       const slot = point - PLACE,
         place = this.placeAt(at);
-      if (onBoard) this.report(fill(this.world, slot));
-      else if (!over) this.report(take(this.world, slot));
+      // Onto the large plate it is eaten, or wrapped when a leaf lies there. Set down anywhere else off the grill it goes
+      // back where it was, unless it is burnt: that is thrown away.
+      if (onBoard) this.report(serve(this.world, slot));
+      else if (!over) this.report(this.world.slots[slot]?.burnt ? take(this.world, slot) : []);
       else if (place >= 0) shift(this.world, slot, place);
     }
   }

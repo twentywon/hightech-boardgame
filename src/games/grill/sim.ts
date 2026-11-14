@@ -64,7 +64,7 @@ export type Happening =
   | { kind: "discard"; slot: number }
   | { kind: "burn"; slot: number }
   | { kind: "dress" }
-  | { kind: "wrap"; points: number; meats: number; leaf: boolean };
+  | { kind: "wrap"; points: number; meats: number; bonus: boolean };
 /** What a side is worth when the piece is eaten. */
 export const grade = (done: number) => (done < RAW ? 0 : done < GOOD ? 1 : done <= OVER ? 3 : done < CHARRED ? 1 : 0);
 /** What a piece is worth: nothing while a side is raw. */
@@ -108,31 +108,38 @@ export function leaf(world: World): Happening[] {
   world.wrap.leaf = true;
   return [{ kind: "dress" }];
 }
-/** A piece goes from the grill onto the wrap plate; a burnt one is not taken. */
+/** A piece goes from the grill into the leaf on the wrap plate; without a leaf there is no wrap, and a burnt one is not taken. */
 export function fill(world: World, slot: number): Happening[] {
   const piece = world.slots[slot];
-  if (!piece || piece.burnt || world.wrap.meats.length >= FILLING) return [];
+  if (!piece || !world.wrap.leaf || piece.burnt || world.wrap.meats.length >= FILLING) return [];
   world.slots[slot] = null;
   world.wrap.meats.push(piece);
   return [{ kind: "dress" }];
 }
-/** A relish is added to the wrap plate, once each. */
+/** A relish is added to the leaf on the wrap plate, once each. */
 export function relish(world: World, which: number): Happening[] {
-  if (!(which >= 0 && which < RELISHES.length) || world.wrap.relishes.includes(which)) return [];
+  if (!world.wrap.leaf || !(which >= 0 && which < RELISHES.length) || world.wrap.relishes.includes(which)) return [];
   world.wrap.relishes.push(which);
   return [{ kind: "dress" }];
 }
 /**
- * What is on the wrap plate is eaten: its pieces for what they are worth,
- * and, when they lie in a leaf and are worth something, two more for the
- * wrap and one for each relish up to three.
+ * A piece is carried from the grill to the large plate: into the leaf when
+ * one lies there, and otherwise eaten at once for what it is worth (a burnt
+ * one is thrown away).
+ */
+export const serve = (world: World, slot: number): Happening[] => (world.wrap.leaf && !world.slots[slot]?.burnt ? fill(world, slot) : take(world, slot));
+/**
+ * The wrap is eaten: its pieces for what they are worth and, when they are
+ * worth something, two more for the leaf and one for each relish up to
+ * three. A wrap with a piece worth something and a relish is a whole one
+ * (`bonus`), which the clock rewards.
  */
 export function eatWrap(world: World): Happening[] {
   const { wrap } = world;
-  if (!wrap.leaf && !wrap.meats.length && !wrap.relishes.length) return [];
+  if (!wrap.leaf) return [];
   const meat = wrap.meats.reduce((sum, piece) => sum + worth(piece), 0),
-    points = meat + (wrap.leaf && meat > 0 ? 2 + Math.min(3, wrap.relishes.length) : 0),
-    told: Happening = { kind: "wrap", points, meats: wrap.meats.length, leaf: wrap.leaf };
+    points = meat + (meat > 0 ? 2 + Math.min(3, wrap.relishes.length) : 0),
+    told: Happening = { kind: "wrap", points, meats: wrap.meats.length, bonus: meat > 0 && wrap.relishes.length > 0 };
   world.wrap = { leaf: false, meats: [], relishes: [] };
   return [told];
 }
