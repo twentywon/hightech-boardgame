@@ -1,0 +1,15 @@
+Hwatu card images in Seotda
+
+The twenty flower-card images are reduced-size renderings of SVG files from
+Wikimedia Commons, used under the Creative Commons Attribution-ShareAlike 4.0
+International licence (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/
+
+- "Hwatu <Month> gwang.svg", "Hwatu <Month> yul.svg", "Hwatu <Month> tti.svg"
+  for January to October (eighteen files), by Mliu92.
+- "Hwatu May Tane.svg" and "Hwatu September Tane.svg", by Spenĉjo, after
+  artwork by Marcus Richert and Louie Mantia.
+
+Source: https://commons.wikimedia.org/wiki/Category:Hwatu
+Changes: rendered at 250 px width and re-encoded as WebP; in the game a small
+month number is drawn over one corner. The image files under
+src/games/seotda/cards/ remain available under CC BY-SA 4.0.

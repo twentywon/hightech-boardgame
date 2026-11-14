@@ -1,0 +1,397 @@
+{
+  "method": "Three individual positions at default budgets; synchronous search only; not a strength evaluation or tournament",
+  "summary": [
+    {
+      "difficulty": "beginner",
+      "meanMs": 19.030519666666635,
+      "maxMs": 26.996988999999985,
+      "depths": [
+        0,
+        0,
+        0
+      ],
+      "nodes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "difficulty": "easy",
+      "meanMs": 253.479462,
+      "maxMs": 300.87716900000004,
+      "depths": [
+        1,
+        1,
+        2
+      ],
+      "nodes": [
+        222,
+        92,
+        200
+      ]
+    },
+    {
+      "difficulty": "normal",
+      "meanMs": 1002.6235543333332,
+      "maxMs": 1003.7101960000005,
+      "depths": [
+        2,
+        2,
+        3
+      ],
+      "nodes": [
+        814,
+        490,
+        2483
+      ]
+    },
+    {
+      "difficulty": "hard",
+      "meanMs": 2001.4691976666666,
+      "maxMs": 2002.974615,
+      "depths": [
+        3,
+        2,
+        4
+      ],
+      "nodes": [
+        1539,
+        812,
+        2347
+      ]
+    },
+    {
+      "difficulty": "expert",
+      "meanMs": 3002.500554333333,
+      "maxMs": 3003.4807849999997,
+      "depths": [
+        3,
+        2,
+        3
+      ],
+      "nodes": [
+        1315,
+        515,
+        1733
+      ]
+    }
+  ],
+  "samples": [
+    {
+      "difficulty": "beginner",
+      "position": "opening",
+      "budgetMs": 100,
+      "move": {
+        "from": "b1",
+        "to": "c3"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 0,
+        "qNodes": 0,
+        "depth": 0,
+        "elapsedMs": 21.954133999999954,
+        "timedOut": false,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 36,
+        "reason": "evaluation"
+      }
+    },
+    {
+      "difficulty": "beginner",
+      "position": "development",
+      "budgetMs": 100,
+      "move": {
+        "from": "f3",
+        "to": "e5"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 0,
+        "qNodes": 0,
+        "depth": 0,
+        "elapsedMs": 26.996988999999985,
+        "timedOut": false,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 148,
+        "reason": "evaluation"
+      }
+    },
+    {
+      "difficulty": "beginner",
+      "position": "rook ending",
+      "budgetMs": 100,
+      "move": {
+        "from": "g2",
+        "to": "g4"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 0,
+        "qNodes": 0,
+        "depth": 0,
+        "elapsedMs": 8.140435999999966,
+        "timedOut": false,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 578,
+        "reason": "evaluation"
+      }
+    },
+    {
+      "difficulty": "easy",
+      "position": "opening",
+      "budgetMs": 300,
+      "move": {
+        "from": "b1",
+        "to": "c3"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 222,
+        "qNodes": 0,
+        "depth": 1,
+        "elapsedMs": 300.87716900000004,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 8,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "easy",
+      "position": "development",
+      "budgetMs": 300,
+      "move": {
+        "from": "c4",
+        "to": "f7"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 92,
+        "qNodes": 0,
+        "depth": 1,
+        "elapsedMs": 300.18352400000003,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 82,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "easy",
+      "position": "rook ending",
+      "budgetMs": 300,
+      "move": {
+        "from": "g2",
+        "to": "g4"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 200,
+        "qNodes": 0,
+        "depth": 2,
+        "elapsedMs": 159.3776929999999,
+        "timedOut": false,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 611,
+        "reason": "search"
+      }
+    },
+    {
+      "difficulty": "normal",
+      "position": "opening",
+      "budgetMs": 1000,
+      "move": {
+        "from": "e2",
+        "to": "e4"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 814,
+        "qNodes": 702,
+        "depth": 2,
+        "elapsedMs": 1000.4788409999999,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 50,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "normal",
+      "position": "development",
+      "budgetMs": 1000,
+      "move": {
+        "from": "b1",
+        "to": "c3"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 490,
+        "qNodes": 454,
+        "depth": 2,
+        "elapsedMs": 1003.6816259999996,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 72,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "normal",
+      "position": "rook ending",
+      "budgetMs": 1000,
+      "move": {
+        "from": "e1",
+        "to": "a1"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 2483,
+        "qNodes": 2092,
+        "depth": 3,
+        "elapsedMs": 1003.7101960000005,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 604,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "hard",
+      "position": "opening",
+      "budgetMs": 2000,
+      "move": {
+        "from": "b1",
+        "to": "c3"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 1539,
+        "qNodes": 1266,
+        "depth": 3,
+        "elapsedMs": 2000.7278579999993,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 4,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "hard",
+      "position": "development",
+      "budgetMs": 2000,
+      "move": {
+        "from": "b1",
+        "to": "c3"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 812,
+        "qNodes": 750,
+        "depth": 2,
+        "elapsedMs": 2002.974615,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 72,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "hard",
+      "position": "rook ending",
+      "budgetMs": 2000,
+      "move": {
+        "from": "e1",
+        "to": "a1"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 2347,
+        "qNodes": 1773,
+        "depth": 4,
+        "elapsedMs": 2000.7051200000005,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 607,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "expert",
+      "position": "opening",
+      "budgetMs": 3000,
+      "move": {
+        "from": "b1",
+        "to": "c3"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 1315,
+        "qNodes": 1163,
+        "depth": 3,
+        "elapsedMs": 3000.884770999999,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 4,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "expert",
+      "position": "development",
+      "budgetMs": 3000,
+      "move": {
+        "from": "b1",
+        "to": "c3"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 515,
+        "qNodes": 480,
+        "depth": 2,
+        "elapsedMs": 3003.1361070000003,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 72,
+        "reason": "budget"
+      }
+    },
+    {
+      "difficulty": "expert",
+      "position": "rook ending",
+      "budgetMs": 3000,
+      "move": {
+        "from": "e1",
+        "to": "a1"
+      },
+      "claim": false,
+      "stats": {
+        "nodes": 1733,
+        "qNodes": 1245,
+        "depth": 3,
+        "elapsedMs": 3003.4807849999997,
+        "timedOut": true,
+        "nodeLimited": false,
+        "tableHits": 0,
+        "score": 589,
+        "reason": "budget"
+      }
+    }
+  ]
+}

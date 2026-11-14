@@ -1,0 +1,9 @@
+Recorded sound effects
+
+The dice, card and chip sounds are taken from "Casino Audio" (1.1) by Kenney
+Vleugels (www.kenney.nl), released under Creative Commons Zero (CC0),
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Source: https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips
+Changes: twelve of the files were converted from Ogg Vorbis to 22.05 kHz mono
+WAV, trimmed and levelled (src/engine/sounds/).

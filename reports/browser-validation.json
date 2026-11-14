@@ -1,0 +1,101 @@
+{
+  "sourceCommand": "CHROMIUM_PATH=/usr/bin/chromium npm exec -- playwright test --reporter=json",
+  "server": "fresh production build and isolated Vite preview",
+  "renderer": "Chromium SwiftShader",
+  "measurementWindowMs": 1600,
+  "stats": {
+    "startTime": "2026-11-10T07:06:40.725Z",
+    "duration": 179022.232,
+    "expected": 12,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "cases": [
+    {
+      "project": "desktop",
+      "name": "menu, actual WebGL moves, persistence, camera and restart",
+      "status": "passed",
+      "durationMs": 18841
+    },
+    {
+      "project": "mobile",
+      "name": "menu, actual WebGL moves, persistence, camera and restart",
+      "status": "passed",
+      "durationMs": 20123
+    },
+    {
+      "project": "desktop",
+      "name": "AI responds and settings persist",
+      "status": "passed",
+      "durationMs": 8855
+    },
+    {
+      "project": "mobile",
+      "name": "AI responds and settings persist",
+      "status": "passed",
+      "durationMs": 6775
+    },
+    {
+      "project": "desktop",
+      "name": "five difficulties, white opening, next-game policy and persisted preferences",
+      "status": "passed",
+      "durationMs": 13770
+    },
+    {
+      "project": "mobile",
+      "name": "five difficulties, white opening, next-game policy and persisted preferences",
+      "status": "passed",
+      "durationMs": 21533
+    },
+    {
+      "project": "desktop",
+      "name": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "status": "passed",
+      "durationMs": 29623,
+      "frameMeasurement": {
+        "count": 93,
+        "max": 63.19999999999982
+      }
+    },
+    {
+      "project": "mobile",
+      "name": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "status": "passed",
+      "durationMs": 23307,
+      "frameMeasurement": {
+        "count": 66,
+        "max": 366.6999999999998
+      }
+    },
+    {
+      "project": "desktop",
+      "name": "random color is resolved once and retained when resuming",
+      "status": "passed",
+      "durationMs": 9808
+    },
+    {
+      "project": "mobile",
+      "name": "random color is resolved once and retained when resuming",
+      "status": "passed",
+      "durationMs": 10228
+    },
+    {
+      "project": "desktop",
+      "name": "AI selection remains usable when storage writes are blocked",
+      "status": "passed",
+      "durationMs": 5250
+    },
+    {
+      "project": "mobile",
+      "name": "AI selection remains usable when storage writes are blocked",
+      "status": "passed",
+      "durationMs": 5059
+    }
+  ],
+  "notes": [
+    "Earlier worker-start checks assumed a fixed delay; final tests wait for the actual Worker event.",
+    "Earlier software-rendering startup/restart flows timed out. Idle rendering now skips unchanged frames and scene disposal releases shadow maps and the WebGL context. The overall per-test limit is 60 seconds; AI search budgets are unchanged.",
+    "Frame measurements are two cloud samples, not a real-device FPS guarantee."
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "protocol": "http:",
+  "singleDocumentOnly": true,
+  "directFile": {
+    "verified": false,
+    "error": "ERR_BLOCKED_BY_ADMINISTRATOR"
+  },
+  "results": [
+    {
+      "game": "gomoku",
+      "moves": 3,
+      "aiOpeningAndReply": true
+    },
+    {
+      "game": "reversi",
+      "moves": 3,
+      "aiOpeningAndReply": true
+    }
+  ],
+  "externalRequests": [],
+  "pageErrors": [],
+  "workers": [
+    "blob",
+    "blob",
+    "blob",
+    "blob"
+  ]
+}

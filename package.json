@@ -1,0 +1,30 @@
+{
+  "name": "world-table-games",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "ai:evaluate": "vitest run --config evaluation.config.ts",
+    "reversi:evaluate": "vitest run --config reversi-evaluation.config.ts",
+    "build:html": "npm run build && node scripts/export-html.mjs",
+    "chess:measure": "vitest run --config chess-performance.config.ts",
+    "e2e": "playwright test --trace off && PW_WORKERS=1 playwright test --trace off --grep @alone"
+  },
+  "dependencies": {
+    "chess.js": "1.4.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
+  }
+}
