@@ -128,7 +128,8 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
   expect(errors).toEqual([]);
 });
 
-test("chess AI stays responsive, cancels old work and applies settings only to a new game", async ({
+// @alone: it counts animation frames while a Worker thinks, which other browsers running beside it would spoil.
+test("chess AI stays responsive, cancels old work and applies settings only to a new game @alone", async ({
   page,
 }, info) => {
   test.setTimeout(120000);
