@@ -65,6 +65,10 @@ function numberDisc(id: number) {
 }
 /** A pool table under a lamp in a pub. */
 export class PoolView extends FlickView<State> {
+  /** White against the cloth. */
+  protected aimColor() {
+    return "#ffffff";
+  }
   private meshes: T.Object3D[] = [];
   private ring: T.Mesh;
   /** A wider white ring round the cue ball while it may be put down by hand. */

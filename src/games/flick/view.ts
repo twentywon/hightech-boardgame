@@ -16,12 +16,35 @@ export abstract class FlickView<S> extends TableView<S> {
   protected top = 0;
   constructor(host: HTMLElement, quality: "high" | "low", clear: string) {
     super(host, quality, clear);
-    const bar = this.own(new T.BoxGeometry(1, 0.03, 0.09));
-    this.arrow = new T.Mesh(bar, this.own(new T.MeshBasicMaterial({ color: "#ffd24a", depthTest: false, transparent: true, opacity: 0.95 })));
-    this.pull = new T.Mesh(bar, this.own(new T.MeshBasicMaterial({ color: "#ffffff", depthTest: false, transparent: true, opacity: 0.5 })));
+    // The line of aim and the line of the pull: thin and dashed (the user asked), black unless a table says otherwise.
+    const bar = this.own(new T.PlaneGeometry(1, 0.05).rotateX(-Math.PI / 2)),
+      dashes = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 16;
+        canvas.height = 4;
+        const pen = canvas.getContext("2d")!;
+        pen.fillStyle = "#ffffff";
+        pen.fillRect(0, 0, 9, 4);
+        const texture = this.own(new T.CanvasTexture(canvas));
+        texture.wrapS = T.RepeatWrapping;
+        texture.magFilter = T.NearestFilter;
+        return texture;
+      },
+      line = (opacity: number) => new T.Mesh(bar, this.own(new T.MeshBasicMaterial({ color: this.aimColor(), map: dashes(), depthTest: false, transparent: true, opacity, side: T.DoubleSide })));
+    this.arrow = line(0.95);
+    this.pull = line(0.45);
     this.arrow.renderOrder = this.pull.renderOrder = 9;
     this.arrow.visible = this.pull.visible = false;
     this.scene.add(this.arrow, this.pull);
+  }
+  /** The colour of the aiming line. */
+  protected aimColor() {
+    return "#111111";
+  }
+  /** Stretches a dashed line to a length, keeping its dashes the same size. */
+  private stretch(mesh: T.Mesh, length: number) {
+    mesh.scale.set(length, 1, 1);
+    (mesh.material as T.MeshBasicMaterial).map!.repeat.x = length / 0.22;
   }
   /** The discs of a state at rest, and the table they lie on. */
   protected abstract discs(state: S): Disc[];
@@ -110,16 +133,16 @@ export abstract class FlickView<S> extends TableView<S> {
     aim.degrees = (Math.atan2(dz, dx) * 180) / Math.PI;
     aim.power = Math.min(POWERS, Math.round(length * 7));
     const show = aim.power >= 1,
-      reach = 0.4 + aim.power * 0.16;
+      reach = 0.6 + aim.power * 0.3;
     this.arrow.visible = this.pull.visible = show;
     const angle = Math.atan2(dz, dx);
     this.aimed(show ? { x: aim.x, z: aim.z, angle, power: aim.power } : null);
     if (!show) return;
     this.arrow.position.set(aim.x + (Math.cos(angle) * reach) / 2, this.top + 0.25, aim.z + (Math.sin(angle) * reach) / 2);
-    this.arrow.scale.set(reach, 1, 1 + aim.power / POWERS);
+    this.stretch(this.arrow, reach);
     this.arrow.rotation.y = -angle;
     this.pull.position.set((aim.x + at.x) / 2, this.top + 0.25, (aim.z + at.z) / 2);
-    this.pull.scale.set(length, 1, 0.5);
+    this.stretch(this.pull, length);
     this.pull.rotation.y = -angle;
   }
   protected dragEnd(at: { x: number; z: number } | null) {

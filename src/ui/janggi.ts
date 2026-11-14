@@ -1,4 +1,4 @@
-import { mirrorStatus } from "./banner";
+import { mirrorStatus, shout } from "./banner";
 import { dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import {
@@ -401,6 +401,11 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     const check = !state.outcome && inCheck(state),
       last = state.moves.at(-1) ?? null,
       score = points(state.board);
+    // 장군 is told once, large, when the position comes up.
+    if (check && $("board").dataset.checked !== String(state.moves.length)) {
+      $("board").dataset.checked = String(state.moves.length);
+      shout("장군");
+    }
     $("board").dataset.animating = String(!!view?.animating);
     $("board").dataset.facing = facing;
     $("board").dataset.top = String(top);

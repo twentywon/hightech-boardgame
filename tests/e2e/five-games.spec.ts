@@ -89,7 +89,7 @@ test("indian poker: I see only the other card, and a call ends the round", async
     moved = await count(page).innerText();
   await expect(decide).toHaveText("결정 · 체크");
   await expect(tools.getByRole("button", { name: "− 내리기" })).toBeDisabled();
-  for (let i = 0; i < 3; i++) await tools.getByRole("button", { name: "+ 올리기" }).click();
+  for (let i = 0; i < 3; i++) await tools.getByRole("button", { name: "+ 베팅 올리기" }).click();
   await tools.getByRole("button", { name: "− 내리기" }).click();
   await expect(decide).toHaveText("결정 · 베팅 2");
   await expect(page.locator("#turn")).toContainText("내 베팅 2");

@@ -40,6 +40,19 @@ export function cheer(text: string) {
   setTimeout(() => el.remove(), 1900);
 }
 
+/** A word across the middle of the table, white and heavy, for a moment: check in chess, 장군 in janggi. */
+export function shout(text: string) {
+  const board = document.querySelector<HTMLElement>(".board-area");
+  if (!board || capturing()) return;
+  board.querySelector(".board-shout")?.remove();
+  const el = document.createElement("div");
+  el.className = "board-shout";
+  el.setAttribute("aria-hidden", "true");
+  el.textContent = text;
+  board.append(el);
+  setTimeout(() => el.remove(), 1500);
+}
+
 /**
  * The 파산 stamp (the user's own picture) for a player who has run out of
  * money. Without a target it comes down large in the middle of the table and

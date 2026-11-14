@@ -1,4 +1,4 @@
-import { mirrorStatus } from "./banner";
+import { mirrorStatus, shout } from "./banner";
 import { dress, resultArt } from "./chrome";
 import {
   type AIOptions,
@@ -484,6 +484,11 @@ export function mountChess(
       moves = snapshot().moves,
       last = moves.at(-1),
       check = game.isCheck();
+    // A check is told once, large, when the position comes up.
+    if (check && !state.outcome && $("board").dataset.checked !== String(moves.length)) {
+      $("board").dataset.checked = String(moves.length);
+      shout("체크");
+    }
     $("board").dataset.animating = String(!!view?.animating);
     $("board").dataset.facing = facing;
     $("board").dataset.top = String(top);

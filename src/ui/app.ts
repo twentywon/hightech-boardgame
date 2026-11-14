@@ -340,7 +340,7 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
         // The chosen game's panel opens under its own row of the grid: it follows its tile and spans every column.
         expanded ? `<div class="game-stage" data-category="${g.category}" data-players="${g.players}" ${out ? "hidden" : ""}><div id="game-detail" class="game-detail" role="region" aria-label="${g.name} 대국 설정">${selected === "gomoku" ? gomokuSetup() : ""}</div></div>` : ""
       }`;
-    }).join("")}</div>${selected ? "" : `<p class="rail-hint">게임을 누르면 설명과 시작 버튼이 그 줄 아래에 펼쳐집니다.</p>`}<footer><span>World Table Games</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
+    }).join("")}</div><footer><span>World Table Games</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;
   bindHeader();
   // The collection has no bar across its top: the settings button stands in the corner of the title block instead.
   document.querySelector(".hero")?.append($("settings"));

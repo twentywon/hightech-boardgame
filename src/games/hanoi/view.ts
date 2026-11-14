@@ -24,8 +24,9 @@ export class HanoiView extends TableView<State> {
   private arrow = new T.Group();
   private lifted: number | null = null;
   /** The peg whose top disc the pointer carries, and where it is carried; then where it was let go, for the fall. */
-  private held: { peg: number; x: number } | null = null;
-  private dropped: number | null = null;
+  private held: { peg: number; on: number | null; x: number; y: number; dy: number } | null = null;
+  private dropped: { x: number; y: number } | null = null;
+  private turned = new Map<number, T.BufferGeometry>();
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#d9cdb8");
     this.daylight("#fff8ec", "#8a6f52", "#fff0d2", 9, 2.2);
@@ -41,11 +42,8 @@ export class HanoiView extends TableView<State> {
       this.add(new T.SphereGeometry(0.15, 20, 14), brass, x, BASE + PEG_TALL, 0);
       this.add(new T.CylinderGeometry(0.3, 0.34, 0.08, 28), brass, x, BASE + 0.04, 0);
     }
-    // A disc turned on a lathe: flat faces and a rounded rim.
-    const profile = [[0, 0], [0.9, 0], [0.98, 0.05], [1, 0.14], [1, THICK - 0.14], [0.98, THICK - 0.05], [0.9, THICK], [0, THICK]].map(([r, y]) => new T.Vector2(r, y)),
-      turned = this.own(new T.LatheGeometry(profile, 56));
     for (let i = 0; i < MAX; i++) {
-      const disc = new T.Mesh(turned, this.standard({ color: GLAZE[i], roughness: 0.25 }));
+      const disc = new T.Mesh(this.lathe(1), this.standard({ color: GLAZE[i], roughness: 0.25 }));
       disc.castShadow = disc.receiveShadow = true;
       disc.visible = false;
       this.discs.push(disc);
@@ -67,30 +65,69 @@ export class HanoiView extends TableView<State> {
     this.begin();
   }
   /** A disc is carried by the pointer from its peg and let go over another: nothing moves by a tap. */
-  protected dragStart(point: number) {
+  /** How high a disc carried to a peg may come down on it: onto what lies there (its own place, on the peg it came from). */
+  private floorOn(state: State, peg: number, from: number) {
+    return BASE + (state.pegs[peg].length - (peg === from ? 1 : 0)) * THICK;
+  }
+  /** Whether the top disc of `from` may lie on `peg`. */
+  private fits(state: State, from: number, peg: number) {
+    return peg === from || state.pegs[from][state.pegs[from].length - 1] < (state.pegs[peg][state.pegs[peg].length - 1] ?? Infinity);
+  }
+  protected dragStart(point: number, at: { x: number; y: number; z: number }) {
     const state = this.state;
     if (!state || state.winner !== null || point < 0 || point >= PEGS || !state.pegs[point].length) return false;
-    this.held = { peg: point, x: PEG_X[point] };
-    this.place(state);
+    // The disc stays where it lies until the pointer draws it up the peg.
+    const y = this.floorOn(state, point, point);
+    this.held = { peg: point, on: point, x: PEG_X[point], y, dy: y - at.y };
     return true;
   }
-  protected dragMove(at: { x: number; z: number }) {
-    if (!this.held || !this.state) return;
-    this.held.x = Math.max(-5.2, Math.min(5.2, at.x));
-    this.place(this.state);
+  protected dragMove(at: { x: number; y: number; z: number }) {
+    const held = this.held,
+      state = this.state;
+    if (!held || !state) return;
+    const wantX = Math.max(-5.2, Math.min(5.2, at.x)),
+      wantY = Math.min(this.above + 2.2, at.y + held.dy);
+    if (held.on !== null) {
+      // Threaded on a peg: it slides up and down, and comes free above the peg's top.
+      held.x = PEG_X[held.on];
+      held.y = Math.max(this.floorOn(state, held.on, held.peg), wantY);
+      if (held.y >= this.above) held.on = null;
+    }
+    if (held.on === null) {
+      held.x = wantX;
+      const near = PEG_X.findIndex((x) => Math.abs(x - wantX) < 0.4);
+      if (wantY >= this.above) held.y = wantY;
+      else if (near >= 0 && this.fits(state, held.peg, near)) {
+        // Brought down over a peg it may lie on: it goes onto that peg.
+        held.on = near;
+        held.x = PEG_X[near];
+        held.y = Math.max(this.floorOn(state, near, held.peg), wantY);
+      } else held.y = this.above;
+    }
+    this.place(state);
   }
-  protected dragEnd(at: { x: number; z: number } | null) {
+  protected dragEnd(at: { x: number; y: number; z: number } | null) {
     const held = this.held,
       state = this.state;
     this.held = null;
     if (!held || !state) return;
-    const to = at ? PEG_X.reduce((best, x, peg) => (Math.abs(x - at.x) < Math.abs(PEG_X[best] - at.x) ? peg : best), 0) : held.peg,
-      disc = state.pegs[held.peg][state.pegs[held.peg].length - 1],
-      under = state.pegs[to][state.pegs[to].length - 1] ?? Infinity;
+    const to = !at ? held.peg : (held.on ?? PEG_X.reduce((best, x, peg) => (Math.abs(x - held.x) < Math.abs(PEG_X[best] - held.x) ? peg : best), 0));
     // Let go over its own peg, or over a smaller disc: it goes back where it was.
-    if (to === held.peg || disc > under) return this.place(state);
-    this.dropped = held.x;
+    if (to === held.peg || !this.fits(state, held.peg, to)) return this.place(state);
+    this.dropped = { x: held.x, y: held.y };
     this.onMove({ from: held.peg, to, extra: -1 });
+  }
+  /** A disc of a width, turned on a lathe: flat faces, a rounded rim, and a hole through its middle for the peg. Made once for each width. */
+  private lathe(r: number) {
+    const key = Math.round(r * 1000);
+    let geometry = this.turned.get(key);
+    if (!geometry) {
+      const hole = 0.17,
+        profile = [[hole, 0], [r - 0.1, 0], [r - 0.02, 0.05], [r, 0.14], [r, THICK - 0.14], [r - 0.02, THICK - 0.05], [r - 0.1, THICK], [hole, THICK], [hole, 0]].map(([x, y]) => new T.Vector2(x, y));
+      geometry = this.own(new T.LatheGeometry(profile, 56));
+      this.turned.set(key, geometry);
+    }
+    return geometry;
   }
   /** Where the `level`-th disc from the bottom of a peg lies. */
   private rest(peg: number, level: number) {
@@ -113,9 +150,10 @@ export class HanoiView extends TableView<State> {
           at = this.rest(p, level),
           // The top disc of the chosen peg hangs over it.
           top = level === peg.length - 1 && state.winner === null,
-          up = top && (this.lifted === p || this.held?.peg === p);
-        disc.scale.set(r, 1, r);
-        disc.position.set(top && this.held?.peg === p ? this.held.x : at.x, up ? this.above : at.y, 0);
+          up = top && this.lifted === p;
+        disc.geometry = this.lathe(r);
+        if (top && this.held?.peg === p) disc.position.set(this.held.x, this.held.y, 0);
+        else disc.position.set(at.x, up ? this.above : at.y, 0);
       }),
     );
   }
@@ -135,11 +173,12 @@ export class HanoiView extends TableView<State> {
     this.place(before);
     if (carried !== null) {
       // Let go by the pointer: it slides over its peg and comes down.
-      disc.position.set(carried, this.above, 0);
-      this.tween(0, 110, (p) => (disc.position.x = carried + (end.x - carried) * ease(p)));
-      this.tween(110, 190, (p) => {
+      const slide = Math.abs(carried.x - end.x) > 0.01 ? 110 : 0;
+      disc.position.set(carried.x, carried.y, 0);
+      if (slide) this.tween(0, slide, (p) => (disc.position.x = carried.x + (end.x - carried.x) * ease(p)));
+      this.tween(slide, 190, (p) => {
         disc.position.x = end.x;
-        disc.position.y = this.above + (end.y - this.above) * p * p;
+        disc.position.y = carried.y + (end.y - carried.y) * p * p;
         if (p === 1) this.onContact();
       });
       return true;

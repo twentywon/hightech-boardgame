@@ -45,7 +45,8 @@ export interface PointConfig<S> {
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
   /** `show` keeps a tool in place (greyed) while its move is not legal; `text` rewrites its label for the state. */
-  tools?: { label: string; point: number; onBoard?: boolean; show?: (state: S) => boolean; text?: (state: S) => string; area?: string; name?: string }[];
+  /** `keep` holds a tool's place, unseen, while its move is not legal, so that the buttons beside it do not shift. */
+  tools?: { label: string; point: number; onBoard?: boolean; show?: (state: S) => boolean; keep?: (state: S) => boolean; text?: (state: S) => string; area?: string; name?: string }[];
   /** Extra time, in milliseconds, the computer takes over the move it is about to make. */
   ponder?: (state: S) => number;
   /** No panel beside the table: the table takes the whole width (the panel stays in the page, unseen, for readers). */
@@ -599,7 +600,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     (config.tools ?? []).forEach((tool, i) => {
       const button = $<HTMLButtonElement>(`pg-tool-${i}`);
       const legal = game.moves(s).some((m) => m.to === tool.point);
-      button.hidden = done || !(tool.show ? tool.show(s) : legal);
+      const kept = !done && !legal && !!tool.keep?.(s);
+      button.hidden = done || !(tool.show ? tool.show(s) : legal || kept);
+      button.style.visibility = kept ? "hidden" : "";
       button.disabled = waiting || bot || !legal;
       if (tool.text) button.textContent = tool.text(s);
     });

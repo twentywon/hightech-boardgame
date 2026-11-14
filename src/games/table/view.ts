@@ -82,7 +82,7 @@ export abstract class TableView<S> implements PointView<S> {
     const ground = (e: PointerEvent) => {
       aim(this.ray, e, el, this.camera);
       const hit = new T.Vector3();
-      return this.ray.ray.intersectPlane(this.floor, hit) ? { x: hit.x, z: hit.z } : null;
+      return this.ray.ray.intersectPlane(this.floor, hit) ? { x: hit.x, y: hit.y, z: hit.z } : null;
     };
     el.addEventListener("pointerdown", (e) => {
       down = e.pointerType === "mouse" && e.button !== 0 ? null : e.pointerId;
@@ -182,12 +182,13 @@ export abstract class TableView<S> implements PointView<S> {
   /** The plane a dragged pointer is followed on. */
   protected floor = new T.Plane(new T.Vector3(0, 1, 0), 0);
   /** A press on `point` (or -1) at a place on the floor; true to follow it as a drag instead of a pick. */
-  protected dragStart(_point: number, _at: { x: number; z: number }) {
+  /** `y` is the height of that place, which matters only when the floor is an upright plane. */
+  protected dragStart(_point: number, _at: { x: number; y: number; z: number }) {
     return false;
   }
-  protected dragMove(_at: { x: number; z: number }) {}
+  protected dragMove(_at: { x: number; y: number; z: number }) {}
   /** The drag is let go at a place on the floor, or abandoned (null). */
-  protected dragEnd(_at: { x: number; z: number } | null) {}
+  protected dragEnd(_at: { x: number; y: number; z: number } | null) {}
   /** Drops every running tween without laying the state out: the caller does that. */
   protected settleNow() {
     this.tweens = [];
