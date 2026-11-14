@@ -286,8 +286,9 @@ test("chess planned-move repetition claim ends the game without executing the de
   await page.getByRole("button", { name: "무승부 청구", exact: true }).click();
   await expect(page.locator("#turn")).toContainText("무승부");
   await expect(page.locator("#move-count")).toHaveText("7수");
-  await expect(page.getByRole("button", { name: "게임판 보기" })).toBeVisible();
-  await page.getByRole("button", { name: "게임판 보기" }).click();
+  // No window comes up at the end: the status line tells the result.
+  await page.waitForTimeout(1200);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
   await page.evaluate(() => {
     window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
     window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));

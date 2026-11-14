@@ -117,6 +117,9 @@ test("gomoku: game result survives page suspension while settings are open", asy
   await page.waitForTimeout(1200);
   await expect(page.getByRole("heading", { name: "나만의 테이블" })).toBeVisible();
   await page.getByRole("button", { name: "설정 저장" }).click();
-  await expect(page.getByRole("button", { name: "게임판 보기" })).toBeVisible({ timeout: 15000 });
+  // No window comes up at the end: the result stays in the status line.
+  await page.waitForTimeout(1500);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("#turn")).toContainText(/승리|무승부/);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("wtg.settings.v1")!).quality)).toBe("low");
 });

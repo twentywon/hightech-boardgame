@@ -1,3 +1,4 @@
+import { mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import winArt from "../assets/result/win.svg?raw";
 import loseArt from "../assets/result/lose.svg?raw";
@@ -65,6 +66,20 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
         );
       }
     }).observe(result, { attributes: true, attributeFilter: ["hidden"] });
+  // With no window at the end, the result is told where the turn was: the status line takes the result block's sentence
+  // (and keeps it, whatever the screen writes there afterwards) for as long as the block is shown.
+  const turn = side.querySelector<HTMLElement>("#turn");
+  if (result && turn && !RESULT_WINDOWS) {
+    const tell = () => {
+      const line = result.hidden ? "" : (result.querySelector("p")?.textContent ?? "");
+      if (line && turn.textContent !== line) {
+        turn.textContent = line;
+        mirrorStatus();
+      }
+    };
+    new MutationObserver(tell).observe(result, { attributes: true, attributeFilter: ["hidden"], childList: true, subtree: true, characterData: true });
+    new MutationObserver(tell).observe(turn, { childList: true, characterData: true, subtree: true });
+  }
   // 새 게임 stays with the other screen buttons over the table and opens the game's own setup in a dialog.
   const restart = main.querySelector<HTMLButtonElement>("#restart");
   if (restart) restart.onclick = () => setupDialog(setup);

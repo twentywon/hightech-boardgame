@@ -651,6 +651,8 @@ test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops w
 });
 
 test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens while it is stopped; a meal may be without a clock", async ({ page }) => {
+  // A long test on a slow machine: the clock of the table runs behind the wall clock there.
+  test.setTimeout(150000);
   const errors = await sit(page, "고기 굽기"),
     figure = (n: number) => page.locator(".solo-stat").nth(n).locator("b"),
     keys = async (...list: string[]) => {

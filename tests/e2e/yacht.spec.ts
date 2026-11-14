@@ -133,9 +133,11 @@ test("yacht dice opens inline; roll, keep, score, and a whole solo game", async 
   await expect(rollButton(page)).toBeDisabled();
   await page.screenshot({ path: `test-results/${info.project.name}-yacht-over.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  // The result comes up in a window; its 새 게임 leads to the setup, as 다시 플레이 does.
-  await expect(page.getByRole("dialog")).toContainText("총점 170점", { timeout: 10000 });
-  await page.getByRole("dialog").getByRole("button", { name: "새 게임", exact: true }).click();
+  // No window comes up: the status line tells the result, and 새 게임 over the table leads to the setup.
+  await expect(page.locator("#turn")).toContainText("총점 170점", { timeout: 10000 });
+  await page.waitForTimeout(1200);
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await page.locator("#restart").click();
   await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
   await settled(page);
   await expect(page.locator("#move-count")).toHaveText("1 / 12 라운드");
