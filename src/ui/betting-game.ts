@@ -1,5 +1,5 @@
 import { announce, dress } from "./chrome";
-import { bankrupt, mirrorStatus } from "./banner";
+import { bankrupt, mirrorStatus, shout } from "./banner";
 import type { Action } from "../games/cards/betting";
 import type { BettingGame, TableView } from "../games/cards/game";
 import { CardTableView, type CardSkin } from "../games/cards/table-view";
@@ -302,6 +302,8 @@ export function mountBettingGame<S>(
       const net = result.rows.find((row) => row.name === "나")?.net ?? 0;
       if (net < 0) sound.lose();
       else if (net > 0) sound.win();
+      // The hand is told across the table (the user asked).
+      if (net !== 0) shout(net > 0 ? "승리" : "패배");
     }
     if (hadFocus && focused && (focused.offsetParent === null || (focused as HTMLButtonElement).disabled || !focused.isConnected))
       (covered(state).length

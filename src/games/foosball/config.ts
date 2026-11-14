@@ -6,6 +6,8 @@ import { FOOSBALL_COLORS, FoosballView } from "./view";
 export const foosballConfig: PointConfig<State> = {
   game: foosball,
   panel: "scoreboard",
+  // A goal, by either side, is told across the table.
+  cheer: (before, state) => (state.ply > before.ply && (state.score[0] !== before.score[0] || state.score[1] !== before.score[1]) ? "GOAL" : null),
   tallyHtml: (state) => [0, 1].map((p) => `${state.score[p]}`) as [string, string],
   view: (host, quality, _variant, _mode, level) => new FoosballView(host, quality, level),
   colors: FOOSBALL_COLORS,

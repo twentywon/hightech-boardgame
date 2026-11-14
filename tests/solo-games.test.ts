@@ -654,7 +654,7 @@ describe("tower of Hanoi", () => {
     for (let discs = hanoi.MIN; discs <= hanoi.MAX; discs++) {
       let state = hanoi.createGame(discs);
       while (state.winner === null) state = hanoi.play(state, hanoi.hint(state)!)!;
-      expect([discs, state.ply, state.pegs[2].length]).toEqual([discs, 2 ** discs - 1, discs]);
+      expect([discs, state.ply, Math.max(state.pegs[1].length, state.pegs[2].length)]).toEqual([discs, 2 ** discs - 1, discs]);
       expect(hanoi.hint(state)).toBeNull();
       expect(hanoi.hanoi.reason(state)).toMatch(/^성공!.*가장 적게/);
     }
@@ -662,6 +662,14 @@ describe("tower of Hanoi", () => {
     let state = hanoi.play(hanoi.createGame(4), { from: 0, to: 2, extra: -1 })!;
     for (let i = 0; i < 40 && state.winner === null; i++) state = hanoi.play(state, hanoi.hint(state)!)!;
     expect(state.winner).toBe(0);
+    // The tower on the middle peg is as good as on the last; back on the first it is not.
+    const middle = { ...hanoi.createGame(3), pegs: [[1], [3, 2], []] } as hanoi.State,
+      done = hanoi.play(middle, { from: 0, to: 1, extra: -1 })!;
+    expect([done.winner, done.pegs[1]]).toEqual([0, [3, 2, 1]]);
+    const home = { ...hanoi.createGame(3), pegs: [[3, 2], [1], []] } as hanoi.State;
+    expect(hanoi.play(home, { from: 1, to: 0, extra: -1 })!.winner).toBeNull();
+    // The hint makes for whichever peg is nearer: here the middle one, a single move away.
+    expect(hanoi.hint(middle)).toMatchObject({ from: 0, to: 1 });
   });
 });
 describe("lights on", () => {

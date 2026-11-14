@@ -8,6 +8,8 @@ import { DT, POWERS, lift, moving, step, type Arena, type Disc } from "./physics
  * with the same physics the rules used, and turns a pull on a disc into a
  * shot (pull back and let go, like a catapult).
  */
+/** How wide the aiming line is: the size of its dots. */
+const DOT = 0.075;
 export abstract class FlickView<S> extends TableView<S> {
   private arrow: T.Mesh;
   private pull: T.Mesh;
@@ -16,23 +18,21 @@ export abstract class FlickView<S> extends TableView<S> {
   protected top = 0;
   constructor(host: HTMLElement, quality: "high" | "low", clear: string) {
     super(host, quality, clear);
-    // The line of aim and the line of the pull: thin and dashed (the user asked), black unless a table says otherwise.
-    const bar = this.own(new T.PlaneGeometry(1, 0.05).rotateX(-Math.PI / 2)),
-      dashes = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 16;
-        canvas.height = 4;
-        const pen = canvas.getContext("2d")!;
-        pen.fillStyle = "#ffffff";
-        pen.fillRect(0, 0, 9, 4);
-        const texture = this.own(new T.CanvasTexture(canvas));
-        texture.wrapS = T.RepeatWrapping;
-        texture.magFilter = T.NearestFilter;
-        return texture;
-      },
-      line = (opacity: number) => new T.Mesh(bar, this.own(new T.MeshBasicMaterial({ color: this.aimColor(), map: dashes(), depthTest: false, transparent: true, opacity, side: T.DoubleSide })));
-    this.arrow = line(0.95);
-    this.pull = line(0.45);
+    // The line of aim: a short row of round dots along the way the shot will go (the user asked: nothing on the side
+    // of the pull, round dots, short), black unless a table says otherwise.
+    const dots = document.createElement("canvas");
+    dots.width = 64;
+    dots.height = 32;
+    const pen = dots.getContext("2d")!;
+    pen.fillStyle = "#ffffff";
+    pen.beginPath();
+    pen.arc(16, 16, 13, 0, Math.PI * 2);
+    pen.fill();
+    const row = this.own(new T.CanvasTexture(dots));
+    row.wrapS = T.RepeatWrapping;
+    this.arrow = new T.Mesh(this.own(new T.PlaneGeometry(1, DOT).rotateX(-Math.PI / 2)), this.own(new T.MeshBasicMaterial({ color: this.aimColor(), map: row, depthTest: false, transparent: true, opacity: 0.95, side: T.DoubleSide })));
+    // The pull itself is not drawn.
+    this.pull = new T.Mesh(this.arrow.geometry, this.own(new T.MeshBasicMaterial({ visible: false })));
     this.arrow.renderOrder = this.pull.renderOrder = 9;
     this.arrow.visible = this.pull.visible = false;
     this.scene.add(this.arrow, this.pull);
@@ -43,8 +43,10 @@ export abstract class FlickView<S> extends TableView<S> {
   }
   /** Stretches a dashed line to a length, keeping its dashes the same size. */
   private stretch(mesh: T.Mesh, length: number) {
+    // Each dot with its gap is twice as long as the line is wide, so the dots stay round.
     mesh.scale.set(length, 1, 1);
-    (mesh.material as T.MeshBasicMaterial).map!.repeat.x = length / 0.22;
+    const map = (mesh.material as T.MeshBasicMaterial).map;
+    if (map) map.repeat.x = length / (DOT * 2);
   }
   /** The discs of a state at rest, and the table they lie on. */
   protected abstract discs(state: S): Disc[];
@@ -133,17 +135,16 @@ export abstract class FlickView<S> extends TableView<S> {
     aim.degrees = (Math.atan2(dz, dx) * 180) / Math.PI;
     aim.power = Math.min(POWERS, Math.round(length * 7));
     const show = aim.power >= 1,
-      reach = 0.6 + aim.power * 0.3;
+      reach = 0.35 + aim.power * 0.075;
     this.arrow.visible = this.pull.visible = show;
     const angle = Math.atan2(dz, dx);
     this.aimed(show ? { x: aim.x, z: aim.z, angle, power: aim.power } : null);
     if (!show) return;
-    this.arrow.position.set(aim.x + (Math.cos(angle) * reach) / 2, this.top + 0.25, aim.z + (Math.sin(angle) * reach) / 2);
+    // It lies at the height of the discs' middles, starting at the disc's edge, so that it lines up with the shot from any side.
+    const from = 0.3 + reach / 2;
+    this.arrow.position.set(aim.x + Math.cos(angle) * from, this.top + 0.02, aim.z + Math.sin(angle) * from);
     this.stretch(this.arrow, reach);
     this.arrow.rotation.y = -angle;
-    this.pull.position.set((aim.x + at.x) / 2, this.top + 0.25, (aim.z + at.z) / 2);
-    this.stretch(this.pull, length);
-    this.pull.rotation.y = -angle;
   }
   protected dragEnd(at: { x: number; z: number } | null) {
     const aim = this.aiming;

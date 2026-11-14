@@ -563,7 +563,7 @@ test("lights on: a board laid at random is lit in the fewest presses", async ({ 
   await expect(page.locator("#pz-stage")).toHaveText("4×4 · 스테이지 2");
   expect(errors).toEqual([]);
 });
-test("minesweeper: the first square is safe, a flag guards a mine, and the cleared field is told in a window", async ({ page }) => {
+test("minesweeper: the first square is safe, a flag guards a mine, and the cleared field is told", async ({ page }) => {
   const random = await seeded(page, 57),
     errors = await sit(page, "지뢰찾기");
   await rest(page);
@@ -602,9 +602,9 @@ test("minesweeper: the first square is safe, a flag guards a mine, and the clear
     await rest(page);
   }
   expect(state.winner).toBe(0);
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("성공!", { timeout: 20000 });
-  await dialog.getByRole("button", { name: "확인" }).click();
+  // The result is told in the status line; no window comes up.
+  await expect(page.locator("#turn")).toContainText("성공!", { timeout: 20000 });
+  await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   // 새 게임 offers the three fields.
   await page.locator("#restart").click();

@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { dress, resultArt } from "./chrome";
+import { RESULT_WINDOWS, dress, resultArt } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import {
   createGame,
@@ -404,6 +404,8 @@ export function mountReversi(
       return;
     }
     resultPending = false;
+    // No window at the end for now (the user asked): the status line tells the result.
+    if (!RESULT_WINDOWS) return;
     const c = counts(state.board);
     modal(
       state.winner === "draw"

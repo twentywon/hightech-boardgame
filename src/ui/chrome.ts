@@ -93,7 +93,10 @@ export function resultArt(outcome: Outcome) {
  * with nothing when the result no longer stands (a move taken back);
  * `outcome` says, for the person at the screen, whether to cheer or to mourn.
  */
+/** False while the user wants no window at the end of a game: the result stays in the status line and the panel. */
+export const RESULT_WINDOWS = false;
 export function announce(text: () => string, setup?: (host: HTMLElement) => void, outcome: () => Outcome = () => "win") {
+  if (!RESULT_WINDOWS) return;
   const show = () => {
     if (document.querySelector("dialog[open]")) {
       setTimeout(show, 400);

@@ -1,5 +1,5 @@
 import { mirrorStatus, shout } from "./banner";
-import { dress, resultArt } from "./chrome";
+import { RESULT_WINDOWS, dress, resultArt } from "./chrome";
 import {
   type AIOptions,
   type Difficulty,
@@ -489,6 +489,11 @@ export function mountChess(
       $("board").dataset.checked = String(moves.length);
       shout("체크");
     }
+    // So is a checkmate.
+    if (state.outcome?.reason === "체크메이트" && $("board").dataset.checked !== `mate${moves.length}`) {
+      $("board").dataset.checked = `mate${moves.length}`;
+      shout("체크메이트");
+    }
     $("board").dataset.animating = String(!!view?.animating);
     $("board").dataset.facing = facing;
     $("board").dataset.top = String(top);
@@ -632,6 +637,8 @@ export function mountChess(
       return;
     }
     resultPending = false;
+    // No window at the end for now (the user asked): the status line tells the result.
+    if (!RESULT_WINDOWS) return;
     dialog(
       state.outcome.winner
         ? `${state.outcome.winner === "w" ? "백" : "흑"}이 승리했습니다!`

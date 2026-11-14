@@ -129,8 +129,8 @@ test("yut against the computer plays on to a result, and the screen fits", async
     await expect(page.locator("#yut-result")).toBeVisible({ timeout: 700 });
   }).toPass({ timeout: 220000, intervals: [100] });
   await expect(page.locator("#yut-final")).toContainText(/이겼습니다|컴퓨터가 먼저/);
-  // The result comes up in a window once the table rests; it is closed before going on.
-  await page.getByRole("dialog").getByRole("button", { name: "확인" }).click({ timeout: 20000 });
+  // No window comes up at the end.
+  await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await page.locator("#yut-again").click();
   await page.getByRole("dialog").getByRole("button", { name: "새 게임 시작" }).click();
