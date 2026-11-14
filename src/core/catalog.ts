@@ -359,4 +359,12 @@ export const games = [
     icon: "●",
     available: true,
   },
+  {
+    name: "고기 굽기",
+    en: "MEAT GRILL",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "♨",
+    available: true,
+  },
 ];

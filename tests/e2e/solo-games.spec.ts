@@ -649,3 +649,40 @@ test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops w
   }).toPass({ timeout: 20000 });
   expect(errors).toEqual([]);
 });
+
+test("meat grill: pieces are turned and taken off, and nothing happens while it is stopped", async ({ page }) => {
+  const errors = await sit(page, "고기 굽기"),
+    served = page.locator(".solo-stat").nth(1).locator("b");
+  await expect(served).toHaveText("0");
+  await expect(page.locator(".solo-stat").nth(2)).toContainText("0/3");
+  await page.locator("canvas").focus();
+  // Every place is pressed in turn, again and again: what lies there is turned, then taken off.
+  await expect(async () => {
+    for (let slot = 0; slot < 7; slot++) {
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Enter");
+    }
+    expect(Number(await served.innerText())).toBeGreaterThanOrEqual(2);
+  }).toPass({ timeout: 30000 });
+  // Stopped: presses do nothing.
+  await page.locator("#pg-pause").click();
+  await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "계속하기");
+  const before = await count(page).innerText();
+  await page.locator("canvas").focus();
+  for (let slot = 0; slot < 7; slot++) {
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+  }
+  await page.waitForTimeout(500);
+  await expect(count(page)).toHaveText(before);
+  await page.keyboard.press("p");
+  await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "일시정지");
+  // A tap in the middle of the grill reaches the piece there, once one lies there.
+  const box = (await page.locator("canvas").boundingBox())!;
+  await expect(async () => {
+    const was = await count(page).innerText();
+    await page.mouse.click(box.x + box.width / 2, box.y + 56 + (box.height - 86) / 2);
+    await expect(count(page)).not.toHaveText(was, { timeout: 500 });
+  }).toPass({ timeout: 30000 });
+  expect(errors).toEqual([]);
+});

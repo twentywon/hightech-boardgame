@@ -221,6 +221,13 @@ const play = {
     await keys(["ArrowRight", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowRight", "ArrowRight", "ArrowRight", "Enter"], 120);
     await wait(400);
   },
+  "meat-grill": async () => {
+    await page.locator("canvas").focus();
+    await wait(4200);
+    await keys(["ArrowRight", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter", "ArrowRight", "Enter"], 60);
+    await wait(2600);
+    await page.locator("canvas").blur();
+  },
   "fruit-merge": async () => {
     await page.locator("canvas").focus();
     for (let i = 0; i < 22; i++) {
