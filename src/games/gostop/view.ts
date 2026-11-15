@@ -1,9 +1,10 @@
 import * as T from "three";
 import { capturing as picturing } from "../../ui/banner";
-import { planks, weave, block } from "../../engine/scene-utils";
+import { weave, block } from "../../engine/scene-utils";
+import { ondol } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { BONUS2, CARDS, FLIP, bundles, capturing, isBonus, kindOf, monthOf, pictureOf, piValue, score, sure, type State } from "./rules";
+import { BONUS2, CARDS, FLIP, bundles, capturing, choicesOf, danger, isBonus, kindOf, monthOf, pictureOf, piValue, points, sure, type State } from "./rules";
 import { GOSTOP_LAYOUT as L } from "./layout";
 
 // The forty-eight pictures, inlined so that the game makes no network request (CC BY-SA 4.0, see public/hwatu-license.txt).
@@ -35,16 +36,26 @@ export class GostopView extends TableView<State> {
   private grey: T.Material;
   /** A bomb painted on the first card of each three that may be played together as a bomb. */
   private badges: T.Mesh[] = [];
+  /**
+   * Lettering over the table, in the page: each seat's 피박, 광박 and 멍박 as it stands (the user asked), the sets
+   * called out at the seat that made them, and the bubble that shows the two floor cards to choose between.
+   */
+  private layer: HTMLDivElement;
+  private seats: HTMLDivElement[] = [];
+  private bubble: HTMLDivElement;
+  /** The final reckoning, printed like a shop's receipt at the end of a game (the user asked). */
+  private receipt: HTMLDivElement;
+  private printed: State | null = null;
   /** The deal last shown, so that a new game is dealt from the pile once. */
   private dealt: State["opening"] | null = null;
   /** A tablet lying by the pile for each side, with its score painted on it (there is no panel beside the table). */
   private plates: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string }[] = [];
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#1b1611");
-    this.daylight("#fff4e4", "#3a2c22", "#fff1da", 7, 2.1);
+    super(host, quality, "#3a2a1c");
+    this.daylight("#fff1dc", "#8a6236", "#ffe8c6", 7, 2.1);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    // The table, and on it an olive wool blanket with a darker band round its edge.
-    this.add(block(13.6, 0.5, 11.2, 0.12), this.standard(planks(1.7, keep, 1.4)), 0, -0.27, 0).castShadow = false;
+    // An ondol room (the user asked), and on its floor an olive wool blanket with a darker band round its edge.
+    ondol(this.scene, keep, 6.1, 4.95);
     const blanket = this.standard({ color: "#56603f", roughness: 1, ...weave(5, 4.2, keep, 1.2) }),
       band = this.standard({ color: "#3d452c", roughness: 1, ...weave(5, 4.2, keep, 1.2) });
     this.add(new T.BoxGeometry(12.2, 0.04, 9.9), band, 0, 0, 0).castShadow = false;
@@ -98,7 +109,7 @@ export class GostopView extends TableView<State> {
     for (const side of [0, 1]) {
       const canvas = document.createElement("canvas");
       canvas.width = 640;
-      canvas.height = 200;
+      canvas.height = Math.round((640 * L.PLATE_D) / L.PLATE_W);
       const texture = this.own(new T.CanvasTexture(canvas));
       texture.colorSpace = T.SRGBColorSpace;
       texture.anisotropy = 8;
@@ -106,17 +117,158 @@ export class GostopView extends TableView<State> {
       this.add(block(L.PLATE_W, 0.06, L.PLATE_D, 0.03), [lacquer, lacquer, top, lacquer, lacquer, lacquer], 0, 0.05, side === 0 ? L.PLATE_Z : -L.PLATE_Z);
       this.plates.push({ canvas, texture, said: "" });
     }
+    this.layer = document.createElement("div");
+    this.layer.className = "gs-layer";
+    this.layer.setAttribute("aria-hidden", "true");
+    for (const side of ["me", "them"]) {
+      const seat = document.createElement("div");
+      seat.className = `gs-seat ${side}`;
+      this.layer.append(seat);
+      this.seats.push(seat);
+    }
+    this.bubble = document.createElement("div");
+    this.bubble.className = "gs-bubble";
+    this.bubble.hidden = true;
+    this.layer.append(this.bubble);
+    this.receipt = document.createElement("div");
+    this.receipt.className = "gs-receipt";
+    this.receipt.hidden = true;
+    this.layer.append(this.receipt);
+    if (getComputedStyle(host).position === "static") host.style.position = "relative";
+    host.append(this.layer);
     this.begin();
   }
-  /** Paints a side's score and goes on its tablet. */
-  private say(side: number, label: string, points: number, gos: number) {
+  /** Where a point of the table falls in the canvas, in pixels. */
+  private screen(x: number, y: number, z: number) {
+    const v = new T.Vector3(x, y, z).project(this.camera),
+      el = this.renderer.domElement;
+    return { left: ((v.x + 1) / 2) * el.clientWidth + el.offsetLeft, top: ((1 - v.y) / 2) * el.clientHeight + el.offsetTop };
+  }
+  /** Prints the reckoning of a finished game: who won, the points of each kind, the goes, every doubling, the total. */
+  private print(state: State) {
+    const over = state.winner !== null && !!state.result && !this.animating && !picturing();
+    this.receipt.hidden = !over;
+    if (!over) {
+      this.printed = null;
+      return;
+    }
+    if (this.printed === state) return;
+    this.printed = state;
+    const result = state.result!,
+      row = (label: string, value: string, kind = "") => {
+        const line = document.createElement("div");
+        line.className = `gs-row ${kind}`;
+        const a = document.createElement("span"),
+          b = document.createElement("span");
+        a.textContent = label;
+        b.textContent = value;
+        line.append(a, b);
+        return line;
+      },
+      rule = (kind = "") => {
+        const line = document.createElement("hr");
+        if (kind) line.className = kind;
+        return line;
+      },
+      text = (words: string, kind: string) => {
+        const line = document.createElement("div");
+        line.className = kind;
+        line.textContent = words;
+        return line;
+      },
+      now = new Date(),
+      pad = (n: number) => String(n).padStart(2, "0"),
+      when = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const parts: HTMLElement[] = [text("WORLD TABLE GAMES", "gs-shop"), text("고스톱 계산서", "gs-title"), text(when, "gs-when"), rule()];
+    if (state.winner === "draw") {
+      parts.push(row("결과", "나가리"), rule("double"), row("합계", "0점", "total"));
+    } else {
+      const kinds = result.lines.filter((l) => l.value.endsWith("점")),
+        rest = result.lines.filter((l) => !l.value.endsWith("점")),
+        base = kinds.reduce((n, l) => n + parseInt(l.value, 10), 0);
+      parts.push(row("이긴 사람", state.winner === 0 ? "나" : "컴퓨터"), rule());
+      for (const l of kinds) parts.push(row(l.label, l.value));
+      parts.push(row("점수", `${base}점`, "sub"));
+      if (rest.length) {
+        parts.push(rule());
+        for (const l of rest) parts.push(row(l.label, l.value, l.value.startsWith("×") ? "times" : ""));
+      }
+      parts.push(rule("double"), row("합계", `${result.points}점`, "total"));
+    }
+    parts.push(rule(), text("이용해 주셔서 감사합니다", "gs-thanks"), text("||| || ||| | || |||| | ||| || |", "gs-code"));
+    this.receipt.replaceChildren(...parts);
+  }
+  /** The lettering of the seats and the bubble, for a state at rest. */
+  private overlay(state: State) {
+    this.print(state);
+    const hidden = picturing() || state.winner !== null;
+    // Each seat's doubles, beside its hand: mine at the left of my row, the computer's at the right of its row.
+    const anchors = [this.screen(-L.HAND_STEP * 5 - 0.1, 0.05, L.HAND_Z), this.screen(L.RIVAL_STEP * 5 + 0.15, 0.05, L.RIVAL_Z)];
+    this.seats.forEach((seat, side) => {
+      const risk = hidden ? [] : danger(state, side as 0 | 1);
+      seat.replaceChildren(
+        ...risk.map((word) => {
+          const tag = document.createElement("span");
+          tag.textContent = word;
+          return tag;
+        }),
+      );
+      seat.style.left = `${Math.max(8, anchors[side].left)}px`;
+      seat.style.top = `${anchors[side].top}px`;
+    });
+    // Two floor cards of a month that differ: a bubble shows them apart to be chosen (the user asked).
+    const choosing = !hidden && state.phase === "choose" && state.turn === 0 && !this.animating,
+      choices = choosing ? choicesOf(state) : [];
+    this.bubble.hidden = !choices.length;
+    if (!choices.length) return this.bubble.replaceChildren();
+    const at = this.slot(monthOf(state.pending!), 0),
+      point = this.screen(at.x, 0.1, at.z - L.CH / 2);
+    this.bubble.replaceChildren(
+      ...choices.map((id) => {
+        const button = document.createElement("button"),
+          picture = document.createElement("img");
+        picture.src = sources[`./cards/${pictureOf(id)}.webp`];
+        picture.alt = "";
+        button.append(picture);
+        button.onclick = (e) => {
+          e.stopPropagation();
+          this.onPick(id);
+        };
+        return button;
+      }),
+    );
+    this.bubble.style.left = `${point.left}px`;
+    this.bubble.style.top = `${point.top}px`;
+  }
+  /** Calls out the sets a side has made (홍단, 고도리, 삼광…) over its row of taken cards. */
+  private call(side: 0 | 1, names: string[]) {
+    if (!names.length || picturing()) return;
+    const at = this.screen(0, 0.3, side === 0 ? L.TAKEN_Z : -L.TAKEN_Z),
+      el = document.createElement("div");
+    el.className = `gs-call ${side ? "them" : "me"}`;
+    el.textContent = names.join(" · ");
+    el.style.left = `${at.left}px`;
+    el.style.top = `${at.top}px`;
+    this.layer.append(el);
+    setTimeout(() => el.remove(), 2400);
+  }
+  dispose() {
+    this.layer.remove();
+    super.dispose();
+  }
+  /**
+   * Paints a side's tablet: its name, score and goes on the upper line, and under the score a picture for every time it
+   * has shaken (three cards fanned) or bombed (a bomb) (the user asked).
+   */
+  private say(side: number, label: string, total: number, gos: number, shakes: number, bombs: number) {
     const plate = this.plates[side],
-      key = `${label}|${points}|${gos}`;
+      key = `${label}|${total}|${gos}|${shakes}|${bombs}`;
     if (plate.said === key) return;
     plate.said = key;
     const ctx = plate.canvas.getContext("2d")!,
       w = plate.canvas.width,
-      h = plate.canvas.height;
+      h = plate.canvas.height,
+      line = 100;
     ctx.fillStyle = "#c9a24a";
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = "#24170f";
@@ -131,24 +283,71 @@ export class GostopView extends TableView<State> {
       while (ctx.measureText(text).width > room && (px -= 4) > 20);
       return ctx.measureText(text).width;
     };
-    const value = `${points}점`,
+    const value = `${total}점`,
       go = gos ? ` ${gos}고` : "";
     ctx.textAlign = "right";
     let right = w - 40;
     if (go) {
       ctx.fillStyle = "#ff8a6a";
-      right -= fit(go, 64, 150, 800) - 0;
-      ctx.fillText(go, w - 40, h / 2 + 4);
+      right -= fit(go, 64, 150, 800);
+      ctx.fillText(go, w - 40, line);
       right -= 6;
     }
     ctx.fillStyle = "#ffd45a";
-    const used = fit(value, 104, 300, 800);
-    ctx.fillText(value, right, h / 2 + 4);
+    const used = fit(value, 100, 300, 800);
+    ctx.fillText(value, right, line + 2);
     ctx.textAlign = "left";
     ctx.fillStyle = "#e9dcc0";
     fit(label, 60, right - used - 70, 700);
-    ctx.fillText(label, 40, h / 2 + 2);
+    ctx.fillText(label, 40, line);
+    // Under it: shakes, then bombs, small pictures from the right.
+    let x = w - 64;
+    const y = h - 62;
+    for (let i = 0; i < bombs; i++, x -= 70) this.bombAt(ctx, x, y, 26);
+    for (let i = 0; i < shakes - bombs; i++, x -= 70) this.fanAt(ctx, x, y);
+    if (shakes) {
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#cdbf9f";
+      fit(bombs && shakes > bombs ? "흔들기·폭탄" : bombs ? "폭탄" : "흔들기", 40, 220, 700);
+      ctx.fillText(bombs && shakes > bombs ? "흔들기·폭탄" : bombs ? "폭탄" : "흔들기", x + 22, y + 2);
+    }
     plate.texture.needsUpdate = true;
+  }
+  /** Three cards fanned, for a shake. */
+  private fanAt(ctx: CanvasRenderingContext2D, x: number, y: number) {
+    for (const [turn, tone] of [[-0.35, "#a3271a"], [0, "#c8321f"], [0.35, "#e05a3a"]] as [number, string][]) {
+      ctx.save();
+      ctx.translate(x, y + 18);
+      ctx.rotate(turn);
+      ctx.fillStyle = tone;
+      ctx.strokeStyle = "#fff4dc";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(-11, -42, 22, 36, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  /** A round bomb with a lit fuse. */
+  private bombAt(ctx: CanvasRenderingContext2D, x: number, y: number, r: number) {
+    ctx.beginPath();
+    ctx.arc(x, y + 4, r, 0, Math.PI * 2);
+    ctx.fillStyle = "#0d0e10";
+    ctx.fill();
+    ctx.strokeStyle = "#e9dcc0";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.strokeStyle = "#b08a5a";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.6, y - r * 0.6);
+    ctx.quadraticCurveTo(x + r, y - r * 1.3, x + r * 1.3, y - r * 1.05);
+    ctx.stroke();
+    ctx.fillStyle = "#ffb21a";
+    ctx.beginPath();
+    ctx.arc(x + r * 1.35, y - r * 1.1, 6, 0, Math.PI * 2);
+    ctx.fill();
   }
   private paint(draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
     const canvas = document.createElement("canvas");
@@ -360,7 +559,7 @@ export class GostopView extends TableView<State> {
   protected spots(): Spot[] {
     const state = this.state;
     if (!state || state.winner !== null || state.turn !== 0) return [];
-    const ids = state.phase === "play" ? state.hands[0] : state.phase === "choose" ? state.floor.filter((id) => monthOf(id) === monthOf(state.pending!)) : [];
+    const ids = state.phase === "play" ? state.hands[0] : choicesOf(state);
     const out: Spot[] = ids.flatMap((id) => {
       const pose = this.poses.get(id);
       // Cards held together overlap: each is found by its own uncovered strip.
@@ -373,8 +572,9 @@ export class GostopView extends TableView<State> {
   protected place(state: State) {
     this.poses = this.arrange(state);
     this.cards.forEach((mesh, id) => this.put(mesh, this.poses.get(id)!));
-    this.say(0, "나", score(state.taken[0]).total, state.gos[0]);
-    this.say(1, "컴퓨터", score(state.taken[1]).total, state.gos[1]);
+    this.say(0, "나", points(state, 0).total, state.gos[0], state.shakes[0], state.bombs[0]);
+    this.say(1, "컴퓨터", points(state, 1).total, state.gos[1], state.shakes[1], state.bombs[1]);
+    this.overlay(state);
     this.mark(this.marks);
   }
   /** Carries a card from one pose to another in an arc, turning it over on the way when it must. */
@@ -459,7 +659,9 @@ export class GostopView extends TableView<State> {
     // turned over onto it, then what was taken goes to the taker's side and any chaff stolen crosses over.
     const plan = new Map<number, { via: Pose | null; delay: number }>();
     let lead = 0;
-    if (turned && last) {
+    // After a choice for the card turned over, the played and turned cards already lie on the floor: they are only gathered.
+    const resumed = !!before.resume;
+    if (turned && last && !resumed) {
       // A shake: the computer shows its three cards for a moment (mine are in view already).
       if (last.shown.length && last.side === 1) {
         lead = 1100;
@@ -495,8 +697,14 @@ export class GostopView extends TableView<State> {
       return plan.has(id) || Math.abs(a.x - b.x) + Math.abs(a.z - b.z) + Math.abs(a.y - b.y) > 0.005 || a.up !== b.up || a.s !== b.s;
     });
     if (!moved.length) return false;
-    const gather = turned ? lead + L.GATHER_AT : 0,
+    const gather = turned ? (resumed ? 120 : lead + L.GATHER_AT) : 0,
       steal = gather + 380;
+    // Sets made are called out as the cards come home.
+    if (last && last !== before.last)
+      this.tween(gather + 420, 1, (p) => {
+        if (p === 1) [0, 1].forEach((side) => this.call(side as 0 | 1, last.achieved?.[side] ?? []));
+      });
+    this.bubble.hidden = true;
     for (const id of moved) {
       const a = from.get(id)!,
         b = to.get(id)!,
@@ -507,7 +715,7 @@ export class GostopView extends TableView<State> {
         // It stays on the floor until the gathering, or there for good.
         if (Math.abs(step.via.x - b.x) + Math.abs(step.via.z - b.z) > 0.005 || step.via.s !== b.s) this.fly(id, step.via, b, gather + 60, 420, false);
       } else if (step) this.fly(id, a, b, step.delay, 420, true);
-      else if (last?.shown.includes(id) && last.side === 1 && turned) continue;
+      else if (last?.shown.includes(id) && last.side === 1 && turned && !resumed) continue;
       // A bonus card played: it goes to my side, a chaff comes across, and a card is drawn from the pile in its place.
       else this.fly(id, a, b, stolen ? (turned ? steal : 380) : turned ? gather : id === last?.drawn ? 420 : 0, turned ? 420 : 340, !turned);
     }
@@ -519,7 +727,7 @@ export class GostopView extends TableView<State> {
   }
   protected mark(marks: Marks) {
     const state = this.state,
-      choosing = state?.phase === "choose" && state.turn === 0 ? state.floor.filter((id) => monthOf(id) === monthOf(state.pending!)) : [];
+      choosing = state?.turn === 0 ? choicesOf(state) : [];
     this.rings.forEach((ring, i) => {
       const pose = choosing[i] !== undefined ? this.poses.get(choosing[i]) : undefined;
       ring.visible = !!pose;

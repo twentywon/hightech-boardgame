@@ -172,4 +172,66 @@ describe("go-stop", () => {
       { cards: [id(4, 0), id(4, 1), id(4, 2)], bomb: true },
     ]);
   });
+  test("one's own 뻑 taken back (자뻑) takes two chaff", () => {
+    const s = laid([[id(1, 2), id(5, 2)], [id(1, 0), id(6, 2)]], [id(1, 3), id(9, 2)], [id(10, 2), id(4, 2), id(1, 1)], [[], [id(7, 2), id(7, 3), id(8, 2)]]);
+    const ppeok = g.play(s, { from: -1, to: id(1, 2), extra: -1 })!;
+    expect(ppeok.stuck[1]).toBe(0);
+    // Later a card of mine takes my own 뻑 back.
+    const mine = { ...ppeok, turn: 0 as const, hands: [[id(1, 0), id(5, 2)], [id(6, 2)]] as [number[], number[]] };
+    const back = g.play(mine, { from: -1, to: id(1, 0), extra: -1 })!;
+    expect(back.last!.events).toContain("자뻑");
+    expect(back.last!.stolen).toHaveLength(2);
+  });
+  test("a bonus card turned over from the pile steals a chaff too", () => {
+    const s = laid([[id(1, 2), id(5, 2)], [id(6, 2)]], [id(1, 3), id(9, 2)], [id(10, 2), id(9, 3), g.BONUS2], [[], [id(7, 2)]]);
+    const next = g.play(s, { from: -1, to: id(1, 2), extra: -1 })!;
+    expect(next.last!.stolen).toEqual([id(7, 2)]);
+  });
+  test("the card turned over meeting two floor cards that differ waits for a choice; two plain chaff do not", () => {
+    // The pile turns over September's chaff, and the floor holds September's animal and ribbon.
+    const s = laid([[id(1, 2), id(5, 2)], [id(6, 2)]], [id(1, 3), id(9, 0), id(9, 1)], [id(10, 2), id(9, 2)]);
+    const asked = g.play(s, { from: -1, to: id(1, 2), extra: -1 })!;
+    expect(asked.phase).toBe("choose");
+    expect(asked.pending).toBe(id(9, 2));
+    expect(g.choicesOf(asked).sort()).toEqual([id(9, 0), id(9, 1)].sort());
+    const took = g.play(asked, { from: -1, to: id(9, 1), extra: -1 })!;
+    expect(took.taken[0]).toEqual(expect.arrayContaining([id(1, 2), id(1, 3), id(9, 1), id(9, 2)]));
+    expect(took.floor).toEqual([id(9, 0)]);
+    expect(took.turn).toBe(1);
+    const chaff = laid([[id(1, 2), id(5, 2)], [id(6, 2)]], [id(1, 3), id(9, 2), id(9, 3)], [id(10, 2), id(9, 0)]);
+    expect(g.play(chaff, { from: -1, to: id(1, 2), extra: -1 })!.phase).toBe("play");
+  });
+  test("September's animal is offered as a double chaff once chaff begins to score", () => {
+    const chaff = [id(1, 2), id(1, 3), id(2, 2), id(2, 3), id(3, 2), id(3, 3), id(4, 2)];
+    const s = laid([[id(5, 2), id(6, 2)], [id(7, 2), id(8, 2)]], [id(5, 3), id(10, 2)], [id(11, 2), id(12, 3)], [[...chaff, g.GUKJIN], []]);
+    const asked = g.play(s, { from: -1, to: id(5, 2), extra: -1 })!;
+    expect(asked.phase).toBe("gukjin");
+    const pi = g.play(asked, { from: -1, to: g.AS_PI, extra: -1 })!;
+    expect(pi.gukjin[0]).toBe("pi");
+    expect(g.points(pi, 0).counts.pi).toBe(11);
+    expect(g.points(pi, 0).pi).toBe(2);
+    const yeol = g.play(asked, { from: -1, to: g.AS_YEOL, extra: -1 })!;
+    expect(g.points(yeol, 0).counts.pi).toBe(9);
+  });
+  test("sets made are named for the seat, and the doubles a side would pay are told", () => {
+    const s = laid([[id(3, 1), id(5, 2)], [id(6, 2)]], [id(3, 2), id(9, 2)], [id(10, 2), id(4, 2)], [[id(1, 1), id(2, 1), id(1, 0), id(8, 0)], [id(7, 2)]]);
+    const next = g.play(s, { from: -1, to: id(3, 1), extra: -1 })!;
+    expect(next.last!.achieved[0]).toEqual(["홍단"]);
+    expect(g.sets([id(1, 0), id(3, 0), id(12, 0)])).toEqual(["비삼광"]);
+    expect(g.sets([id(1, 0), id(3, 0), id(8, 0), id(11, 0)])).toEqual(["사광"]);
+    // I have brights, the computer none: it would pay 광박 if I stopped now.
+    const lit = laid([[], []], [], [], [[id(1, 0), id(3, 0), id(8, 0)], [id(7, 2)]]);
+    expect(g.danger(lit, 1)).toContain("광박");
+    expect(g.danger(lit, 0)).toEqual([]);
+  });
+  test("the winner of a game is the first player of the next", () => {
+    expect(g.createGame(seededRandom(2), 1).turn).toBe(1);
+    expect(g.createGame(seededRandom(2), 1).first).toBe(1);
+    let s = g.gostop.create("");
+    expect(s.turn).toBe(0);
+    const random = seededRandom(11);
+    for (let n = 0; n < 300 && s.winner === null; n++) s = g.gostop.play(s, g.choose(s, "normal", random)!)!;
+    const next = g.gostop.create("");
+    if (s.winner === 0 || s.winner === 1) expect(next.first).toBe(s.winner);
+  });
 });

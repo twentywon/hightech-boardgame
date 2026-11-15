@@ -21,8 +21,8 @@ export const GOSTOP_LAYOUT = {
   FLOOR_Z: 0.72,
   /** The score tablets, below and above the pile. */
   PLATE_W: 1.8,
-  PLATE_D: 0.56,
-  PLATE_Z: 1.3,
+  PLATE_D: 0.78,
+  PLATE_Z: 1.32,
   TAKEN_X: -4.25,
   TAKEN_Z: 2.3,
   TAKEN_STEP: 0.17,

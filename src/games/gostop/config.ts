@@ -1,6 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { CARDS, FLIP, GO, GOAL, NO, STOP, YES, gostop, monthOf, type State } from "./rules";
+import { AS_PI, AS_YEOL, CARDS, choicesOf, FLIP, GO, GOAL, NO, STOP, YES, gostop, type State } from "./rules";
 import { GOSTOP_COLORS, GostopView } from "./view";
 
 /** Where the keyboard walks: the cards that can be chosen now, my hand in a row and the floor's two choices above it. */
@@ -8,7 +8,7 @@ function keyPoints(state: State) {
   const points = Array.from({ length: CARDS }, () => ({ x: NaN, z: NaN }));
   if (state.turn !== 0 || state.winner !== null) return points;
   if (state.phase === "play") [...state.hands[0]].sort((a, b) => a - b).forEach((id, i) => (points[id] = { x: i, z: 1 }));
-  if (state.phase === "choose") state.floor.filter((id) => monthOf(id) === monthOf(state.pending!)).forEach((id, i) => (points[id] = { x: i, z: 0 }));
+  choicesOf(state).forEach((id, i) => (points[id] = { x: i, z: 0 }));
   return points;
 }
 const first = (state: State) => {
@@ -30,7 +30,8 @@ export const gostopConfig: PointConfig<State> = {
   noPanel: true,
   noUndo: true,
   showMovable: false,
-  ponder: () => 500,
+  // The computer waits for the deal to be over when it is the first to play (선).
+  ponder: (state) => (state.ply === 0 ? 3000 + 800 * state.opening.swaps.length : 500),
   // 쪽, 뻑, 따닥 and the rest are called out over the table, as players do.
   cheer: (before, state) => {
     const said = state.last && state.last !== before.last ? state.last.events : [];
@@ -43,6 +44,9 @@ export const gostopConfig: PointConfig<State> = {
     { label: "흔들기", point: YES, text: (state) => (state.offer === "bomb" ? "폭탄" : "흔들기") },
     { label: "그냥 내기", point: NO, text: (state) => (state.offer === "bomb" ? "한 장만 내기" : "그냥 내기") },
     // After a bomb: a turn that only turns the pile over (a tap on the pile does the same).
+    // September's animal (국진), asked once chaff begins to score.
+    { label: "쌍피로 쓰기", point: AS_PI },
+    { label: "열끗으로 두기", point: AS_YEOL },
     { label: "뒤집기만", point: FLIP, text: (state) => `뒤집기만 (${state.dummies[0]})` },
   ],
   name: "고스톱",
@@ -85,9 +89,13 @@ export const gostopConfig: PointConfig<State> = {
         ["싹쓸이", "바닥의 패를 모두 쓸어 가면 피를 한 장 뺏습니다."],
         ["흔들기", "손에 같은 달 세 장이 있고 바닥에 그 달이 없을 때, 그중 한 장을 내며 흔들 수 있습니다. 이기면 점수가 두 배입니다. 손에서 세 장이 붙어 놓입니다."],
         ["폭탄", "손에 같은 달 세 장이 있고 바닥에 나머지 한 장이 있으면 세 장을 한꺼번에 내 네 장을 모두 가져오고 피를 한 장 뺏습니다. 이기면 점수가 두 배이고, 그 뒤 두 번은 패를 내지 않고 더미만 뒤집을 수 있습니다(더미를 누릅니다). 세 장이 붙어 놓이고 폭탄 그림이 붙습니다."],
-        ["보너스피", "손에서 내면 바로 가져오고 상대 피를 한 장 뺏으며, 더미에서 한 장을 받아 이어서 냅니다. 더미에서 뒤집히면 가져오고 한 장 더 뒤집습니다. 처음 바닥에 깔리면 선이 가져갑니다."],
+        ["보너스피", "어떻게 얻든 얻을 때마다 상대 피를 한 장 뺏습니다. 손에서 내면 바로 가져오고 더미에서 한 장을 받아 이어서 냅니다. 더미에서 뒤집히면 가져오고 한 장 더 뒤집습니다. 처음 바닥에 깔리면 선이 가져갑니다."],
         ["테두리", "내 차례에 바닥의 패를 따올 수 있는 손패는 파란 테두리, 같은 달 두 장이 이미 먹혀 남은 두 장을 반드시 다시 가져올 수 있는 손패는 회색 테두리입니다."],
-        ["두 장 중 고르기", "같은 달 두 장이 바닥에 있고 종류가 다르면 가져올 패를 누릅니다."],
+        ["두 장 중 고르기", "같은 달 두 장이 바닥에 있고 종류가 다르면 말풍선에 두 장이 따로 나옵니다. 가져올 패를 누릅니다."],
+        ["자뻑", "내가 싼 뻑을 내가 가져가면 상대 피를 두 장 뺏습니다."],
+        ["9월 열끗", "국진이라고도 합니다. 피로 점수가 나기 시작할 때 쌍피로 쓸지 열끗으로 둘지 한 번 고릅니다."],
+        ["선", "처음에는 내가 선이고, 그 뒤로는 전판에 이긴 사람이 선입니다. 선이 먼저 치고, 바닥에 깔린 보너스피를 가져갑니다."],
+        ["족보와 박 표시", "홍단·청단·초단·고도리·삼광·비삼광·사광·오광을 이루면 그 사람 자리 쪽에 크게 나옵니다. 지금 멈추면 물게 될 피박·광박·멍박은 손패 옆에 빨간 표시로 나옵니다. 흔든 횟수와 폭탄 횟수는 점수판 아래에 그림으로 나옵니다."],
         ["고", "한 번 할 때마다 1점을 더하고, 3고부터는 점수가 두 배씩 됩니다. 고를 하면 점수가 더 나야 다시 고/스톱을 고를 수 있습니다."],
         ["박", "이긴 쪽이 피로 점수를 냈는데 진 쪽 피가 5장 이하면 <b>피박</b>, 광으로 냈는데 진 쪽 광이 없으면 <b>광박</b>, 열끗이 7장 이상이면 <b>멍박</b>, 고를 하고 진 쪽은 <b>고박</b>. 각각 두 배입니다."],
       ),

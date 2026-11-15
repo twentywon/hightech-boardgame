@@ -304,6 +304,121 @@ export function hanokYard(scene: T.Object3D, own: Own) {
   const tile = standard({ color: "#3b3d42", roughness: 0.6 });
   add(new T.BoxGeometry(1.5, 0.22, 9.2), tile, 9.2, 1.55, -2.5);
 }
+/** 장판: the oiled yellow paper of an ondol floor, laid in squares whose tones differ a little, browner where it is warm. */
+function jangpan() {
+  const { c, ctx } = canvas(1024, 1024),
+    rand = noise(17),
+    cell = 128;
+  for (let r = 0; r < 8; r++)
+    for (let q = 0; q < 8; q++) {
+      const warm = rand() * 0.12;
+      ctx.fillStyle = `hsl(${40 - warm * 25}, ${44 + warm * 30}%, ${60 - warm * 50}%)`;
+      ctx.fillRect(q * cell, r * cell, cell, cell);
+      // A faint mottle in each square, as the varnish lies.
+      for (let i = 0; i < 26; i++) {
+        ctx.fillStyle = `rgba(${120 + rand() * 40}, ${70 + rand() * 30}, 20, ${0.03 + rand() * 0.04})`;
+        ctx.beginPath();
+        ctx.ellipse(q * cell + rand() * cell, r * cell + rand() * cell, 6 + rand() * 26, 4 + rand() * 14, rand() * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  // The seams between the squares.
+  ctx.strokeStyle = "rgba(110, 66, 22, 0.35)";
+  ctx.lineWidth = 2;
+  for (let i = 0; i <= 8; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * cell, 0);
+    ctx.lineTo(i * cell, 1024);
+    ctx.moveTo(0, i * cell);
+    ctx.lineTo(1024, i * cell);
+    ctx.stroke();
+  }
+  return texture(c, 5, 4);
+}
+/** A sliding door of 창호: a wooden lattice over white hanji with the light behind it. */
+function changho() {
+  const { c, ctx } = canvas(256, 512);
+  ctx.fillStyle = "#f6efdc";
+  ctx.fillRect(0, 0, 256, 512);
+  ctx.fillStyle = "#6b4626";
+  ctx.fillRect(0, 0, 256, 14);
+  ctx.fillRect(0, 498, 256, 14);
+  ctx.fillRect(0, 0, 14, 512);
+  ctx.fillRect(242, 0, 14, 512);
+  // The lattice: thin bars across and down, the lower panel solid.
+  for (let x = 14; x < 242; x += 38) ctx.fillRect(x, 14, 4, 380);
+  for (let y = 14; y < 394; y += 38) ctx.fillRect(14, y, 228, 4);
+  ctx.fillRect(14, 392, 228, 10);
+  ctx.fillStyle = "#8a5a32";
+  ctx.fillRect(14, 402, 228, 96);
+  ctx.strokeStyle = "#5a391c";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(34, 420, 188, 60);
+  return texture(c);
+}
+/**
+ * An ondol room round a blanket on the floor (the user asked): the floor of yellow oiled paper, hanji walls on a
+ * wooden skirting with two sliding lattice doors at the back, a low chest of drawers with brass fittings, a pair of
+ * floor cushions and a folded quilt in the corner. The blanket lies at `y` 0; everything stands clear of `half` by
+ * `depth`.
+ */
+export function ondol(scene: T.Object3D, own: Own, half: number, depth: number) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.8, ...options }));
+  const floor = new T.Mesh(own(new T.PlaneGeometry(44, 34)), standard({ map: own(jangpan()), roughness: 0.45 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.01;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const back = -depth - 1.6,
+    side = half + 2.4,
+    hanji = standard({ color: "#efe5cf", roughness: 0.95 }),
+    timber = standard({ map: own(wood(true)), roughness: 0.6 });
+  // The walls and their skirting.
+  box(scene, own, [side * 2 + 1, 6, 0.2], [0, 3, back - 0.1], hanji, false);
+  box(scene, own, [0.2, 6, -back * 2 + 4], [-side - 0.1, 3, 0], hanji, false);
+  box(scene, own, [0.2, 6, -back * 2 + 4], [side + 0.1, 3, 0], hanji, false);
+  box(scene, own, [side * 2 + 1, 0.22, 0.08], [0, 0.11, back + 0.04], timber, false);
+  box(scene, own, [0.08, 0.22, -back * 2 + 4], [-side + 0.04, 0.11, 0], timber, false);
+  box(scene, own, [0.08, 0.22, -back * 2 + 4], [side - 0.04, 0.11, 0], timber, false);
+  // Two sliding doors in the back wall, and a post either side of them.
+  const door = standard({ map: own(changho()), roughness: 0.9, emissive: "#3a2f1e", emissiveIntensity: 0.25 });
+  for (const x of [-0.95, 0.95]) {
+    const leaf = new T.Mesh(own(new T.PlaneGeometry(1.9, 3.8)), door);
+    leaf.position.set(x, 1.9, back + 0.02);
+    scene.add(leaf);
+  }
+  for (const x of [-2.05, 2.05]) box(scene, own, [0.22, 4.2, 0.22], [x, 2.1, back + 0.1], timber);
+  box(scene, own, [4.3, 0.22, 0.22], [0, 4.0, back + 0.1], timber);
+  // A low chest of drawers against the back wall at the left, with brass fittings.
+  const lacquer = standard({ map: own(wood(true)), color: "#7a4a2a", roughness: 0.4 }),
+    brass = standard({ color: "#c9a24a", roughness: 0.35, metalness: 0.7 });
+  const chestX = -side + 2.2,
+    chestZ = back + 0.75;
+  box(scene, own, [3.2, 1.6, 1.2], [chestX, 0.8, chestZ], lacquer);
+  for (const [x, y] of [[-0.8, 1.15], [0.8, 1.15], [-0.8, 0.55], [0.8, 0.55]]) {
+    box(scene, own, [1.3, 0.48, 0.03], [chestX + x, y, chestZ + 0.61], lacquer);
+    box(scene, own, [0.28, 0.12, 0.05], [chestX + x, y, chestZ + 0.64], brass);
+  }
+  // Floor cushions (방석) in red silk with a pale border, one at each side of the blanket.
+  const silk = standard({ color: "#a8262c", roughness: 0.55 }),
+    rim = standard({ color: "#e6c27a", roughness: 0.6 }),
+    cushion = (x: number, z: number, turn: number) => {
+      const group = new T.Group(),
+        body = new T.Mesh(own(new T.BoxGeometry(1.7, 0.2, 1.7)), rim),
+        top = new T.Mesh(own(new T.BoxGeometry(1.4, 0.06, 1.4)), silk);
+      body.position.y = 0.1;
+      top.position.y = 0.22;
+      body.castShadow = body.receiveShadow = top.receiveShadow = true;
+      group.add(body, top);
+      group.position.set(x, 0, z);
+      group.rotation.y = turn;
+      scene.add(group);
+    };
+  cushion(half + 1.2, 0.8, 0.2);
+  cushion(-half - 1.25, -1.2, -0.15);
+  // A folded quilt (이불) in the far right corner: three layers of colour.
+  ["#3f6fa8", "#d9a441", "#b8414a"].forEach((color, i) => box(scene, own, [2.4, 0.28, 1.6], [side - 1.6, 0.14 + i * 0.28, back + 1.1], standard({ color, roughness: 0.9 })));
+}
 /**
  * A pub round a games table: a dark boarded floor `drop` below the table top,
  * a brick wall at the back with a neon sign, a shelf of bottles and a
