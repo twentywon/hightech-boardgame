@@ -67,7 +67,7 @@ export class Sound {
     this.tone("triangle", 780, 160, 0, 0.1, 0.07);
   }
   /** Plays one recording; false when it is not ready. */
-  private recording(name: string, volume: number, rate = 1) {
+  private recording(name: string, volume: number, rate = 1, at = 0) {
     const c = this.context,
       buffer = samples.get(name);
     if (!this.enabled || !c) return true;
@@ -79,17 +79,17 @@ export class Sound {
     gain.gain.value = volume;
     source.connect(gain);
     gain.connect(c.destination);
-    source.start();
+    source.start(c.currentTime + at);
     return true;
   }
   /**
    * Cards, dice and chips: one of the recordings whose name starts with `kind`, a little higher or lower each
    * time, as no two throws or deals are alike; false when none is ready.
    */
-  private sample(kind: string, volume: number) {
+  private sample(kind: string, volume: number, at = 0) {
     if (!this.enabled || !this.context) return true;
     const ready = [...samples.keys()].filter((name) => name.startsWith(`${kind}-`));
-    return ready.length > 0 && this.recording(ready[Math.floor(Math.random() * ready.length)], volume, 0.94 + Math.random() * 0.12);
+    return ready.length > 0 && this.recording(ready[Math.floor(Math.random() * ready.length)], volume, 0.94 + Math.random() * 0.12, at);
   }
   /**
    * A piece set down: the `which`-th recording of its kind, always the same one at the same pitch, so that every
@@ -132,9 +132,32 @@ export class Sound {
   card() {
     if (!this.sample("card", 0.5)) this.tap();
   }
-  /** Dice thrown into the tray: several at once, or one or two. */
-  dice(count: number) {
-    if (!this.sample(count >= 3 ? "dice" : "die", 0.6)) this.tap();
+  /** One die knocking against another or against the board: a short, bright click. */
+  private click(at: number, volume: number, pitch = 1) {
+    const f = (2600 + Math.random() * 1800) * pitch;
+    this.noise(at, 0.018, volume, f, "bandpass", f * 0.8);
+    this.tone("triangle", f * 0.42, f * 0.3, at, 0.025, volume * 0.35);
+  }
+  /**
+   * Dice rolled: rattled in the hand while they fly, thrown into the tray as they land (`land` seconds from now,
+   * when the view's dice come down), then tumbling over a few times, each knock softer and later than the last,
+   * until they lie still. Several dice rattle more and roll longer than one.
+   */
+  dice(count: number, land = 0) {
+    if (!this.enabled || !this.context) return;
+    const many = Math.max(1, Math.min(5, count));
+    // The rattle in the hand: quick knocks while they are shaken and fly.
+    for (let t = 0; t < land - 0.1; t += 0.035 + Math.random() * 0.035) this.click(t, 0.035 + Math.random() * 0.03, 0.85);
+    if (!this.sample(many >= 3 ? "dice" : "die", 0.6, land)) this.click(land, 0.14);
+    // Rolling to a stop: knocks closing up and dying away.
+    const knocks = 4 + many * 2;
+    let t = land + 0.08,
+      gap = 0.05;
+    for (let i = 0; i < knocks; i++) {
+      this.click(t, 0.075 * (1 - i / knocks) + 0.012, 1 - i * 0.02);
+      t += gap * (0.6 + Math.random() * 0.8);
+      gap *= 1.2;
+    }
   }
   /** Chips sliding across the felt. */
   chips() {

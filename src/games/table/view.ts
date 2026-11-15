@@ -43,6 +43,7 @@ export abstract class TableView<S> implements PointView<S> {
   private tweens: Tween[] = [];
   private ray = new T.Raycaster();
   onContact: () => void = () => {};
+  onRoll: (count: number, land: number) => void = () => {};
   onSettled: () => void = () => {};
   onPick: (point: number) => void = () => {};
   onMove: (move: Move) => void = () => {};

@@ -237,11 +237,12 @@ export class LudoView extends TableView<State> {
       const to = upright(last.rolled),
         axis = new T.Vector3(1, 0.4, 0.6).normalize(),
         spin = new T.Quaternion();
+      // It is heard rattling, landing where the hop comes down and rolling to a stop.
+      this.onRoll(1, 0.44);
       this.tween(0, 520, (p) => {
         spin.setFromAxisAngle(axis, (1 - p) * Math.PI * 5);
         this.die.quaternion.copy(to).multiply(spin);
         this.die.position.y = 0.31 + hop(p) * 0.9;
-        if (p === 1) this.onContact();
       });
       // A roll nobody can use is left to be seen for a moment.
       if (state.turn !== before.turn) this.tween(520, 500, () => {});

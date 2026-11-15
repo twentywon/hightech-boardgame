@@ -208,7 +208,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
   function apply(next: State) {
     // Every throw of the dice is heard, whoever throws and wherever it leads.
     if (next.dice !== state.dice) {
-      sound.dice(3);
+      sound.dice(2, view ? 0.5 : 0);
       // A double is announced on the board and heard, whoever rolled it.
       if (next.dice[0] === next.dice[1]) {
         sound.double();

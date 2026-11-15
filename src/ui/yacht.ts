@@ -176,7 +176,8 @@ export function mountYacht(
     performance.now() < lockedUntil ||
     !!document.querySelector("dialog[open]");
   function apply(next: State, animate = true) {
-    if (next.rollId !== state.rollId) sound.dice(next.rolled.filter(Boolean).length);
+    // The dice rattle while they fly and are heard landing where the view's first hop comes down.
+    if (next.rollId !== state.rollId) sound.dice(next.rolled.filter(Boolean).length, animate && view ? 0.47 : 0);
     state = next;
     if (view) view.sync(state, animate);
     else present();

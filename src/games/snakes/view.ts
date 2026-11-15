@@ -169,6 +169,7 @@ export class SnakesView implements PointView<State> {
   private reducedMotion =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   onContact: () => void = () => {};
+  onRoll: (count: number, land: number) => void = () => {};
   onSettled: () => void = () => {};
   onPick: (point: number) => void = () => {};
   get animating() {
@@ -304,6 +305,8 @@ export class SnakesView implements PointView<State> {
       to = upright(roll.die),
       axis = new T.Vector3(1, 0.4, 0.6).normalize(),
       spin = new T.Quaternion();
+    // The die is heard rattling, landing where the hop comes down and rolling to a stop.
+    this.onRoll(1, 0.44);
     this.tweens.push({
       start: now,
       duration: 520,

@@ -18,6 +18,8 @@ export interface PointView<S> {
   readonly renderer: { domElement: HTMLCanvasElement };
   readonly animating: boolean;
   onContact: () => void;
+  /** Dice thrown on the table: `land` is how many seconds from now they come down. */
+  onRoll?: (count: number, land: number) => void;
   onSettled: () => void;
   onPick: (point: number) => void;
   /** A whole move made by a gesture of the view's own (a flick), instead of by picking points. */
@@ -341,6 +343,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         } as PointView<S>;
       }
       view.onContact = () => (config.contact ? config.contact(sound, state) : sound.tap());
+      view.onRoll = (count, land) => sound.dice(count, land);
       view.onSettled = present;
       view.onPick = pick;
       view.onMove = commit;
