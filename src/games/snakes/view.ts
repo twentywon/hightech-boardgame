@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, wood, realism, planks, block, hop, travel } from "../../engine/scene-utils";
+import { afterGPUFrame, wood, realism, planks, block, hop, travel, pawn } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -217,14 +217,10 @@ export class SnakesView implements PointView<State> {
     board.position.set(BOARD_X, -0.05, 0);
     board.receiveShadow = true;
     this.scene.add(table, board);
-    const pawn = this.own(new T.CylinderGeometry(0.1, 0.24, 0.6, 20));
+    const man = this.own(pawn(0.84).translate(0, -0.3, 0));
     TOKENS.forEach((color) => {
-      const token = new T.Mesh(pawn, standard({ color, roughness: 0.35 }));
+      const token = new T.Mesh(man, standard({ color, roughness: 0.35 }));
       token.castShadow = true;
-      const head = new T.Mesh(this.own(new T.SphereGeometry(0.16, 16, 12)), token.material);
-      head.position.y = 0.36;
-      head.castShadow = true;
-      token.add(head);
       this.tokens.push(token);
       this.scene.add(token);
     });

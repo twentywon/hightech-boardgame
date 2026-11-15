@@ -261,6 +261,64 @@ export function block(width: number, height: number, depth: number, radius = Mat
   }
   return geometry;
 }
+/**
+ * A turned pawn `height` tall, standing on y = 0: a foot, a waist, a collar and a ball for a head, in one piece.
+ * The men of Ludo and of snakes and ladders are of this kind.
+ */
+export function pawn(height: number) {
+  const profile: [number, number][] = [
+    [0, 0],
+    [0.31, 0],
+    [0.325, 0.03],
+    [0.31, 0.07],
+    [0.24, 0.1],
+    [0.2, 0.13],
+    [0.215, 0.16],
+    [0.19, 0.19],
+    [0.13, 0.3],
+    [0.1, 0.45],
+    [0.095, 0.55],
+    [0.12, 0.6],
+    [0.19, 0.63],
+    [0.2, 0.655],
+    [0.17, 0.675],
+    [0.115, 0.69],
+  ];
+  for (let i = 0; i <= 10; i++) {
+    const a = -1.05 + ((Math.PI / 2 + 1.05) * i) / 10;
+    profile.push([0.2 * Math.cos(a), 0.8 + 0.2 * Math.sin(a)]);
+  }
+  return new T.LatheGeometry(
+    profile.map(([r, y]) => new T.Vector2(Math.max(0, r) * height, y * height)),
+    28,
+  );
+}
+/**
+ * A draughtsman `radius` wide and `height` thick, lying about y = 0: a rounded rim, a raised ring and a hollow
+ * with a boss in the middle, as checkers are turned.
+ */
+export function draughtsman(radius: number, height: number) {
+  const top = height / 2,
+    lip = height * 0.2,
+    R = radius;
+  return new T.LatheGeometry(
+    [
+      [0, -top],
+      [R * 0.95, -top],
+      [R, -top + lip],
+      [R, top - lip],
+      [R * 0.95, top],
+      [R * 0.84, top],
+      [R * 0.78, top - lip],
+      [R * 0.56, top - lip],
+      [R * 0.5, top - lip * 0.3],
+      [R * 0.4, top - lip * 0.3],
+      [R * 0.34, top - lip],
+      [0, top - lip],
+    ].map(([r, y]) => new T.Vector2(r, y)),
+    40,
+  );
+}
 /** A lacquered or glazed thing (a stone, a marble, a ball, a die): a clear coat over it where a graphics card draws. */
 export function glossy(options: T.MeshStandardMaterialParameters, coat = 1): T.MeshStandardMaterial {
   return capable() ? new T.MeshPhysicalMaterial({ ...options, clearcoat: coat, clearcoatRoughness: 0.14 }) : new T.MeshStandardMaterial(options);

@@ -92,14 +92,15 @@ export class HareView extends TableView<State> {
       };
     part(new T.SphereGeometry(0.34, 20, 14), coat, -0.05, 0.42, 0, 1.45, 0.95, 0.85);
     part(new T.SphereGeometry(0.24, 18, 12), coat, 0.42, 0.78, 0);
-    part(new T.BoxGeometry(0.3, 0.16, 0.2), coat, 0.66, 0.72, 0);
+    // A rounded muzzle, drooping ears, and legs and a tail without corners.
+    part(new T.CapsuleGeometry(0.085, 0.15, 4, 10).rotateZ(Math.PI / 2), coat, 0.66, 0.72, 0);
     part(new T.SphereGeometry(0.06, 10, 8), dark, 0.82, 0.76, 0);
     for (const side of [-1, 1]) {
-      part(new T.BoxGeometry(0.1, 0.3, 0.16), dark, 0.36, 0.8, side * 0.24).rotation.x = side * 0.5;
+      part(new T.SphereGeometry(0.12, 12, 8), dark, 0.36, 0.78, side * 0.25, 0.5, 1.5, 0.85).rotation.x = side * 0.5;
       part(new T.SphereGeometry(0.035, 8, 6), dark, 0.6, 0.86, side * 0.11);
-      for (const along of [-0.34, 0.26]) part(new T.CylinderGeometry(0.075, 0.065, 0.4, 10), coat, along, 0.2, side * 0.17);
+      for (const along of [-0.34, 0.26]) part(new T.CapsuleGeometry(0.07, 0.26, 4, 8), coat, along, 0.2, side * 0.17);
     }
-    part(new T.CylinderGeometry(0.035, 0.06, 0.42, 8), dark, -0.56, 0.62, 0).rotation.z = 0.9;
+    part(new T.CapsuleGeometry(0.04, 0.36, 4, 8), dark, -0.56, 0.62, 0).rotation.z = 0.9;
     part(new T.TorusGeometry(0.2, 0.035, 8, 20), this.standard({ color: "#c63a2a" }), 0.3, 0.62, 0).rotation.y = Math.PI / 2;
     return g;
   }

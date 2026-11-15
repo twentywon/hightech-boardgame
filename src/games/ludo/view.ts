@@ -1,4 +1,4 @@
-import { block, hop } from "../../engine/scene-utils";
+import { block, hop, pawn } from "../../engine/scene-utils";
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -161,16 +161,13 @@ export class LudoView extends TableView<State> {
     table.castShadow = false;
     const edge = this.standard({ color: "#3a2c1f", roughness: 0.6 });
     this.add(block(15 * S + 0.3, 0.2, 15 * S + 0.3), [edge, edge, this.standard({ map: this.own(boardTexture()), roughness: 0.85 }), edge, edge, edge], 0, -0.1, 0);
-    const pawn = this.own(new T.CylinderGeometry(0.1, 0.22, 0.46, 20)),
-      head = this.own(new T.SphereGeometry(0.15, 16, 12));
+    // A turned man, standing where the old one did (its foot 0.23 under the middle the tokens are placed by).
+    const man = this.own(pawn(0.7).translate(0, -0.23, 0));
     LUDO_COLORS.forEach((color) => {
       const paint = this.standard({ color, roughness: 0.35 });
       for (let k = 0; k < 4; k++) {
-        const mesh = new T.Mesh(pawn, paint),
-          top = new T.Mesh(head, paint);
-        top.position.y = 0.3;
-        mesh.add(top);
-        mesh.castShadow = top.castShadow = true;
+        const mesh = new T.Mesh(man, paint);
+        mesh.castShadow = true;
         this.tokens.push(mesh);
         this.scene.add(mesh);
       }

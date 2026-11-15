@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block, hop as arc, travel } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block, hop as arc, travel, draughtsman } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
@@ -222,7 +222,7 @@ export class PointBoardView {
       spec.marbles
         ? new T.SphereGeometry(radius, 28, 20)
         : theme === "wood"
-        ? new T.CylinderGeometry(radius, radius * 1.04, this.height, 32)
+        ? draughtsman(radius * 1.02, this.height)
         : new T.SphereGeometry(radius, 28, 16).scale(1, this.height / (radius * 2), 1),
     );
     let skin: T.CanvasTexture | null = null;
