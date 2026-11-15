@@ -10,6 +10,7 @@ import * as pour from "../src/games/pour/rules";
 import * as river from "../src/games/river/rules";
 import * as hanoi from "../src/games/hanoi/rules";
 import * as lights from "../src/games/lights/rules";
+import * as queensRules from "../src/games/queens/rules";
 import * as mines from "../src/games/mines/rules";
 import * as fruit from "../src/games/fruit/rules";
 import * as box from "../src/games/fruit/sim";
@@ -984,5 +985,47 @@ describe("meat grill", () => {
     for (let i = 0; i < grill.SECONDS + 75; i++) free = grill.play(free, to(grill.TICK))!;
     expect([free.endless, free.winner, free.gone, grill.clock(free.gone)]).toEqual([true, null, 195, "3:15"]);
     expect(grill.grill.hint(free)).toMatch(/지난 시간 3:15/);
+  });
+});
+
+describe("queens on the board", () => {
+  test("every board has its known number of answers", () => {
+    expect([5, 6, 7, 8].map((n) => queensRules.answers(n).length)).toEqual([10, 4, 40, 92]);
+  });
+  test("a laid puzzle keeps its givens, which never clash, and the first four stages have a single way to finish", () => {
+    for (let stage = 1; stage <= queensRules.STAGES.length; stage++)
+      for (let seed = 1; seed <= 12; seed++) {
+        const state = queensRules.createGame(stage, seededRandom(seed * 31 + stage)),
+          { size, given } = queensRules.STAGES[stage - 1];
+        expect(state.size).toBe(size);
+        expect(state.fixed.filter(Boolean)).toHaveLength(given);
+        expect(queensRules.clashing(state)).toEqual([]);
+        const ways = queensRules.answers(size).filter((cols) => state.fixed.every((f, i) => !f || cols[Math.floor(i / size)] === i % size));
+        if (stage <= 4) expect(ways).toHaveLength(1);
+        else expect(ways.length).toBeGreaterThan(0);
+      }
+  });
+  test("a given queen cannot be moved, no more than n are set, and a clash is told", () => {
+    let state = queensRules.createGame(1, seededRandom(5));
+    const given = state.fixed.findIndex(Boolean);
+    expect(queensRules.play(state, { from: -1, to: given, extra: -1 })).toBeNull();
+    // A queen on the given's row clashes with it.
+    const sameRow = Math.floor(given / 5) * 5 + ((given % 5) + 1) % 5;
+    state = queensRules.play(state, { from: -1, to: sameRow, extra: -1 })!;
+    expect(queensRules.clashing(state)).toContain(sameRow);
+    // Taken off again, nothing clashes.
+    state = queensRules.play(state, { from: -1, to: sameRow, extra: -1 })!;
+    expect(queensRules.clashing(state)).toEqual([]);
+  });
+  test("following the hint, from a wrong start too, always ends in a solved board", () => {
+    for (let stage = 1; stage <= queensRules.STAGES.length; stage++) {
+      let state = queensRules.createGame(stage, seededRandom(stage * 7));
+      // A queen set somewhere wrong first.
+      const wrong = state.queens.findIndex((q, i) => !q && queensRules.clashing({ size: state.size, queens: state.queens.map((x, j) => x || j === i) }).length > 0);
+      state = queensRules.play(state, { from: -1, to: wrong, extra: -1 })!;
+      for (let step = 0; step < 40 && state.winner === null; step++) state = queensRules.play(state, queensRules.hint(state)!)!;
+      expect(state.winner).toBe(0);
+      expect(queensRules.queens.reason(state)).toMatch(/^성공!/);
+    }
   });
 });

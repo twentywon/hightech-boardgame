@@ -212,6 +212,11 @@ const play = {
     await keys(["ArrowLeft", "ArrowLeft", "Enter", "ArrowRight", "Enter"], 260);
     await wait(700);
   },
+  "queens-on-the-board": async () => {
+    // The 8×8 board with its three given queens.
+    await page.locator("dialog[open] .stage-card").nth(3).click();
+    await wait(900);
+  },
   "lights-on": async () => {
     await page.locator("dialog[open] .stage-card").nth(2).click();
     await wait(500);

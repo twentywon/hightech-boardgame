@@ -344,6 +344,14 @@ export const games = [
     available: true,
   },
   {
+    name: "체스판의 퀸",
+    en: "QUEENS ON THE BOARD",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "♛",
+    available: true,
+  },
+  {
     name: "지뢰찾기",
     en: "MINESWEEPER",
     category: "퍼즐게임",

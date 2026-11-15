@@ -7,6 +7,7 @@ import { createGame as layJugs, solve as solveJugs } from "../../src/games/pour/
 import { createGame as gather, solve as ferry } from "../../src/games/river/rules";
 import * as tower from "../../src/games/hanoi/rules";
 import * as lamps from "../../src/games/lights/rules";
+import * as queenRules from "../../src/games/queens/rules";
 import * as field from "../../src/games/mines/rules";
 import { selectGame } from "./library";
 
@@ -709,5 +710,36 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
   await expect(figure(1)).toHaveText(/^0:0\d$/);
   await expect(figure(1)).not.toHaveText("0:00", { timeout: 20000 });
   await expect(kept("wraps")).toHaveAttribute("data-wraps", "0");
+  expect(errors).toEqual([]);
+});
+
+test("queens on the board: a puzzle laid at random is finished by setting the missing queens", async ({ page }) => {
+  const random = await seeded(page, 47),
+    errors = await sit(page, "체스판의 퀸");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "6×6" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  // Puzzles were laid when the game was looked at and when sitting down; the third is the one chosen.
+  queenRules.createGame(1, random);
+  queenRules.createGame(1, random);
+  const state = queenRules.createGame(2, random),
+    size = state.size,
+    answer = queenRules.answers(size).find((cols) => state.fixed.every((f, i) => !f || cols[Math.floor(i / size)] === i % size))!,
+    board = walker(page, size, size);
+  await expect(page.locator("#turn")).toContainText(`퀸 ${size}개`);
+  await board.home();
+  // A given queen cannot be taken off.
+  const given = state.fixed.findIndex(Boolean);
+  await board.go(given);
+  await page.waitForTimeout(300);
+  await expect(count(page)).toHaveText("0수");
+  const missing = answer.map((c, r) => r * size + c).filter((i) => !state.fixed[i]);
+  for (const [n, cell] of missing.entries()) {
+    await board.go(cell);
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+  }
+  await expect(page.locator("#turn")).toContainText("성공!");
   expect(errors).toEqual([]);
 });

@@ -37,6 +37,7 @@ import { pourConfig } from "../games/pour/config";
 import { riverConfig } from "../games/river/config";
 import { hanoiConfig } from "../games/hanoi/config";
 import { lightsConfig } from "../games/lights/config";
+import { queensConfig } from "../games/queens/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -155,6 +156,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "river-crossing": { config: riverConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "tower-of-hanoi": { config: hanoiConfig, options: { mode: "ai", variant: "3", level: "normal" } },
   "lights-on": { config: lightsConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "queens-on-the-board": { config: queensConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -288,6 +290,7 @@ type GameSelection =
   | "river-crossing"
   | "tower-of-hanoi"
   | "lights-on"
+  | "queens-on-the-board"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"
