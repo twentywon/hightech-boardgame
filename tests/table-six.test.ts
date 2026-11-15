@@ -1,0 +1,172 @@
+import { describe, expect, test } from "vitest";
+import { seededRandom } from "../src/core/ai";
+import * as amz from "../src/games/amazons/rules";
+import * as bg from "../src/games/backgammon/rules";
+import * as one from "../src/games/onecard/rules";
+import * as om from "../src/games/oldmaid/rules";
+import * as cur from "../src/games/curling/rules";
+import * as sb from "../src/games/starbattle/rules";
+import { rankOf, suitOf } from "../src/games/deck/cards";
+
+const card = (suit: number, rank: number) => suit * 13 + rank - 1;
+describe("game of the amazons", () => {
+  test("four amazons a side; a move lands like a queen and burns a square", () => {
+    const s = amz.createGame();
+    expect(s.board.filter((p) => p === 0)).toHaveLength(4);
+    expect(s.board.filter((p) => p === 1)).toHaveLength(4);
+    const m = amz.moves(s)[0],
+      next = amz.play(s, m)!;
+    expect(next.board[m.extra]).toBe(amz.BURNT);
+    expect(next.board[m.to]).toBe(0);
+    expect(next.turn).toBe(1);
+    // An arrow may go back to the square the amazon left.
+    expect(amz.moves(s).some((x) => x.extra === x.from)).toBe(true);
+  });
+  test("a side that cannot move loses, and the computer's moves are legal to the end", () => {
+    const random = seededRandom(4);
+    let s = amz.createGame();
+    for (let n = 0; n < 120 && s.winner === null; n++) {
+      const m = amz.chooseMove(s, "easy", random)!;
+      s = amz.play(s, m)!;
+      expect(s).not.toBeNull();
+    }
+    expect(s.winner).not.toBeNull();
+    expect(amz.canMove(s.board, s.turn)).toBe(false);
+  });
+});
+describe("backgammon", () => {
+  test("fifteen checkers a side; doubles play four times; a blot hit goes to the bar and comes in first", () => {
+    const s = bg.createGame();
+    expect(s.points[0].reduce((a, b) => a + b, 0)).toBe(15);
+    expect(bg.pips(s, 0)).toBe(167);
+    const doubles = bg.play(s, { from: -1, to: bg.ROLL, extra: -1 }, () => 0.5)!;
+    expect(doubles.left).toEqual([4, 4, 4, 4]);
+    // A lone white checker on point 4; red's checker on point 0 lands on it with a 4.
+    const blot = { ...bg.createGame(), phase: "move" as const, turn: 1 as const, left: [4, 2] };
+    blot.points[0] = [...blot.points[0]];
+    blot.points[0][5] = 4;
+    blot.points[0][4] = 1;
+    const hit = bg.play(blot, { from: 0, to: 4, extra: -1 })!;
+    expect(hit.bar[0]).toBe(1);
+    expect(hit.last!.hit).toBe(true);
+    const back = { ...hit, turn: 0 as const, phase: "move" as const, left: [3, 5] };
+    expect(bg.moves(back).every((m) => m.from === bg.BAR)).toBe(true);
+  });
+  test("games against itself end, with a gammon or backgammon counted", () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const random = seededRandom(seed);
+      let s = bg.createGame();
+      for (let n = 0; n < 3000 && s.winner === null; n++) s = bg.play(s, bg.chooseMove(s, "normal", random)!, random)!;
+      expect(s.winner).not.toBeNull();
+      expect(s.off[s.winner as 0 | 1]).toBe(15);
+      expect([1, 2, 3]).toContain(s.stake);
+    }
+  });
+});
+describe("one card", () => {
+  test("seven each and a plain card turned up; suit or rank goes on", () => {
+    const s = one.createGame(seededRandom(2));
+    expect(s.hands[0]).toHaveLength(7);
+    expect(s.hands[1]).toHaveLength(7);
+    const top = one.top(s);
+    expect(one.power(top)).toBe(0);
+    for (const c of s.hands[0]) if (c < 52) expect(one.playable(s, c)).toBe(suitOf(c) === suitOf(top) || rankOf(c) === rankOf(top));
+  });
+  test("attacks pile up and pass on; a 7 names the suit; a jack plays again", () => {
+    const base = { ...one.createGame(seededRandom(3)), discard: [card(1, 5)] };
+    const attack = { ...base, hands: [[card(1, 2), card(0, 9)], [card(2, 2), card(3, 9)]] as [number[], number[]] };
+    const a = one.play(attack, { from: -1, to: card(1, 2), extra: -1 })!;
+    expect(a.attack).toBe(2);
+    expect(one.playable(a, card(2, 2))).toBe(true);
+    expect(one.playable(a, card(3, 9))).toBe(false);
+    const passed = one.play(a, { from: -1, to: card(2, 2), extra: -1 })!;
+    expect(passed.attack).toBe(4);
+    const took = one.play(passed, { from: -1, to: one.DRAW, extra: -1 })!;
+    expect(took.hands[0]).toHaveLength(5);
+    expect(took.attack).toBe(0);
+    const seven = { ...base, hands: [[card(1, 7), card(0, 9)], [card(3, 3)]] as [number[], number[]] };
+    const named = one.play(seven, { from: -1, to: card(1, 7), extra: -1 })!;
+    expect(named.phase).toBe("suit");
+    const clubs = one.play(named, { from: -1, to: one.SUIT_BASE + 3, extra: -1 })!;
+    expect(clubs.suit).toBe(3);
+    expect(one.playable(clubs, card(3, 3))).toBe(true);
+    const jack = { ...base, hands: [[card(1, 11), card(0, 9)], [card(3, 3)]] as [number[], number[]] };
+    expect(one.play(jack, { from: -1, to: card(1, 11), extra: -1 })!.turn).toBe(0);
+  });
+  test("games against the computer end", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const random = seededRandom(seed);
+      let s = one.createGame(random);
+      for (let n = 0; n < 2000 && s.winner === null; n++) s = one.play(s, one.chooseMove(s, "normal", random)!, random)!;
+      expect(s.winner).not.toBeNull();
+    }
+  });
+});
+describe("old maid", () => {
+  test("every card dealt, pairs laid down at once, and the game ends with the joker in one hand", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const random = seededRandom(seed);
+      let s = om.createGame(random);
+      expect(s.hands.flat().length + s.pairs.length).toBe(53);
+      for (const hand of s.hands) {
+        const ranks = hand.filter((c) => c !== om.JOKER).map(rankOf);
+        expect(new Set(ranks).size).toBe(ranks.length);
+      }
+      for (let n = 0; n < 500 && s.winner === null; n++) s = om.play(s, om.chooseMove(s, "normal", random)!, random)!;
+      expect(s.winner).not.toBeNull();
+      expect(s.hands[s.thief!]).toEqual([om.JOKER]);
+      expect(s.winner).toBe(s.thief === 0 ? 1 : 0);
+    }
+  });
+});
+describe("curling", () => {
+  test("a stone short of the hog line is taken off; strengths 11 to 15 stop in the house", () => {
+    expect(cur.rest(cur.slide([], 0, 0, 3, 0), 0)).toHaveLength(0);
+    for (const power of [11, 13, 15]) {
+      const [stone] = cur.rest(cur.slide([], 0, 0, power, 0), 0);
+      expect(Math.hypot(stone.x - cur.TEE, stone.z) - cur.R).toBeLessThan(cur.HOUSE);
+    }
+    // A turn makes it curl one way or the other.
+    const [left] = cur.rest(cur.slide([], 0, 0, 13, 1), 0),
+      [right] = cur.rest(cur.slide([], 0, 0, 13, 2), 0);
+    expect(left.z).toBeLessThan(-0.2);
+    expect(right.z).toBeGreaterThan(0.2);
+  });
+  test("the nearest stones score; a game of four ends is played out", () => {
+    const at = (id: number, x: number, z = 0) => ({ id, x, z, vx: 0, vz: 0, r: cur.R, m: 1, on: true });
+    expect(cur.count([at(0, cur.TEE), at(1, cur.TEE + 0.5), at(4, cur.TEE + 0.8)])).toEqual([2, 0]);
+    expect(cur.count([at(0, cur.TEE + 1), at(4, cur.TEE)])).toEqual([0, 1]);
+    const random = seededRandom(6);
+    let s = cur.createGame();
+    expect(cur.play(s, { from: -1, to: cur.SPIN, extra: -1 })!.ply).toBe(0);
+    for (let n = 0; n < 200 && s.winner === null; n++) s = cur.play(s, cur.chooseMove(s, "easy", random)!)!;
+    expect(s.winner).not.toBeNull();
+    expect(s.scores[0]).toHaveLength(cur.ENDS);
+  });
+});
+describe("star battle", () => {
+  test("every laid puzzle has one answer, a star a row, column and region, none touching, and the hint finds it", () => {
+    for (let stage = 1; stage <= sb.STAGES.length; stage++)
+      for (let seed = 1; seed <= 4; seed++) {
+        let s = sb.createGame(stage, seededRandom(seed * 17 + stage));
+        const n = s.size;
+        expect(sb.solutions(n, s.region)).toBe(1);
+        expect(new Set(s.answer).size).toBe(n);
+        expect(new Set(s.answer.map((c, r) => s.region[r * n + c])).size).toBe(n);
+        s.answer.forEach((c, r) => r && expect(Math.abs(c - s.answer[r - 1])).toBeGreaterThan(1));
+        for (let m = 0; m < 200 && s.winner === null; m++) s = sb.play(s, sb.hint(s)!)!;
+        expect(s.winner).toBe(0);
+      }
+  });
+  test("a tap goes star, dot, nothing; stars in each other's way clash", () => {
+    const s = sb.createGame(1, seededRandom(2));
+    let t = s;
+    for (const mark of [sb.STAR, sb.DOT, sb.EMPTY]) {
+      t = sb.play(t, { from: -1, to: 0, extra: -1 })!;
+      expect(t.cells[0]).toBe(mark);
+    }
+    const cells = new Array(25).fill(0);
+    cells[0] = cells[6] = sb.STAR;
+    expect(sb.clashes({ size: 5, region: s.region, cells })[0]).toBe(true);
+  });
+});

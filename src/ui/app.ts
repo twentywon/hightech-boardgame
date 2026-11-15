@@ -47,6 +47,12 @@ import { foxGeeseConfig } from "../games/foxgeese/config";
 import { taflConfig } from "../games/tafl/config";
 import { urConfig } from "../games/ur/config";
 import { tentsConfig } from "../games/tents/config";
+import { amazonsConfig } from "../games/amazons/config";
+import { backgammonConfig } from "../games/backgammon/config";
+import { oneCardConfig } from "../games/onecard/config";
+import { oldMaidConfig } from "../games/oldmaid/config";
+import { curlingConfig } from "../games/curling/config";
+import { starBattleConfig } from "../games/starbattle/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -175,6 +181,12 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   hnefatafl: { config: taflConfig, options: { mode: "ai", variant: "defenders", level: "normal" } },
   "royal-game-of-ur": { config: urConfig, options: { mode: "ai", variant: "", level: "normal" } },
   tents: { config: tentsConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "game-of-the-amazons": { config: amazonsConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  backgammon: { config: backgammonConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "one-card": { config: oneCardConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "old-maid": { config: oldMaidConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  curling: { config: curlingConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "star-battle": { config: starBattleConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -318,6 +330,12 @@ type GameSelection =
   | "hnefatafl"
   | "royal-game-of-ur"
   | "tents"
+  | "game-of-the-amazons"
+  | "backgammon"
+  | "one-card"
+  | "old-maid"
+  | "curling"
+  | "star-battle"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"

@@ -17,6 +17,8 @@ export interface Disc {
   /** Slices it still has to spend in the air, and how many the flight lasts: an airborne disc touches nothing. */
   air?: number;
   flight?: number;
+  /** A curling stone's turn: it drifts sideways as it slides, more as it slows (left out, a disc runs straight). */
+  curl?: number;
 }
 export interface Arena {
   halfX: number;
@@ -69,6 +71,14 @@ export function step(discs: Disc[], arena: Arena, heard?: Heard): number[] {
     const slowed = Math.max(0, speed - arena.friction * DT);
     d.vx *= slowed / speed;
     d.vz *= slowed / speed;
+    if (d.curl && slowed > 0) {
+      // Sideways, across the way it goes, and harder as it slows.
+      const push = d.curl * Math.min(2.5, 1.4 / slowed) * DT;
+      const vx = d.vx,
+        vz = d.vz;
+      d.vx += (-vz / slowed) * push;
+      d.vz += (vx / slowed) * push;
+    }
     d.x += d.vx * DT;
     d.z += d.vz * DT;
   }
@@ -100,6 +110,8 @@ export function step(discs: Disc[], arena: Arena, heard?: Heard): number[] {
         heard.discs = (heard.discs ?? 0) + 1;
         heard.force = Math.max(heard.force ?? 0, closing);
       }
+      // A stone that is struck, or strikes, runs straight afterwards.
+      a.curl = b.curl = undefined;
       const impulse = ((1 + arena.bounce) * closing) / (1 / a.m + 1 / b.m);
       a.vx -= (impulse / a.m) * nx;
       a.vz -= (impulse / a.m) * nz;

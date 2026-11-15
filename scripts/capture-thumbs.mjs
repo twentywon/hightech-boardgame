@@ -247,6 +247,23 @@ const play = {
     await keys(["ArrowRight", "Enter", "Enter", "ArrowRight", "Enter", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "ArrowLeft", "Enter", "Enter", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "Enter"], 260);
     await wait(700);
   },
+  "star-battle": async () => {
+    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await wait(800);
+    await keys(["Enter", "ArrowRight", "ArrowRight", "Enter", "Enter", "ArrowDown", "ArrowDown", "Enter", "ArrowRight", "ArrowDown", "Enter", "Enter"], 260);
+    await wait(700);
+  },
+  backgammon: async () => {
+    await page.evaluate(() => document.querySelector("#pg-tool-0")?.click());
+    await wait(2400);
+  },
+  "one-card": async () => {
+    await wait(1200);
+  },
+  "old-maid": async () => {
+    await keys(["ArrowRight", "Enter"], 200);
+    await wait(4000);
+  },
   tents: async () => {
     // The 7×7 field with a few tents and grass marks.
     await page.locator("dialog[open] .stage-card").nth(2).click();

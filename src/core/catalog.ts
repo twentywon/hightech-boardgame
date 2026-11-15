@@ -200,6 +200,14 @@ export const games = [
     available: true,
   },
   {
+    name: "아마존스",
+    en: "GAME OF THE AMAZONS",
+    category: "보드게임",
+    players: "2인용",
+    icon: "♛",
+    available: true,
+  },
+  {
     name: "숫자야구",
     en: "NUMBER BASEBALL",
     category: "보드게임",
@@ -240,6 +248,14 @@ export const games = [
     available: true,
   },
   {
+    name: "컬링",
+    en: "CURLING",
+    category: "보드게임",
+    players: "2인용",
+    icon: "◎",
+    available: true,
+  },
+  {
     name: "타일 러미",
     en: "TILE RUMMY",
     category: "보드게임",
@@ -272,6 +288,14 @@ export const games = [
     available: true,
   },
   {
+    name: "백개먼",
+    en: "BACKGAMMON",
+    category: "주사위게임",
+    players: "2인용",
+    icon: "◆",
+    available: true,
+  },
+  {
     name: "포켓볼",
     en: "POCKET BALL",
     category: "보드게임",
@@ -293,6 +317,22 @@ export const games = [
     category: "카드게임",
     players: "2인용",
     icon: "✿",
+    available: true,
+  },
+  {
+    name: "원카드",
+    en: "ONE CARD",
+    category: "카드게임",
+    players: "2인용",
+    icon: "🂡",
+    available: true,
+  },
+  {
+    name: "도둑잡기",
+    en: "OLD MAID",
+    category: "카드게임",
+    players: "2인용",
+    icon: "🃏",
     available: true,
   },
   {
@@ -421,6 +461,14 @@ export const games = [
     category: "퍼즐게임",
     players: "1인용",
     icon: "⛺",
+    available: true,
+  },
+  {
+    name: "스타 배틀",
+    en: "STAR BATTLE",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "★",
     available: true,
   },
   {
