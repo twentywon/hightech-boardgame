@@ -972,3 +972,217 @@ export function sumer(scene: T.Object3D, own: Own, half: number, depth: number) 
   lyre.rotation.y = 0.45;
   scene.add(lyre);
 }
+/** A chalkboard: dark green slate with the day's writing in chalk and a few doodles. */
+function chalkboard() {
+  const { c, ctx } = canvas(1024, 280),
+    rand = noise(91);
+  ctx.fillStyle = "#2c4a3a";
+  ctx.fillRect(0, 0, 1024, 280);
+  // Old chalk wiped across it.
+  for (let i = 0; i < 70; i++) {
+    ctx.fillStyle = `rgba(230, 236, 228, ${0.02 + rand() * 0.04})`;
+    ctx.beginPath();
+    ctx.ellipse(rand() * 1024, rand() * 280, 40 + rand() * 120, 10 + rand() * 26, (rand() - 0.5) * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // The writing keeps to the sides: the student across the desks sits before the middle of the board.
+  ctx.fillStyle = "rgba(244, 244, 236, 0.92)";
+  ctx.textBaseline = "middle";
+  ctx.font = '500 32px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif';
+  ctx.fillText("모둠 활동", 40, 52);
+  ctx.font = '700 58px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif';
+  ctx.fillText("오늘은", 40, 130);
+  ctx.fillText("도둑잡기!", 40, 205);
+  ctx.font = '500 32px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif';
+  ctx.fillText("주번: 김○○", 700, 52);
+  ctx.fillStyle = "rgba(255, 214, 120, 0.9)";
+  ctx.fillText("조커 조심 ☆", 760, 225);
+  ctx.strokeStyle = "rgba(244, 244, 236, 0.85)";
+  ctx.lineWidth = 4;
+  // A smiling face and a star.
+  ctx.beginPath();
+  ctx.arc(880, 110, 42, 0, Math.PI * 2);
+  ctx.moveTo(904, 120);
+  ctx.arc(880, 120, 24, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(244, 244, 236, 0.85)";
+  for (const x of [866, 894]) {
+    ctx.beginPath();
+    ctx.arc(x, 98, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return texture(c);
+}
+/** The view out of the windows: sky over the trees of the school yard. */
+function schoolyard() {
+  const { c, ctx } = canvas(512, 256),
+    rand = noise(19);
+  const sky = ctx.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, "#8fc4ef");
+  sky.addColorStop(1, "#e4f1fb");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+    const x = rand() * 512,
+      y = 30 + rand() * 60;
+    for (let k = 0; k < 5; k++) {
+      ctx.beginPath();
+      ctx.ellipse(x + k * 16, y + Math.sin(k) * 6, 22, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  for (let i = 0; i < 26; i++) {
+    const x = (i / 26) * 540 - 10,
+      h = 60 + rand() * 50;
+    ctx.fillStyle = ["#4f8a3f", "#5f9a46", "#3f7a36", "#6aa14c"][i % 4];
+    ctx.beginPath();
+    ctx.ellipse(x, 256 - h * 0.5, 26 + rand() * 12, h * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return texture(c);
+}
+/** A cork notice board with pinned papers in colours. */
+function noticeBoard() {
+  const { c, ctx } = canvas(512, 256),
+    rand = noise(43);
+  ctx.fillStyle = "#b8875a";
+  ctx.fillRect(0, 0, 512, 256);
+  for (let i = 0; i < 900; i++) {
+    ctx.fillStyle = `rgba(${90 + rand() * 60}, ${55 + rand() * 40}, 30, 0.35)`;
+    ctx.fillRect(rand() * 512, rand() * 256, 2, 2);
+  }
+  for (const [x, y, w, h, color] of [[30, 30, 120, 90, "#fff7d6"], [170, 20, 100, 130, "#ffffff"], [290, 40, 90, 70, "#ffd9e6"], [400, 24, 90, 110, "#d6ecff"], [60, 140, 140, 90, "#e0ffd6"], [230, 160, 110, 80, "#ffffff"], [370, 150, 120, 86, "#fff1c2"]] as [number, number, number, number, string][]) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "rgba(60, 60, 70, 0.45)";
+    for (let line = 0; line < 5; line++) ctx.fillRect(x + 10, y + 16 + line * 13, w - 20 - (line % 2) * 20, 3);
+    ctx.fillStyle = ["#d23b3b", "#2f62c0", "#e0b020"][Math.floor(rand() * 3)];
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + 6, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return texture(c);
+}
+/**
+ * A school classroom round a group of four desks pushed together (the user asked for a classroom): a wooden floor,
+ * rows of other desks and chairs, a green chalkboard with its tray on the front wall, a teacher's desk, windows on the
+ * schoolyard along the left wall and a notice board on the right. The desks' tops are at `y` 0 and reach `half` by
+ * `depth`; `seats` are where the players sit (a chair is put behind each but the first, mine).
+ */
+export function classroom(scene: T.Object3D, own: Own, half: number, depth: number, seats: { x: number; z: number; fx: number; fz: number }[]) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.8, ...options })),
+    add = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x: number, y: number, z: number, shadow = true) => {
+      const mesh = new T.Mesh(own(geometry), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = shadow;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      return mesh;
+    },
+    FLOOR = -8.2;
+  const floor = add(new T.PlaneGeometry(80, 80), standard({ ...stuff("boards", "#b88a5a", 9, own), roughness: 0.55 }), 0, FLOOR, -8, false);
+  floor.rotation.x = -Math.PI / 2;
+  // The desks: a pale laminate top with a dark edging, on grey steel legs, with a shelf for books beneath.
+  const grain = own(wood(false, 0.6));
+  grain.repeat.set(0.6, 0.6);
+  const laminate = standard({ map: grain, color: "#f0dcb8", roughness: 0.5 }),
+    edging = standard({ color: "#5a4636", roughness: 0.5 }),
+    steel = standard({ color: "#8a9096", roughness: 0.4, metalness: 0.6 }),
+    shelf = standard({ color: "#6f747a", roughness: 0.6, metalness: 0.4 }),
+    W = half,
+    D = depth;
+  // The four pushed together, each with its own edging so that the seams show.
+  for (const sx of [-1, 1])
+    for (const sz of [-1, 1]) {
+      const x = (sx * W) / 2,
+        z = (sz * D) / 2;
+      add(new T.BoxGeometry(W - 0.06, 0.28, D - 0.06), [edging, edging, laminate, edging, edging, edging], x, -0.14, z, false);
+      add(new T.BoxGeometry(W - 0.8, 1.0, D - 1.2), shelf, x, -0.9, z, false);
+      for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) add(new T.CylinderGeometry(0.13, 0.13, -FLOOR - 0.3, 8), steel, x + lx * (W / 2 - 0.35), (FLOOR - 0.3) / 2, z + lz * (D / 2 - 0.35));
+    }
+  // A chair behind each of the others.
+  const chairWood = standard({ map: own(wood(false, 0.7)), color: "#d9b07a", roughness: 0.6 }),
+    chair = (x: number, z: number, turn: number) => {
+      const g = new T.Group(),
+        part = (geometry: T.BufferGeometry, material: T.Material, px: number, py: number, pz: number) => {
+          const mesh = new T.Mesh(own(geometry), material);
+          mesh.position.set(px, py, pz);
+          mesh.castShadow = mesh.receiveShadow = true;
+          g.add(mesh);
+        };
+      part(new T.BoxGeometry(4.2, 0.3, 4.0), chairWood, 0, FLOOR + 4.9, 0);
+      part(new T.BoxGeometry(4.2, 2.6, 0.3), chairWood, 0, FLOOR + 8.4, 2.0);
+      for (const [lx, lz] of [[-1.8, -1.7], [1.8, -1.7], [-1.8, 1.8], [1.8, 1.8]]) part(new T.CylinderGeometry(0.11, 0.11, 4.9, 8), steel, lx, FLOOR + 2.45, lz);
+      for (const lx of [-1.8, 1.8]) part(new T.CylinderGeometry(0.1, 0.1, 3.6, 8), steel, lx, FLOOR + 6.9, 1.9);
+      g.position.set(x, 0, z);
+      g.rotation.y = turn;
+      scene.add(g);
+    };
+  seats.slice(1).forEach((s) => chair(s.x - s.fx * 0.6, s.z - s.fz * 0.6, Math.atan2(-s.fx, -s.fz)));
+  // The rest of the class: single desks and chairs in rows facing the board, left as they are after a lesson.
+  const spots: [number, number][] = [];
+  for (const x of [-26, -18, -10, 10, 18, 26])
+    for (const z of [-30, -22, -14, -6, 2, 10]) spots.push([x, z]);
+  for (const x of [-4.5, 4.5]) for (const z of [-30, -22]) spots.push([x, z]);
+  const tops = new T.InstancedMesh(own(new T.BoxGeometry(5.6, 0.28, 4.2)), laminate, spots.length),
+    rims = new T.InstancedMesh(own(new T.BoxGeometry(5.7, 0.2, 4.3)), edging, spots.length),
+    legs = new T.InstancedMesh(own(new T.CylinderGeometry(0.13, 0.13, -FLOOR, 8)), steel, spots.length * 4),
+    seatsMesh = new T.InstancedMesh(own(new T.BoxGeometry(4.0, 0.3, 3.8)), chairWood, spots.length),
+    backs = new T.InstancedMesh(own(new T.BoxGeometry(4.0, 2.4, 0.3)), chairWood, spots.length),
+    chairLegs = new T.InstancedMesh(own(new T.CylinderGeometry(0.1, 0.1, 4.9, 6)), steel, spots.length * 4),
+    m = new T.Matrix4(),
+    rand = noise(5);
+  spots.forEach(([x, z], i) => {
+    const dx = (rand() - 0.5) * 0.8,
+      dz = (rand() - 0.5) * 0.6;
+    tops.setMatrixAt(i, m.makeTranslation(x + dx, -0.14, z + dz));
+    rims.setMatrixAt(i, m.makeTranslation(x + dx, -0.3, z + dz));
+    [[-2.4, -1.8], [2.4, -1.8], [-2.4, 1.8], [2.4, 1.8]].forEach(([lx, lz], k) => legs.setMatrixAt(i * 4 + k, m.makeTranslation(x + dx + lx, FLOOR / 2, z + dz + lz)));
+    const cx = x + (rand() - 0.5) * 1.2,
+      cz = z + 4.4 + rand() * 0.8;
+    seatsMesh.setMatrixAt(i, m.makeTranslation(cx, FLOOR + 4.9, cz));
+    backs.setMatrixAt(i, m.makeTranslation(cx, FLOOR + 8.2, cz + 1.9));
+    [[-1.7, -1.6], [1.7, -1.6], [-1.7, 1.7], [1.7, 1.7]].forEach(([lx, lz], k) => chairLegs.setMatrixAt(i * 4 + k, m.makeTranslation(cx + lx, FLOOR + 2.45, cz + lz)));
+  });
+  for (const mesh of [tops, rims, legs, seatsMesh, backs, chairLegs]) {
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+  // The front wall with its chalkboard, tray and a wooden wainscot; the teacher's desk before it.
+  const plaster = standard({ color: "#ece6d6", roughness: 0.95 }),
+    wainscot = standard({ map: own(wood(false, 0.5)), color: "#c9a77c", roughness: 0.7 }),
+    front = -38;
+  add(new T.PlaneGeometry(80, 40), plaster, 0, FLOOR + 20, front, false);
+  add(new T.BoxGeometry(80, 7.5, 0.3), wainscot, 0, FLOOR + 3.75, front + 0.15, false);
+  add(new T.BoxGeometry(46, 13.4, 0.3), standard({ color: "#a9adb1", roughness: 0.35, metalness: 0.6 }), 0, 7.5, front + 0.3, false);
+  add(new T.BoxGeometry(45, 12.6, 0.12), standard({ map: own(chalkboard()), roughness: 0.9 }), 0, 7.5, front + 0.5, false);
+  add(new T.BoxGeometry(45, 0.25, 1.0), standard({ color: "#a9adb1", roughness: 0.35, metalness: 0.6 }), 0, 1.05, front + 0.9, false);
+  const chalk = own(new T.CylinderGeometry(0.1, 0.1, 1.0, 8).rotateZ(Math.PI / 2));
+  ["#f6f4ec", "#f6d36a", "#f08aa0", "#f6f4ec"].forEach((color, i) => add(chalk, standard({ color, roughness: 0.9 }), -14 + i * 1.6, 1.28, front + 1.0));
+  add(new T.BoxGeometry(2.2, 0.6, 0.9), standard({ color: "#2b2b30", roughness: 0.9 }), 12, 1.45, front + 1.0);
+  add(new T.BoxGeometry(9, 9, 5), standard({ map: own(wood(true, 0.7)), roughness: 0.6 }), 14, FLOOR + 4.5, front + 6, true);
+  // Windows along the left wall, the schoolyard beyond them.
+  const left = -34,
+    frame = standard({ color: "#e9ece8", roughness: 0.5 });
+  const yard = add(new T.PlaneGeometry(70, 22).rotateY(Math.PI / 2), own(new T.MeshBasicMaterial({ map: own(schoolyard()) })), left - 1.2, 6, -8, false);
+  yard.receiveShadow = false;
+  for (let z = -34; z <= 16; z += 10) {
+    add(new T.BoxGeometry(0.5, 16, 8.6), own(new T.MeshStandardMaterial({ color: "#dff0ff", transparent: true, opacity: 0.12, roughness: 0.05 })), left + 0.1, 6, z, false).receiveShadow = false;
+    add(new T.BoxGeometry(0.6, 16.4, 0.5), frame, left + 0.2, 6, z - 4.6, false);
+    add(new T.BoxGeometry(0.6, 0.5, 9.6), frame, left + 0.2, 14.1, z, false);
+    add(new T.BoxGeometry(0.6, 0.5, 9.6), frame, left + 0.2, -2.1, z, false);
+  }
+  add(new T.BoxGeometry(0.6, 16.4, 0.5), frame, left + 0.2, 6, 20.6, false);
+  // The wall below and above the windows, and beyond them at both ends.
+  add(new T.BoxGeometry(0.4, 6.2, 80), plaster, left, FLOOR + 3.1, -8, false);
+  add(new T.BoxGeometry(0.4, 16.4, 9), plaster, left, 6, -43.4, false);
+  add(new T.BoxGeometry(0.4, 16.4, 12), plaster, left, 6, 26.8, false);
+  add(new T.BoxGeometry(0.4, 12, 80), plaster, left, 20.1, -8, false);
+  // The right wall: a notice board and the door to the corridor.
+  const right = 34;
+  add(new T.PlaneGeometry(80, 40).rotateY(-Math.PI / 2), plaster, right, FLOOR + 20, -8, false);
+  add(new T.BoxGeometry(0.3, 8, 18), standard({ map: own(noticeBoard()), roughness: 0.9 }), right - 0.2, 7, -16, false);
+  add(new T.BoxGeometry(0.4, 17, 8), standard({ map: own(wood(true, 0.6)), roughness: 0.6 }), right - 0.25, FLOOR + 8.5, 2, false);
+  add(new T.BoxGeometry(80, 7.5, 0.3).rotateY(Math.PI / 2), wainscot, right - 0.15, FLOOR + 3.75, -8, false);
+}

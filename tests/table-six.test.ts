@@ -108,6 +108,12 @@ describe("old maid", () => {
       const random = seededRandom(seed);
       let s = om.createGame(random);
       expect(s.hands.flat().length + s.pairs.length).toBe(53);
+      // Four at the desks: I draw from my left, and the one at my right draws from me.
+      expect(s.hands).toHaveLength(4);
+      if (s.hands.every((h) => h.length)) {
+        expect(om.source(s, 0)).toBe(1);
+        expect(om.source(s, 3)).toBe(0);
+      }
       for (const hand of s.hands) {
         const ranks = hand.filter((c) => c !== om.JOKER).map(rankOf);
         expect(new Set(ranks).size).toBe(ranks.length);

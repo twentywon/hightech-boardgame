@@ -12,7 +12,12 @@ export interface CardPose {
   /** Turn about the vertical axis. */
   turn?: number;
   s?: number;
+  /** A card held up in a hand: its whole turn in space (face toward local +y), in place of `turn` and `up`. */
+  q?: T.Quaternion;
 }
+const SPIN = new T.Euler();
+/** A pose's turn in space, whether it is held (`q`) or lies on the table. */
+export const turnOf = (pose: CardPose, out = new T.Quaternion()) => (pose.q ? out.copy(pose.q) : out.setFromEuler(SPIN.set(0, pose.turn ?? 0, pose.up ? 0 : Math.PI)));
 /** A joker's face: a jester's star and the word, black or in colour. */
 function jokerFace(ctx: CanvasRenderingContext2D, w: number, h: number, colour: boolean) {
   ctx.fillStyle = "#ffffff";
@@ -58,13 +63,16 @@ function jokerFace(ctx: CanvasRenderingContext2D, w: number, h: number, colour: 
 export abstract class DeckView<S> extends TableView<S> {
   protected cards: T.Mesh[] = [];
   protected poses = new Map<number, CardPose>();
-  constructor(host: HTMLElement, quality: "high" | "low", count: number) {
+  /** `felt` false leaves out the green table and its light, for a game that sets its own room. */
+  constructor(host: HTMLElement, quality: "high" | "low", count: number, felt = true) {
     super(host, quality, "#14231b");
-    this.daylight("#fff6e6", "#2a3a30", "#fff1da", 8, 2.1);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    this.add(new T.BoxGeometry(40, 0.4, 30), this.standard(planks(8, keep)), 0, -0.25, 0).castShadow = false;
-    this.add(block(12.4, 0.12, 9.4, 0.3), this.standard({ color: "#5a3a22", roughness: 0.5 }), 0, -0.04, 0).castShadow = false;
-    this.add(new T.BoxGeometry(11.8, 0.03, 8.8), this.standard({ color: "#1f6a45", roughness: 1, ...weave(4, 3, keep, 1) }), 0, 0.01, 0).castShadow = false;
+    if (felt) {
+      this.daylight("#fff6e6", "#2a3a30", "#fff1da", 8, 2.1);
+      this.add(new T.BoxGeometry(40, 0.4, 30), this.standard(planks(8, keep)), 0, -0.25, 0).castShadow = false;
+      this.add(block(12.4, 0.12, 9.4, 0.3), this.standard({ color: "#5a3a22", roughness: 0.5 }), 0, -0.04, 0).castShadow = false;
+      this.add(new T.BoxGeometry(11.8, 0.03, 8.8), this.standard({ color: "#1f6a45", roughness: 1, ...weave(4, 3, keep, 1) }), 0, 0.01, 0).castShadow = false;
+    }
     const geometry = keep(new T.BoxGeometry(CARD_W, 0.014, CARD_H)),
       edge = this.standard({ color: "#e8e2d4", roughness: 0.6 }),
       back = this.standard({ map: this.paint((ctx, w, h) => drawBack(ctx, w, h)), roughness: 0.5 });
@@ -105,7 +113,8 @@ export abstract class DeckView<S> extends TableView<S> {
   protected put(mesh: T.Mesh, pose: CardPose, lift = 0, flip = pose.up ? 0 : Math.PI) {
     mesh.visible = true;
     mesh.position.set(pose.x, pose.y + lift, pose.z);
-    mesh.rotation.set(0, pose.turn ?? 0, flip);
+    if (pose.q) mesh.quaternion.copy(pose.q);
+    else mesh.rotation.set(0, pose.turn ?? 0, flip);
     mesh.scale.setScalar(pose.s ?? 1);
   }
   protected place(state: S) {
@@ -119,6 +128,20 @@ export abstract class DeckView<S> extends TableView<S> {
   /** Flies one card from a pose to another, turning it over on the way when it must. */
   protected fly(id: number, a: CardPose, b: CardPose, delay: number, duration: number, heard: boolean) {
     const mesh = this.cards[id];
+    // A card held in a hand, or going to one, turns the shortest way between the two.
+    if (a.q || b.q) {
+      const qa = turnOf(a),
+        qb = turnOf(b);
+      this.tween(delay, duration, (p) => {
+        const e = p * p * (3 - 2 * p);
+        mesh.visible = true;
+        mesh.position.set(a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e + Math.sin(Math.PI * p) * 0.5, a.z + (b.z - a.z) * e);
+        mesh.quaternion.slerpQuaternions(qa, qb, e);
+        mesh.scale.setScalar((a.s ?? 1) + ((b.s ?? 1) - (a.s ?? 1)) * e);
+        if (p === 1 && heard) this.onContact();
+      });
+      return;
+    }
     this.tween(delay, duration, (p) => {
       const e = p * p * (3 - 2 * p),
         fa = a.up ? 0 : Math.PI,

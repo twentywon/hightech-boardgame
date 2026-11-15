@@ -3,15 +3,16 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 import { BLACK_JOKER, rankOf, shuffle } from "../deck/cards";
 
 /**
- * Old Maid (도둑잡기) for me and two computers, with 52 cards and one joker.
+ * Old Maid (도둑잡기) for me and three computers, with 52 cards and one joker.
  * Every card is dealt and pairs of the same rank are laid down. In turn each
  * player draws a card unseen from the next player's hand and lays down any
  * pair it makes; a player with no cards left is safe. Whoever is left
- * holding the joker at the end is the thief and loses. Seats: 0 is me, then
- * 1 (across at the left) and 2 (across at the right); I draw from seat 1,
- * seat 1 from seat 2, seat 2 from me.
+ * holding the joker at the end is the thief and loses. Seats round the table:
+ * 0 is me, 1 at my left, 2 across, 3 at my right; I draw from seat 1, seat 1
+ * from seat 2, seat 2 from seat 3 and seat 3 from me (a seat that is out is
+ * passed over).
  */
-export const SEATS = 3,
+export const SEATS = 4,
   JOKER = BLACK_JOKER;
 export interface State {
   hands: number[][];
@@ -38,7 +39,7 @@ function lay(hand: number[]) {
 }
 export function createGame(random: Random = cryptoRandom): State {
   const deck = shuffle([...Array.from({ length: 52 }, (_, i) => i), JOKER], random),
-    hands: number[][] = [[], [], []],
+    hands: number[][] = Array.from({ length: SEATS }, () => []),
     pairs: number[] = [];
   deck.forEach((card, i) => hands[i % SEATS].push(card));
   for (let s = 0; s < SEATS; s++) {
@@ -89,7 +90,7 @@ export function chooseMove(s: State, _level: string, random: Random = Math.rando
   return options.length ? options[Math.floor(random() * options.length) % options.length] : null;
 }
 const effect = (): Effect | null => null;
-const SEAT_NAME = ["나", "왼쪽 컴퓨터", "오른쪽 컴퓨터"];
+const SEAT_NAME = ["나", "왼쪽 컴퓨터", "맞은편 컴퓨터", "오른쪽 컴퓨터"];
 export const oldMaid: PointGame<State> = {
   create: () => createGame(),
   moves,
@@ -102,7 +103,7 @@ export const oldMaid: PointGame<State> = {
   ply: (s) => s.ply,
   evaluate: () => 0,
   hint: (s) => (s.seat === 0 ? `${SEAT_NAME[source(s, 0)]}의 카드 한 장을 뽑으세요.` : `${SEAT_NAME[s.seat]}가 ${SEAT_NAME[source(s, s.seat)]}의 카드를 뽑는 중`),
-  tally: (s) => [`카드 ${s.hands[0].length}장`, `카드 ${s.hands[1].length} · ${s.hands[2].length}장`],
+  tally: (s) => [`카드 ${s.hands[0].length}장`, `카드 ${s.hands.slice(1).map((h) => h.length).join(" · ")}장`],
   reason: (s) => (s.thief === 0 ? "조커가 내 손에 남았습니다. 내가 도둑입니다." : `${SEAT_NAME[s.thief ?? 1]}가 조커를 들고 남았습니다.`),
 };
 export { SEAT_NAME };
