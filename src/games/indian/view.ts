@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, planks } from "../../engine/scene-utils";
+import { wood, planks, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { CARD, drawBack, drawFace } from "../cards/faces";
@@ -60,7 +60,7 @@ export class IndianView extends TableView<State> {
     // A bare room: a dark wall behind the figure, and the table between us.
     const wall = this.add(new T.PlaneGeometry(60, 30), this.standard({ color: "#2b3038", roughness: 1 }), 0, 8, -11);
     wall.castShadow = false;
-    const top = this.add(new T.BoxGeometry(11, 0.3, 9), this.standard(planks(1.4, (r) => this.own(r), 1.1)), 0, TABLE - 0.15, 0.2);
+    const top = this.add(block(11, 0.3, 9), this.standard(planks(1.4, (r) => this.own(r), 1.1)), 0, TABLE - 0.15, 0.2);
     top.castShadow = false;
     this.add(new T.CylinderGeometry(2.6, 2.6, 0.02, 48), this.standard({ color: "#1f6a4a", roughness: 0.95 }), 0, TABLE + 0.012, -0.9).castShadow = false;
     // The figure: smooth and white, jointed like an artist's model.

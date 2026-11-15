@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, weave } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, weave, block } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import { cabin } from "../../engine/scenery";
 
@@ -210,7 +210,7 @@ export class YachtView {
     keep.rotation.x = -Math.PI / 2;
     keep.position.set(0, 0.004, KEEP_Z - 0.12);
     this.scene.add(keep);
-    const geometry = this.own(new T.BoxGeometry(SIZE, SIZE, SIZE));
+    const geometry = this.own(block(SIZE, SIZE, SIZE));
     const materials = FACES.map((value) =>
       this.own(new T.MeshStandardMaterial({ map: this.own(faceTexture(value)), roughness: 0.4 })),
     );

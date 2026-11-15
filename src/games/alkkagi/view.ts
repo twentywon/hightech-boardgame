@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, planks, glossy } from "../../engine/scene-utils";
+import { wood, planks, glossy, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { FlickView } from "../flick/view";
@@ -102,7 +102,7 @@ export class AlkkagiView extends FlickView<State> {
     const arena = arenaOf(mode),
       side = this.standard({ color: "#a9793e", roughness: 0.6 });
     // A thick board on four short feet: a stone pushed over the edge drops off it.
-    this.add(new T.BoxGeometry(arena.halfX * 2, 0.7, arena.halfZ * 2), [side, side, this.standard({ map: this.own(boardTexture(mode)), roughness: 0.7 }), side, side, side], 0, -0.35, 0);
+    this.add(block(arena.halfX * 2, 0.7, arena.halfZ * 2), [side, side, this.standard({ map: this.own(boardTexture(mode)), roughness: 0.7 }), side, side, side], 0, -0.35, 0);
     for (const x of [-1, 1]) for (const z of [-1, 1]) this.add(new T.CylinderGeometry(0.4, 0.3, 0.5, 16), side, x * (arena.halfX - 0.7), -0.95, z * (arena.halfZ - 0.7));
     if (mode === "janggi") {
       // The fold of the board and its two brass hinges, which stones bounce off.

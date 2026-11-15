@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, wood, realism, planks } from "../../engine/scene-utils";
+import { afterGPUFrame, wood, realism, planks, block } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -209,7 +209,7 @@ export class SnakesView implements PointView<State> {
     table.position.y = -0.1;
     table.receiveShadow = true;
     const side = CELL * 10,
-      board = new T.Mesh(this.own(new T.BoxGeometry(side + 0.3, 0.1, side + 0.3)), [
+      board = new T.Mesh(this.own(block(side + 0.3, 0.1, side + 0.3)), [
         ...Array(2).fill(standard({ color: "#3a2c1f" })),
         standard({ map: this.own(boardTexture()), roughness: 0.9 }),
         ...Array(3).fill(standard({ color: "#3a2c1f" })),
@@ -229,7 +229,7 @@ export class SnakesView implements PointView<State> {
       this.scene.add(token);
     });
     this.die = new T.Mesh(
-      this.own(new T.BoxGeometry(0.7, 0.7, 0.7)),
+      this.own(block(0.7, 0.7, 0.7)),
       FACES.map((value) => standard({ map: this.own(dieFace(value)), roughness: 0.4 })),
     );
     this.die.castShadow = true;

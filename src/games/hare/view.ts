@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, planks } from "../../engine/scene-utils";
+import { wood, planks, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { LINKS, PLACES, type State } from "./rules";
@@ -64,7 +64,7 @@ export class HareView extends TableView<State> {
     table.rotation.x = -Math.PI / 2;
     table.castShadow = false;
     const edge = this.standard({ color: "#6a4a2c", roughness: 0.6 });
-    this.add(new T.BoxGeometry(11.9, 0.18, 7.5), [edge, edge, this.standard({ map: this.own(boardTexture()), roughness: 0.95 }), edge, edge, edge], 0, -0.09, 0);
+    this.add(block(11.9, 0.18, 7.5), [edge, edge, this.standard({ map: this.own(boardTexture()), roughness: 0.95 }), edge, edge, edge], 0, -0.09, 0);
     for (let k = 0; k < 3; k++) this.hounds.push(this.hound());
     this.hare = this.rabbit();
     for (const piece of [...this.hounds, this.hare]) piece.scale.setScalar(1.3);

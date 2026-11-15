@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, planks, glossy } from "../../engine/scene-utils";
+import { wood, planks, glossy, block as rounded } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CELLS, SIZE, TURN_BASE, quarterCells, twistOf, type State } from "./rules";
@@ -121,10 +121,10 @@ export class TwistView extends TableView<State> {
     this.add(new T.CylinderGeometry(0.46, 0.4, 0.8, 26), this.standard({ color: "#e8e2d4", roughness: 0.35 }), -6.9, 0.1, -0.6);
     this.add(new T.CylinderGeometry(0.39, 0.39, 0.02, 26), this.standard({ color: "#3a2416", roughness: 0.2 }), -6.9, 0.49, -0.6);
     // The board: a dark tray carrying four quarters that turn.
-    this.add(new T.BoxGeometry(EDGE * 2 + 0.5, 0.22, EDGE * 2 + 0.5), this.standard({ color: "#2a1c14", roughness: 0.5 }), 0, -0.2, 0);
+    this.add(rounded(EDGE * 2 + 0.5, 0.22, EDGE * 2 + 0.5), this.standard({ color: "#2a1c14", roughness: 0.5 }), 0, -0.2, 0);
     const side = this.standard({ color: "#8b3320", roughness: 0.55 }),
       face = this.standard({ map: this.own(quarterTexture()), roughness: 0.55 }),
-      block = this.own(new T.BoxGeometry(3 * STEP - 0.06, 0.24, 3 * STEP - 0.06));
+      block = this.own(rounded(3 * STEP - 0.06, 0.24, 3 * STEP - 0.06));
     for (let q = 0; q < 4; q++) {
       const mesh = new T.Mesh(block, [side, side, face, side, side, side]),
         centre = quarterCentre(q);

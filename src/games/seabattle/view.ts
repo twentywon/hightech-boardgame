@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, planks } from "../../engine/scene-utils";
+import { wood, planks, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CELLS, FLEET, SIZE, span, sunk, type Ship, type State } from "./rules";
@@ -127,7 +127,7 @@ export class SeaBattleView extends TableView<State> {
     for (const [x, y] of [[-6.6, 6.3], [-4.9, 5.4], [-3.6, 6.5]])
       this.add(new T.SphereGeometry(0.1, 10, 8), this.standard({ color: "#c8321f" }), x, y, -8.72);
     // The table and what lies on it: a radio, a telephone, a mug, a ruler and pencil.
-    const top = this.add(new T.BoxGeometry(26, 0.5, 13), this.standard(planks(3.2, (r) => this.own(r), 1.6)), 0, -0.45, 0);
+    const top = this.add(block(26, 0.5, 13), this.standard(planks(3.2, (r) => this.own(r), 1.6)), 0, -0.45, 0);
     top.castShadow = false;
     for (const x of [-12, 12]) for (const z of [-5.6, 5.6]) this.add(new T.BoxGeometry(0.7, 3.8, 0.7), iron, x, -2.5, z);
     const olive = this.standard({ color: "#4a5a3c", roughness: 0.7 });
@@ -144,7 +144,7 @@ export class SeaBattleView extends TableView<State> {
     const edge = this.standard({ color: "#3a2c1f", roughness: 0.6 });
     ["청군 해역", "홍군 해역"].forEach((label) => {
       const sea = new T.Group();
-      this.add(new T.BoxGeometry(SIDE + 0.9, 0.12, SIDE + 0.9), [edge, edge, this.standard({ map: this.own(chart(label)), roughness: 0.9 }), edge, edge, edge], 0, -0.14, 0, sea);
+      this.add(block(SIDE + 0.9, 0.12, SIDE + 0.9), [edge, edge, this.standard({ map: this.own(chart(label)), roughness: 0.9 }), edge, edge, edge], 0, -0.14, 0, sea);
       this.seas.push(sea);
       this.scene.add(sea);
     });
@@ -188,8 +188,8 @@ export class SeaBattleView extends TableView<State> {
     const g = new T.Group(),
       across = ship.cells.length > 1 && ship.cells[1] - ship.cells[0] === 1,
       length = ship.cells.length * CELL - 0.12;
-    this.add(new T.BoxGeometry(length, 0.16, 0.3), this.steel, 0, 0.0, 0, g);
-    this.add(new T.BoxGeometry(Math.min(length * 0.4, 0.7), 0.14, 0.2), this.steel, 0, 0.14, 0, g);
+    this.add(block(length, 0.16, 0.3), this.steel, 0, 0.0, 0, g);
+    this.add(block(Math.min(length * 0.4, 0.7), 0.14, 0.2), this.steel, 0, 0.14, 0, g);
     this.add(new T.CylinderGeometry(0.05, 0.05, 0.2, 8), this.steel, length * 0.12, 0.3, 0, g);
     if (!across) g.rotation.y = Math.PI / 2;
     g.userData.middle = (ship.cells[0] + ship.cells[ship.cells.length - 1]) / 2;

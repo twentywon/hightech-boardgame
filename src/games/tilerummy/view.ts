@@ -1,4 +1,4 @@
-import { stuff } from "../../engine/scene-utils";
+import { stuff, block as rounded } from "../../engine/scene-utils";
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -107,7 +107,7 @@ export class TileRummyView extends TableView<State> {
     this.add(new T.BoxGeometry(0.5, 0.16, 0.26), this.standard({ color: "#f3f0ea" }), 9.6, 0.08, -4.2).rotation.y = 0.5;
     this.add(new T.CylinderGeometry(0.045, 0.045, 1.5, 6), this.standard({ color: "#e0a020" }), 10.2, 0.05, -2.9).rotation.set(Math.PI / 2, 0, 0.8);
     this.add(new T.IcosahedronGeometry(0.22, 0), this.standard({ color: "#fbfaf2", roughness: 1 }), -9.4, 0.18, -4.6);
-    const block = this.own(new T.BoxGeometry(W, 0.14, D)),
+    const block = this.own(rounded(W, 0.14, D)),
       ivory = this.standard({ color: "#f8f3e4", roughness: 0.4 }),
       back = this.standard({ color: "#e2d8bd", roughness: 0.5 }),
       faces = new Map<string, T.Material>();

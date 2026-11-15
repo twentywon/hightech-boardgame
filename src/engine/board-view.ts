@@ -6,7 +6,7 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-import { wood, disposeScene, afterGPUFrame, aim, realism, planks, weave, glossy } from "./scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism, planks, weave, glossy, block } from "./scene-utils";
 import { parkBench } from "./scenery";
 import {
   FOV,
@@ -149,7 +149,7 @@ export class BoardView {
       this.scene.add(table);
     }
     const board = new T.Mesh(
-      new T.BoxGeometry(
+      block(
         this.variant === "reversi" ? 6.3 : 6.55,
         0.36,
         this.variant === "reversi" ? 6.3 : 6.55,

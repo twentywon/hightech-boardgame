@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
@@ -158,7 +158,7 @@ export class PointBoardView {
     if (theme === "yard") hanokYard(this.scene, own);
     else if (theme === "wood") {
       flat(90, 90, standard(planks(11, (r) => this.own(r))), -0.3);
-      const slab = new T.Mesh(this.own(new T.BoxGeometry(side, 0.3, side)), standard({ map: this.own(wood()), roughness: 0.55 }));
+      const slab = new T.Mesh(this.own(block(side, 0.3, side)), standard({ map: this.own(wood()), roughness: 0.55 }));
       slab.position.set(0, -0.152, centreZ);
       slab.castShadow = slab.receiveShadow = true;
       this.scene.add(slab);

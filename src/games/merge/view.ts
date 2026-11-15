@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "../../engine/scene-utils";
+import { wood, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { DOWN, LEFT, N, RIGHT, UP, type State } from "./rules";
@@ -42,7 +42,7 @@ export class MergeView extends TableView<State> {
     this.add(new T.BoxGeometry(40, 0.4, 30), this.standard({ map: desk, color: "#e8d9bd", roughness: 0.6 }), 0, -0.5, 0).castShadow = false;
     // The tray: a dark slate bed with a pale rim and a hollow for each tile.
     const side = N * CELL + 0.5;
-    this.add(new T.BoxGeometry(side + 0.5, 0.3, side + 0.5), this.standard({ color: "#f3efe4", roughness: 0.5 }), 0, -0.15, OZ);
+    this.add(block(side + 0.5, 0.3, side + 0.5), this.standard({ color: "#f3efe4", roughness: 0.5 }), 0, -0.15, OZ);
     this.add(new T.BoxGeometry(side, 0.3, side), this.standard({ color: "#2c3836", roughness: 0.9 }), 0, -0.12, OZ).castShadow = false;
     // The score card: dark slate like the tray, lying flat between the tray and me.
     const canvas = document.createElement("canvas");
@@ -51,7 +51,7 @@ export class MergeView extends TableView<State> {
     const texture = this.own(new T.CanvasTexture(canvas));
     texture.colorSpace = T.SRGBColorSpace;
     texture.anisotropy = 4;
-    this.add(new T.BoxGeometry(4.5, 0.12, 1.2), this.standard({ color: "#f3efe4", roughness: 0.5 }), 0, -0.24, OZ + side / 2 + 1.25);
+    this.add(block(4.5, 0.12, 1.2), this.standard({ color: "#f3efe4", roughness: 0.5 }), 0, -0.24, OZ + side / 2 + 1.25);
     const face = this.add(new T.PlaneGeometry(4.3, 1.075), this.own(new T.MeshBasicMaterial({ map: texture })), 0, -0.175, OZ + side / 2 + 1.25);
     face.rotation.x = -Math.PI / 2;
     face.castShadow = false;
@@ -69,7 +69,7 @@ export class MergeView extends TableView<State> {
     pencil.rotation.set(Math.PI / 2, 0, 0.5);
     this.add(new T.CylinderGeometry(0.5, 0.42, 0.9, 28), this.standard({ color: "#f6f3ea", roughness: 0.3 }), -side / 2 - 1.7, 0.15, -1.6 + OZ);
     this.add(new T.CylinderGeometry(0.44, 0.44, 0.02, 28), this.standard({ color: "#5a3a22", roughness: 0.4 }), -side / 2 - 1.7, 0.605, -1.6 + OZ).castShadow = false;
-    this.box = this.own(new T.BoxGeometry(CELL - GAP, THICK, CELL - GAP));
+    this.box = this.own(block(CELL - GAP, THICK, CELL - GAP));
     for (let i = 0; i < N * N; i++) {
       const mesh = new T.Mesh(this.box, this.face(2));
       mesh.castShadow = mesh.receiveShadow = true;

@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, glossy } from "../../engine/scene-utils";
+import { wood, glossy, block as rounded } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { DRAW, LEFT, RIGHT, TILES, type Laid, type State } from "./rules";
@@ -92,7 +92,7 @@ export class DominoView extends TableView<State> {
     floor.castShadow = false;
     const seams = this.standard({ color: "#0e0a07", roughness: 1 });
     for (let k = -9; k <= 9; k++) this.add(new T.BoxGeometry(0.03, 0.004, 90), seams, k * 1.7, 0.002, 0).castShadow = false;
-    const block = this.own(new T.BoxGeometry(U * 2 - 0.05, 0.16, U - 0.05)),
+    const block = this.own(rounded(U * 2 - 0.05, 0.16, U - 0.05)),
       ivory = this.own(glossy({ color: "#f6f1e4", roughness: 0.4 }, 0.6)),
       back = this.standard({ color: "#22262b", roughness: 0.45 });
     TILES.forEach(([a, b]) => {

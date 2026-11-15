@@ -1,3 +1,4 @@
+import { block } from "../../engine/scene-utils";
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -159,7 +160,7 @@ export class LudoView extends TableView<State> {
     table.rotation.x = -Math.PI / 2;
     table.castShadow = false;
     const edge = this.standard({ color: "#3a2c1f", roughness: 0.6 });
-    this.add(new T.BoxGeometry(15 * S + 0.3, 0.2, 15 * S + 0.3), [edge, edge, this.standard({ map: this.own(boardTexture()), roughness: 0.85 }), edge, edge, edge], 0, -0.1, 0);
+    this.add(block(15 * S + 0.3, 0.2, 15 * S + 0.3), [edge, edge, this.standard({ map: this.own(boardTexture()), roughness: 0.85 }), edge, edge, edge], 0, -0.1, 0);
     const pawn = this.own(new T.CylinderGeometry(0.1, 0.22, 0.46, 20)),
       head = this.own(new T.SphereGeometry(0.15, 16, 12));
     LUDO_COLORS.forEach((color) => {
@@ -174,7 +175,7 @@ export class LudoView extends TableView<State> {
         this.scene.add(mesh);
       }
     });
-    this.die = new T.Mesh(this.own(new T.BoxGeometry(0.62, 0.62, 0.62)), FACES.map((value) => this.standard({ map: this.own(dieFace(value)), roughness: 0.4 })));
+    this.die = new T.Mesh(this.own(block(0.62, 0.62, 0.62)), FACES.map((value) => this.standard({ map: this.own(dieFace(value)), roughness: 0.4 })));
     this.die.castShadow = true;
     this.die.position.set(DIE.x, 0.31, DIE.z);
     this.scene.add(this.die);

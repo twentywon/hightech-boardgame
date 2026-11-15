@@ -1,5 +1,5 @@
 import * as T from "three";
-import { aim, wood } from "../../engine/scene-utils";
+import { aim, wood, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { BRICK, CLEAR, ITEM, LOST, MAX_LIVES, type State } from "./rules";
@@ -64,7 +64,7 @@ export class BricksView extends TableView<State> {
     this.add(new T.BoxGeometry(HALF_X * 2 + 0.6, 0.7, 0.3), rail, 0, 0.05, -HALF_Z - 0.15);
     // The line behind the bat: a ball that crosses it is lost.
     this.add(new T.BoxGeometry(HALF_X * 2, 0.01, 0.05), this.standard({ color: "#c8503c", roughness: 1 }), 0, 0.006, HALF_Z + 0.4).castShadow = false;
-    const brick = this.own(new T.BoxGeometry(BRICK_W, 0.36, BRICK_D));
+    const brick = this.own(block(BRICK_W, 0.36, BRICK_D));
     this.paints = ROW_PAINT.map((color) => this.standard({ color, roughness: 0.3 }));
     // Pale when one hit is left, grey for two, bronze for three.
     this.metal = ["#c9d0d4", "#8d979e", "#b0722f"].map((color, i) => this.standard({ color, roughness: 0.5 - i * 0.12, metalness: 0.3 + i * 0.25 }));
@@ -115,7 +115,7 @@ export class BricksView extends TableView<State> {
     this.bat.castShadow = true;
     this.scene.add(this.bat);
     // Prizes: flat tiles with a word on them, sliding toward me.
-    const tile = this.own(new T.BoxGeometry(1.04, 0.12, 0.56));
+    const tile = this.own(block(1.04, 0.12, 0.56));
     this.prizePaints = PRIZES.map(([word, paint, ink]) => {
       const canvas = document.createElement("canvas");
       canvas.width = 256;

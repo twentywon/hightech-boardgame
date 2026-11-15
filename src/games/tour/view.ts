@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, planks } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, block } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { SPACES, type State } from "./rules";
 import { drawFlag } from "./flags";
@@ -334,7 +334,7 @@ export class TourView {
     this.scene.add(table);
     // The board: a sea-blue square with the road of spaces along its rim.
     const width = REACH * 2 + STEP,
-      board = new T.Mesh(this.own(new T.BoxGeometry(width + 0.3, 0.14, width + 0.3)), standard({ color: "#2f6f8e", roughness: 0.6 }));
+      board = new T.Mesh(this.own(block(width + 0.3, 0.14, width + 0.3)), standard({ color: "#2f6f8e", roughness: 0.6 }));
     board.position.y = -0.08;
     board.receiveShadow = true;
     this.scene.add(board);
@@ -461,7 +461,7 @@ export class TourView {
       this.tokens.push(token);
       this.scene.add(token);
     }
-    const cube = this.own(new T.BoxGeometry(0.6, 0.6, 0.6)),
+    const cube = this.own(block(0.6, 0.6, 0.6)),
       faces = FACES.map((value) => standard({ map: this.own(dieFace(value)), roughness: 0.4 }));
     for (const x of [-0.5, 0.5]) {
       const die = new T.Mesh(cube, faces);

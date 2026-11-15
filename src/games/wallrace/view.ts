@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, planks } from "../../engine/scene-utils";
+import { wood, planks, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CELLS, G, H_BASE, N, V_BASE, type State } from "./rules";
@@ -35,8 +35,8 @@ export class WallRaceView extends TableView<State> {
     const table = this.add(new T.PlaneGeometry(90, 90), this.standard(planks(11, (r) => this.own(r))), 0, -0.3, 0);
     table.rotation.x = -Math.PI / 2;
     table.castShadow = false;
-    this.add(new T.BoxGeometry(N * STEP + 0.5, 0.2, N * STEP + 0.5), this.standard({ color: "#2b1d14", roughness: 0.6 }), 0, -0.2, 0);
-    const square = this.own(new T.BoxGeometry(STEP - 0.2, 0.12, STEP - 0.2)),
+    this.add(block(N * STEP + 0.5, 0.2, N * STEP + 0.5), this.standard({ color: "#2b1d14", roughness: 0.6 }), 0, -0.2, 0);
+    const square = this.own(block(STEP - 0.2, 0.12, STEP - 0.2)),
       plain = this.standard({ color: "#b98a56", roughness: 0.6 }),
       goals = PAWN_COLORS.map((color) => this.standard({ color, roughness: 0.7 }));
     for (let cell = 0; cell < CELLS; cell++) {
@@ -60,7 +60,7 @@ export class WallRaceView extends TableView<State> {
       this.pawns.push(mesh);
       this.scene.add(mesh);
     });
-    this.slab = this.own(new T.BoxGeometry(2 * STEP - 0.2, 0.5, 0.14));
+    this.slab = this.own(block(2 * STEP - 0.2, 0.5, 0.14));
     this.timber = this.standard({ color: "#e8cf9a", roughness: 0.5 });
     // Walls not yet set wait beside the board, each side's on its own edge.
     for (const side of [0, 1])

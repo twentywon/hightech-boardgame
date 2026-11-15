@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, disposeScene, wood, realism, planks } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, disposeScene, wood, realism, planks, block } from "../../engine/scene-utils";
 import {
   FOV,
   OVERHEAD,
@@ -157,7 +157,7 @@ export class JanggiView {
     const width = (FILES - 1) * SPACING,
       depth = (RANKS - 1) * SPACING;
     const board = new T.Mesh(
-      new T.BoxGeometry(width + 1, 0.34, depth + 1),
+      block(width + 1, 0.34, depth + 1),
       new T.MeshStandardMaterial({ map: wood(), roughness: 0.52 }),
     );
     board.position.y = -0.03;

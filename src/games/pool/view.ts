@@ -1,5 +1,5 @@
 import * as T from "three";
-import { glossy, planks, weave } from "../../engine/scene-utils";
+import { glossy, planks, weave, block } from "../../engine/scene-utils";
 import { pub } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -113,7 +113,7 @@ export class PoolView extends FlickView<State> {
     for (const x of [HALF_X + 0.02, -HALF_X - 0.02]) for (const z of [HALF_Z / 2, -HALF_Z / 2]) this.add(new T.BoxGeometry(0.1, 0.3, HALF_Z - 0.9), cushion, x, 0.14, z);
     for (const x of [-1, 1]) for (const z of [-1, 1]) this.add(new T.BoxGeometry(0.7, 3.1, 0.7), side, x * (HALF_X - 0.3), -1.9, z * (HALF_Z - 0.6));
     // A chalk cube on the rail.
-    this.add(new T.BoxGeometry(0.2, 0.2, 0.2), this.standard({ color: "#2f7fc0" }), HALF_X + 0.36, 0.4, 3.6);
+    this.add(block(0.2, 0.2, 0.2), this.standard({ color: "#2f7fc0" }), HALF_X + 0.36, 0.4, 3.6);
     const sphere = this.own(new T.SphereGeometry(R, 28, 20)),
       band = this.own(new T.SphereGeometry(R * 1.012, 28, 12, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.4)),
       spot = this.own(new T.CircleGeometry(R * 0.5, 20)),

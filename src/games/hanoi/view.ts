@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, glossy } from "../../engine/scene-utils";
+import { wood, glossy, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { MAX, PEGS, type State } from "./rules";
@@ -35,8 +35,8 @@ export class HanoiView extends TableView<State> {
     this.add(new T.BoxGeometry(40, 0.4, 30), this.standard({ map: desk, roughness: 0.75 }), 0, -0.2, 0).castShadow = false;
     const dark = this.standard({ map: this.own(wood(true)), roughness: 0.45 }),
       brass = this.standard({ color: "#c9a44a", roughness: 0.28, metalness: 0.85 });
-    this.add(new T.BoxGeometry(11.4, BASE, 3.9), dark, 0, BASE / 2, 0);
-    this.add(new T.BoxGeometry(11.8, 0.12, 4.3), dark, 0, 0.06, 0);
+    this.add(block(11.4, BASE, 3.9), dark, 0, BASE / 2, 0);
+    this.add(block(11.8, 0.12, 4.3), dark, 0, 0.06, 0);
     for (const x of PEG_X) {
       this.add(new T.CylinderGeometry(0.1, 0.1, PEG_TALL, 20), brass, x, BASE + PEG_TALL / 2, 0);
       this.add(new T.SphereGeometry(0.15, 20, 14), brass, x, BASE + PEG_TALL, 0);

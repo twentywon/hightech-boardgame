@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
-import { wood, disposeScene, afterGPUFrame, aim, realism, planks, veneer, glossy } from "../../engine/scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism, planks, veneer, glossy, block } from "../../engine/scene-utils";
 import { toWorld, fromWorld, squares } from "./coordinates";
 import {
   FOV,
@@ -95,7 +95,7 @@ export class ChessView {
     table.receiveShadow = true;
     this.scene.add(table);
     const rim = new T.Mesh(
-      new T.BoxGeometry(7.05, 0.35, 7.05),
+      block(7.05, 0.35, 7.05),
       new T.MeshStandardMaterial({ map: wood(true), roughness: 0.5 }),
     );
     rim.castShadow = rim.receiveShadow = true;

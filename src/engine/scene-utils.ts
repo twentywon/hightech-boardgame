@@ -195,9 +195,61 @@ export function weave(across: number, down = across, keep: Keep = (r) => r, dept
 }
 /** Veneer for inlaid squares: pale maple and brown walnut (Poly Haven, CC0). */
 export const veneer = (dark: boolean) => surface(dark ? walnutUrl : mapleUrl);
+/**
+ * A box whose edges and corners are rounded off by `radius`, as real boards, tiles and dice are: the light then
+ * catches on its edges. Its faces stay flat (no pillow), its six sides keep the order and the picture layout of
+ * `BoxGeometry`, so a list of six materials and a board's printed face go on as before.
+ */
+export function block(width: number, height: number, depth: number, radius = Math.min(0.06, Math.min(width, height, depth) * 0.3), steps = 2) {
+  const r = Math.max(0.0001, Math.min(radius, width / 2, height / 2, depth / 2)),
+    lines = 2 * steps + 1,
+    geometry = new T.BoxGeometry(width, height, depth, lines, lines, lines),
+    at = geometry.getAttribute("position"),
+    normal = geometry.getAttribute("normal"),
+    uv = geometry.getAttribute("uv"),
+    half = [width / 2, height / 2, depth / 2],
+    size = [width, height, depth],
+    // Along an axis the lines of the grid crowd into the rounded bands at either end; one span crosses the flat.
+    line = (value: number, axis: number) => {
+      const i = Math.round((value / size[axis] + 0.5) * lines),
+        j = i <= steps ? i : lines - i,
+        inset = r - r * Math.tan((Math.PI / 4) * ((steps - j) / steps));
+      return (i <= steps ? -1 : 1) * (half[axis] - inset);
+    },
+    perFace = (lines + 1) * (lines + 1),
+    p = [0, 0, 0],
+    n = [0, 0, 0];
+  for (let i = 0; i < at.count; i++) {
+    const raw = [at.getX(i), at.getY(i), at.getZ(i)];
+    let length = 0;
+    for (let axis = 0; axis < 3; axis++) {
+      const value = line(raw[axis], axis),
+        inner = Math.max(-(half[axis] - r), Math.min(half[axis] - r, value));
+      p[axis] = inner;
+      n[axis] = value - inner;
+      length += n[axis] * n[axis];
+    }
+    length = Math.sqrt(length) || 1;
+    for (let axis = 0; axis < 3; axis++) {
+      n[axis] /= length;
+      p[axis] += n[axis] * r;
+    }
+    at.setXYZ(i, p[0], p[1], p[2]);
+    normal.setXYZ(i, n[0], n[1], n[2]);
+    const [x, y, z] = p,
+      face = Math.floor(i / perFace);
+    if (face === 0) uv.setXY(i, 0.5 - z / depth, 0.5 + y / height);
+    else if (face === 1) uv.setXY(i, 0.5 + z / depth, 0.5 + y / height);
+    else if (face === 2) uv.setXY(i, 0.5 + x / width, 0.5 - z / depth);
+    else if (face === 3) uv.setXY(i, 0.5 + x / width, 0.5 + z / depth);
+    else if (face === 4) uv.setXY(i, 0.5 + x / width, 0.5 + y / height);
+    else uv.setXY(i, 0.5 - x / width, 0.5 + y / height);
+  }
+  return geometry;
+}
 /** A lacquered or glazed thing (a stone, a marble, a ball, a die): a clear coat over it where a graphics card draws. */
 export function glossy(options: T.MeshStandardMaterialParameters, coat = 1): T.MeshStandardMaterial {
-  return capable() ? new T.MeshPhysicalMaterial({ ...options, clearcoat: coat, clearcoatRoughness: 0.06 }) : new T.MeshStandardMaterial(options);
+  return capable() ? new T.MeshPhysicalMaterial({ ...options, clearcoat: coat, clearcoatRoughness: 0.14 }) : new T.MeshStandardMaterial(options);
 }
 
 /**
@@ -218,20 +270,23 @@ export function realism(renderer: T.WebGLRenderer, scene: T.Scene, filmic = fals
     room = new RoomEnvironment(),
     reflected = pmrem.fromScene(room, 0.04).texture;
   scene.environment = reflected;
-  scene.environmentIntensity = 0.32;
+  scene.environmentIntensity = 0.27;
   room.dispose();
   pmrem.dispose();
   scene.traverse((thing) => {
     // The room lights the shaded sides, so the flat sky light gives way to it.
-    if (thing instanceof T.HemisphereLight) thing.intensity *= 0.62;
+    if (thing instanceof T.HemisphereLight) thing.intensity *= 0.56;
+    // The user found the tables a little glaring: every lamp is turned down a touch.
+    else if (thing instanceof T.SpotLight || thing instanceof T.PointLight) thing.intensity *= 0.9;
     else if (thing instanceof T.DirectionalLight && thing.castShadow) {
+      thing.intensity *= 0.9;
       thing.shadow.mapSize.set(2048, 2048);
       thing.shadow.radius = 5;
       thing.shadow.blurSamples = 16;
     }
   });
-  const fill = new T.DirectionalLight("#cfe0ff", 0.22),
-    rim = new T.DirectionalLight("#fff0d8", 0.4);
+  const fill = new T.DirectionalLight("#cfe0ff", 0.16),
+    rim = new T.DirectionalLight("#fff0d8", 0.28);
   fill.position.set(7, 5, 3);
   rim.position.set(2, 6, -9);
   scene.add(fill, rim);

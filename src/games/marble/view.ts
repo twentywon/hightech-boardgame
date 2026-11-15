@@ -1,3 +1,4 @@
+import { block } from "../../engine/scene-utils";
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -57,7 +58,7 @@ export class MarbleView extends TableView<State> {
     this.scene.add(sun);
     const frame = this.standard({ color: "#4a2f22", roughness: 0.6 }),
       rim = this.standard({ color: "#5c3a29", roughness: 0.6 });
-    this.add(new T.BoxGeometry(W * S + 0.8, 0.3, H * S + 0.8), frame, 0, -0.2, 0);
+    this.add(block(W * S + 0.8, 0.3, H * S + 0.8), frame, 0, -0.2, 0);
     this.add(new T.BoxGeometry(W * S + 0.44, 0.3, H * S + 0.44), rim, 0, -0.17, 0).castShadow = false;
     const board = this.add(new T.BoxGeometry(W * S + 0.1, 0.3, H * S + 0.1), [rim, rim, this.standard({ map: this.own(face()), roughness: 0.85 }), rim, rim, rim], 0, -0.15, 0);
     board.castShadow = false;
