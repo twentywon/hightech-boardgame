@@ -222,6 +222,10 @@ const play = {
     await page.locator("dialog[open] .stage-card").nth(3).click();
     await wait(800);
   },
+  "turning-maze": async () => {
+    await page.locator("dialog[open] .stage-card").nth(1).click();
+    await wait(800);
+  },
   "lights-on": async () => {
     await page.locator("dialog[open] .stage-card").nth(2).click();
     await wait(500);

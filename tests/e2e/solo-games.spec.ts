@@ -9,6 +9,7 @@ import * as tower from "../../src/games/hanoi/rules";
 import * as lamps from "../../src/games/lights/rules";
 import * as queenRules from "../../src/games/queens/rules";
 import * as tourRules from "../../src/games/knight/rules";
+import * as mazeRules from "../../src/games/tilt/rules";
 import * as field from "../../src/games/mines/rules";
 import { selectGame } from "./library";
 
@@ -771,6 +772,42 @@ test("knight tour: a board laid at random is travelled square by square, and a w
     await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
     await rest(page);
   }
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("turning maze: the knobs and the arrow keys turn the dial, and the blocks are brought onto their marks", async ({ page }) => {
+  const random = await seeded(page, 59),
+    errors = await sit(page, "회전 미로");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "5×5" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  // Mazes were laid when the game was looked at and when sitting down; the third is the one chosen.
+  mazeRules.createGame(1, random);
+  mazeRules.createGame(1, random);
+  let state = mazeRules.createGame(1, random);
+  const way: number[] = [];
+  for (let s = state; s.winner === null; ) {
+    const move = mazeRules.hint(s)!;
+    way.push(move.to);
+    s = mazeRules.play(s, move)!;
+  }
+  // The left knob's button (kept for readers and the keyboard) turns it, and undo brings it back.
+  await page.getByRole("button", { name: "왼쪽으로 돌리기" }).click();
+  await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+  await rest(page);
+  await page.locator("#pg-undo").click();
+  await expect(count(page)).toHaveText("0수", { timeout: 20000 });
+  await rest(page);
+  await page.locator("canvas").focus();
+  for (const [n, to] of way.entries()) {
+    await page.keyboard.press(to === mazeRules.LEFT ? "ArrowLeft" : "ArrowRight");
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+    state = mazeRules.play(state, { from: -1, to, extra: -1 })!;
+  }
+  expect(state.winner).toBe(0);
   await expect(page.locator("#turn")).toContainText("성공!");
   expect(errors).toEqual([]);
 });

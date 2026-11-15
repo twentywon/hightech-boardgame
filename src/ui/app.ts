@@ -39,6 +39,7 @@ import { hanoiConfig } from "../games/hanoi/config";
 import { lightsConfig } from "../games/lights/config";
 import { queensConfig } from "../games/queens/config";
 import { knightConfig } from "../games/knight/config";
+import { tiltConfig } from "../games/tilt/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -159,6 +160,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "lights-on": { config: lightsConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "queens-on-the-board": { config: queensConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "knight-tour": { config: knightConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "turning-maze": { config: tiltConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -294,6 +296,7 @@ type GameSelection =
   | "lights-on"
   | "queens-on-the-board"
   | "knight-tour"
+  | "turning-maze"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"

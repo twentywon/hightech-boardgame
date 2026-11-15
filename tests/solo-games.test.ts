@@ -12,6 +12,7 @@ import * as hanoi from "../src/games/hanoi/rules";
 import * as lights from "../src/games/lights/rules";
 import * as queensRules from "../src/games/queens/rules";
 import * as tour from "../src/games/knight/rules";
+import * as maze from "../src/games/tilt/rules";
 import * as mines from "../src/games/mines/rules";
 import * as fruit from "../src/games/fruit/rules";
 import * as box from "../src/games/fruit/sim";
@@ -1063,5 +1064,44 @@ describe("knight tour", () => {
       expect(state.winner).toBe(0);
       expect(state.path).toHaveLength(state.open.filter(Boolean).length);
     }
+  });
+});
+
+describe("turning maze", () => {
+  test("blocks fall down the maze until a wall, the frame or the other block stops them", () => {
+    const walls = { size: 3, floor: new Array(9).fill(false), side: new Array(9).fill(false) };
+    // Both in the left column: the lower one lands on the floor, the upper one on it.
+    expect(maze.settle(walls, [0, 3], 0)).toEqual([3, 6]);
+    expect(maze.settle(walls, [3, 0], 0)).toEqual([6, 3]);
+    // A wall under the middle cell of the left column stops a block there.
+    walls.floor[3] = true;
+    expect(maze.settle(walls, [0, 8], 0)).toEqual([3, 8]);
+    // Turned a quarter to the right, down is the maze's right side.
+    expect(maze.downOf(1)).toBe(3);
+    expect(maze.settle(walls, [0, 8], maze.downOf(1))).toEqual([2, 8]);
+  });
+  test("a laid puzzle is not solved at the start, needs about the stage's turns, and the hint solves it", () => {
+    for (let stage = 1; stage <= maze.STAGES.length; stage++)
+      for (let seed = 1; seed <= 6; seed++) {
+        let state = maze.createGame(stage, seededRandom(seed * 13 + stage));
+        const { turns } = maze.STAGES[stage - 1];
+        expect(state.blocks).not.toEqual(state.marks);
+        let n = 0;
+        while (state.winner === null && n < 40) {
+          state = maze.play(state, maze.hint(state)!)!;
+          n++;
+        }
+        expect(state.winner).toBe(0);
+        expect(n).toBeGreaterThanOrEqual(turns);
+        expect(n).toBeLessThanOrEqual(turns + 3);
+      }
+  });
+  test("only the two turns are moves, and a solved maze takes no more", () => {
+    const state = maze.createGame(1, seededRandom(2));
+    expect(maze.moves(state).map((m) => m.to)).toEqual([maze.LEFT, maze.RIGHT]);
+    expect(maze.play(state, { from: -1, to: 7, extra: -1 })).toBeNull();
+    const turned = maze.play(state, { from: -1, to: maze.RIGHT, extra: -1 })!;
+    expect(turned.turn).toBe(1);
+    expect(maze.play(turned, { from: -1, to: maze.LEFT, extra: -1 })!.turn).toBe(0);
   });
 });
