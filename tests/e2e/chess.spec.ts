@@ -297,3 +297,20 @@ test("chess planned-move repetition claim ends the game without executing the de
   await page.waitForTimeout(300);
   await expect(page.locator("dialog")).toHaveCount(0);
 });
+
+test("chess: a press that slides onto the next square before it is let go moves nothing", async ({ page }, info) => {
+  test.skip(info.project.name === "mobile", "the mouse is pressed and slid by hand here");
+  await start(page);
+  const e2 = await cell(page, "e2"),
+    e3 = await cell(page, "e3");
+  // Pressed on the pawn and let go a square ahead: the pawn is picked up, not moved.
+  await page.mouse.move(e2.x, e2.y);
+  await page.mouse.down();
+  await page.mouse.move(e3.x, e3.y, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  await expect(page.locator("#move-count")).toHaveText("0수");
+  // It is still held, so a tap on the square ahead moves it there.
+  await tap(page, "e3", info);
+  await expect(page.locator("#move-count")).toHaveText("1수");
+});

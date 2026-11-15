@@ -52,6 +52,8 @@ export class ChessView {
   private cameraAt = 0;
   private cameraMs = 450;
   private pointerId: number | null = null;
+  /** The square a press began on: a release elsewhere moves nothing (a finger that slid off the pawn moved it). */
+  private pressed: Square | null = null;
   get animating() {
     return !!this.cameraAt || this.moves.length > 0;
   }
@@ -148,6 +150,7 @@ export class ChessView {
       if (!e.isPrimary || e.button !== 0 || this.pointerId !== null) return;
       this.pointerId = e.pointerId;
       canvas.setPointerCapture(e.pointerId);
+      this.pressed = this.squareAt(e);
       this.pick(e, false);
     });
     canvas.addEventListener("pointerup", (e) => {
@@ -155,20 +158,18 @@ export class ChessView {
       this.pointerId = null;
       if (canvas.hasPointerCapture(e.pointerId))
         canvas.releasePointerCapture(e.pointerId);
-      // A click or a tap commits at once.
-      this.pick(e, true);
-    });
-    canvas.addEventListener("pointermove", (e) => {
-      if (
-        e.isPrimary &&
-        this.pointerId === e.pointerId &&
-        e.pointerType !== "mouse"
-      )
-        this.pick(e, false);
+      // A click or a tap commits at once, but only where it began: a press that drifted to the next square
+      // before it was let go keeps the piece picked up and moves nothing.
+      const at = this.squareAt(e),
+        began = this.pressed;
+      this.pressed = null;
+      if (at === began) this.pick(e, true);
+      else if (began && !this.disposed && !this.animating) this.onSelect(began, false);
     });
     const cancel = (e: PointerEvent) => {
       if (this.pointerId !== e.pointerId) return;
       this.pointerId = null;
+      this.pressed = null;
       this.onCancel();
     };
     canvas.addEventListener("pointercancel", cancel);
@@ -575,15 +576,15 @@ export class ChessView {
   }
   private ray = new T.Raycaster();
   private plane = new T.Plane(new T.Vector3(0, 1, 0), -0.21);
-  private pick(e: PointerEvent, confirm: boolean) {
-    if (this.disposed || this.animating) return;
+  /** The square under the pointer, or null off the board. */
+  private squareAt(e: PointerEvent): Square | null {
     aim(this.ray, e, this.renderer.domElement, this.camera);
     const point = new T.Vector3();
-    if (!this.ray.ray.intersectPlane(this.plane, point)) {
-      this.onSelect(null, confirm);
-      return;
-    }
-    this.onSelect(fromWorld(point.x, point.z), confirm);
+    return this.ray.ray.intersectPlane(this.plane, point) ? fromWorld(point.x, point.z) : null;
+  }
+  private pick(e: PointerEvent, confirm: boolean) {
+    if (this.disposed || this.animating) return;
+    this.onSelect(this.squareAt(e), confirm);
   }
   private target() {
     const distance = cameraDistance(this.camera.aspect, this.top, SUBJECTS.chess),
