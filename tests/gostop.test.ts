@@ -8,16 +8,25 @@ function laid(hands: [number[], number[]], floor: number[], pile: number[], take
   return { ...g.createGame(seededRandom(1)), hands, floor, pile, taken };
 }
 describe("go-stop", () => {
-  test("a deal: ten each, eight on the floor, twenty in the pile, never four of a month on the floor", () => {
+  test("a deal: ten each, eight on the floor, the rest in the pile, a bonus card on the floor taken by the first player", () => {
+    let swapped = 0;
     for (let seed = 1; seed < 200; seed++) {
       const s = g.createGame(seededRandom(seed));
       expect(s.hands[0]).toHaveLength(10);
       expect(s.hands[1]).toHaveLength(10);
       expect(s.floor).toHaveLength(8);
-      expect(s.pile).toHaveLength(20);
-      expect(new Set([...s.hands[0], ...s.hands[1], ...s.floor, ...s.pile]).size).toBe(48);
+      expect(s.floor.some(g.isBonus)).toBe(false);
+      expect(s.pile).toHaveLength(22 - s.opening.swaps.length);
+      expect(s.taken[0]).toEqual(s.opening.swaps.map(([bonus]) => bonus));
+      // Each bonus card laid was swapped, in place, and the floor is what the swaps left.
+      const lying = [...s.opening.laid];
+      for (const [bonus, replacement] of s.opening.swaps) lying[lying.indexOf(bonus)] = replacement;
+      expect(lying).toEqual(s.floor);
+      swapped += s.opening.swaps.length;
+      expect(new Set([...s.hands[0], ...s.hands[1], ...s.floor, ...s.pile, ...s.taken[0]]).size).toBe(50);
       for (let m = 1; m <= 12; m++) expect(s.floor.filter((c) => g.monthOf(c) === m).length).toBeLessThan(4);
     }
+    expect(swapped).toBeGreaterThan(0);
   });
   test("the cards: five brights, nine animals, ten ribbons, and chaff worth twenty-six", () => {
     const all = Array.from({ length: 48 }, (_, i) => i);
@@ -25,6 +34,8 @@ describe("go-stop", () => {
     expect(all.filter((c) => g.kindOf(c) === "yeol")).toHaveLength(9);
     expect(all.filter((c) => g.kindOf(c) === "tti")).toHaveLength(10);
     expect(all.reduce((n, c) => n + g.piValue(c), 0)).toBe(26);
+    expect(g.piValue(g.BONUS2)).toBe(2);
+    expect(g.piValue(g.BONUS3)).toBe(3);
   });
   test("scores: brights, godori, the three ribbon sets and chaff", () => {
     const gw = [id(1, 0), id(3, 0), id(8, 0)];
@@ -98,8 +109,8 @@ describe("go-stop", () => {
         s = g.play(s, move)!;
         expect(s).not.toBeNull();
         const all = [...s.hands[0], ...s.hands[1], ...s.floor, ...s.pile, ...s.taken[0], ...s.taken[1]];
-        expect(new Set(all).size).toBe(48);
-        expect(all).toHaveLength(48);
+        expect(new Set(all).size).toBe(50);
+        expect(all).toHaveLength(50);
       }
       expect(s.winner).not.toBeNull();
     }
@@ -109,5 +120,56 @@ describe("go-stop", () => {
       turned = { ...s, turn: 1 as const },
       other = { ...turned, hands: [[...s.pile.slice(0, 10)], s.hands[1]] as [number[], number[]], pile: [...s.hands[0], ...s.pile.slice(10)] };
     expect(g.choose(turned, "normal", seededRandom(9))).toEqual(g.choose(other, "normal", seededRandom(9)));
+  });
+  test("a bonus card played from the hand is taken with a chaff of the other's, a card is drawn and the turn goes on", () => {
+    const s = laid([[g.BONUS3, id(5, 2)], [id(6, 2)]], [id(2, 2), id(9, 2)], [id(10, 2), id(4, 2)], [[], [id(7, 2), id(7, 3)]]);
+    const next = g.play(s, { from: -1, to: g.BONUS3, extra: -1 })!;
+    expect(next.turn).toBe(0);
+    expect(next.taken[0]).toEqual(expect.arrayContaining([g.BONUS3, id(7, 2)]));
+    expect(next.hands[0]).toEqual([id(5, 2), id(4, 2)]);
+    expect(next.last!.drawn).toBe(id(4, 2));
+    expect(g.score(next.taken[0]).counts.pi).toBe(4);
+  });
+  test("a bonus card turned over from the pile is taken and the next card turned", () => {
+    const s = laid([[id(1, 2), id(5, 2)], [id(6, 2)]], [id(1, 3), id(9, 2)], [id(10, 2), id(9, 3), g.BONUS2]);
+    const next = g.play(s, { from: -1, to: id(1, 2), extra: -1 })!;
+    expect(next.last!.bonuses).toEqual([g.BONUS2]);
+    expect(next.last!.flipped).toBe(id(9, 3));
+    expect(next.taken[0]).toEqual(expect.arrayContaining([g.BONUS2, id(1, 2), id(1, 3), id(9, 2), id(9, 3)]));
+  });
+  test("three of a month with none on the floor may be shaken, which doubles; with the fourth there, bombed", () => {
+    const shake = laid([[id(3, 0), id(3, 1), id(3, 2), id(5, 2)], [id(6, 2), id(7, 2)]], [id(2, 2), id(9, 2)], [id(10, 2), id(4, 2)]);
+    const asked = g.play(shake, { from: -1, to: id(3, 2), extra: -1 })!;
+    expect(asked.phase).toBe("declare");
+    expect(asked.offer).toBe("shake");
+    const shaken = g.play(asked, { from: -1, to: g.YES, extra: -1 })!;
+    expect(shaken.shakes[0]).toBe(1);
+    expect(shaken.last!.events).toContain("흔들기");
+    expect(shaken.last!.shown.sort()).toEqual([id(3, 0), id(3, 1), id(3, 2)].sort());
+    const plain = g.play(asked, { from: -1, to: g.NO, extra: -1 })!;
+    expect(plain.shakes[0]).toBe(0);
+    const bomb = laid([[id(3, 0), id(3, 1), id(3, 2), id(5, 2)], [id(6, 2), id(7, 2)]], [id(3, 3), id(9, 2)], [id(10, 2), id(4, 2)], [[], [id(7, 3)]]);
+    const offer = g.play(bomb, { from: -1, to: id(3, 0), extra: -1 })!;
+    expect(offer.offer).toBe("bomb");
+    const boom = g.play(offer, { from: -1, to: g.YES, extra: -1 })!;
+    expect(boom.hands[0]).toEqual([id(5, 2)]);
+    expect(boom.taken[0]).toEqual(expect.arrayContaining([id(3, 0), id(3, 1), id(3, 2), id(3, 3), id(7, 3)]));
+    expect(boom.dummies[0]).toBe(2);
+    expect(boom.shakes[0]).toBe(1);
+    // Two turns that only turn the pile over.
+    const back = g.play(boom, g.choose(boom, "normal", seededRandom(3))!)!;
+    expect(g.moves(back).some((m) => m.to === g.FLIP)).toBe(true);
+    const flipped = g.play(back, { from: -1, to: g.FLIP, extra: -1 })!;
+    expect(flipped.dummies[0]).toBe(1);
+    expect(flipped.hands[0]).toEqual([id(5, 2)]);
+  });
+  test("marks of the hand: what takes now, a pair sure to come back, and threes held together", () => {
+    const s = laid([[id(1, 2), id(2, 2), id(2, 3), id(3, 0), id(3, 1), id(3, 2), id(4, 0), id(4, 1), id(4, 2)], [id(6, 2)]], [id(1, 3), id(4, 3)], [id(10, 2)], [[id(2, 0)], [id(2, 1)]]);
+    expect(g.capturing(s, 0).sort()).toEqual([id(1, 2), id(4, 0), id(4, 1), id(4, 2)].sort());
+    expect(g.sure(s, 0).sort()).toEqual([id(2, 2), id(2, 3)].sort());
+    expect(g.bundles(s, 0)).toEqual([
+      { cards: [id(3, 0), id(3, 1), id(3, 2)], bomb: false },
+      { cards: [id(4, 0), id(4, 1), id(4, 2)], bomb: true },
+    ]);
   });
 });

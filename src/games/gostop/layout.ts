@@ -8,6 +8,8 @@ export const GOSTOP_LAYOUT = {
   HAND_Z: 3.75,
   HAND_STEP: 0.8,
   HAND_SCALE: 1,
+  /** How far apart the cards of three held together lie. */
+  BUNDLE_STEP: 0.3,
   RIVAL_Z: -3.85,
   RIVAL_STEP: 0.52,
   RIVAL_SCALE: 0.75,

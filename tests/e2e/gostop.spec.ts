@@ -22,15 +22,27 @@ async function onScreen(page: Page, x: number, y: number, z: number) {
   return { x: box.x + ((v.x + 1) / 2) * box.width, y: box.y + ((1 - v.y) / 2) * box.height };
 }
 
-test("go-stop: a card of my hand is tapped and played, and the computer answers", async ({ page }) => {
+test("go-stop: the cards are dealt from the pile, a card of my hand is tapped and played, and the computer answers", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  // A fixed shuffle in which my hand holds no three of a month (three would be held together and move the row).
+  await page.addInitScript(() => {
+    let seed = 1;
+    crypto.getRandomValues = ((buffer: Uint32Array) => {
+      for (let i = 0; i < buffer.length; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        buffer[i] = seed * 2;
+      }
+      return buffer;
+    }) as typeof crypto.getRandomValues;
+  });
   await page.goto("/");
   await selectGame(page, "고스톱");
   // Against the computer only: each side's hand is hidden from the other.
   await expect(page.getByLabel("로컬 2인", { exact: true })).toBeHidden();
   await page.locator(".game-stage button.primary").click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  // The deal from the pile takes a while; nothing can be played until it is over.
   await rest(page);
   // No panel beside the table (it stays in the page as a pixel for readers): the scores are painted on the table.
   await expect(page.locator(".game-layout")).toHaveClass(/no-panel/);

@@ -1,8 +1,9 @@
 import * as T from "three";
+import { capturing as picturing } from "../../ui/banner";
 import { planks, weave, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { kindOf, monthOf, pictureOf, piValue, score, type State } from "./rules";
+import { BONUS2, CARDS, FLIP, bundles, capturing, isBonus, kindOf, monthOf, pictureOf, piValue, score, sure, type State } from "./rules";
 import { GOSTOP_LAYOUT as L } from "./layout";
 
 // The forty-eight pictures, inlined so that the game makes no network request (CC BY-SA 4.0, see public/hwatu-license.txt).
@@ -16,7 +17,7 @@ interface Pose {
   s: number;
 }
 /** Which group of the taken cards a card goes to: brights, animals, ribbons, chaff. */
-const GROUP = { gwang: 0, yeol: 1, tti: 2, pi: 3, ssang: 3 } as const;
+const GROUP = { gwang: 0, yeol: 1, tti: 2, pi: 3, ssang: 3, bonus: 3 } as const;
 /**
  * A table with a wool blanket on it, seen from my seat: my hand along the near
  * edge, the computer's face down across the table, the pile in the middle with
@@ -28,6 +29,14 @@ export class GostopView extends TableView<State> {
   private poses = new Map<number, Pose>();
   private cursor: T.Mesh;
   private rings: T.Mesh[] = [];
+  /** Frames under the cards of my hand: blue where a card takes something now, grey where a pair is sure to come back. */
+  private edges: T.Mesh[] = [];
+  private blue: T.Material;
+  private grey: T.Material;
+  /** A bomb painted on the first card of each three that may be played together as a bomb. */
+  private badges: T.Mesh[] = [];
+  /** The deal last shown, so that a new game is dealt from the pile once. */
+  private dealt: State["opening"] | null = null;
   /** A tablet lying by the pile for each side, with its score painted on it (there is no panel beside the table). */
   private plates: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string }[] = [];
   constructor(host: HTMLElement, quality: "high" | "low") {
@@ -44,7 +53,7 @@ export class GostopView extends TableView<State> {
     const geometry = this.own(new T.BoxGeometry(L.CW, 0.018, L.CH)),
       edge = this.standard({ color: "#2a120c", roughness: 0.7 }),
       back = this.standard({ map: this.paint((ctx, w, h) => this.back(ctx, w, h)), roughness: 0.55 });
-    for (let id = 0; id < 48; id++) {
+    for (let id = 0; id < CARDS; id++) {
       const face = this.standard({ map: this.face(id), roughness: 0.5 }),
         mesh = new T.Mesh(geometry, [edge, edge, face, back, edge, edge]);
       mesh.castShadow = mesh.receiveShadow = true;
@@ -64,6 +73,26 @@ export class GostopView extends TableView<State> {
     this.cursor = lay(paint("#ffffff"));
     const gold = paint("#f2c14e");
     for (let i = 0; i < 4; i++) this.rings.push(lay(gold));
+    this.blue = paint("#2f80f0");
+    this.grey = paint("#a2a7ad");
+    const wide = this.own(new T.PlaneGeometry(L.CW + 0.1, L.CH + 0.1));
+    for (let i = 0; i < 12; i++) {
+      const mesh = new T.Mesh(wide, this.blue);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.edges.push(mesh);
+    }
+    const bomb = this.own(new T.MeshBasicMaterial({ map: this.icon(), transparent: true, depthWrite: false })),
+      round = this.own(new T.PlaneGeometry(0.42, 0.42));
+    for (let i = 0; i < 3; i++) {
+      const mesh = new T.Mesh(round, bomb);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.visible = false;
+      mesh.renderOrder = 6;
+      this.scene.add(mesh);
+      this.badges.push(mesh);
+    }
     // The scores: mine on a tablet below the pile, the computer's above it, both written to be read from my seat.
     const lacquer = this.standard({ color: "#20140e", roughness: 0.45 });
     for (const side of [0, 1]) {
@@ -131,6 +160,73 @@ export class GostopView extends TableView<State> {
     texture.anisotropy = 4;
     return texture;
   }
+  /** A round black bomb with a lit fuse, on a white disc. */
+  private icon() {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    ctx.beginPath();
+    ctx.arc(64, 64, 60, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff4dc";
+    ctx.fill();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#c8321f";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(58, 72, 32, 0, Math.PI * 2);
+    ctx.fillStyle = "#1d1f23";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(48, 62, 9, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fill();
+    ctx.fillStyle = "#1d1f23";
+    ctx.fillRect(70, 34, 16, 14);
+    ctx.strokeStyle = "#7a5a3a";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(80, 36);
+    ctx.quadraticCurveTo(90, 18, 102, 24);
+    ctx.stroke();
+    ctx.fillStyle = "#ffb21a";
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(104, 22);
+      ctx.lineTo(104 + Math.cos(a) * 13, 22 + Math.sin(a) * 13);
+      ctx.lineTo(104 + Math.cos(a + 0.3) * 5, 22 + Math.sin(a + 0.3) * 5);
+      ctx.fill();
+    }
+    const texture = this.own(new T.CanvasTexture(canvas));
+    texture.colorSpace = T.SRGBColorSpace;
+    return texture;
+  }
+  /** A bonus card: no month, a large figure of how much chaff it is worth. */
+  private bonusFace(ctx: CanvasRenderingContext2D, w: number, h: number, worth: number) {
+    ctx.fillStyle = "#fbf3e0";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "#c8321f";
+    ctx.lineWidth = 12;
+    ctx.strokeRect(6, 6, w - 12, h - 12);
+    ctx.strokeStyle = "#d9a441";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(20, 20, w - 40, h - 40);
+    ctx.beginPath();
+    ctx.arc(w / 2, h * 0.47, 66, 0, Math.PI * 2);
+    ctx.fillStyle = worth === 3 ? "#1f4e9c" : "#c8321f";
+    ctx.fill();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#3a2a1a";
+    ctx.font = '800 34px "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif';
+    ctx.fillText("보너스", w / 2, 58);
+    ctx.fillStyle = "#fff6e0";
+    ctx.font = '900 92px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText(String(worth), w / 2, h * 0.47 + 6);
+    ctx.fillStyle = "#3a2a1a";
+    ctx.font = '800 44px "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif';
+    ctx.fillText(`${worth}피`, w / 2, h - 62);
+  }
   /** The red back of a hwatu card: a dark frame and fine diagonal lines. */
   private back(ctx: CanvasRenderingContext2D, w: number, h: number) {
     ctx.fillStyle = "#a3271a";
@@ -149,6 +245,7 @@ export class GostopView extends TableView<State> {
   }
   /** A card's face: its picture once decoded (a plain card of its month until then), and the month in a corner. */
   private face(id: number) {
+    if (isBonus(id)) return this.paint((ctx, w, h) => this.bonusFace(ctx, w, h, id === BONUS2 ? 2 : 3));
     const month = monthOf(id),
       texture = this.paint((ctx, w, h) => {
         ctx.fillStyle = "#f4eddc";
@@ -184,15 +281,28 @@ export class GostopView extends TableView<State> {
   private arrange(state: State) {
     const poses = new Map<number, Pose>(),
       over = state.winner !== null;
-    // My hand, by month; the card waiting for its floor card to be chosen is lifted toward the floor.
-    const mine = [...state.hands[0]].sort((a, b) => a - b);
-    mine.forEach((id, i) => {
-      const lifted = state.phase === "choose" && state.pending === id && state.turn === 0;
-      poses.set(id, { x: (i - (mine.length - 1) / 2) * L.HAND_STEP, y: lifted ? 0.35 : 0.04, z: L.HAND_Z - (lifted ? 0.45 : 0), up: true, s: L.HAND_SCALE });
-    });
+    // My hand, by month; three of a month are held together (the user asked); the card waiting for a choice is lifted.
+    const mine = [...state.hands[0]].sort((a, b) => a - b),
+      held = new Set(bundles(state, 0).flatMap((b) => b.cards)),
+      units: number[][] = [];
+    for (const id of mine) {
+      const prior = units[units.length - 1];
+      if (held.has(id) && prior && held.has(prior[0]) && monthOf(prior[0]) === monthOf(id)) prior.push(id);
+      else units.push([id]);
+    }
+    const span = (unit: number[]) => L.HAND_STEP + (unit.length - 1) * L.BUNDLE_STEP,
+      total = units.reduce((n, unit) => n + span(unit), 0) - (L.HAND_STEP - L.CW * L.HAND_SCALE);
+    let x = -total / 2 + (L.CW * L.HAND_SCALE) / 2;
+    for (const unit of units) {
+      unit.forEach((id, k) => {
+        const lifted = (state.phase === "choose" || state.phase === "declare") && state.pending === id && state.turn === 0;
+        poses.set(id, { x: x + k * L.BUNDLE_STEP, y: (lifted ? 0.35 : 0.04) + k * 0.02, z: L.HAND_Z - (lifted ? 0.45 : 0), up: true, s: L.HAND_SCALE });
+      });
+      x += span(unit);
+    }
     // The computer's hand in the order it was dealt, face down until the game is over.
     state.hands[1].forEach((id, i) => {
-      const lifted = state.phase === "choose" && state.pending === id && state.turn === 1;
+      const lifted = (state.phase === "choose" || state.phase === "declare") && state.pending === id && state.turn === 1;
       poses.set(id, { x: (i - (state.hands[1].length - 1) / 2) * L.RIVAL_STEP, y: lifted ? 0.35 : 0.04, z: L.RIVAL_Z + (lifted ? 0.45 : 0), up: over || lifted, s: L.RIVAL_SCALE });
     });
     // The pile, face down, one on another.
@@ -210,7 +320,7 @@ export class GostopView extends TableView<State> {
       for (const id of state.taken[side]) groups[GROUP[kindOf(id)]].push(id);
       let x = L.TAKEN_X;
       // Doubles first among the chaff, so that a row of chaff is worth ten exactly where it can be (the user asked for a row a ten).
-      groups[3].sort((a, b) => (kindOf(b) === "ssang" ? 1 : 0) - (kindOf(a) === "ssang" ? 1 : 0));
+      groups[3].sort((a, b) => piValue(b) - piValue(a));
       groups.forEach((ids, g) => {
         let across = 0,
           down = 0,
@@ -251,10 +361,14 @@ export class GostopView extends TableView<State> {
     const state = this.state;
     if (!state || state.winner !== null || state.turn !== 0) return [];
     const ids = state.phase === "play" ? state.hands[0] : state.phase === "choose" ? state.floor.filter((id) => monthOf(id) === monthOf(state.pending!)) : [];
-    return ids.flatMap((id) => {
+    const out: Spot[] = ids.flatMap((id) => {
       const pose = this.poses.get(id);
+      // Cards held together overlap: each is found by its own uncovered strip.
       return pose ? [{ x: pose.x, y: pose.y, z: pose.z, r: 0.5 * pose.s, point: id }] : [];
     });
+    // After a bomb, a tap on the pile turns it over without playing a card.
+    if (state.phase === "play" && state.dummies[0] > 0) out.push({ x: L.PILE_X, y: 0.3, z: 0, r: 0.55, point: FLIP });
+    return out;
   }
   protected place(state: State) {
     this.poses = this.arrange(state);
@@ -263,24 +377,117 @@ export class GostopView extends TableView<State> {
     this.say(1, "컴퓨터", score(state.taken[1]).total, state.gos[1]);
     this.mark(this.marks);
   }
+  /** Carries a card from one pose to another in an arc, turning it over on the way when it must. */
+  /** With `hold`, the card is kept where it starts until its moment (a redrawn table would otherwise lay it out early). */
+  private fly(id: number, p0: Pose, p1: Pose, delay: number, duration: number, heard: boolean, hold = false) {
+    const mesh = this.cards[id];
+    if (hold)
+      return this.tween(0, delay + duration, (q) => {
+        const p = Math.max(0, (q * (delay + duration) - delay) / duration);
+        if (p <= 0) return this.put(mesh, p0);
+        const e = p * p * (3 - 2 * p),
+          fa = p0.up ? 0 : Math.PI,
+          fb = p1.up ? 0 : Math.PI;
+        this.put(mesh, { x: p0.x + (p1.x - p0.x) * e, y: p0.y + (p1.y - p0.y) * e, z: p0.z + (p1.z - p0.z) * e, up: p1.up, s: p0.s + (p1.s - p0.s) * e }, Math.sin(Math.PI * p) * 0.55, fa + (fb - fa) * e);
+        mesh.rotation.x = Math.sin(Math.PI * p) * 0.18;
+        if (q === 1 && heard) this.onContact();
+      });
+    this.tween(delay, duration, (p) => {
+      const e = p * p * (3 - 2 * p),
+        fa = p0.up ? 0 : Math.PI,
+        fb = p1.up ? 0 : Math.PI;
+      this.put(mesh, { x: p0.x + (p1.x - p0.x) * e, y: p0.y + (p1.y - p0.y) * e, z: p0.z + (p1.z - p0.z) * e, up: p1.up, s: p0.s + (p1.s - p0.s) * e }, Math.sin(Math.PI * p) * 0.55, fa + (fb - fa) * e);
+      // A card in flight leans a little, as one thrown down does.
+      mesh.rotation.x = Math.sin(Math.PI * p) * 0.18;
+      if (p === 1 && heard) this.onContact();
+    });
+  }
+  /**
+   * A new game is dealt from the pile in the middle (the user asked): four to the floor, five to the computer and five
+   * to me, twice over; then a bonus card on the floor goes to the first player and the pile fills its place.
+   */
+  sync(state: State, animate = true) {
+    const fresh = state.ply === 0 && state.opening !== this.dealt;
+    if (fresh) this.dealt = state.opening;
+    // The same state shown again while it is being dealt: the deal goes on.
+    if (!fresh && state === this.state && this.animating) return;
+    if (!fresh || this.disposed || this.reducedMotion) return super.sync(state, animate);
+    this.state = state;
+    this.settleNow();
+    this.poses = this.arrange(state);
+    this.hide();
+    const { laid, swaps } = state.opening,
+      // The place of each of the eight: where the card that stays there at last lies (a bonus card is replaced in place).
+      spot = state.floor.map((id) => this.poses.get(id)!);
+    // Everything starts in the pile, face down.
+    const order = [...state.hands[0], ...state.hands[1], ...laid, ...swaps.map(([, r]) => r), ...state.pile.filter((id) => !swaps.some(([, r]) => r === id))];
+    const stack = (i: number): Pose => ({ x: L.PILE_X, y: 0.04 + (order.length - 1 - i) * 0.019, z: 0, up: false, s: 1 });
+    order.forEach((id, i) => this.put(this.cards[id], stack(i)));
+    const step = 75,
+      flight = 300;
+    // A moment first, so that the table is seen before the cards go out.
+    let at = 450;
+    const send = (id: number, to: Pose, heard: boolean) => {
+      this.fly(id, stack(order.indexOf(id)), to, at, flight, heard, true);
+      at += step;
+    };
+    for (const round of [0, 1]) {
+      laid.slice(round * 4, round * 4 + 4).forEach((id, k) => send(id, spot[round * 4 + k], true));
+      state.hands[1].slice(round * 5, round * 5 + 5).forEach((id, k) => send(id, this.poses.get(id)!, k === 4));
+      state.hands[0].slice(round * 5, round * 5 + 5).forEach((id, k) => send(id, this.poses.get(id)!, k === 4));
+    }
+    // A bonus card on the floor goes to the first player, and the pile's top fills its place.
+    at += 250;
+    const lying = [...laid];
+    for (const [bonus, replacement] of swaps) {
+      const i = lying.indexOf(bonus);
+      this.fly(bonus, spot[i], this.poses.get(bonus)!, at, 420, true, true);
+      this.fly(replacement, stack(order.indexOf(replacement)), spot[i], at + 300, flight, true, true);
+      lying[i] = replacement;
+      at += 750;
+    }
+    this.redraw();
+  }
   protected animate(before: State, state: State) {
     const from = this.arrange(before),
       to = this.arrange(state),
       last = state.last,
-      turned = !!last && last !== before.last && state.ply === before.ply + 1 && before.last?.played !== last.played;
+      turned = !!last && last !== before.last && state.ply === before.ply + 1 && (before.last?.played !== last.played || last.played === -1) && !last.events.includes("보너스");
     this.poses = to;
-    // Every card that moves, and when: the card played lands on the floor, the pile's card is turned over onto it,
-    // then what was taken goes to the taker's side and any chaff stolen crosses over.
-    const plan = new Map<number, { via: Pose | null; delay: number; up: boolean }>();
+    this.hide();
+    // Every card that moves, and when: the card played (with a bomb's others) lands on the floor, the pile's card is
+    // turned over onto it, then what was taken goes to the taker's side and any chaff stolen crosses over.
+    const plan = new Map<number, { via: Pose | null; delay: number }>();
+    let lead = 0;
     if (turned && last) {
-      const floorCount = (month: number) => before.floor.filter((id) => monthOf(id) === month).length,
-        played = monthOf(last.played);
-      plan.set(last.played, { via: { ...this.slot(played, floorCount(played)), up: true, s: 1 }, delay: 0, up: true });
+      // A shake: the computer shows its three cards for a moment (mine are in view already).
+      if (last.shown.length && last.side === 1) {
+        lead = 1100;
+        for (const id of last.shown) {
+          const a = from.get(id)!,
+            shown: Pose = { ...a, y: a.y + 0.3, z: a.z + 0.7, up: true };
+          this.fly(id, a, shown, 0, 320, false);
+          if (id !== last.played) this.fly(id, shown, to.get(id)!, lead - 300, 300, false);
+          else from.set(id, shown);
+        }
+      }
+      const floorCount = (month: number) => before.floor.filter((id) => !isBonus(id) && monthOf(id) === month).length;
+      const played = last.played >= 0 ? monthOf(last.played) : -1;
+      if (last.played >= 0) {
+        [last.played, ...last.bomb].forEach((id, k) => plan.set(id, { via: { ...this.slot(played, floorCount(played) + k), up: true, s: 1 }, delay: lead + k * 110 }));
+      }
+      let flipAt = lead + (last.played >= 0 ? L.FLIP_AT + last.bomb.length * 110 : 100);
+      // Bonus cards turned over go straight to the taker; then the next card is turned.
+      for (const id of last.bonuses) {
+        plan.set(id, { via: null, delay: flipAt });
+        flipAt += 450;
+      }
       if (last.flipped !== null) {
         const month = monthOf(last.flipped),
-          n = floorCount(month) + (month === played ? 1 : 0);
-        plan.set(last.flipped, { via: { ...this.slot(month, n), up: true, s: 1 }, delay: L.FLIP_AT, up: true });
+          n = floorCount(month) + (month === played ? 1 + last.bomb.length : 0);
+        plan.set(last.flipped, { via: { ...this.slot(month, n), up: true, s: 1 }, delay: flipAt });
       }
+      lead = Math.max(lead, flipAt - L.FLIP_AT);
     }
     const moved = this.cards.map((_, id) => id).filter((id) => {
       const a = from.get(id)!,
@@ -288,31 +495,27 @@ export class GostopView extends TableView<State> {
       return plan.has(id) || Math.abs(a.x - b.x) + Math.abs(a.z - b.z) + Math.abs(a.y - b.y) > 0.005 || a.up !== b.up || a.s !== b.s;
     });
     if (!moved.length) return false;
-    const gather = turned ? L.GATHER_AT : 0,
+    const gather = turned ? lead + L.GATHER_AT : 0,
       steal = gather + 380;
     for (const id of moved) {
       const a = from.get(id)!,
         b = to.get(id)!,
-        mesh = this.cards[id],
         step = plan.get(id),
-        stolen = !!last?.stolen.includes(id) && turned;
-      const flight = (p0: Pose, p1: Pose, delay: number, duration: number, heard: boolean) =>
-        this.tween(delay, duration, (p) => {
-          const e = p * p * (3 - 2 * p),
-            fa = p0.up ? 0 : Math.PI,
-            fb = p1.up ? 0 : Math.PI;
-          this.put(mesh, { x: p0.x + (p1.x - p0.x) * e, y: p0.y + (p1.y - p0.y) * e, z: p0.z + (p1.z - p0.z) * e, up: p1.up, s: p0.s + (p1.s - p0.s) * e }, Math.sin(Math.PI * p) * 0.55, fa + (fb - fa) * e);
-          // A card in flight leans a little, as one thrown down does.
-          mesh.rotation.x = Math.sin(Math.PI * p) * 0.18;
-          if (p === 1 && heard) this.onContact();
-        });
+        stolen = !!last?.stolen.includes(id);
       if (step?.via) {
-        flight(a, step.via, step.delay, 380, true);
+        this.fly(id, a, step.via, step.delay, 380, true);
         // It stays on the floor until the gathering, or there for good.
-        if (Math.abs(step.via.x - b.x) + Math.abs(step.via.z - b.z) > 0.005 || step.via.s !== b.s) flight(step.via, b, gather + 60, 420, false);
-      } else flight(a, b, stolen ? steal : turned ? gather : 0, turned ? 420 : 320, !turned);
+        if (Math.abs(step.via.x - b.x) + Math.abs(step.via.z - b.z) > 0.005 || step.via.s !== b.s) this.fly(id, step.via, b, gather + 60, 420, false);
+      } else if (step) this.fly(id, a, b, step.delay, 420, true);
+      else if (last?.shown.includes(id) && last.side === 1 && turned) continue;
+      // A bonus card played: it goes to my side, a chaff comes across, and a card is drawn from the pile in its place.
+      else this.fly(id, a, b, stolen ? (turned ? steal : 380) : turned ? gather : id === last?.drawn ? 420 : 0, turned ? 420 : 340, !turned);
     }
     return true;
+  }
+  /** Takes the marks of my hand away while cards are moving; `mark` lays them again once they rest. */
+  private hide() {
+    for (const mesh of [...this.edges, ...this.badges]) mesh.visible = false;
   }
   protected mark(marks: Marks) {
     const state = this.state,
@@ -325,6 +528,34 @@ export class GostopView extends TableView<State> {
         ring.scale.setScalar(pose.s);
       }
     });
+    // My turn: a blue edge round the cards that take something, a grey one round a pair sure to come back (the user
+    // asked), and a bomb on each three that may be played together.
+    this.hide();
+    if (state && state.turn === 0 && state.phase === "play" && state.winner === null && !this.animating && !picturing()) {
+      const lay = (ids: number[], material: T.Material, from: number) =>
+        ids.forEach((id, i) => {
+          const edge = this.edges[from + i],
+            pose = this.poses.get(id);
+          if (!edge || !pose) return;
+          edge.material = material;
+          edge.visible = true;
+          edge.position.set(pose.x, pose.y - 0.012, pose.z);
+          edge.scale.setScalar(pose.s);
+        });
+      const blue = capturing(state, 0);
+      lay(blue, this.blue, 0);
+      lay(sure(state, 0), this.grey, blue.length);
+      bundles(state, 0)
+        .filter((b) => b.bomb)
+        .forEach((b, i) => {
+          // On the upper corner of the uppermost of the three.
+          const badge = this.badges[i],
+            pose = this.poses.get(Math.max(...b.cards));
+          if (!badge || !pose) return;
+          badge.visible = true;
+          badge.position.set(pose.x + (L.CW * pose.s) / 2 - 0.17, pose.y + 0.03, pose.z - (L.CH * pose.s) / 2 + 0.19);
+        });
+    }
     const pose = marks.cursor !== null ? this.poses.get(marks.cursor) : undefined;
     this.cursor.visible = !!pose;
     if (pose) {
