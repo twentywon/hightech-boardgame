@@ -1,12 +1,17 @@
 import * as T from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import woodDarkUrl from "../assets/tex/wood-dark.webp?inline";
-import woodLightUrl from "../assets/tex/wood-light.webp?inline";
-import woodNormalUrl from "../assets/tex/wood-normal.webp?inline";
-import woodRoughUrl from "../assets/tex/wood-rough.webp?inline";
-import clothNormalUrl from "../assets/tex/cloth-normal.webp?inline";
-import mapleUrl from "../assets/tex/maple.webp?inline";
-import walnutUrl from "../assets/tex/walnut.webp?inline";
+// The photographs of surfaces, inlined so nothing is fetched at run time. Browser tests import views (and so this
+// file) under plain Node, which knows neither the pictures nor `import.meta.glob`: there, with no page, none are asked for.
+const pictures: Record<string, string> =
+  typeof document === "undefined" ? {} : import.meta.glob<string>("../assets/tex/*.webp", { query: "?inline", import: "default", eager: true });
+const picture = (name: string) => pictures[`../assets/tex/${name}.webp`] ?? "",
+  woodDarkUrl = picture("wood-dark"),
+  woodLightUrl = picture("wood-light"),
+  woodNormalUrl = picture("wood-normal"),
+  woodRoughUrl = picture("wood-rough"),
+  clothNormalUrl = picture("cloth-normal"),
+  mapleUrl = picture("maple"),
+  walnutUrl = picture("walnut");
 const ndc = new T.Vector2();
 /** Points `ray` from the camera through the pointer's place on the canvas. */
 export function aim(ray: T.Raycaster, e: PointerEvent, canvas: HTMLCanvasElement, camera: T.Camera) {
