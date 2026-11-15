@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { PerspectiveCamera, Vector3 } from "three";
 import { selectGame } from "./library";
 import { FOV, cameraDistance, type Subject } from "../../src/engine/camera";
-import { foxGeeseBoard } from "../../src/games/foxgeese/board";
+import { FOX_SUBJECT, pointAt } from "../../src/games/foxgeese/view";
 import { indexOf } from "../../src/games/foxgeese/rules";
 import { taflBoard } from "../../src/games/tafl/board";
 import { UR_SUBJECT, DICE } from "../../src/games/ur/view";
@@ -43,11 +43,10 @@ async function tap(page: Page, subject: Subject & { tilt: number }, x: number, z
 
 test("fox and geese: a goose steps forward and the computer's fox answers", async ({ page }, info) => {
   const mobile = info.project.name === "mobile",
-    board = foxGeeseBoard("geese"),
     errors = await sit(page, "여우와 거위", "ai", "geese");
   await ready(page);
   const go = async (point: number) => {
-    await tap(page, board.subject, board.points[point].x, board.points[point].z, mobile);
+    await tap(page, FOX_SUBJECT, pointAt(point).x, pointAt(point).z, mobile, 0.3);
     await page.waitForTimeout(150);
   };
   // The goose at the left end of the middle row's lower line steps up.

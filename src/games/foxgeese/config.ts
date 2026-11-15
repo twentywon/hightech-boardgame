@@ -1,13 +1,17 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { FEWEST, STALL_LIMIT, STAY, foxGeese, type State } from "./rules";
-import { FOX, GOOSE, foxGeeseBoard } from "./board";
+import { FOX, GOOSE, FoxGeeseView, pointAt } from "./view";
+import { POINTS } from "./rules";
 
 export const foxGeeseConfig: PointConfig<State> = {
   game: foxGeese,
   contact: (sound) => sound.wood(4),
   noPanel: true,
-  board: foxGeeseBoard,
+  // Modelled geese and a fox (the user asked), on a board of their own.
+  view: (host, quality) => new FoxGeeseView(host, quality),
+  colors: [GOOSE, FOX],
+  keyPoints: () => POINTS.map((_, i) => pointAt(i)),
   showMovable: false,
   variants: [
     { value: "geese", label: "거위 (열세 마리)" },
