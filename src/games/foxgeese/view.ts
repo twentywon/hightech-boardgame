@@ -1,5 +1,5 @@
 import * as T from "three";
-import { planks, block } from "../../engine/scene-utils";
+import { planks, block, wood } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { LINKS, POINTS, type State } from "./rules";
@@ -10,7 +10,7 @@ export const GOOSE = "#f4f1e8",
 export const FOX_SUBJECT: TableSubject = { half: 4.0, halfZ: 4.0, height: 0.9, lookY: 0, tilt: 1.0 };
 /** Where a point of the cross lies on the board. */
 export const pointAt = (i: number) => ({ x: (POINTS[i].col - 3) * STEP, z: (POINTS[i].row - 3) * STEP });
-/** The board's top: the cross a shade darker than the wood round it, its lines and points burnt in. */
+/** What is burnt into the board's top, on a clear ground laid over the wood: the cross a shade darker, its lines and points. */
 function boardTexture() {
   const size = 1024,
     c = document.createElement("canvas");
@@ -21,9 +21,7 @@ function boardTexture() {
       const p = pointAt(i);
       return [size / 2 + (p.x / STEP) * u, size / 2 + (p.z / STEP) * u] as [number, number];
     };
-  ctx.fillStyle = "#d9b27c";
-  ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = "rgba(90, 52, 22, 0.16)";
+  ctx.fillStyle = "rgba(90, 52, 22, 0.18)";
   ctx.fillRect(size / 2 - 1.5 * u - u * 0.4, size / 2 - 3 * u - u * 0.4, 3 * u + u * 0.8, 6 * u + u * 0.8);
   ctx.fillRect(size / 2 - 3 * u - u * 0.4, size / 2 - 1.5 * u - u * 0.4, 6 * u + u * 0.8, 3 * u + u * 0.8);
   ctx.strokeStyle = "#3a2414";
@@ -60,7 +58,13 @@ export class FoxGeeseView extends TableView<State> {
     table.rotation.x = -Math.PI / 2;
     table.castShadow = false;
     const edge = this.standard({ color: "#6a4a2c", roughness: 0.6 });
-    this.add(block(7.6 * STEP, 0.2, 7.6 * STEP, 0.08), [edge, edge, this.standard({ map: this.own(boardTexture()), roughness: 0.7 }), edge, edge, edge], 0, -0.1, 0);
+    // A board of real wood grain (the plain painted top looked as if its surface had come off), with the cross burnt in over it.
+    const grain = this.own(wood(false));
+    grain.repeat.set(1.4, 1.4);
+    this.add(block(7.6 * STEP, 0.2, 7.6 * STEP, 0.08), [edge, edge, this.standard({ map: grain, roughness: 0.55 }), edge, edge, edge], 0, -0.1, 0);
+    const burnt = this.add(new T.PlaneGeometry(7.6 * STEP, 7.6 * STEP), this.own(new T.MeshStandardMaterial({ map: this.own(boardTexture()), transparent: true, roughness: 0.7, depthWrite: false })), 0, 0.002, 0);
+    burnt.rotation.x = -Math.PI / 2;
+    burnt.castShadow = false;
     // Larger than life on the board, and turned three-quarters toward me so that their faces are seen.
     for (let k = 0; k < 13; k++) {
       const goose = this.goose();
