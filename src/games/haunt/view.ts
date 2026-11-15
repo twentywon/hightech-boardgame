@@ -2,7 +2,7 @@ import * as T from "three";
 import { wood, planks, glossy, block, stuff } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { BACK, FORE, GHOST, NONE, VAMPIRE, ZOMBIE, counts, sightline, type State } from "./rules";
+import { BACK, GHOST, NONE, REMOVE, SET, VAMPIRE, ZOMBIE, counts, put, sightline, type State } from "./rules";
 
 export const HAUNT_COLORS: [string, string] = ["#e9eef2", "#5a2a6e"];
 /** A square's side, the height of the board's top, how far out the numbers lie. */
@@ -25,6 +25,15 @@ function clueAt(size: number, k: number) {
     along = (i - (size - 1) / 2) * CELL;
   return side === 0 ? { x: along, z: -half } : side === 1 ? { x: half, z: along } : side === 2 ? { x: along, z: half } : { x: -half, z: along };
 }
+/** What the camera frames for a board of `size` (browser tests aim with it too). */
+export function hauntSubject(size: number, aspect: number): TableSubject {
+  const half = (size * CELL) / 2 + OUT + 0.4;
+  return { half: aspect < 1 ? half : half + 0.3, halfZ: half + 0.75, height: 0.9, lookY: 0.1, tilt: 1.02 };
+}
+/** Where a kind of monster stands in the row in front of the board. */
+export function legendAt(size: number, kind: number) {
+  return { x: (kind - 2) * 1.45 - 0.28, z: (size * CELL) / 2 + OUT + 0.95 };
+}
 type Parts = Record<string, T.BufferGeometry>;
 /**
  * A haunted funhouse on a dark table: a board of slate squares in an old frame, mirrors standing corner to corner
@@ -45,6 +54,11 @@ export class HauntView extends TableView<State> {
   private meshes = new Map<number, T.Group>();
   private cursor: T.Mesh;
   private hintRing: T.Mesh;
+  /** Where each kind stands in the row in front of the board, the gold ring under the one a hint points to, and what the hand carries. */
+  private legend: { x: number; z: number }[] = [];
+  private legendRing: T.Mesh;
+  private target: T.Mesh;
+  private carry: { kind: number; from: number; figure: T.Group } | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#1b1622");
     this.daylight("#c9c2e6", "#2a2030", "#ffd9a8", 8, 1.9);
@@ -57,7 +71,11 @@ export class HauntView extends TableView<State> {
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.cursor = ringMesh(own, 0.36, 0.41, "#fff2c6");
     this.hintRing = ringMesh(own, 0.35, 0.43, "#ffb21f");
-    this.scene.add(this.board, this.figures, this.cursor, this.hintRing);
+    this.legendRing = ringMesh(own, 0.34, 0.42, "#ffb21f");
+    this.target = ringMesh(own, 0.36, 0.43, "#7fe0a0");
+    this.scene.add(this.board, this.figures, this.cursor, this.hintRing, this.legendRing, this.target);
+    // The hand is followed on the board's top.
+    this.floor = new T.Plane(new T.Vector3(0, 1, 0), -TOP);
     this.begin();
   }
   /** The shapes and paints of the mirror and the three monsters, made once and shared. */
@@ -211,8 +229,11 @@ export class HauntView extends TableView<State> {
     });
     // In front of the board: each kind of monster with a plate saying how many there are.
     const front = span / 2 + OUT + 0.95;
+    this.legend = [];
     [GHOST, VAMPIRE, ZOMBIE].forEach((kind, i) => {
-      const x = (i - 1) * 1.45,
+      const x = (i - 1) * 1.45;
+      this.legend[kind] = legendAt(n, kind);
+      const
         figure = this.monster(kind);
       figure.scale.setScalar(0.95);
       figure.position.set(x - 0.28, 0, front);
@@ -225,13 +246,73 @@ export class HauntView extends TableView<State> {
     if (resized) this.resize();
   }
   protected subject(aspect: number): TableSubject {
-    const half = ((this.size || 4) * CELL) / 2 + OUT + 0.4;
-    return { half: aspect < 1 ? half : half + 0.3, halfZ: half + 0.75, height: 0.9, lookY: 0.1, tilt: 1.02 };
+    return hauntSubject(this.size || 4, aspect);
   }
+  /** The monsters in front of the board (points 101 to 103) and every square: all are taken by the hand to drag. */
   protected spots(): Spot[] {
     const state = this.state;
     if (!state) return [];
-    return state.mirror.flatMap((m, i) => (m === NONE ? [{ ...squareAt(state.size, i), y: TOP, r: CELL * 0.5, point: i }] : []));
+    const kinds = [GHOST, VAMPIRE, ZOMBIE].flatMap((kind) => (this.legend[kind] ? [{ ...this.legend[kind], y: 0.45, r: 0.55, point: 100 + kind }] : []));
+    return [...kinds, ...state.mirror.map((_, i) => ({ ...squareAt(state.size, i), y: TOP + 0.3, r: CELL * 0.55, point: i }))];
+  }
+  /** The square under a point of the board's top, or −1 off the board. */
+  private cellAt(at: { x: number; z: number }) {
+    const n = this.size,
+      c = Math.round(at.x / CELL + (n - 1) / 2),
+      r = Math.round(at.z / CELL + (n - 1) / 2);
+    return r >= 0 && r < n && c >= 0 && c < n && Math.abs(at.x - squareAt(n, r * n + c).x) <= CELL * 0.6 && Math.abs(at.z - squareAt(n, r * n + c).z) <= CELL * 0.6 ? r * n + c : -1;
+  }
+  /**
+   * A monster is taken from the row in front of the board, or off a square of mine, and carried; a tap on the board
+   * is taken too and does nothing (nothing is set by a bare tap: the user asked for dragging).
+   */
+  protected dragStart(point: number, at: { x: number; y: number; z: number }) {
+    const state = this.state;
+    if (!state || state.winner !== null || point < 0) return false;
+    let kind = 0,
+      from = -1;
+    if (point > 100) kind = point - 100;
+    else if (state.mirror[point] === NONE && !state.fixed[point] && state.cells[point]) {
+      kind = state.cells[point];
+      from = point;
+      this.meshes.get(point)?.removeFromParent();
+    }
+    if (kind) {
+      const figure = this.monster(kind);
+      figure.scale.setScalar(FIGURE);
+      figure.position.set(at.x, TOP + 0.45, at.z);
+      this.scene.add(figure);
+      this.carry = { kind, from, figure };
+    }
+    this.dirty = true;
+    return true;
+  }
+  protected dragMove(at: { x: number; y: number; z: number }) {
+    const carry = this.carry,
+      state = this.state;
+    if (!carry || !state) return;
+    carry.figure.position.set(at.x, TOP + 0.45, at.z);
+    const cell = this.cellAt(at),
+      ok = cell >= 0 && state.mirror[cell] === NONE && !state.fixed[cell];
+    this.target.visible = ok;
+    if (ok) {
+      const p = squareAt(state.size, cell);
+      this.target.position.set(p.x, TOP + 0.02, p.z);
+    }
+  }
+  protected dragEnd(at: { x: number; y: number; z: number } | null) {
+    const carry = this.carry,
+      state = this.state;
+    this.carry = null;
+    this.target.visible = false;
+    if (!carry || !state) return;
+    carry.figure.removeFromParent();
+    const cell = at ? this.cellAt(at) : -1,
+      fits = cell >= 0 && state.mirror[cell] === NONE && !state.fixed[cell];
+    // Let go on a square it may stand on: it is set there. Carried off the board, it is taken away. Else it goes back.
+    if (fits && cell !== carry.from) this.onMove({ from: carry.from, to: put(cell, carry.kind), extra: -1 });
+    else if (!fits && cell < 0 && carry.from >= 0 && at) this.onMove({ from: carry.from, to: REMOVE, extra: -1 });
+    else this.place(state);
   }
   protected place(state: State) {
     this.lay(state);
@@ -284,6 +365,11 @@ export class HauntView extends TableView<State> {
       }
     };
     ring(this.cursor, marks.cursor);
-    ring(this.hintRing, marks.hint?.to);
+    // A hint names a square and the monster for it: a ring on the square and one under that monster in front.
+    const hinted = marks.hint && marks.hint.to >= SET ? marks.hint.to - SET : null;
+    ring(this.hintRing, hinted === null ? null : Math.floor(hinted / 4));
+    const kind = hinted === null ? 0 : hinted % 4;
+    this.legendRing.visible = !!kind && !!this.legend[kind];
+    if (this.legendRing.visible) this.legendRing.position.set(this.legend[kind].x, 0.02, this.legend[kind].z);
   }
 }

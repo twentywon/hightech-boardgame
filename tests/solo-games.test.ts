@@ -1143,3 +1143,20 @@ describe("haunted mirrors", () => {
     expect(haunt.play(state, { from: -1, to: shown, extra: -1 })).toBeNull();
   });
 });
+
+describe("haunted mirrors by hand", () => {
+  test("a monster is dragged onto a square, carried to another, and carried off the board", () => {
+    const state = haunt.createGame(2, seededRandom(8)),
+      [a, b] = state.mirror.flatMap((m, i) => (m === haunt.NONE && !state.fixed[i] ? [i] : []));
+    let s = haunt.play(state, { from: -1, to: haunt.put(a, haunt.VAMPIRE), extra: -1 })!;
+    expect(s.cells[a]).toBe(haunt.VAMPIRE);
+    s = haunt.play(s, { from: a, to: haunt.put(b, haunt.VAMPIRE), extra: -1 })!;
+    expect([s.cells[a], s.cells[b]]).toEqual([haunt.EMPTY, haunt.VAMPIRE]);
+    // Carrying a kind the square does not hold is refused; so is setting one on a mirror.
+    expect(haunt.play(s, { from: b, to: haunt.put(a, haunt.GHOST), extra: -1 })).toBeNull();
+    const mirror = state.mirror.findIndex((m) => m !== haunt.NONE);
+    if (mirror >= 0) expect(haunt.play(s, { from: -1, to: haunt.put(mirror, haunt.GHOST), extra: -1 })).toBeNull();
+    s = haunt.play(s, { from: b, to: haunt.REMOVE, extra: -1 })!;
+    expect(s.cells[b]).toBe(haunt.EMPTY);
+  });
+});

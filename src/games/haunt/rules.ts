@@ -139,13 +139,41 @@ export function solutions(size: number, mirror: number[], clues: number[], total
 const solved = (s: State) => s.cells.every((k, i) => s.mirror[i] !== NONE || k !== EMPTY) && counts(s, s.cells).every((n, k) => n === s.clues[k]) && [GHOST, VAMPIRE, ZOMBIE].every((kind) => s.cells.filter((k) => k === kind).length === s.totals[kind - 1]);
 export const moves = (state: State): Move[] =>
   state.winner !== null ? [] : state.cells.flatMap((_, to) => (state.mirror[to] === NONE && !state.fixed[to] ? [{ from: -1, to, extra: -1 }] : []));
-/** A tap on a square turns what it holds over to the next: nothing, a ghost, a vampire, a zombie, nothing again. */
+/**
+ * Moves that a hand makes by dragging: a monster set on a square (`put(cell, kind)`, from the row in front of the
+ * board when `from` is −1, or carried off another square `from`), and a monster carried off the board (`REMOVE`).
+ */
+export const REMOVE = 999,
+  SET = 1000,
+  put = (cell: number, kind: number) => SET + cell * 4 + kind;
+const free = (state: State, cell: number) => Number.isInteger(cell) && cell >= 0 && cell < state.cells.length && state.mirror[cell] === NONE && !state.fixed[cell];
+/**
+ * A monster dragged onto a square takes its place (whatever stood there goes); one dragged off a square leaves it
+ * empty. The keyboard turns a square over instead (`to` the square itself): nothing, ghost, vampire, zombie, nothing.
+ */
 export function play(state: State, move: Move): State | null {
-  const to = move.to;
-  if (state.winner !== null || move.from !== -1 || move.extra !== -1 || !Number.isInteger(to) || to < 0 || to >= state.cells.length || state.mirror[to] !== NONE || state.fixed[to]) return null;
+  const { from, to } = move;
+  if (state.winner !== null || move.extra !== -1 || !Number.isInteger(to)) return null;
   const cells = [...state.cells];
-  cells[to] = (cells[to] + 1) % 4;
-  const next = { ...state, cells, last: to, ply: state.ply + 1 };
+  let last: number;
+  if (to >= SET) {
+    const cell = Math.floor((to - SET) / 4),
+      kind = (to - SET) % 4;
+    if (!free(state, cell) || kind === 0 || (from !== -1 && (!free(state, from) || state.cells[from] !== kind))) return null;
+    if (from !== -1) cells[from] = 0;
+    cells[cell] = kind;
+    last = cell;
+  } else if (to === REMOVE) {
+    if (!free(state, from) || !state.cells[from]) return null;
+    cells[from] = 0;
+    last = from;
+  } else {
+    if (from !== -1 || !free(state, to)) return null;
+    cells[to] = (cells[to] + 1) % 4;
+    last = to;
+  }
+  if (cells.every((k, i) => k === state.cells[i])) return null;
+  const next = { ...state, cells, last, ply: state.ply + 1 };
   return { ...next, winner: solved(next) ? 0 : null };
 }
 /** A puzzle of a stage (1 to 5) whose numbers leave one answer. */
@@ -185,11 +213,11 @@ export function createGame(stage = 1, random: Random = cryptoRandom): State {
     return { size, mirror, cells: [...known], fixed, answer, totals, clues, last: null, winner: null, ply: 0 };
   }
 }
-/** A square that is wrong or empty, to be pressed until it holds the right monster. */
+/** A square that is wrong or empty, and the monster that belongs there (dragged from the row in front). */
 export function hint(state: State): Move | null {
   if (state.winner !== null) return null;
   const cell = state.cells.findIndex((k, i) => state.mirror[i] === NONE && !state.fixed[i] && k !== state.answer[i]);
-  return cell < 0 ? null : { from: -1, to: cell, extra: -1 };
+  return cell < 0 ? null : { from: -1, to: put(cell, state.answer[cell]), extra: -1 };
 }
 export const NAMES = ["", "유령", "뱀파이어", "좀비"];
 const effect = (): Effect | null => null;
@@ -203,7 +231,7 @@ export const haunt: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => -s.ply,
-  hint: (s) => `빈 칸을 눌러 괴물을 고르세요 · 유령 ${s.totals[0]} · 뱀파이어 ${s.totals[1]} · 좀비 ${s.totals[2]}`,
+  hint: (s) => `앞줄의 괴물을 칸으로 끌어다 놓으세요 · 유령 ${s.totals[0]} · 뱀파이어 ${s.totals[1]} · 좀비 ${s.totals[2]}`,
   tally: () => ["", ""],
   reason: () => "성공! 괴물을 모두 찾았습니다.",
 };

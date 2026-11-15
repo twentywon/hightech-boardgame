@@ -11,6 +11,7 @@ import * as queenRules from "../../src/games/queens/rules";
 import * as tourRules from "../../src/games/knight/rules";
 import * as mazeRules from "../../src/games/tilt/rules";
 import * as hauntRules from "../../src/games/haunt/rules";
+import { hauntSubject, legendAt, squareAt as hauntSquare } from "../../src/games/haunt/view";
 import * as field from "../../src/games/mines/rules";
 import { selectGame } from "./library";
 
@@ -840,5 +841,55 @@ test("haunted mirrors: each square is tapped round to its monster and the puzzle
     }
   }
   await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("haunted mirrors: a monster is dragged from the row in front onto a square, carried on, and carried off", async ({ page }, info) => {
+  test.skip(info.project.name === "mobile", "the mouse drags here");
+  const random = await seeded(page, 67),
+    errors = await sit(page, "할로윈 퍼즐");
+  await page.getByRole("dialog").locator(".stage-card").first().click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  hauntRules.createGame(1, random);
+  hauntRules.createGame(1, random);
+  const state = hauntRules.createGame(1, random),
+    [a, b] = state.mirror.flatMap((m, i) => (m === hauntRules.NONE && !state.fixed[i] ? [i] : [])),
+    box = (await page.locator("canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    subject = hauntSubject(state.size, aspect),
+    d = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+  camera.position.set(0, Math.sin(subject.tilt) * d, Math.cos(subject.tilt) * d);
+  camera.lookAt(0, subject.lookY, 0);
+  camera.updateMatrixWorld();
+  const screen = (x: number, y: number, z: number) => {
+      const v = new Vector3(x, y, z).project(camera);
+      return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+    },
+    square = (cell: number) => {
+      const p = hauntSquare(state.size, cell);
+      return screen(p.x, 0.12, p.z);
+    },
+    drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i++) await page.mouse.move(from.x + ((to.x - from.x) * i) / 8, from.y + ((to.y - from.y) * i) / 8);
+      await page.mouse.up();
+    };
+  const ghost = legendAt(state.size, hauntRules.GHOST);
+  // A bare tap on a square sets nothing.
+  await page.mouse.click(square(a).x, square(a).y);
+  await page.waitForTimeout(300);
+  await expect(count(page)).toHaveText("0수");
+  await drag(screen(ghost.x, 0.4, ghost.z), square(a));
+  await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+  await rest(page);
+  await drag(square(a), square(b));
+  await expect(count(page)).toHaveText("2수", { timeout: 20000 });
+  await rest(page);
+  // Carried off the board, it is taken away.
+  await drag(square(b), { x: box.x + 30, y: box.y + box.height / 2 });
+  await expect(count(page)).toHaveText("3수", { timeout: 20000 });
   expect(errors).toEqual([]);
 });
