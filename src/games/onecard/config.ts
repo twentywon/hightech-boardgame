@@ -17,6 +17,9 @@ export const oneCardConfig: PointConfig<State> = {
     points[DRAW] = { x: ONECARD.PILE.x, z: ONECARD.PILE.z };
     return points;
   },
+  // The keyboard starts on the first card of my hand.
+  keyStart: (s) => sorted(s.hands[0])[0] ?? DRAW,
+  rehome: (before, next) => before.turn !== next.turn || before.ply !== next.ply,
   // Each side sees only its own hand, and a card drawn cannot be put back.
   computerOnly: true,
   noUndo: true,

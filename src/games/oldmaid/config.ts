@@ -16,6 +16,9 @@ export const oldMaidConfig: PointConfig<State> = {
     if (s.seat === 0) s.hands[from].forEach((id, i) => (points[id] = seatSpot(from, i, s.hands[from].length)));
     return points;
   },
+  // The keyboard starts on the first card of the hand I draw from.
+  keyStart: (s) => s.hands[source(s, 0)][0] ?? 0,
+  rehome: (before, next) => before.seat !== next.seat || before.ply !== next.ply,
   // The others' hands are hidden, and a card drawn cannot be given back.
   computerOnly: true,
   noUndo: true,

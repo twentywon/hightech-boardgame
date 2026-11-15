@@ -167,6 +167,6 @@ test("table soccer: the ball runs by itself and my rods follow the keys", async 
   await pause.click();
   await expect.poll(() => canvas.getAttribute("data-ball"), { timeout: 10000 }).not.toBe(stopped);
   await page.getByRole("button", { name: "게임 방법" }).click();
-  await expect(page.locator("dialog[open]")).toContainText("골키퍼");
+  await expect(page.locator("dialog[open]")).toContainText("5골을 먼저 넣은 쪽이 이깁니다");
   expect(errors).toEqual([]);
 });
