@@ -794,7 +794,8 @@ test("turning maze: the knobs and the arrow keys turn the dial, and the blocks a
     s = mazeRules.play(s, move)!;
   }
   // The left knob's button (kept for readers and the keyboard) turns it, and undo brings it back.
-  await page.getByRole("button", { name: "왼쪽으로 돌리기" }).click();
+  // It is a pixel under the knobs, so it is pressed as the keyboard or a reader would press it.
+  await page.getByRole("button", { name: "왼쪽으로 돌리기" }).evaluate((button) => (button as HTMLButtonElement).click());
   await expect(count(page)).toHaveText("1수", { timeout: 20000 });
   await rest(page);
   await page.locator("#pg-undo").click();
