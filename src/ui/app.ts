@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { RESULT_WINDOWS, dress, resultArt } from "./chrome";
+import { RESULT_WINDOWS, dress, finale, resultArt } from "./chrome";
 import { mountChess, type ChessController } from "./chess";
 import { mountBlackjack, type BlackjackController } from "./blackjack";
 import { mountYacht, type YachtController, type YachtOptions } from "./yacht";
@@ -737,8 +737,11 @@ function showResult() {
   if (mode === "ai" && state.winner !== "draw" && state.winner !== human)
     sound.lose();
   else sound.win();
-  // No window at the end for now (the user asked): the status line tells the result.
-  if (!RESULT_WINDOWS) return;
+  // No window at the end for now (the user asked): the result's word comes up in the middle of the table.
+  if (!RESULT_WINDOWS) {
+    finale(state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win");
+    return;
+  }
   modal(
     state.winner === "draw"
       ? "멋진 승부, 무승부!"

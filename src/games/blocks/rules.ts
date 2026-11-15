@@ -167,6 +167,6 @@ export const blocks: PointGame<State> = {
   ply: (s) => s.ply,
   evaluate: (s) => s.score,
   hint: (s) => `점수 ${s.score} · ${s.lines}줄 · 레벨 ${level(s)}`,
-  tally: (s) => [`점수 ${s.score} · ${s.lines}줄 · 레벨 ${level(s)}`, ""],
+  tally: (s) => [`점수 ${s.score} · 레벨 ${level(s)}`, ""],
   reason: (s) => `${s.winner === 0 ? "잘 쌓았습니다!" : "블록이 꼭대기까지 찼습니다."} ${s.lines}줄을 지웠고 점수는 ${s.score}, 레벨 ${level(s)}입니다.`,
 };

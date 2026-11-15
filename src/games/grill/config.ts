@@ -25,7 +25,7 @@ export const grillConfig: PointConfig<State> = {
     { value: "1", name: "일반 모드", note: `${SECONDS}초 동안 점수 내기`, art: modeArt(false) },
     { value: "2", name: "무제한 모드", note: "시간 제한 없이", art: modeArt(true) },
   ],
-  tallyHtml: (state) => [stat("점수", state.score) + stat(state.endless ? "지난 시간" : "남은 시간", state.endless ? clock(state.gone) : `${state.left}초`) + stat("먹은 고기", state.eaten) + stat("쌈", state.wraps) + stat("탄 고기", state.burnt), ""],
+  tallyHtml: (state) => [stat("점수", state.score) + stat(state.endless ? "지난 시간" : "남은 시간", state.endless ? clock(state.gone) : `${state.left}초`), ""],
   // Meat hisses as it is laid on the grill and each time it is turned; anything eaten is chewed.
   contact: (sound, state) => {
     const last = state.last;

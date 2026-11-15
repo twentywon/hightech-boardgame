@@ -48,6 +48,6 @@ export const fruit: PointGame<State> = {
   ply: (s) => s.ply,
   evaluate: (s) => s.score,
   hint: (s) => `점수 ${s.score}${s.largest >= 0 ? ` · 가장 큰 과일 ${FRUITS[s.largest]}` : " · 같은 과일끼리 닿게 떨어뜨리세요."}`,
-  tally: (s) => [`점수 ${s.score} · 떨어뜨린 과일 ${s.drops}`, ""],
+  tally: (s) => [`점수 ${s.score}`, ""],
   reason: (s) => `점수 ${s.score}점! 과일이 선 위로 넘쳤습니다.${s.largest >= 0 ? ` 가장 큰 과일은 ${FRUITS[s.largest]}입니다.` : ""}`,
 };

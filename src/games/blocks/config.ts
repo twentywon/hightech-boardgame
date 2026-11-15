@@ -21,7 +21,7 @@ export const blocksConfig: PointConfig<State> = {
   view: (host, quality) => new BlocksView(host, quality),
   colors: BLOCK_COLORS,
   keyMove: (key) => (key in KEYS ? { from: -1, to: KEYS[key], extra: -1 } : null),
-  tallyHtml: (state) => [stat("점수", state.score) + stat("지운 줄", state.lines) + stat("레벨", level(state)), ""],
+  tallyHtml: (state) => [stat("점수", state.score) + stat("레벨", level(state)), ""],
   // A block set down on the heap; a row taken out rings.
   contact: (sound, state) => (state.last?.cleared.length ? sound.sparkle() : sound.tap()),
   // The arrow keys of a keyboard at the lower left (up turns the piece), and the drop beside them.

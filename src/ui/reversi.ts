@@ -1,5 +1,5 @@
 import { mirrorStatus } from "./banner";
-import { RESULT_WINDOWS, dress, resultArt } from "./chrome";
+import { RESULT_WINDOWS, dress, finale, resultArt } from "./chrome";
 import { part, steps, notes, table } from "./guide";
 import {
   createGame,
@@ -404,8 +404,11 @@ export function mountReversi(
       return;
     }
     resultPending = false;
-    // No window at the end for now (the user asked): the status line tells the result.
-    if (!RESULT_WINDOWS) return;
+    // No window at the end for now (the user asked): the result's word comes up in the middle of the table.
+    if (!RESULT_WINDOWS) {
+      finale(state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win", setup);
+      return;
+    }
     const c = counts(state.board);
     modal(
       state.winner === "draw"

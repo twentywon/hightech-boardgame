@@ -90,6 +90,9 @@ export class PointBoardView {
   private geometry: T.BufferGeometry;
   private materials: T.MeshStandardMaterial[];
   private height: number;
+  /** The gold crown set on a crowned piece (checkers): shared shapes, made on first use. */
+  private crownParts: { band: T.BufferGeometry; point: T.BufferGeometry; ball: T.BufferGeometry; gold: T.Material } | null = null;
+  private pieceRadius = 0.3;
   private rings = new T.Group();
   private ringGeometry: T.RingGeometry;
   private ringMaterials: T.MeshBasicMaterial[];
@@ -217,6 +220,7 @@ export class PointBoardView {
     drawing.anisotropy = 4;
     flat(side, side, this.own(new T.MeshBasicMaterial({ map: this.own(drawing), transparent: true, depthWrite: false })), 0.004);
     // Pieces: pebbles in the yard, discs on wood, glossy germs on the bench.
+    this.pieceRadius = radius;
     this.height = spec.marbles ? radius * 2 : theme === "wood" ? 0.16 : radius * (theme === "lab" ? 1.1 : 0.8);
     this.geometry = this.own(
       spec.marbles
@@ -327,6 +331,34 @@ export class PointBoardView {
     this.pieces.add(mesh);
     return mesh;
   }
+  /** A small gold crown: a band with five points, each tipped with a ball. It sits on a piece scaled twice as high. */
+  private crown() {
+    const r = this.pieceRadius;
+    this.crownParts ??= {
+      band: this.own(new T.CylinderGeometry(r * 0.52, r * 0.56, r * 0.22, 28, 1, true)),
+      point: this.own(new T.ConeGeometry(r * 0.13, r * 0.3, 10)),
+      ball: this.own(new T.SphereGeometry(r * 0.065, 10, 8)),
+      gold: this.own(new T.MeshStandardMaterial({ color: "#f0c02a", metalness: 0.75, roughness: 0.28, emissive: "#3a2600", side: T.DoubleSide })),
+    };
+    const { band, point, ball, gold } = this.crownParts,
+      group = new T.Group(),
+      ring = new T.Mesh(band, gold);
+    ring.position.y = r * 0.11;
+    group.add(ring);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2,
+        spike = new T.Mesh(point, gold),
+        tip = new T.Mesh(ball, gold);
+      spike.position.set(Math.cos(a) * r * 0.5, r * 0.36, Math.sin(a) * r * 0.5);
+      tip.position.set(Math.cos(a) * r * 0.5, r * 0.53, Math.sin(a) * r * 0.5);
+      group.add(spike, tip);
+    }
+    group.traverse((o) => (o.castShadow = true));
+    // The piece is stretched to twice its height: the crown is not, and stands on its top.
+    group.scale.y = 0.5;
+    group.position.y = this.height / 2;
+    return group;
+  }
   /** Puts every piece exactly where `owners` says, without animation. */
   private rebuild(owners: (0 | 1 | null)[], crowned?: boolean[]) {
     this.pieces.clear();
@@ -334,10 +366,11 @@ export class PointBoardView {
     owners.forEach((owner, point) => {
       if (owner === null) return;
       const mesh = this.spawn(point, owner);
-      // A crowned piece is two pieces high.
+      // A crowned piece is two pieces high and wears a gold crown on top (the user asked for a king's mark).
       if (crowned?.[point]) {
         mesh.scale.y = 2;
         mesh.position.y = this.height;
+        mesh.add(this.crown());
       }
       this.meshes.set(point, mesh);
     });

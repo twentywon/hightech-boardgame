@@ -111,6 +111,6 @@ export const mines: PointGame<State> = {
   ply: (s) => s.ply,
   evaluate: (s) => opened(s),
   hint: (s) => `남은 지뢰 ${s.mines - flags(s)}개 · ${s.flagging ? "깃발 꽂기: 지뢰라고 생각하는 칸을 누르세요." : s.mine ? "지뢰가 없는 칸을 모두 여세요." : "아무 칸이나 눌러 시작하세요. 첫 칸은 안전합니다."}`,
-  tally: (s) => [`남은 지뢰 ${s.mines - flags(s)} · 연 칸 ${opened(s)}/${s.rows * s.cols - s.mines}`, ""],
+  tally: (s) => [`남은 지뢰 ${s.mines - flags(s)}`, ""],
   reason: (s) => (s.winner === 0 ? `성공! 지뢰 ${s.mines}개를 모두 피했습니다.` : `지뢰를 밟았습니다. 안전한 칸 ${s.rows * s.cols - s.mines}개 가운데 ${opened(s)}개를 열었습니다.`),
 };

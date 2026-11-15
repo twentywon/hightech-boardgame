@@ -1,4 +1,4 @@
-import { mirrorStatus } from "./banner";
+import { capturing, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import winArt from "../assets/result/win.svg?raw";
 import loseArt from "../assets/result/lose.svg?raw";
@@ -60,10 +60,15 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   }
   // When the game is over its result comes up in a window, with a way to another game. The panel's own
   // result block (shown at that moment) is what is read.
-  const result = side.querySelector<HTMLElement>(".yd-result");
-  if (result)
+  const result = side.querySelector<HTMLElement>(".yd-result"),
+    // A puzzle tells its result in its own panel and offers the next stage there (the user asked): no finale.
+    puzzle = !!side.querySelector(".puzzle-panel");
+  if (result && !puzzle)
     new MutationObserver(() => {
-      if (result.hidden) delete result.dataset.told;
+      if (result.hidden) {
+        delete result.dataset.told;
+        board.querySelector(".board-finale")?.remove();
+      }
       else if (!result.dataset.told) {
         result.dataset.told = "1";
         announce(
@@ -103,6 +108,58 @@ const HUD = new Set(["gomoku", "reversi", "chess", "blackjack", "seotda", "seven
 const BACK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M11.5 5 4.5 12l7 7"/></svg>`,
   GEAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
 
+/**
+ * The end of a game, told in the middle of the table (the user asked): 승리, 패배 or 무승부 in large letters, and
+ * after a moment 다시 하기 (the game's own new-game window) and 다른 게임 (back to the collection) under it.
+ * It stays until one is pressed or the game is begun again; the table itself can still be looked at round it.
+ */
+export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
+  const board = document.querySelector<HTMLElement>(".board-area");
+  if (!board || capturing()) return;
+  board.querySelector(".board-finale")?.remove();
+  const box = document.createElement("div"),
+    word = document.createElement("b"),
+    ways = document.createElement("div"),
+    again = document.createElement("button"),
+    other = document.createElement("button");
+  box.className = `board-finale ${outcome}`;
+  word.className = "finale-word";
+  word.setAttribute("aria-hidden", "true");
+  // A game whose clock simply runs out is neither won nor lost.
+  word.textContent = document.documentElement.dataset.game === "meat-grill" ? "시간 종료" : ART[outcome].word;
+  ways.className = "finale-ways";
+  ways.hidden = true;
+  again.id = "finale-again";
+  again.className = "primary";
+  again.textContent = "다시 하기";
+  other.id = "finale-other";
+  other.textContent = "다른 게임";
+  again.onclick = () => {
+    box.remove();
+    if (setup) setupDialog(setup);
+    else document.querySelector<HTMLButtonElement>("#restart")?.click();
+  };
+  other.onclick = () => {
+    box.remove();
+    document.querySelector<HTMLButtonElement>("#back")?.click();
+  };
+  ways.append(again, other);
+  box.append(word, ways);
+  board.append(box);
+  setTimeout(() => {
+    if (box.isConnected) ways.hidden = false;
+  }, 1300);
+  // A new game begun on the same table (or a move taken back) changes the count: the finale goes.
+  const count = document.querySelector("#move-count");
+  if (count) {
+    const watch = new MutationObserver(() => {
+      watch.disconnect();
+      box.remove();
+    });
+    watch.observe(count, { childList: true, characterData: true, subtree: true });
+  }
+}
+
 export type Outcome = "win" | "lose" | "draw";
 const ART: Record<Outcome, { picture: string; word: string }> = {
   win: { picture: winArt, word: "승리" },
@@ -129,7 +186,20 @@ export function resultArt(outcome: Outcome) {
 /** False while the user wants no window at the end of a game: the result stays in the status line and the panel. */
 export const RESULT_WINDOWS = false;
 export function announce(text: () => string, setup?: (host: HTMLElement) => void, outcome: () => Outcome = () => "win") {
-  if (!RESULT_WINDOWS) return;
+  if (!RESULT_WINDOWS) {
+    // No window: the result's word comes up in the middle of the table, and then the ways on under it.
+    const wait = () => {
+      const board = document.querySelector<HTMLElement>(".board-area");
+      if (!board?.isConnected) return;
+      if (document.querySelector("dialog[open]") || document.querySelector("#board[data-animating='true']")) {
+        setTimeout(wait, 300);
+        return;
+      }
+      if (text()) finale(outcome(), setup);
+    };
+    setTimeout(wait, 700);
+    return;
+  }
   const show = () => {
     if (document.querySelector("dialog[open]")) {
       setTimeout(show, 400);

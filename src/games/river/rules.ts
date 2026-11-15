@@ -217,7 +217,7 @@ export const river: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => s.actors.filter((a) => a.side === 1).length,
-  hint: (s) => `${ruleText(s)} · 배 정원 ${s.seats}${s.kind === "farmer" ? "(농부 포함)" : ""}`,
+  hint: (s) => ruleText(s),
   tally: () => ["", ""],
   reason: (s) => (s.winner === 0 ? "성공! 모두 무사히 건넜습니다." : `실패! ${s.trouble}`),
 };

@@ -95,6 +95,6 @@ export const dots: PointGame<State> = {
     return moves(s).sort((a, b) => score(b.to) - score(a.to));
   },
   hint: () => "점과 점 사이에 선을 그으세요. 네모를 완성하면 한 번 더 긋습니다.",
-  tally: (s) => [`네모 ${count(s, 0)}`, `네모 ${count(s, 1)}`],
+  tally: (s) => [`${count(s, 0)}`, `${count(s, 1)}`],
   reason: (s) => `${count(s, 0)} : ${count(s, 1)}`,
 };

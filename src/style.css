@@ -2735,3 +2735,26 @@ html[data-game="spider"] .game-layout.hud .table-layout > aside.game-sidebar { b
 /* Battleship is the exception: its two boards reach the lower left, so its fleets stay at the upper left. */
 html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { top:54px !important;bottom:auto; }
 @media (orientation: landscape) and (max-height: 540px) { html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { top:40px !important; } }
+/* No status line over these tables (the user asked); #turn stays in the page as the live region. */
+:is(html[data-game="meat-grill"], html[data-game="minesweeper"], html[data-game="lights-on"], html[data-game="water-pouring"], html[data-game="marble-shot"], html[data-game="brick-breaker"], html[data-game="2048"], html[data-game="falling-blocks"], html[data-game="fruit-merge"]) .game-layout .board-area > .board-hint { display:none !important; }
+/* Every letter on a game screen is set in gomoku's face (the user asked): the status line, the lettering over
+   the table, scores, money, buttons and the words that come up across the table. Letters painted into the
+   pictures themselves (piece glyphs, board coordinates, card faces) keep their own. */
+main.game-layout, main.game-layout :not(svg, svg *) { font-family:Inter, "Noto Sans KR", Arial, sans-serif !important; }
+/* The end of a game (the user asked): its word in the middle of the table, then two ways on under it. */
+.board-area .board-finale { position:absolute;inset:0;z-index:7;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;pointer-events:none; }
+.board-finale .finale-word { color:#fff;font-weight:900;font-synthesis:weight;font-size:clamp(58px, 14vmin, 160px);letter-spacing:.04em;line-height:1;white-space:nowrap;-webkit-text-stroke:.07em #1b1f24;paint-order:stroke fill;text-shadow:0 .05em 0 rgba(0,0,0,.45), 0 0 .3em rgba(0,0,0,.55);animation:finale-in .55s cubic-bezier(.2,1.4,.4,1) both; }
+.board-finale.win .finale-word { color:#ffe07a; }
+.board-finale.lose .finale-word { color:#dfe6ef; }
+.board-finale .finale-ways { display:flex;gap:12px;pointer-events:auto;animation:finale-ways .4s ease-out both; }
+.board-finale .finale-ways[hidden] { display:none; }
+.board-finale .finale-ways button { min-width:132px;min-height:50px;padding:0 22px;border-radius:999px;border:0;font-size:17px;font-weight:800;background:#fffffff2;color:#16181a;box-shadow:0 6px 18px #0006;cursor:pointer; }
+.board-finale .finale-ways button.primary { background:#ffd24a; }
+.board-finale .finale-ways button:hover { transform:translateY(-1px); }
+@keyframes finale-in { from { opacity:0;transform:scale(.6); } to { opacity:1;transform:none; } }
+@keyframes finale-ways { from { opacity:0;transform:translateY(10px); } to { opacity:1;transform:none; } }
+@media (orientation: landscape) and (max-height: 540px) { .board-finale .finale-ways button { min-width:110px;min-height:42px;font-size:15px; } .board-area .board-finale { gap:16px; } }
+@media (prefers-reduced-motion: reduce) { .board-finale .finale-word, .board-finale .finale-ways { animation:none; } }
+/* With the finale in the middle of the table, the panel's own result block is kept only for readers and the keyboard. */
+.game-layout.hud aside.game-sidebar .yd-result { position:absolute !important;width:1px !important;height:1px !important;overflow:hidden !important;opacity:0;margin:0 !important;padding:0 !important; }
+.game-layout.hud aside.game-sidebar .yd-result button { pointer-events:auto; }

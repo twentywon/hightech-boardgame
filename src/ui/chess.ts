@@ -1,5 +1,5 @@
 import { mirrorStatus, shout } from "./banner";
-import { RESULT_WINDOWS, dress, resultArt } from "./chrome";
+import { RESULT_WINDOWS, dress, finale, resultArt } from "./chrome";
 import {
   type AIOptions,
   type Difficulty,
@@ -637,8 +637,11 @@ export function mountChess(
       return;
     }
     resultPending = false;
-    // No window at the end for now (the user asked): the status line tells the result.
-    if (!RESULT_WINDOWS) return;
+    // No window at the end for now (the user asked): the result's word comes up in the middle of the table.
+    if (!RESULT_WINDOWS) {
+      finale(!state.outcome.winner ? "draw" : mode === "ai" && state.outcome.winner !== human ? "lose" : "win", setup);
+      return;
+    }
     dialog(
       state.outcome.winner
         ? `${state.outcome.winner === "w" ? "백" : "흑"}이 승리했습니다!`
