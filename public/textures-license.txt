@@ -53,3 +53,23 @@ https://creativecommons.org/publicdomain/zero/1.0/
 Changes: reduced to 512 or 768 pixels and stored as WebP; the two woods
 graded to the colours the tables were painted in, the oak turned a quarter
 round; the veneers are tinted by the game.
+
+Grounds and walls round the tables, also Poly Haven textures under CC0:
+
+- "Dirt Floor" by eye-candy.xyz (https://polyhaven.com/a/dirt_floor):
+  colour and normal map (src/assets/tex/earth.webp, earth-normal.webp)
+- "Leafy Grass" by Charlotte Baglioni (https://polyhaven.com/a/leafy_grass):
+  colour and normal map (grass.webp, grass-normal.webp)
+- "Large Red Bricks" by Rob Tuytel
+  (https://polyhaven.com/a/large_red_bricks): colour and normal map
+  (brick.webp, brick-normal.webp)
+- "Concrete Floor 02" by Rob Tuytel
+  (https://polyhaven.com/a/concrete_floor_02): colour (stone.webp)
+- "Gravel Floor 02" by Jenelle van Heerden and Dimitrios Savva
+  (https://polyhaven.com/a/gravel_floor_02): colour and normal map
+  (gravel.webp, gravel-normal.webp)
+- "Laminate Floor 02" by Dario Barresi and Charlotte Baglioni
+  (https://polyhaven.com/a/laminate_floor_02): colour (boards.webp)
+
+Changes: reduced and stored as WebP; each colour picture brought to a
+middling grey so that the game lays its figure over its own colour.

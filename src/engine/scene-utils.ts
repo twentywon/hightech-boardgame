@@ -12,6 +12,9 @@ const picture = (name: string) => pictures[`../assets/tex/${name}.webp`] ?? "",
   clothNormalUrl = picture("cloth-normal"),
   mapleUrl = picture("maple"),
   walnutUrl = picture("walnut");
+/** What a ground or a wall is made of; each is a photograph (Poly Haven, CC0) and some have a relief as well. */
+export type Stuff = "earth" | "grass" | "brick" | "stone" | "gravel" | "boards";
+const RELIEFS: Partial<Record<Stuff, string>> = { earth: picture("earth-normal"), grass: picture("grass-normal"), brick: picture("brick-normal"), gravel: picture("gravel-normal") };
 const ndc = new T.Vector2();
 /** Points `ray` from the camera through the pointer's place on the canvas. */
 export function aim(ray: T.Raycaster, e: PointerEvent, canvas: HTMLCanvasElement, camera: T.Camera) {
@@ -91,7 +94,7 @@ function photo(url: string, ready?: (image: HTMLImageElement) => void) {
   else image.addEventListener("load", () => ready(image), { once: true });
 }
 // They are asked for as the page opens, so that a table finds them ready.
-if (typeof Image !== "undefined") for (const url of [woodDarkUrl, woodLightUrl, woodNormalUrl, woodRoughUrl, clothNormalUrl, mapleUrl, walnutUrl]) photo(url);
+if (typeof Image !== "undefined") for (const url of Object.values(pictures)) photo(url);
 const SOFTWARE = /swiftshader|llvmpipe|software|basic render/i;
 let drawnBySoftware: boolean | undefined;
 /**
@@ -160,6 +163,31 @@ export function planks(across: number, keep: Keep = (r) => r, down = across): T.
   const map = keep(surface(woodDarkUrl, across, down));
   if (!capable()) return { map, roughness: 0.8 };
   return { map, normalMap: keep(surface(woodNormalUrl, across, down, true)), roughnessMap: keep(surface(woodRoughUrl, across, down, true)), roughness: 0.9 };
+}
+/**
+ * A ground or a wall of some stuff, tiled `across` by `down`: the figure of its photograph laid over the colour
+ * `base` (the photographs are kept at a middling grey, so the colour a table was painted in stays its colour), with
+ * its relief where it has one and a graphics card draws.
+ */
+export function stuff(kind: Stuff, base: string, across = 1, keep: Keep = (r) => r, down = across): T.MeshStandardMaterialParameters {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 512;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, 512, 512);
+  const map = keep(new T.CanvasTexture(canvas));
+  map.colorSpace = T.SRGBColorSpace;
+  map.wrapS = map.wrapT = T.RepeatWrapping;
+  map.repeat.set(across, down);
+  map.anisotropy = 4;
+  photo(picture(kind), (image) => {
+    ctx.globalCompositeOperation = "overlay";
+    ctx.drawImage(image, 0, 0, 512, 512);
+    ctx.globalCompositeOperation = "source-over";
+    map.needsUpdate = true;
+  });
+  const relief = RELIEFS[kind];
+  return relief && capable() ? { map, normalMap: keep(surface(relief, across, down, true)) } : { map };
 }
 /** The weave of a cloth, for a felt: nothing where no graphics card draws. */
 export function weave(across: number, down = across, keep: Keep = (r) => r, depth = 0.9): T.MeshStandardMaterialParameters {

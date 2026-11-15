@@ -369,7 +369,7 @@ export class BlackjackView {
     // The casino floor far below the table.
     const floor = new T.Mesh(
       this.own(new T.PlaneGeometry(120, 120)),
-      this.own(new T.MeshStandardMaterial({ map: this.own(carpetTexture()), roughness: 1 })),
+      this.own(new T.MeshStandardMaterial({ map: this.own(carpetTexture()), roughness: 1, ...weave(40, 40, (r) => this.own(r), 0.7) })),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -3.4;

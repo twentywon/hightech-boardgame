@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood } from "./scene-utils";
+import { wood, stuff, weave } from "./scene-utils";
 
 /** Registers a resource with the view that must dispose it. */
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -95,11 +95,11 @@ export function parkBench(scene: T.Object3D, own: Own, top: number) {
   // The ground: lawn behind and under the bench, a gravel path in front of it.
   const ground = top - 4.2,
     lawn = standard({
-      map: own(speckled("#5f8a45", ["rgba(34,70,24,0.35)", "rgba(150,190,96,0.3)", "rgba(88,120,52,0.4)"], 13, 22, 5200)),
+      ...stuff("grass", "#5f8a45", 14, own),
       roughness: 1,
     }),
     gravel = standard({
-      map: own(speckled("#b9ad98", ["rgba(70,62,50,0.28)", "rgba(255,250,238,0.3)", "rgba(120,108,90,0.3)"], 29, 18, 4200)),
+      ...stuff("gravel", "#b9ad98", 18, own),
       roughness: 1,
     });
   const grass = new T.Mesh(own(new T.PlaneGeometry(140, 140)), lawn);
@@ -169,10 +169,12 @@ export function cabin(scene: T.Object3D, own: Own, half: number, depth: number, 
     dark = standard({ color: "#3a3f45", roughness: 0.6 }),
     fabric = standard({
       map: own(speckled("#27406b", ["rgba(12,22,44,0.4)", "rgba(92,122,176,0.3)", "rgba(190,150,70,0.16)"], 17, 10, 4200)),
+      ...weave(8, 8, own),
       roughness: 1,
     }),
     carpet = standard({
       map: own(speckled("#3c4654", ["rgba(16,20,28,0.4)", "rgba(110,124,148,0.3)"], 23, 26, 4200)),
+      ...weave(40, 40, own),
       roughness: 1,
     }),
     wall = standard({ color: "#e4e1d8", roughness: 0.7 });
@@ -246,13 +248,13 @@ export function hanokYard(scene: T.Object3D, own: Own) {
     return mesh;
   };
   const earth = standard({
-    map: own(speckled("#c2a071", ["rgba(92,66,36,0.18)", "rgba(255,240,205,0.16)", "rgba(120,96,60,0.2)"], 31, 14)),
+    ...stuff("earth", "#c2a071", 9, own),
     roughness: 1,
   });
   add(new T.PlaneGeometry(90, 90), earth, 0, -0.03, 0, false).rotation.x = -Math.PI / 2;
   // The house: a stone footing, the wooden porch on it, a step stone and posts.
   const stone = standard({
-    map: own(speckled("#9c968a", ["rgba(40,40,40,0.16)", "rgba(255,255,255,0.14)"], 77, 2)),
+    ...stuff("stone", "#9c968a", 2, own),
   });
   const timber = standard({ map: own(wood(true)), roughness: 0.7 }),
     plank = standard({ map: own(wood()), roughness: 0.6 });
@@ -322,21 +324,8 @@ export function pub(scene: T.Object3D, own: Own, half: number, drop: number) {
   boards.repeat.set(6, 6);
   add(new T.PlaneGeometry(90, 90), standard({ map: boards, color: "#6b5340", roughness: 0.65 }), 0, -drop, 0, false).rotation.x = -Math.PI / 2;
   // Bricks.
-  const { c, ctx } = canvas(256, 256);
-  ctx.fillStyle = "#3a2a24";
-  ctx.fillRect(0, 0, 256, 256);
-  for (let row = 0; row < 8; row++)
-    for (let col = -1; col < 4; col++) {
-      const tone = 96 + ((row * 7 + col * 13) % 5) * 9;
-      ctx.fillStyle = `rgb(${tone + 44}, ${tone - 22}, ${tone - 40})`;
-      ctx.fillRect(col * 64 + (row % 2 ? 32 : 0) + 2, row * 32 + 2, 60, 28);
-    }
-  const bricks = own(new T.CanvasTexture(c));
-  bricks.colorSpace = T.SRGBColorSpace;
-  bricks.wrapS = bricks.wrapT = T.RepeatWrapping;
-  bricks.repeat.set(9, 4);
   const wallZ = -10.5;
-  add(new T.PlaneGeometry(60, 26), standard({ map: bricks, roughness: 1 }), 0, 9 - drop, wallZ, false);
+  add(new T.PlaneGeometry(60, 26), standard({ ...stuff("brick", "#7c4a3a", 5, own, 2.2), roughness: 1 }), 0, 9 - drop, wallZ, false);
   // A neon sign: a ring and a glass, glowing.
   const neon = (color: string) => own(new T.MeshBasicMaterial({ color }));
   add(new T.TorusGeometry(1.5, 0.07, 10, 48), neon("#ff4fa0"), -5, 7.2 - drop + 3, wallZ + 0.2, false);

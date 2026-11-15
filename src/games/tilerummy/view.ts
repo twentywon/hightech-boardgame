@@ -1,3 +1,4 @@
+import { stuff } from "../../engine/scene-utils";
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -33,44 +34,6 @@ function face(colour: number, text: string) {
   t.colorSpace = T.SRGBColorSpace;
   return t;
 }
-/** Strips of varnished wood, each a little different, their ends staggered from row to row. */
-function floorboards() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 1024;
-  const ctx = c.getContext("2d")!;
-  let seed = 11;
-  const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
-  const strip = 64;
-  for (let row = 0; row < 1024 / strip; row++) {
-    // Each row starts somewhere else, and a strip that runs off the right edge comes back in at the left, so the pattern repeats without a seam.
-    const start = rand() * 300;
-    let x = start;
-    while (x < 1024 + start) {
-      const length = 260 + rand() * 240,
-        tone = 150 + rand() * 34,
-        grain = Array.from({ length: 9 }, () => [rand() * strip, 1 + rand() * 2, 0.03 + rand() * 0.05]);
-      for (const at of [x, x - 1024]) {
-        ctx.fillStyle = `rgb(${tone + 44}, ${tone - 2}, ${tone - 62})`;
-        ctx.fillRect(at, row * strip, Math.min(length, 1024 + start - x), strip);
-        for (const [y, h, alpha] of grain) {
-          ctx.fillStyle = `rgba(90,52,20,${alpha})`;
-          ctx.fillRect(at, row * strip + y, Math.min(length, 1024 + start - x), h);
-        }
-        ctx.fillStyle = "rgba(60,34,14,0.55)";
-        ctx.fillRect(at - 1, row * strip, 2, strip);
-      }
-      x += length;
-    }
-    ctx.fillStyle = "rgba(60,34,14,0.5)";
-    ctx.fillRect(0, row * strip, 1024, 2);
-  }
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  t.wrapS = t.wrapT = T.RepeatWrapping;
-  t.repeat.set(4, 4);
-  t.anisotropy = 4;
-  return t;
-}
 interface Pose {
   x: number;
   z: number;
@@ -92,7 +55,7 @@ export class TileRummyView extends TableView<State> {
     this.daylight("#ffffff", "#8a6d4a", "#fff3da", 12, 2.0);
     // A classroom floor: varnished strips of wood laid end to end,
     // and round its edges the legs of desks and chairs, a satchel, indoor shoes and things dropped.
-    const floor = this.add(new T.PlaneGeometry(60, 60), this.standard({ map: this.own(floorboards()), roughness: 0.42 }), 0, 0, 0);
+    const floor = this.add(new T.PlaneGeometry(60, 60), this.standard({ ...stuff("boards", "#c9954f", 5, (r) => this.own(r)), roughness: 0.42 }), 0, 0, 0);
     floor.rotation.x = -Math.PI / 2;
     floor.castShadow = false;
     const steel = this.standard({ color: "#8a939c", roughness: 0.4, metalness: 0.55 }),

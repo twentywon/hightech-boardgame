@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, glossy } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, glossy, stuff } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { speckled } from "../../engine/scenery";
 import type { PointView } from "../../ui/point-game";
@@ -164,7 +164,7 @@ export class MancalaView implements PointView<State> {
       return mesh;
     };
     const sand = standard({
-      map: this.own(speckled("#dcbd82", ["rgba(140,100,50,0.2)", "rgba(255,245,215,0.25)", "rgba(180,140,84,0.25)"], 9, 16, 4200)),
+      ...stuff("earth", "#dcbd82", 10, (r) => this.own(r)),
       roughness: 1,
     });
     add(new T.PlaneGeometry(90, 90), sand, 0, -0.03, 0, false).rotation.x = -Math.PI / 2;

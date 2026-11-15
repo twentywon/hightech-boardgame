@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, planks, glossy } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
@@ -201,7 +201,7 @@ export class PointBoardView {
         this.scene.add(world);
       }
     } else {
-      flat(90, 90, standard({ map: this.own(speckled("#262d33", ["rgba(0,0,0,0.3)", "rgba(150,170,180,0.12)"], 5, 16)), roughness: 0.6 }), -0.02);
+      flat(90, 90, standard({ ...stuff("stone", "#262d33", 10, (r) => this.own(r)), roughness: 0.6 }), -0.02);
     }
     const size = 1024,
       canvas = document.createElement("canvas");
