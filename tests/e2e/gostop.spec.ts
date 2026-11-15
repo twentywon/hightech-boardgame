@@ -32,8 +32,8 @@ test("go-stop: a card of my hand is tapped and played, and the computer answers"
   await page.locator(".game-stage button.primary").click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await rest(page);
-  // No panel beside the table: the scores are painted on the table.
-  await expect(page.locator(".game-sidebar")).toBeHidden();
+  // No panel beside the table (it stays in the page as a pixel for readers): the scores are painted on the table.
+  await expect(page.locator(".game-layout")).toHaveClass(/no-panel/);
   await expect(page.locator(".board-hint")).toContainText("낼 카드를 고르세요");
   // The first card of my hand, at the left of the near row.
   const at = await onScreen(page, -4.5 * L.HAND_STEP, 0.04, L.HAND_Z);
