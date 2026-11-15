@@ -1,5 +1,6 @@
 import * as T from "three";
 import { block, glossy, stuff } from "../../engine/scene-utils";
+import { speckled } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { FlickView } from "../flick/view";
 import { copy, shotOf, strike, type Disc } from "../flick/physics";
@@ -8,6 +9,21 @@ import { ARENA, BACK, CURL, HACK, HOG, HOUSE, R, STONE, STONES, TEE, speedOf, ty
 
 export const CURLING_COLORS: [string, string] = ["#c8321f", "#e0b020"];
 export const CURLING_SUBJECT: TableSubject = { half: 7.5, halfZ: 2.7, height: 0.4, lookY: 0, tilt: 1.0 };
+/**
+ * The thrower's eye (the user asked for a first-person view): behind the hack and a little above it, looking down
+ * the sheet, so that the house lies far up the screen and a stone is pulled back toward oneself.
+ */
+export const EYE = { back: 5, height: 3, ahead: 2.6 };
+/** How far the eye goes down the sheet after a stone: until the house is in the middle of the view. */
+export const CHASE = TEE - (HACK.x + EYE.ahead);
+/** A pull on the ground counts this many times its length, so that a full pull fits between the hack and the bottom of the screen. */
+export const PULL = 2.4;
+/** Sets a camera at the thrower's eye, moved `shift` down the sheet; browser tests aim with the same. */
+export function throwerCamera(camera: T.PerspectiveCamera, shift = 0) {
+  camera.position.set(HACK.x - EYE.back + shift, EYE.height, HACK.z);
+  camera.lookAt(HACK.x + EYE.ahead + shift, 0, HACK.z);
+  camera.updateMatrixWorld();
+}
 /** Where the stones not yet thrown wait, beside the sheet at the hack's end: mine on the near side, the computer's across. */
 export const waitingAt = (side: number, k: number) => ({ x: -6.9 + k * 0.48, z: side === 0 ? 2.15 : -2.15 });
 /** The ice: pebbled white with the house in blue and red rings, and the lines across. */
@@ -58,23 +74,47 @@ function stoneShape() {
   const profile = [[0, 0], [0.12, 0], [0.16, 0.02], [0.17, 0.05], [0.17, 0.09], [0.16, 0.12], [0.12, 0.14], [0, 0.145]].map(([r, y]) => new T.Vector2(r, y));
   return new T.LatheGeometry(profile, 32);
 }
-/** A sheet of ice seen from its side, with the hack at the left and the house at the right; stones are pulled back and let go. */
+/** A stone: the granite body and its handle on two posts, in the handle's colour. */
+function curlingStone(body: T.BufferGeometry, granite: T.Material, grip: T.BufferGeometry, post: T.BufferGeometry, paint: T.Material) {
+  const g = new T.Group(),
+    b = new T.Mesh(body, granite),
+    h = new T.Mesh(grip, paint);
+  b.castShadow = b.receiveShadow = true;
+  h.position.set(0, 0.2, 0);
+  h.castShadow = true;
+  for (const dx of [-0.07, 0.07]) {
+    const p = new T.Mesh(post, paint);
+    p.position.set(dx, 0.16, 0);
+    g.add(p);
+  }
+  g.add(b, h);
+  return g;
+}
+/** How far apart the sheets of the rink lie, centre to centre. */
+const PITCH = ARENA.halfZ * 2 + 1.1;
+/**
+ * A sheet of ice seen from behind the hack, the house far up it; a stone is pulled back toward oneself and let go,
+ * and the eye follows it down the ice, then comes back to the hack.
+ */
 export class CurlingView extends FlickView<State> {
   private stones: T.Group[] = [];
   /** A stone of each side standing in the hack, ready to be slid (the stones of an end scored may still lie on the ice). */
   private ready: T.Group[] = [];
   private turnMark: T.Mesh;
   private cursor: T.Mesh;
+  /** How far down the sheet the eye is, the stone it follows during a shot, and a count that stops an old glide back. */
+  private shift = 0;
+  private chasing: number | null = null;
+  private landed = false;
+  private glide = 0;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#26303a");
+    super(host, quality, "#1c2630");
     this.daylight("#f2f7ff", "#5a6878", "#ffffff", 9, 2.0);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    this.add(new T.BoxGeometry(40, 0.4, 30), this.standard({ ...stuff("boards", "#5c4a3a", 6, keep), roughness: 0.8 }), 0, -0.25, 0).castShadow = false;
     const ice = this.standard({ map: keep(iceTexture()), roughness: 0.18, metalness: 0.05 }),
       boards = this.standard({ color: "#d9dfe6", roughness: 0.5 });
     this.add(block(ARENA.halfX * 2, 0.1, ARENA.halfZ * 2, 0.02), [boards, boards, ice, boards, boards, boards], 0, -0.05, 0).castShadow = false;
-    // Low boards along the sides and the ends, and the snow beyond where the waiting stones stand.
-    for (const z of [-ARENA.halfZ - 0.08, ARENA.halfZ + 0.08]) this.add(block(ARENA.halfX * 2 + 0.3, 0.18, 0.12, 0.04), boards, 0, 0.04, z);
+    // Low boards at the ends of the sheet; its sides are the rink's foam dividers (`rink`).
     for (const x of [-ARENA.halfX - 0.08, ARENA.halfX + 0.08]) this.add(block(0.12, 0.18, ARENA.halfZ * 2 + 0.3, 0.04), boards, x, 0.04, 0);
     const granite = keep(glossy({ ...stuff("stone", "#8a8d92", 0.4, keep), roughness: 0.25 })),
       body = keep(stoneShape()),
@@ -83,23 +123,13 @@ export class CurlingView extends FlickView<State> {
     CURLING_COLORS.forEach((color, side) => {
       const paint = keep(glossy({ color, roughness: 0.3 }));
       for (let k = 0; k <= STONES; k++) {
-        const g = new T.Group(),
-          b = new T.Mesh(body, granite),
-          h = new T.Mesh(grip, paint);
-        b.castShadow = b.receiveShadow = true;
-        h.position.set(0, 0.2, 0);
-        h.castShadow = true;
-        for (const dx of [-0.07, 0.07]) {
-          const p = new T.Mesh(post, paint);
-          p.position.set(dx, 0.16, 0);
-          g.add(p);
-        }
-        g.add(b, h);
+        const g = curlingStone(body, granite, grip, post, paint);
         this.scene.add(g);
         if (k < STONES) this.stones.push(g);
         else this.ready.push(g);
       }
     });
+    this.rink(ice.map!, boards, granite, body, grip, post);
     // An arrow on the ice by the hack shows the turn chosen.
     const shape = new T.Shape();
     shape.absarc(0, 0, 0.32, 0.3, Math.PI * 1.6, false);
@@ -112,6 +142,194 @@ export class CurlingView extends FlickView<State> {
     this.cursor = ringMesh(own, 0.26, 0.32, "#ffd24a");
     this.scene.add(this.cursor);
     this.begin();
+  }
+  /**
+   * The rink round the sheet (the user asked for an ice rink): pebbled ice under everything, two sheets either side
+   * (lit less, with stones of other clubs resting in their houses and brooms on the ice), dark foam dividers between
+   * the sheets, rubber hacks, and beyond the houses and along both sides a white dasher wall with glass over it and
+   * rows of seats rising behind, some of them taken. Nothing stands behind the hack: the eye is there.
+   */
+  private rink(markings: T.Texture, boards: T.Material, granite: T.Material, body: T.BufferGeometry, grip: T.BufferGeometry, post: T.BufferGeometry) {
+    const keep = <R extends { dispose(): void }>(r: R) => this.own(r),
+      floor = this.add(
+        new T.PlaneGeometry(120, 90),
+        this.standard({ map: keep(speckled("#e7eff5", ["#d6e3ed", "#f6fafd", "#cddbe7", "#e1ebf3"], 11, 40, 3200)), roughness: 0.16, metalness: 0.02 }),
+        0,
+        -0.012,
+        0,
+      );
+    floor.rotation.x = -Math.PI / 2;
+    floor.castShadow = false;
+    const SHEETS = [-2, -1, 0, 1, 2].map((k) => k * PITCH),
+      rubber = this.standard({ color: "#17181b", roughness: 0.7 }),
+      foothold = keep(block(0.22, 0.05, 0.13, 0.02));
+    // The other sheets are lit less than the one being played, so that the eye stays on it.
+    const ice = this.standard({ map: markings, color: "#c3ccd5", roughness: 0.22, metalness: 0.05 });
+    for (const z of SHEETS) {
+      if (z) {
+        this.add(block(ARENA.halfX * 2, 0.1, ARENA.halfZ * 2, 0.02), [boards, boards, ice, boards, boards, boards], 0, -0.05, z).castShadow = false;
+        for (const x of [-ARENA.halfX - 0.08, ARENA.halfX + 0.08]) this.add(block(0.12, 0.18, ARENA.halfZ * 2 + 0.3, 0.04), boards, x, 0.04, z);
+      }
+      // The hack's two rubber footholds, where the painted ones are.
+      for (const dz of [-0.11, 0.11]) {
+        const hold = new T.Mesh(foothold, rubber);
+        hold.position.set(HACK.x - 0.34, 0.02, z + dz);
+        hold.castShadow = hold.receiveShadow = true;
+        this.scene.add(hold);
+      }
+    }
+    // Foam dividers along both sides of every sheet.
+    const foam = this.standard({ color: "#22324f", roughness: 0.55 }),
+      bar = keep(new T.CylinderGeometry(0.07, 0.07, ARENA.halfX * 2 + 0.4, 14).rotateZ(Math.PI / 2));
+    for (const z of SHEETS)
+      for (const side of [-1, 1]) {
+        const mesh = new T.Mesh(bar, foam);
+        mesh.position.set(0, 0.06, z + side * (ARENA.halfZ + 0.1));
+        mesh.castShadow = mesh.receiveShadow = true;
+        this.scene.add(mesh);
+      }
+    // Stones of the other sheets' games, in blue and green, lying where they came to rest.
+    const club = ["#2f62c0", "#2f8a52"].map((color) => keep(glossy({ color, roughness: 0.3 })));
+    for (const [x, z, c] of [
+      [4.2, -PITCH + 0.35, 0], [5.0, -PITCH - 0.55, 1], [3.6, -PITCH - 0.95, 0], [5.6, -PITCH + 0.9, 1], [2.2, -PITCH + 0.6, 1],
+      [4.4, PITCH - 0.95, 1], [5.3, PITCH - 1.2, 0], [-1.4, PITCH - 1.1, 0], [4.9, PITCH + 0.4, 1],
+      [4.6, -2 * PITCH + 0.2, 1], [3.9, 2 * PITCH - 0.6, 0],
+    ]) {
+      const stone = curlingStone(body, granite, grip, post, club[c]);
+      stone.position.set(x, 0, z);
+      stone.rotation.y = x * 1.7;
+      this.scene.add(stone);
+    }
+    // Brooms left lying by the hacks of the other sheets: a shaft and a pad.
+    const shaft = keep(new T.CylinderGeometry(0.025, 0.025, 1.5, 8).rotateZ(Math.PI / 2)),
+      pad = keep(block(0.12, 0.06, 0.34, 0.025)),
+      black = this.standard({ color: "#1d1f23", roughness: 0.5 }),
+      fabric = ["#c8321f", "#2f62c0"].map((color) => this.standard({ color, roughness: 0.9 }));
+    for (const [x, z, turn, c] of [[-4.4, -PITCH - 0.8, 0.5, 0], [-3.9, PITCH - 1.15, -0.3, 1]]) {
+      const broom = new T.Group(),
+        stick = new T.Mesh(shaft, black),
+        head = new T.Mesh(pad, fabric[c]);
+      stick.position.set(0, 0.04, 0);
+      head.position.set(0.78, 0.03, 0);
+      stick.castShadow = head.castShadow = true;
+      broom.add(stick, head);
+      broom.position.set(x, 0, z);
+      broom.rotation.y = turn;
+      this.scene.add(broom);
+    }
+    // The dasher wall with glass over it beyond the houses and along both sides, and seats rising behind it.
+    const white = this.standard({ color: "#f1f4f7", roughness: 0.45 }),
+      kick = this.standard({ color: "#1f3f7a", roughness: 0.5 }),
+      cap = this.standard({ color: "#2f62c0", roughness: 0.4 }),
+      glass = this.own(new T.MeshStandardMaterial({ color: "#dff0ff", roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.16, depthWrite: false })),
+      concrete = this.standard({ color: "#8e959d", roughness: 0.9 }),
+      endX = ARENA.halfX + 0.75,
+      sideZ = 2 * PITCH + ARENA.halfZ + 0.6,
+      backX = -16,
+      ROWS = 4,
+      deep = endX + 0.95 + ROWS * 0.85;
+    const wall = (length: number, along: "x" | "z", x: number, z: number) => {
+      const put = (w: number, h: number, y: number, m: T.Material) => this.add(along === "z" ? block(0.16, h, w, 0.03) : block(w, h, 0.16, 0.03), m, x, y, z);
+      put(length, 0.82, 0.41, white);
+      put(length + 0.02, 0.2, 0.1, kick).castShadow = false;
+      put(length + 0.04, 0.07, 0.84, cap);
+      const pane = this.add(along === "z" ? new T.PlaneGeometry(length, 1.1).rotateY(Math.PI / 2) : new T.PlaneGeometry(length, 1.1), glass, x, 1.43, z);
+      pane.castShadow = pane.receiveShadow = false;
+    };
+    wall(sideZ * 2, "z", endX, 0);
+    for (const side of [-1, 1]) wall(endX - backX, "x", (endX + backX) / 2, side * sideZ);
+    // Concrete steps, each row of seats a step higher; the ends' seats face back down the ice, the sides' across it.
+    const pan = keep(block(0.5, 0.08, 0.46, 0.03)),
+      back = keep(block(0.5, 0.48, 0.07, 0.03)),
+      plastic = this.own(new T.MeshStandardMaterial({ color: "#ffffff", roughness: 0.45 })),
+      seats: { x: number; z: number; y: number; turn: number; red: boolean }[] = [];
+    for (let row = 0; row < ROWS; row++) {
+      const rise = 0.42 * (row + 1),
+        out = 0.95 + row * 0.85;
+      this.add(block(0.85, rise, sideZ * 2 + ROWS * 1.7, 0.03), concrete, endX + out, rise / 2, 0).castShadow = false;
+      for (let z = -sideZ + 0.3; z < sideZ; z += 0.66) seats.push({ x: endX + out, z, y: rise, turn: -Math.PI / 2, red: Math.abs(Math.round(z / 0.66)) % 7 === row });
+      for (const side of [-1, 1]) {
+        this.add(block(endX + out - backX, rise, 0.85, 0.03), concrete, (endX + out + backX) / 2, rise / 2, side * (sideZ + out)).castShadow = false;
+        for (let x = backX + 0.5; x < endX + out - 0.4; x += 0.66)
+          seats.push({ x, z: side * (sideZ + out), y: rise, turn: side < 0 ? 0 : Math.PI, red: Math.abs(Math.round(x / 0.66)) % 7 === row });
+      }
+    }
+    // The hall's walls behind the top row, so that nothing shows past the seats.
+    const hall = this.standard({ color: "#3b4a5c", roughness: 0.9 });
+    this.add(new T.PlaneGeometry(sideZ * 2 + 12, 14).rotateY(-Math.PI / 2), hall, deep + 0.3, 6, 0).castShadow = false;
+    for (const side of [-1, 1]) this.add(new T.PlaneGeometry(deep - backX + 2, 14).rotateY(side < 0 ? 0 : Math.PI), hall, (deep + backX) / 2, 6, side * (sideZ + ROWS * 0.85 + 1.2)).castShadow = false;
+    const m = new T.Matrix4(),
+      q = new T.Quaternion(),
+      up = new T.Vector3(0, 1, 0),
+      one = new T.Vector3(1, 1, 1),
+      blue = new T.Color("#2a5bb8"),
+      red = new T.Color("#c8321f"),
+      pans = new T.InstancedMesh(pan, plastic, seats.length),
+      backs = new T.InstancedMesh(back, plastic, seats.length),
+      legs = new T.InstancedMesh(keep(new T.CylinderGeometry(0.03, 0.03, 0.3, 6)), this.standard({ color: "#3a3f46", roughness: 0.5, metalness: 0.5 }), seats.length);
+    // Some seats are taken: a body and a head, in winter clothes; the same people each time (no randomness).
+    let seed = 7;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648,
+      taken = seats.filter(() => next() < 0.32),
+      coats = ["#1f2a44", "#7a1f2a", "#2f5f3a", "#c9a23a", "#5a5f66", "#e2dccf", "#2f62c0", "#8a4a2a"].map((c) => new T.Color(c)),
+      skin = ["#f1c9a5", "#d9a37c", "#a8714a", "#7a4a2c"].map((c) => new T.Color(c)),
+      torsos = new T.InstancedMesh(keep(new T.CapsuleGeometry(0.17, 0.3, 4, 8)), this.own(new T.MeshStandardMaterial({ color: "#ffffff", roughness: 0.85 })), taken.length),
+      heads = new T.InstancedMesh(keep(new T.SphereGeometry(0.13, 12, 8)), this.own(new T.MeshStandardMaterial({ color: "#ffffff", roughness: 0.7 })), taken.length);
+    seats.forEach((s, i) => {
+      q.setFromAxisAngle(up, s.turn);
+      const away = new T.Vector3(0, 0, -0.22).applyQuaternion(q);
+      pans.setMatrixAt(i, m.compose(new T.Vector3(s.x, s.y + 0.3, s.z), q, one));
+      backs.setMatrixAt(i, m.compose(new T.Vector3(s.x + away.x, s.y + 0.55, s.z + away.z), q, one));
+      legs.setMatrixAt(i, m.makeTranslation(s.x, s.y + 0.15, s.z));
+      pans.setColorAt(i, s.red ? red : blue);
+      backs.setColorAt(i, s.red ? red : blue);
+    });
+    taken.forEach((s, i) => {
+      q.setFromAxisAngle(up, s.turn);
+      const lean = new T.Vector3(0, 0, -0.06).applyQuaternion(q);
+      torsos.setMatrixAt(i, m.makeTranslation(s.x + lean.x, s.y + 0.62, s.z + lean.z));
+      heads.setMatrixAt(i, m.makeTranslation(s.x + lean.x, s.y + 1.02, s.z + lean.z));
+      torsos.setColorAt(i, coats[Math.floor(next() * coats.length)]);
+      heads.setColorAt(i, skin[Math.floor(next() * skin.length)]);
+    });
+    for (const mesh of [pans, backs, legs, torsos, heads]) {
+      mesh.castShadow = mesh.receiveShadow = true;
+      this.scene.add(mesh);
+    }
+  }
+  private look() {
+    throwerCamera(this.camera, this.shift);
+    this.redraw();
+  }
+  protected resize() {
+    super.resize();
+    this.look();
+  }
+  /** The replay of a shot is over (or dropped): the next laying out brings the eye back. */
+  protected settleNow() {
+    super.settleNow();
+    if (this.chasing !== null) this.landed = true;
+  }
+  sync(state: State, animate = true) {
+    // A state laid out without its shot (a new game, a test) is seen from the hack.
+    if (!animate) {
+      this.glide++;
+      this.shift = 0;
+      this.chasing = null;
+      this.landed = false;
+    }
+    super.sync(state, animate);
+    this.look();
+  }
+  /** The eye keeps the stone it follows a little ahead of the hack's place on the screen, as far as the house. */
+  protected rolled(id: number, mesh: T.Object3D, dx: number) {
+    if (id !== this.chasing) return;
+    this.shift = Math.max(this.shift, Math.min(CHASE, mesh.position.x + dx - (HACK.x + 1)));
+    this.look();
+  }
+  /** A pull is followed farther than the pointer goes (`PULL`), in the same direction. */
+  protected dragMove(at: { x: number; y: number; z: number }) {
+    super.dragMove({ ...at, x: HACK.x + (at.x - HACK.x) * PULL, z: HACK.z + (at.z - HACK.z) * PULL });
   }
   protected aimColor() {
     return "#2f62c0";
@@ -136,6 +354,11 @@ export class CurlingView extends FlickView<State> {
       stone: Disc = { id: last.id, x: HACK.x, z: HACK.z, vx: 0, vz: 0, r: R, m: 1, on: true, curl: CURL[last.spin] || undefined };
     strike(stone, shot.angle, speedOf(shot.power));
     live.push(stone);
+    // Every shot is seen from the hack: an eye still on its way back from the last one is put there at once.
+    this.glide++;
+    this.shift = 0;
+    this.chasing = last.id;
+    this.look();
     // The stones of an end already scored are cleared before the first of the next; the stone in the hack goes.
     if (before.done) for (const g of this.stones) g.visible = false;
     for (const g of this.ready) g.visible = false;
@@ -150,6 +373,23 @@ export class CurlingView extends FlickView<State> {
   }
   protected place(state: State) {
     super.place(state);
+    // After a shot the eye rests on the house for a moment, then glides back to the hack.
+    if (this.chasing !== null && this.landed) {
+      this.chasing = null;
+      this.landed = false;
+      const from = this.shift,
+        token = ++this.glide;
+      if (from > 0 && !this.reducedMotion)
+        this.tween(700, 650, (p) => {
+          if (token !== this.glide) return;
+          this.shift = from * (1 - p * p * (3 - 2 * p));
+          this.look();
+        });
+      else {
+        this.shift = 0;
+        this.look();
+      }
+    }
     const onIce = new Set(state.stones.map((d) => d.id));
     // Stones not on the ice: those still to be thrown wait by the hack, those thrown and taken off are gone.
     for (const side of [0, 1])

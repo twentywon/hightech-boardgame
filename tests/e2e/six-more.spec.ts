@@ -6,7 +6,7 @@ import { AMAZON_SUBJECT, squareAt } from "../../src/games/amazons/view";
 import * as bgRules from "../../src/games/backgammon/rules";
 import { BG_SUBJECT, DICE_AT, spotOf } from "../../src/games/backgammon/view";
 import { ONECARD } from "../../src/games/onecard/layout";
-import { CURLING_SUBJECT } from "../../src/games/curling/view";
+import { throwerCamera } from "../../src/games/curling/view";
 import { HACK } from "../../src/games/curling/rules";
 import * as starRules from "../../src/games/starbattle/rules";
 import { squareOf, starSubject } from "../../src/games/starbattle/view";
@@ -100,8 +100,16 @@ test("curling: a stone is pulled back from the hack and let go", async ({ page }
   test.skip(info.project.name === "mobile", "the mouse pulls here");
   const errors = await sit(page, "컬링");
   await ready(page);
-  const a = await screen(page, CURLING_SUBJECT, HACK.x, 0.1, HACK.z),
-    b = await screen(page, CURLING_SUBJECT, HACK.x - 1.85, 0.0, HACK.z);
+  // Seen from behind the hack: the stone is pulled straight back toward the eye.
+  const box = (await page.locator("canvas").boundingBox())!,
+    camera = new PerspectiveCamera(FOV, box.width / box.height, 0.1, 120);
+  throwerCamera(camera);
+  const at = (x: number, y: number, z: number) => {
+      const v = new Vector3(x, y, z).project(camera);
+      return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+    },
+    a = at(HACK.x, 0.1, HACK.z),
+    b = at(HACK.x - 0.75, 0, HACK.z);
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   for (let i = 1; i <= 8; i++) await page.mouse.move(a.x + ((b.x - a.x) * i) / 8, a.y + ((b.y - a.y) * i) / 8);

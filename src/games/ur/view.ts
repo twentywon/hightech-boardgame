@@ -1,5 +1,6 @@
 import * as T from "three";
-import { block, glossy, hop, planks } from "../../engine/scene-utils";
+import { block, glossy, hop } from "../../engine/scene-utils";
+import { sumer } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { OFF, PIECES, ROSETTES, THROW, type State } from "./rules";
@@ -123,7 +124,7 @@ function pieceTexture(light: boolean) {
 const TIP_UP = new T.Quaternion().setFromUnitVectors(new T.Vector3(1, 1, 1).normalize(), new T.Vector3(0, 1, 0));
 const DIE_R = 0.36;
 /**
- * The board of Ur on a table: three blocks of inlaid squares (four columns, a bridge of two in the middle row, two
+ * The board of Ur on a reed mat in a room of a Sumerian palace: three blocks of inlaid squares (four columns, a bridge of two in the middle row, two
  * columns), seven pieces a side with five dots on them waiting along the board's long sides, and four
  * tetrahedral dice whose upturned tip is white when it counts.
  */
@@ -134,10 +135,11 @@ export class UrView extends TableView<State> {
   private rings: T.Mesh[] = [];
   private cursor: T.Mesh;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#2a211a");
-    this.daylight("#fff4e2", "#5a4430", "#ffe9c9", 8, 2.1);
-    const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    this.add(new T.BoxGeometry(30, 0.4, 20), this.standard(planks(4, keep)), 0, -0.2, 0).castShadow = false;
+    super(host, quality, "#6a5038");
+    // Warm light, as from a courtyard in the sun of southern Mesopotamia.
+    this.daylight("#fff0d8", "#7a5a3a", "#ffdcaa", 10, 2.2);
+    // A room of a palace at Ur, where the game was found (the user asked for a setting true to its origin).
+    sumer(this.scene, (r) => this.own(r), 6.2, 2.7);
     const edge = this.standard({ color: "#3a2618", roughness: 0.5 }),
       part = (col0: number, cols: number, rows: number[]) => {
         const top = this.standard({ map: this.own(partTexture(col0, cols, rows)), roughness: 0.45 }),

@@ -1,5 +1,6 @@
 import * as T from "three";
-import { planks, block, wood } from "../../engine/scene-utils";
+import { block, wood } from "../../engine/scene-utils";
+import { ranch } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { LINKS, POINTS, type State } from "./rules";
@@ -44,7 +45,7 @@ function boardTexture() {
   t.anisotropy = 8;
   return t;
 }
-/** A cross of 33 points cut into a board on a table, with thirteen modelled geese and a fox. */
+/** A cross of 33 points cut into a board on a ranch's picnic table, with thirteen modelled geese and a fox. */
 export class FoxGeeseView extends TableView<State> {
   private geese: T.Group[] = [];
   private fox: T.Group;
@@ -52,11 +53,11 @@ export class FoxGeeseView extends TableView<State> {
   private cursor: T.Mesh;
   private chosen: T.Mesh;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#4b3626");
-    this.daylight("#fff6e0", "#4a3a2c", "#fff1d6", 7);
-    const table = this.add(new T.PlaneGeometry(90, 90), this.standard(planks(11, (r) => this.own(r))), 0, -0.2, 0);
-    table.rotation.x = -Math.PI / 2;
-    table.castShadow = false;
+    super(host, quality, "#8a6a48");
+    // A warm Texas afternoon, the sun reaching the yard round the table.
+    this.daylight("#fff4dc", "#8a5a3a", "#ffe6b8", 13, 2.3);
+    // The board lies on a picnic table on a ranch (the user asked for a place like a Texas farm).
+    ranch(this.scene, (r) => this.own(r), 5.0, 4.4);
     const edge = this.standard({ color: "#6a4a2c", roughness: 0.6 });
     // A board of real wood grain (the plain painted top looked as if its surface had come off), with the cross burnt in over it.
     const grain = this.own(wood(false));

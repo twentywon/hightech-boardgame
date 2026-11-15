@@ -480,3 +480,495 @@ export function pub(scene: T.Object3D, own: Own, half: number, drop: number) {
     add(new T.CylinderGeometry(0.225, 0.225, 0.12, 18), standard({ color: "#fbf6e6", roughness: 0.9 }), tx + dx, 3.74 - drop, tz + dz);
   }
 }
+/** A hay bale's side: packed straw in short strokes, with two bands of twine. */
+function straw() {
+  const { c, ctx } = canvas(256, 128),
+    rand = noise(23);
+  ctx.fillStyle = "#cfae5c";
+  ctx.fillRect(0, 0, 256, 128);
+  for (let i = 0; i < 1400; i++) {
+    const shade = 150 + rand() * 90;
+    ctx.strokeStyle = `rgba(${shade}, ${shade * 0.82}, ${shade * 0.38}, ${0.5 + rand() * 0.5})`;
+    ctx.lineWidth = 0.8 + rand() * 1.4;
+    const x = rand() * 256,
+      y = rand() * 128,
+      a = (rand() - 0.5) * 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * (6 + rand() * 16), y + Math.sin(a) * (6 + rand() * 16));
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(90, 60, 30, 0.85)";
+  for (const x of [72, 184]) ctx.fillRect(x, 0, 5, 128);
+  return texture(c);
+}
+/** A five-pointed star as a flat shape, `r` to its points. */
+function starShape(r: number) {
+  const shape = new T.Shape();
+  for (let i = 0; i < 10; i++) {
+    const a = Math.PI / 2 + (i * Math.PI) / 5,
+      d = i % 2 ? r * 0.42 : r;
+    if (i) shape.lineTo(Math.cos(a) * d, Math.sin(a) * d);
+    else shape.moveTo(Math.cos(a) * d, Math.sin(a) * d);
+  }
+  return shape;
+}
+/**
+ * A Texas ranch round a picnic table (the user asked for a place like a Texas farm): the table's weathered planks
+ * and its far bench, red dirt with dry grass and bluebonnets, a barbed-wire fence on cedar posts with a longhorn
+ * skull on one and a wagon wheel leaning on it, stacked hay bales with a rusty barn star, a galvanised stock tank,
+ * a prickly pear, a tumbleweed and a horseshoe; a felt hat, a coiled rope and an enamel cup lie on the table beside
+ * the board. The table top is at `y` −0.2, `half` by `depth` round the board; everything is placed by fixed numbers.
+ */
+export function ranch(scene: T.Object3D, own: Own, half: number, depth: number) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.85, ...options })),
+    add = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, parent: T.Object3D = scene) => {
+      const mesh = new T.Mesh(own(geometry), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    },
+    TOP = -0.2,
+    GROUND = -3,
+    rand = noise(97);
+  // The table: four weathered planks with gaps between, on A-frame legs, and a bench along its far side.
+  const grain = own(wood(false));
+  grain.repeat.set(2, 0.5);
+  const weathered = standard({ map: grain, color: "#b9a891", roughness: 0.95 }),
+    plank = 2.1,
+    gap = 0.12,
+    length = half * 2;
+  for (let i = 0; i < 4; i++) add(new T.BoxGeometry(length, 0.28, plank), weathered, 0, TOP - 0.14, (i - 1.5) * (plank + gap));
+  const width = 4 * plank + 3 * gap;
+  for (const x of [-half + 1.3, half - 1.3])
+    for (const side of [-1, 1]) {
+      const leg = add(new T.BoxGeometry(0.3, 3.6, 0.5), weathered, x, (TOP + GROUND) / 2 - 0.1, side * 1.7);
+      leg.rotation.x = side * 0.62;
+    }
+  for (const z of [-(width / 2 + 1.5), width / 2 + 1.5]) add(new T.BoxGeometry(length - 0.6, 0.22, 1.5), weathered, 0, GROUND + 1.55, z);
+  // Red dirt, with dry grass in tufts.
+  const ground = add(new T.PlaneGeometry(90, 70), standard({ ...stuff("earth", "#a3653d", 12, own), roughness: 1 }), 0, GROUND, 0);
+  ground.rotation.x = -Math.PI / 2;
+  ground.castShadow = false;
+  const blade = own(new T.ConeGeometry(0.05, 0.7, 4)),
+    grass = new T.InstancedMesh(blade, standard({ color: "#ffffff", roughness: 1 }), 900),
+    m = new T.Matrix4(),
+    q = new T.Quaternion(),
+    e = new T.Euler(),
+    tones = ["#b39a55", "#8f8a45", "#c4a865", "#7d7a3c"].map((c) => new T.Color(c));
+  let n = 0;
+  for (let tuft = 0; tuft < 90; tuft++) {
+    const x = (rand() - 0.5) * 34,
+      z = -11 + rand() * 18;
+    if (Math.abs(x) < half + 0.4 && Math.abs(z) < width / 2 + 2.4) continue;
+    for (let k = 0; k < 10 && n < 900; k++, n++) {
+      const s = 0.6 + rand() * 0.8;
+      q.setFromEuler(e.set((rand() - 0.5) * 0.7, rand() * 6, (rand() - 0.5) * 0.7));
+      grass.setMatrixAt(n, m.compose(new T.Vector3(x + (rand() - 0.5) * 0.6, GROUND + 0.3 * s, z + (rand() - 0.5) * 0.6), q, new T.Vector3(s, s, s)));
+      grass.setColorAt(n, tones[Math.floor(rand() * tones.length)]);
+    }
+  }
+  grass.count = n;
+  scene.add(grass);
+  // Bluebonnets: spikes of small blue florets, white at the tip, over a few leaves, in patches.
+  const floret = own(new T.SphereGeometry(0.09, 6, 4)),
+    leaf = own(new T.SphereGeometry(0.16, 6, 4)),
+    patches: [number, number][] = [[-6.6, -5.6], [6.2, -6.0], [-7.0, 3.4], [-12.0, -1.6], [11.8, -2.2], [7.2, 3.6], [-3.2, -7.4], [12.6, 1.8], [-13.6, 3.0], [1.6, -7.6]],
+    SPIKES = 8,
+    STEPS = 6,
+    flowers = new T.InstancedMesh(floret, standard({ color: "#ffffff", roughness: 0.7 }), patches.length * SPIKES * STEPS),
+    leaves = new T.InstancedMesh(leaf, standard({ color: "#5d7a3a", roughness: 0.9 }), patches.length * SPIKES),
+    blue = new T.Color("#2e4cb0"),
+    white = new T.Color("#f4f2ea");
+  let f = 0,
+    l = 0;
+  for (const [px, pz] of patches)
+    for (let k = 0; k < SPIKES; k++, l++) {
+      const x = px + (rand() - 0.5) * 1.5,
+        z = pz + (rand() - 0.5) * 1.1,
+        h = 0.55 + rand() * 0.35;
+      leaves.setMatrixAt(l, m.compose(new T.Vector3(x, GROUND + 0.08, z), q.identity(), new T.Vector3(1.3, 0.35, 1.3)));
+      for (let j = 0; j < STEPS; j++, f++) {
+        const t = j / (STEPS - 1),
+          s = 1 - t * 0.55;
+        flowers.setMatrixAt(f, m.compose(new T.Vector3(x, GROUND + 0.2 + t * h, z), q.identity(), new T.Vector3(s, s * 0.9, s)));
+        flowers.setColorAt(f, j === STEPS - 1 ? white : blue);
+      }
+    }
+  for (const mesh of [flowers, leaves]) {
+    mesh.castShadow = true;
+    scene.add(mesh);
+  }
+  // A barbed-wire fence on cedar posts across the back.
+  const fenceZ = -(width / 2 + 3.4),
+    cedar = standard({ map: own(wood(true)), color: "#9a7a62", roughness: 0.95 }),
+    wire = standard({ color: "#55585c", roughness: 0.4, metalness: 0.7 });
+  for (let x = -18.2; x <= 18.2; x += 2.6) {
+    const post = add(new T.CylinderGeometry(0.14, 0.17, 4.0, 8), cedar, x, GROUND + 2.0, fenceZ);
+    post.rotation.z = (rand() - 0.5) * 0.06;
+  }
+  for (const y of [0.9, 1.7, 2.5]) {
+    const strand = add(new T.CylinderGeometry(0.025, 0.025, 36.4, 5).rotateZ(Math.PI / 2), wire, 0, GROUND + y, fenceZ + 0.17);
+    strand.castShadow = false;
+  }
+  // Barbs every little way along each strand.
+  const barb = own(new T.BoxGeometry(0.03, 0.18, 0.03)),
+    barbs = new T.InstancedMesh(barb, wire, 3 * 72);
+  let b = 0;
+  for (const y of [0.9, 1.7, 2.5])
+    for (let i = 0; i < 72; i++, b++) {
+      q.setFromEuler(e.set(0.8, 0, 0.8));
+      barbs.setMatrixAt(b, m.compose(new T.Vector3(-18 + i * 0.5, GROUND + y, fenceZ + 0.17), q, new T.Vector3(1, 1, 1)));
+    }
+  scene.add(barbs);
+  // A longhorn skull on a post: bone, a long snout, and horns that sweep out and turn up at the tips.
+  const bone = standard({ color: "#ece3cc", roughness: 0.7 }),
+    horn = standard({ color: "#d8c49a", roughness: 0.5 }),
+    hornTip = standard({ color: "#3a2a1e", roughness: 0.5 }),
+    skull = new T.Group();
+  add(new T.SphereGeometry(0.42, 16, 12), bone, 0, 0, 0, skull).scale.set(1.15, 0.85, 0.7);
+  add(new T.CylinderGeometry(0.2, 0.32, 0.9, 12), bone, 0, -0.55, 0.06, skull);
+  for (const side of [-1, 1]) {
+    add(new T.SphereGeometry(0.075, 8, 6), standard({ color: "#2a2018", roughness: 0.9 }), side * 0.2, -0.05, 0.27, skull);
+    const curve = new T.CatmullRomCurve3([new T.Vector3(side * 0.35, 0.18, 0), new T.Vector3(side * 1.1, 0.22, 0.12), new T.Vector3(side * 1.8, 0.45, 0.1), new T.Vector3(side * 2.2, 0.85, 0)]);
+    add(new T.TubeGeometry(curve, 24, 0.11, 8), horn, 0, 0, 0, skull);
+    add(new T.ConeGeometry(0.1, 0.35, 8), hornTip, side * 2.27, 1.0, 0, skull).rotation.z = -side * 0.35;
+  }
+  skull.scale.setScalar(0.8);
+  skull.position.set(-5.2, GROUND + 1.75, fenceZ + 0.38);
+  scene.add(skull);
+  // A wagon wheel leaning on the fence.
+  const spokes = standard({ map: own(wood(true)), color: "#a07a58", roughness: 0.8 }),
+    iron = standard({ color: "#3a3330", roughness: 0.5, metalness: 0.6 }),
+    wheel = new T.Group(),
+    R = 1.5;
+  add(new T.TorusGeometry(R, 0.12, 8, 40), spokes, 0, 0, 0, wheel);
+  add(new T.TorusGeometry(R + 0.1, 0.05, 6, 40), iron, 0, 0, 0, wheel);
+  add(new T.CylinderGeometry(0.3, 0.3, 0.45, 14).rotateX(Math.PI / 2), spokes, 0, 0, 0, wheel);
+  for (let i = 0; i < 12; i++) add(new T.CylinderGeometry(0.05, 0.06, R, 6), spokes, Math.cos((i * Math.PI) / 6) * R * 0.5, Math.sin((i * Math.PI) / 6) * R * 0.5, 0, wheel).rotation.z = (i * Math.PI) / 6 - Math.PI / 2;
+  wheel.position.set(4.2, GROUND + R * 0.98, fenceZ + 0.5);
+  wheel.rotation.set(-0.2, 0.25, 0);
+  scene.add(wheel);
+  // Hay bales stacked at the left, with a rusty barn star leaning on them.
+  const hay = standard({ map: own(straw()), roughness: 1 }),
+    bale = own(new T.BoxGeometry(2.4, 1.05, 1.2));
+  for (const [x, y, z, turn] of [[-10.0, 0.525, -6.2, 0.08], [-7.75, 0.525, -6.05, -0.05], [-8.9, 1.575, -6.15, 0.12], [-10.6, 0.525, -3.0, 1.4], [9.6, 0.525, 2.6, 0.5]]) {
+    const mesh = new T.Mesh(bale, hay);
+    mesh.position.set(x, GROUND + y, z);
+    mesh.rotation.y = turn;
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+  const rust = standard({ color: "#8a4a2a", roughness: 0.6, metalness: 0.5 }),
+    star = add(new T.ExtrudeGeometry(starShape(0.62), { depth: 0.07, bevelEnabled: true, bevelSize: 0.025, bevelThickness: 0.025, bevelSegments: 1 }), rust, -7.7, GROUND + 0.7, -5.3);
+  star.rotation.set(-0.25, 0.1, 0.15);
+  // A galvanised stock tank with water in it.
+  const zinc = standard({ color: "#aeb5ba", roughness: 0.35, metalness: 0.75 }),
+    tank = new T.Group(),
+    TR = 1.6;
+  add(new T.CylinderGeometry(TR, TR, 1.4, 40, 1, true), zinc, 0, 0.7, 0, tank).material = own(new T.MeshStandardMaterial({ color: "#aeb5ba", roughness: 0.35, metalness: 0.75, side: T.DoubleSide }));
+  for (const y of [0.25, 0.7, 1.15]) add(new T.TorusGeometry(TR + 0.02, 0.05, 6, 48).rotateX(Math.PI / 2), zinc, 0, y, 0, tank);
+  add(new T.TorusGeometry(TR, 0.08, 8, 48).rotateX(Math.PI / 2), zinc, 0, 1.4, 0, tank);
+  add(new T.CircleGeometry(TR - 0.02, 40).rotateX(-Math.PI / 2), standard({ color: "#3f6b78", roughness: 0.08, metalness: 0.2 }), 0, 1.15, 0, tank).castShadow = false;
+  tank.position.set(9.0, GROUND, -5.4);
+  scene.add(tank);
+  // A prickly pear: flat pads growing out of one another, with red fruit on their rims and a yellow flower.
+  const pad = own(new T.SphereGeometry(0.5, 14, 10)),
+    green = standard({ color: "#6d8f3c", roughness: 0.7 }),
+    fruit = standard({ color: "#a8203f", roughness: 0.5 }),
+    cactus = new T.Group();
+  for (const [x, y, z, rz, ry, s] of [
+    [0, 0.6, 0, 0, 0, 1.2], [-0.55, 1.45, 0.05, 0.5, 0.3, 1], [0.6, 1.4, -0.05, -0.45, -0.3, 1], [-0.95, 2.2, 0.1, 0.2, 0.6, 0.85], [0.35, 2.3, 0.1, -0.15, 0.2, 0.85], [1.05, 2.05, -0.1, -0.7, -0.5, 0.75],
+  ]) {
+    const p = new T.Mesh(pad, green);
+    p.position.set(x, y, z);
+    p.rotation.set(0, ry, rz);
+    p.scale.set(0.75 * s, 1.15 * s, 0.22 * s);
+    p.castShadow = p.receiveShadow = true;
+    cactus.add(p);
+  }
+  for (const [x, y] of [[-0.9, 2.82], [-1.15, 2.7], [0.42, 2.95], [1.3, 2.6]]) add(new T.SphereGeometry(0.11, 8, 6), fruit, x, y, 0.05, cactus).scale.set(1, 1.3, 1);
+  add(new T.SphereGeometry(0.16, 10, 6), standard({ color: "#f0c63a", roughness: 0.6 }), 0.1, 2.98, 0.08, cactus).scale.set(1, 0.6, 1);
+  cactus.scale.setScalar(0.75);
+  cactus.position.set(-7.7, GROUND, 1.8);
+  scene.add(cactus);
+  // A tumbleweed: a ball of dry twigs.
+  const twig = own(new T.CylinderGeometry(0.015, 0.015, 0.65, 3)),
+    weed = new T.InstancedMesh(twig, standard({ color: "#b8995f", roughness: 0.9 }), 160);
+  for (let i = 0; i < 160; i++) {
+    const u = rand() * 2 - 1,
+      a = rand() * Math.PI * 2,
+      r = 0.4 + rand() * 0.25,
+      at = new T.Vector3(Math.sqrt(1 - u * u) * Math.cos(a) * r, u * r, Math.sqrt(1 - u * u) * Math.sin(a) * r);
+    q.setFromEuler(e.set(rand() * 6, rand() * 6, rand() * 6));
+    weed.setMatrixAt(i, m.compose(at.add(new T.Vector3(7.5, GROUND + 0.62, -1.2)), q, new T.Vector3(1, 1, 1)));
+  }
+  weed.castShadow = true;
+  scene.add(weed);
+  // A horseshoe in the dirt.
+  add(new T.TorusGeometry(0.42, 0.08, 6, 20, Math.PI * 1.6).rotateX(-Math.PI / 2), iron, 6.4, GROUND + 0.05, 1.6).rotation.y = 2.2;
+  // On the table: a felt hat with its brim curled up at the sides, a coiled rope and an enamel cup.
+  const felt = standard({ color: "#b98f55", roughness: 0.9 }),
+    hat = new T.Group(),
+    brimShape = new T.LatheGeometry([new T.Vector2(0.4, 0), new T.Vector2(0.95, 0), new T.Vector2(1.1, 0.08)], 40),
+    pos = brimShape.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) + 0.32 * (pos.getX(i) / 1.1) ** 4);
+  brimShape.computeVertexNormals();
+  const brim = add(brimShape, own(new T.MeshStandardMaterial({ color: "#b98f55", roughness: 0.9, side: T.DoubleSide })), 0, 0.04, 0, hat);
+  brim.scale.set(1, 1, 0.82);
+  add(new T.CylinderGeometry(0.4, 0.47, 0.62, 24), felt, 0, 0.35, 0, hat).scale.set(1, 1, 0.82);
+  add(new T.SphereGeometry(0.4, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), felt, 0, 0.62, 0, hat).scale.set(1, 0.32, 0.82);
+  add(new T.TorusGeometry(0.47, 0.045, 6, 30).rotateX(Math.PI / 2), standard({ color: "#3a2618", roughness: 0.6 }), 0, 0.1, 0, hat).scale.set(1, 1, 0.82);
+  hat.position.set(half - 0.95, TOP, -depth + 0.85);
+  hat.rotation.y = 0.5;
+  scene.add(hat);
+  const rope = standard({ color: "#cdb27e", roughness: 0.95 });
+  for (let i = 0; i < 4; i++) add(new T.TorusGeometry(0.5 + i * 0.05, 0.04, 6, 32).rotateX(Math.PI / 2), rope, -half + 0.85 + i * 0.03, TOP + 0.04 + i * 0.06, depth - 0.9 - i * 0.02);
+  add(new T.TubeGeometry(new T.CatmullRomCurve3([new T.Vector3(-half + 1.3, TOP + 0.05, depth - 0.7), new T.Vector3(-half + 1.6, TOP + 0.04, depth - 0.3), new T.Vector3(-half + 1.2, TOP + 0.04, depth - 0.05)]), 12, 0.04, 6), rope, 0, 0, 0);
+  const enamel = standard({ color: "#2f5fa8", roughness: 0.3, metalness: 0.1 });
+  add(new T.CylinderGeometry(0.24, 0.22, 0.42, 20), enamel, half - 0.9, TOP + 0.21, depth - 0.85);
+  add(new T.TorusGeometry(0.13, 0.03, 6, 14), enamel, half - 0.62, TOP + 0.22, depth - 0.85);
+  add(new T.TorusGeometry(0.235, 0.02, 6, 24).rotateX(Math.PI / 2), standard({ color: "#f2efe6", roughness: 0.4 }), half - 0.9, TOP + 0.42, depth - 0.85);
+}
+/** A Sumerian reed mat: split reeds plaited two over two, in straw tones, with a bound edge. */
+function reedMat() {
+  const { c, ctx } = canvas(512, 512),
+    rand = noise(31),
+    cell = 32;
+  ctx.fillStyle = "#b8955c";
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 16; i++)
+    for (let j = 0; j < 16; j++) {
+      const across = (i + j) % 4 < 2,
+        tone = 165 + rand() * 45,
+        x = i * cell,
+        y = j * cell;
+      const g = across ? ctx.createLinearGradient(x, y, x, y + cell) : ctx.createLinearGradient(x, y, x + cell, y);
+      g.addColorStop(0, `rgb(${tone * 0.72}, ${tone * 0.56}, ${tone * 0.3})`);
+      g.addColorStop(0.5, `rgb(${tone}, ${tone * 0.8}, ${tone * 0.47})`);
+      g.addColorStop(1, `rgb(${tone * 0.7}, ${tone * 0.54}, ${tone * 0.28})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(x + 1.5, y + 1.5, cell - 3, cell - 3);
+      ctx.strokeStyle = "rgba(90, 60, 25, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (across) {
+        ctx.moveTo(x + 2, y + cell / 2);
+        ctx.lineTo(x + cell - 2, y + cell / 2);
+      } else {
+        ctx.moveTo(x + cell / 2, y + 2);
+        ctx.lineTo(x + cell / 2, y + cell - 2);
+      }
+      ctx.stroke();
+    }
+  return texture(c, 3, 1.35);
+}
+/** The edge of the mat, bound with darker reed. */
+function reedEdge() {
+  const { c, ctx } = canvas(64, 64);
+  ctx.fillStyle = "#7a5a2e";
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.strokeStyle = "rgba(40, 26, 10, 0.5)";
+  for (let y = 4; y < 64; y += 8) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(64, y + 4);
+    ctx.stroke();
+  }
+  return texture(c, 8, 1);
+}
+/** A pavement of square baked bricks laid in bitumen. */
+function pavement() {
+  const { c, ctx } = canvas(512, 512),
+    rand = noise(53),
+    n = 4,
+    u = 512 / n;
+  ctx.fillStyle = "#2c241d";
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < n; i++)
+    for (let j = 0; j < n; j++) {
+      const warm = rand();
+      ctx.fillStyle = `hsl(${30 + warm * 8}, ${32 + warm * 14}%, ${58 + rand() * 10}%)`;
+      ctx.fillRect(i * u + 4, j * u + 4, u - 8, u - 8);
+      for (let k = 0; k < 140; k++) {
+        ctx.fillStyle = `rgba(${90 + rand() * 60}, ${60 + rand() * 40}, 30, ${0.08 + rand() * 0.12})`;
+        ctx.fillRect(i * u + 4 + rand() * (u - 10), j * u + 4 + rand() * (u - 10), 2 + rand() * 5, 2 + rand() * 4);
+      }
+    }
+  return texture(c, 10, 8);
+}
+/** A frieze inlaid in bitumen: white shell rosettes between red and lapis triangles, as on the temple walls of the time. */
+function frieze() {
+  const { c, ctx } = canvas(512, 64);
+  ctx.fillStyle = "#1e1914";
+  ctx.fillRect(0, 0, 512, 64);
+  for (let k = 0; k < 8; k++) {
+    const x = k * 64 + 32;
+    for (let p = 0; p < 8; p++) {
+      const a = (p * Math.PI) / 4;
+      ctx.fillStyle = "#efe7d4";
+      ctx.beginPath();
+      ctx.ellipse(x + Math.cos(a) * 11, 32 + Math.sin(a) * 11, 9, 4.5, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#c8321f";
+    ctx.beginPath();
+    ctx.arc(x, 32, 5, 0, Math.PI * 2);
+    ctx.fill();
+    for (const [y0, y1, color] of [[0, 14, "#2a4fa0"], [64, 50, "#b5482a"]] as [number, number, string][]) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x + 32 - 14, y0);
+      ctx.lineTo(x + 32, y1);
+      ctx.lineTo(x + 32 + 14, y0);
+      ctx.fill();
+    }
+  }
+  ctx.fillStyle = "#c9a24a";
+  ctx.fillRect(0, 0, 512, 3);
+  ctx.fillRect(0, 61, 512, 3);
+  return texture(c, 6, 1);
+}
+/** A clay tablet's face: rows of wedge-shaped marks pressed in with a reed (no real text). */
+function tablet() {
+  const { c, ctx } = canvas(128, 96),
+    rand = noise(61);
+  ctx.fillStyle = "#b99a72";
+  ctx.fillRect(0, 0, 128, 96);
+  ctx.fillStyle = "rgba(80, 56, 32, 0.75)";
+  for (let row = 0; row < 7; row++) {
+    ctx.fillRect(6, 10 + row * 12, 116, 1);
+    let x = 8;
+    while (x < 118) {
+      const y = 13 + row * 12,
+        kind = rand();
+      ctx.beginPath();
+      if (kind < 0.55) {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + 6, y - 2);
+        ctx.lineTo(x + 6, y + 2);
+      } else {
+        ctx.moveTo(x + 2, y - 4);
+        ctx.lineTo(x, y + 4);
+        ctx.lineTo(x + 4, y + 4);
+      }
+      ctx.fill();
+      x += 4 + rand() * 8;
+    }
+  }
+  return texture(c);
+}
+/**
+ * A room of a Sumerian palace at Ur, where the game was found in the royal tombs (the user asked for a setting that
+ * fits where the game began): a plaited reed mat on a pavement of baked bricks, a mud-plastered wall of buttresses and
+ * recessed niches with an inlaid frieze and a bench before it, a lyre with a gold bull's head and a lapis beard,
+ * clay jars, a bowl of dates, clay tablets and an oil lamp. The mat's top is at `y` 0, `half` by `depth`.
+ */
+export function sumer(scene: T.Object3D, own: Own, half: number, depth: number) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.85, ...options })),
+    add = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x: number, y: number, z: number, parent: T.Object3D = scene) => {
+      const mesh = new T.Mesh(own(geometry), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    };
+  const floor = add(new T.PlaneGeometry(80, 60), standard({ map: own(pavement()), roughness: 0.9 }), 0, -0.05, 0);
+  floor.rotation.x = -Math.PI / 2;
+  floor.castShadow = false;
+  const edge = standard({ map: own(reedEdge()), roughness: 1 }),
+    mat = standard({ map: own(reedMat()), roughness: 1 });
+  add(new T.BoxGeometry(half * 2, 0.05, depth * 2), [edge, edge, mat, edge, edge, edge], 0, -0.025, 0).castShadow = false;
+  // The wall: mud plaster over brick, buttresses with niches between, a frieze along it and a bench in front.
+  const plaster = standard({ map: own(speckled("#b8926a", ["#a9845d", "#c4a079", "#9c7652"], 71, 6)), roughness: 0.95 }),
+    shade = standard({ map: own(speckled("#9c7a55", ["#8d6c4a", "#a8855f"], 72, 3)), roughness: 0.95 }),
+    wallZ = -depth - 1.5,
+    span = 34;
+  add(new T.BoxGeometry(span, 6, 0.4), shade, 0, 3, wallZ - 0.35);
+  for (let x = -span / 2 + 0.6; x < span / 2; x += 2.2) {
+    add(new T.BoxGeometry(1.2, 6, 0.5), plaster, x, 3, wallZ);
+    // The inner step of each niche.
+    add(new T.BoxGeometry(0.25, 6, 0.3), plaster, x + 0.72, 3, wallZ - 0.1);
+    add(new T.BoxGeometry(0.25, 6, 0.3), plaster, x + 1.48, 3, wallZ - 0.1);
+  }
+  const band = add(new T.BoxGeometry(span, 0.42, 0.06), standard({ map: own(frieze()), roughness: 0.5 }), 0, 1.35, wallZ + 0.29);
+  band.castShadow = false;
+  add(new T.BoxGeometry(span, 0.5, 0.8), plaster, 0, 0.2, wallZ + 0.65);
+  const benchTop = 0.45,
+    benchZ = wallZ + 0.65;
+  // Clay: jars with painted bands, on the bench and on the floor.
+  const clay = standard({ color: "#b5714a", roughness: 0.8 }),
+    paleClay = standard({ color: "#cfa47a", roughness: 0.8 }),
+    paint = standard({ color: "#3a2a20", roughness: 0.8 }),
+    jar = (x: number, y: number, z: number, height: number, body: T.Material) => {
+      const profile = [[0, 0], [0.18, 0], [0.32, 0.12], [0.42, 0.42], [0.38, 0.7], [0.2, 0.86], [0.17, 0.95], [0.22, 1.0]].map(([r, h]) => new T.Vector2(r * height, h * height));
+      add(new T.LatheGeometry(profile, 24), body, x, y, z);
+      for (const h of [0.5, 0.62]) add(new T.TorusGeometry(0.405 * height, 0.012 * height, 4, 32).rotateX(Math.PI / 2), paint, x, y + h * height, z).castShadow = false;
+    };
+  jar(-3.4, benchTop, benchZ, 0.9, clay);
+  jar(-2.6, benchTop, benchZ + 0.1, 0.65, paleClay);
+  jar(3.8, benchTop, benchZ, 0.8, paleClay);
+  jar(half + 0.7, 0, -depth + 0.15, 1.1, clay);
+  jar(half + 0.85, 0, -depth + 1.25, 0.72, paleClay);
+  jar(-half + 0.35, 0, depth - 1.5, 0.7, paleClay);
+  // A bowl of dates on the bench.
+  add(new T.LatheGeometry([[0.05, 0], [0.32, 0.03], [0.48, 0.2], [0.5, 0.24]].map(([r, h]) => new T.Vector2(r, h)), 24), own(new T.MeshStandardMaterial({ color: "#c08a5e", roughness: 0.8, side: T.DoubleSide })), 0.4, benchTop, benchZ);
+  const date = own(new T.SphereGeometry(0.07, 8, 6)),
+    dateBrown = standard({ color: "#6a2e14", roughness: 0.35 });
+  const rand = noise(83);
+  for (let i = 0; i < 14; i++) {
+    const a = rand() * Math.PI * 2,
+      r = rand() * 0.3;
+    const d = new T.Mesh(date, dateBrown);
+    d.scale.set(1, 1, 1.7);
+    d.rotation.y = rand() * 3;
+    d.position.set(0.4 + Math.cos(a) * r, benchTop + 0.14 + (0.3 - r) * 0.25 + (i > 9 ? 0.08 : 0), benchZ + Math.sin(a) * r);
+    d.castShadow = true;
+    scene.add(d);
+  }
+  // Clay tablets lying by the mat.
+  const face = standard({ map: own(tablet()), roughness: 0.9 }),
+    side = standard({ color: "#a98a63", roughness: 0.9 });
+  for (const [x, z, turn] of [[half - 0.6, depth - 0.65, 0.3], [half - 1.35, depth - 0.4, -0.25]]) {
+    const t = add(new T.BoxGeometry(0.7, 0.14, 0.52), [side, side, face, side, side, side], x, 0.07, z);
+    t.rotation.y = turn;
+  }
+  // An oil lamp of clay with a small flame at its spout.
+  const lamp = new T.Group();
+  add(new T.SphereGeometry(0.28, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), paleClay, 0, 0.2, 0, lamp).scale.set(1, 0.7, 1);
+  add(new T.CylinderGeometry(0.06, 0.09, 0.32, 10).rotateZ(Math.PI / 2), paleClay, 0.34, 0.16, 0, lamp);
+  add(new T.SphereGeometry(0.06, 8, 6), own(new T.MeshBasicMaterial({ color: "#ffd27a" })), 0.52, 0.22, 0, lamp).scale.set(0.8, 1.6, 0.8);
+  lamp.scale.setScalar(1.7);
+  lamp.position.set(-half + 0.95, 0, depth - 0.6);
+  scene.add(lamp);
+  // The lyre: a wooden sound box with two uprights and a yoke, strings, and on its front a bull's head of gold with a
+  // beard of lapis lazuli.
+  const lyre = new T.Group(),
+    timber = standard({ map: own(wood(true)), roughness: 0.6 }),
+    gold = standard({ color: "#d4a640", roughness: 0.3, metalness: 0.9 }),
+    lapis = standard({ color: "#22408a", roughness: 0.35 }),
+    shell = standard({ color: "#efe6d2", roughness: 0.5 });
+  add(new T.BoxGeometry(1.7, 0.75, 0.32), timber, 0, 0.38, 0, lyre);
+  add(new T.BoxGeometry(1.72, 0.08, 0.34), shell, 0, 0.12, 0, lyre);
+  for (const [x, lean] of [[-0.62, 0.12], [0.55, -0.1]]) add(new T.CylinderGeometry(0.05, 0.06, 1.8, 8), timber, x, 1.6, 0, lyre).rotation.z = lean;
+  add(new T.CylinderGeometry(0.05, 0.05, 1.6, 8).rotateZ(Math.PI / 2), timber, -0.03, 2.45, 0, lyre);
+  for (let i = 0; i < 8; i++) {
+    const s = add(new T.CylinderGeometry(0.008, 0.008, 1.7, 3), shell, -0.36 + i * 0.1, 1.6, 0.02, lyre);
+    s.castShadow = false;
+  }
+  const head = new T.Group();
+  add(new T.SphereGeometry(0.26, 16, 12), gold, 0, 0, 0, head).scale.set(0.8, 1, 0.9);
+  add(new T.CylinderGeometry(0.15, 0.2, 0.3, 12), gold, 0, -0.2, 0.08, head);
+  for (const side of [-1, 1]) {
+    add(new T.ConeGeometry(0.05, 0.42, 8), gold, side * 0.22, 0.24, 0, head).rotation.z = -side * 0.9;
+    add(new T.SphereGeometry(0.04, 8, 6), lapis, side * 0.12, 0.05, 0.2, head);
+  }
+  add(new T.BoxGeometry(0.24, 0.42, 0.1), lapis, 0, -0.5, 0.12, head);
+  head.position.set(0.98, 0.85, 0.05);
+  head.rotation.y = 1.1;
+  lyre.add(head);
+  lyre.position.set(-half - 0.2, 0, -depth + 0.4);
+  lyre.rotation.y = 0.45;
+  scene.add(lyre);
+}
