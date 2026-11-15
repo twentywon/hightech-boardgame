@@ -18,6 +18,7 @@ function towerArt(discs: number) {
 }
 export const hanoiConfig: PointConfig<State> = {
   game: hanoi,
+  contact: (sound) => sound.knock(),
   solo: true,
   showMovable: false,
   view: (host, quality) => new HanoiView(host, quality),

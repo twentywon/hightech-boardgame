@@ -19,7 +19,7 @@ export const lightsConfig: PointConfig<State> = {
   view: (host, quality) => new LightsView(host, quality),
   colors: LIGHT_COLORS,
   keyPoints: (state) => state.on.map((_, i) => ({ x: i % state.size, z: Math.floor(i / state.size) })),
-  contact: (sound) => sound.plastic(),
+  contact: (sound) => sound.tile(),
   puzzle: { hint, hintText: "힌트 — 빨간 고리가 쳐진 불을 누르세요." },
   stagesFirst: true,
   stages: SIZES.map((size, i) => ({ value: String(i + 1), name: `${size}×${size}`, note: `불 ${size * size}개`, art: boardArt(size) })),

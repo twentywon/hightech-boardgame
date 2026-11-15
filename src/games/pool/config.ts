@@ -10,7 +10,7 @@ export const poolConfig: PointConfig<State> = {
   colors: POOL_COLORS,
   noUndo: true,
   // Balls click against each other.
-  contact: (sound) => sound.plastic(),
+  contact: (sound) => sound.tile(),
   name: "포켓볼",
   english: "Pocket Ball",
   number: "NO. 32 — EIGHT BALL",

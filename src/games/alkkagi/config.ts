@@ -25,7 +25,7 @@ export const alkkagiConfig: PointConfig<State> = {
   // A flick cannot be taken back.
   noUndo: true,
   // A flicked stone clacks against the others.
-  contact: (sound) => sound.tap(),
+  contact: (sound) => sound.stone(),
   firstNote: "내가 먼저 튕깁니다. 바둑알은 그 전에 각자 자기 알을 놓습니다.",
   name: "알까기",
   english: "Alkkagi",

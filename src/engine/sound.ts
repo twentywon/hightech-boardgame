@@ -1,5 +1,7 @@
 // Recorded effects, inlined so nothing is fetched at run time. They are
-// Kenney's "Casino Audio" (CC0); see public/sound-license.txt.
+// Kenney's "Casino Audio", "RPG Audio" and "UI Audio" (all CC0); see
+// public/sound-license.txt. Each kind of sound has several recordings
+// ("wood-1" … "wood-4"), and one is drawn each time.
 const recordings = import.meta.glob<string>("./sounds/*.wav", {
   query: "?inline",
   import: "default",
@@ -21,8 +23,12 @@ function decode(context: AudioContext) {
       .catch(() => {});
   }
 }
+/** A little more or less each time, so that nothing sounds twice the same. */
+const vary = (spread: number) => 1 + (Math.random() * 2 - 1) * spread;
 export class Sound {
   private context: AudioContext | null = null;
+  /** The recording each kind played last, which is not played twice running. */
+  private last = new Map<string, string>();
   enabled = true;
   unlock() {
     if (!this.enabled) return;
@@ -59,26 +65,64 @@ export class Sound {
     o.start(t);
     o.stop(t + length + 0.01);
   }
-  /** Stone touching the board. */
+  /** A light touch on a board that is of no particular stuff (the flat games): never quite the same note twice. */
   tap() {
-    this.tone("triangle", 780, 160, 0, 0.1, 0.08);
+    const pitch = vary(0.1);
+    this.tone("triangle", 780 * pitch, 160 * pitch, 0, 0.1, 0.07 * vary(0.2));
   }
-  /** Plays one of the recordings whose name starts with `kind`; false when none is ready. */
-  private sample(kind: string, volume: number) {
+  /**
+   * Plays one of the recordings whose name starts with `kind`, not the one it played last, a little higher or
+   * lower and louder or softer each time; false when none is ready.
+   */
+  private sample(kind: string, volume: number, spread = 0.06) {
     const c = this.context;
     if (!this.enabled || !c) return true;
     const ready = [...samples.keys()].filter((name) => name.startsWith(`${kind}-`));
     if (!ready.length) return false;
-    const source = c.createBufferSource(),
+    const fresh = ready.length > 1 ? ready.filter((name) => name !== this.last.get(kind)) : ready,
+      name = fresh[Math.floor(Math.random() * fresh.length)],
+      source = c.createBufferSource(),
       gain = c.createGain();
-    source.buffer = samples.get(ready[Math.floor(Math.random() * ready.length)])!;
-    // A little pitch variation keeps repeated sounds from feeling mechanical.
-    source.playbackRate.value = 0.94 + Math.random() * 0.12;
-    gain.gain.value = volume;
+    this.last.set(kind, name);
+    source.buffer = samples.get(name)!;
+    source.playbackRate.value = vary(spread);
+    gain.gain.value = volume * vary(0.15);
     source.connect(gain);
     gain.connect(c.destination);
     source.start();
     return true;
+  }
+  /** A wooden piece set down on a wooden board: chess, janggi, a pawn, a checker. */
+  wood() {
+    if (!this.sample("wood", 0.5, 0.1)) this.tap();
+  }
+  /** Something heavier of wood: a disc on its peg, a wall pushed into its groove. */
+  knock() {
+    if (!this.sample("knock", 0.45, 0.1)) this.tap();
+  }
+  /** A stone on a board: the click of the stone, and the board under it. */
+  stone() {
+    if (!this.sample("stone", 0.6, 0.1)) return this.tap();
+    const pitch = vary(0.12);
+    this.tone("sine", 210 * pitch, 120 * pitch, 0, 0.07, 0.07);
+  }
+  /** A tile, a domino, a ball: something hard clacking on something hard. */
+  tile() {
+    if (!this.sample("tile", 0.55, 0.1)) this.plastic();
+  }
+  /** Glass or porcelain: a marble into its hollow, with a short ring. */
+  glass() {
+    if (!this.sample("glass", 0.4, 0.12)) return this.plastic();
+    const pitch = vary(0.15);
+    this.tone("sine", 2900 * pitch, 2700 * pitch, 0, 0.16, 0.018);
+  }
+  /** Something set down on cloth, earth or a mat. */
+  soft() {
+    if (!this.sample("soft", 0.5, 0.1)) this.tap();
+  }
+  /** Paper: a pencil's stroke, a page, chalk. */
+  paper() {
+    if (!this.sample("paper", 0.4, 0.12)) this.tap();
   }
   /** A card or a hwatu landing on the felt. */
   card() {
@@ -116,8 +160,9 @@ export class Sound {
     gain.connect(c.destination);
     source.start(t);
   }
-  /** A cash machine: the drawer's rattle, then two bright bells. */
+  /** A cash machine: coins, the drawer's rattle, then two bright bells. */
   cash() {
+    this.sample("coin", 0.35, 0.08);
     this.noise(0, 0.12, 0.12, 3200, "highpass");
     this.noise(0.1, 0.1, 0.1, 2600, "highpass");
     [1568, 2093].forEach((f, i) => this.tone("triangle", f, f, 0.2 + i * 0.09, 0.5, 0.09));
@@ -138,10 +183,12 @@ export class Sound {
   }
   /** A plastic disc dropping into a plastic rack: a hard click and a lighter rattle. */
   plastic() {
-    this.noise(0, 0.035, 0.3, 4200, "bandpass", 3200);
-    this.tone("square", 1900, 1300, 0, 0.04, 0.05);
-    this.noise(0.07, 0.03, 0.14, 5200, "bandpass", 4200);
-    this.tone("square", 2300, 1700, 0.07, 0.03, 0.025);
+    const pitch = vary(0.1),
+      gap = 0.07 * vary(0.25);
+    this.noise(0, 0.035, 0.3 * vary(0.15), 4200 * pitch, "bandpass", 3200 * pitch);
+    this.tone("square", 1900 * pitch, 1300 * pitch, 0, 0.04, 0.05);
+    this.noise(gap, 0.03, 0.14, 5200 * pitch, "bandpass", 4200 * pitch);
+    this.tone("square", 2300 * pitch, 1700 * pitch, gap, 0.03, 0.025);
   }
   /** Two barks. */
   bark() {
@@ -182,16 +229,23 @@ export class Sound {
     this.tone("triangle", 880, 1760, 0.5, 1.3, 0.02);
     this.noise(0.2, 1.4, 0.03, 4000, "bandpass", 900);
   }
-  /** Rising chime for a win or a draw. */
-  win() {
-    [523, 659, 784, 1047].forEach((f, i) =>
-      this.tone("sine", f, f, i * 0.11, 0.32, 0.06),
-    );
+  /** A soft bell: a note with two partials over it, struck and left to ring. */
+  private bell(frequency: number, at: number, length: number, volume: number) {
+    this.tone("sine", frequency, frequency, at, length, volume);
+    this.tone("sine", frequency * 2, frequency * 2, at, length * 0.6, volume * 0.3);
+    this.tone("triangle", frequency * 3.01, frequency * 3.01, at, length * 0.3, volume * 0.12);
   }
-  /** Falling phrase for a loss against the computer. */
+  /** A win or a draw: a rising broken chord on bells and the chord held under its last note; one of three keys. */
+  win() {
+    const key = [1, 1.122, 0.891][Math.floor(Math.random() * 3)],
+      notes = [523.25, 659.25, 783.99, 1046.5].map((f) => f * key);
+    notes.forEach((f, i) => this.bell(f, i * 0.12, i === 3 ? 1.1 : 0.5, 0.055));
+    notes.slice(0, 3).forEach((f) => this.tone("sine", f / 2, f / 2, 0.36, 1.2, 0.022));
+  }
+  /** A loss against the computer: three falling notes, soft, the last one held. */
   lose() {
-    [392, 330, 262].forEach((f, i) =>
-      this.tone("sine", f, f * 0.97, i * 0.16, 0.36, 0.06),
-    );
+    const key = [1, 0.944, 1.059][Math.floor(Math.random() * 3)];
+    [392, 349.23, 293.66].forEach((f, i) => this.bell(f * key, i * 0.2, i === 2 ? 1.0 : 0.45, 0.05));
+    this.tone("sine", 146.83 * key, 146.83 * key, 0.4, 1.0, 0.03);
   }
 }

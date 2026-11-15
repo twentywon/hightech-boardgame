@@ -82,6 +82,7 @@ import {
 } from "../games/gomoku/ai/difficulty";
 import { BoardView } from "../engine/board-view";
 import { Sound } from "../engine/sound";
+import { music } from "../engine/music";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 let state = createGame(),
   mode: Mode = "local",
@@ -200,6 +201,8 @@ function aiForm() {
 }
 const sound = new Sound();
 sound.enabled = settings.sound;
+music.enabled = settings.music;
+music.attach();
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
 function header() {
@@ -501,7 +504,7 @@ function game() {
   $("undo").onclick = takeBack;
   try {
     view = new BoardView($("board"), settings.quality);
-    view.onContact = () => sound.tap();
+    view.onContact = () => sound.stone();
     view.onSelect = (p, confirm) => {
       refusal = "";
       if (!p || !canPlay() || state.board[p.row][p.col] || barred(p)) {
@@ -750,12 +753,14 @@ function showRules() {
 function showSettings() {
   modal(
     "나만의 테이블",
-    `<label class="setting">착수 효과음<input id="sound-setting" type="checkbox" ${settings.sound ? "checked" : ""}></label><label class="setting">렌더링 품질<select id="quality-setting"><option value="high" ${settings.quality === "high" ? "selected" : ""}>높음 (최대 2×)</option><option value="low" ${settings.quality === "low" ? "selected" : ""}>절전 (1×)</option></select></label><label class="setting">오목판 좌표 표시<input id="labels-setting" type="checkbox" ${settings.labels ? "checked" : ""}></label>`,
+    `<label class="setting">착수 효과음<input id="sound-setting" type="checkbox" ${settings.sound ? "checked" : ""}></label><label class="setting">배경음악<input id="music-setting" type="checkbox" ${settings.music ? "checked" : ""}></label><label class="setting">렌더링 품질<select id="quality-setting"><option value="high" ${settings.quality === "high" ? "selected" : ""}>높음 (최대 2×)</option><option value="low" ${settings.quality === "low" ? "selected" : ""}>절전 (1×)</option></select></label><label class="setting">오목판 좌표 표시<input id="labels-setting" type="checkbox" ${settings.labels ? "checked" : ""}></label>`,
     [{ text: "설정 저장", action: () => {} }],
   );
   const d = document.querySelector("dialog")!;
   d.querySelector("button")!.onclick = () => {
     settings.sound = $<HTMLInputElement>("sound-setting").checked;
+    settings.music = $<HTMLInputElement>("music-setting").checked;
+    music.enabled = settings.music;
     settings.quality = $<HTMLSelectElement>("quality-setting").value as
       "high" | "low";
     settings.labels = $<HTMLInputElement>("labels-setting").checked;

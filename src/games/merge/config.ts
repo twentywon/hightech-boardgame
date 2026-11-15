@@ -15,7 +15,7 @@ export const mergeConfig: PointConfig<State> = {
   keyMove: (key) => (key in KEYS ? { from: -1, to: KEYS[key], extra: -1 } : null),
   tallyHtml: (state) => [`<span class="solo-stat"><small>점수</small><b>${state.score}</b></span><span class="solo-stat"><small>가장 큰 수</small><b>${best(state)}</b></span>`, ""],
   // Tiles click together.
-  contact: (sound) => sound.plastic(),
+  contact: (sound) => sound.tile(),
   name: "2048",
   english: "2048",
   number: "NO. 36 — TWICE AND TWICE AGAIN",

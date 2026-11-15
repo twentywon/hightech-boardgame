@@ -202,7 +202,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     try {
       view = new JanggiView($("board"), settings.quality, facing);
       view.onSelect = select;
-      view.onContact = () => sound.tap();
+      view.onContact = () => sound.wood();
       view.onSettled = update;
       view.render(state.board, null, false);
       view.renderer.domElement.addEventListener("keydown", (e) => {

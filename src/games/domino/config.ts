@@ -5,6 +5,7 @@ import { DOMINO_COLORS, DominoView } from "./view";
 
 export const dominoConfig: PointConfig<State> = {
   game: domino,
+  contact: (sound) => sound.tile(),
   noPanel: true,
   view: (host, quality) => new DominoView(host, quality),
   colors: DOMINO_COLORS,

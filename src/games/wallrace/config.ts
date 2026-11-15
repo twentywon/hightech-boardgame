@@ -5,6 +5,7 @@ import { PAWN_COLORS, WallRaceView, racePoints } from "./view";
 
 export const wallRaceConfig: PointConfig<State> = {
   game: wallRace,
+  contact: (sound) => sound.knock(),
   noPanel: true,
   view: (host, quality) => new WallRaceView(host, quality),
   colors: PAWN_COLORS,

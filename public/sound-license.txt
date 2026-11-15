@@ -7,3 +7,21 @@ https://creativecommons.org/publicdomain/zero/1.0/
 Source: https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips
 Changes: twelve of the files were converted from Ogg Vorbis to 22.05 kHz mono
 WAV, trimmed and levelled (src/engine/sounds/).
+
+The sounds of wood, stone, tiles, glass, cloth, paper and coins are taken
+from two more packs by Kenney Vleugels (www.kenney.nl), both released under
+Creative Commons Zero (CC0):
+
+- "RPG Audio" (50 RPG sound effects),
+  https://opengameart.org/content/50-rpg-sound-effects
+  (wood-*, knock-*, soft-*, paper-*, coin-*, glass-4)
+- "UI Audio" (51 UI sound effects: buttons, switches and clicks),
+  https://opengameart.org/content/51-ui-sound-effects-buttons-switches-and-clicks
+  (stone-*, tile-*, glass-1 to glass-3)
+
+Changes: thirty-three of the files were converted to 22.05 kHz mono WAV,
+trimmed, levelled and renamed after what they stand for in the games
+(src/engine/sounds/).
+
+The background music is not a recording: it is made by the page as it plays
+(src/engine/music.ts).

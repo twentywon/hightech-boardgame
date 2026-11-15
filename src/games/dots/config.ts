@@ -68,6 +68,7 @@ const paper: PaperGame<State> = {
 };
 export const dotsConfig: PointConfig<State> = {
   game: dots,
+  contact: (sound) => sound.paper(),
   panel: "big",
   view: (host, quality) => new PaperView(host, quality, paper),
   colors: PENCILS as [string, string],

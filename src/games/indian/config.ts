@@ -5,6 +5,7 @@ import { CHIP_COLORS, IndianView } from "./view";
 
 export const indianConfig: PointConfig<State> = {
   game: indian,
+  contact: (sound) => sound.chips(),
   panel: "big",
   // Only the chips each has left.
   tallyHtml: (state) => [0, 1].map((p) => `<span class="sr-text">칩 </span>${state.chips[p]}`) as [string, string],

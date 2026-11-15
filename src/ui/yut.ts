@@ -177,7 +177,7 @@ export function mountYut(
     try {
       view = new YutView($("board"), settings.quality);
       view.onContact = (stick) => {
-        if (!stick) sound.tap();
+        if (!stick) sound.soft();
       };
       view.onSettled = present;
       view.onPick = pick;

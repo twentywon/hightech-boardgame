@@ -9,7 +9,7 @@ export const carromConfig: PointConfig<State> = {
   view: (host, quality) => new CarromView(host, quality),
   colors: MEN_COLORS,
   noUndo: true,
-  contact: (sound) => sound.plastic(),
+  contact: (sound) => sound.tile(),
   name: "카롬",
   english: "Carrom",
   number: "NO. 26 — STRIKE AND POCKET",

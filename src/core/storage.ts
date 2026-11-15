@@ -7,6 +7,8 @@ import {
 export type Mode = "local" | "ai";
 export interface Settings {
   sound: boolean;
+  /** The quiet music under every table. */
+  music: boolean;
   quality: "high" | "low";
   top: boolean;
   /** Coordinate letters and numbers on the Gomoku board. */
@@ -14,6 +16,7 @@ export interface Settings {
 }
 export const defaults: Settings = {
   sound: true,
+  music: true,
   quality: "high",
   top: false,
   labels: true,
@@ -23,6 +26,7 @@ export function getSettings(): Settings {
     const s = JSON.parse(localStorage.getItem("wtg.settings.v1") || "{}");
     return {
       sound: typeof s.sound === "boolean" ? s.sound : true,
+      music: typeof s.music === "boolean" ? s.music : true,
       quality: s.quality === "low" ? "low" : "high",
       top: s.top === true,
       labels: s.labels !== false,
