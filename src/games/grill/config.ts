@@ -1,6 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { BEST, BURN, DRESS, EAT, EXTRA, SECONDS, WRAP, clock, grill, type State } from "./rules";
+import { BEST, BURN, DRESS, EAT, EXTRA, FLIP, LAY, SECONDS, WRAP, clock, grill, type State } from "./rules";
 import { CUTS, FILLING, PORTION, RELISHES } from "./sim";
 import { GRILL_COLORS, GrillView } from "./view";
 
@@ -26,8 +26,16 @@ export const grillConfig: PointConfig<State> = {
     { value: "2", name: "무제한 모드", note: "시간 제한 없이", art: modeArt(true) },
   ],
   tallyHtml: (state) => [stat("점수", state.score) + stat(state.endless ? "지난 시간" : "남은 시간", state.endless ? clock(state.gone) : `${state.left}초`) + stat("먹은 고기", state.eaten) + stat("쌈", state.wraps) + stat("탄 고기", state.burnt), ""],
-  contact: (sound, state) =>
-    state.last === BURN ? sound.lose() : state.last === EAT + BEST || (state.last !== null && state.last >= WRAP + 8) ? sound.sparkle() : state.last !== null && state.last >= EAT ? sound.hop() : state.last === DRESS ? sound.plastic() : sound.tap(),
+  // Meat hisses as it is laid on the grill and each time it is turned; anything eaten is chewed.
+  contact: (sound, state) => {
+    const last = state.last;
+    if (last === LAY || last === FLIP) return sound.sizzle();
+    if (last === BURN) return sound.lose();
+    if (last === DRESS) return sound.plastic();
+    if (last === null || last < EAT) return sound.tap();
+    sound.chew();
+    if (last === EAT + BEST || last >= WRAP + 8) sound.sparkle();
+  },
   name: "고기 굽기",
   english: "Meat Grill",
   number: "NO. 47 — LAY, TURN, WRAP",

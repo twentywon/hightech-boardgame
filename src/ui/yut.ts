@@ -176,9 +176,8 @@ export function mountYut(
     };
     try {
       view = new YutView($("board"), settings.quality);
-      view.onContact = (stick) => {
-        if (!stick) sound.soft();
-      };
+      // A stick knocks on the mat each time it lands or bounces; a piece set down is soft.
+      view.onContact = (stick) => (stick ? sound.stick() : sound.soft());
       view.onSettled = present;
       view.onPick = pick;
       view.onThrow = () => act((s) => throwSticks(s, random));
@@ -197,7 +196,7 @@ export function mountYut(
     performance.now() < lockedUntil ||
     !!document.querySelector("dialog[open]");
   function apply(next: State) {
-    if (next.throwId !== state.throwId) sound.dice(4);
+    if (next.throwId !== state.throwId) sound.sticks();
     // A piece sent home is worth a cheer.
     if (next.last && next.last !== state.last && next.last.captured)
       cheer(mode === "ai" && next.last.player === 1 ? "잡혔다!" : "잡았다!");

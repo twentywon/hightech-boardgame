@@ -22,7 +22,7 @@ export const pourConfig: PointConfig<State> = {
   colors: POUR_COLORS,
   keyPoints: () => [-3.4, 0, 3.4].map((x) => ({ x, z: 0 })),
   // Liquid into glass.
-  contact: (sound) => sound.splash(),
+  contact: (sound) => sound.pour(),
   puzzle: { hint: (state) => solve(state)?.[0] ?? null, hintText: "힌트 — 금색 고리의 비커를 들어, 화살표가 가리키는 비커에 부으세요." },
   stagesFirst: true,
   stages: BANDS.map(([low, high], i) => ({ value: String(i + 1), name: NAMES[i], note: `최소 ${low}–${high}번`, art: levelArt(i + 1) })),

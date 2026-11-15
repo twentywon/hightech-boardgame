@@ -14,7 +14,7 @@ Creative Commons Zero (CC0):
 
 - "RPG Audio" (50 RPG sound effects),
   https://opengameart.org/content/50-rpg-sound-effects
-  (wood-*, knock-*, soft-*, paper-*, coin-*, glass-4)
+  (knock-*, soft-*, paper-*, coin-*, glass-4)
 - "UI Audio" (51 UI sound effects: buttons, switches and clicks),
   https://opengameart.org/content/51-ui-sound-effects-buttons-switches-and-clicks
   (stone-*, tile-*, glass-1 to glass-3)
@@ -22,6 +22,26 @@ Creative Commons Zero (CC0):
 Changes: thirty-three of the files were converted to 22.05 kHz mono WAV,
 trimmed, levelled and renamed after what they stand for in the games
 (src/engine/sounds/).
+
+The sounds below were recorded by Joseph Sardin for BigSoundBank
+(https://bigsoundbank.com), released under Creative Commons Zero (CC0 1.0):
+
+- wood-1 to wood-4: "Two dice on a wooden table" (s0581), single knocks
+- stick-1 to stick-4: "Drumsticks 1" (s1488) and "Drumsticks 3" (s1969)
+- marble-1: "Glass ball bounce 1" (s2240)
+- sizzle-1 to sizzle-3: "Frying pan 2" (s0144) and "Frying pan 3" (s0145)
+- chew-1 to chew-3: "Mouth noises 1" to "3" (s0352, s0353, s0354)
+- bark-2: "Barking dog" (s0916)
+- hop-1: "Steps in the grass, quick" (s1254)
+- pour-1: "Cold water in mug" (s1156)
+- gurgle-1: "Gurgling sink 1" (s1026)
+
+The billiard sounds (ball-*, cushion-*, pocket-1) are taken from "Pool And
+Billiards SFX" by Suraj Kispotta (papapleygames), released under Creative
+Commons Zero (CC0 1.0): https://papapleygames.itch.io/pool-and-billiards
+
+Changes to all of these: cut to single strokes or short passages, faded,
+levelled and converted to 22.05 kHz mono WAV or MP3 (src/engine/sounds/).
 
 The background music is not a recording: it is made by the page as it plays
 (src/engine/music.ts).

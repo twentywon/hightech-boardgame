@@ -10,7 +10,9 @@ export const poolConfig: PointConfig<State> = {
   colors: POOL_COLORS,
   noUndo: true,
   // Balls click against each other.
-  contact: (sound) => sound.tile(5),
+  contact: (sound) => sound.ball(),
+  // Balls click as billiard balls do, thud on the cushions and drop rattling into the pockets.
+  knock: (sound, kind, strength) => (kind === "disc" ? sound.ball(strength) : kind === "cushion" ? sound.cushion(strength) : sound.pocket()),
   name: "포켓볼",
   english: "Pocket Ball",
   number: "NO. 32 — EIGHT BALL",

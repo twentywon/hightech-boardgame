@@ -41,8 +41,9 @@ function chord(name: string): Chord {
   const [, root, kind] = /^([A-G]b?)(.*)$/.exec(name)!;
   return { root: ROOTS[root], ...KINDS[kind] };
 }
-/** One of the two pieces of music. */
-interface Piece {
+/** The jazz of the collection and of most tables. */
+interface Jazz {
+  style: "jazz";
   /** Beats a minute. */
   tempo: number;
   /** Where in a beat its off-beat falls: a half is straight, two thirds a full swing. */
@@ -67,7 +68,8 @@ interface Piece {
   tune: number;
 }
 /** The collection: a medium swing in C, the bass walking, the ride and a vibraphone. */
-const LOBBY: Piece = {
+const LOBBY: Jazz = {
+  style: "jazz",
   tempo: 112,
   swing: 0.64,
   key: 0,
@@ -96,7 +98,8 @@ const LOBBY: Piece = {
   tune: 0.04,
 };
 /** A table: a ballad a tone down, slower, the bass in two, brushes only, few notes. */
-const TABLE: Piece = {
+const TABLE: Jazz = {
+  style: "jazz",
   tempo: 66,
   swing: 0.6,
   key: -2,
@@ -124,7 +127,83 @@ const TABLE: Piece = {
   low: 0.07,
   tune: 0.034,
 };
+/**
+ * Korean court and folk music for the Korean tables (gonu, yut): a gayageum plucking the five notes of gyemyeonjo
+ * on A, its long notes shaken (nonghyeon) and now and then bent down a step, a daegeum holding a note over it,
+ * and a janggu keeping the gutgeori rhythm (four beats of three).
+ */
+interface Gugak {
+  style: "korea";
+  /** Seconds a beat (a dotted quarter); a bar is four beats of three. */
+  beat: number;
+  /** Pitch classes of the mode, as semitones from C. */
+  mode: number[];
+  /** Where the gayageum plucks in a bar, in eighths (0 to 12), and its range. */
+  figures: number[][];
+  range: [number, number];
+  /** How often a bar holds a daegeum note, and where it goes. */
+  flute: number;
+  high: [number, number];
+  /** Notes a bar's first pluck rests on. */
+  rest: number[];
+  drum: number;
+  pluck: number;
+  breath: number;
+}
+const KOREA: Gugak = {
+  style: "korea",
+  beat: 0.82,
+  mode: [9, 0, 2, 4, 7],
+  figures: [[0, 3, 6, 9], [0, 2, 3, 6, 8, 9], [0, 3, 4, 6, 9, 10], [0, 6], [0, 3, 6, 8, 9, 11], [0, 1.5, 3, 6, 9], [0, 4, 6, 10]],
+  range: [-3, 16],
+  flute: 0.45,
+  high: [9, 21],
+  rest: [9, 4, 9, 2],
+  drum: 0.055,
+  pluck: 0.05,
+  breath: 0.03,
+};
+/**
+ * North Indian music for the Indian tables (mancala, carrom, peg solitaire): a tanpura's drone on Sa and Pa, a
+ * tabla playing teental (sixteen beats, four by four, the third four open) and a sitar wandering through a calm
+ * evening raga (the notes of Yaman on D), gliding into some notes, coming home to Sa or Pa on the first beat.
+ */
+interface Raga {
+  style: "india";
+  /** Seconds a beat (a matra); a bar is one vibhag of four. */
+  beat: number;
+  /** Sa, in semitones from middle C, and the raga's notes from Sa. */
+  sa: number;
+  notes: number[];
+  /** Where the sitar plucks in a bar, in beats, and its range in semitones from middle C. */
+  figures: number[][];
+  range: [number, number];
+  /** How often a bar begins a phrase, and how many bars it runs. */
+  chance: number;
+  bars: [number, number];
+  drone: number;
+  tabla: number;
+  sitar: number;
+}
+const INDIA: Raga = {
+  style: "india",
+  beat: 0.62,
+  sa: 2,
+  notes: [0, 2, 4, 6, 7, 9, 11],
+  figures: [[0, 1, 2, 3], [0, 0.5, 1, 2, 3], [0, 1.5, 2, 2.5, 3], [0, 2], [0, 1, 1.5, 2, 3, 3.5], [0, 0.75, 1.5, 3], [0, 3]],
+  range: [-1, 21],
+  chance: 0.6,
+  bars: [1, 3],
+  drone: 0.014,
+  tabla: 0.05,
+  sitar: 0.05,
+};
+type Piece = Jazz | Gugak | Raga;
 const PIECES = { lobby: LOBBY, table: TABLE };
+/** Tables that have music of their own country instead of the jazz. */
+const OWN: Record<string, Piece> = { gonu: KOREA, "yut-nori": KOREA, mancala: INDIA, carrom: INDIA, "peg-solitaire": INDIA };
+/** How long a bar of a piece lasts, in seconds. */
+const barLength = (piece: Piece) => (piece.style === "jazz" ? (60 / piece.tempo) * 4 : piece.beat * 4);
 const pick = <X>(list: X[]) => list[Math.floor(Math.random() * list.length)];
 const jitter = (seconds: number) => (Math.random() * 2 - 1) * seconds;
 const pitchClass = (n: number) => ((n % 12) + 12) % 12;
@@ -151,6 +230,8 @@ class Music {
   private bassNote = -24;
   private lineNote = 19;
   private line = 0;
+  /** The game chosen last in the collection: a table plays its music. */
+  game: string | null = null;
   private wanted = true;
   private begun = false;
 
@@ -165,13 +246,15 @@ class Music {
   }
   /** Which piece plays: the collection's or a table's. The one playing fades out and the other comes in. */
   scene(name: keyof typeof PIECES) {
-    const piece = PIECES[name];
+    const piece = (name === "table" && this.game && OWN[this.game]) || PIECES[name];
     if (piece === this.piece) return;
     this.piece = piece;
     this.bars = 0;
     this.line = 0;
-    this.coming = pick(piece.rounds);
-    this.lineNote = Math.round((piece.lines.range[0] + piece.lines.range[1]) / 2);
+    if (piece.style === "jazz") {
+      this.coming = pick(piece.rounds);
+      this.lineNote = Math.round((piece.lines.range[0] + piece.lines.range[1]) / 2);
+    } else this.lineNote = piece.style === "korea" ? 9 : piece.sa + 12;
     const c = this.context;
     if (!c) return;
     this.change();
@@ -371,12 +454,280 @@ class Music {
     if (this.next < c.currentTime) this.next = c.currentTime + 0.2;
     while (this.next < c.currentTime + 1.5) {
       this.bar(this.next);
-      this.next += (60 / this.piece.tempo) * 4;
+      this.next += barLength(this.piece);
       this.bars++;
     }
   }
   private bar(at: number) {
-    const piece = this.piece,
+    const piece = this.piece;
+    if (piece.style === "korea") return this.gugak(at, piece);
+    if (piece.style === "india") return this.raga(at, piece);
+    this.jazz(at, piece);
+  }
+  /** A note drawn from `scale` (absolute semitones) by a step or two from the last one. */
+  private wander(scale: number[], steps = [-2, -1, -1, 1, 1, 2, 0]) {
+    let index = scale.reduce((best, n, i) => (Math.abs(n - this.lineNote) < Math.abs(scale[best] - this.lineNote) ? i : best), 0);
+    index = Math.max(0, Math.min(scale.length - 1, index + pick(steps)));
+    return index;
+  }
+  /** A drum's low skin: a thump falling in pitch. */
+  private thump(at: number, from: number, to: number, length: number, volume: number) {
+    const c = this.context!,
+      o = c.createOscillator(),
+      g = c.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(from, at);
+    o.frequency.exponentialRampToValueAtTime(to, at + length * 0.6);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(volume, at + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + length);
+    o.connect(g);
+    g.connect(this.bus!);
+    o.start(at);
+    o.stop(at + length + 0.05);
+  }
+  /** A plucked string with its own shaking and bending: a gayageum or a sitar. */
+  private string(semitones: number, at: number, length: number, volume: number, how: { bright: boolean; shake: number; bend: number; glide: number }) {
+    const c = this.context!,
+      f = hertz(semitones),
+      g = c.createGain(),
+      tone = c.createBiquadFilter(),
+      lfo = c.createOscillator(),
+      depth = c.createGain(),
+      ring = Math.max(0.5, length) + (how.bright ? 0.9 : 0.6),
+      oscillators: [OscillatorType, number, number][] = how.bright
+        ? [
+            ["sawtooth", 1, 0.55],
+            ["triangle", 2, 0.25],
+          ]
+        : [
+            ["triangle", 1, 1],
+            ["sine", 2, 0.3],
+          ];
+    tone.type = "lowpass";
+    tone.frequency.setValueAtTime(how.bright ? 3400 : 2400, at);
+    tone.frequency.setTargetAtTime(how.bright ? 1300 : 900, at, 0.25);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(volume, at + 0.004);
+    g.gain.setTargetAtTime(0.0001, at + 0.004, how.bright ? 0.45 : 0.55);
+    g.gain.setTargetAtTime(0.0001, at + ring - 0.25, 0.08);
+    g.connect(tone);
+    tone.connect(this.bus!);
+    // The shaking of the string (nonghyeon, gamak) comes in after the pluck and grows.
+    lfo.frequency.value = 5 + Math.random();
+    depth.gain.setValueAtTime(0, at);
+    depth.gain.linearRampToValueAtTime(0, at + 0.2);
+    depth.gain.linearRampToValueAtTime(f * how.shake, at + Math.max(0.5, length * 0.8));
+    lfo.connect(depth);
+    lfo.start(at);
+    lfo.stop(at + ring);
+    for (const [type, partial, share] of oscillators) {
+      const o = c.createOscillator(),
+        part = c.createGain();
+      o.type = type;
+      const base = f * partial;
+      // A glide up into the note from the step below (meend), or a fall at its end to the step below.
+      if (how.glide) {
+        o.frequency.setValueAtTime(base * 2 ** (-how.glide / 12), at);
+        o.frequency.exponentialRampToValueAtTime(base, at + 0.14);
+      } else o.frequency.setValueAtTime(base, at);
+      if (how.bend) {
+        o.frequency.setValueAtTime(base, at + length * 0.55);
+        o.frequency.exponentialRampToValueAtTime(base * 2 ** (-how.bend / 12), at + length * 0.9);
+      }
+      depth.connect(o.frequency);
+      part.gain.value = share;
+      o.connect(part);
+      part.connect(g);
+      o.start(at);
+      o.stop(at + ring);
+    }
+  }
+  /** A bar of gutgeori: the janggu, the gayageum, and now and then the daegeum. */
+  private gugak(at: number, p: Gugak) {
+    const eighth = p.beat / 3,
+      when = (position: number) => at + position * eighth + jitter(0.01);
+    // The janggu: 덩 (both heads), 쿵 (the low head), 기덕 (the high head, with a grace stroke), 더러러 (a roll).
+    const low = (t: number, loud: number) => this.thump(t, 120, 72, 0.5, p.drum * loud),
+      high = (t: number, loud: number) => {
+        this.hiss(t, 0.002, 0.07, p.drum * 0.28 * loud, "bandpass", 2300, 1.4);
+        this.thump(t, 520, 380, 0.08, p.drum * 0.25 * loud);
+      };
+    const strokes: [number, string][] = [
+      [0, "dung"],
+      [2, "deok"],
+      [3, "kung"],
+      [4, "roll"],
+      [6, "kung"],
+      [8, "deok"],
+      [9, "kung"],
+      [10, "roll"],
+    ];
+    for (const [position, stroke] of strokes) {
+      const t = when(position);
+      if (stroke === "dung") {
+        low(t, 1);
+        high(t, 1);
+      } else if (stroke === "kung") low(t, 0.75);
+      else if (stroke === "deok") {
+        high(t - eighth * 0.4, 0.45);
+        high(t, 0.9);
+      } else [0, 1, 2].forEach((i) => high(t + (i * eighth) / 3, 0.6 - i * 0.12));
+    }
+    // The gayageum: by steps through the mode, resting on its own notes at the head of the bar.
+    const scale: number[] = [];
+    for (let n = p.range[0]; n <= p.range[1]; n++) if (p.mode.includes(pitchClass(n))) scale.push(n);
+    const figure = pick(p.figures);
+    figure.forEach((position, i) => {
+      let index = this.wander(scale);
+      if (position === 0) {
+        const home = scale.filter((n) => pitchClass(n) === pitchClass(pick(p.rest)));
+        if (home.length) index = scale.indexOf(home.reduce((a, b) => (Math.abs(b - this.lineNote) < Math.abs(a - this.lineNote) ? b : a)));
+      }
+      const note = scale[index],
+        length = ((figure[i + 1] ?? 12) - position) * eighth,
+        below = index > 0 ? note - scale[index - 1] : 0,
+        // A long note is shaken; now and then it is bent down to the note below (꺾는 음).
+        bend = length > eighth * 2.5 && below === 2 && Math.random() < 0.3 ? 2 : 0;
+      this.lineNote = note;
+      this.string(note, when(position), length, p.pluck * (position === 0 ? 1 : 0.8) * (0.85 + Math.random() * 0.3), {
+        bright: false,
+        shake: length > eighth * 2 ? 0.014 : 0.004,
+        bend,
+        glide: 0,
+      });
+    });
+    // The daegeum: one long breath over the bar, high, shaken more as it goes.
+    if (Math.random() < p.flute) {
+      const high: number[] = [];
+      for (let n = p.high[0]; n <= p.high[1]; n++) if (p.mode.includes(pitchClass(n))) high.push(n);
+      const start = pick([0, 3, 6]),
+        note = high[Math.floor(Math.random() * high.length)];
+      this.flute(note, when(start), (12 - start) * eighth * 0.95, p.breath);
+    }
+  }
+  /** A bamboo flute: a pure tone with breath round it, coming in slowly and shaking more as it is held. */
+  private flute(semitones: number, at: number, length: number, volume: number) {
+    const c = this.context!,
+      f = hertz(semitones),
+      o = c.createOscillator(),
+      g = c.createGain(),
+      lfo = c.createOscillator(),
+      depth = c.createGain();
+    o.type = "sine";
+    o.frequency.value = f;
+    lfo.frequency.value = 4.6;
+    depth.gain.setValueAtTime(0, at);
+    depth.gain.linearRampToValueAtTime(f * 0.018, at + length);
+    lfo.connect(depth);
+    depth.connect(o.frequency);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(volume, at + 0.3);
+    g.gain.setValueAtTime(volume, at + length * 0.7);
+    g.gain.linearRampToValueAtTime(0.0001, at + length + 0.4);
+    o.connect(g);
+    g.connect(this.bus!);
+    o.start(at);
+    o.stop(at + length + 0.5);
+    lfo.start(at);
+    lfo.stop(at + length + 0.5);
+    // The breath: noise round the note.
+    this.hiss(at, 0.3, length, volume * 0.25, "bandpass", f * 2, 6);
+  }
+  /** A bar of teental: the tanpura's four strings, the tabla's four strokes, and the sitar's phrase. */
+  private raga(at: number, p: Raga) {
+    const beat = p.beat,
+      part = this.bars % 4,
+      sa = p.sa;
+    // The tanpura: Pa below, Sa, Sa, and Sa an octave down, one string a beat, each left to ring.
+    [sa - 17, sa - 12, sa - 12, sa - 24].forEach((note, i) => this.drone(note, at + i * beat, beat * 4.5, p.drone));
+    // The tabla: Dha Dhin Dhin Dha, Dha Dhin Dhin Dha, Dha Tin Tin Ta (open: no bass), Ta Dhin Dhin Dha.
+    const theka = [
+      ["dha", "dhin", "dhin", "dha"],
+      ["dha", "dhin", "dhin", "dha"],
+      ["dha", "tin", "tin", "ta"],
+      ["ta", "dhin", "dhin", "dha"],
+    ][part];
+    theka.forEach((bol, i) => {
+      const t = at + i * beat + jitter(0.008),
+        accent = part === 0 && i === 0 ? 1.25 : 1;
+      // The dayan rings at Sa; the bayan swells upward under it.
+      if (bol === "dha" || bol === "ta") this.dayan(t, sa + 12, p.tabla * accent, 0.22);
+      else this.dayan(t, sa + 12, p.tabla * 0.7, 0.45);
+      if (bol === "dha" || bol === "dhin") {
+        const c = this.context!,
+          o = c.createOscillator(),
+          g = c.createGain();
+        o.frequency.setValueAtTime(72, t);
+        o.frequency.exponentialRampToValueAtTime(102, t + 0.25);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(p.tabla * 1.3 * accent, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+        o.connect(g);
+        g.connect(this.bus!);
+        o.start(t);
+        o.stop(t + 0.75);
+      }
+    });
+    // A light filler between the beats now and then (tirakita).
+    if (Math.random() < 0.3) [0, 1, 2, 3].forEach((i) => this.dayan(at + (2.5 + i * 0.125) * beat, sa + 12, p.tabla * 0.35, 0.08));
+    // The sitar: a phrase now and then, by steps through the raga, home to Sa or Pa on the cycle's first beat.
+    if (this.line === 0 && Math.random() < p.chance) this.line = p.bars[0] + Math.floor(Math.random() * (p.bars[1] - p.bars[0] + 1));
+    if (this.line === 0) return;
+    this.line--;
+    const scale: number[] = [];
+    for (let n = p.range[0]; n <= p.range[1]; n++) if (p.notes.includes(pitchClass(n - sa))) scale.push(n);
+    const figure = pick(p.figures);
+    figure.forEach((position, i) => {
+      let index = this.wander(scale);
+      if (part === 0 && position === 0) {
+        const home = scale.filter((n) => [0, 7].includes(pitchClass(n - sa)));
+        index = scale.indexOf(home.reduce((a, b) => (Math.abs(b - this.lineNote) < Math.abs(a - this.lineNote) ? b : a)));
+      }
+      const note = scale[index],
+        length = ((figure[i + 1] ?? 4) - position) * beat,
+        glide = index > 0 && Math.random() < 0.3 ? note - scale[index - 1] : 0;
+      this.lineNote = note;
+      this.string(note, at + position * beat + jitter(0.01), length, p.sitar * (0.8 + Math.random() * 0.3), {
+        bright: true,
+        shake: length > beat * 1.5 ? 0.008 : 0,
+        bend: 0,
+        glide,
+      });
+    });
+  }
+  /** One string of the tanpura: a buzzing tone (jawari) left to ring, its colour moving as it dies. */
+  private drone(semitones: number, at: number, length: number, volume: number) {
+    const c = this.context!,
+      o = c.createOscillator(),
+      buzz = c.createBiquadFilter(),
+      g = c.createGain();
+    o.type = "sawtooth";
+    o.frequency.value = hertz(semitones);
+    o.detune.value = jitter(4);
+    buzz.type = "bandpass";
+    buzz.Q.value = 2.5;
+    buzz.frequency.setValueAtTime(1800, at);
+    buzz.frequency.exponentialRampToValueAtTime(500, at + length);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(volume, at + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + length);
+    o.connect(buzz);
+    buzz.connect(g);
+    g.connect(this.bus!);
+    o.start(at);
+    o.stop(at + length + 0.05);
+  }
+  /** The tabla's right drum: a tuned ring with its overtones and a click, `decay` long. */
+  private dayan(at: number, semitones: number, volume: number, decay: number) {
+    const f = hertz(semitones);
+    this.voice(this.bus!, "sine", f, at, 0.002, volume * 0.6, decay * 0.5, at + decay * 2);
+    this.voice(this.bus!, "sine", f * 2.01, at, 0.002, volume * 0.3, decay * 0.3, at + decay * 1.5);
+    this.voice(this.bus!, "sine", f * 3.02, at, 0.001, volume * 0.15, decay * 0.15, at + decay);
+    this.hiss(at, 0.001, 0.03, volume * 0.2, "bandpass", 3500, 1.5);
+  }
+  private jazz(at: number, piece: Jazz) {
+    const
       beat = 60 / piece.tempo,
       place = this.bars % 4,
       // Where a position in the bar falls in time, its off-beats swung.

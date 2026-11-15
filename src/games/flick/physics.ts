@@ -39,7 +39,14 @@ export const DT = 1 / 120,
   REST = 0.04,
   MAX_STEPS = 120 * 14;
 /** Advances every disc by one slice. Returns the ids that left the table in it. */
-export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): number[] {
+/** What a view hears of one slice: every knock (`hits`), of them the knocks of disc on disc (`discs`, the hardest as `force`), and cushions struck. */
+export interface Heard {
+  hits: number;
+  discs?: number;
+  force?: number;
+  walls?: number;
+}
+export function step(discs: Disc[], arena: Arena, heard?: Heard): number[] {
   const gone: number[] = [];
   for (const d of discs) {
     if (!d.on) continue;
@@ -88,7 +95,11 @@ export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): num
       b.z += nz * overlap * (a.m / total);
       const closing = (a.vx - b.vx) * nx + (a.vz - b.vz) * nz;
       if (closing <= 0) continue;
-      if (heard && closing > 0.6) heard.hits++;
+      if (heard && closing > 0.6) {
+        heard.hits++;
+        heard.discs = (heard.discs ?? 0) + 1;
+        heard.force = Math.max(heard.force ?? 0, closing);
+      }
       const impulse = ((1 + arena.bounce) * closing) / (1 / a.m + 1 / b.m);
       a.vx -= (impulse / a.m) * nx;
       a.vz -= (impulse / a.m) * nz;
@@ -122,6 +133,8 @@ export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): num
       continue;
     }
     if (arena.cushions) {
+      // A cushion struck hard enough is heard (it changes nothing in the shot).
+      const was = { vx: d.vx, vz: d.vz };
       if (d.x < -arena.halfX + d.r) {
         d.x = -arena.halfX + d.r;
         d.vx = Math.abs(d.vx) * arena.bounce;
@@ -135,6 +148,10 @@ export function step(discs: Disc[], arena: Arena, heard?: { hits: number }): num
       } else if (d.z > arena.halfZ - d.r) {
         d.z = arena.halfZ - d.r;
         d.vz = -Math.abs(d.vz) * arena.bounce;
+      }
+      if (heard && (Math.sign(was.vx) !== Math.sign(d.vx) || Math.sign(was.vz) !== Math.sign(d.vz)) && Math.hypot(was.vx, was.vz) > 0.6) {
+        heard.walls = (heard.walls ?? 0) + 1;
+        heard.force = Math.max(heard.force ?? 0, Math.hypot(was.vx, was.vz));
       }
     } else if (Math.abs(d.x) > arena.halfX || Math.abs(d.z) > arena.halfZ) {
       d.on = false;

@@ -1,7 +1,7 @@
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView } from "../table/view";
-import { DT, POWERS, lift, moving, step, type Arena, type Disc } from "./physics";
+import { DT, POWERS, lift, moving, step, type Arena, type Disc, type Heard } from "./physics";
 
 /**
  * A table of discs that are flicked: the view lays them out, replays a shot
@@ -11,6 +11,11 @@ import { DT, POWERS, lift, moving, step, type Arena, type Disc } from "./physics
 /** How wide the aiming line is: the size of its dots. */
 const DOT = 0.075;
 export abstract class FlickView<S> extends TableView<S> {
+  /**
+   * What a shot is heard to strike: a disc, a cushion or a pocket, with how hard (0 to 1). Left unset, a knock of
+   * disc on disc or post is the table's one contact sound and cushions and pockets are not heard.
+   */
+  onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
   private arrow: T.Mesh;
   private pull: T.Mesh;
   private aiming: { point: number; x: number; z: number; degrees: number; power: number } | null = null;
@@ -71,23 +76,37 @@ export abstract class FlickView<S> extends TableView<S> {
     const live = this.struck(before, state);
     if (!live) return false;
     const arena = this.arena(before),
-      heard = { hits: 0 },
+      heard: Heard = { hits: 0, discs: 0, walls: 0, force: 0 },
       falling = new Map<number, number>();
     let done = 0,
-      sounded = 0;
+      sounded = 0,
+      discs = 0,
+      walls = 0;
     // Replayed in step with the clock; the rules have already said where it ends.
     this.tween(0, 14000, () => {});
     const started = performance.now(),
       run = () => {
         const due = Math.floor((performance.now() - started) / (DT * 1000));
+        let dropped = false;
         while (done < due && moving(live)) {
-          for (const id of step(live, arena, heard)) falling.set(id, 0);
+          for (const id of step(live, arena, heard)) {
+            falling.set(id, 0);
+            dropped = true;
+          }
           done++;
         }
-        if (heard.hits > sounded) {
-          sounded = heard.hits;
-          this.onContact();
-        }
+        const knock = this.onKnock;
+        if (knock) {
+          const strength = Math.min(1, (heard.force ?? 0) / 10);
+          if (heard.discs! > discs) knock("disc", strength);
+          else if (heard.hits > sounded) knock("disc", 0.3);
+          if (heard.walls! > walls) knock("cushion", strength);
+          if (dropped) knock("pocket", 1);
+          heard.force = 0;
+        } else if (heard.hits > sounded) this.onContact();
+        sounded = heard.hits;
+        discs = heard.discs!;
+        walls = heard.walls!;
         for (const disc of live) {
           const mesh = this.mesh(disc.id),
             fell = falling.get(disc.id);

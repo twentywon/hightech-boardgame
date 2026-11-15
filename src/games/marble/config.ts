@@ -26,7 +26,7 @@ export const marbleConfig: PointConfig<State> = {
   colors: MARBLE_COLORS,
   keyPoints: () => Array.from({ length: W * H }, (_, i) => ({ x: (i % W) - (W - 1) / 2, z: Math.floor(i / W) - (H - 1) / 2 })),
   // Glass against glass.
-  contact: (sound) => sound.glass(3),
+  contact: (sound) => sound.marble(),
   stages: SIZES.map(([size, name]) => ({ value: String(size), name, note: `구슬 ${size}개`, art: sizeArt(size) })),
   name: "구슬치기",
   english: "Marble Shot",

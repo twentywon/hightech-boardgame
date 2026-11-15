@@ -18,6 +18,8 @@ export interface PointView<S> {
   readonly renderer: { domElement: HTMLCanvasElement };
   readonly animating: boolean;
   onContact: () => void;
+  /** A shot striking a disc, a cushion or a pocket, for a table that tells them apart (pocket ball). */
+  onKnock?: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null;
   /** Dice thrown on the table: `land` is how many seconds from now they come down. */
   onRoll?: (count: number, land: number) => void;
   onSettled: () => void;
@@ -95,6 +97,8 @@ export interface PointConfig<S> {
   firstNote?: string;
   /** What a piece coming to rest sounds like, instead of a tap. */
   contact?: (sound: Sound, state: S) => void;
+  /** How the strikes of a shot sound, where a disc, a cushion and a pocket each have their own. */
+  knock?: (sound: Sound, kind: "disc" | "cushion" | "pocket", strength: number) => void;
   /** A piece with a single legal move makes it as soon as it is picked. */
   autoSingle?: boolean;
   /** No taking back: something hidden would be learnt from it. */
@@ -344,6 +348,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       }
       view.onContact = () => (config.contact ? config.contact(sound, state) : sound.tap());
       view.onRoll = (count, land) => sound.dice(count, land);
+      if (config.knock) view.onKnock = (kind, strength) => config.knock!(sound, kind, strength);
       view.onSettled = present;
       view.onPick = pick;
       view.onMove = commit;

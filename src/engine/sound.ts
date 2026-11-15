@@ -3,7 +3,7 @@
 // public/sound-license.txt. Each kind of sound has several recordings
 // ("wood-1" … "wood-4"): a game takes one of them for its pieces and keeps
 // to it, so that a game always sounds the same and no two games quite alike.
-const recordings = import.meta.glob<string>("./sounds/*.wav", {
+const recordings = import.meta.glob<string>("./sounds/*.{wav,mp3}", {
   query: "?inline",
   import: "default",
   eager: true,
@@ -159,6 +159,44 @@ export class Sound {
       gap *= 1.2;
     }
   }
+  /** One yut stick knocking on another or landing on the mat. */
+  stick() {
+    if (!this.sample("stick", 0.32)) this.knock(2);
+  }
+  /** The four sticks shaken together in the hand as they are thrown: a few quick knocks. */
+  sticks() {
+    if (!this.enabled || !this.context) return;
+    [0, 0.05, 0.11, 0.15].forEach((at, i) => this.sample("stick", 0.22 - i * 0.03, at));
+  }
+  /** Glass marbles knocking together: always the same knock, as for any piece. */
+  marble() {
+    if (!this.piece("marble", 1, 0.45)) this.glass(1);
+  }
+  /** Two billiard balls striking each other; `strength` from 0 to 1 sets how loud. */
+  ball(strength = 0.6) {
+    if (!this.sample("ball", 0.15 + 0.45 * strength)) this.tile(5);
+  }
+  /** A billiard ball against a cushion. */
+  cushion(strength = 0.6) {
+    if (!this.sample("cushion", 0.12 + 0.35 * strength)) this.soft();
+  }
+  /** A billiard ball dropping into a pocket and rolling down into it. */
+  pocket() {
+    if (!this.piece("pocket", 1, 0.5)) this.knock();
+  }
+  /** Meat laid on a hot grill, or turned over: a hiss of fat. */
+  sizzle() {
+    if (!this.sample("sizzle", 0.32)) this.noise(0, 1.2, 0.08, 5200, "highpass");
+  }
+  /** Something eaten with relish: chewing and the smack of the lips. */
+  chew() {
+    if (!this.sample("chew", 0.55)) this.tap();
+  }
+  /** Water poured from one beaker into another, glugging as it goes. */
+  pour() {
+    if (!this.piece("pour", 1, 0.5)) return this.splash();
+    this.recording("gurgle-1", 0.22, 1, 0.35);
+  }
   /** Chips sliding across the felt. */
   chips() {
     if (!this.sample("chips", 0.5))
@@ -215,16 +253,26 @@ export class Sound {
     this.noise(0.07, 0.03, 0.14, 5200, "bandpass", 4200);
     this.tone("square", 2300, 1700, 0.07, 0.03, 0.025);
   }
-  /** Two barks. */
+  /** A hound's bark: a recording, the same each time. */
   bark() {
+    if (this.piece("bark", 2, 0.32)) return;
+    this.barked();
+  }
+  /** Two barks, made by the page while the recording is not ready. */
+  private barked() {
     for (const at of [0, 0.2]) {
       this.tone("sawtooth", 520, 210, at, 0.13, 0.16);
       this.tone("square", 260, 120, at, 0.12, 0.06);
       this.noise(at, 0.1, 0.1, 1400, "bandpass", 700);
     }
   }
-  /** Three light, quick hops. */
+  /** The hare's hop: a light footfall in the grass, the same each time. */
   hop() {
+    if (this.recording("hop-1", 0.5, 1.25)) return;
+    this.pop();
+  }
+  /** Three light, quick notes rising (a merge of fruit; the hare's hop while its recording is not ready). */
+  pop() {
     [0, 0.11, 0.22].forEach((at, i) => {
       this.tone("sine", 880 + i * 120, 620 + i * 120, at, 0.07, 0.09);
       this.noise(at, 0.04, 0.05, 2600, "bandpass", 1800);

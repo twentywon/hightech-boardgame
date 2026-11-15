@@ -13,7 +13,7 @@ export const fruitConfig: PointConfig<State> = {
   view: (host, quality) => new FruitView(host, quality),
   colors: FRUIT_COLORS,
   tallyHtml: (state) => [stat("점수", state.score) + stat("가장 큰 과일", state.largest >= 0 ? FRUITS[state.largest] : "–") + stat("떨어뜨린 수", state.drops), ""],
-  contact: (sound, state) => (state.last !== null && state.last >= MERGE ? sound.hop() : sound.tap()),
+  contact: (sound, state) => (state.last !== null && state.last >= MERGE ? sound.pop() : sound.tap()),
   name: "과일 합치기",
   english: "Fruit Merge",
   number: "NO. 46 — TWO OF A KIND MAKE ONE",
