@@ -1,7 +1,8 @@
 // Recorded effects, inlined so nothing is fetched at run time. They are
 // Kenney's "Casino Audio", "RPG Audio" and "UI Audio" (all CC0); see
 // public/sound-license.txt. Each kind of sound has several recordings
-// ("wood-1" … "wood-4"), and one is drawn each time.
+// ("wood-1" … "wood-4"): a game takes one of them for its pieces and keeps
+// to it, so that a game always sounds the same and no two games quite alike.
 const recordings = import.meta.glob<string>("./sounds/*.wav", {
   query: "?inline",
   import: "default",
@@ -23,12 +24,8 @@ function decode(context: AudioContext) {
       .catch(() => {});
   }
 }
-/** A little more or less each time, so that nothing sounds twice the same. */
-const vary = (spread: number) => 1 + (Math.random() * 2 - 1) * spread;
 export class Sound {
   private context: AudioContext | null = null;
-  /** The recording each kind played last, which is not played twice running. */
-  private last = new Map<string, string>();
   enabled = true;
   unlock() {
     if (!this.enabled) return;
@@ -65,64 +62,71 @@ export class Sound {
     o.start(t);
     o.stop(t + length + 0.01);
   }
-  /** A light touch on a board that is of no particular stuff (the flat games): never quite the same note twice. */
+  /** A light touch on a board that is of no particular stuff (the flat games). */
   tap() {
-    const pitch = vary(0.1);
-    this.tone("triangle", 780 * pitch, 160 * pitch, 0, 0.1, 0.07 * vary(0.2));
+    this.tone("triangle", 780, 160, 0, 0.1, 0.07);
   }
-  /**
-   * Plays one of the recordings whose name starts with `kind`, not the one it played last, a little higher or
-   * lower and louder or softer each time; false when none is ready.
-   */
-  private sample(kind: string, volume: number, spread = 0.06) {
-    const c = this.context;
+  /** Plays one recording; false when it is not ready. */
+  private recording(name: string, volume: number, rate = 1) {
+    const c = this.context,
+      buffer = samples.get(name);
     if (!this.enabled || !c) return true;
-    const ready = [...samples.keys()].filter((name) => name.startsWith(`${kind}-`));
-    if (!ready.length) return false;
-    const fresh = ready.length > 1 ? ready.filter((name) => name !== this.last.get(kind)) : ready,
-      name = fresh[Math.floor(Math.random() * fresh.length)],
-      source = c.createBufferSource(),
+    if (!buffer) return false;
+    const source = c.createBufferSource(),
       gain = c.createGain();
-    this.last.set(kind, name);
-    source.buffer = samples.get(name)!;
-    source.playbackRate.value = vary(spread);
-    gain.gain.value = volume * vary(0.15);
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    gain.gain.value = volume;
     source.connect(gain);
     gain.connect(c.destination);
     source.start();
     return true;
   }
+  /**
+   * Cards, dice and chips: one of the recordings whose name starts with `kind`, a little higher or lower each
+   * time, as no two throws or deals are alike; false when none is ready.
+   */
+  private sample(kind: string, volume: number) {
+    if (!this.enabled || !this.context) return true;
+    const ready = [...samples.keys()].filter((name) => name.startsWith(`${kind}-`));
+    return ready.length > 0 && this.recording(ready[Math.floor(Math.random() * ready.length)], volume, 0.94 + Math.random() * 0.12);
+  }
+  /**
+   * A piece set down: the `which`-th recording of its kind, always the same one at the same pitch, so that every
+   * move of a game sounds alike (the user asked); games of one stuff take different recordings.
+   */
+  private piece(kind: string, which: number, volume: number) {
+    return this.recording(`${kind}-${which}`, volume) || this.recording(`${kind}-1`, volume);
+  }
   /** A wooden piece set down on a wooden board: chess, janggi, a pawn, a checker. */
-  wood() {
-    if (!this.sample("wood", 0.5, 0.1)) this.tap();
+  wood(which = 1) {
+    if (!this.piece("wood", which, 0.5)) this.tap();
   }
   /** Something heavier of wood: a disc on its peg, a wall pushed into its groove. */
-  knock() {
-    if (!this.sample("knock", 0.45, 0.1)) this.tap();
+  knock(which = 1) {
+    if (!this.piece("knock", which, 0.45)) this.tap();
   }
   /** A stone on a board: the click of the stone, and the board under it. */
-  stone() {
-    if (!this.sample("stone", 0.6, 0.1)) return this.tap();
-    const pitch = vary(0.12);
-    this.tone("sine", 210 * pitch, 120 * pitch, 0, 0.07, 0.07);
+  stone(which = 1) {
+    if (!this.piece("stone", which, 0.6)) return this.tap();
+    this.tone("sine", 210, 120, 0, 0.07, 0.07);
   }
   /** A tile, a domino, a ball: something hard clacking on something hard. */
-  tile() {
-    if (!this.sample("tile", 0.55, 0.1)) this.plastic();
+  tile(which = 1) {
+    if (!this.piece("tile", which, 0.55)) this.plastic();
   }
   /** Glass or porcelain: a marble into its hollow, with a short ring. */
-  glass() {
-    if (!this.sample("glass", 0.4, 0.12)) return this.plastic();
-    const pitch = vary(0.15);
-    this.tone("sine", 2900 * pitch, 2700 * pitch, 0, 0.16, 0.018);
+  glass(which = 1) {
+    if (!this.piece("glass", which, 0.4)) return this.plastic();
+    this.tone("sine", 2900, 2700, 0, 0.16, 0.018);
   }
   /** Something set down on cloth, earth or a mat. */
-  soft() {
-    if (!this.sample("soft", 0.5, 0.1)) this.tap();
+  soft(which = 1) {
+    if (!this.piece("soft", which, 0.5)) this.tap();
   }
   /** Paper: a pencil's stroke, a page, chalk. */
-  paper() {
-    if (!this.sample("paper", 0.4, 0.12)) this.tap();
+  paper(which = 1) {
+    if (!this.piece("paper", which, 0.4)) this.tap();
   }
   /** A card or a hwatu landing on the felt. */
   card() {
@@ -162,7 +166,7 @@ export class Sound {
   }
   /** A cash machine: coins, the drawer's rattle, then two bright bells. */
   cash() {
-    this.sample("coin", 0.35, 0.08);
+    this.sample("coin", 0.35);
     this.noise(0, 0.12, 0.12, 3200, "highpass");
     this.noise(0.1, 0.1, 0.1, 2600, "highpass");
     [1568, 2093].forEach((f, i) => this.tone("triangle", f, f, 0.2 + i * 0.09, 0.5, 0.09));
@@ -183,12 +187,10 @@ export class Sound {
   }
   /** A plastic disc dropping into a plastic rack: a hard click and a lighter rattle. */
   plastic() {
-    const pitch = vary(0.1),
-      gap = 0.07 * vary(0.25);
-    this.noise(0, 0.035, 0.3 * vary(0.15), 4200 * pitch, "bandpass", 3200 * pitch);
-    this.tone("square", 1900 * pitch, 1300 * pitch, 0, 0.04, 0.05);
-    this.noise(gap, 0.03, 0.14, 5200 * pitch, "bandpass", 4200 * pitch);
-    this.tone("square", 2300 * pitch, 1700 * pitch, gap, 0.03, 0.025);
+    this.noise(0, 0.035, 0.3, 4200, "bandpass", 3200);
+    this.tone("square", 1900, 1300, 0, 0.04, 0.05);
+    this.noise(0.07, 0.03, 0.14, 5200, "bandpass", 4200);
+    this.tone("square", 2300, 1700, 0.07, 0.03, 0.025);
   }
   /** Two barks. */
   bark() {

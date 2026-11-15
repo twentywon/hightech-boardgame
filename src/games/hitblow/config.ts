@@ -5,7 +5,7 @@ import { CHALK_COLORS, HitBlowView, keyAt } from "./view";
 
 export const hitBlowConfig: PointConfig<State> = {
   game: hitBlow,
-  contact: (sound) => sound.paper(),
+  contact: (sound) => sound.paper(3),
   noPanel: true,
   view: (host, quality) => new HitBlowView(host, quality),
   colors: CHALK_COLORS,

@@ -5,7 +5,7 @@ import { STAR_COLORS, StarHopView, holeAt } from "./view";
 
 export const starHopConfig: PointConfig<State> = {
   game: starHop,
-  contact: (sound) => sound.glass(),
+  contact: (sound) => sound.glass(1),
   noPanel: true,
   view: (host, quality) => new StarHopView(host, quality),
   colors: STAR_COLORS,

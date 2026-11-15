@@ -185,7 +185,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $("tour-no").onclick = () => act((s) => decide(s, false));
     try {
       view = new TourView($("board"), settings.quality, state.players.length);
-      view.onContact = () => sound.wood();
+      view.onContact = () => sound.wood(3);
       view.onSettled = present;
       view.onTap = () => {
         if (state.phase === "roll") $("tour-roll").click();

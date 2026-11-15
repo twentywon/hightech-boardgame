@@ -166,7 +166,7 @@ export function mountReversi(
     $("undo").onclick = takeBack;
     try {
       view = new BoardView($("board"), settings.quality, "reversi");
-      view.onContact = () => sound.tile();
+      view.onContact = () => sound.tile(3);
       view.onSettled = update;
       view.renderReversi(state, false);
       if (settings.top) view.setCamera(true);

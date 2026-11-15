@@ -5,7 +5,7 @@ import { RACK_COLORS, TileRummyView } from "./view";
 
 export const tileRummyConfig: PointConfig<State> = {
   game: tileRummy,
-  contact: (sound) => sound.tile(),
+  contact: (sound) => sound.tile(2),
   noPanel: true,
   view: (host, quality) => new TileRummyView(host, quality),
   colors: RACK_COLORS,

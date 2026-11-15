@@ -5,7 +5,7 @@ import { MARBLE_COLORS, TwistView, twistPoints } from "./view";
 
 export const twistConfig: PointConfig<State> = {
   game: twist,
-  contact: (sound) => sound.glass(),
+  contact: (sound) => sound.glass(4),
   noPanel: true,
   view: (host, quality) => new TwistView(host, quality),
   colors: MARBLE_COLORS,

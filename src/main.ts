@@ -1,5 +1,6 @@
 import "./style.css";
 import "./ui/app";
+import { music } from "./engine/music";
 
 // Fit the table below the actual header and wrapping game controls.
 const root = document.querySelector<HTMLElement>("#app")!;
@@ -48,6 +49,8 @@ const remember = () => {
   }
 };
 new MutationObserver(() => {
+  // The collection and a table have each their own music.
+  music.scene(atTable() ? "table" : "lobby");
   if (atTable()) remember();
   // Left by the table's own button: the entry that stood for the table is used up.
   else if (history.state?.table) history.back();

@@ -21,7 +21,7 @@ function picture(stage: string) {
 }
 export const pegConfig: PointConfig<State> = {
   game: peg,
-  contact: (sound) => sound.glass(),
+  contact: (sound) => sound.glass(2),
   board: pegBoard,
   solo: true,
   noPanel: true,

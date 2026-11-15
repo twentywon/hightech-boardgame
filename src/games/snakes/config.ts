@@ -5,7 +5,7 @@ import { LADDERS, SNAKES, snakes, type State } from "./rules";
 
 export const snakesConfig: PointConfig<State> = {
   game: snakes,
-  contact: (sound) => sound.wood(),
+  contact: (sound) => sound.wood(2),
   noPanel: true,
   view: (host, quality) => new SnakesView(host, quality),
   colors: TOKENS as [string, string],

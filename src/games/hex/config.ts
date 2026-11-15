@@ -78,7 +78,7 @@ const paper: PaperGame<State> = {
 };
 export const hexConfig: PointConfig<State> = {
   game: hex,
-  contact: (sound) => sound.paper(),
+  contact: (sound) => sound.paper(2),
   noPanel: true,
   view: (host, quality) => new PaperView(host, quality, paper),
   colors: PENCILS as [string, string],

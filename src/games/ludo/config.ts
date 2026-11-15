@@ -5,7 +5,7 @@ import { LUDO_COLORS, LudoView } from "./view";
 
 export const ludoConfig: PointConfig<State> = {
   game: ludo,
-  contact: (sound) => sound.wood(),
+  contact: (sound) => sound.wood(1),
   noPanel: true,
   view: (host, quality) => new LudoView(host, quality),
   colors: LUDO_COLORS,

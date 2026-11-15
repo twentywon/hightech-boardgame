@@ -5,7 +5,7 @@ import { QUIET_LIMIT, checkers, type State } from "./rules";
 
 export const checkersConfig: PointConfig<State> = {
   game: checkers,
-  contact: (sound) => sound.wood(),
+  contact: (sound) => sound.wood(3),
   noPanel: true,
   board: checkersBoard,
   name: "체커",
