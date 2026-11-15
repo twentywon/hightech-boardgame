@@ -128,7 +128,7 @@ test("2048: the arrow keys and a swipe slide the tiles", async ({ page }) => {
 
 test("falling blocks: the clock brings the piece down, a key drops it, and an open window stops the clock", async ({ page }) => {
   const errors = await sit(page, "블록 내리기");
-  await expect(page.locator(".solo-stat")).toHaveCount(3);
+  await expect(page.locator(".solo-stat")).toHaveCount(2);
   // Nothing is pressed: the piece falls by itself.
   await expect(count(page)).not.toHaveText("0수", { timeout: 10000 });
   expect(await score(page)).toBe(0);
@@ -437,7 +437,7 @@ test("river crossing: a wrong crossing is shown as a failure and taken back, and
   await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await panel.locator("#pz-restart").click();
-  await expect(page.locator("#turn")).toContainText("배 정원");
+  await expect(count(page)).toHaveText("0수");
   await rest(page);
   await home();
   for (const [n, crew] of way.entries()) {
@@ -578,7 +578,7 @@ test("minesweeper: the first square is safe, a flag guards a mine, and the clear
   let state = field.play(field.createGame(1), { from: -1, to: first, extra: -1 }, random)!;
   const safe = state.rows * state.cols - state.mines,
     mined = state.mine!.findIndex(Boolean);
-  await expect(page.locator(".solo-stat").nth(1)).toContainText(`${field.opened(state)}/${safe}`);
+  await expect(page.locator("[data-opened]")).toHaveAttribute("data-opened", `${field.opened(state)}/${safe}`);
   // Nothing of where the mines lie is written into the page.
   expect(await page.locator("main").innerHTML()).not.toMatch(/data-mine|mine=/);
   // F turns to flagging: a flag on a mine counts it off, and the square cannot then be opened.
@@ -598,7 +598,7 @@ test("minesweeper: the first square is safe, a flag guards a mine, and the clear
     if (state.open[cell] || state.mine![cell]) continue;
     await board.go(cell);
     state = field.play(state, { from: -1, to: cell, extra: -1 })!;
-    await expect(page.locator(".solo-stat").nth(1)).toContainText(`${field.opened(state)}/${safe}`, { timeout: 20000 });
+    await expect(page.locator("[data-opened]")).toHaveAttribute("data-opened", `${field.opened(state)}/${safe}`, { timeout: 20000 });
     await rest(page);
   }
   expect(state.winner).toBe(0);
@@ -615,14 +615,14 @@ test("minesweeper: the first square is safe, a flag guards a mine, and the clear
 });
 test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops while it is", async ({ page }) => {
   const errors = await sit(page, "과일 합치기"),
-    drops = page.locator(".solo-stat").nth(2).locator("b"),
+    drops = page.locator("[data-drops]"),
     // The hand needs a moment (of the box's own time, which runs slow on a busy machine) before it holds the next fruit: the key is pressed until it lets go.
     dropTo = (total: number) =>
       expect(async () => {
         await page.keyboard.press(" ");
-        await expect(drops).toHaveText(String(total), { timeout: 400 });
+        await expect(drops).toHaveAttribute("data-drops", String(total), { timeout: 400 });
       }).toPass({ timeout: 20000 });
-  await expect(drops).toHaveText("0");
+  await expect(drops).toHaveAttribute("data-drops", "0");
   await page.locator("canvas").focus();
   await dropTo(1);
   await page.keyboard.down("ArrowRight");
@@ -637,7 +637,7 @@ test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops w
     await page.keyboard.press(" ");
     await page.waitForTimeout(300);
   }
-  await expect(drops).toHaveText("2");
+  await expect(drops).toHaveAttribute("data-drops", "2");
   await page.keyboard.press("p");
   await expect(page.locator("#pg-pause")).toHaveAttribute("aria-label", "일시정지");
   await dropTo(3);
@@ -645,7 +645,7 @@ test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops w
   const box = (await page.locator("canvas").boundingBox())!;
   await expect(async () => {
     await page.mouse.click(box.x + box.width * 0.45, box.y + box.height * 0.5);
-    await expect(drops).toHaveText("4", { timeout: 400 });
+    await expect(drops).toHaveAttribute("data-drops", "4", { timeout: 400 });
   }).toPass({ timeout: 20000 });
   expect(errors).toEqual([]);
 });
@@ -655,12 +655,14 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
   test.setTimeout(150000);
   const errors = await sit(page, "고기 굽기"),
     figure = (n: number) => page.locator(".solo-stat").nth(n).locator("b"),
+    // Pieces eaten and wraps are no longer shown (the user asked); the page keeps them unseen for this test.
+    kept = (name: "eaten" | "wraps") => page.locator(`[data-${name}]`),
     keys = async (...list: string[]) => {
       for (const key of list) await page.keyboard.press(key);
     };
   // The clock may already have ticked.
   await expect(figure(1)).toHaveText(/^1[12]\d초$/);
-  await expect(figure(2)).toHaveText("0");
+  await expect(kept("eaten")).toHaveAttribute("data-eaten", "0");
   // A tap on a plate lays nothing: a piece must be carried to the grill.
   const box = (await page.locator("canvas").boundingBox())!;
   await page.mouse.click(box.x + box.width * 0.12, box.y + box.height * 0.5);
@@ -675,7 +677,7 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
   for (let slot = 0; slot < 7; slot++) await keys("ArrowRight", "Enter");
   for (let slot = 0; slot < 7; slot++) await keys("ArrowLeft", " ");
   await keys(" ");
-  await expect(figure(2)).toHaveText("2");
+  await expect(kept("eaten")).toHaveAttribute("data-eaten", "2");
   await expect(figure(0)).toHaveText("0");
   // Stopped: nothing is laid and the clock stands.
   await page.locator("#pg-pause").click();
@@ -695,10 +697,10 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
   for (let i = 0; i < 6; i++) await keys("ArrowRight");
   await keys("l", "2", "s");
   for (let i = 0; i < 6; i++) await keys("ArrowRight");
-  await expect(figure(3)).toHaveText("0");
+  await expect(kept("wraps")).toHaveAttribute("data-wraps", "0");
   await keys("Enter");
-  await expect(figure(3)).toHaveText("1");
-  await expect(figure(2)).toHaveText("2");
+  await expect(kept("wraps")).toHaveAttribute("data-wraps", "1");
+  await expect(kept("eaten")).toHaveAttribute("data-eaten", "2");
   // 새 게임 offers the two kinds of meal; without a clock the time counts up.
   await page.locator("#restart").click();
   await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(2);
@@ -706,6 +708,6 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
   await expect(page.locator(".solo-stat").nth(1)).toContainText("지난 시간");
   await expect(figure(1)).toHaveText(/^0:0\d$/);
   await expect(figure(1)).not.toHaveText("0:00", { timeout: 20000 });
-  await expect(figure(3)).toHaveText("0");
+  await expect(kept("wraps")).toHaveAttribute("data-wraps", "0");
   expect(errors).toEqual([]);
 });

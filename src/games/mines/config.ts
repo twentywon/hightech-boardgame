@@ -32,7 +32,8 @@ export const minesConfig: PointConfig<State> = {
   contact: (sound, state) => (state.winner === 1 ? sound.explosion() : state.flagging ? sound.plastic() : sound.tap()),
   stages: FIELDS.map((field, i) => ({ value: String(i + 1), name: field.name, note: `${field.cols}×${field.rows} · 지뢰 ${field.mines}개`, art: fieldArt(field.rows, field.cols) })),
   tools: [{ label: "깃발 꽂기", point: FLAG, show: (state) => state.winner === null, text: (state) => (state.flagging ? "깃발 끄기" : "깃발 꽂기") }],
-  tallyHtml: (state) => [stat("남은 지뢰", state.mines - flags(state)), ""],
+  // Only the mines left are shown (the user asked); the squares opened are kept, unseen, for the tests.
+  tallyHtml: (state) => [stat("남은 지뢰", state.mines - flags(state)) + `<i hidden data-opened="${opened(state)}/${state.rows * state.cols - state.mines}"></i>`, ""],
   name: "지뢰찾기",
   english: "Minesweeper",
   number: "NO. 45 — READ THE NUMBERS",
