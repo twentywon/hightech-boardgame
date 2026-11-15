@@ -217,7 +217,7 @@ export const river: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => s.actors.filter((a) => a.side === 1).length,
-  hint: (s) => `${ruleText(s)} · 배 정원 ${s.seats}${s.kind === "farmer" ? "(농부 포함)" : ""} · ${s.crossings}번 건넘 (최소 ${s.best}번)`,
-  tally: (s) => [`${s.crossings}번 건넘 · 최소 ${s.best}번`, ""],
-  reason: (s) => (s.winner === 0 ? `성공! ${s.crossings}번 만에 모두 건넜습니다. 최소 횟수는 ${s.best}번${s.crossings === s.best ? "으로, 가장 적게 건넜습니다!" : "입니다."}` : `실패! ${s.trouble}`),
+  hint: (s) => `${ruleText(s)} · 배 정원 ${s.seats}${s.kind === "farmer" ? "(농부 포함)" : ""}`,
+  tally: () => ["", ""],
+  reason: (s) => (s.winner === 0 ? "성공! 모두 무사히 건넜습니다." : `실패! ${s.trouble}`),
 };

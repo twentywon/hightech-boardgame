@@ -107,7 +107,7 @@ export const lights: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => -s.ply,
-  hint: (s) => `불을 모두 켜세요 · 꺼진 불 ${s.on.filter((lit) => !lit).length}개 · ${s.ply}번 누름 (최소 ${s.best}번)`,
-  tally: (s) => [`${s.ply}번 누름 · 최소 ${s.best}번`, ""],
-  reason: (s) => `성공! ${s.ply}번 만에 불을 모두 켰습니다. 최소 횟수는 ${s.best}번${s.ply === s.best ? "으로, 가장 적게 눌렀습니다!" : "입니다."}`,
+  hint: (s) => `불을 모두 켜세요 · 꺼진 불 ${s.on.filter((lit) => !lit).length}개`,
+  tally: () => ["", ""],
+  reason: () => "성공! 불을 모두 켰습니다.",
 };

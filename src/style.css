@@ -2624,3 +2624,90 @@ dialog .stage-card small, dialog .stage-card b { word-break:keep-all; }
 @keyframes shout-pop { 0% { opacity:0;scale:.6; } 18% { opacity:1;scale:1.08; } 30% { scale:1; } 75% { opacity:1; } 100% { opacity:0;scale:1.04; } }
 .board-shout { position:absolute;left:50%;top:48%;z-index:6;translate:-50% -50%;pointer-events:none;color:#fff;font-weight:900;font-synthesis:weight;font-size:clamp(54px, 13vmin, 150px);letter-spacing:.04em;line-height:1;white-space:nowrap;-webkit-text-stroke:.07em #1b1f24;paint-order:stroke fill;text-shadow:0 .05em 0 rgba(0,0,0,.45), 0 0 .3em rgba(0,0,0,.55);animation:shout-pop 1.5s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .board-shout { animation:none; } }
+
+/* The table's corner buttons (back, settings): bare thick white signs with a faint dark shadow so that
+   they stand out on any table, with no round plate behind them (the user asked). */
+.board-area .board-nav { gap:4px; }
+.board-area .board-nav .board-icon { background:none !important;box-shadow:none !important;color:#fff;filter:drop-shadow(0 1px 1.5px #0007) drop-shadow(0 0 6px #0004);transition:transform .15s ease, opacity .15s ease; }
+.board-area .board-nav .board-icon:hover { background:none !important;transform:scale(1.08); }
+.board-area .board-nav .board-icon:active { transform:scale(.94); }
+.board-area .board-nav .board-icon svg { display:block;width:26px;height:26px; }
+@media (orientation: landscape) and (max-height: 540px) { .board-area .board-nav .board-icon svg { width:22px;height:22px; } }
+@media (prefers-reduced-motion: reduce) { .board-area .board-nav .board-icon { transition:none; } }
+
+/* Information over the table --------------------------------------------------
+   For the games listed in HUD (src/ui/chrome.ts) there is no panel beside the
+   table (the user asked): the panel lies over the table's left side, below the
+   corner buttons, as plain lettering with no cards, boxes or borders, white
+   with a soft dark shadow (dark letters with a light halo on light tables,
+   `hud-ink`). Help lines are not shown; the status line keeps the turn. The
+   panel stays the same element, so ids, the live region and tests are kept. */
+.game-layout.hud .table-layout { grid-template-columns:minmax(0, 1fr) !important;position:relative; }
+.game-layout.hud:not(.spider-game) .table-layout { display:grid !important; }
+.game-layout.hud .table-layout > aside.game-sidebar { position:absolute !important;left:20px;top:62px;z-index:5;width:auto !important;max-width:min(270px, 32%);height:auto !important;min-height:0 !important;max-height:calc(100% - 120px) !important;margin:0 !important;padding:0 !important;overflow:visible !important;background:none !important;border:0 !important;box-shadow:none !important;display:flex !important;flex-direction:column;gap:10px;pointer-events:none;color:#fff;font-size:15px;line-height:1.35;text-shadow:0 1px 2px #000b, 0 0 10px #0007;grid-template-columns:none !important; }
+.game-layout.hud.hud-low .table-layout > aside.game-sidebar { top:auto;bottom:58px;max-height:calc(100% - 130px) !important; }
+.game-layout.hud.hud-ink .table-layout > aside.game-sidebar { color:#1d2024;text-shadow:0 0 2px #fff, 0 0 8px #fffd, 0 0 14px #fff9; }
+/* Only what there is to know: no help, no rule lines, no turn box (the status line says it). */
+.game-layout.hud aside.game-sidebar :is(.input-help, .hint, .side-mode, #chess-captured, #chess-claim-info, .bj-note) { display:none !important; }
+.game-layout.hud aside.game-sidebar > #turn:not(:has(button)) { display:none !important; }
+/* Every card, box and border goes; the letters stay. */
+.game-layout.hud aside.game-sidebar :is(div, ul, ol, li, dl, dt, dd, p, span, b, strong, small, em, section):not(button, button *) { background:none !important;border:0 !important;box-shadow:none !important;color:inherit !important;border-radius:0 !important;min-height:0 !important; }
+.game-layout.hud aside.game-sidebar :is(ul, ol, dl, .player, .yut-sides, .bg-seats, .bj-money, .bj-text) { margin:0 !important;padding:0 !important; }
+.game-layout.hud aside.game-sidebar small { opacity:.82;font-size:12px;font-weight:500; }
+.game-layout.hud aside.game-sidebar button { pointer-events:auto;text-shadow:none; }
+/* Players and sides: one line each, the one to move at full strength and the other a little faded. */
+.game-layout.hud aside.game-sidebar .player { display:grid !important;grid-template-columns:auto minmax(0, 1fr) auto;align-items:center;gap:4px 10px;padding:0 !important; }
+.game-layout.hud aside.game-sidebar .player > span { font-weight:700;font-size:15px; }
+.game-layout.hud aside.game-sidebar .player > span small { display:block; }
+.game-layout.hud aside.game-sidebar .player > b { font-size:17px;font-weight:800;font-variant-numeric:tabular-nums; }
+.game-layout.hud aside.game-sidebar .player .stone { filter:drop-shadow(0 1px 2px #0008); }
+.game-layout.hud aside.game-sidebar .yut-sides { display:flex !important;flex-direction:column;gap:8px !important; }
+.game-layout.hud aside.game-sidebar .yut-sides li { padding:0 !important;gap:2px 8px !important; }
+.game-layout.hud aside.game-sidebar .yut-sides li:not(.active) { opacity:.68; }
+.game-layout.hud aside.game-sidebar .yut-sides li b { font-weight:700; }
+.game-layout.hud aside.game-sidebar .yut-sides li > span[id^="pg-count-"] { font-size:24px !important;font-weight:800 !important;font-variant-numeric:tabular-nums; }
+.game-layout.hud aside.game-sidebar .yut-dot { box-shadow:0 0 0 2px #fff9, 0 1px 3px #0008 !important; }
+.game-layout.hud.hud-ink aside.game-sidebar .yut-dot { box-shadow:0 0 0 2px #fff, 0 1px 3px #0004 !important; }
+/* Money, counts and scores: a small label over a large figure. */
+.game-layout.hud aside.game-sidebar .bj-money { display:flex !important;flex-wrap:wrap;gap:6px 22px !important; }
+.game-layout.hud aside.game-sidebar .bj-money > div { padding:0 !important; }
+.game-layout.hud aside.game-sidebar .bj-money dt { font-size:12px;font-weight:600;opacity:.85; }
+.game-layout.hud aside.game-sidebar .bj-money dd { font-size:26px !important;font-weight:800;line-height:1.1; }
+.game-layout.hud aside.game-sidebar .solo-stat { display:grid !important;padding:0 !important;gap:0 !important; }
+.game-layout.hud aside.game-sidebar .solo-stat small { font-size:12px; }
+.game-layout.hud aside.game-sidebar .solo-stat b { font-size:26px !important;line-height:1.1; }
+.game-layout.hud aside.game-sidebar .bj-text, .game-layout.hud aside.game-sidebar .bg-seats { display:grid !important;gap:6px !important; }
+.game-layout.hud aside.game-sidebar .bg-seats li { padding:0 !important; }
+.game-layout.hud aside.game-sidebar .yd-result { padding:0 !important;gap:8px; }
+.game-layout.hud aside.game-sidebar .yd-result p { font-weight:700; }
+/* Table soccer's stadium figures keep their amber glow without the board behind them. */
+.game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides { flex-direction:row !important;gap:22px !important; }
+.game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides::after { display:none; }
+.game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li { opacity:1; }
+.game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li > span[id^="pg-count-"] { color:#ffc44a !important;font-size:44px !important;text-shadow:0 0 12px #ff9d00, 0 1px 2px #000c; }
+/* Short wide phones: smaller letters, nearer the corner. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .game-layout.hud .table-layout > aside.game-sidebar { left:10px;top:48px;max-width:min(200px, 28%);font-size:12.5px;gap:6px;max-height:calc(100% - 84px) !important; }
+  .game-layout.hud.hud-low .table-layout > aside.game-sidebar { top:auto;bottom:26px; }
+  .game-layout.hud aside.game-sidebar .bj-money dd, .game-layout.hud aside.game-sidebar .solo-stat b { font-size:19px !important; }
+  .game-layout.hud aside.game-sidebar .yut-sides li > span[id^="pg-count-"] { font-size:18px !important; }
+  .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li > span[id^="pg-count-"] { font-size:30px !important; }
+}
+/* The tour's travellers are buttons (they open the deeds): lettering like the rest. */
+.game-layout.hud aside.game-sidebar .tour-deeds { background:none !important;border:0 !important;box-shadow:none !important;padding:0 !important;color:inherit !important;text-shadow:inherit !important;font:inherit; }
+.game-layout.hud aside.game-sidebar .tour-deeds span { font-size:20px;font-weight:800;color:inherit !important; }
+/* On a light table the white corner signs need a little more shadow to be seen. */
+.game-layout.hud.hud-ink .board-area .board-nav .board-icon { filter:drop-shadow(0 1px 2px #000b) drop-shadow(0 0 5px #0007); }
+/* Battleship: the two fleets side by side across the top, clear of the two boards below. */
+.game-layout.hud.hud-row .table-layout > aside.game-sidebar { max-width:min(460px, 60%);top:54px; }
+.game-layout.hud.hud-row aside.game-sidebar .yut-sides { flex-direction:row !important;gap:28px !important; }
+.game-layout.hud.hud-row aside.game-sidebar .yut-sides li { opacity:1; }
+@media (orientation: landscape) and (max-height: 540px) { .game-layout.hud.hud-row .table-layout > aside.game-sidebar { top:40px;max-width:min(360px, 55%); } }
+.game-layout.hud aside.game-sidebar .fleet { display:flex !important;flex-wrap:wrap;gap:4px 10px !important;max-width:210px; }
+.game-layout.hud aside.game-sidebar .fleet .ship { gap:2px; }
+.game-layout.hud aside.game-sidebar .fleet .ship i { width:9px;height:9px;border-radius:2px;box-shadow:0 0 0 1px #fff8, 0 1px 2px #0008 !important; }
+.game-layout.hud aside.game-sidebar .fleet .ship.sunk i { background:#fff5 !important; }
+.game-layout.hud aside.game-sidebar .fleet .ship.waiting { opacity:.55; }
+@media (orientation: landscape) and (max-height: 540px) { .game-layout.hud aside.game-sidebar .fleet .ship i { width:6px;height:6px; } .game-layout.hud aside.game-sidebar .fleet { max-width:150px;gap:3px 7px !important; } }
+.game-layout.hud aside.game-sidebar li:has(.fleet) { display:grid !important;grid-template-columns:auto minmax(0, 1fr);align-items:center;gap:2px 6px !important; }
+.game-layout.hud aside.game-sidebar li:has(.fleet) > span { grid-column:1 / -1; }

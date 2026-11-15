@@ -348,7 +348,7 @@ test("water pouring: the level is asked, pours are counted against the fewest, a
   layJugs(1, random);
   const puzzle = layJugs(1, random),
     way = solveJugs(puzzle)!;
-  await expect(page.locator("#turn")).toContainText(`최소 ${puzzle.best}번`);
+  await expect(page.locator("#turn")).not.toContainText("최소");
   await expect(page.locator("#turn")).toContainText("목표:");
   await expect(page.locator(".solo-stat")).toHaveCount(2);
   await expect(page.locator(".solo-stat").nth(1)).toContainText(String(puzzle.best));
@@ -381,8 +381,8 @@ test("water pouring: the level is asked, pours are counted against the fewest, a
     }
   }
   // Solved in the fewest pours: said so, no window, and the next stage is offered.
-  await expect(page.locator("#turn")).toContainText(`${puzzle.best}번 만에`);
-  await expect(page.locator("#turn")).toContainText("가장 적게");
+  await expect(page.locator("#turn")).toContainText("성공!");
+  await expect(page.locator("#turn")).not.toContainText("번 만에");
   await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await panel.locator("#pz-next").click();
@@ -406,7 +406,7 @@ test("river crossing: a wrong crossing is shown as a failure and taken back, and
     way = ferry(puzzle)!,
     sheep = puzzle.actors.findIndex((actor) => actor.role === "sheep");
   expect(way).toHaveLength(puzzle.best);
-  await expect(page.locator("#turn")).toContainText(`최소 ${puzzle.best}번`);
+  await expect(page.locator("#turn")).not.toContainText("최소");
   const panel = page.locator(".puzzle-panel"),
     launch = page.locator("#pg-tool-0");
   // An empty boat does not cross.
@@ -437,7 +437,7 @@ test("river crossing: a wrong crossing is shown as a failure and taken back, and
   await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await panel.locator("#pz-restart").click();
-  await expect(page.locator("#turn")).toContainText("0번 건넘");
+  await expect(page.locator("#turn")).toContainText("배 정원");
   await rest(page);
   await home();
   for (const [n, crew] of way.entries()) {
@@ -449,7 +449,7 @@ test("river crossing: a wrong crossing is shown as a failure and taken back, and
     await rest(page);
   }
   await expect(page.locator("#turn")).toContainText("성공!");
-  await expect(page.locator("#turn")).toContainText(`${puzzle.best}번 만에`);
+  await expect(page.locator("#turn")).toContainText("성공!");
   await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await panel.locator("#pz-next").click();
@@ -501,7 +501,7 @@ test("tower of Hanoi: discs are chosen, a move is taken back, and the tower is m
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "원판 3개" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  await expect(page.locator("#turn")).toContainText("최소 7번");
+  await expect(page.locator("#turn")).not.toContainText("최소");
   const panel = page.locator(".puzzle-panel"),
     pegs = walker(page, 3, 0);
   let state = tower.createGame(3);
@@ -525,8 +525,8 @@ test("tower of Hanoi: discs are chosen, a move is taken back, and the tower is m
     }
     state = tower.play(state, move)!;
   }
-  await expect(page.locator("#turn")).toContainText("7번 만에");
-  await expect(page.locator("#turn")).toContainText("가장 적게");
+  await expect(page.locator("#turn")).toContainText("성공!");
+  await expect(page.locator("#turn")).not.toContainText("번 만에");
   await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await expect(panel.locator("#pz-next")).toBeVisible();
@@ -545,7 +545,7 @@ test("lights on: a board laid at random is lit in the fewest presses", async ({ 
   let state = lamps.createGame(2, random);
   const way = lamps.solve(state.size, state.on)!,
     board = walker(page, 4, 4);
-  await expect(page.locator("#turn")).toContainText(`최소 ${state.best}번`);
+  await expect(page.locator("#turn")).not.toContainText("최소");
   await expect(page.locator("#turn")).toContainText(`꺼진 불 ${state.on.filter((lit) => !lit).length}개`);
   await board.home();
   for (const [n, cell] of way.entries()) {
@@ -556,7 +556,7 @@ test("lights on: a board laid at random is lit in the fewest presses", async ({ 
     if (state.winner === null) await expect(page.locator("#turn")).toContainText(`꺼진 불 ${state.on.filter((lit) => !lit).length}개`);
   }
   await expect(page.locator("#turn")).toContainText("성공!");
-  await expect(page.locator("#turn")).toContainText("가장 적게");
+  await expect(page.locator("#turn")).not.toContainText("번 만에");
   await page.waitForTimeout(1600);
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await page.locator(".puzzle-panel #pz-next").click();

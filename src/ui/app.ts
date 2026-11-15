@@ -335,7 +335,11 @@ function askNewGame() {
 }
 function menu(selected: GameSelection = null, category = "전체", people = "전체") {
   // The table sat down at from here plays this game's music (Korean or Indian for some, jazz for the rest).
-  if (selected) music.game = selected;
+  if (selected) {
+    music.game = selected;
+    // The table sat down at knows which game it is (its information is laid over the table for some).
+    document.documentElement.dataset.game = selected;
+  }
   clear();
   app.innerHTML = header() +
     `<main class="library"><section class="hero"><div class="hero-copy"><div class="eyebrow">The world, at your table</div><h1>World <em>Table</em> Games</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p></div></section><div class="collection-heading"><h2>게임 컬렉션 <span>${String(games.filter(g => g.available).length).padStart(2,"0")} / ${String(games.length).padStart(2,"0")}</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임", "퍼즐게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-label="${x}" aria-pressed="${x === category}">${x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.category === x).length}</span></button>`).join("")}</div><div class="filters people" role="group" aria-label="인원">${["전체", "1인용", "2인용"].map((x) => `<button class="filter ${x === people ? "active" : ""}" data-players="${x}" aria-label="인원 ${x}" aria-pressed="${x === people}">${x === "전체" ? "인원 전체" : x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.players === x).length}</span></button>`).join("")}</div></div><div class="collection game-list game-grid" id="game-rail">${games.map((g, i) => {

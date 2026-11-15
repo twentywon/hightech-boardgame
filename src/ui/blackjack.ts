@@ -1,6 +1,6 @@
 import { announce, dress } from "./chrome";
 import { part, steps, notes, table } from "./guide";
-import { bankrupt, mirrorStatus } from "./banner";
+import { bankrupt, mirrorStatus, shout } from "./banner";
 import {
   MAX_BET,
   MIN_BET,
@@ -235,6 +235,8 @@ export function mountBlackjack(
       soundedRound = state.round;
       if (state.outcome.net < 0) sound.lose();
       else if (state.outcome.net > 0) sound.win();
+      // Every round is told across the table, as in the other card games (the user asked); a push is a draw.
+      if (!state.outcome.refunded) shout(state.outcome.net > 0 ? "승리" : state.outcome.net < 0 ? "패배" : "무승부");
     }
     // Keep keyboard focus on the step that replaced the one just used.
     if (hadFocus && focused && (focused.offsetParent === null || (focused as HTMLButtonElement).disabled)) {

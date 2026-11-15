@@ -68,6 +68,20 @@ interface Tween {
   start: number;
   from: T.Vector3;
   to: T.Vector3;
+  /** A taken piece: it hops higher and grows smaller on its way off the board. */
+  taken?: boolean;
+}
+/** How large a taken piece lies beside the board, and every side's full set of pieces. */
+const TAKEN_SCALE = 0.75,
+  FULL: Record<string, number> = { K: 1, A: 2, R: 2, C: 2, N: 2, E: 2, P: 5 },
+  ORDER = "RCNEAPK";
+/**
+ * Where the `i`-th piece `taker` took lies: on the table at its player's right hand. Cho sits at the near edge (+z)
+ * with its right at +x; han sits across (−z) with its right at −x. Three to a row, from the player's own edge inward.
+ */
+export function takenAt(taker: Side, i: number) {
+  const side = taker === "cho" ? 1 : -1;
+  return new T.Vector3(side * (3.72 + (i % 3) * 0.56), -0.2 + 0.1 * TAKEN_SCALE, side * (3.2 - Math.floor(i / 3) * 0.6));
 }
 export interface Marks {
   selected: number | null;
@@ -94,6 +108,8 @@ export class JanggiView {
   private meshes: (T.Mesh | null)[] = Array(FILES * RANKS).fill(null);
   private shown = "";
   private tweens: Tween[] = [];
+  /** How many pieces each side has taken (they stand at its right). */
+  private taken: Record<Side, number> = { cho: 0, han: 0 };
   private geometries = new Map<string, T.BufferGeometry>();
   private tops = new Map<string, T.MeshStandardMaterial>();
   private side = new T.MeshStandardMaterial({ color: "#e2d2a8", roughness: 0.6 });
@@ -232,7 +248,8 @@ export class JanggiView {
           const p = Math.min(1, (time - t.start) / 260);
           if (p < 0) return true;
           t.mesh.position.lerpVectors(t.from, t.to, travel(p));
-          t.mesh.position.y += hop(p) * 0.5;
+          t.mesh.position.y += hop(p) * (t.taken ? 0.9 : 0.5);
+          if (t.taken) t.mesh.scale.setScalar(1 - (1 - TAKEN_SCALE) * Math.min(1, p * 1.4));
           if (p < 1) return true;
           this.onContact();
           return false;
@@ -344,8 +361,18 @@ export class JanggiView {
       board[last.from] === "." &&
       [...board].every((piece, i) => i === last.from || i === last.to || piece === this.shown[i])
     ) {
-      const taken = this.meshes[last.to];
-      if (taken) this.pieces.remove(taken);
+      // A piece taken goes to the taker's right, beside the board (the user asked).
+      const taken = this.meshes[last.to],
+        taker = sideOf(this.shown[last.from])!;
+      if (taken) {
+        const to = takenAt(taker, this.taken[taker]++);
+        if (animate && !this.reducedMotion)
+          this.tweens.push({ mesh: taken, start: performance.now(), from: taken.position.clone(), to, taken: true });
+        else {
+          taken.position.copy(to);
+          taken.scale.setScalar(TAKEN_SCALE);
+        }
+      }
       this.meshes[last.to] = moving;
       this.meshes[last.from] = null;
       const p = toWorld(last.to),
@@ -356,6 +383,17 @@ export class JanggiView {
     } else {
       this.pieces.clear();
       this.meshes = [...board].map((piece, i) => (piece === "." ? null : this.make(piece, i)));
+      // What is missing from each side's full set has been taken by the other; it is laid out by kind.
+      this.taken = { cho: 0, han: 0 };
+      for (const kind of ORDER)
+        for (const [taker, piece] of [["cho", kind.toLowerCase()], ["han", kind]] as const) {
+          const left = [...board].filter((p) => p === piece).length;
+          for (let n = left; n < FULL[kind]; n++) {
+            const mesh = this.make(piece, 0);
+            mesh.position.copy(takenAt(taker, this.taken[taker]++));
+            mesh.scale.setScalar(TAKEN_SCALE);
+          }
+        }
     }
     this.shown = board;
     if (!this.tweens.length) this.onSettled();

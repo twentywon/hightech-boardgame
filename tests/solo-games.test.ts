@@ -540,7 +540,8 @@ describe("water pouring", () => {
     expect(way.length).toBe(7);
     for (const move of way) state = pour.play(state, move)!;
     expect([state.amounts, state.winner, state.ply]).toEqual([[4, 4, 0], 0, 7]);
-    expect(pour.pouring.reason(state)).toMatch(/7번 만에.*가장 적게/);
+    expect(pour.pouring.reason(state)).toMatch(/^성공!/);
+    expect(pour.pouring.reason(state)).not.toMatch(/번|최소/);
     expect(pour.moves(state)).toEqual([]);
     // An amount in any vessel is the other kind of goal.
     const make: pour.State = { ...classic(), goal: { kind: "make", amount: 2 }, best: 2 };
@@ -603,7 +604,8 @@ describe("river crossing", () => {
     let state = start;
     for (const crew of river.solve(start)!) state = go(state, crew);
     expect([state.winner, state.crossings, state.actors.every((a) => a.side === 1)]).toEqual([0, 7, true]);
-    expect(river.river.reason(state)).toMatch(/7번 만에.*가장 적게/);
+    expect(river.river.reason(state)).toMatch(/^성공!/);
+    expect(river.river.reason(state)).not.toMatch(/번|최소/);
   });
   test("wolves must not outnumber sheep on either bank, and couples must not be parted wrongly", () => {
     const flock = river.createGame(2, seededRandom(1)),
@@ -656,7 +658,8 @@ describe("tower of Hanoi", () => {
       while (state.winner === null) state = hanoi.play(state, hanoi.hint(state)!)!;
       expect([discs, state.ply, Math.max(state.pegs[1].length, state.pegs[2].length)]).toEqual([discs, 2 ** discs - 1, discs]);
       expect(hanoi.hint(state)).toBeNull();
-      expect(hanoi.hanoi.reason(state)).toMatch(/^성공!.*가장 적게/);
+      expect(hanoi.hanoi.reason(state)).toMatch(/^성공!/);
+      expect(hanoi.hanoi.reason(state)).not.toMatch(/번|최소/);
     }
     // After a wrong first move the hint still leads home.
     let state = hanoi.play(hanoi.createGame(4), { from: 0, to: 2, extra: -1 })!;

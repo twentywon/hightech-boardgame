@@ -20,7 +20,8 @@ export interface Subject {
 export const SUBJECTS = {
   gomoku: { half: 3.275, height: 0.35, lookY: 0 },
   reversi: { half: 3.15, height: 0.35, lookY: 0 },
-  chess: { half: 3.525, height: 1.45, lookY: 0.1 },
+  // The taken pieces stand beside the board at each player's right, so the view is wider than the board.
+  chess: { half: 5.25, halfZ: 3.525, height: 1.45, lookY: 0.1 },
   // Blackjack lays its cards out wide on landscape screens and tall on
   // portrait ones, and looks down more steeply so card faces stay readable.
   blackjackWide: { half: 4.6, halfZ: 3.95, height: 0.3, lookY: 0, tilt: 1.1 },
@@ -35,7 +36,7 @@ export const SUBJECTS = {
   cardsCompact: { half: 4.3, halfZ: 3.6, height: 0.3, lookY: 0, tilt: 1.1 },
   cardsCompactSquare: { half: 3.3, halfZ: 3.7, height: 0.3, lookY: 0, tilt: 1.1 },
   // Janggi: nine files by ten ranks of intersections.
-  janggi: { half: 3.45, halfZ: 3.8, height: 0.45, lookY: 0 },
+  janggi: { half: 5.15, halfZ: 3.8, height: 0.45, lookY: 0 },
   // Yut: the mat with the board and the throwing strip, and the porch behind it.
   yut: { half: 4.3, halfZ: 5.6, height: 0.5, lookY: 0, tilt: 0.98 },
 } as const satisfies Record<string, Subject>;

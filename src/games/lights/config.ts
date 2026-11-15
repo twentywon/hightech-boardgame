@@ -23,7 +23,8 @@ export const lightsConfig: PointConfig<State> = {
   puzzle: { hint, hintText: "힌트 — 빨간 고리가 쳐진 불을 누르세요." },
   stagesFirst: true,
   stages: SIZES.map((size, i) => ({ value: String(i + 1), name: `${size}×${size}`, note: `불 ${size * size}개`, art: boardArt(size) })),
-  tallyHtml: (state) => [`<span class="solo-stat"><small>누른 횟수</small><b>${state.ply}</b></span><span class="solo-stat"><small>최소 횟수</small><b>${state.best}</b></span>`, ""],
+  // No count of moves made or of the fewest (the user asked).
+  tallyHtml: () => ["", ""],
   name: "불 켜기",
   english: "Lights On",
   number: "NO. 44 — EVERY LAMP LIT",
@@ -40,7 +41,7 @@ export const lightsConfig: PointConfig<State> = {
   rulesTitle: "누르면 이웃까지 뒤집힙니다",
   rules:
     part("기본 규칙", steps("판의 불 가운데 몇이 꺼져 있습니다.", "불 하나를 누르면 <b>그 불과 위·아래·왼쪽·오른쪽 불</b>이 함께 뒤집힙니다. 켜진 불은 꺼지고 꺼진 불은 켜집니다.", "가장자리에서는 판 안에 있는 이웃만 뒤집힙니다.", "불을 <b>모두 켜면</b> 성공입니다.")) +
-    part("판과 횟수", table(["판의 크기", "앉을 때와 <b>새 게임</b>에서 3×3부터 7×7까지 고릅니다."], ["무작위 문제", "문제는 할 때마다 새로 만들어집니다. 다 켜진 판에서 불을 눌러 만든 것이라 반드시 풀립니다."], ["누른 횟수 · 최소 횟수", "오른쪽 판에 지금까지 누른 횟수와, 이 문제를 풀 수 있는 가장 적은 횟수가 나란히 나옵니다."])) +
+    part("판과 문제", table(["판의 크기", "앉을 때와 <b>새 게임</b>에서 3×3부터 7×7까지 고릅니다."], ["무작위 문제", "문제는 할 때마다 새로 만들어집니다. 다 켜진 판에서 불을 눌러 만든 것이라 반드시 풀립니다."])) +
     part("오른쪽 판", table(["힌트", "가장 빨리 켜는 길에서 눌러야 할 불 하나에 빨간 고리가 쳐집니다."], ["무르기 · 처음부터", "한 번씩 되돌리거나, 처음 상태로 되돌립니다."], ["다른 퍼즐 · 다음 스테이지", "같은 크기의 새 문제가 나옵니다."])) +
     part("처음이라면", notes("같은 불을 <b>두 번 누르면 제자리</b>입니다. 그러니 어떤 불이든 한 번 누르거나 안 누르거나 둘 중 하나입니다.", "누르는 <b>순서는 상관없습니다</b>. 어떤 불들을 누를지만 정하면 됩니다.", "맨 윗줄부터 차례로: 윗줄에 꺼진 불이 있으면 바로 아래 칸을 눌러 켜면서 내려갑니다. 마지막 줄에 남은 불은 맨 윗줄을 다시 눌러 맞춥니다.")),
   help: "마우스·터치: 불을 누릅니다<br>키보드: 방향키로 고르고 Enter",

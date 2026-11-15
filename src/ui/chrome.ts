@@ -14,6 +14,13 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
     board = main?.querySelector<HTMLElement>(".board-area"),
     side = main?.querySelector<HTMLElement>("aside.game-sidebar");
   if (!main || !board || !side) return;
+  // For these games the panel beside the table is gone: what it says is written over the table itself.
+  const game = document.documentElement.dataset.game ?? "";
+  if (HUD.has(game)) {
+    main.classList.add("hud");
+    if (INK.has(game)) main.classList.add("hud-ink");
+    if (LOW.has(game)) main.classList.add("hud-low");
+  }
   // What the player presses to play goes onto the table, in the order given.
   const box = document.createElement("div");
   box.className = "board-controls";
@@ -27,7 +34,7 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   nav.className = "board-nav";
   const back = main.querySelector<HTMLButtonElement>("#back");
   if (back) {
-    back.textContent = "←";
+    back.innerHTML = BACK_ICON;
     back.setAttribute("aria-label", "← 컬렉션");
     back.className = "board-icon";
     nav.append(back);
@@ -35,6 +42,7 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   const settings = document.querySelector<HTMLButtonElement>("#app > header #settings");
   if (settings) {
     settings.className = "board-icon";
+    settings.innerHTML = GEAR_ICON;
     nav.append(settings);
   }
   board.append(nav);
@@ -84,6 +92,18 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   const restart = main.querySelector<HTMLButtonElement>("#restart");
   if (restart) restart.onclick = () => setupDialog(setup);
 }
+
+/**
+ * Games whose panel is not shown beside the table: its words (players, scores, chips, counts) stand over the
+ * table's left side as plain lettering (the user asked). `INK` games have a light table and take dark letters;
+ * `LOW` games keep the upper left for something of their own and write at the lower left.
+ */
+const HUD = new Set(["gomoku", "reversi", "chess", "blackjack", "seotda", "seven-poker", "janggi", "yut-nori", "hexa-germ-war", "dots-and-boxes", "mancala", "spider", "world-tour", "battleship", "indian-poker", "table-soccer", "falling-blocks", "brick-breaker", "minesweeper", "fruit-merge", "meat-grill"]),
+  INK = new Set(["minesweeper", "fruit-merge", "falling-blocks", "mancala"]),
+  LOW = new Set(["chess", "janggi"]);
+/** The two buttons in the table's corner are bare white signs with a faint shadow, drawn thick (the user asked). */
+const BACK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M11.5 5 4.5 12l7 7"/></svg>`,
+  GEAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
 
 export type Outcome = "win" | "lose" | "draw";
 const ART: Record<Outcome, { picture: string; word: string }> = {

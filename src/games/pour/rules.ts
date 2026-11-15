@@ -114,7 +114,7 @@ export const pouring: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => -s.ply,
-  hint: (s) => `목표: ${goalText(s)} · ${s.ply}번 부음 (최소 ${s.best}번)`,
-  tally: (s) => [`${s.ply}번 부음 · 최소 ${s.best}번`, ""],
-  reason: (s) => `성공! ${s.ply}번 만에 나눴습니다. 최소 횟수는 ${s.best}번${s.ply === s.best ? "으로, 가장 적게 부었습니다!" : "입니다."}`,
+  hint: (s) => `목표: ${goalText(s)}`,
+  tally: () => ["", ""],
+  reason: () => "성공! 물을 다 나눴습니다.",
 };

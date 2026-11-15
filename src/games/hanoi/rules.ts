@@ -66,7 +66,7 @@ export const hanoi: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => -s.ply,
-  hint: (s) => `원판 ${s.discs}개를 모두 다른 기둥으로 · ${s.ply}번 옮김 (최소 ${s.best}번)`,
-  tally: (s) => [`${s.ply}번 옮김 · 최소 ${s.best}번`, ""],
-  reason: (s) => `성공! ${s.ply}번 만에 탑을 옮겼습니다. 최소 횟수는 ${s.best}번${s.ply === s.best ? "으로, 가장 적게 옮겼습니다!" : "입니다."}`,
+  hint: (s) => `원판 ${s.discs}개를 모두 다른 기둥으로`,
+  tally: () => ["", ""],
+  reason: () => "성공! 탑을 모두 옮겼습니다.",
 };

@@ -11,6 +11,16 @@ import {
   cameraDistance,
   orbit,
 } from "../../engine/camera";
+/** How large a taken piece stands beside the board, and where the `i`-th piece `taker` took stands. */
+const TAKEN_SCALE = 0.72;
+/**
+ * At the taker's right hand, on the table beside the board: white sits at the near edge (+z) and its right is +x,
+ * black sits across (−z) and its right is −x. Three to a row, from the player's own edge inward.
+ */
+export function takenAt(taker: Color, i: number) {
+  const side = taker === "w" ? 1 : -1;
+  return new T.Vector3(side * (3.98 + (i % 3) * 0.5), -0.25, side * (3.05 - Math.floor(i / 3) * 0.58));
+}
 interface Token {
   mesh: T.Group;
   type: PieceSymbol;
@@ -47,6 +57,8 @@ export class ChessView {
     start: number;
     capture: boolean;
   }[] = [];
+  /** Pieces each side has taken, standing on the table at its player's right (the user asked). */
+  private taken: Record<Color, T.Group[]> = { w: [], b: [] };
   private cameraStart = new T.Vector3();
   private cameraTarget = new T.Vector3();
   private cameraAt = 0;
@@ -191,12 +203,12 @@ export class ChessView {
         const u = Math.min(1, (t - m.start) / 320),
           e = m.capture ? u * u * (3 - 2 * u) : travel(u);
         m.mesh.position.lerpVectors(m.from, m.to, e);
-        if (m.capture) m.mesh.scale.setScalar(Math.max(0.01, 1 - u));
-        else m.mesh.position.y += hop(u) * 0.35;
-        if (u === 1) {
-          if (m.capture) this.scene.remove(m.mesh);
-          else this.onContact();
-        }
+        // A taken piece hops off the board to its taker's row, growing a little smaller on the way.
+        if (m.capture) {
+          m.mesh.position.y += hop(u) * 0.9;
+          m.mesh.scale.setScalar(1 - (1 - TAKEN_SCALE) * Math.min(1, u * 1.4));
+        } else m.mesh.position.y += hop(u) * 0.35;
+        if (u === 1) this.onContact();
         return u < 1;
       });
       this.renderer.render(this.scene, this.camera);
@@ -461,10 +473,12 @@ export class ChessView {
       const taken = this.tokens.get(capture);
       if (taken) {
         this.tokens.delete(capture);
+        const row = this.taken[last.color];
+        row.push(taken.mesh);
         this.moves.push({
           mesh: taken.mesh,
           from: taken.mesh.position.clone(),
-          to: taken.mesh.position.clone().add(new T.Vector3(0, -0.4, 0)),
+          to: takenAt(last.color, row.length - 1),
           start: performance.now(),
           capture: true,
         });
@@ -498,6 +512,19 @@ export class ChessView {
         for (const p of row)
           if (p)
             this.tokens.set(p.square, this.token(p.type, p.color, p.square));
+      // The taken pieces are laid out again from the game's own record, in the order they were taken.
+      for (const color of ["w", "b"] as const) {
+        for (const mesh of this.taken[color]) this.scene.remove(mesh);
+        this.taken[color] = [];
+      }
+      for (const move of game.history({ verbose: true }))
+        if (move.captured) {
+          const row = this.taken[move.color],
+            mesh = this.token(move.captured, move.color === "w" ? "b" : "w", "a1").mesh;
+          mesh.position.copy(takenAt(move.color, row.length));
+          mesh.scale.setScalar(TAKEN_SCALE);
+          row.push(mesh);
+        }
     }
   }
   private move(token: Token, to: Square) {
