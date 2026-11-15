@@ -13,3 +13,19 @@ Source: https://commons.wikimedia.org/wiki/Category:Hwatu
 Changes: rendered at 250 px width and re-encoded as WebP; in the game a small
 month number is drawn over one corner. The image files under
 src/games/seotda/cards/ remain available under CC BY-SA 4.0.
+
+Hwatu card images in Go-Stop
+
+The forty-eight flower-card images are reduced-size renderings of SVG files
+from Wikimedia Commons by Spenĉjo, after artwork by Marcus Richert and Louie
+Mantia Jr., used under the Creative Commons Attribution-ShareAlike 4.0
+International licence (CC BY-SA 4.0), https://creativecommons.org/licenses/by-sa/4.0/
+
+- "Hwatu <Month> Hikari.svg", "Hwatu <Month> Tane.svg",
+  "Hwatu <Month> Tanzaku.svg" and "Hwatu <Month> Kasu 1.svg" to
+  "Hwatu <Month> Kasu 3.svg", January to December.
+
+Source: https://commons.wikimedia.org/wiki/Category:Hwatu
+Changes: rendered at 210 px width and re-encoded as WebP; in the game a small
+month number is drawn over one corner. The image files under
+src/games/gostop/cards/ remain available under CC BY-SA 4.0.

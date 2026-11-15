@@ -264,6 +264,14 @@ export const games = [
     available: true,
   },
   {
+    name: "고스톱",
+    en: "GO-STOP",
+    category: "카드게임",
+    players: "2인용",
+    icon: "✿",
+    available: true,
+  },
+  {
     name: "테이블 사커",
     en: "TABLE SOCCER",
     category: "보드게임",

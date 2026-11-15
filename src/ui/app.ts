@@ -27,6 +27,7 @@ import { starHopConfig } from "../games/starhop/config";
 import { ludoConfig } from "../games/ludo/config";
 import { poolConfig } from "../games/pool/config";
 import { indianConfig } from "../games/indian/config";
+import { gostopConfig } from "../games/gostop/config";
 import { foosballConfig } from "../games/foosball/config";
 import { blocksConfig } from "../games/blocks/config";
 import { mergeConfig } from "../games/merge/config";
@@ -149,6 +150,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   ludo: { config: ludoConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "pocket-ball": { config: poolConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "indian-poker": { config: indianConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "go-stop": { config: gostopConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "table-soccer": { config: foosballConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "falling-blocks": { config: blocksConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "2048": { config: mergeConfig, options: { mode: "ai", variant: "", level: "normal" } },
@@ -286,6 +288,7 @@ type GameSelection =
   | "ludo"
   | "pocket-ball"
   | "indian-poker"
+  | "go-stop"
   | "table-soccer"
   | "falling-blocks"
   | "2048"

@@ -188,6 +188,13 @@ const play = {
     await page.evaluate(() => [...document.querySelectorAll(".pg-tools button")].find((b) => b.textContent.includes("이마에 얹기"))?.click());
     await wait(1800);
   },
+  "go-stop": async () => {
+    // A few cards played, so that something has been taken on both sides.
+    for (let i = 0; i < 4; i++) {
+      await keys(["ArrowRight", "Enter"]);
+      await wait(3200);
+    }
+  },
   "table-soccer": async () => {
     await wait(2600);
   },
