@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, disposeScene, wood, realism, planks, block } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, disposeScene, wood, realism, planks, block, hop, travel } from "../../engine/scene-utils";
 import {
   FOV,
   OVERHEAD,
@@ -231,9 +231,8 @@ export class JanggiView {
         this.tweens = this.tweens.filter((t) => {
           const p = Math.min(1, (time - t.start) / 260);
           if (p < 0) return true;
-          const e = p * p * (3 - 2 * p);
-          t.mesh.position.lerpVectors(t.from, t.to, e);
-          t.mesh.position.y += Math.sin(Math.PI * p) * 0.5;
+          t.mesh.position.lerpVectors(t.from, t.to, travel(p));
+          t.mesh.position.y += hop(p) * 0.5;
           if (p < 1) return true;
           this.onContact();
           return false;

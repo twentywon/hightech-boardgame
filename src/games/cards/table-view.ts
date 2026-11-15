@@ -807,6 +807,8 @@ export class CardTableView {
       t.mesh.position.lerpVectors(t.from, t.to, e);
       t.mesh.position.y += Math.sin(Math.PI * p) * t.lift;
       t.mesh.rotation.z = t.fromFlip + (t.toFlip - t.fromFlip) * e;
+      // A thing in the air leans into its flight and lies flat again as it lands.
+      if (t.lift > 0 && Math.abs(t.mesh.rotation.x) < 0.5) t.mesh.rotation.x = Math.sin(Math.PI * p) * 0.2;
       if (p < 1) return true;
       if (t.contact) this.onContact();
       t.done?.();

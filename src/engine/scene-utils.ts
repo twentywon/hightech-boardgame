@@ -195,6 +195,20 @@ export function weave(across: number, down = across, keep: Keep = (r) => r, dept
 }
 /** Veneer for inlaid squares: pale maple and brown walnut (Poly Haven, CC0). */
 export const veneer = (dark: boolean) => surface(dark ? walnutUrl : mapleUrl);
+/** The part of its way at which a hopping thing comes down; what is left of the time is its small bounce. */
+const LANDING = 0.84;
+/**
+ * How high a thing that hops stands at `p` of its time (0 to 1; 1 is the top of the hop): up and over as a thrown
+ * thing goes, then one small bounce where it lands. Pieces used to follow half a sine and stop dead.
+ */
+export const hop = (p: number) => (p < LANDING ? 4 * (p / LANDING) * (1 - p / LANDING) : 0.09 * Math.sin((Math.PI * (p - LANDING)) / (1 - LANDING)));
+/** How far along its way a hopping thing is at `p`: it has arrived when it lands, and bounces where it stands. */
+export const travel = (p: number) => {
+  const q = Math.min(1, p / LANDING);
+  return q * q * (3 - 2 * q);
+};
+/** How much of its fall a dropped thing still has before it at `p`: faster and faster, as things fall, then one small bounce. */
+export const fall = (p: number) => (p < 0.8 ? 1 - (p / 0.8) ** 2 : 0.07 * Math.sin((Math.PI * (p - 0.8)) / 0.2));
 /**
  * A box whose edges and corners are rounded off by `radius`, as real boards, tiles and dice are: the light then
  * catches on its edges. Its faces stay flat (no pillow), its six sides keep the order and the picture layout of

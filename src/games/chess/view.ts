@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
-import { wood, disposeScene, afterGPUFrame, aim, realism, planks, veneer, glossy, block } from "../../engine/scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism, planks, veneer, glossy, block, hop, travel } from "../../engine/scene-utils";
 import { toWorld, fromWorld, squares } from "./coordinates";
 import {
   FOV,
@@ -188,10 +188,10 @@ export class ChessView {
       this.camera.lookAt(0, 0.1, 0);
       this.moves = this.moves.filter((m) => {
         const u = Math.min(1, (t - m.start) / 320),
-          e = u * u * (3 - 2 * u);
+          e = m.capture ? u * u * (3 - 2 * u) : travel(u);
         m.mesh.position.lerpVectors(m.from, m.to, e);
         if (m.capture) m.mesh.scale.setScalar(Math.max(0.01, 1 - u));
-        else m.mesh.position.y += Math.sin(Math.PI * u) * 0.35;
+        else m.mesh.position.y += hop(u) * 0.35;
         if (u === 1) {
           if (m.capture) this.scene.remove(m.mesh);
           else this.onContact();
@@ -259,115 +259,184 @@ export class ChessView {
         points.map(([r, y]) => new T.Vector2(r, y)),
         32,
       );
+    // A turned set in the Staunton manner: every piece stands on the same foot and stem, closed at the top.
     add(
       lathe([
         [0, 0],
-        [0.29, 0],
-        [0.31, 0.05],
-        [0.3, 0.11],
-        [0.23, 0.16],
-        [0.25, 0.2],
-        [0.18, 0.25],
-        [0.15, 0.32],
-        [0.11, 0.48],
-        [0.15, 0.56],
-        [0.19, 0.59],
+        [0.3, 0],
+        [0.315, 0.025],
+        [0.315, 0.07],
+        [0.29, 0.1],
+        [0.25, 0.115],
+        [0.235, 0.145],
+        [0.255, 0.175],
+        [0.24, 0.205],
+        [0.19, 0.235],
+        [0.16, 0.3],
+        [0.138, 0.4],
+        [0.125, 0.5],
+        [0.14, 0.545],
+        [0.2, 0.565],
+        [0.215, 0.59],
+        [0.2, 0.612],
+        [0.12, 0.628],
+        [0, 0.63],
       ]),
     );
     if (type === "p") {
-      add(new T.SphereGeometry(0.19, 24, 16), 0, 0.72);
+      add(lathe([[0.12, 0.62], [0.085, 0.66], [0.1, 0.7], [0, 0.7]]));
+      add(new T.SphereGeometry(0.175, 28, 20), 0, 0.82);
     }
     if (type === "r") {
-      add(new T.CylinderGeometry(0.23, 0.16, 0.34, 32), 0, 0.72);
-      add(new T.CylinderGeometry(0.27, 0.24, 0.11, 32), 0, 0.92);
+      // A tower with a hollow top and six merlons round it.
+      add(
+        lathe([
+          [0.19, 0.61],
+          [0.165, 0.66],
+          [0.158, 0.86],
+          [0.19, 0.9],
+          [0.25, 0.93],
+          [0.265, 0.96],
+          [0.265, 1.03],
+          [0.185, 1.03],
+          [0.185, 0.97],
+          [0, 0.97],
+        ]),
+      );
       for (let n = 0; n < 6; n++) {
-        const a = (n * Math.PI) / 3;
-        const m = add(
-          new T.BoxGeometry(0.12, 0.14, 0.12),
-          Math.sin(a) * 0.21,
-          1.03,
-          Math.cos(a) * 0.21,
-        );
-        m.rotation.y = a;
+        const a = (n * Math.PI) / 3,
+          arc = 0.36,
+          merlon = new T.Shape();
+        merlon.absarc(0, 0, 0.265, a - arc, a + arc, false);
+        merlon.absarc(0, 0, 0.185, a + arc, a - arc, true);
+        add(new T.ExtrudeGeometry(merlon, { depth: 0.09, bevelEnabled: true, bevelSize: 0.008, bevelThickness: 0.008, bevelSegments: 1, curveSegments: 6 }).rotateX(-Math.PI / 2), 0, 1.03, 0);
       }
     }
     if (type === "b") {
-      add(new T.CylinderGeometry(0.1, 0.17, 0.24, 28), 0, 0.68);
-      const head = add(new T.SphereGeometry(0.22, 28, 20), 0, 0.96);
-      head.scale.set(0.85, 1.3, 0.85);
+      // A mitre on a collar, with its slit and a finial.
+      add(
+        lathe([
+          [0.19, 0.61],
+          [0.12, 0.65],
+          [0.1, 0.72],
+          [0.16, 0.755],
+          [0.182, 0.78],
+          [0.16, 0.805],
+          [0.115, 0.825],
+          [0.15, 0.9],
+          [0.178, 0.99],
+          [0.168, 1.08],
+          [0.125, 1.17],
+          [0.06, 1.24],
+          [0, 1.265],
+        ]),
+      );
       const cut = new T.Mesh(
-        new T.BoxGeometry(0.045, 0.31, 0.32),
+        new T.BoxGeometry(0.022, 0.15, 0.345),
         new T.MeshStandardMaterial({
           color: color === "w" ? "#837d70" : "#5c6766",
           roughness: 0.6,
         }),
       );
-      cut.position.set(0.06, 1.07, 0);
-      cut.rotation.z = -0.45;
+      // A thin dark plate set into the mitre: only its edge shows, as the slit.
+      cut.position.set(0.07, 1.115, 0);
+      cut.rotation.z = -0.5;
       g.add(cut);
-      add(new T.SphereGeometry(0.065, 16, 12), 0, 1.23);
+      add(new T.SphereGeometry(0.052, 18, 12), 0, 1.3);
     }
     if (type === "n") {
-      const shape = new T.Shape();
-      shape.moveTo(-0.2, 0.54);
-      shape.lineTo(-0.22, 0.82);
-      shape.lineTo(-0.08, 1.12);
-      shape.lineTo(0.03, 1.24);
-      shape.lineTo(0.02, 1.06);
-      shape.lineTo(0.19, 1.02);
-      shape.lineTo(0.3, 0.83);
-      shape.lineTo(0.21, 0.75);
-      shape.lineTo(0.08, 0.8);
-      shape.lineTo(0.14, 0.54);
-      shape.closePath();
-      const geo = new T.ExtrudeGeometry(shape, {
-        depth: 0.23,
+      // A horse's head cut from a board and rounded off: ear, forehead, nose, jaw and the arch of the neck.
+      const head = new T.Shape();
+      head.moveTo(-0.185, 0.6);
+      head.splineThru(
+        [
+          [-0.225, 0.78],
+          [-0.21, 0.95],
+          [-0.14, 1.1],
+          [-0.06, 1.2],
+          [-0.025, 1.3],
+          [0.03, 1.21],
+          [0.095, 1.16],
+          [0.2, 1.06],
+          [0.295, 0.935],
+          [0.32, 0.865],
+          [0.285, 0.8],
+          [0.2, 0.805],
+          [0.125, 0.86],
+          [0.105, 0.78],
+          [0.15, 0.68],
+          [0.17, 0.6],
+        ].map(([x, y]) => new T.Vector2(x, y)),
+      );
+      head.closePath();
+      const geo = new T.ExtrudeGeometry(head, {
+        depth: 0.13,
         bevelEnabled: true,
-        bevelSize: 0.025,
-        bevelThickness: 0.025,
-        bevelSegments: 2,
+        bevelSize: 0.045,
+        bevelThickness: 0.055,
+        bevelSegments: 4,
+        curveSegments: 28,
         steps: 1,
       });
-      geo.translate(0, 0, -0.115);
+      geo.translate(0, 0, -0.065);
       add(geo);
-      for (const z of [-0.145, 0.145]) {
+      // The mane: a ridge down the back of the neck.
+      const mane = new T.Shape();
+      mane.moveTo(-0.2, 0.64);
+      mane.splineThru([[-0.265, 0.8], [-0.25, 0.97], [-0.17, 1.13], [-0.08, 1.24], [-0.1, 1.1], [-0.17, 0.95], [-0.185, 0.8]].map(([x, y]) => new T.Vector2(x, y)));
+      mane.closePath();
+      add(new T.ExtrudeGeometry(mane, { depth: 0.05, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2, curveSegments: 16 }).translate(0, 0, -0.025));
+      for (const z of [-0.118, 0.118]) {
         const eye = new T.Mesh(
-          new T.SphereGeometry(0.027, 12, 8),
+          new T.SphereGeometry(0.024, 12, 8),
           new T.MeshStandardMaterial({
             color: color === "w" ? "#353d39" : "#ddcda5",
           }),
         );
-        eye.position.set(0.13, 0.96, z);
+        eye.position.set(0.135, 1.03, z);
         g.add(eye);
       }
     }
     if (type === "q" || type === "k") {
       add(
         lathe([
-          [0.16, 0.55],
-          [0.12, 0.64],
-          [0.1, 0.85],
-          [0.14, 0.94],
-          [0.22, 0.98],
-          [0.22, 1.04],
-          [0.15, 1.08],
+          [0.19, 0.61],
+          [0.125, 0.66],
+          [0.1, 0.8],
+          [0.095, 0.98],
+          [0.13, 1.04],
+          [0.21, 1.07],
+          [0.215, 1.1],
+          [0.15, 1.12],
+          [0.13, 1.16],
+          ...(type === "q"
+            ? [
+                [0.185, 1.25],
+                [0.235, 1.305],
+                [0.2, 1.305],
+                [0.12, 1.25],
+                [0, 1.26],
+              ]
+            : [
+                [0.2, 1.27],
+                [0.22, 1.31],
+                [0.17, 1.335],
+                [0.06, 1.36],
+                [0, 1.365],
+              ]),
         ]),
       );
       if (type === "q") {
-        add(new T.CylinderGeometry(0.22, 0.13, 0.18, 32), 0, 1.17);
-        for (let n = 0; n < 6; n++) {
-          const a = (n * Math.PI) / 3;
-          add(
-            new T.SphereGeometry(0.065, 16, 12),
-            Math.cos(a) * 0.18,
-            1.3,
-            Math.sin(a) * 0.18,
-          );
+        // A coronet of small balls round a dome, and one on top.
+        for (let n = 0; n < 8; n++) {
+          const a = (n * Math.PI) / 4;
+          add(new T.SphereGeometry(0.042, 14, 10), Math.cos(a) * 0.218, 1.325, Math.sin(a) * 0.218);
         }
-        add(new T.SphereGeometry(0.075, 16, 12), 0, 1.34);
+        add(new T.SphereGeometry(0.13, 22, 14).scale(1, 0.6, 1), 0, 1.27);
+        add(new T.SphereGeometry(0.05, 16, 12), 0, 1.38);
       } else {
-        add(new T.BoxGeometry(0.105, 0.35, 0.105), 0, 1.29);
-        add(new T.BoxGeometry(0.31, 0.1, 0.105), 0, 1.32);
+        add(block(0.085, 0.27, 0.085, 0.02), 0, 1.49);
+        add(block(0.25, 0.085, 0.085, 0.02), 0, 1.505);
       }
     }
     if (color === "b") g.rotation.y = Math.PI;

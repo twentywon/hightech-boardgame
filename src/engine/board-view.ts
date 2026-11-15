@@ -6,7 +6,7 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-import { wood, disposeScene, afterGPUFrame, aim, realism, planks, weave, glossy, block } from "./scene-utils";
+import { wood, disposeScene, afterGPUFrame, aim, realism, planks, weave, glossy, block, fall } from "./scene-utils";
 import { parkBench } from "./scenery";
 import {
   FOV,
@@ -386,7 +386,7 @@ export class BoardView {
       });
       this.falling = this.falling.filter((f) => {
         const t = Math.min(1, (time - f.start) / 280);
-        f.mesh.position.y = 0.245 + 0.65 * Math.pow(1 - t, 3);
+        f.mesh.position.y = 0.245 + 0.65 * fall(t);
         if (this.variant === "gomoku")
           f.mesh.scale.set(
             0.19,

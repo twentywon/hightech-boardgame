@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block, hop as arc, travel } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
@@ -366,9 +366,9 @@ export class PointBoardView {
       side = model.owners[effect.to] ?? 0,
       to = this.at(effect.to),
       hop = (mesh: T.Mesh, from: T.Vector3, height: number, grow: boolean) => (p: number) => {
-        const e = p * p * (3 - 2 * p);
+        const e = travel(p);
         mesh.position.lerpVectors(from, to, e);
-        mesh.position.y += Math.sin(Math.PI * p) * height;
+        mesh.position.y += arc(p) * height;
         if (grow) mesh.scale.setScalar(0.2 + 0.8 * e);
       };
     let arrive = 320;

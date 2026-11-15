@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, wood, realism, planks, block } from "../../engine/scene-utils";
+import { afterGPUFrame, wood, realism, planks, block, hop, travel } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -314,7 +314,7 @@ export class SnakesView implements PointView<State> {
       update: (p) => {
         spin.setFromAxisAngle(axis, (1 - p) * Math.PI * 5);
         this.die.quaternion.copy(to).multiply(spin);
-        this.die.position.y = 0.35 + Math.sin(Math.PI * p) * 0.9;
+        this.die.position.y = 0.35 + hop(p) * 0.9;
       },
     });
     let at = now + 560,
@@ -341,9 +341,8 @@ export class SnakesView implements PointView<State> {
         start: at + 120,
         duration: 520,
         update: (p) => {
-          const e = p * p * (3 - 2 * p);
-          token.position.lerpVectors(start, end, e);
-          token.position.y += Math.sin(Math.PI * p) * 0.25;
+          token.position.lerpVectors(start, end, travel(p));
+          token.position.y += hop(p) * 0.25;
         },
       });
     }

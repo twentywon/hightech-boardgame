@@ -1,4 +1,4 @@
-import { block } from "../../engine/scene-utils";
+import { block, hop } from "../../engine/scene-utils";
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -243,7 +243,7 @@ export class LudoView extends TableView<State> {
       this.tween(0, 520, (p) => {
         spin.setFromAxisAngle(axis, (1 - p) * Math.PI * 5);
         this.die.quaternion.copy(to).multiply(spin);
-        this.die.position.y = 0.31 + Math.sin(Math.PI * p) * 0.9;
+        this.die.position.y = 0.31 + hop(p) * 0.9;
         if (p === 1) this.onContact();
       });
       // A roll nobody can use is left to be seen for a moment.
