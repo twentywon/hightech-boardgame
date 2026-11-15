@@ -14,6 +14,7 @@ import * as queensRules from "../src/games/queens/rules";
 import * as tour from "../src/games/knight/rules";
 import * as maze from "../src/games/tilt/rules";
 import * as haunt from "../src/games/haunt/rules";
+import * as skyline from "../src/games/skyline/rules";
 import { shownGuide } from "../src/ui/guide";
 import { grillConfig } from "../src/games/grill/config";
 import { minesConfig } from "../src/games/mines/config";
@@ -1182,5 +1183,61 @@ describe("game guides as shown", () => {
   test("brick breaker drops its bat, start and score sections; minesweeper keeps only the basic rules", () => {
     expect(titles(shownGuide(bricksConfig.rules, "brick-breaker"))).toEqual(["기본 규칙", "벽돌", "떨어지는 아이템", "처음이라면"]);
     expect(titles(shownGuide(minesConfig.rules, "minesweeper"))).toEqual(["기본 규칙"]);
+  });
+});
+
+describe("building puzzle", () => {
+  test("a building hides every lower one behind it", () => {
+    expect(skyline.visible([1, 2, 3, 4])).toBe(4);
+    expect(skyline.visible([4, 3, 2, 1])).toBe(1);
+    expect(skyline.visible([2, 1, 4, 3])).toBe(2);
+    expect(skyline.visible([2, 0, 3, 0])).toBe(2);
+    // Line 0 looks down column 0 from the top; line 5 (right side, row 1) looks leftward along row 1.
+    expect(skyline.line(4, 0)).toEqual([0, 4, 8, 12]);
+    expect(skyline.line(4, 5)).toEqual([7, 6, 5, 4]);
+    expect(skyline.line(4, 9)).toEqual([13, 9, 5, 1]);
+    expect(skyline.line(4, 14)).toEqual([8, 9, 10, 11]);
+  });
+  test("every laid puzzle has exactly one answer, a Latin square whose numbers are its own, and the hint builds it", () => {
+    for (let stage = 1; stage <= skyline.STAGES.length; stage++)
+      for (let seed = 1; seed <= 4; seed++) {
+        let state = skyline.createGame(stage, seededRandom(seed * 23 + stage));
+        const n = state.size;
+        expect(skyline.solutions(n, state.clues, state.cells)).toBe(1);
+        expect(skyline.solved({ size: n, cells: state.answer, clues: state.clues })).toBe(true);
+        state.clues.forEach((clue, k) => clue && expect(skyline.visible(skyline.line(n, k).map((i) => state.answer[i]))).toBe(clue));
+        // A stage hides no more numbers than it says.
+        expect(state.clues.filter(Boolean).length).toBeGreaterThanOrEqual(Math.ceil(skyline.STAGES[stage - 1].keep * 4 * n));
+        for (let m = 0; m < 100 && state.winner === null; m++) state = skyline.play(state, skyline.hint(state)!)!;
+        expect(state.winner).toBe(0);
+      }
+  });
+  test("a tap raises a building a storey and clears it past the tallest; buildings from the start stay", () => {
+    const state = skyline.createGame(1, seededRandom(4)),
+      free = state.fixed.findIndex((f) => !f),
+      shown = state.fixed.findIndex(Boolean);
+    let s = state;
+    for (const h of [1, 2, 3, 4, 0]) {
+      s = skyline.play(s, { from: -1, to: free, extra: -1 })!;
+      expect(s.cells[free]).toBe(h);
+    }
+    if (shown >= 0) expect(skyline.play(state, { from: -1, to: shown, extra: -1 })).toBeNull();
+    // Dragged on, carried across and carried off.
+    const other = state.fixed.findIndex((f, i) => !f && i !== free);
+    s = skyline.play(state, { from: -1, to: skyline.put(free, 3), extra: -1 })!;
+    expect(s.cells[free]).toBe(3);
+    s = skyline.play(s, { from: free, to: skyline.put(other, 3), extra: -1 })!;
+    expect([s.cells[free], s.cells[other]]).toEqual([0, 3]);
+    s = skyline.play(s, { from: other, to: skyline.REMOVE, extra: -1 })!;
+    expect(s.cells[other]).toBe(0);
+  });
+  test("a height met twice in a line clashes, and a number shows when it is met or broken", () => {
+    const s = { size: 4, cells: [4, 3, 2, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], clues: new Array(16).fill(0) };
+    expect(skyline.clashes(s)[3]).toBe(false);
+    expect(skyline.clashes(s)[0]).toBe(true);
+    s.clues[12] = 1; // the left of row 0: sees only the 4
+    expect(skyline.clueState(s, 12)).toBe("done");
+    s.clues[4] = 1; // the right of row 0 sees 1, 2, 3, 4
+    expect(skyline.clueState(s, 4)).toBe("over");
   });
 });

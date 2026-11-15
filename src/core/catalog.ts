@@ -384,6 +384,14 @@ export const games = [
     available: true,
   },
   {
+    name: "빌딩 퍼즐",
+    en: "BUILDING PUZZLE",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "▥",
+    available: true,
+  },
+  {
     name: "지뢰찾기",
     en: "MINESWEEPER",
     category: "퍼즐게임",

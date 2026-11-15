@@ -240,6 +240,13 @@ const play = {
     await keys(["Enter", "ArrowRight", "Enter", "Enter", "ArrowDown", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "Enter", "Enter"], 320);
     await wait(700);
   },
+  "building-puzzle": async () => {
+    // The 5×5 block with a few buildings up.
+    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await wait(800);
+    await keys(["ArrowRight", "Enter", "Enter", "ArrowRight", "Enter", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "ArrowLeft", "Enter", "Enter", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "Enter"], 260);
+    await wait(700);
+  },
   "lights-on": async () => {
     await page.locator("dialog[open] .stage-card").nth(2).click();
     await wait(500);

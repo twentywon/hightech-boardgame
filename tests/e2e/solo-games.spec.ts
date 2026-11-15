@@ -13,6 +13,8 @@ import * as mazeRules from "../../src/games/tilt/rules";
 import * as hauntRules from "../../src/games/haunt/rules";
 import { hauntSubject, legendAt, squareAt as hauntSquare } from "../../src/games/haunt/view";
 import * as field from "../../src/games/mines/rules";
+import * as cityRules from "../../src/games/skyline/rules";
+import { plotAt, skylineSubject, stockAt } from "../../src/games/skyline/view";
 import { selectGame } from "./library";
 
 const count = (page: Page) => page.locator("#move-count");
@@ -891,5 +893,84 @@ test("haunted mirrors: a monster is dragged from the row in front onto a square,
   // Carried off the board, it is taken away.
   await drag(square(b), { x: box.x + 30, y: box.y + box.height / 2 });
   await expect(count(page)).toHaveText("3수", { timeout: 20000 });
+  expect(errors).toEqual([]);
+});
+
+test("building puzzle: each plot is tapped up to its height and the city is finished", async ({ page }) => {
+  const random = await seeded(page, 71),
+    errors = await sit(page, "빌딩 퍼즐");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").first().click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  // Puzzles were laid when the game was looked at and when sitting down; the third is the one chosen.
+  cityRules.createGame(1, random);
+  cityRules.createGame(1, random);
+  const state = cityRules.createGame(1, random),
+    board = walker(page, state.size, state.size);
+  await board.home();
+  let presses = 0;
+  for (let cell = 0; cell < state.cells.length; cell++) {
+    if (state.fixed[cell]) continue;
+    // A tap raises the building on a plot a storey.
+    for (let k = 0; k < state.answer[cell]; k++) {
+      await board.go(cell);
+      presses++;
+      await expect(count(page)).toHaveText(`${presses}수`, { timeout: 20000 });
+      await rest(page);
+    }
+  }
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("building puzzle: a building is dragged from the row in front, raised by a tap, carried on and carried off", async ({ page }, info) => {
+  test.skip(info.project.name === "mobile", "the mouse drags here");
+  const random = await seeded(page, 73),
+    errors = await sit(page, "빌딩 퍼즐");
+  await page.getByRole("dialog").locator(".stage-card").first().click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  cityRules.createGame(1, random);
+  cityRules.createGame(1, random);
+  const state = cityRules.createGame(1, random),
+    [a, b] = state.fixed.flatMap((f, i) => (f ? [] : [i])),
+    box = (await page.locator("canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    subject = skylineSubject(state.size, aspect),
+    d = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+  camera.position.set(0, Math.sin(subject.tilt) * d, Math.cos(subject.tilt) * d);
+  camera.lookAt(0, subject.lookY, 0);
+  camera.updateMatrixWorld();
+  const screen = (x: number, y: number, z: number) => {
+      const v = new Vector3(x, y, z).project(camera);
+      return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+    },
+    plot = (cell: number, y = 0.14) => {
+      const p = plotAt(state.size, cell);
+      return screen(p.x, y, p.z);
+    },
+    drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i++) await page.mouse.move(from.x + ((to.x - from.x) * i) / 8, from.y + ((to.y - from.y) * i) / 8);
+      await page.mouse.up();
+    };
+  const two = stockAt(state.size, 2);
+  await drag(screen(two.x, 0.2, two.z), plot(a));
+  await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+  await rest(page);
+  // A tap on the building raises it a storey.
+  const up = plot(a, 0.14 + 0.19);
+  await page.mouse.click(up.x, up.y);
+  await expect(count(page)).toHaveText("2수", { timeout: 20000 });
+  await rest(page);
+  await drag(plot(a, 0.3), plot(b));
+  await expect(count(page)).toHaveText("3수", { timeout: 20000 });
+  await rest(page);
+  // Carried off the block, it is taken away.
+  await drag(plot(b, 0.3), { x: box.x + 30, y: box.y + box.height / 2 });
+  await expect(count(page)).toHaveText("4수", { timeout: 20000 });
   expect(errors).toEqual([]);
 });
