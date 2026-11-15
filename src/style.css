@@ -2711,3 +2711,27 @@ dialog .stage-card small, dialog .stage-card b { word-break:keep-all; }
 @media (orientation: landscape) and (max-height: 540px) { .game-layout.hud aside.game-sidebar .fleet .ship i { width:6px;height:6px; } .game-layout.hud aside.game-sidebar .fleet { max-width:150px;gap:3px 7px !important; } }
 .game-layout.hud aside.game-sidebar li:has(.fleet) { display:grid !important;grid-template-columns:auto minmax(0, 1fr);align-items:center;gap:2px 6px !important; }
 .game-layout.hud aside.game-sidebar li:has(.fleet) > span { grid-column:1 / -1; }
+/* The pause button is a bare white sign too, like back and settings (the user asked): two thick bars, an
+   arrowhead while paused, a faint dark shadow and no plate. */
+.board-area .board-pause .board-icon { background:none !important;box-shadow:none !important;filter:drop-shadow(0 1px 1.5px #0007) drop-shadow(0 0 6px #0004);transition:transform .15s ease; }
+.board-area .board-pause .board-icon:hover { transform:scale(1.08); }
+.board-area .board-pause .pause-icon i { width:16px;height:20px;border-left:6px solid #fff;border-right:6px solid #fff;border-radius:1px; }
+.board-area .board-pause .pause-icon.paused i { width:0;height:0;border-width:11px 0 11px 18px;border-color:transparent transparent transparent #fff;margin-left:5px;border-radius:0; }
+.game-layout.hud.hud-ink .board-area .board-pause .board-icon { filter:drop-shadow(0 1px 2px #000b) drop-shadow(0 0 5px #0007); }
+@media (prefers-reduced-motion: reduce) { .board-area .board-pause .board-icon { transition:none; } }
+/* Every such panel stands at the table's lower left, above the small print, as chess and janggi first did
+   (the user asked); where the lower left holds buttons of the game's own the letters stand above them. */
+.game-layout.hud .table-layout > aside.game-sidebar { top:auto !important;bottom:58px; }
+html[data-game="falling-blocks"] .game-layout.hud .table-layout > aside.game-sidebar { bottom:150px; }
+html[data-game="spider"] .game-layout.hud .table-layout > aside.game-sidebar { bottom:96px; }
+@media (orientation: landscape) and (max-height: 540px) {
+  .game-layout.hud .table-layout > aside.game-sidebar { bottom:30px; }
+  html[data-game="falling-blocks"] .game-layout.hud .table-layout > aside.game-sidebar { bottom:112px; }
+  html[data-game="spider"] .game-layout.hud .table-layout > aside.game-sidebar { bottom:70px; }
+}
+/* Each line only as wide as its words, so that a score stands next to its name and not out over the table. */
+.game-layout.hud aside.game-sidebar { align-items:flex-start; }
+.game-layout.hud aside.game-sidebar .yut-sides li, .game-layout.hud aside.game-sidebar .player { width:max-content;max-width:100%; }
+/* Battleship is the exception: its two boards reach the lower left, so its fleets stay at the upper left. */
+html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { top:54px !important;bottom:auto; }
+@media (orientation: landscape) and (max-height: 540px) { html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { top:40px !important; } }

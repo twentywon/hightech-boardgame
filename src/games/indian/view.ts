@@ -60,7 +60,8 @@ export class IndianView extends TableView<State> {
     // A bare room: a dark wall behind the figure, and the table between us.
     const wall = this.add(new T.PlaneGeometry(60, 30), this.standard({ color: "#2b3038", roughness: 1 }), 0, 8, -11);
     wall.castShadow = false;
-    const top = this.add(block(11, 0.3, 9), this.standard(planks(1.4, (r) => this.own(r), 1.1)), 0, TABLE - 0.15, 0.2);
+    // The table runs on toward me past the bottom of the view (the user asked), its far edge where it was.
+    const top = this.add(block(11, 0.3, 24), this.standard(planks(1.4, (r) => this.own(r), 2.9)), 0, TABLE - 0.15, 7.7);
     top.castShadow = false;
     this.add(new T.CylinderGeometry(2.6, 2.6, 0.02, 48), this.standard({ color: "#1f6a4a", roughness: 0.95 }), 0, TABLE + 0.012, -0.9).castShadow = false;
     // The figure: smooth and white, jointed like an artist's model.
@@ -91,6 +92,8 @@ export class IndianView extends TableView<State> {
     part(new T.SphereGeometry(0.21, 14, 10), white, 0.7, TABLE + 0.2, 2.15).scale.set(1.2, 0.6, 1.3);
     figure.position.set(0, 0, -4.6);
     this.scene.add(figure);
+    // The figure casts no shadow, and neither do the cards (the user asked).
+    figure.traverse((o) => (o.castShadow = false));
     // The cards: its own on its forehead, mine at the top of my view, and mine again laid down once the round is over.
     const card = this.own(new T.PlaneGeometry(CW, CH));
     this.back = this.standard({ map: this.texture((ctx, w, h) => drawBack(ctx, w, h)), roughness: 0.6 });
@@ -99,7 +102,7 @@ export class IndianView extends TableView<State> {
     const reverse = new T.Mesh(card, this.back);
     reverse.rotation.y = Math.PI;
     reverse.position.z = -0.004;
-    this.theirFace.castShadow = reverse.castShadow = true;
+    this.theirFace.castShadow = reverse.castShadow = false;
     this.theirs.add(this.theirFace, reverse);
     this.theirs.scale.setScalar(THEIRS);
     figure.add(this.theirs);

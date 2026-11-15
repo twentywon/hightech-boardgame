@@ -350,8 +350,8 @@ test("water pouring: the level is asked, pours are counted against the fewest, a
     way = solveJugs(puzzle)!;
   await expect(page.locator("#turn")).not.toContainText("최소");
   await expect(page.locator("#turn")).toContainText("목표:");
-  await expect(page.locator(".solo-stat")).toHaveCount(2);
-  await expect(page.locator(".solo-stat").nth(1)).toContainText(String(puzzle.best));
+  // No count of pours or of the fewest is shown (the user asked).
+  await expect(page.locator(".solo-stat")).toHaveCount(0);
   const panel = page.locator(".puzzle-panel");
   await panel.getByRole("button", { name: "힌트", exact: true }).click();
   await expect(page.locator("#turn")).toContainText("화살표");
@@ -445,7 +445,7 @@ test("river crossing: a wrong crossing is shown as a failure and taken back, and
     await launch.click();
     // The press took the keyboard to the button: give it back to the table.
     await page.locator("canvas").focus();
-    await expect(page.locator(".solo-stat").first()).toContainText(String(n + 1), { timeout: 20000 });
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
     await rest(page);
   }
   await expect(page.locator("#turn")).toContainText("성공!");

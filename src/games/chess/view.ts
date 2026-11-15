@@ -586,6 +586,20 @@ export class ChessView {
     if (check) mark(check, "#e65a45", true);
     if (cursor) mark(cursor, "#fff2c6", true);
     for (const s of legal) {
+      // A piece that may be taken is marked apart from an empty square (the user asked): its square glows red and a
+      // red ring stands round its foot, where a plain dot would hide under it.
+      if (this.tokens.has(s)) {
+        mark(s, "#d8432f");
+        const p = toWorld(s),
+          ring = new T.Mesh(
+            new T.RingGeometry(0.31, 0.37, 40),
+            new T.MeshBasicMaterial({ color: "#e0402a", transparent: true, opacity: 0.95, side: T.DoubleSide, depthWrite: false }),
+          );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(p.x, 0.222, p.z);
+        this.marks.add(ring);
+        continue;
+      }
       const p = toWorld(s),
         m = new T.Mesh(
           new T.CircleGeometry(0.085, 24),
