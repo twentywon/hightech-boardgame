@@ -14,6 +14,10 @@ import * as queensRules from "../src/games/queens/rules";
 import * as tour from "../src/games/knight/rules";
 import * as maze from "../src/games/tilt/rules";
 import * as haunt from "../src/games/haunt/rules";
+import { shownGuide } from "../src/ui/guide";
+import { grillConfig } from "../src/games/grill/config";
+import { minesConfig } from "../src/games/mines/config";
+import { bricksConfig } from "../src/games/bricks/config";
 import * as mines from "../src/games/mines/rules";
 import * as fruit from "../src/games/fruit/rules";
 import * as box from "../src/games/fruit/sim";
@@ -1158,5 +1162,25 @@ describe("haunted mirrors by hand", () => {
     if (mirror >= 0) expect(haunt.play(s, { from: -1, to: haunt.put(mirror, haunt.GHOST), extra: -1 })).toBeNull();
     s = haunt.play(s, { from: b, to: haunt.REMOVE, extra: -1 })!;
     expect(s.cells[b]).toBe(haunt.EMPTY);
+  });
+});
+
+describe("game guides as shown", () => {
+  const titles = (html: string) => [...html.matchAll(/<h3>(.*?)<\/h3>/g)].map((m) => m[1]);
+  test("no game shows the side panel's section or anything on pausing", () => {
+    for (const [game, rules] of [["meat-grill", grillConfig.rules], ["brick-breaker", bricksConfig.rules]] as const) {
+      const shown = shownGuide(rules, game);
+      expect(titles(shown)).not.toContain("오른쪽 판");
+      expect(shown).not.toMatch(/일시\s?정지/);
+    }
+  });
+  test("the grill keeps its rules, modes, wraps and advice, without the chooser row", () => {
+    const shown = shownGuide(grillConfig.rules, "meat-grill");
+    expect(titles(shown)).toEqual(["기본 규칙", "모드", "쌈 싸기", "처음이라면"]);
+    expect(shown).not.toContain("<dt>고르기</dt>");
+  });
+  test("brick breaker drops its bat, start and score sections; minesweeper keeps only the basic rules", () => {
+    expect(titles(shownGuide(bricksConfig.rules, "brick-breaker"))).toEqual(["기본 규칙", "벽돌", "떨어지는 아이템", "처음이라면"]);
+    expect(titles(shownGuide(minesConfig.rules, "minesweeper"))).toEqual(["기본 규칙"]);
   });
 });

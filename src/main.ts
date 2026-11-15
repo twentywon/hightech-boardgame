@@ -41,6 +41,13 @@ document.getElementById("rotate-go")?.addEventListener("click", async () => {
 // The browser's (or the phone's) back button leaves a table for the collection instead of leaving the page.
 // Sitting down adds one history entry; going back from it presses the table's own ← 컬렉션.
 const atTable = () => !!root.querySelector(":scope > main.game-layout");
+// The page puts the collection where it belongs itself (at the game just left): the browser must not scroll it back
+// to where the page stood when the table's history entry was made.
+try {
+  history.scrollRestoration = "manual";
+} catch {
+  // A viewer that forbids it keeps the browser's own behaviour.
+}
 const remember = () => {
   try {
     if (!history.state?.table) history.pushState({ table: true }, "");

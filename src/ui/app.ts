@@ -345,6 +345,18 @@ function askNewGame() {
     bindGomokuSetup();
   });
 }
+/**
+ * Leaves a table for the collection and brings the game that was played back into view, its tile in the middle of
+ * the screen and in focus (the user asked: not the top of the page).
+ */
+function leave() {
+  const id = document.documentElement.dataset.game;
+  menu();
+  const entry = id ? document.querySelector<HTMLElement>(`.game-entry[data-game="${CSS.escape(id)}"]`) : null;
+  if (!entry) return;
+  entry.scrollIntoView({ block: "center", behavior: "auto" });
+  entry.querySelector<HTMLButtonElement>(".game-card")?.focus({ preventScroll: true });
+}
 function menu(selected: GameSelection = null, category = "전체", people = "전체") {
   // The table sat down at from here plays this game's music (Korean or Indian for some, jazz for the rest).
   if (selected) {
@@ -400,7 +412,7 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
   });
   if (selected === "reversi") {
     reversi = mountReversi(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"),
       preferences: reversiOptions,
       remember: (options) => { reversiOptions = options; setReversiOptions(options); },
@@ -408,14 +420,14 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
   }
   if (selected === "chess") {
     chess = mountChess(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: chessOptions,
       remember: (options) => { chessOptions = options; },
     });
   }
   if (selected === "seotda" || selected === "seven-poker") {
     const nav = {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: bettingOptions[selected],
       remember: (options: BettingOptions) => { bettingOptions[selected] = options; },
     };
@@ -425,21 +437,21 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
   }
   if (selected === "janggi") {
     janggi = mountJanggi(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: janggiOptions,
       remember: (options) => { janggiOptions = options; },
     });
   }
   if (selected === "spider") {
     spider = mountSpider(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: spiderOptions,
       remember: (options) => { spiderOptions = options; },
     });
   }
   if (selected === "world-tour") {
     tour = mountTour(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: tourOptions,
       remember: (options) => { tourOptions = options; },
     });
@@ -447,28 +459,28 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
   if (selected && pointGames[selected]) {
     const entry = pointGames[selected];
     points = mountPointGame(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: entry.options,
       remember: (options: PointOptions) => { entry.options = options; },
     }, entry.config);
   }
   if (selected === "yut-nori") {
     yut = mountYut(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: yutOptions,
       remember: (options) => { yutOptions = options; },
     });
   }
   if (selected === "yacht-dice") {
     yacht = mountYacht(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: yachtOptions,
       remember: (options) => { yachtOptions = options; },
     });
   }
   if (selected === "blackjack") {
     blackjack = mountBlackjack(app, {
-      header, bindHeader, back: () => menu(), settings,
+      header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"),
     });
   }
@@ -502,7 +514,7 @@ function game() {
     header() +
     `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · ${state.noDoubleThree ? "삼삼 금지" : "삼삼 허용"}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 교차점을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
   bindHeader();
-  $("back").onclick = () => menu();
+  $("back").onclick = leave;
   $("rules").onclick = showRules;
   dress(
     (host) => {
