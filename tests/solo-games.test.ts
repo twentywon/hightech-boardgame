@@ -13,6 +13,7 @@ import * as lights from "../src/games/lights/rules";
 import * as queensRules from "../src/games/queens/rules";
 import * as tour from "../src/games/knight/rules";
 import * as maze from "../src/games/tilt/rules";
+import * as haunt from "../src/games/haunt/rules";
 import * as mines from "../src/games/mines/rules";
 import * as fruit from "../src/games/fruit/rules";
 import * as box from "../src/games/fruit/sim";
@@ -1103,5 +1104,42 @@ describe("turning maze", () => {
     const turned = maze.play(state, { from: -1, to: maze.RIGHT, extra: -1 })!;
     expect(turned.turn).toBe(1);
     expect(maze.play(turned, { from: -1, to: maze.LEFT, extra: -1 })!.turn).toBe(0);
+  });
+});
+
+describe("haunted mirrors", () => {
+  test("a ghost is seen only after a mirror, a vampire only before one, a zombie always, and twice when passed twice", () => {
+    const { NONE, BACK, GHOST, VAMPIRE, ZOMBIE } = haunt;
+    // 2×2: a "\" mirror top left. Looking in from the top of column 0 the line turns right along row 0.
+    const mirror = [BACK, NONE, NONE, NONE];
+    expect(haunt.sightline(2, mirror, 0).map((s) => [s.cell, s.turned])).toEqual([[1, true]]);
+    expect(haunt.count(2, mirror, [0, GHOST, 0, 0], 0)).toBe(1);
+    expect(haunt.count(2, mirror, [0, VAMPIRE, 0, 0], 0)).toBe(0);
+    expect(haunt.count(2, mirror, [0, ZOMBIE, 0, 0], 0)).toBe(1);
+    // Looking in from the left of row 1, nothing turns: a vampire is seen, a ghost is not.
+    expect(haunt.count(2, mirror, [0, 0, VAMPIRE, GHOST], 7)).toBe(1);
+  });
+  test("every laid puzzle has exactly one answer, its numbers are the answer's, and the hint solves it", () => {
+    for (let stage = 1; stage <= haunt.STAGES.length; stage++)
+      for (let seed = 1; seed <= 4; seed++) {
+        let state = haunt.createGame(stage, seededRandom(seed * 19 + stage));
+        expect(haunt.solutions(state.size, state.mirror, state.clues, state.totals, state.cells)).toBe(1);
+        expect(haunt.counts(state, state.answer)).toEqual(state.clues);
+        for (let n = 0; n < 200 && state.winner === null; n++) state = haunt.play(state, haunt.hint(state)!)!;
+        expect(state.winner).toBe(0);
+      }
+  });
+  test("a tap turns a square over to the next monster, mirrors and shown monsters stay", () => {
+    const state = haunt.createGame(1, seededRandom(4)),
+      free = state.mirror.findIndex((m, i) => m === haunt.NONE && !state.fixed[i]),
+      mirror = state.mirror.findIndex((m) => m !== haunt.NONE),
+      shown = state.fixed.findIndex(Boolean);
+    let s = state;
+    for (const kind of [haunt.GHOST, haunt.VAMPIRE, haunt.ZOMBIE, haunt.EMPTY]) {
+      s = haunt.play(s, { from: -1, to: free, extra: -1 })!;
+      expect(s.cells[free]).toBe(kind);
+    }
+    if (mirror >= 0) expect(haunt.play(state, { from: -1, to: mirror, extra: -1 })).toBeNull();
+    expect(haunt.play(state, { from: -1, to: shown, extra: -1 })).toBeNull();
   });
 });

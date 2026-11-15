@@ -10,6 +10,7 @@ import * as lamps from "../../src/games/lights/rules";
 import * as queenRules from "../../src/games/queens/rules";
 import * as tourRules from "../../src/games/knight/rules";
 import * as mazeRules from "../../src/games/tilt/rules";
+import * as hauntRules from "../../src/games/haunt/rules";
 import * as field from "../../src/games/mines/rules";
 import { selectGame } from "./library";
 
@@ -809,6 +810,35 @@ test("turning maze: the knobs and the arrow keys turn the dial, and the blocks a
     state = mazeRules.play(state, { from: -1, to, extra: -1 })!;
   }
   expect(state.winner).toBe(0);
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("haunted mirrors: each square is tapped round to its monster and the puzzle is solved", async ({ page }) => {
+  const random = await seeded(page, 61),
+    errors = await sit(page, "할로윈 퍼즐");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").first().click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  // Puzzles were laid when the game was looked at and when sitting down; the third is the one chosen.
+  hauntRules.createGame(1, random);
+  hauntRules.createGame(1, random);
+  const state = hauntRules.createGame(1, random),
+    board = walker(page, state.size, state.size);
+  await expect(page.locator("#turn")).toContainText(`유령 ${state.totals[0]}`);
+  await board.home();
+  let presses = 0;
+  for (let cell = 0; cell < state.cells.length; cell++) {
+    if (state.mirror[cell] !== hauntRules.NONE || state.fixed[cell]) continue;
+    // A tap turns nothing into a ghost, then a vampire, then a zombie.
+    for (let k = 0; k < state.answer[cell]; k++) {
+      await board.go(cell);
+      presses++;
+      await expect(count(page)).toHaveText(`${presses}수`, { timeout: 20000 });
+      await rest(page);
+    }
+  }
   await expect(page.locator("#turn")).toContainText("성공!");
   expect(errors).toEqual([]);
 });

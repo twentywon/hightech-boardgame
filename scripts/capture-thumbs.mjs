@@ -226,6 +226,13 @@ const play = {
     await page.locator("dialog[open] .stage-card").nth(1).click();
     await wait(800);
   },
+  "haunted-mirrors": async () => {
+    // The 5×5 board with a few monsters set.
+    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await wait(800);
+    await keys(["Enter", "ArrowRight", "Enter", "Enter", "ArrowDown", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "Enter", "Enter"], 320);
+    await wait(700);
+  },
   "lights-on": async () => {
     await page.locator("dialog[open] .stage-card").nth(2).click();
     await wait(500);

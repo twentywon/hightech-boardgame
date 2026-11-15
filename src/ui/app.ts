@@ -40,6 +40,7 @@ import { lightsConfig } from "../games/lights/config";
 import { queensConfig } from "../games/queens/config";
 import { knightConfig } from "../games/knight/config";
 import { tiltConfig } from "../games/tilt/config";
+import { hauntConfig } from "../games/haunt/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -161,6 +162,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "queens-on-the-board": { config: queensConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "knight-tour": { config: knightConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "turning-maze": { config: tiltConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "haunted-mirrors": { config: hauntConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -297,6 +299,7 @@ type GameSelection =
   | "queens-on-the-board"
   | "knight-tour"
   | "turning-maze"
+  | "haunted-mirrors"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"
