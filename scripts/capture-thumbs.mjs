@@ -217,6 +217,11 @@ const play = {
     await page.locator("dialog[open] .stage-card").nth(3).click();
     await wait(900);
   },
+  "knight-tour": async () => {
+    // The 5×5 board, a few hops along the hinted way.
+    await page.locator("dialog[open] .stage-card").nth(3).click();
+    await wait(800);
+  },
   "lights-on": async () => {
     await page.locator("dialog[open] .stage-card").nth(2).click();
     await wait(500);

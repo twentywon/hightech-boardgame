@@ -11,6 +11,7 @@ import * as river from "../src/games/river/rules";
 import * as hanoi from "../src/games/hanoi/rules";
 import * as lights from "../src/games/lights/rules";
 import * as queensRules from "../src/games/queens/rules";
+import * as tour from "../src/games/knight/rules";
 import * as mines from "../src/games/mines/rules";
 import * as fruit from "../src/games/fruit/rules";
 import * as box from "../src/games/fruit/sim";
@@ -1026,6 +1027,41 @@ describe("queens on the board", () => {
       for (let step = 0; step < 40 && state.winner === null; step++) state = queensRules.play(state, queensRules.hint(state)!)!;
       expect(state.winner).toBe(0);
       expect(queensRules.queens.reason(state)).toMatch(/^성공!/);
+    }
+  });
+});
+
+describe("knight tour", () => {
+  test("every laid board can be travelled from where the knight stands, and covers its share of the board", () => {
+    for (let stage = 1; stage <= tour.STAGES.length; stage++)
+      for (let seed = 1; seed <= 15; seed++) {
+        const state = tour.createGame(stage, seededRandom(seed * 17 + stage)),
+          { cols, rows, fill } = tour.STAGES[stage - 1];
+        expect(state.open.filter(Boolean).length).toBeGreaterThanOrEqual(Math.ceil(cols * rows * fill));
+        expect(state.open[state.path[0]]).toBe(true);
+        expect(tour.solve(state)).not.toBeNull();
+      }
+  });
+  test("only a knight's move to an open, unvisited square is taken; a knight with nowhere left is stuck", () => {
+    const state = tour.createGame(1, seededRandom(3)),
+      here = state.path[0],
+      next = tour.nextSquares(state);
+    expect(tour.play(state, { from: -1, to: here, extra: -1 })).toBeNull();
+    const notKnight = state.open.findIndex((open, i) => open && i !== here && !tour.jumps(state.cols, state.rows, here).includes(i));
+    if (notKnight >= 0) expect(tour.play(state, { from: -1, to: notKnight, extra: -1 })).toBeNull();
+    expect(tour.play(state, { from: -1, to: next[0], extra: -1 })!.path).toEqual([here, next[0]]);
+    // Wandering without care ends either in a full journey or stuck, and is then refused any move.
+    let s = state;
+    while (s.winner === null) s = tour.play(s, { from: -1, to: tour.nextSquares(s)[0], extra: -1 })!;
+    expect([0, 1]).toContain(s.winner);
+    expect(tour.moves(s)).toEqual([]);
+  });
+  test("following the hint always travels the whole board", () => {
+    for (let stage = 1; stage <= tour.STAGES.length; stage++) {
+      let state = tour.createGame(stage, seededRandom(stage * 11));
+      while (state.winner === null) state = tour.play(state, tour.hint(state)!)!;
+      expect(state.winner).toBe(0);
+      expect(state.path).toHaveLength(state.open.filter(Boolean).length);
     }
   });
 });

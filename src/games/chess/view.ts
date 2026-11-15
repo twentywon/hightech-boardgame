@@ -108,9 +108,10 @@ export class ChessView {
     table.position.y = -0.35;
     table.receiveShadow = true;
     this.scene.add(table);
+    // The rim is a lighter, warmer, polished wood than the table under it, so that the board stands apart (the user asked).
     const rim = new T.Mesh(
       block(7.05, 0.35, 7.05),
-      new T.MeshStandardMaterial({ map: wood(true), roughness: 0.5 }),
+      new T.MeshStandardMaterial({ map: wood(false), color: "#b27450", roughness: 0.34 }),
     );
     rim.castShadow = rim.receiveShadow = true;
     this.scene.add(rim);
@@ -228,7 +229,7 @@ export class ChessView {
     const c = document.createElement("canvas");
     c.width = c.height = 64;
     const ctx = c.getContext("2d")!;
-    ctx.fillStyle = "#e2d3ac";
+    ctx.fillStyle = "#3b2414";
     ctx.font = "42px Georgia";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";

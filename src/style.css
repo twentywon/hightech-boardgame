@@ -2758,3 +2758,5 @@ main.game-layout, main.game-layout :not(svg, svg *) { font-family:Inter, "Noto S
 /* With the finale in the middle of the table, the panel's own result block is kept only for readers and the keyboard. */
 .game-layout.hud aside.game-sidebar .yd-result { position:absolute !important;width:1px !important;height:1px !important;overflow:hidden !important;opacity:0;margin:0 !important;padding:0 !important; }
 .game-layout.hud aside.game-sidebar .yd-result button { pointer-events:auto; }
+/* Thumbnails show the table alone, without the lettering laid over it. */
+html[data-capture] .game-layout.hud .table-layout > aside.game-sidebar { display:none !important; }

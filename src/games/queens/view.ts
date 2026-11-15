@@ -61,9 +61,10 @@ export class QueensView extends TableView<State> {
     this.size = size;
     this.board.clear();
     const span = size * CELL,
-      rim = this.add(block(span + 0.5, 0.35, span + 0.5), this.standard({ map: this.own(wood(true)), roughness: 0.5 }), 0, 0, 0, this.board),
+      rim = this.add(block(span + 0.5, 0.35, span + 0.5), this.standard({ map: this.own(wood(false)), color: "#b27450", roughness: 0.34 }), 0, 0, 0, this.board),
       light = this.standard({ map: veneer(false), roughness: 0.38, color: "#fff4e0" }),
       dark = this.standard({ map: veneer(true), roughness: 0.38, color: "#9a7458" });
+    // The rim is a lighter, warmer, polished wood than the table under it, so that the board stands apart (the user asked).
     rim.castShadow = rim.receiveShadow = true;
     // Squares of veneer, each cut from another part of its sheet so that no two have the same grain.
     let cut = 11;

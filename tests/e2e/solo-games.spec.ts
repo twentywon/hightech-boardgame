@@ -8,6 +8,7 @@ import { createGame as gather, solve as ferry } from "../../src/games/river/rule
 import * as tower from "../../src/games/hanoi/rules";
 import * as lamps from "../../src/games/lights/rules";
 import * as queenRules from "../../src/games/queens/rules";
+import * as tourRules from "../../src/games/knight/rules";
 import * as field from "../../src/games/mines/rules";
 import { selectGame } from "./library";
 
@@ -736,6 +737,36 @@ test("queens on the board: a puzzle laid at random is finished by setting the mi
   await expect(count(page)).toHaveText("0수");
   const missing = answer.map((c, r) => r * size + c).filter((i) => !state.fixed[i]);
   for (const [n, cell] of missing.entries()) {
+    await board.go(cell);
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+  }
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("knight tour: a board laid at random is travelled square by square, and a wrong square is refused", async ({ page }) => {
+  const random = await seeded(page, 53),
+    errors = await sit(page, "나이트의 여행");
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "4×4" }).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await rest(page);
+  // Boards were laid when the game was looked at and when sitting down; the third is the one chosen.
+  tourRules.createGame(1, random);
+  tourRules.createGame(1, random);
+  const state = tourRules.createGame(2, random),
+    way = tourRules.solve(state)!,
+    board = walker(page, state.cols, state.rows);
+  await expect(page.locator("#turn")).toContainText("한 번씩");
+  await board.home();
+  // A square that is not a knight's move away is not taken.
+  const here = state.path[0],
+    wrong = state.open.findIndex((open, i) => open && i !== here && !tourRules.jumps(state.cols, state.rows, here).includes(i));
+  await board.go(wrong);
+  await page.waitForTimeout(300);
+  await expect(count(page)).toHaveText("0수");
+  for (const [n, cell] of way.entries()) {
     await board.go(cell);
     await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
     await rest(page);
