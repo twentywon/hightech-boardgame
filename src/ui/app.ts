@@ -43,6 +43,10 @@ import { knightConfig } from "../games/knight/config";
 import { tiltConfig } from "../games/tilt/config";
 import { hauntConfig } from "../games/haunt/config";
 import { skylineConfig } from "../games/skyline/config";
+import { foxGeeseConfig } from "../games/foxgeese/config";
+import { taflConfig } from "../games/tafl/config";
+import { urConfig } from "../games/ur/config";
+import { tentsConfig } from "../games/tents/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -167,6 +171,10 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "turning-maze": { config: tiltConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "haunted-mirrors": { config: hauntConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "building-puzzle": { config: skylineConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "fox-and-geese": { config: foxGeeseConfig, options: { mode: "ai", variant: "geese", level: "normal" } },
+  hnefatafl: { config: taflConfig, options: { mode: "ai", variant: "defenders", level: "normal" } },
+  "royal-game-of-ur": { config: urConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  tents: { config: tentsConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -306,6 +314,10 @@ type GameSelection =
   | "turning-maze"
   | "haunted-mirrors"
   | "building-puzzle"
+  | "fox-and-geese"
+  | "hnefatafl"
+  | "royal-game-of-ur"
+  | "tents"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"

@@ -247,6 +247,25 @@ const play = {
     await keys(["ArrowRight", "Enter", "Enter", "ArrowRight", "Enter", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "ArrowLeft", "Enter", "Enter", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "Enter"], 260);
     await wait(700);
   },
+  tents: async () => {
+    // The 7×7 field with a few tents and grass marks.
+    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await wait(800);
+    await keys(["ArrowRight", "Enter", "ArrowDown", "ArrowDown", "Enter", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "Enter", "ArrowDown", "ArrowDown", "ArrowLeft", "Enter"], 260);
+    await wait(700);
+  },
+  "royal-game-of-ur": async () => {
+    // A few throws and moves, so that pieces stand on the board.
+    for (let i = 0; i < 6; i++) {
+      await page.evaluate(() => document.querySelector("#pg-tool-0")?.click());
+      await wait(1500);
+      await keys(["ArrowRight", "ArrowLeft", "Enter"], 120);
+      await wait(2600);
+    }
+  },
+  hnefatafl: async () => {
+    await wait(2500);
+  },
   "lights-on": async () => {
     await page.locator("dialog[open] .stage-card").nth(2).click();
     await wait(500);

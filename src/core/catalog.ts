@@ -184,6 +184,22 @@ export const games = [
     available: true,
   },
   {
+    name: "여우와 거위",
+    en: "FOX AND GEESE",
+    category: "보드게임",
+    players: "2인용",
+    icon: "🦊",
+    available: true,
+  },
+  {
+    name: "바이킹 체스",
+    en: "HNEFATAFL",
+    category: "보드게임",
+    players: "2인용",
+    icon: "♔",
+    available: true,
+  },
+  {
     name: "숫자야구",
     en: "NUMBER BASEBALL",
     category: "보드게임",
@@ -245,6 +261,14 @@ export const games = [
     category: "주사위게임",
     players: "2인용",
     icon: "✚",
+    available: true,
+  },
+  {
+    name: "우르 왕실 게임",
+    en: "ROYAL GAME OF UR",
+    category: "주사위게임",
+    players: "2인용",
+    icon: "✦",
     available: true,
   },
   {
@@ -389,6 +413,14 @@ export const games = [
     category: "퍼즐게임",
     players: "1인용",
     icon: "▥",
+    available: true,
+  },
+  {
+    name: "텐트 치기",
+    en: "TENTS",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "⛺",
     available: true,
   },
   {
