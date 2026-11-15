@@ -100,14 +100,14 @@ test("the notebook: dots and boxes closes a box for another turn, hex colours a 
   await expect(moves(page)).toHaveText("3수");
   await expect(turn(page)).toContainText("파랑 (플레이어 2) 차례");
   await mark(lines[13]);
-  await expect(page.locator("#pg-count-1")).toHaveText("네모 1");
+  await expect(page.locator("#pg-count-1")).toHaveText("1");
   // Blue closed the box and draws again.
   await expect(turn(page)).toContainText("파랑 (플레이어 2) 차례");
   // A line already drawn is refused.
   await mark(lines[13]);
   await expect(moves(page)).toHaveText("4수");
   await page.locator("#pg-undo").click();
-  await expect(page.locator("#pg-count-1")).toHaveText("네모 0");
+  await expect(page.locator("#pg-count-1")).toHaveText("0");
   await page.screenshot({ path: `test-results/${info.project.name}-dots.png`, fullPage: true });
   await sit(page, "헥스", "ai", "7");
   await expect(page.locator(".side-mode")).toContainText("7 × 7");
