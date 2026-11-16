@@ -43,10 +43,17 @@ test("balance quiz: the four stages are laid, each takes a press, a hint is show
   await expect(page.locator("#turn")).toContainText(`저울 ${left - 1}번 남음`);
   await rest(page);
   await expect(page.locator("#pg-tool-1")).toHaveText("가짜 지목하기");
+  // The goods and the mobile: a button by a number turns it, and only 정답 확인 says whether the answer is right.
   for (const stage of ["3", "4"]) {
     await page.locator(`.puzzle-level[data-stage="${stage}"]`).click();
     await expect(count(page)).toHaveText("0수");
     await press(page, "1수");
+    await expect(page.locator("#turn")).not.toContainText(/성공!|실패!/);
+    await expect(page.locator("#pg-tool-2")).toHaveText("정답 확인");
+    await page.locator("#pg-tool-2").click();
+    await expect(count(page)).toHaveText("2수");
+    await expect(page.locator("#turn")).toContainText(/성공!|실패!/);
+    await rest(page);
   }
   expect(errors).toEqual([]);
 });

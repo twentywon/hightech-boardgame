@@ -65,6 +65,23 @@ describe("balance quiz", () => {
     // The hint names where a coin or weight goes.
     expect(b.putOf(b.hint(w)!.to)).not.toBeNull();
   });
+  test("goods and mobile: turning a dial tells nothing; the answer is known only when handed in", () => {
+    for (const stage of [3, 4]) {
+      const s = b.createGame(stage, seededRandom(7));
+      let right = s;
+      s.answer.forEach((v, i) => (right = b.play(right, { from: -1, to: b.setTo(i, v), extra: -1 })!));
+      // Every dial at its answer, and still nothing is settled until 정답 확인.
+      expect(right.winner).toBeNull();
+      expect(b.levelled(right)).toBe(true);
+      expect(b.play(right, { from: -1, to: b.CHECK, extra: -1 })!.winner).toBe(0);
+      // A wrong answer handed in is a failure that says how many lean.
+      const wrong = b.play(right, { from: -1, to: b.UP, extra: -1 })!,
+        failed = b.play(wrong, { from: -1, to: b.CHECK, extra: -1 })!;
+      expect(failed.winner).toBe(1);
+      expect(failed.trouble).toMatch(/기웁니다/);
+      expect(b.moves(s).map((m) => m.to)).toContain(b.CHECK);
+    }
+  });
   test("weights: one setting levels the scale, and the hints find it", () => {
     for (let seed = 1; seed <= 30; seed++) {
       const s = b.createGame(2, seededRandom(seed));

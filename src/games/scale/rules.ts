@@ -26,6 +26,8 @@ export const KINDS: Kind[] = ["coins", "weights", "goods", "mobile"];
  */
 export const WEIGH = 900,
   ACCUSE = 901,
+  /** The goods' and the mobile's answer handed in: the dials say nothing until then (the user asked). */
+  CHECK = 902,
   UP = 1000,
   DOWN = 1100,
   SET = 2000,
@@ -476,8 +478,17 @@ export function createGame(stage = 1, random: Random = cryptoRandom): State {
     made = kind === "coins" ? coinsGame(random) : kind === "weights" ? weightsGame(random) : kind === "goods" ? goodsGame(random) : mobileGame(random);
   return { ...made, key: Math.floor(random() * 1e9) };
 }
+/** How many scales or rods the dials leave leaning. */
+function leaning(s: State) {
+  if (s.kind === "goods") return s.scales.filter((sc) => panWeight(sc.left, s.guess) !== panWeight(sc.right, s.guess)).length;
+  if (s.kind === "mobile" && s.mobile) {
+    const w = shownLeaves(s);
+    return rods(s.mobile).filter((r) => lean(r, w) !== 0).length;
+  }
+  return 0;
+}
 /** Whether the dials level everything. */
-function levelled(s: State) {
+export function levelled(s: State) {
   if (s.kind === "goods") return s.scales.every((sc) => panWeight(sc.left, s.guess) === panWeight(sc.right, s.guess));
   if (s.kind === "mobile" && s.mobile) {
     const w = shownLeaves(s);
@@ -494,7 +505,10 @@ export function moves(s: State): Move[] {
     if (weighable(s)) out.push(WEIGH);
     out.push(ACCUSE);
   } else if (s.kind === "weights") s.weights.forEach((_, i) => out.push(i));
-  else for (let i = 0; i < dials(s); i++) out.push(UP + i, DOWN + i);
+  else {
+    for (let i = 0; i < dials(s); i++) out.push(UP + i, DOWN + i);
+    out.push(CHECK);
+  }
   return out.map((to) => ({ from: -1, to, extra: -1 }));
 }
 export function play(s: State, move: Move): State | null {
@@ -537,6 +551,12 @@ export function play(s: State, move: Move): State | null {
     const placed = { ...next, pans: s.pans.map((p, i) => (i === to ? (p + 1) % 3 : p)) };
     return { ...placed, winner: leftWeight(placed) === rightWeight(placed) ? 0 : null };
   }
+  // The answer handed in: right only when every scale or rod is level with the dials as they stand.
+  if (to === CHECK) {
+    if (levelled(s)) return { ...next, winner: 0 };
+    const off = leaning(s);
+    return { ...next, winner: 1, trouble: s.kind === "goods" ? `고른 무게로는 저울 ${off}개가 기웁니다.` : `고른 무게로는 막대 ${off}개가 기웁니다.` };
+  }
   let guess: number[];
   const n = dials(s);
   if (to >= SET) {
@@ -547,8 +567,8 @@ export function play(s: State, move: Move): State | null {
   } else if (to >= DOWN && to < DOWN + n) guess = s.guess.map((g, k) => (k === to - DOWN ? (g <= 1 ? s.max : g - 1) : g));
   else if (to >= UP && to < UP + n) guess = s.guess.map((g, k) => (k === to - UP ? (g >= s.max ? 1 : g + 1) : g));
   else return null;
-  const changed = { ...next, guess };
-  return { ...changed, winner: levelled(changed) ? 0 : null };
+  // Turning a dial tells nothing: the scales stay as they are until the answer is handed in.
+  return { ...next, guess };
 }
 /** The next thing to press on the way to the answer. */
 export function hint(s: State): Move | null {
@@ -559,15 +579,15 @@ export function hint(s: State): Move | null {
     return i < 0 ? null : { from: -1, to: putOn(i, s.answer[i]), extra: -1 };
   }
   const i = s.answer.findIndex((v, k) => v !== s.guess[k]);
-  return i < 0 ? null : { from: -1, to: setTo(i, s.answer[i]), extra: -1 };
+  return { from: -1, to: i < 0 ? CHECK : setTo(i, s.answer[i]), extra: -1 };
 }
 const tellHeavy = (s: State) => (s.heavy === 1 ? "가짜는 더 무겁습니다" : s.heavy === -1 ? "가짜는 더 가볍습니다" : "가짜가 무거운지 가벼운지는 모릅니다");
 export function ruleText(s: State) {
   if (s.kind === "coins")
     return s.accusing ? "가짜라고 확신하는 동전을 누르세요." : `동전 ${s.coins}개 중 가짜 하나 · 저울 ${s.allowed - s.log.length}번 남음 · ${tellHeavy(s)}`;
   if (s.kind === "weights") return `${SPICES[s.spice][0]} ${s.load}g을 추로 달아 저울을 수평으로 맞추세요.`;
-  if (s.kind === "goods") return "모든 저울이 수평이 되도록 물건마다 무게를 정하세요.";
-  return "모빌의 막대가 모두 수평이 되도록 ? 추의 무게를 정하세요.";
+  if (s.kind === "goods") return "저울이 모두 수평이 되는 물건의 무게를 찾아 정하고 정답 확인을 누르세요.";
+  return "모빌이 균형을 이루는 ? 추의 무게를 찾아 정하고 정답 확인을 누르세요.";
 }
 const effect = (): Effect | null => null;
 export const balance: PointGame<State> = {

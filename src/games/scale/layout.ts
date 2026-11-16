@@ -66,11 +66,18 @@ export function smallAt(i: number, n: number) {
     k = i - 3;
   return { x: (k - (inRow - 1) / 2) * 4.2, y: 0, z: 0.2 };
 }
-/** Where dial `i` of `n` stands in the goods' stage: the goods on a plate at its left, the number upright at its right, ▲ above and ▼ below. */
+/**
+ * A dial's buttons stand beside its number like a lift's call buttons (the user asked): a brass plate `PANEL.gap` to
+ * the right of the number's middle, ▲ `PANEL.step` above its middle and ▼ as far below, `PANEL.out` before it.
+ */
+export const PANEL = { gap: 0.72, step: 0.19, out: 0.06, radius: 0.14 };
+/** Where dial `i` of `n` stands in the goods' stage: the goods on a plate at its left, the number upright, and its buttons beside it. */
 export function goodsDial(i: number, n: number) {
   const x = (i - (n - 1) / 2) * 3.2,
-    z = 3.3;
-  return { good: { x: x - 0.75, y: 0, z }, tile: { x: x + 0.45, y: 0.72, z }, up: { x: x + 0.45, y: 1.2, z: z + 0.03 }, down: { x: x + 0.45, y: 0.24, z: z + 0.03 } };
+    z = 3.3,
+    tile = { x: x + 0.2, y: 0.62, z },
+    panel = { x: tile.x + PANEL.gap, y: tile.y, z };
+  return { good: { x: x - 0.8, y: 0, z }, tile, panel, up: { x: panel.x, y: panel.y + PANEL.step, z: z + PANEL.out }, down: { x: panel.x, y: panel.y - PANEL.step, z: z + PANEL.out } };
 }
 /** The mobile: the step of an arm, the height of the top pivot, the threads to a rod and to a weight. */
 export const MOBILE = { unit: 1.0, top: 9.0, beam: 10.4, rodThread: 1.5, leafThread: 0.95 };
@@ -101,5 +108,11 @@ export function hang(root: Rod, angles: number[], leafCount: number): Hang {
   walk(root, 0, MOBILE.top + rodThread);
   return out;
 }
-/** Where the dial of a hidden leaf is: before its weight, ▲ above and ▼ below. */
-export const mobileDial = (leaf: { x: number; y: number }) => ({ tile: { x: leaf.x, y: leaf.y, z: 0.62 }, up: { x: leaf.x, y: leaf.y + 0.62, z: 0.62 }, down: { x: leaf.x, y: leaf.y - 0.62, z: 0.62 } });
+/** The dial of a hidden leaf, relative to the leaf: the number before its sack, a little to the left, and its buttons at the right. */
+export const LEAF_DIAL = { tile: -0.22, z: 0.62 };
+/** Where the dial of a hidden leaf is (leaves at one height hang at least two steps apart, so the buttons clear the next one). */
+export function mobileDial(leaf: { x: number; y: number }) {
+  const tile = { x: leaf.x + LEAF_DIAL.tile, y: leaf.y, z: LEAF_DIAL.z },
+    panel = { x: tile.x + PANEL.gap, y: tile.y, z: LEAF_DIAL.z };
+  return { tile, panel, up: { x: panel.x, y: panel.y + PANEL.step, z: panel.z + PANEL.out }, down: { x: panel.x, y: panel.y - PANEL.step, z: panel.z + PANEL.out } };
+}

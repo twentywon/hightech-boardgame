@@ -4,8 +4,8 @@ import { souk } from "../../engine/scenery";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { ACCUSE, DOWN, GOODS, SET, SPICES, UP, WEIGH, WEIGHT, hung, isLeaf, lean, onPans, panWeight, putOf, putOn, reach, rods, shownLeaves, type Kind, type State } from "./rules";
-import { BIG, CARRY_Z, MOBILE, RACK, SHELF, SMALL, TABLE, coinRest, goodsDial, hang, mobileDial, panRow, panUnder, rackRow, smallAt, subjectOf, weightRest } from "./layout";
+import { ACCUSE, CHECK, DOWN, GOODS, SET, SPICES, UP, WEIGH, WEIGHT, hung, isLeaf, lean, onPans, panWeight, putOf, putOn, reach, rods, shownLeaves, type Kind, type State } from "./rules";
+import { BIG, CARRY_Z, LEAF_DIAL, MOBILE, PANEL, RACK, SHELF, SMALL, TABLE, coinRest, goodsDial, hang, mobileDial, panRow, panUnder, rackRow, smallAt, subjectOf, weightRest } from "./layout";
 
 export const BALANCE_COLORS: [string, string] = ["#c9a24a", "#22355c"];
 const UPWARD = new T.Vector3(0, 1, 0);
@@ -66,6 +66,8 @@ export class BalanceView extends TableView<State> {
   private items: T.Object3D[] = [];
   /** The dials: their number tile (repainted when the value changes), and the canvas each is painted on. */
   private tiles: { mesh: T.Mesh; canvas: HTMLCanvasElement; texture: T.CanvasTexture; value: number }[] = [];
+  /** The lift buttons of the dials, by the point they press (`UP + i`, `DOWN + i`), each with its own lamp. */
+  private buttons = new Map<number, T.Mesh>();
   private mobileParts: { rods: T.Group[]; rodThreads: T.Mesh[]; leaves: T.Group[]; leafThreads: T.Mesh[] } = { rods: [], rodThreads: [], leaves: [], leafThreads: [] };
   /** The angles shown now, for the next animation to start from. */
   private angles: number[] = [];
@@ -259,16 +261,47 @@ export class BalanceView extends TableView<State> {
     t.texture.needsUpdate = true;
   }
   /** A small triangle pointing up or down the dial. */
-  private arrowhead(parent: T.Object3D, x: number, y: number, z: number, up: boolean, upright: boolean) {
-    const shape = new T.Shape();
-    shape.moveTo(-0.22, 0);
-    shape.lineTo(0.22, 0);
-    shape.lineTo(0, 0.26);
+  /**
+   * Dial `i`'s buttons, as by a lift's door (the user asked): a brass plate standing upright beside the number with two
+   * round ivory buttons in brass rings, ▲ over ▼, each lit a moment when pressed.
+   */
+  private elevator(parent: T.Object3D, i: number, x: number, y: number, z: number) {
+    this.part(parent, block(0.44, 0.84, 0.06, 0.03), this.brass, x, y, z);
+    const mark = this.standard({ color: "#3a2410", roughness: 0.5 }),
+      shape = new T.Shape();
+    shape.moveTo(-0.075, -0.045);
+    shape.lineTo(0.075, -0.045);
+    shape.lineTo(0, 0.07);
     shape.closePath();
-    const mesh = this.part(parent, new T.ExtrudeGeometry(shape, { depth: 0.06, bevelEnabled: false }), this.standard({ color: "#8a5a2a", roughness: 0.5 }), x, y, z);
-    if (upright) mesh.rotation.z = up ? 0 : Math.PI;
-    else mesh.rotation.set(-Math.PI / 2, 0, up ? 0 : Math.PI);
-    return mesh;
+    const sign = this.own(new T.ExtrudeGeometry(shape, { depth: 0.012, bevelEnabled: false })),
+      ring = this.own(new T.TorusGeometry(PANEL.radius + 0.015, 0.022, 8, 28)),
+      face = this.own(new T.CylinderGeometry(PANEL.radius, PANEL.radius, 0.05, 28).rotateX(Math.PI / 2));
+    for (const up of [true, false]) {
+      const at = y + (up ? PANEL.step : -PANEL.step),
+        button = this.part(parent, face, this.standard({ color: "#f4ecd8", roughness: 0.35, emissive: "#000000" }), x, at, z + PANEL.out);
+      this.part(parent, ring, this.brass, x, at, z + PANEL.out - 0.01);
+      const arrow = new T.Mesh(sign, mark);
+      arrow.position.set(0, 0, 0.026);
+      if (!up) arrow.rotation.z = Math.PI;
+      button.add(arrow);
+      this.buttons.set((up ? UP : DOWN) + i, button);
+    }
+  }
+  /** A dial's button pressed: it sinks a little and its lamp glows, then comes back. */
+  private press(point: number) {
+    const button = this.buttons.get(point);
+    if (!button) return;
+    const rest = button.position.z,
+      lamp = button.material as T.MeshStandardMaterial;
+    this.tween(0, 170, (p) => {
+      const down = Math.sin(Math.PI * p);
+      button.position.z = rest - down * 0.03;
+      lamp.emissive.setRGB(0.9 * down, 0.55 * down, 0.1 * down);
+      if (p === 1) {
+        button.position.z = rest;
+        lamp.emissive.setRGB(0, 0, 0);
+      }
+    });
   }
   /** Lays the table out afresh for a new puzzle. */
   private build(s: State) {
@@ -276,6 +309,7 @@ export class BalanceView extends TableView<State> {
     this.scales = [];
     this.items = [];
     this.tiles = [];
+    this.buttons.clear();
     this.mobileParts = { rods: [], rodThreads: [], leaves: [], leafThreads: [] };
     this.log = null;
     this.angles = [];
@@ -352,11 +386,12 @@ export class BalanceView extends TableView<State> {
         this.part(this.world, new T.CylinderGeometry(0.62, 0.55, 0.08, 28), plate, at.good.x, 0.04, at.good.z);
         const thing = this.goods(i, 1.15);
         thing.position.set(at.good.x, 0.08, at.good.z);
-        // The number stands upright on a little foot, ▲ above it and ▼ below.
-        this.part(this.world, block(0.5, 0.36, 0.3, 0.04), this.standard({ color: "#6a4a2a", roughness: 0.6 }), at.tile.x, 0.04, at.tile.z - 0.12).castShadow = false;
+        // The number stands upright on a little foot, its lift buttons on a plate beside it.
+        const foot = this.standard({ color: "#6a4a2a", roughness: 0.6 });
+        this.part(this.world, block(0.5, 0.3, 0.3, 0.04), foot, at.tile.x, 0.15, at.tile.z - 0.12).castShadow = false;
+        this.part(this.world, block(0.3, 0.22, 0.26, 0.04), foot, at.panel.x, 0.11, at.panel.z - 0.1).castShadow = false;
         this.tile(this.world, at.tile.x, at.tile.y, at.tile.z, true);
-        this.arrowhead(this.world, at.up.x, at.up.y - 0.13, at.up.z, true, true);
-        this.arrowhead(this.world, at.down.x, at.down.y + 0.13, at.down.z, false, true);
+        this.elevator(this.world, i, at.panel.x, at.panel.y, at.panel.z);
       });
     } else if (s.mobile) {
       // The stall's beam the mobile hangs from, on two posts.
@@ -394,9 +429,8 @@ export class BalanceView extends TableView<State> {
           // A sack of unknown weight with a dial before it.
           this.part(g, new T.SphereGeometry(0.5, 18, 14), this.standard({ color: "#d9c49a", roughness: 1 }), 0, -0.05).scale.set(1, 1.1, 0.9);
           this.part(g, new T.ConeGeometry(0.22, 0.32, 12).rotateX(Math.PI), this.standard({ color: "#c8b48a", roughness: 1 }), 0, 0.52);
-          this.tile(g, 0, 0, 0.62, true);
-          this.arrowhead(g, 0, 0.42, 0.6, true, true);
-          this.arrowhead(g, 0, -0.42, 0.6, false, true);
+          this.tile(g, LEAF_DIAL.tile, 0, LEAF_DIAL.z, true);
+          this.elevator(g, hiddenAt, LEAF_DIAL.tile + PANEL.gap, 0, LEAF_DIAL.z);
         }
         this.world.add(g);
         this.mobileParts.leaves.push(g);
@@ -421,10 +455,13 @@ export class BalanceView extends TableView<State> {
         right = s.weights.reduce((sum, w, i) => sum + (s.pans[i] === 2 ? w : 0), 0);
       return [tilt(left - right)];
     }
-    if (s.kind === "goods") return s.scales.map((sc) => tilt(panWeight(sc.left, s.guess) - panWeight(sc.right, s.guess)));
+    // The goods and the mobile hang level whatever the dials say (the user asked: turning a dial must tell nothing);
+    // only an answer handed in and found wrong weighs them with the numbers chosen, to show what they would do.
+    const shown = s.winner === 1;
+    if (s.kind === "goods") return s.scales.map((sc) => (shown ? tilt(panWeight(sc.left, s.guess) - panWeight(sc.right, s.guess)) : 0));
     if (!s.mobile) return [];
     const w = shownLeaves(s);
-    return rods(s.mobile).map((rod) => tilt(lean(rod, w), 0.25));
+    return rods(s.mobile).map((rod) => (shown ? tilt(lean(rod, w), 0.25) : 0));
   }
   /** Where a coin or weight lies, on the table or on a pan, with the beam turned as given. */
   private itemAt(s: State, i: number, angle: number) {
@@ -536,7 +573,15 @@ export class BalanceView extends TableView<State> {
       s.pans.forEach((p, i) => {
         if (p !== before.pans[i]) moved.push({ i, from: dropped?.item === i ? dropped.at : this.itemAt(before, i, a0[0]), to: this.itemAt(s, i, a1[0]) });
       });
-    const weighed = s.kind === "coins" && s.log.length > before.log.length,
+    // A dial's button: it is pressed and the number changes at once; nothing else moves.
+    const dial = s.last?.to ?? -1;
+    if ((s.kind === "goods" || s.kind === "mobile") && dial !== CHECK && s.winner === null && before.winner === null && s.ply === before.ply + 1) {
+      this.lay(s, a1);
+      if (!this.buttons.has(dial)) return false;
+      this.press(dial);
+      return true;
+    }
+    const weighed = (s.kind === "coins" && s.log.length > before.log.length) || (s.winner === 1 && before.winner === null && a1.some((x) => x !== 0)),
       duration = weighed ? 1100 : moved.length ? 420 : 380;
     this.lay(before, a0);
     this.tween(0, duration, (p) => {
@@ -649,9 +694,12 @@ export class BalanceView extends TableView<State> {
       // Everything is seen from the side now: the ring stands upright round what it marks.
       this.cursor.position.copy(at.at).add(new T.Vector3(0, 0, 0.2));
       this.cursor.rotation.set(0, 0, 0);
+      // A lift button is small: its ring is drawn close round it.
+      this.cursor.scale.setScalar(this.buttons.has(marks.cursor ?? -1) ? 0.45 : 1);
     }
     const hinted = marks.hint?.to;
-    if (hinted === undefined || hinted === null || s.winner !== null) return;
+    // Handing the answer in is the 정답 확인 button's: the status line says so, and nothing on the table is marked.
+    if (hinted === undefined || hinted === null || hinted === CHECK || s.winner !== null) return;
     const put = putOf(hinted);
     if (put) {
       // A coin or weight to carry: the arrow over it, and a ring where it goes (a pan, or its place off the scale).
@@ -684,7 +732,8 @@ export class BalanceView extends TableView<State> {
       material.map = label(`→ ${value}`, 160, 96, "#ffffff", "#c88a10");
       material.needsUpdate = true;
       this.target.visible = true;
-      this.target.position.copy(tile.at).add(new T.Vector3(0.95, 0, 0.2));
+      // Over the number: its buttons stand at its right.
+      this.target.position.copy(tile.at).add(new T.Vector3(0, 0.62, 0.2));
       return;
     }
     const spot = hinted === WEIGH || hinted === ACCUSE ? null : find(hinted);

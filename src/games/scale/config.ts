@@ -1,9 +1,19 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { ACCUSE, DOWN, UP, WEIGH, balance, hint, type State } from "./rules";
+import { ACCUSE, CHECK, DOWN, SET, UP, WEIGH, balance, hint, putOf, type State } from "./rules";
+import type { Move } from "../points/types";
 import { BALANCE_COLORS, BalanceView } from "./view";
 import { coinRest } from "./layout";
 
+/** What a hint asks for, by the kind of move it points at. */
+function hintText(s: State, move: Move) {
+  if (putOf(move.to)) return "힌트 — 금색 화살표가 가리키는 것을 금색 고리로 끌어다 놓으세요.";
+  if (move.to >= SET) return "힌트 — 금색 숫자가 뜬 다이얼을 버튼으로 그 값에 맞추세요.";
+  if (move.to === CHECK) return "힌트 — 숫자가 모두 맞습니다. 정답 확인을 누르세요.";
+  if (move.to === WEIGH) return "힌트 — 지금 접시 그대로 저울 달기를 누르세요.";
+  if (move.to === ACCUSE) return s.accusing ? "힌트 — 아직 가짜를 확신할 수 없습니다. 저울로 돌아가기를 누르세요." : "힌트 — 가짜가 하나로 좁혀졌습니다. 가짜 지목하기를 누르세요.";
+  return "힌트 — 금색 화살표가 가리키는 동전을 누르세요.";
+}
 const STAGES: [string, string][] = [
   ["가짜 동전", "저울을 정해진 횟수만"],
   ["추 달기", "꾸러미를 수평으로"],
@@ -43,12 +53,13 @@ export const balanceConfig: PointConfig<State> = {
   },
   keyStart: (s) => (s.kind === "coins" || s.kind === "weights" ? 0 : UP),
   contact: (sound) => sound.chips(),
-  puzzle: { hint, hintText: "힌트 — 금색 화살표가 가리키는 것을 금색 고리로 끌어다 놓으세요. 고리가 없으면 누르고, 금색 숫자가 뜨면 그 다이얼을 그 값으로 맞추세요." },
+  puzzle: { hint, hintText },
   stagesFirst: true,
   stages: STAGES.map(([name, note], i) => ({ value: String(i + 1), name, note, art: stageArt(i + 1) })),
   tools: [
     { label: "저울 달기", point: WEIGH, show: (s) => s.kind === "coins" && s.winner === null && !s.accusing },
     { label: "가짜 지목하기", point: ACCUSE, show: (s) => s.kind === "coins" && s.winner === null, text: (s) => (s.accusing ? "저울로 돌아가기" : "가짜 지목하기") },
+    { label: "정답 확인", point: CHECK, show: (s) => (s.kind === "goods" || s.kind === "mobile") && s.winner === null },
   ],
   tallyHtml: () => ["", ""],
   name: "저울 퀴즈",
@@ -69,8 +80,8 @@ export const balanceConfig: PointConfig<State> = {
         "스테이지는 네 가지이고, 문제는 매번 무작위로 새로 만들어집니다. 어느 문제든 답은 <b>하나뿐</b>입니다.",
         "가짜 동전: 동전을 <b>끌어다</b> 왼쪽이나 오른쪽 접시에 놓고(접시 밖에 놓으면 받침대로 돌아갑니다), <b>저울 달기</b>를 누릅니다. 저울은 언제든 달 수 있지만, 양쪽 동전 수가 다르면 많은 쪽으로 기울 뿐 아무것도 알려 주지 않고 한 번을 씁니다. 정해진 횟수 안에 가짜를 확실히 알아낸 뒤 <b>가짜 지목하기</b>를 누르고 그 동전을 누릅니다.",
         "추 달기: 왼쪽 접시에 꾸러미가 있습니다. 추를 <b>끌어다</b> 접시에 놓아 저울을 <b>수평</b>으로 맞춥니다(접시 밖에 놓으면 받침으로 돌아갑니다). 추는 꾸러미와 같은 쪽에 올려도 됩니다.",
-        "물건 무게: 저울들은 물건이 제 무게일 때 모두 수평이 됩니다. 아래 다이얼의 ▲▼로 물건마다 무게를 정해 <b>모든 저울을 수평</b>으로 만듭니다.",
-        "모빌: 막대는 왼쪽 무게 × 왼쪽 길이와 오른쪽 무게 × 오른쪽 길이가 같을 때 수평입니다. 막대의 눈금으로 길이를 세고, ? 자루의 다이얼로 무게를 정해 <b>모든 막대를 수평</b>으로 만듭니다.",
+        "물건 무게: 저울들은 물건이 제 무게일 때 모두 수평입니다. 저울을 읽고 물건마다 무게를 알아내, 숫자 옆의 ▲▼ 버튼으로 맞춘 뒤 <b>정답 확인</b>을 누릅니다. 숫자를 바꿔도 저울은 움직이지 않습니다.",
+        "모빌: 막대는 왼쪽 무게 × 왼쪽 길이와 오른쪽 무게 × 오른쪽 길이가 같을 때 수평입니다. 막대의 눈금으로 길이를 세어 ? 자루의 무게를 알아내, 숫자 옆의 ▲▼ 버튼으로 맞춘 뒤 <b>정답 확인</b>을 누릅니다. 숫자를 바꿔도 모빌은 움직이지 않습니다.",
       ),
     ) +
     part(
@@ -82,9 +93,9 @@ export const balanceConfig: PointConfig<State> = {
         ["모빌", "막대 2~3개짜리 모빌에서 ? 자루 1~3개의 무게(1~15)를 맞힙니다."],
       ),
     ) +
-    part("힌트와 되돌리기", table(["힌트", "옮길 동전·추 위에 금색 화살표가, 놓을 곳에 금색 고리가 뜹니다. 버튼을 눌러야 할 때는 저울 위에 화살표만 뜨고, 다이얼이면 맞출 값이 금색 숫자로 뜹니다."], ["무르기 · 처음부터", "한 번씩 되돌리거나, 처음 상태로 되돌립니다. 동전을 잘못 지목해도 무르기로 이어서 할 수 있습니다."], ["다른 퍼즐 · 다음 스테이지", "같은 스테이지의 새 문제가 나옵니다."])) +
+    part("힌트와 되돌리기", table(["힌트", "옮길 동전·추 위에 금색 화살표가, 놓을 곳에 금색 고리가 뜹니다. 다이얼이면 맞출 값이 금색 숫자로 뜨고, 버튼을 눌러야 할 때는 위의 안내가 알려 줍니다."], ["정답 확인", "물건 무게와 모빌은 정답 확인을 눌러야 맞았는지 알 수 있습니다. 틀리면 고른 무게대로 저울이나 모빌이 기울며 실패하고, 무르기로 이어서 할 수 있습니다."], ["무르기 · 처음부터", "한 번씩 되돌리거나, 처음 상태로 되돌립니다. 동전을 잘못 지목하거나 정답 확인에서 틀려도 무르기로 이어서 할 수 있습니다."], ["다른 퍼즐 · 다음 스테이지", "같은 스테이지의 새 문제가 나옵니다."])) +
     part("처음이라면", notes("가짜 동전은 셋으로 나눠 둘을 다는 것이 기본입니다. 수평이면 남은 묶음에 가짜가 있습니다.", "물건 무게는 물건 하나와 추만 있는 저울부터 풉니다.", "모빌은 맨 아래 막대부터 풉니다.")),
-  help: "마우스·터치: 동전·추를 끌어다 접시에 놓고, 다이얼의 ▲▼를 누릅니다<br>키보드: 방향키로 고르고 Enter(동전·추는 왼쪽 접시 → 오른쪽 접시 → 받침 순서로 옮겨집니다)",
+  help: "마우스·터치: 동전·추를 끌어다 접시에 놓고, 숫자 옆의 ▲▼ 버튼을 누릅니다<br>키보드: 방향키로 고르고 Enter(동전·추는 왼쪽 접시 → 오른쪽 접시 → 받침 순서로 옮겨집니다)",
   sides: ["나", ""],
   startWord: "좌판 앞에 서기",
 };
