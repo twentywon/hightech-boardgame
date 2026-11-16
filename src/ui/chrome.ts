@@ -102,7 +102,7 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
  * table's lower left as plain lettering, as in chess and janggi (the user asked). `INK` games have a light
  * table and take dark letters.
  */
-const HUD = new Set(["gomoku", "reversi", "chess", "blackjack", "seotda", "seven-poker", "janggi", "yut-nori", "hexa-germ-war", "dots-and-boxes", "mancala", "spider", "world-tour", "battleship", "indian-poker", "table-soccer", "falling-blocks", "brick-breaker", "minesweeper", "fruit-merge", "meat-grill"]),
+const HUD = new Set(["gomoku", "reversi", "chess", "blackjack", "seotda", "seven-poker", "janggi", "yut-nori", "hexa-germ-war", "dots-and-boxes", "mancala", "spider", "world-tour", "battleship", "indian-poker", "table-soccer", "air-hockey", "falling-blocks", "brick-breaker", "minesweeper", "fruit-merge", "meat-grill"]),
   INK = new Set(["minesweeper", "fruit-merge", "falling-blocks", "mancala"]);
 /** The two buttons in the table's corner are bare white signs with a faint shadow, drawn thick (the user asked). */
 const BACK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M11.5 5 4.5 12l7 7"/></svg>`,

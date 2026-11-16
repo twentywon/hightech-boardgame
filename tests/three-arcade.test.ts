@@ -108,6 +108,16 @@ describe("air hockey", () => {
     expect(shoot(0, 8)).toBe(1);
     expect(shoot(-hs.HALF_X + 0.4, -8)).toBeGreaterThan(0);
   });
+  test("my mallet goes all the way to the hand in one slice and sweeps the puck along instead of passing through it", () => {
+    const w = hs.createWorld(0);
+    expect(w.puck).toMatchObject({ x: 0, z: 1.5 });
+    w.targets[0] = { x: 0, z: 0.3 };
+    hs.step(w, "normal");
+    expect(w.mallets[0].z).toBeCloseTo(0.3, 5);
+    // The puck lay on the way: it is now ahead of the mallet, struck toward the far goal.
+    expect(w.puck.z).toBeLessThan(w.mallets[0].z);
+    expect(w.puck.vz).toBeLessThan(-5);
+  });
   test("the computer meets a puck coming at its goal", () => {
     const w = hs.createWorld(0);
     Object.assign(w.puck, { x: 0.9, z: 1, vx: 0, vz: -6 });
@@ -137,6 +147,20 @@ describe("basketball", () => {
   test("too weak or too far aside misses", () => {
     const ideal = bs.idealThrow(0);
     for (const [power, yaw] of [[ideal.power - 0.15, 0], [ideal.power, 0.12], [ideal.power, -0.12]]) expect(throwOnce(power, yaw).seen).toContain("miss");
+  });
+  test("the ball falls at the machine's scale of real gravity, and its bounces die away soon", () => {
+    expect(bs.G).toBeCloseTo(9.81 / 0.6, 2);
+    const w = bs.createWorld(1);
+    bs.shoot(w, 0.3, 0);
+    const ball = w.balls.find((b) => b.phase === "flight")!;
+    // Let go from rest high over the lane.
+    Object.assign(ball, { x: 0, y: 3.5, z: -2, vx: 0, vy: 0, vz: 0 });
+    for (let k = 0; k < 120; k++) bs.step(w);
+    expect(ball.vy).toBeCloseTo(-bs.G * 0.5, 1);
+    let bounces = 0;
+    for (let k = 0; k < 240 * 2 && ball.phase === "flight"; k++) bounces += bs.step(w).filter((e) => e.kind === "bounce").length;
+    expect(ball.phase).not.toBe("flight");
+    expect(bounces).toBeLessThanOrEqual(4);
   });
   test("the clock starts with the first throw and tells whole seconds", () => {
     const w = bs.createWorld(1);

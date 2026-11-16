@@ -369,17 +369,18 @@ const play = {
     }
     await page.keyboard.press("Escape");
   },
-  // My mallet pushed up the middle into the puck, and the table paused while the puck is on its way.
+  // My mallet swept from my goal (at the left) into the puck, and the table paused while the puck is on its way.
   "air-hockey": async () => {
     const box = await page.locator("canvas").boundingBox();
-    await page.mouse.move(box.x + box.width * 0.52, box.y + box.height * 0.86);
+    await page.mouse.move(box.x + box.width * 0.16, box.y + box.height * 0.56);
     await page.mouse.down();
     for (let k = 1; k <= 10; k++) {
-      await page.mouse.move(box.x + box.width * 0.52, box.y + box.height * (0.86 - k * 0.035));
+      await page.mouse.move(box.x + box.width * (0.16 + k * 0.03), box.y + box.height * 0.55);
       await wait(25);
     }
     await page.mouse.up();
-    await wait(420);
+    // A frame of the capture takes over a second: wait for the strike to be drawn.
+    await wait(1500);
     await page.keyboard.press("p");
   },
   // A ball thrown up the lane, and the machine paused while it comes down toward the hoop.

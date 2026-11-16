@@ -2817,3 +2817,22 @@ html[data-capture] .game-layout.hud .table-layout > aside.game-sidebar { display
 .cu-sweep[aria-pressed="true"] { background:#1d3f86;scale:.95; }
 .cu-sweep[hidden] { display:none; }
 html[data-capture] .cu-sweep { display:none !important; }
+/* Air hockey's score stands on a lit board of its own at the top of the table (the user asked): the panel, drawn as
+   a stadium board with my goals in red and the computer's in blue. */
+html[data-game="air-hockey"] .game-layout.hud .table-layout > aside.game-sidebar { left:50% !important;right:auto !important;top:12px !important;bottom:auto !important;translate:-50% 0;max-width:none !important;gap:0;text-shadow:none; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides { display:grid !important;grid-template-columns:auto auto;gap:0 64px !important;padding:10px 34px 12px !important;border-radius:12px;background:linear-gradient(#171a21, #07080b) !important;border:3px solid #333944 !important;box-shadow:0 8px 22px #000a, inset 0 0 18px #000d !important;position:relative; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides::after { display:block;content:":";position:absolute;left:50%;bottom:16px;translate:-50% 0;color:#ffd45a;font:800 40px/1 var(--mono, ui-monospace, monospace);text-shadow:0 0 10px #ffb21a; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li { display:flex !important;flex-direction:column;align-items:center;gap:4px !important;width:auto; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li .yut-dot { display:none; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li b { color:#ffd45a;font-size:12px;font-weight:700;letter-spacing:.08em; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li > span[id^="pg-count-"] { font:800 54px/1 var(--mono, ui-monospace, monospace) !important;min-width:1.2em;text-align:center; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar #pg-side-0 > span[id^="pg-count-"] { color:#ff4a3a !important;text-shadow:0 0 14px #ff2a1a, 0 0 2px #fff6 !important; }
+html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar #pg-side-1 > span[id^="pg-count-"] { color:#4aa8ff !important;text-shadow:0 0 14px #1a7aff, 0 0 2px #fff6 !important; }
+@media (orientation: landscape) and (max-height: 540px) {
+  html[data-game="air-hockey"] .game-layout.hud .table-layout > aside.game-sidebar { top:6px !important; }
+  html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides { gap:0 40px !important;padding:5px 22px 6px !important; }
+  html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides::after { font-size:26px;bottom:8px; }
+  html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li > span[id^="pg-count-"] { font-size:32px !important; }
+  html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li b { font-size:10px; }
+}
+

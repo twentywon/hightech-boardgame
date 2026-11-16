@@ -11,9 +11,10 @@ export const HALF_X = 2.2,
   GOAL = 0.8,
   PUCK = 0.22,
   MALLET = 0.36;
-/** The fastest the puck goes, and how fast my mallet follows the hand. */
-export const MAX_PUCK = 13,
-  HAND_SPEED = 18;
+/** The fastest the puck goes. My mallet has no speed limit: it goes wherever the hand is (the user asked). */
+export const MAX_PUCK = 15;
+/** The longest step a mallet takes between two looks for the puck, so that a quick hand cannot pass through it. */
+const REACH_STEP = 0.06;
 /** The computer by level: its mallet's top speed, how often it looks again, and how far its aim strays. */
 export const LEVELS = {
   easy: { speed: 4.8, look: 0.32, stray: 0.55 },
@@ -113,6 +114,25 @@ export function think(world: World, level: Level, random: () => number = Math.ra
   }
   world.targets[1] = keep(1, target.x, target.z);
 }
+/** The puck pushed out of a mallet it overlaps, and struck by the mallet's speed (a mallet is too heavy to be moved). */
+function strike(world: World, m: Body) {
+  const { puck } = world,
+    dx = puck.x - m.x,
+    dz = puck.z - m.z,
+    far = Math.hypot(dx, dz),
+    reach = PUCK + MALLET;
+  if (far >= reach || far < 1e-9) return;
+  const nx = dx / far,
+    nz = dz / far;
+  puck.x = m.x + nx * reach;
+  puck.z = m.z + nz * reach;
+  const closing = (puck.vx - m.vx) * nx + (puck.vz - m.vz) * nz;
+  if (closing < 0) {
+    puck.vx -= 1.85 * closing * nx;
+    puck.vz -= 1.85 * closing * nz;
+    world.hit++;
+  }
+}
 /** One slice of time. Returns who scored in it (0 when the puck went into the far goal, 1 into mine), or null. */
 export function step(world: World, level: Level): 0 | 1 | null {
   const { puck } = world;
@@ -121,14 +141,20 @@ export function step(world: World, level: Level): 0 | 1 | null {
       dx = target.x - m.x,
       dz = target.z - m.z,
       far = Math.hypot(dx, dz),
-      most = (side === 0 ? HAND_SPEED : LEVELS[level].speed) * DT,
+      // My mallet goes all the way to the hand; the computer's hand has its top speed.
+      most = side === 0 ? Infinity : LEVELS[level].speed * DT,
       move = far > most ? most / far : 1,
+      kept = keep(side as 0 | 1, m.x + dx * move, m.z + dz * move),
       [ox, oz] = [m.x, m.z];
-    const kept = keep(side as 0 | 1, m.x + dx * move, m.z + dz * move);
-    m.x = kept.x;
-    m.z = kept.z;
-    m.vx = (m.x - ox) / DT;
-    m.vz = (m.z - oz) / DT;
+    m.vx = (kept.x - ox) / DT;
+    m.vz = (kept.z - oz) / DT;
+    // A long way is gone in short steps, the puck looked for at each, so that the mallet sweeps it along.
+    const steps = Math.max(1, Math.ceil(Math.hypot(kept.x - ox, kept.z - oz) / REACH_STEP));
+    for (let k = 1; k <= steps; k++) {
+      m.x = ox + ((kept.x - ox) * k) / steps;
+      m.z = oz + ((kept.z - oz) * k) / steps;
+      strike(world, m);
+    }
   });
   // The air under it slows it only a little.
   puck.vx *= 1 - 0.18 * DT;
@@ -152,24 +178,7 @@ export function step(world: World, level: Level): 0 | 1 | null {
     puck.vz = -puck.vz * 0.9;
     world.wall++;
   }
-  // The mallets: the puck is pushed out and struck by the mallet's own speed (a mallet is too heavy to be moved).
-  for (const m of world.mallets) {
-    const dx = puck.x - m.x,
-      dz = puck.z - m.z,
-      far = Math.hypot(dx, dz),
-      reach = PUCK + MALLET;
-    if (far >= reach || far < 1e-9) continue;
-    const nx = dx / far,
-      nz = dz / far;
-    puck.x = m.x + nx * reach;
-    puck.z = m.z + nz * reach;
-    const closing = (puck.vx - m.vx) * nx + (puck.vz - m.vz) * nz;
-    if (closing < 0) {
-      puck.vx -= 1.85 * closing * nx;
-      puck.vz -= 1.85 * closing * nz;
-      world.hit++;
-    }
-  }
+  for (const m of world.mallets) strike(world, m);
   const speed = Math.hypot(puck.vx, puck.vz);
   if (speed > MAX_PUCK) {
     puck.vx *= MAX_PUCK / speed;

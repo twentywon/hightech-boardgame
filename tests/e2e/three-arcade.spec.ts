@@ -66,10 +66,11 @@ test("air hockey: my mallet follows the hand, the puck moves, and a pause holds 
   const canvas = page.locator("canvas"),
     box = (await canvas.boundingBox())!;
   const before = await canvas.getAttribute("data-mallet");
-  // A press near my end and a drag up the middle strike the puck lying in my half.
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height * 0.85);
+  // The table lies across the screen with my goal at the left: a press there and a drag toward the middle,
+  // through the puck lying in my half, strike it.
+  await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.55);
   await page.mouse.down();
-  for (let k = 1; k <= 10; k++) await page.mouse.move(box.x + box.width / 2, box.y + box.height * (0.85 - k * 0.04));
+  for (let k = 1; k <= 10; k++) await page.mouse.move(box.x + box.width * (0.15 + k * 0.035), box.y + box.height * 0.55);
   await page.mouse.up();
   await expect.poll(() => canvas.getAttribute("data-mallet")).not.toBe(before);
   const first = await canvas.getAttribute("data-puck");

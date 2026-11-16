@@ -7,8 +7,13 @@
  * The player stands at +z and throws toward -z. The lane's floor rises gently toward the back (`floorAt`), so a ball
  * that has come down rolls back to the tray by itself.
  */
+/**
+ * Gravity at the machine's scale (the user asked for a ball as heavy and quick as a real one): a ball's radius of 0.2
+ * stands for a real basketball's 0.12 m, so a metre is 1.67 units and the earth pulls at 9.81 × 1.67 units a second
+ * squared. Throws are quicker and flatter for it, and bounces die sooner.
+ */
 export const DT = 1 / 240,
-  G = 9.8;
+  G = 9.81 * (0.2 / 0.12);
 /** A ball's radius, and how many balls the machine holds. */
 export const BALL = 0.2,
   BALLS = 5;
@@ -27,7 +32,7 @@ const TRAY_Y = 0.5,
   RAMP_FROM = 0.55,
   SLOPE = 0.08;
 /** How quickly a ball on the ramp gathers speed toward the tray (a quick return, as on the machines). */
-const ROLL = 2.4;
+const ROLL = 3.4;
 /** The height of the floor at a point down the lane. */
 export const floorAt = (z: number) => (z >= RAMP_FROM ? TRAY_Y : TRAY_Y + (RAMP_FROM - z) * SLOPE);
 /** The angle a ball leaves the hand at, and how far the shortest and the longest throws carry (to the rim's height). */
@@ -155,12 +160,12 @@ function rim(world: World, ball: Ball, out: Happening[]) {
   ball.z = cz + uz * reach;
   const into = ball.vx * ux + ball.vy * uy + ball.vz * uz;
   if (into < 0) {
-    // A hard rim: most of the blow comes back, and the ball's run along the rim is slowed a little.
-    ball.vx -= 1.55 * into * ux;
-    ball.vy -= 1.55 * into * uy;
-    ball.vz -= 1.55 * into * uz;
-    ball.vx *= 0.92;
-    ball.vz *= 0.92;
+    // A hard rim and a heavy ball: a little under half of the blow comes back, and the run along the rim is slowed.
+    ball.vx -= 1.45 * into * ux;
+    ball.vy -= 1.45 * into * uy;
+    ball.vz -= 1.45 * into * uz;
+    ball.vx *= 0.88;
+    ball.vz *= 0.88;
     ball.spin *= -0.5;
     if (-into > 0.4) out.push({ kind: "rim", strength: Math.min(1, -into / 6) });
   }
@@ -237,7 +242,7 @@ export function step(world: World): Happening[] {
     if (!netted && ball.z - BALL < BOARD.z && ball.vz < 0 && Math.abs(ball.x - world.hoopX) < BOARD.half + BALL * 0.5 && ball.y > BOARD.bottom - BALL * 0.5 && ball.y < BOARD.top + BALL * 0.5 && ball.z > BOARD.z - 0.15) {
       const blow = -ball.vz;
       ball.z = BOARD.z + BALL;
-      ball.vz = blow * 0.7;
+      ball.vz = blow * 0.6;
       out.push({ kind: "board", strength: Math.min(1, blow / 7) });
     }
     if (ball.z - BALL < LANE.back) {
@@ -265,8 +270,8 @@ export function step(world: World): Happening[] {
         out.push({ kind: "miss", ball: k });
       }
       const blow = -ball.vy;
-      if (blow > 1.1) {
-        ball.vy = blow * 0.55;
+      if (blow > 1.6) {
+        ball.vy = blow * 0.5;
         ball.vx *= 0.8;
         ball.vz *= 0.8;
         out.push({ kind: "bounce", strength: Math.min(1, blow / 7) });
@@ -302,7 +307,7 @@ export function step(world: World): Happening[] {
       q.z += nz * overlap * sq;
       const closing = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny + (q.vz - p.vz) * nz;
       if (closing >= 0) continue;
-      const share = 1.8 * closing;
+      const share = 1.7 * closing;
       p.vx += share * nx * sp;
       p.vy += share * ny * sp;
       p.vz += share * nz * sp;
