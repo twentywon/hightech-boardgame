@@ -5,7 +5,7 @@ import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { ACCUSE, DOWN, GOODS, SET, SPICES, UP, WEIGH, WEIGHT, hung, isLeaf, lean, onPans, panWeight, reach, rods, shownLeaves, type Kind, type State } from "./rules";
-import { BIG, MOBILE, SMALL, TABLE, coinRest, goodsDial, hang, mobileDial, panPlace, smallAt, subjectOf, weightRest } from "./layout";
+import { BIG, MOBILE, RACK, SHELF, SMALL, TABLE, coinRest, goodsDial, hang, mobileDial, panRow, rackRow, smallAt, subjectOf, weightRest } from "./layout";
 
 export const BALANCE_COLORS: [string, string] = ["#c9a24a", "#22355c"];
 const UPWARD = new T.Vector3(0, 1, 0);
@@ -112,8 +112,8 @@ export class BalanceView extends TableView<State> {
     parent.add(mesh);
     return mesh;
   }
-  /** A brass balance of `size` (1 the big one) standing at `x`, `z`; `narrow` shortens its beam. */
-  private balance(x: number, z: number, size: number, narrow = 1): Balance {
+  /** A brass balance of `size` (1 the big one) standing at `x`, `z` (on a shelf `y` high); `narrow` shortens its beam. */
+  private balance(x: number, z: number, size: number, narrow = 1, y = 0): Balance {
     const root = new T.Group(),
       H = BIG.height * size,
       L = BIG.beam * size * narrow,
@@ -147,7 +147,7 @@ export class BalanceView extends TableView<State> {
       root.add(pan);
       pans.push(pan);
     }
-    root.position.set(x, 0, z);
+    root.position.set(x, y, z);
     this.world.add(root);
     const made: Balance = { root, beam, pans: pans as [T.Group, T.Group], H, L, C, R };
     this.lean(made, 0);
@@ -166,7 +166,8 @@ export class BalanceView extends TableView<State> {
   private coin(n: number) {
     const face = this.standard({ map: this.own(label(String(n + 1), 128, 128, "#6a4a12", "#e2b84a")), roughness: 0.35, metalness: 0.6 }),
       rim = this.standard({ color: "#c79a32", roughness: 0.35, metalness: 0.7 });
-    return this.part(this.world, new T.CylinderGeometry(0.33, 0.33, 0.1, 28), [rim, face, face]);
+    // It stands on its edge, faces to the eye.
+    return this.part(this.world, new T.CylinderGeometry(RACK.radius, RACK.radius, 0.1, 28).rotateX(Math.PI / 2).rotateZ(Math.PI / 2), [rim, face, face]);
   }
   /** A brass weight in the shape of a bell, its value on its top and, with `card`, on a small card standing on it; larger for heavier. */
   private weight(value: number, scale = 1, card = true) {
@@ -178,7 +179,7 @@ export class BalanceView extends TableView<State> {
     if (card) {
       // The value large on a card standing on the knob, turned up toward the eye, so that it can be read from afar.
       const tag = this.part(g, new T.PlaneGeometry(0.66 * scale, 0.44 * scale), this.standard({ map: this.own(label(String(value), 160, 106, "#3a2410", "#f6edd6")), roughness: 0.7, side: T.DoubleSide }), 0, h + r * 0.4 + 0.26 * scale, 0);
-      tag.rotation.x = -0.55;
+      tag.rotation.x = -0.12;
       tag.castShadow = false;
     }
     this.world.add(g);
@@ -257,17 +258,24 @@ export class BalanceView extends TableView<State> {
       this.scales.push(this.balance(BIG.x, BIG.z, 1));
       if (s.kind === "coins") {
         for (let i = 0; i < s.coins; i++) this.items.push(this.coin(i));
+        // The rack: a wooden step for each row of coins.
+        const rack = this.standard({ color: "#7a4a2a", roughness: 0.6 }),
+          rows = Math.ceil(s.coins / rackRow(s.coins)),
+          width = rackRow(s.coins) * RACK.gap + 0.5;
+        for (let r = 0; r < rows; r++) {
+          const h = 0.1 + r * RACK.step;
+          this.part(this.world, block(width, h, RACK.depth, 0.04), rack, 0, h / 2, RACK.z - r * RACK.depth).castShadow = false;
+        }
         // A sheet of paper at the right where the weighings are written down.
         const c = document.createElement("canvas");
         c.width = 512;
         c.height = 640;
         const texture = this.own(new T.CanvasTexture(c));
         texture.colorSpace = T.SRGBColorSpace;
-        // It stands on a little easel, leaning back toward the eye.
-        const lean = 0.8,
-          sheet = this.part(this.world, new T.PlaneGeometry(3.2, 4.0), this.standard({ map: texture, roughness: 0.9 }), 6.15, 2.0 * Math.cos(lean), -0.25);
-        sheet.rotation.set(-lean, -0.12, 0);
-        const board = this.part(sheet, new T.BoxGeometry(3.4, 4.2, 0.08), this.standard({ color: "#7a4a2a", roughness: 0.6 }), 0, 0, -0.05);
+        // It stands upright on the table at the right, leaning back a little.
+        const sheet = this.part(this.world, new T.PlaneGeometry(2.3, 2.9), this.standard({ map: texture, roughness: 0.9 }), 5.1, 1.55, 0.1);
+        sheet.rotation.set(-0.12, -0.2, 0);
+        const board = this.part(sheet, new T.BoxGeometry(2.5, 3.1, 0.08), this.standard({ color: "#7a4a2a", roughness: 0.6 }), 0, 0, -0.05);
         board.castShadow = true;
         this.log = { canvas: c, texture, said: "" };
       } else {
@@ -279,28 +287,32 @@ export class BalanceView extends TableView<State> {
         this.part(sack, new T.CylinderGeometry(0.2, 0.32, 0.35, 14), cloth, 0, 1.05);
         this.part(sack, new T.ConeGeometry(0.34, 0.3, 16), this.standard({ color: colour, roughness: 1 }), 0, 1.3);
         const tag = this.part(sack, new T.PlaneGeometry(1.5, 0.62), this.standard({ map: this.own(label(`${name} ${s.load}g`, 300, 124, "#3a2410", "#f6edd6", 800)), roughness: 0.8, side: T.DoubleSide }), 0, 1.75, 0.15);
-        tag.rotation.x = -0.55;
+        tag.rotation.x = -0.1;
         this.scales[0].pans[0].add(sack);
         sack.position.y = 0.22;
         // The weights in a tray in front.
-        const tray = this.part(this.world, block(s.weights.length * 1.35 + 0.6, 0.16, 1.4, 0.06), this.standard({ color: "#7a4a2a", roughness: 0.6 }), 0, 0.08, weightRest(0, 1).z);
+        const tray = this.part(this.world, block(s.weights.length * 1.35 + 0.6, 0.16, 1.2, 0.06), this.standard({ color: "#7a4a2a", roughness: 0.6 }), 0, 0.08, weightRest(0, 1).z);
         tray.castShadow = false;
         s.weights.forEach((w) => this.items.push(this.weight(w)));
       }
     } else if (s.kind === "goods") {
+      // With more than three scales the back three stand on a raised shelf, so that those before them hide nothing.
+      if (s.scales.length > 3) {
+        const shelf = this.standard({ color: "#6a4a2c", roughness: 0.6 });
+        this.part(this.world, block(SHELF.width, SHELF.height, 2.0, 0.06), shelf, 0, SHELF.height / 2, SHELF.z).castShadow = false;
+      }
       s.scales.forEach((sc, i) => {
         const at = smallAt(i, s.scales.length),
-          b = this.balance(at.x, at.z, SMALL, 0.78);
+          b = this.balance(at.x, at.z, SMALL, 0.78, at.y);
         this.scales.push(b);
         sc.left.concat(sc.right).forEach((item, k) => {
           const side = k < sc.left.length ? 0 : 1,
             j = side === 0 ? k : k - sc.left.length,
             n = side === 0 ? sc.left.length : sc.right.length,
             thing = item >= WEIGHT ? this.weight(item - WEIGHT, 0.8) : this.goods(item, 1.0),
-            ring = n === 1 ? 0 : 0.36,
-            a = (j / n) * Math.PI * 2 + 0.4;
+            spot = panRow(j, n, 2, 0.5);
           b.pans[side].add(thing);
-          thing.position.set(Math.cos(a) * ring, 0.16, Math.sin(a) * ring);
+          thing.position.set(spot.x, 0.16 + spot.y, spot.z);
         });
       });
       // The dials in front: the goods on a plate, the number, and ▲ ▼.
@@ -310,9 +322,11 @@ export class BalanceView extends TableView<State> {
         this.part(this.world, new T.CylinderGeometry(0.62, 0.55, 0.08, 28), plate, at.good.x, 0.04, at.good.z);
         const thing = this.goods(i, 1.15);
         thing.position.set(at.good.x, 0.08, at.good.z);
-        this.tile(this.world, at.tile.x, 0.08, at.tile.z, false);
-        this.arrowhead(this.world, at.up.x, 0.05, at.up.z + 0.13, true, false);
-        this.arrowhead(this.world, at.down.x, 0.05, at.down.z - 0.13, false, false);
+        // The number stands upright on a little foot, ▲ above it and ▼ below.
+        this.part(this.world, block(0.5, 0.36, 0.3, 0.04), this.standard({ color: "#6a4a2a", roughness: 0.6 }), at.tile.x, 0.04, at.tile.z - 0.12).castShadow = false;
+        this.tile(this.world, at.tile.x, at.tile.y, at.tile.z, true);
+        this.arrowhead(this.world, at.up.x, at.up.y - 0.13, at.up.z, true, true);
+        this.arrowhead(this.world, at.down.x, at.down.y + 0.13, at.down.z, false, true);
       });
     } else if (s.mobile) {
       // The stall's beam the mobile hangs from, on two posts.
@@ -387,14 +401,17 @@ export class BalanceView extends TableView<State> {
     const b = this.scales[0];
     if (s.pans[i] === 0) {
       const rest = s.kind === "coins" ? coinRest(i, s.coins) : weightRest(i, s.weights.length);
-      return new T.Vector3(rest.x, s.kind === "coins" ? 0.05 : 0.16, rest.z);
+      return new T.Vector3(rest.x, rest.y, rest.z);
     }
     this.lean(b, angle);
+    // On a pan they stand in rows across it, upright as in the rack: four coins to a row, or three weights.
     const side = s.pans[i] - 1,
       order = s.pans.slice(0, i).filter((p) => p === s.pans[i]).length,
-      spot = panPlace(order, s.kind === "coins" ? 0.62 : 0.6),
+      total = s.pans.filter((p) => p === s.pans[i]).length,
+      coins = s.kind === "coins",
+      spot = coins ? panRow(order, total, 4, 0.52) : panRow(order, total, 3, 0.72),
       pan = b.pans[side].position;
-    return new T.Vector3(BIG.x + pan.x + spot.x, pan.y + 0.24 + spot.y * (s.kind === "coins" ? 0.11 : 0.5), BIG.z + pan.z + spot.z);
+    return new T.Vector3(BIG.x + pan.x + spot.x, pan.y + 0.2 + (coins ? RACK.radius : 0) + spot.y, BIG.z + pan.z + spot.z);
   }
   /** Lays everything out with the beams and rods at `angles`, the items where `moving` puts them (or where the state has them). */
   private lay(s: State, angles: number[], moving: Map<number, T.Vector3> = new Map()) {
@@ -503,11 +520,11 @@ export class BalanceView extends TableView<State> {
   /** The place a press on each point counts, and where marks go. */
   private points(s: State): { point: number; at: T.Vector3; r: number }[] {
     const out: { point: number; at: T.Vector3; r: number }[] = [];
-    if (s.kind === "coins" || s.kind === "weights") this.items.forEach((item, i) => out.push({ point: i, at: item.position.clone().add(new T.Vector3(0, 0.15, 0)), r: s.kind === "coins" ? 0.4 : 0.5 }));
+    if (s.kind === "coins" || s.kind === "weights") this.items.forEach((item, i) => out.push({ point: i, at: item.position.clone().add(new T.Vector3(0, s.kind === "coins" ? 0 : 0.35, 0)), r: s.kind === "coins" ? 0.36 : 0.5 }));
     else if (s.kind === "goods")
       s.guess.forEach((_, i) => {
         const at = goodsDial(i, s.guess.length);
-        out.push({ point: UP + i, at: new T.Vector3(at.up.x, 0.1, at.up.z), r: 0.32 }, { point: DOWN + i, at: new T.Vector3(at.down.x, 0.1, at.down.z), r: 0.32 }, { point: UP + i, at: new T.Vector3(at.tile.x, 0.16, at.tile.z), r: 0.3 });
+        out.push({ point: UP + i, at: new T.Vector3(at.up.x, at.up.y, at.up.z), r: 0.3 }, { point: DOWN + i, at: new T.Vector3(at.down.x, at.down.y, at.down.z), r: 0.3 }, { point: UP + i, at: new T.Vector3(at.tile.x, at.tile.y, at.tile.z + 0.1), r: 0.32 });
       });
     else if (s.mobile) {
       const laid = hang(s.mobile, this.angles, s.leaves.length);
@@ -534,9 +551,9 @@ export class BalanceView extends TableView<State> {
     const at = marks.cursor !== null ? find(marks.cursor) : undefined;
     if (at) {
       this.cursor.visible = true;
-      this.cursor.position.copy(at.at);
-      if (s.kind === "mobile") this.cursor.rotation.set(0, 0, 0);
-      else this.cursor.rotation.set(-Math.PI / 2, 0, 0);
+      // Everything is seen from the side now: the ring stands upright round what it marks.
+      this.cursor.position.copy(at.at).add(new T.Vector3(0, 0, 0.2));
+      this.cursor.rotation.set(0, 0, 0);
     }
     const hinted = marks.hint?.to;
     if (hinted === undefined || hinted === null || s.winner !== null) return;
@@ -547,15 +564,14 @@ export class BalanceView extends TableView<State> {
         tile = find(UP + i) && points.filter((p) => p.point === UP + i)[1];
       if (!tile) return;
       this.ring.visible = true;
-      this.ring.position.copy(tile.at);
-      if (s.kind === "mobile") this.ring.rotation.set(0, 0, 0);
-      else this.ring.rotation.set(-Math.PI / 2, 0, 0);
+      this.ring.position.copy(tile.at).add(new T.Vector3(0, 0, 0.12));
+      this.ring.rotation.set(0, 0, 0);
       const material = this.target.material as T.SpriteMaterial;
       material.map?.dispose();
       material.map = label(`→ ${value}`, 160, 96, "#ffffff", "#c88a10");
       material.needsUpdate = true;
       this.target.visible = true;
-      this.target.position.copy(tile.at).add(s.kind === "mobile" ? new T.Vector3(0.95, 0, 0.2) : new T.Vector3(0, 0.7, -0.1));
+      this.target.position.copy(tile.at).add(new T.Vector3(0.95, 0, 0.2));
       return;
     }
     const spot = hinted === WEIGH || hinted === ACCUSE ? null : find(hinted);
