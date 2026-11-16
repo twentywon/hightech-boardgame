@@ -519,4 +519,12 @@ export const games = [
     icon: "⚒",
     available: true,
   },
+  {
+    name: "인형뽑기",
+    en: "CLAW MACHINE",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "♡",
+    available: true,
+  },
 ];

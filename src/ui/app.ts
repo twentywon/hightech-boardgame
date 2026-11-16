@@ -46,6 +46,7 @@ import { skylineConfig } from "../games/skyline/config";
 import { balanceConfig } from "../games/scale/config";
 import { snakeConfig } from "../games/snake/config";
 import { whackConfig } from "../games/whack/config";
+import { clawConfig } from "../games/claw/config";
 import { foxGeeseConfig } from "../games/foxgeese/config";
 import { taflConfig } from "../games/tafl/config";
 import { urConfig } from "../games/ur/config";
@@ -183,6 +184,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "balance-quiz": { config: balanceConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   snake: { config: snakeConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "whack-a-mole": { config: whackConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "claw-machine": { config: clawConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fox-and-geese": { config: foxGeeseConfig, options: { mode: "ai", variant: "geese", level: "normal" } },
   hnefatafl: { config: taflConfig, options: { mode: "ai", variant: "defenders", level: "normal" } },
   "royal-game-of-ur": { config: urConfig, options: { mode: "ai", variant: "", level: "normal" } },
@@ -335,6 +337,7 @@ type GameSelection =
   | "balance-quiz"
   | "snake"
   | "whack-a-mole"
+  | "claw-machine"
   | "fox-and-geese"
   | "hnefatafl"
   | "royal-game-of-ur"

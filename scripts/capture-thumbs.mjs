@@ -345,6 +345,15 @@ const play = {
     }
     await wait(150);
   },
+  // The claw sent over the middle of the pit and let down: the picture is taken as it closes on a toy.
+  "claw-machine": async () => {
+    await page.locator("canvas").focus();
+    await keys(["ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp"], 90);
+    await wait(1600);
+    await page.keyboard.press(" ");
+    await wait(1250);
+    await page.keyboard.press("p");
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {
