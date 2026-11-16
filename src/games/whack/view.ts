@@ -2,6 +2,7 @@ import * as T from "three";
 import { cryptoRandom } from "../../core/random";
 import { aim, block, glossy } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
+import { funfair } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
 import { FIELD, WHACK_SUBJECT } from "./layout";
@@ -29,205 +30,173 @@ function star(pen: CanvasRenderingContext2D, x: number, y: number, r: number, tu
   }
   pen.closePath();
 }
-/**
- * The printed top of the machine, our own: a sunny meadow with ribbons of path curling across it, flowers, carrots,
- * stars and molehills, and the game's name between the holes; each hole has a dark halo where the rim sits.
- */
-function fieldPrint() {
-  const W = 2048,
-    H = Math.round((W * FIELD.d) / FIELD.w),
-    canvas = document.createElement("canvas");
-  canvas.width = W;
-  canvas.height = H;
-  const pen = canvas.getContext("2d")!,
-    random = sequence(31),
-    px = (x: number) => ((x + FIELD.w / 2) / FIELD.w) * W,
-    pz = (z: number) => ((z + FIELD.d / 2) / FIELD.d) * H,
-    scale = W / FIELD.w;
-  const sky = pen.createLinearGradient(0, 0, W, H);
-  sky.addColorStop(0, "#d8ee4a");
-  sky.addColorStop(0.5, "#f6e64e");
-  sky.addColorStop(1, "#b8e04a");
-  pen.fillStyle = sky;
-  pen.fillRect(0, 0, W, H);
-  // Soft green swirls in the grass.
-  pen.strokeStyle = "rgba(60, 160, 60, 0.35)";
-  pen.lineWidth = 10;
-  for (let k = 0; k < 26; k++) {
-    const x = random() * W,
-      y = random() * H,
-      r = 30 + random() * 50;
-    pen.beginPath();
-    for (let a = 0; a < Math.PI * 3.2; a += 0.15) pen.lineTo(x + Math.cos(a) * r * (a / 10), y + Math.sin(a) * r * (a / 10));
-    pen.stroke();
-  }
-  // Ribbons of path: wide pink bands edged in white, curling between the holes.
-  const ribbon = (points: [number, number][], color: string) => {
-    for (const [width, paint] of [[118, "#ffffff"], [92, color]] as const) {
-      pen.strokeStyle = paint;
-      pen.lineWidth = width;
-      pen.lineCap = "round";
-      pen.beginPath();
-      pen.moveTo(points[0][0], points[0][1]);
-      for (let i = 1; i + 1 < points.length; i += 2) pen.quadraticCurveTo(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1]);
-      pen.stroke();
-    }
-  };
-  ribbon([[-60, H * 0.32], [W * 0.18, H * 0.05], [W * 0.38, H * 0.3], [W * 0.55, H * 0.55], [W * 0.78, H * 0.3], [W * 0.95, H * 0.08], [W + 80, H * 0.22]], "#ef4a86");
-  ribbon([[-60, H * 0.86], [W * 0.2, H * 0.66], [W * 0.45, H * 0.9], [W * 0.7, H * 1.1], [W + 80, H * 0.72]], "#ff8a3a");
-  // Molehills, flowers, carrots and stars scattered clear of the holes.
-  const clear = (x: number, y: number, room: number) => HOLES.every(([hx, hz]) => Math.hypot(x - px(hx), y - pz(hz)) > HOLE_R * scale + room);
-  const flower = (x: number, y: number, r: number, petal: string) => {
-    pen.fillStyle = petal;
-    for (let k = 0; k < 5; k++) {
-      const a = (k * Math.PI * 2) / 5;
-      pen.beginPath();
-      pen.ellipse(x + Math.cos(a) * r * 0.62, y + Math.sin(a) * r * 0.62, r * 0.5, r * 0.34, a, 0, Math.PI * 2);
-      pen.fill();
-    }
-    pen.fillStyle = "#ffd23a";
-    pen.beginPath();
-    pen.arc(x, y, r * 0.38, 0, Math.PI * 2);
-    pen.fill();
-  };
-  const carrot = (x: number, y: number, r: number, turn: number) => {
-    pen.save();
-    pen.translate(x, y);
-    pen.rotate(turn);
-    pen.fillStyle = "#3f9a34";
-    for (const a of [-0.5, 0, 0.5]) {
-      pen.beginPath();
-      pen.ellipse(Math.sin(a) * r * 0.5, -r * 1.25, r * 0.18, r * 0.55, a, 0, Math.PI * 2);
-      pen.fill();
-    }
-    pen.fillStyle = "#ff7a1a";
-    pen.beginPath();
-    pen.moveTo(-r * 0.42, -r * 0.8);
-    pen.quadraticCurveTo(0, -r * 1.0, r * 0.42, -r * 0.8);
-    pen.lineTo(0, r * 1.1);
-    pen.closePath();
-    pen.fill();
-    pen.strokeStyle = "#c8560a";
-    pen.lineWidth = 4;
-    for (const t of [-0.3, 0.05, 0.4]) {
-      pen.beginPath();
-      pen.moveTo(-r * 0.25 * (1 - t), r * t);
-      pen.lineTo(r * 0.05, r * t + 4);
-      pen.stroke();
-    }
-    pen.restore();
-  };
-  for (let k = 0, placed = 0; k < 400 && placed < 46; k++) {
-    const x = random() * W,
-      y = random() * H;
-    if (!clear(x, y, 70)) continue;
-    placed++;
-    const what = placed % 5;
-    if (what === 0) {
-      // A molehill.
-      pen.fillStyle = "#9a6a3a";
-      pen.beginPath();
-      pen.ellipse(x, y, 54, 30, 0, Math.PI, 0);
-      pen.fill();
-      pen.fillStyle = "#7a4e26";
-      for (let d = 0; d < 6; d++) pen.fillRect(x - 40 + random() * 80, y - 20 + random() * 16, 8, 6);
-    } else if (what === 1) flower(x, y, 30 + random() * 12, ["#ffffff", "#ff7ab8", "#8ad0ff"][placed % 3]);
-    else if (what === 2) carrot(x, y, 34, random() * 1.2 - 0.6);
-    else {
-      pen.fillStyle = ["#ff5a4a", "#3a8aff", "#ffffff", "#a85aff"][placed % 4];
-      star(pen, x, y, 22 + random() * 18, random());
-      pen.fill();
-    }
-  }
-  // The game's name, twice, on the paths between the holes.
-  const title = (text: string, x: number, y: number, size: number, turn: number) => {
-    pen.save();
-    pen.translate(x, y);
-    pen.rotate(turn);
-    pen.font = `900 ${size}px "Inter", "Noto Sans KR", sans-serif`;
-    pen.textAlign = "center";
-    pen.textBaseline = "middle";
-    pen.lineJoin = "round";
-    pen.lineWidth = size * 0.24;
-    pen.strokeStyle = "#1a2a7a";
-    pen.strokeText(text, 0, 0);
-    pen.fillStyle = "#ffffff";
-    pen.fillText(text, 0, 0);
-    pen.restore();
-  };
-  // In the corners, clear of the holes.
-  title("WHACK!", px(-3.25), pz(-2.45), 96, -0.22);
-  title("두더지 잡기", px(3.2), pz(2.5), 74, -0.18);
-  // Under each rim, a dark halo.
-  for (const [hx, hz] of HOLES) {
-    const glow = pen.createRadialGradient(px(hx), pz(hz), HOLE_R * scale * 0.9, px(hx), pz(hz), HOLE_R * scale * 1.45);
-    glow.addColorStop(0, "rgba(40, 20, 0, 0.55)");
-    glow.addColorStop(1, "rgba(40, 20, 0, 0)");
-    pen.fillStyle = glow;
-    pen.beginPath();
-    pen.arc(px(hx), pz(hz), HOLE_R * scale * 1.45, 0, Math.PI * 2);
-    pen.fill();
-  }
+/** A painted panel `w` × `h` pixels, made by `paint`. */
+function panel(w: number, h: number, paint: (pen: CanvasRenderingContext2D, w: number, h: number) => void) {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  paint(canvas.getContext("2d")!, w, h);
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
 }
-/** Glitter for the rims: specks of light on amber. */
-function glitter() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 64;
-  const pen = canvas.getContext("2d")!,
-    random = sequence(5);
-  pen.fillStyle = "#3a2400";
-  pen.fillRect(0, 0, 256, 64);
-  for (let k = 0; k < 260; k++) {
-    pen.fillStyle = ["#fff6c0", "#ffd24a", "#ff9a3a", "#ffffff", "#8ae0ff"][k % 5];
-    pen.fillRect(random() * 256, random() * 64, 2 + random() * 3, 2 + random() * 3);
-  }
-  const texture = new T.CanvasTexture(canvas);
-  texture.colorSpace = T.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = T.RepeatWrapping;
-  return texture;
+/** Bubbly letters: a thick dark outline, a white rim and a bright fill. */
+function bubbly(pen: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, fill: string, turn = 0) {
+  pen.save();
+  pen.translate(x, y);
+  pen.rotate(turn);
+  pen.font = `900 ${size}px "Inter", "Noto Sans KR", sans-serif`;
+  pen.textAlign = "center";
+  pen.textBaseline = "middle";
+  pen.lineJoin = "round";
+  pen.lineWidth = size * 0.34;
+  pen.strokeStyle = "#1a2a6a";
+  pen.strokeText(text, 0, 0);
+  pen.lineWidth = size * 0.16;
+  pen.strokeStyle = "#ffffff";
+  pen.strokeText(text, 0, 0);
+  pen.fillStyle = fill;
+  pen.fillText(text, 0, 0);
+  pen.restore();
 }
-/** A carpet of an arcade: dark, with bright shapes scattered over it. */
-function carpet() {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 512;
-  const pen = canvas.getContext("2d")!,
-    random = sequence(77);
-  pen.fillStyle = "#1a1640";
-  pen.fillRect(0, 0, 512, 512);
-  for (let k = 0; k < 90; k++) {
-    const x = random() * 512,
-      y = random() * 512;
-    pen.strokeStyle = pen.fillStyle = ["rgba(255,74,176,0.5)", "rgba(56,224,255,0.45)", "rgba(255,226,58,0.45)", "rgba(122,106,255,0.55)"][k % 4];
-    pen.lineWidth = 5;
-    if (k % 3 === 0) {
+/** A cartoon mole of our own, popping out of a dirt hole: a brown egg, a pale snout, buck teeth, round eyes. */
+function cartoonMole(pen: CanvasRenderingContext2D, x: number, y: number, s: number, cheer = false) {
+  pen.fillStyle = "#6a3e1e";
+  pen.beginPath();
+  pen.ellipse(x, y + s * 0.62, s * 0.95, s * 0.28, 0, 0, Math.PI * 2);
+  pen.fill();
+  pen.fillStyle = "#8a5a34";
+  pen.beginPath();
+  pen.ellipse(x, y, s * 0.62, s * 0.72, 0, Math.PI, 0);
+  pen.lineTo(x + s * 0.62, y + s * 0.6);
+  pen.lineTo(x - s * 0.62, y + s * 0.6);
+  pen.closePath();
+  pen.fill();
+  pen.fillStyle = "#f0d2a8";
+  pen.beginPath();
+  pen.ellipse(x, y + s * 0.18, s * 0.32, s * 0.24, 0, 0, Math.PI * 2);
+  pen.fill();
+  pen.fillStyle = "#ff7a9a";
+  pen.beginPath();
+  pen.arc(x, y + s * 0.06, s * 0.1, 0, Math.PI * 2);
+  pen.fill();
+  pen.fillStyle = "#ffffff";
+  pen.fillRect(x - s * 0.08, y + s * 0.3, s * 0.07, s * 0.12);
+  pen.fillRect(x + s * 0.01, y + s * 0.3, s * 0.07, s * 0.12);
+  for (const side of [-1, 1]) {
+    pen.fillStyle = "#ffffff";
+    pen.beginPath();
+    pen.ellipse(x + side * s * 0.22, y - s * 0.22, s * 0.13, s * 0.16, 0, 0, Math.PI * 2);
+    pen.fill();
+    pen.fillStyle = "#141018";
+    pen.beginPath();
+    pen.arc(x + side * s * 0.2, y - s * (cheer ? 0.26 : 0.2), s * 0.07, 0, Math.PI * 2);
+    pen.fill();
+    pen.fillStyle = "#8a5a34";
+    pen.beginPath();
+    pen.ellipse(x + side * s * 0.58, y + s * 0.5, s * 0.2, s * 0.13, side * 0.4, 0, Math.PI * 2);
+    pen.fill();
+  }
+}
+/** A meadow under a sky, the ground below a share `low` of the height, with flowers and moles here and there. */
+function meadow(pen: CanvasRenderingContext2D, w: number, h: number, low: number, seed: number, moles: [number, number, number][]) {
+  const random = sequence(seed),
+    sky = pen.createLinearGradient(0, 0, 0, h * low);
+  sky.addColorStop(0, "#4fb4ff");
+  sky.addColorStop(1, "#bfe8ff");
+  pen.fillStyle = sky;
+  pen.fillRect(0, 0, w, h);
+  pen.fillStyle = "rgba(255,255,255,0.9)";
+  for (let k = 0; k < 5; k++) {
+    const cx = random() * w,
+      cy = random() * h * low * 0.6 + h * 0.05;
+    for (let b = 0; b < 4; b++) {
       pen.beginPath();
-      pen.arc(x, y, 9, 0, Math.PI * 2);
-      pen.stroke();
-    } else if (k % 3 === 1) {
-      pen.beginPath();
-      pen.moveTo(x - 12, y + 8);
-      pen.lineTo(x, y - 10);
-      pen.lineTo(x + 12, y + 8);
-      pen.closePath();
-      pen.stroke();
-    } else {
-      pen.beginPath();
-      pen.moveTo(x - 14, y);
-      pen.quadraticCurveTo(x - 7, y - 10, x, y);
-      pen.quadraticCurveTo(x + 7, y + 10, x + 14, y);
-      pen.stroke();
+      pen.ellipse(cx + (b - 1.5) * w * 0.035, cy + Math.sin(b * 2) * h * 0.01, w * 0.05, h * 0.035, 0, 0, Math.PI * 2);
+      pen.fill();
     }
   }
-  const texture = new T.CanvasTexture(canvas);
-  texture.colorSpace = T.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = T.RepeatWrapping;
-  texture.repeat.set(5, 5);
-  return texture;
+  // Two rolling hills, then the grass.
+  for (const [colour, rise, phase] of [["#7ad05a", 0.08, 1.3], ["#5ab848", 0.0, 0.2]] as const) {
+    pen.fillStyle = colour;
+    pen.beginPath();
+    pen.moveTo(0, h);
+    for (let x = 0; x <= w; x += 8) pen.lineTo(x, h * (low - rise) + Math.sin(x / w * 6 + phase) * h * 0.04);
+    pen.lineTo(w, h);
+    pen.closePath();
+    pen.fill();
+  }
+  for (let k = 0; k < 40; k++) {
+    const fx = random() * w,
+      fy = h * low + random() * h * (1 - low) * 0.95,
+      r = 4 + random() * 7;
+    pen.fillStyle = ["#ffffff", "#ff6aa8", "#ffd23a", "#8ad0ff"][k % 4];
+    for (let p = 0; p < 5; p++) {
+      const a = (p * Math.PI * 2) / 5;
+      pen.beginPath();
+      pen.arc(fx + Math.cos(a) * r, fy + Math.sin(a) * r, r * 0.62, 0, Math.PI * 2);
+      pen.fill();
+    }
+    pen.fillStyle = "#ffb000";
+    pen.beginPath();
+    pen.arc(fx, fy, r * 0.5, 0, Math.PI * 2);
+    pen.fill();
+  }
+  for (const [mx, my, ms] of moles) cartoonMole(pen, mx * w, my * h, ms * h, true);
+}
+/** The front of the cabinet: the meadow with moles, the name, and a coin slot plate painted at the right. */
+const frontArt = () =>
+  panel(1024, 300, (pen, w, h) => {
+    meadow(pen, w, h, 0.42, 3, [[0.12, 0.62, 0.22], [0.36, 0.72, 0.16], [0.6, 0.66, 0.2]]);
+    bubbly(pen, "두더지 잡기", w * 0.38, h * 0.22, 74, "#ffd23a", -0.04);
+  });
+/** The cabinet's sides: the meadow again, other moles, and stars. */
+const sideArt = () =>
+  panel(768, 300, (pen, w, h) => {
+    meadow(pen, w, h, 0.4, 9, [[0.25, 0.7, 0.2], [0.7, 0.62, 0.24]]);
+    bubbly(pen, "WHACK!", w * 0.5, h * 0.2, 64, "#ff6a3a", 0.05);
+  });
+/** The sign at the back: a big meadow scene with three moles and the name in large bubbly letters. */
+const marqueeArt = () =>
+  panel(1024, 480, (pen, w, h) => {
+    meadow(pen, w, h, 0.55, 17, [[0.2, 0.72, 0.2], [0.5, 0.78, 0.25], [0.8, 0.7, 0.2]]);
+    // A rainbow arching over the name (painted first, so that the name stands clear in front of it).
+    ["#ff5a5a", "#ffb03a", "#ffe23a", "#5ad06a", "#4aa8ff", "#a86aff"].forEach((colour, i) => {
+      pen.strokeStyle = colour;
+      pen.lineWidth = 9;
+      pen.beginPath();
+      pen.arc(w * 0.71, h * 0.56, 205 - i * 9, Math.PI * 1.1, Math.PI * 1.9);
+      pen.stroke();
+    });
+    bubbly(pen, "두더지 잡기", w * 0.71, h * 0.4, 78, "#ff4a5a", -0.03);
+  });
+/** The deck: green, with a pale pattern of little stars and a darker ring under each hole's rim. */
+function deckPrint() {
+  const W = 2048,
+    H = Math.round((W * FIELD.d) / FIELD.w);
+  return panel(W, H, (pen) => {
+    const random = sequence(31),
+      px = (x: number) => ((x + FIELD.w / 2) / FIELD.w) * W,
+      pz = (z: number) => ((z + FIELD.d / 2) / FIELD.d) * H,
+      scale = W / FIELD.w;
+    pen.fillStyle = "#3aa84a";
+    pen.fillRect(0, 0, W, H);
+    pen.fillStyle = "rgba(255,255,255,0.07)";
+    for (let k = 0; k < 160; k++) {
+      star(pen, random() * W, random() * H, 10 + random() * 16, random());
+      pen.fill();
+    }
+    for (const [hx, hz] of HOLES) {
+      const halo = pen.createRadialGradient(px(hx), pz(hz), HOLE_R * scale * 0.95, px(hx), pz(hz), HOLE_R * scale * 1.5);
+      halo.addColorStop(0, "rgba(0, 40, 0, 0.45)");
+      halo.addColorStop(1, "rgba(0, 40, 0, 0)");
+      pen.fillStyle = halo;
+      pen.beginPath();
+      pen.arc(px(hx), pz(hz), HOLE_R * scale * 1.5, 0, Math.PI * 2);
+      pen.fill();
+    }
+  });
 }
 /** One mole as built: its parts that change (the hard hat, the eyes open or dazed, the stars) and its paint. */
 interface MoleModel {
@@ -261,6 +230,12 @@ export class WhackView extends TableView<State> {
   private led: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
   private words: { sprite: T.Sprite; at: number; x: number; y: number; z: number }[] = [];
   private paused = false;
+  private fair: { wheel: T.Group; bulbs: T.MeshStandardMaterial[] };
+  /** Hard hats knocked off and flying, each from where it came off (kept here, not as tweens: a new state drops tweens). */
+  private hats: { hat: T.Object3D; from: T.Vector3; at: number }[] = [];
+  /** The mallet's cable to the cabinet, and where its end was when the cable was last laid. */
+  private cable!: T.Mesh;
+  private cableFrom = new T.Vector3(1e9, 0, 0);
   private shown = 0;
   private last = performance.now();
   private left = 0;
@@ -282,9 +257,8 @@ export class WhackView extends TableView<State> {
     this.own(sun.shadow);
     this.scene.add(sun);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    // The arcade's carpet round the machine.
-    const floor = this.add(new T.PlaneGeometry(60, 60).rotateX(-Math.PI / 2), this.standard({ map: keep(carpet()), roughness: 0.95 }), 0, -1.6, 0);
-    floor.castShadow = false;
+    // An amusement park round the machine (the user asked); its big wheel turns and its bulbs twinkle.
+    this.fair = funfair(this.scene, keep, FIELD.ground);
     this.cabinet(keep);
     this.kit = this.moleKit(keep);
     this.malletModel(keep);
@@ -320,22 +294,39 @@ export class WhackView extends TableView<State> {
     const hit = new T.Vector3();
     return this.striker.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -y), hit) ? hit : null;
   }
-  /** The machine: a cabinet below the top, the padded frame, the printed top with its holes, and the rims. */
+  /**
+   * The machine, in the manner of the upright arcade cabinet in the photograph the user sent (our own pictures on
+   * it): a tall blue cabinet on casters with painted panels in front and at the sides, a green deck with seven holes
+   * in raised green rims, a red strip behind the deck with two vents, and the painted sign standing above it.
+   */
   private cabinet(keep: <R extends { dispose(): void }>(r: R) => R) {
-    const { w, d, frame, pad, well } = FIELD,
-      vinyl = keep(glossy({ color: "#1f5fd0", roughness: 0.38 }, 0.5)),
-      dark = this.standard({ color: "#16224a", roughness: 0.6 });
-    // The cabinet's sides under the top (open above, so that the holes look down into the dark).
-    const outer = { w: w + 2 * frame, d: d + 2 * frame };
-    for (const side of [-1, 1]) {
-      this.add(block(outer.w, 1.6, 0.12, 0.04), dark, 0, -0.8, side * (outer.d / 2 - 0.06)).castShadow = false;
-      this.add(block(0.12, 1.6, outer.d, 0.04), dark, side * (outer.w / 2 - 0.06), -0.8, 0).castShadow = false;
-    }
-    // The padded frame: rounded cushions on the four sides, the near one fattest (it is leaned on).
-    this.add(block(w + 2 * frame, pad, frame, 0.18), vinyl, 0, pad / 2, -d / 2 - frame / 2);
-    this.add(block(w + 2 * frame, pad + 0.12, frame + 0.25, 0.24), vinyl, 0, (pad + 0.12) / 2, d / 2 + (frame + 0.25) / 2);
-    for (const side of [-1, 1]) this.add(block(frame, pad, d, 0.18), vinyl, side * (w / 2 + frame / 2), pad / 2, 0);
-    // The printed top, cut through at the holes.
+    const { w, d, trim, well, ground } = FIELD,
+      blue = keep(glossy({ color: "#1f5fd0", roughness: 0.38 }, 0.4)),
+      chrome = this.standard({ color: "#d8dee6", roughness: 0.25, metalness: 0.8 }),
+      dark = this.standard({ color: "#16182a", roughness: 0.6 }),
+      outer = { w: w + 2 * trim, d: d + 2 * trim },
+      tall = -ground;
+    // The cabinet's four walls under the deck (open above, so that the holes look down into the dark), painted outside.
+    const front = this.standard({ map: keep(frontArt()), roughness: 0.6 }),
+      side = this.standard({ map: keep(sideArt()), roughness: 0.6 });
+    this.add(block(outer.w, tall - 0.35, 0.14, 0.04), [blue, blue, blue, blue, front, blue], 0, ground + 0.35 + (tall - 0.35) / 2, outer.d / 2 - 0.07);
+    this.add(block(outer.w, tall - 0.35, 0.14, 0.04), blue, 0, ground + 0.35 + (tall - 0.35) / 2, -outer.d / 2 + 0.07);
+    for (const s of [-1, 1]) this.add(block(0.14, tall - 0.35, outer.d, 0.04), s > 0 ? [side, blue, blue, blue, blue, blue] : [blue, side, blue, blue, blue, blue], s * (outer.w / 2 - 0.07), ground + 0.35 + (tall - 0.35) / 2, 0);
+    // Blue corner posts, a black kick strip and four casters.
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) this.add(block(0.32, tall, 0.32, 0.1), blue, sx * (outer.w / 2), ground + tall / 2, sz * (outer.d / 2));
+    this.add(block(outer.w + 0.1, 0.35, outer.d + 0.1, 0.05), dark, 0, ground + 0.175, 0).castShadow = false;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) this.add(new T.CylinderGeometry(0.22, 0.22, 0.18, 16).rotateZ(Math.PI / 2), dark, sx * (outer.w / 2 - 0.5), ground + 0.12, sz * (outer.d / 2 - 0.4));
+    // A coin box at the front right: a dark plate with a slot and a red lamp.
+    const box = new T.Group();
+    box.position.set(outer.w / 2 - 1.2, ground + tall * 0.42, outer.d / 2 + 0.02);
+    this.add(block(1.1, 1.2, 0.12, 0.04), this.standard({ color: "#2a2c34", roughness: 0.4, metalness: 0.5 }), 0, 0, 0, box);
+    this.add(block(0.08, 0.36, 0.05, 0.01), dark, -0.22, 0.2, 0.07, box);
+    this.add(new T.SphereGeometry(0.12, 14, 10), this.standard({ color: "#ff3a3a", emissive: "#ff2020", emissiveIntensity: 0.8 }), 0.25, -0.28, 0.08, box);
+    this.scene.add(box);
+    // A chrome trim round the deck.
+    for (const sz of [-1, 1]) this.add(block(outer.w, 0.12, trim, 0.04), chrome, 0, 0.0, sz * (d / 2 + trim / 2));
+    for (const sx of [-1, 1]) this.add(block(trim, 0.12, d, 0.04), chrome, sx * (w / 2 + trim / 2), 0.0, 0);
+    // The deck, cut through at the holes.
     const shape = new T.Shape();
     shape.moveTo(-w / 2, -d / 2);
     shape.lineTo(w / 2, -d / 2);
@@ -350,64 +341,53 @@ export class WhackView extends TableView<State> {
     const top = new T.ShapeGeometry(shape, 48),
       uv = top.attributes.uv,
       pos = top.attributes.position;
-    // The print laid across the whole top (a shape's own coordinates are not 0 to 1).
+    // The print laid across the whole deck (a shape's own coordinates are not 0 to 1).
     for (let i = 0; i < uv.count; i++) uv.setXY(i, (pos.getX(i) + w / 2) / w, (pos.getY(i) + d / 2) / d);
     top.rotateX(-Math.PI / 2);
-    const print = this.add(top, this.standard({ map: keep(fieldPrint()), roughness: 0.55 }), 0, 0, 0);
-    print.castShadow = false;
-    // The wells under the holes, dark inside, and the glittering rims round them.
+    const deck = this.add(top, this.standard({ map: keep(deckPrint()), roughness: 0.5 }), 0, 0, 0);
+    deck.castShadow = false;
+    // The wells under the holes, dark inside, and raised rims of glossy green plastic round them.
     const wall = keep(new T.CylinderGeometry(HOLE_R, HOLE_R, well, 36, 1, true)),
-      inside = this.standard({ color: "#1a1208", roughness: 0.9, side: T.BackSide }),
-      floorPaint = this.standard({ color: "#120c06", roughness: 0.95 }),
+      inside = this.standard({ color: "#101a10", roughness: 0.9, side: T.BackSide }),
+      floorPaint = this.standard({ color: "#0a0f08", roughness: 0.95 }),
       bottom = keep(new T.CircleGeometry(HOLE_R, 36).rotateX(-Math.PI / 2)),
-      rim = keep(new T.TorusGeometry(HOLE_R + 0.06, 0.13, 16, 48).rotateX(Math.PI / 2)),
-      sparkle = keep(glitter());
-    sparkle.repeat.set(6, 1);
+      rim = keep(new T.TorusGeometry(HOLE_R + 0.08, 0.15, 16, 48).rotateX(Math.PI / 2));
     for (const [x, z] of HOLES) {
       this.add(wall, inside, x, -well / 2, z).castShadow = false;
       this.add(bottom, floorPaint, x, -well + 0.01, z).castShadow = false;
-      const paint = this.standard({ color: "#f6b81e", emissive: "#ffb000", emissiveMap: sparkle, emissiveIntensity: 0.6, roughness: 0.22, metalness: 0.15, transparent: true, opacity: 0.92 });
+      const paint = keep(glossy({ color: "#5ccf5a", emissive: "#ffe23a", emissiveIntensity: 0, roughness: 0.3 }, 0.5));
       this.rims.push(paint);
-      this.add(rim, paint, x, 0.05, z);
+      this.add(rim, paint, x, 0.07, z);
     }
   }
-  /** The sign behind the top: an upright board in the machine's colours, its name, and the score and the time in lights. */
+  /** The red strip behind the deck with its two vents, and the tall painted sign above it with the score and the time in lights. */
   private sign(keep: <R extends { dispose(): void }>(r: R) => R) {
-    const { w, d, frame } = FIELD,
-      board = new T.Group(),
-      canvas = document.createElement("canvas");
+    const { w, d, trim, marquee } = FIELD,
+      width = w + 2 * trim,
+      back = -d / 2 - trim,
+      red = keep(glossy({ color: "#e8323a", roughness: 0.4 }, 0.4)),
+      blue = keep(glossy({ color: "#1f5fd0", roughness: 0.38 }, 0.4)),
+      dark = this.standard({ color: "#16182a", roughness: 0.6 });
+    const strip = 0.8;
+    this.add(block(width, strip, 0.5, 0.06), red, 0, strip / 2, back - 0.25);
+    for (const x of [-1.4, 1.4]) this.add(block(0.8, 0.4, 0.05, 0.02), dark, x, strip / 2, back + 0.01);
+    // The sign: a blue frame round the painted board, standing on the strip, leaning back a little.
+    const board = new T.Group();
+    board.position.set(0, strip, back - 0.35);
+    board.rotation.x = -0.12;
+    this.scene.add(board);
+    this.add(block(width + 0.3, marquee + 0.3, 0.3, 0.12), blue, 0, marquee / 2, 0, board);
+    const art = this.add(new T.PlaneGeometry(width - 0.1, marquee - 0.1), this.standard({ map: keep(marqueeArt()), roughness: 0.55 }), 0, marquee / 2, 0.16, board);
+    art.castShadow = false;
+    // The lights, set in the sign's upper left as on such machines: a dark window with the time and the score.
+    const canvas = document.createElement("canvas");
     canvas.width = 1024;
     canvas.height = 256;
     const texture = keep(new T.CanvasTexture(canvas));
     texture.colorSpace = T.SRGBColorSpace;
-    const face = document.createElement("canvas");
-    face.width = 1024;
-    face.height = 360;
-    const pen = face.getContext("2d")!,
-      paint = pen.createLinearGradient(0, 0, 0, 360);
-    paint.addColorStop(0, "#ffd84a");
-    paint.addColorStop(1, "#ffa21a");
-    pen.fillStyle = paint;
-    pen.fillRect(0, 0, 1024, 360);
-    pen.strokeStyle = "rgba(255,255,255,0.45)";
-    pen.lineWidth = 12;
-    for (const [x, y, r] of [[90, 80, 50], [940, 70, 46], [120, 290, 40], [910, 300, 44]]) {
-      pen.beginPath();
-      for (let a = 0; a < Math.PI * 3; a += 0.12) pen.lineTo(x + Math.cos(a) * r * (a / 9.4), y + Math.sin(a) * r * (a / 9.4));
-      pen.stroke();
-    }
-    const art = keep(new T.CanvasTexture(face));
-    art.colorSpace = T.SRGBColorSpace;
-    const H = 2.5,
-      width = w + 2 * frame;
-    const blue = this.standard({ color: "#1f5fd0", roughness: 0.4 });
-    this.add(block(width, H, 0.3, 0.12), [blue, blue, blue, blue, this.standard({ map: art, roughness: 0.5 }), blue], 0, H / 2, 0, board);
-    // The lights: a dark window with the score and the time in glowing figures.
-    const screen = this.add(new T.PlaneGeometry(width * 0.62, H * 0.5), this.own(new T.MeshBasicMaterial({ map: texture, toneMapped: false })), 0, H * 0.52, 0.16, board);
+    this.add(block(3.9, 1.2, 0.08, 0.04), dark, -width / 2 + 2.25, marquee - 0.85, 0.17, board);
+    const screen = this.add(new T.PlaneGeometry(3.7, 1.0), this.own(new T.MeshBasicMaterial({ map: texture, toneMapped: false })), -width / 2 + 2.25, marquee - 0.85, 0.22, board);
     screen.castShadow = screen.receiveShadow = false;
-    board.position.set(0, 0, -d / 2 - frame - 0.1);
-    board.rotation.x = -0.32;
-    this.scene.add(board);
     return { canvas, texture, said: "" };
   }
   /** Paints the lights: the score and the seconds left, and the level. */
@@ -541,10 +521,11 @@ export class WhackView extends TableView<State> {
    * turns the whole about the hand (see `pose`).
    */
   private malletModel(keep: <R extends { dispose(): void }>(r: R) => R) {
-    const pad = keep(glossy({ color: "#e8352a", roughness: 0.42 }, 0.4)),
-      cap = this.standard({ color: "#fff2e0", roughness: 0.5 }),
-      wood = this.standard({ color: "#c98a4a", roughness: 0.55 }),
-      grip = this.standard({ color: "#2a2a30", roughness: 0.7 }),
+    // A padded beige head on a blue handle, as on such machines, tied to the cabinet by a white cable.
+    const pad = this.standard({ color: "#e9c690", roughness: 0.75 }),
+      cap = this.standard({ color: "#d9ae72", roughness: 0.75 }),
+      wood = keep(glossy({ color: "#2f6ad8", roughness: 0.35 }, 0.5)),
+      grip = this.standard({ color: "#f2f2f2", roughness: 0.6 }),
       { length } = MALLET;
     const handle = new T.Mesh(keep(new T.CylinderGeometry(0.07, 0.085, length, 14).rotateX(Math.PI / 2)), wood);
     handle.position.z = -length / 2;
@@ -562,6 +543,9 @@ export class WhackView extends TableView<State> {
     this.mallet.traverse((o) => ((o as T.Mesh).castShadow = true));
     this.mallet.rotation.order = "YXZ";
     this.scene.add(this.mallet);
+    this.cable = new T.Mesh(new T.BufferGeometry(), this.standard({ color: "#f4f4f4", roughness: 0.6 }));
+    this.cable.castShadow = true;
+    this.scene.add(this.cable);
   }
   /** The hole of the mole a line of sight strikes first (its body, as drawn), or −1. */
   private moleUnder(ray: T.Ray) {
@@ -672,15 +656,13 @@ export class WhackView extends TableView<State> {
     const model = this.moles[hole];
     if (!model) return;
     model.hat.visible = false;
-    const [x, z] = HOLES[hole],
-      flying = model.hat.clone();
+    // A copy flies off from where the hat sat (its place in the scene, not the mole's own frame).
+    const flying = model.hat.clone(),
+      from = model.hat.getWorldPosition(new T.Vector3());
     flying.visible = true;
+    flying.position.copy(from);
     this.scene.add(flying);
-    this.tween(0, 520, (p) => {
-      flying.position.set(x + p * 1.4, 1.1 + Math.sin(p * Math.PI) * 1.3 - p * 0.6, z - p * 0.4);
-      flying.rotation.set(-0.12 + p * 6, 0, p * 3);
-      if (p === 1) flying.removeFromParent();
-    });
+    this.hats.push({ hat: flying, from, at: now });
   }
   private advance(now: number) {
     const real = Math.min(0.3, (now - this.last) / 1000);
@@ -728,10 +710,10 @@ export class WhackView extends TableView<State> {
       model.stars.rotation.y = now / 160;
       if (mole.kind === HELMET && mole.hits === 2 && !dazed) model.hat.visible = true;
     });
-    // The rims glitter, and flash bright when a mole is hit.
+    // A rim flashes yellow when its mole is hit.
     this.rims.forEach((paint, hole) => {
       const since = now - this.flash[hole];
-      paint.emissiveIntensity = 0.45 + 0.15 * Math.sin(now / 190 + hole * 1.7) + (since < 360 ? 2.2 * (1 - since / 360) : 0);
+      paint.emissiveIntensity = since < 360 ? 1.4 * (1 - since / 360) : 0;
     });
     // The mallet: held from the near right, raised over where it is aimed, and swung down about the hand so that its
     // face lands flat on the mole's head (or the rim) at the blow, then lifted again.
@@ -753,6 +735,34 @@ export class WhackView extends TableView<State> {
     this.mallet.rotation.set(-rise + MALLET.raised * (1 - blow), Math.atan2(away.x, away.z), 0);
     // The drum stands upright at the blow, whatever the handle's angle.
     this.head.rotation.x = rise;
+    // The cable hangs from the handle's end to the cabinet's right side, laid afresh when the hand has moved.
+    this.cable.visible = this.mallet.visible;
+    this.mallet.updateMatrixWorld();
+    const end = this.mallet.localToWorld(new T.Vector3(0, 0, 0.2));
+    if (end.distanceTo(this.cableFrom) > 0.01) {
+      this.cableFrom.copy(end);
+      const anchor = new T.Vector3(FIELD.w / 2 + FIELD.trim + 0.05, -0.6, FIELD.d / 2 - 0.6),
+        low = Math.min(end.y, anchor.y) - 0.6 - end.distanceTo(anchor) * 0.12,
+        mid = end.clone().lerp(anchor, 0.5).setY(low);
+      this.cable.geometry.dispose();
+      this.cable.geometry = new T.TubeGeometry(new T.QuadraticBezierCurve3(end, mid, anchor), 24, 0.035, 6);
+    }
+    // Hard hats knocked off fly up and away to the right, turning over, and are gone.
+    this.hats = this.hats.filter((flight) => {
+      const p = (now - flight.at) / 560;
+      if (p >= 1) {
+        flight.hat.removeFromParent();
+        return false;
+      }
+      flight.hat.position.set(flight.from.x + p * 1.6, flight.from.y + Math.sin(p * Math.PI) * 1.4 - p * 0.8, flight.from.z - p * 0.5);
+      flight.hat.rotation.set(-0.12 + p * 6, 0, p * 3);
+      return true;
+    });
+    // The park: the big wheel turns slowly (its gondolas hang upright) and the bulbs twinkle.
+    const { wheel, bulbs } = this.fair;
+    wheel.rotation.z = now / 9000;
+    for (const car of wheel.children) if (car.userData.gondola) car.rotation.z = -wheel.rotation.z;
+    bulbs.forEach((bulb, k) => (bulb.emissiveIntensity = (k + Math.floor(now / 300)) % 3 === 0 ? 1.4 : 0.5));
     // Words rise and fade.
     this.words = this.words.filter((word) => {
       const p = (now - word.at) / 850;
@@ -775,6 +785,8 @@ export class WhackView extends TableView<State> {
       this.world = createWorld(state.level, cryptoRandom);
       for (const word of this.words) word.sprite.removeFromParent();
       this.words = [];
+      for (const flight of this.hats) flight.hat.removeFromParent();
+      this.hats = [];
     }
     this.lights(state);
     this.pose(performance.now());
@@ -785,6 +797,7 @@ export class WhackView extends TableView<State> {
   protected mark(_marks: Marks) {}
   dispose() {
     cancelAnimationFrame(this.ticker);
+    this.cable.geometry.dispose();
     for (const word of this.words) {
       (word.sprite.material as T.SpriteMaterial).map?.dispose();
       word.sprite.material.dispose();

@@ -1565,3 +1565,248 @@ export function souk(scene: T.Object3D, own: Own, half: number, depth: number) {
   canopy.rotation.x = Math.PI / 2 + 0.35;
   canopy.castShadow = false;
 }
+
+/** The paving of a fairground: pale bricks in warm colours, laid in rows. */
+function paving() {
+  const { c, ctx: pen } = canvas(512, 512),
+    random = noise(41);
+  pen.fillStyle = "#d9c7b0";
+  pen.fillRect(0, 0, 512, 512);
+  const colours = ["#efdcc2", "#e8cfb0", "#f3e6d2", "#e2c3a6", "#f0d8c8"];
+  for (let row = 0; row < 16; row++)
+    for (let col = -1; col < 9; col++) {
+      const x = col * 64 + (row % 2) * 32,
+        y = row * 32;
+      pen.fillStyle = colours[Math.floor(random() * colours.length)];
+      pen.fillRect(x + 2, y + 2, 60, 28);
+    }
+  return texture(c, 14, 14);
+}
+/** A sky with soft clouds, laid behind everything. */
+function skyBack() {
+  const { c, ctx: pen } = canvas(512, 512),
+    random = noise(7),
+    air = pen.createLinearGradient(0, 0, 0, 512);
+  air.addColorStop(0, "#5fb4ff");
+  air.addColorStop(0.7, "#b4e0ff");
+  air.addColorStop(1, "#e8f6ff");
+  pen.fillStyle = air;
+  pen.fillRect(0, 0, 512, 512);
+  pen.fillStyle = "rgba(255,255,255,0.85)";
+  for (let k = 0; k < 7; k++) {
+    const x = random() * 512,
+      y = 40 + random() * 260;
+    for (let b = 0; b < 5; b++) {
+      pen.beginPath();
+      pen.ellipse(x + b * 22 - 44, y + Math.sin(b) * 6, 30, 16, 0, 0, Math.PI * 2);
+      pen.fill();
+    }
+  }
+  const t = new T.CanvasTexture(c);
+  t.colorSpace = T.SRGBColorSpace;
+  return t;
+}
+/** Stripes round a cone or a drum, two colours `count` times round. */
+function stripes(a: string, b: string, count: number) {
+  const { c, ctx: pen } = canvas(512, 64);
+  for (let k = 0; k < count * 2; k++) {
+    pen.fillStyle = k % 2 ? b : a;
+    pen.fillRect((k * 512) / (count * 2), 0, 512 / (count * 2) + 1, 64);
+  }
+  return texture(c);
+}
+/**
+ * A fairground round a machine standing at the middle (the user asked for an amusement park behind the arcade
+ * machines): paved ground, a sky, a big wheel and a carousel far behind, a striped tent, strings of bulbs across on
+ * poles, a ticket booth, a balloon seller's cart, trees, lamp posts and benches. Everything stands clear of the
+ * middle (a machine up to six across) and of the near side, where the eye is. All painted and modelled in code.
+ * The wheel and the bulbs are returned so that a view may turn the one and twinkle the others.
+ */
+export function funfair(scene: T.Scene, own: Own, ground: number) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.7, ...options })),
+    add = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x: number, y: number, z: number, parent: T.Object3D = scene) => {
+      const mesh = new T.Mesh(own(geometry), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    },
+    bulbs: T.MeshStandardMaterial[] = [],
+    bulbGeometry = own(new T.SphereGeometry(0.16, 10, 8)),
+    bulb = (x: number, y: number, z: number, colour: string, parent: T.Object3D = scene) => {
+      const paint = standard({ color: colour, emissive: colour, emissiveIntensity: 0.8, roughness: 0.4 });
+      bulbs.push(paint);
+      const mesh = new T.Mesh(bulbGeometry, paint);
+      mesh.position.set(x, y, z);
+      parent.add(mesh);
+      return mesh;
+    };
+  scene.background = own(skyBack());
+  scene.fog = new T.Fog("#d8efff", 38, 110);
+  const floor = add(new T.PlaneGeometry(160, 160).rotateX(-Math.PI / 2), standard({ map: own(paving()), roughness: 0.92 }), 0, ground, 0);
+  floor.castShadow = false;
+  const white = standard({ color: "#ffffff", roughness: 0.4 }),
+    steel = standard({ color: "#cfd6de", roughness: 0.3, metalness: 0.6 }),
+    red = standard({ color: "#e8323a", roughness: 0.45 }),
+    COLOURS = ["#ff4a5a", "#ffc23a", "#3aa8ff", "#5ad06a", "#c86aff", "#ff8a3a"];
+  // The big wheel, far behind on the right: two rims, spokes, gondolas and a row of bulbs, on two A-frames.
+  const wheel = new T.Group(),
+    R = 12,
+    hubY = ground + R + 2.5;
+  wheel.position.set(20, hubY, -42);
+  scene.add(wheel);
+  for (const side of [-0.7, 0.7]) {
+    const rim = add(new T.TorusGeometry(R, 0.22, 8, 64), white, 0, 0, side, wheel);
+    rim.castShadow = false;
+  }
+  const spoke = own(new T.CylinderGeometry(0.08, 0.08, R, 6));
+  for (let k = 0; k < 16; k++) {
+    const a = (k * Math.PI * 2) / 16;
+    for (const side of [-0.7, 0.7]) {
+      const bar = new T.Mesh(spoke, steel);
+      bar.position.set((Math.cos(a) * R) / 2, (Math.sin(a) * R) / 2, side);
+      bar.rotation.z = a - Math.PI / 2;
+      wheel.add(bar);
+    }
+    // A gondola hangs from the rim (it is turned upright again as the wheel turns, by the view).
+    const car = new T.Group();
+    car.position.set(Math.cos(a) * R, Math.sin(a) * R, 0);
+    add(new T.CylinderGeometry(0.9, 0.7, 1.1, 12), standard({ color: COLOURS[k % COLOURS.length], roughness: 0.4 }), 0, -1.1, 0, car);
+    add(new T.ConeGeometry(1.0, 0.5, 12), white, 0, -0.3, 0, car);
+    car.userData.gondola = true;
+    wheel.add(car);
+  }
+  for (let k = 0; k < 32; k++) {
+    const a = (k * Math.PI * 2) / 32;
+    bulb(Math.cos(a) * (R + 0.3), Math.sin(a) * (R + 0.3), 0.75, k % 2 ? "#fff3a0" : "#ff9ad0", wheel);
+  }
+  add(new T.CylinderGeometry(0.7, 0.7, 2.2, 16).rotateX(Math.PI / 2), steel, 0, 0, 0, wheel);
+  for (const side of [-1.6, 1.6])
+    for (const lean of [-1, 1]) {
+      const leg = add(new T.CylinderGeometry(0.25, 0.35, (hubY - ground) / Math.cos(0.32), 10), white, 20 + lean * Math.tan(0.32) * ((hubY - ground) / 2), (hubY + ground) / 2, -42 + side);
+      leg.rotation.z = -lean * 0.32;
+    }
+  // A carousel on the left: a round deck, striped poles with horses, a striped roof with bulbs round its edge.
+  const carousel = new T.Group();
+  carousel.position.set(-17, ground, -24);
+  scene.add(carousel);
+  add(new T.CylinderGeometry(5, 5.2, 0.7, 40), standard({ color: "#ffe9c2", roughness: 0.5 }), 0, 0.35, 0, carousel);
+  const pole = own(new T.CylinderGeometry(0.09, 0.09, 4.2, 8)),
+    horseBody = own(new T.CapsuleGeometry(0.35, 0.9, 6, 12).rotateZ(Math.PI / 2)),
+    horseHead = own(new T.CapsuleGeometry(0.2, 0.45, 6, 10));
+  for (let k = 0; k < 10; k++) {
+    const a = (k * Math.PI * 2) / 10,
+      x = Math.cos(a) * 3.8,
+      z = Math.sin(a) * 3.8,
+      bar = new T.Mesh(pole, steel);
+    bar.position.set(x, 2.8, z);
+    carousel.add(bar);
+    const horse = new T.Group(),
+      coat = standard({ color: ["#ffffff", "#f5c6d8", "#c8e4ff", "#fff0b0"][k % 4], roughness: 0.4 });
+    horse.add(new T.Mesh(horseBody, coat));
+    const head = new T.Mesh(horseHead, coat);
+    head.position.set(0.65, 0.45, 0);
+    head.rotation.z = -0.5;
+    horse.add(head);
+    horse.position.set(x, 1.6 + (k % 2) * 0.5, z);
+    horse.rotation.y = -a;
+    horse.traverse((o) => ((o as T.Mesh).castShadow = true));
+    carousel.add(horse);
+  }
+  add(new T.ConeGeometry(5.6, 2.6, 24, 1, true), standard({ map: own(stripes("#e8323a", "#ffffff", 12)), side: T.DoubleSide, roughness: 0.6 }), 0, 6.2, 0, carousel);
+  add(new T.CylinderGeometry(5.6, 5.6, 0.7, 24, 1, true), standard({ map: own(stripes("#ffc23a", "#e8323a", 24)), side: T.DoubleSide }), 0, 4.65, 0, carousel);
+  add(new T.SphereGeometry(0.35, 12, 8), standard({ color: "#ffd84a", metalness: 0.6, roughness: 0.3 }), 0, 7.7, 0, carousel);
+  for (let k = 0; k < 24; k++) {
+    const a = (k * Math.PI * 2) / 24;
+    bulb(Math.cos(a) * 5.65, 4.3, Math.sin(a) * 5.65, k % 2 ? "#fff3a0" : "#ffb04a", carousel);
+  }
+  // A striped tent far behind the middle, with a flag.
+  add(new T.CylinderGeometry(7, 7, 4, 28, 1, true), standard({ map: own(stripes("#3a6aff", "#ffffff", 14)), side: T.DoubleSide }), -2, ground + 2, -52);
+  add(new T.ConeGeometry(7.4, 5, 28), standard({ map: own(stripes("#3a6aff", "#ffffff", 14)), roughness: 0.6 }), -2, ground + 6.5, -52);
+  add(new T.CylinderGeometry(0.08, 0.08, 2.4, 6), steel, -2, ground + 10, -52);
+  add(new T.PlaneGeometry(1.4, 0.8), standard({ color: "#ff4a5a", side: T.DoubleSide }), -1.3, ground + 10.6, -52);
+  // Strings of bulbs across the back on striped poles, hanging in curves.
+  const poles: [number, number][] = [[-15, -9], [-6, -11.5], [6, -11.5], [15, -9]],
+    top = ground + 8.5,
+    striped = standard({ map: own(stripes("#ffffff", "#e8323a", 6)) });
+  for (const [x, z] of poles) {
+    const p = add(new T.CylinderGeometry(0.16, 0.2, top - ground, 10), striped, x, (top + ground) / 2, z);
+    p.castShadow = false;
+    add(new T.SphereGeometry(0.3, 10, 8), standard({ color: "#ffd84a", metalness: 0.5 }), x, top + 0.2, z);
+  }
+  for (let i = 0; i + 1 < poles.length; i++) {
+    const [ax, az] = poles[i],
+      [bx, bz] = poles[i + 1];
+    for (let k = 1; k < 12; k++) {
+      const t = k / 12,
+        sag = Math.sin(Math.PI * t) * 2.2;
+      bulb(ax + (bx - ax) * t, top - 0.3 - sag, az + (bz - az) * t, COLOURS[k % COLOURS.length]);
+    }
+  }
+  // A ticket booth with a striped awning on the left, and a balloon seller's cart on the right.
+  const booth = new T.Group();
+  booth.position.set(-11, ground, -6);
+  booth.rotation.y = 0.5;
+  scene.add(booth);
+  add(block(3, 3.2, 2.4, 0.1), standard({ color: "#ffe2a8", roughness: 0.6 }), 0, 1.6, 0, booth);
+  add(block(1.8, 1.0, 0.1, 0.03), standard({ color: "#2a3a5a", roughness: 0.2 }), 0, 2.0, 1.22, booth);
+  const awning = add(new T.BoxGeometry(3.4, 0.08, 1.4), standard({ map: own(stripes("#e8323a", "#ffffff", 8)) }), 0, 3.0, 1.6, booth);
+  awning.rotation.x = 0.35;
+  add(block(3.2, 0.3, 2.6, 0.08), red, 0, 3.35, 0, booth);
+  const cart = new T.Group();
+  cart.position.set(11, ground, -5);
+  scene.add(cart);
+  add(block(1.8, 0.9, 1.1, 0.08), standard({ color: "#3aa8ff", roughness: 0.5 }), 0, 0.85, 0, cart);
+  for (const sx of [-0.7, 0.7]) add(new T.CylinderGeometry(0.35, 0.35, 0.12, 16).rotateX(Math.PI / 2), standard({ color: "#2a2a30" }), sx, 0.35, 0.6, cart);
+  const string = own(new T.CylinderGeometry(0.012, 0.012, 1, 4)),
+    balloon = own(new T.SphereGeometry(0.42, 16, 12));
+  for (let k = 0; k < 8; k++) {
+    const a = k * 2.3,
+      x = Math.cos(a) * 0.55,
+      z = Math.sin(a) * 0.4,
+      y = 3.4 + (k % 3) * 0.45,
+      ball = new T.Mesh(balloon, standard({ color: COLOURS[k % COLOURS.length], roughness: 0.25 }));
+    ball.scale.set(1, 1.15, 1);
+    ball.position.set(x, y, z);
+    cart.add(ball);
+    const line = new T.Mesh(string, white);
+    line.scale.y = y - 1.3;
+    line.position.set(x / 2, (y + 1.3) / 2, z / 2);
+    cart.add(line);
+  }
+  // Trees along the back and the sides, lamp posts and benches at the sides.
+  const trunk = standard({ color: "#7a5236", roughness: 0.9 }),
+    leaves = [standard({ color: "#4fa84a", roughness: 0.9 }), standard({ color: "#3d9440", roughness: 0.9 })];
+  const trees: [number, number, number][] = [[-26, -16, 1.2], [-21, -34, 1.4], [-30, -4, 1.1], [27, -14, 1.3], [31, -26, 1.5], [29, 2, 1.0], [-8, -30, 1.1], [8, -28, 1.2], [-34, 8, 1.2], [35, 10, 1.1]];
+  trees.forEach(([x, z, s], i) => {
+    add(new T.CylinderGeometry(0.3 * s, 0.4 * s, 3 * s, 8), trunk, x, ground + 1.5 * s, z);
+    add(new T.SphereGeometry(2.2 * s, 14, 10), leaves[i % 2], x, ground + 3.8 * s, z);
+    add(new T.SphereGeometry(1.5 * s, 12, 8), leaves[(i + 1) % 2], x + 1.1 * s, ground + 4.6 * s, z + 0.4);
+  });
+  for (const [x, z] of [[-14, 1], [14, 1], [-13, -14], [13, -14]]) {
+    add(new T.CylinderGeometry(0.1, 0.14, 4.5, 8), standard({ color: "#2a3a4a", roughness: 0.4, metalness: 0.5 }), x, ground + 2.25, z);
+    const globe = add(new T.SphereGeometry(0.42, 14, 10), standard({ color: "#fff6d0", emissive: "#ffe8a0", emissiveIntensity: 0.9 }), x, ground + 4.7, z);
+    globe.castShadow = false;
+  }
+  const seat = standard({ color: "#c46a3a", roughness: 0.7 }),
+    iron = standard({ color: "#2a2a30", roughness: 0.5, metalness: 0.5 });
+  for (const [x, z, turn] of [[-10, 0, Math.PI / 2], [10, 0, -Math.PI / 2]] as const) {
+    const bench = new T.Group();
+    bench.position.set(x, ground, z);
+    bench.rotation.y = turn;
+    scene.add(bench);
+    add(block(2.6, 0.12, 0.6, 0.03), seat, 0, 0.75, 0, bench);
+    add(block(2.6, 0.5, 0.1, 0.03), seat, 0, 1.15, -0.3, bench);
+    for (const sx of [-1.1, 1.1]) add(block(0.1, 0.75, 0.6, 0.02), iron, sx, 0.37, 0, bench);
+  }
+  // Flower beds round the plaza.
+  for (const [x, z] of [[-7.5, 8], [7.5, 8], [-16, 2], [16, 2]]) {
+    add(new T.CylinderGeometry(1.4, 1.5, 0.5, 20), standard({ color: "#b9a48a", roughness: 0.9 }), x, ground + 0.25, z);
+    for (let k = 0; k < 9; k++) {
+      const a = (k * Math.PI * 2) / 9;
+      add(new T.SphereGeometry(0.22, 8, 6), standard({ color: COLOURS[k % COLOURS.length] }), x + Math.cos(a) * 0.8, ground + 0.65, z + Math.sin(a) * 0.8);
+    }
+    add(new T.SphereGeometry(0.7, 10, 8), leaves[0], x, ground + 0.7, z);
+  }
+  return { wheel, bulbs };
+}

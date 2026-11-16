@@ -50,7 +50,8 @@ export interface PointConfig<S> {
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
   /** `show` keeps a tool in place (greyed) while its move is not legal; `text` rewrites its label for the state. */
   /** `keep` holds a tool's place, unseen, while its move is not legal, so that the buttons beside it do not shift. */
-  tools?: { label: string; point: number; onBoard?: boolean; show?: (state: S) => boolean; keep?: (state: S) => boolean; text?: (state: S) => string; area?: string; name?: string }[];
+  /** On a live table a tool with `release` is held: its move is made when it is pressed and `release` when it is let go. */
+  tools?: { label: string; point: number; release?: number; onBoard?: boolean; show?: (state: S) => boolean; keep?: (state: S) => boolean; text?: (state: S) => string; area?: string; name?: string }[];
   /** Extra time, in milliseconds, the computer takes over the move it is about to make. */
   ponder?: (state: S) => number;
   /** No panel beside the table: the table takes the whole width (the panel stays in the page, unseen, for readers). */
@@ -90,7 +91,10 @@ export interface PointConfig<S> {
   /** What the button over the table that starts anew is called, and the heading of its window, when it is not 새 게임. */
   newGameLabel?: string;
   /** A key that is a whole move (an arrow that slides the tiles), or null for the usual walk over the points. */
-  keyMove?: (key: string, state: S) => Move | null;
+  /** `repeat` is true for the copies a key held down sends. */
+  keyMove?: (key: string, state: S, repeat?: boolean) => Move | null;
+  /** A key let go that is a move of its own (an arrow that was held to move something along), on a live table. */
+  keyUp?: (key: string, state: S) => Move | null;
   /** The names and colours of the two sides, when they depend on the variant. */
   sidesOf?: (variant: string) => [string, string];
   colorsOf?: (variant: string) => [string, string];
@@ -320,7 +324,36 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $("pg-undo").onclick = undo;
     if (config.action) $("pg-action").onclick = () => pick(game.moves(state)[0]?.to ?? -1);
     // On a table that runs by itself a button is a move at once, whatever else is going on.
-    (config.tools ?? []).forEach((tool, i) => ($(`pg-tool-${i}`).onclick = () => (config.live ? commit({ from: -1, to: tool.point, extra: -1 }) : pick(tool.point))));
+    (config.tools ?? []).forEach((tool, i) => {
+      const button = $(`pg-tool-${i}`),
+        made = (to: number) => commit({ from: -1, to, extra: -1 });
+      if (!(config.live && tool.release !== undefined)) {
+        button.onclick = () => (config.live ? made(tool.point) : pick(tool.point));
+        return;
+      }
+      // Held: pressed it pushes, let go it stops; a click from the keyboard is a short push.
+      const release = tool.release;
+      let held = false;
+      const up = () => {
+        if (!held) return;
+        held = false;
+        made(release);
+      };
+      button.onpointerdown = (e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        e.preventDefault();
+        button.setPointerCapture(e.pointerId);
+        held = true;
+        made(tool.point);
+      };
+      button.onpointerup = button.onpointercancel = button.onlostpointercapture = up;
+      button.oncontextmenu = (e) => e.preventDefault();
+      button.onclick = (e) => {
+        if (e.detail !== 0) return;
+        made(tool.point);
+        later(() => made(release), 300);
+      };
+    });
     if (config.pausable) $("pg-pause").onclick = togglePause;
     if (config.newGameLabel) $("restart").textContent = config.newGameLabel;
     try {
@@ -357,6 +390,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       canvas.tabIndex = 0;
       canvas.setAttribute("aria-label", `${config.name} 판`);
       canvas.addEventListener("keydown", key);
+      canvas.addEventListener("keyup", keyUp);
       view.sync(state, false);
       // Keys that are moves must work from the start, without a first click on the table.
       if (config.keyMove || config.live || config.pausable) canvas.focus({ preventScroll: true });
@@ -463,7 +497,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       togglePause();
       return;
     }
-    const direct = config.keyMove?.(e.key, state);
+    const direct = config.keyMove?.(e.key, state, e.repeat);
     if (direct) {
       e.preventDefault();
       e.stopPropagation();
@@ -499,6 +533,14 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       cursor = best;
       update();
     }
+  }
+  /** A key let go: a move only on a table that asks for it (an arrow held to steer). */
+  function keyUp(e: KeyboardEvent) {
+    const made = config.keyUp?.(e.key, state);
+    if (!made) return;
+    e.preventDefault();
+    e.stopPropagation();
+    commit(made);
   }
   function undo() {
     if (busy() || !past.length) return;
@@ -680,6 +722,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if ((config.keyMove || config.pausable) && (e.target === document.body || e.target === document.documentElement) && document.getElementById("pg-undo") && !document.querySelector("dialog[open]")) key(e);
   };
   document.addEventListener("keydown", pageKey);
+  const pageKeyUp = (e: KeyboardEvent) => {
+    if (config.keyUp && (e.target === document.body || e.target === document.documentElement) && document.getElementById("pg-undo")) keyUp(e);
+  };
+  document.addEventListener("keyup", pageKeyUp);
   document.addEventListener("close", dialogClosed, true);
   document.addEventListener("cancel", dialogClosed, true);
   document.addEventListener("click", dialogClosed, true);
@@ -692,6 +738,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       stop();
       sound.dispose();
       document.removeEventListener("keydown", pageKey);
+      document.removeEventListener("keyup", pageKeyUp);
       document.removeEventListener("close", dialogClosed, true);
       document.removeEventListener("cancel", dialogClosed, true);
       document.removeEventListener("click", dialogClosed, true);

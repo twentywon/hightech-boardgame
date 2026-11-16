@@ -5,13 +5,15 @@ import { KINDS } from "./sim";
  * A claw machine: a number of tries (coins), each steering the claw over a
  * pit of soft toys and letting it down to catch one. The machine itself is
  * played in real time by the view (see `sim.ts`). The player's own moves are
- * the steps of the claw and the button (`STEER`, `DROP`), which change
- * nothing here but are passed on to the machine; the machine reports what a
+ * the lever pushed one way and let go again (`STEER + dir`, `RELEASE + dir`)
+ * and the button (`DROP`), which change nothing here but are passed on to
+ * the machine; the machine reports what a
  * try came to: a toy down the chute (`PRIZE + kind`) or nothing (`MISSED`),
  * and now and then a toy that fell in by itself (`BONUS + kind`). The game
  * ends with the last try, won if anything was caught.
  */
 export const STEER = 10,
+  RELEASE = 14,
   DROP = 20,
   MISSED = 1,
   PRIZE = 30,
@@ -37,12 +39,12 @@ export const createGame = (level = 1): State => {
 };
 const ended = (state: State): State => (state.tries <= 0 ? { ...state, winner: state.prizes.length ? 0 : 1 } : state);
 export const moves = (state: State): Move[] =>
-  state.winner !== null ? [] : [STEER, STEER + 1, STEER + 2, STEER + 3, DROP, MISSED, ...KINDS.flatMap((_, k) => [PRIZE + k, BONUS + k])].map((to) => ({ from: -1, to, extra: -1 }));
+  state.winner !== null ? [] : [STEER, STEER + 1, STEER + 2, STEER + 3, RELEASE, RELEASE + 1, RELEASE + 2, RELEASE + 3, DROP, MISSED, ...KINDS.flatMap((_, k) => [PRIZE + k, BONUS + k])].map((to) => ({ from: -1, to, extra: -1 }));
 export function play(state: State, move: Move): State | null {
   if (state.winner !== null || move.from !== -1 || move.extra !== -1) return null;
   const to = move.to,
     next = { ...state, last: to, ply: state.ply + 1 };
-  if ((to >= STEER && to < STEER + 4) || to === DROP) return next;
+  if ((to >= STEER && to < RELEASE + 4) || to === DROP) return next;
   if (to === MISSED) return ended({ ...next, tries: state.tries - 1 });
   if (to >= PRIZE && to < PRIZE + KINDS.length) return ended({ ...next, tries: state.tries - 1, prizes: [...state.prizes, to - PRIZE] });
   if (to >= BONUS && to < BONUS + KINDS.length) return { ...next, prizes: [...state.prizes, to - BONUS] };

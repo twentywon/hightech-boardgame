@@ -1,16 +1,22 @@
 import * as T from "three";
 import { cryptoRandom } from "../../core/random";
 import { block, glossy } from "../../engine/scene-utils";
+import { funfair } from "../../engine/scenery";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot } from "../table/view";
-import { AIM_HEIGHT, BUTTON, CLAW_SUBJECT, DECK } from "./layout";
-import { BONUS, DROP, MISSED, PRIZE, STEER, type State } from "./rules";
-import { AIM_TIME, CHUTE, DT, KINDS, PIT, REACH, TOP, aimAt, createWorld, drop, nudge, step, surface, type Happening, type World } from "./sim";
+import { AIM_HEIGHT, BUTTON, CLAW_SUBJECT, DECK, STICK } from "./layout";
+import { BONUS, DROP, MISSED, PRIZE, RELEASE, STEER, type State } from "./rules";
+import { AIM_TIME, CHUTE, DT, KINDS, PIT, RAIL, REACH, aimAt, createWorld, drop, hubOf, lean, letGo, leverOf, press, step, surface, type Happening, type World } from "./sim";
 
 export const CLAW_COLORS: [string, string] = ["#ff6fae", "#b9b3a4"];
-/** The cabinet: its posts' corners, the floor of the room under it, the gantry's height, and the top of the glass. */
-const CAB = { x: 2.66, z: 2.06, ground: -2.6, rail: TOP + 0.95, glass: 3.95 };
+/** The cabinet: its posts' corners, the ground of the park under it, the gantry's height, and the top of the glass. */
+const CAB = { x: 2.66, z: 2.06, ground: -2.6, rail: RAIL, glass: 3.95 };
+/** The joystick, as a place a press can take hold of (not a move of the rules), and how far a drag leans it all the way. */
+const LEVER = 99,
+  LEVER_REACH = 0.32;
+/** A cylinder's axis, which the cable's is turned from. */
+const DOWN_UP = new T.Vector3(0, 1, 0);
 const sequence = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 /** A canvas texture of `w` × `h` painted by `paint`. */
 function painted(w: number, h: number, paint: (pen: CanvasRenderingContext2D) => void) {
@@ -101,11 +107,12 @@ interface ToyModel {
   body: T.Group;
 }
 /**
- * A claw machine in an arcade, seen from where a player stands before it: a glass cabinet on a pink frame, a pit
- * of soft toys, the claw hanging from a gantry under the sign, a chute in the front left corner behind a clear
- * wall, and the control deck below the glass with the lights, the joystick and the big button. The view plays the
- * machine in real time (see `sim.ts`): steps and the button come from the screen as moves, what a try came to goes
- * back as a move.
+ * A claw machine in an amusement park, seen from where a player stands before it: a glass cabinet on a pink
+ * frame, a pit of soft toys, the claw hanging by a cable from a gantry under the sign (it swings as the trolley
+ * starts and stops), a chute in the front left corner behind a clear wall, and the control deck below the glass
+ * with the lights, the joystick and the big button. The view plays the machine in real time (see `sim.ts`): the
+ * lever pushed and let go and the button come from the screen as moves, the joystick and the glass are taken by
+ * hand, and what a try came to goes back as a move.
  */
 export class ClawView extends TableView<State> {
   private world: World;
@@ -123,6 +130,9 @@ export class ClawView extends TableView<State> {
   private shelf = new T.Group();
   private shelved = -1;
   private bulbs: T.MeshStandardMaterial[] = [];
+  private fair: { wheel: T.Group; bulbs: T.MeshStandardMaterial[] };
+  /** Where a press on the joystick began, while it is held. */
+  private grasp: { x: number; z: number } | null = null;
   private words: { sprite: T.Sprite; at: number }[] = [];
   private paused = false;
   private shown = 0;
@@ -134,9 +144,9 @@ export class ClawView extends TableView<State> {
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#1a1236");
     this.world = createWorld(1, cryptoRandom);
-    this.scene.add(new T.HemisphereLight("#fff6f0", "#4a3a6a", 1.5));
-    const sun = new T.DirectionalLight("#fff4e6", 1.6);
-    sun.position.set(2, 10, 8);
+    this.scene.add(new T.HemisphereLight("#fff6e8", "#40305a", 1.6));
+    const sun = new T.DirectionalLight("#fff2dc", 2.0);
+    sun.position.set(-3, 12, 7);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = sun.shadow.camera.bottom = -6;
@@ -149,7 +159,8 @@ export class ClawView extends TableView<State> {
     lamp.position.set(0, CAB.glass - 0.2, 0.4);
     this.scene.add(lamp);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    this.room(keep);
+    // The same amusement park as the whack-a-mole machine's (the user asked); its wheel turns and its bulbs twinkle.
+    this.fair = funfair(this.scene, keep, CAB.ground);
     this.cabinet(keep);
     this.kit = this.toyKit(keep);
     // The claw, its cable and the gantry it runs on.
@@ -184,7 +195,7 @@ export class ClawView extends TableView<State> {
       this.prongs.push(arm);
     }
     this.scene.add(this.hub);
-    this.cable = this.add(new T.CylinderGeometry(0.018, 0.018, 1, 6), dark, 0, 0, 0);
+    this.cable = this.add(new T.CylinderGeometry(0.018, 0.018, 1, 6).translate(0, 0.5, 0), dark, 0, 0, 0);
     this.bridge = this.add(block(2 * PIT.x1 + 0.4, 0.1, 0.14, 0.03), dark, 0, CAB.rail, 0);
     this.trolley = this.add(block(0.34, 0.16, 0.34, 0.04), chrome, 0, CAB.rail - 0.08, 0);
     // A red ring on whatever lies under the claw while it is being steered.
@@ -200,39 +211,6 @@ export class ClawView extends TableView<State> {
       this.advance(performance.now());
     };
     this.ticker = requestAnimationFrame(tick);
-  }
-  /** The arcade round the machine: a dark carpet with bright shapes, a wall with neon strips behind. */
-  private room(keep: <R extends { dispose(): void }>(r: R) => R) {
-    const carpet = painted(512, 512, (pen) => {
-      pen.fillStyle = "#1c1642";
-      pen.fillRect(0, 0, 512, 512);
-      const random = sequence(77);
-      pen.lineWidth = 5;
-      for (let k = 0; k < 80; k++) {
-        pen.strokeStyle = ["rgba(255,74,176,0.45)", "rgba(56,224,255,0.4)", "rgba(255,226,58,0.4)"][k % 3];
-        const x = random() * 512,
-          y = random() * 512;
-        pen.beginPath();
-        if (k % 2) pen.arc(x, y, 9, 0, Math.PI * 2);
-        else {
-          pen.moveTo(x - 12, y + 8);
-          pen.lineTo(x, y - 10);
-          pen.lineTo(x + 12, y + 8);
-          pen.closePath();
-        }
-        pen.stroke();
-      }
-    });
-    carpet.wrapS = carpet.wrapT = T.RepeatWrapping;
-    carpet.repeat.set(6, 6);
-    keep(carpet);
-    this.add(new T.PlaneGeometry(50, 50).rotateX(-Math.PI / 2), this.standard({ map: carpet, roughness: 0.95 }), 0, CAB.ground, 0).castShadow = false;
-    const wall = this.add(new T.PlaneGeometry(50, 20), this.standard({ color: "#2a2156", roughness: 0.9 }), 0, 6, -7);
-    wall.castShadow = false;
-    for (const [y, color] of [[2.2, "#ff4ab0"], [3.0, "#38e0ff"]] as const) {
-      const strip = this.add(new T.BoxGeometry(30, 0.08, 0.05), this.own(new T.MeshBasicMaterial({ color })), 0, y, -6.95);
-      strip.castShadow = false;
-    }
   }
   /** The cabinet: base, posts, the pit's floor with the chute cut out, the glass, the backdrop and the sign with bulbs. */
   private cabinet(keep: <R extends { dispose(): void }>(r: R) => R) {
@@ -455,18 +433,38 @@ export class ClawView extends TableView<State> {
   protected subject() {
     return CLAW_SUBJECT;
   }
-  /** The big button: a tap on it is the screen's own pick of `DROP`. */
+  /** The big button (a tap on it is the screen's own pick of `DROP`) and the joystick's ball, which a press takes hold of. */
   protected spots(): Spot[] {
-    return [{ ...BUTTON, r: 0.42, point: DROP }];
+    return [
+      { ...BUTTON, r: 0.42, point: DROP },
+      { ...STICK, r: 0.3, point: LEVER },
+    ];
   }
-  /** A press on the glass sends the claw over the point under it, and it follows the finger while it is held. */
+  /**
+   * A press on the joystick takes hold of it: dragged, it leans that way and the claw runs on that way as long as it
+   * is held. A press on the glass sends the claw over the point under it, and it follows the finger while it is held.
+   */
   protected dragStart(point: number, at: { x: number; y: number; z: number }) {
     if (point === DROP || !this.running()) return false;
+    if (point === LEVER) {
+      this.grasp = { x: at.x, z: at.z };
+      return true;
+    }
     aimAt(this.world, at.x, at.z);
     return true;
   }
   protected dragMove(at: { x: number; y: number; z: number }) {
-    aimAt(this.world, at.x, at.z);
+    if (!this.running()) return;
+    if (this.grasp) {
+      const x = (at.x - this.grasp.x) / LEVER_REACH,
+        z = (at.z - this.grasp.z) / LEVER_REACH;
+      // A little play round the middle, so that a finger resting on it does not move the claw.
+      lean(this.world, Math.abs(x) < 0.12 ? 0 : x, Math.abs(z) < 0.12 ? 0 : z);
+    } else aimAt(this.world, at.x, at.z);
+  }
+  protected dragEnd() {
+    if (this.grasp) lean(this.world, 0, 0);
+    this.grasp = null;
   }
   /** The table never makes the screen wait. */
   get animating() {
@@ -474,6 +472,8 @@ export class ClawView extends TableView<State> {
   }
   setPaused(paused: boolean) {
     this.paused = paused;
+    // Paused, every hand is off the lever (a key let go meanwhile would not be heard).
+    if (paused) letGo(this.world);
   }
   private running() {
     return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
@@ -515,6 +515,8 @@ export class ClawView extends TableView<State> {
   private advance(now: number) {
     const real = Math.min(0.3, (now - this.last) / 1000);
     this.last = now;
+    // While the machine stands (a window open, the page hidden) nothing is held: keys let go meanwhile go unheard.
+    if (!this.running() && !this.paused) letGo(this.world);
     if (this.running()) {
       this.left += real;
       while (this.left >= DT && this.state?.winner === null) {
@@ -528,43 +530,59 @@ export class ClawView extends TableView<State> {
   }
   /** Puts everything where the machine has it. */
   private pose(now: number) {
-    const { claw, toys } = this.world;
+    const { claw, toys } = this.world,
+      // How far the claw hangs over, as angles about the two axes, from its swing and the cable's length.
+      length = Math.max(0.3, CAB.rail - 0.16 - (claw.y + 0.16)),
+      swayZ = Math.atan2(claw.sx, length),
+      swayX = Math.atan2(claw.sz, length);
     // Models for toys laid since the last time (a new game lays a new pit).
     while (this.toys.length < toys.length) this.toys.push(this.toy(toys[this.toys.length].kind, toys[this.toys.length].r));
     toys.forEach((toy, i) => {
       const model = this.toys[i];
       model.root.visible = !toy.gone;
       model.root.position.set(toy.x, toy.y, toy.z);
-      // Lying, a toy leans back to look up out of the pit; held, it hangs facing the glass; falling, it tumbles.
+      // Lying, a toy leans back to look up out of the pit, and it is lifted just so, swinging with the claw and
+      // hanging over on the side it was caught by; falling, it tumbles.
       if (toy.vy !== null) model.root.rotation.set(-0.5 + (now / 140) % (Math.PI * 2), toy.turn, 0.3);
-      else if (toy.held) model.root.rotation.set(0.15, Math.sin(now / 300) * 0.2, Math.sin(now / 230) * 0.08);
-      else model.root.rotation.set(-0.55, toy.turn, 0);
+      else if (toy.held) {
+        const { offset } = claw;
+        model.root.rotation.set(-0.55 - swayX + offset.z * 0.9, toy.turn, swayZ - offset.x * 0.9);
+      } else model.root.rotation.set(-0.55, toy.turn, 0);
     });
-    // The claw, its cable to the trolley, the trolley on its bridge across the rails.
-    this.hub.position.set(claw.x, claw.y, claw.z);
-    const open = 0.08 + claw.open * 0.5;
+    // The claw hangs from the trolley on its cable, tilted as far as it has swung; the trolley runs on its bridge.
+    const hub = hubOf(claw);
+    this.hub.position.set(hub.x, claw.y, hub.z);
+    this.hub.rotation.set(-swayX, 0, swayZ);
+    // Holding a toy the prongs close only as far as the toy lets them.
+    const open = 0.08 + Math.max(claw.open, claw.holding !== null ? 0.4 : 0) * 0.5;
     for (const arm of this.prongs) arm.rotation.z = open;
-    const above = CAB.rail - 0.16,
-      span = above - (claw.y + 0.16);
-    this.cable.position.set(claw.x, claw.y + 0.16 + span / 2, claw.z);
-    this.cable.scale.y = Math.max(0.01, span);
+    const top = new T.Vector3(claw.x, CAB.rail - 0.16, claw.z),
+      end = new T.Vector3(hub.x, claw.y + 0.16, hub.z),
+      way = end.clone().sub(top);
+    this.cable.position.copy(top);
+    this.cable.scale.set(1, Math.max(0.01, way.length()), 1);
+    this.cable.quaternion.setFromUnitVectors(DOWN_UP, way.normalize());
     this.bridge.position.z = claw.z;
     this.trolley.position.set(claw.x, CAB.rail - 0.08, claw.z);
     // Where the claw would come down, while it is steered.
     const aiming = claw.phase === "aim" && !capturing() && this.state?.winner === null;
     this.target.visible = aiming;
     if (aiming) {
-      this.target.position.set(claw.x, surface(toys, claw.x, claw.z) + 0.03, claw.z);
+      this.target.position.set(hub.x, surface(toys, hub.x, hub.z) + 0.03, hub.z);
       this.target.scale.setScalar(1 + 0.12 * Math.sin(now / 160));
     }
-    // The joystick leans the way the claw is going; the button sinks a moment when pressed.
-    const dx = claw.target.x - claw.x,
-      dz = claw.target.z - claw.z,
-      far = Math.hypot(dx, dz),
-      lean = aiming && far > 0.02 ? 0.35 : 0;
-    this.stick.rotation.set(lean * (far ? dz / far : 0), 0, -lean * (far ? dx / far : 0));
+    // The joystick leans the way it is pushed (or the way a finger on the glass sends the claw); the button sinks a moment when pressed.
+    const lever = leverOf(this.world),
+      going = Math.hypot(claw.vx, claw.vz),
+      [lx, lz] = Math.hypot(lever.x, lever.z) > 0.05 ? [lever.x, lever.z] : aiming && going > 0.05 ? [claw.vx / going, claw.vz / going] : [0, 0];
+    this.stick.rotation.set(0.38 * lz, 0, -0.38 * lx);
     const pressing = now - this.pressed < 180;
     this.button.position.y = pressing ? 0.0 : 0.05;
+    // The park: the big wheel turns slowly (its gondolas hang upright) and the bulbs twinkle.
+    const { wheel, bulbs } = this.fair;
+    wheel.rotation.z = now / 9000;
+    for (const car of wheel.children) if (car.userData.gondola) car.rotation.z = -wheel.rotation.z;
+    bulbs.forEach((bulb, k) => (bulb.emissiveIntensity = (k + Math.floor(now / 300)) % 3 === 0 ? 1.4 : 0.5));
     // The sign's bulbs chase round.
     this.bulbs.forEach((bulb, k) => (bulb.emissiveIntensity = (k + Math.floor(now / 160)) % 3 === 0 ? 1.6 : 0.35));
     this.words = this.words.filter((word) => {
@@ -603,8 +621,9 @@ export class ClawView extends TableView<State> {
       for (const word of this.words) word.sprite.removeFromParent();
       this.words = [];
     } else if (state.ply === this.shown + 1 && state.last !== null) {
-      // The player's steps and the button are passed on to the machine.
-      if (state.last >= STEER && state.last < STEER + 4) nudge(this.world, state.last - STEER);
+      // The lever pushed and let go and the button are passed on to the machine.
+      if (state.last >= STEER && state.last < STEER + 4) press(this.world, state.last - STEER, true);
+      else if (state.last >= RELEASE && state.last < RELEASE + 4) press(this.world, state.last - RELEASE, false);
       else if (state.last === DROP) {
         drop(this.world);
         this.pressed = performance.now();

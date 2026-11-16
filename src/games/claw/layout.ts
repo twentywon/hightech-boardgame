@@ -10,3 +10,5 @@ export const AIM_HEIGHT = 0.45;
 /** The control deck in front of the glass (its middle and its slope toward the player), and its big button, which lies on it. */
 export const DECK = { y: -0.18, z: 2.48, tilt: 0.32 };
 export const BUTTON = { x: 1.65, y: DECK.y + 0.05 * Math.cos(DECK.tilt), z: DECK.z + 0.05 * Math.sin(DECK.tilt) };
+/** The joystick's red ball on the deck, which a press takes hold of to lean the lever. */
+export const STICK = { x: 0.55, y: DECK.y + 0.41 * Math.cos(DECK.tilt), z: DECK.z + 0.41 * Math.sin(DECK.tilt) };

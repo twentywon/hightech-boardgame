@@ -345,10 +345,14 @@ const play = {
     }
     await wait(150);
   },
-  // The claw sent over the middle of the pit and let down: the picture is taken as it closes on a toy.
+  // The claw run over the middle of the pit with the lever held, and let down: the picture is taken as it closes on a toy.
   "claw-machine": async () => {
     await page.locator("canvas").focus();
-    await keys(["ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp"], 90);
+    for (const [key, hold] of [["ArrowRight", 1300], ["ArrowUp", 700]]) {
+      await page.keyboard.down(key);
+      await wait(hold);
+      await page.keyboard.up(key);
+    }
     await wait(1600);
     await page.keyboard.press(" ");
     await wait(1250);

@@ -64,4 +64,78 @@ describe("claw machine", () => {
     while (none.winner === null) none = cr.play(none, { from: -1, to: cr.MISSED, extra: -1 })!;
     expect(none.winner).toBe(1);
   });
+  test("the lever held moves the claw on and on, it stops shortly when let go, and the hanging claw swings and settles", () => {
+    const world = cs.createWorld(1, seededRandom(3)),
+      from = world.claw.x;
+    cs.press(world, 1, true);
+    for (let k = 0; k < 60; k++) cs.step(world);
+    // A second held to the right: well past a single step, at nearly full speed.
+    const moved = world.claw.x - from;
+    expect(moved).toBeGreaterThan(cs.SPEED * 0.7);
+    expect(world.claw.vx).toBeCloseTo(cs.SPEED, 1);
+    cs.press(world, 1, false);
+    const stopped = world.claw.x;
+    for (let k = 0; k < 30; k++) cs.step(world);
+    expect(world.claw.vx).toBe(0);
+    expect(world.claw.x - stopped).toBeGreaterThan(0.05);
+    expect(world.claw.x - stopped).toBeLessThan(0.4);
+    // Stopped short, the claw swings on past the trolley, and the swing dies away.
+    let widest = 0;
+    for (let k = 0; k < 60; k++) {
+      cs.step(world);
+      widest = Math.max(widest, Math.abs(world.claw.sx));
+    }
+    expect(widest).toBeGreaterThan(0.04);
+    for (let k = 0; k < 60 * 5; k++) cs.step(world);
+    expect(Math.abs(world.claw.sx)).toBeLessThan(0.01);
+    // Held at the end of the rails, it goes no further.
+    cs.press(world, 1, true);
+    for (let k = 0; k < 60 * 4; k++) cs.step(world);
+    expect(world.claw.x).toBeLessThanOrEqual(cs.PIT.x1 - 0.35 + 1e-9);
+    cs.letGo(world);
+    expect(cs.leverOf(world)).toEqual({ x: 0, z: 0 });
+  });
+  test("a toy caught off its middle is lifted where it lay, then slips out on the way up; caught at its middle it is held", () => {
+    let slipped = 0,
+      held = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const world = cs.createWorld(1, seededRandom(seed)),
+        toy = world.toys.find((t) => t.y < t.r + 0.01 && t.x + t.r < cs.PIT.x1 - 0.4 && world.toys.every((o) => o === t || Math.hypot(o.x - t.x, o.z - t.z) > o.r + t.r))!;
+      if (!toy) continue;
+      const lay = { x: toy.x, y: toy.y, z: toy.z };
+      cs.aimAt(world, toy.x + toy.r * 0.85, toy.z);
+      for (let k = 0; k < 400; k++) cs.step(world);
+      cs.drop(world);
+      let lifted = 0,
+        offset: number | null = null,
+        seen: cs.Happening[] = [];
+      for (let k = 0; k < 60 * 20 && !seen.some((e) => e.kind !== "closed"); k++) {
+        seen = [...seen, ...cs.step(world)];
+        if (toy.held) {
+          lifted = Math.max(lifted, toy.y - lay.y);
+          const hub = cs.hubOf(world.claw);
+          // Lifted as it lay: still off to the side of the claw by as much as it was.
+          offset ??= toy.x - hub.x;
+          expect(toy.x - hub.x).toBeCloseTo(offset, 6);
+        }
+      }
+      // The claw may have come down on a neighbour instead; only this toy's tries count.
+      if (offset === null) continue;
+      expect(-offset).toBeGreaterThan(toy.r * 0.6);
+      expect(lifted).toBeGreaterThan(0.2);
+      expect(toy.gone).toBe(false);
+      slipped++;
+      // Once more, squarely over the same toy (where it now lies): it is held to the chute.
+      for (let k = 0; k < 120; k++) cs.step(world);
+      if (toy.vy !== null) continue;
+      cs.aimAt(world, toy.x, toy.z);
+      for (let k = 0; k < 400; k++) cs.step(world);
+      cs.drop(world);
+      const again: cs.Happening[] = [];
+      for (let k = 0; k < 60 * 20 && !again.some((e) => e.kind !== "closed"); k++) again.push(...cs.step(world));
+      if (again.some((e) => e.kind === "prize" && e.toy === toy.id)) held++;
+    }
+    expect(slipped).toBeGreaterThan(5);
+    expect(held).toBeGreaterThan(slipped / 2);
+  });
 });

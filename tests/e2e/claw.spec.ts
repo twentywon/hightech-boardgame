@@ -7,7 +7,7 @@ import { selectGame } from "./library";
 const moves = async (page: Page) => Number(/(\d+)/.exec(await page.locator("#move-count").innerText())?.[1] ?? 0);
 const tries = async (page: Page) => Number(/남은 횟수 (\d+)/.exec(await page.locator("#turn").innerText())?.[1] ?? -1);
 
-test("claw machine: the claw is steered by keys and a press on the glass, the button lets it down, and the try is counted", async ({ page }) => {
+test("claw machine: the claw is steered by held keys, a held arrow and a press on the glass, the button lets it down, and the try is counted", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -19,7 +19,17 @@ test("claw machine: the claw is steered by keys and a press on the glass, the bu
   await page.locator("canvas").focus();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowUp");
-  await expect.poll(() => moves(page)).toBeGreaterThanOrEqual(2);
+  // A key pressed and let go is two moves: the lever pushed, and let go.
+  await expect.poll(() => moves(page)).toBeGreaterThanOrEqual(4);
+  // The arrow at the lower left, held a while: one move as it is pressed and one as it is let go.
+  const held = await moves(page),
+    arrow = (await page.getByRole("button", { name: "집게 오른쪽으로" }).boundingBox())!;
+  await page.mouse.move(arrow.x + arrow.width / 2, arrow.y + arrow.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  await expect.poll(() => moves(page)).toBe(held + 1);
+  await page.mouse.up();
+  await expect.poll(() => moves(page)).toBe(held + 2);
   // A press on the pit through the glass, then the big red button on the deck, aimed through the same camera.
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
