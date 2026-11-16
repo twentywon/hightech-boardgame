@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, stuff, weave } from "./scene-utils";
+import { block, wood, stuff, weave } from "./scene-utils";
 
 /** Registers a resource with the view that must dispose it. */
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -1185,4 +1185,208 @@ export function classroom(scene: T.Object3D, own: Own, half: number, depth: numb
   add(new T.BoxGeometry(0.3, 8, 18), standard({ map: own(noticeBoard()), roughness: 0.9 }), right - 0.2, 7, -16, false);
   add(new T.BoxGeometry(0.4, 17, 8), standard({ map: own(wood(true, 0.6)), roughness: 0.6 }), right - 0.25, FLOOR + 8.5, 2, false);
   add(new T.BoxGeometry(80, 7.5, 0.3).rotateY(Math.PI / 2), wainscot, right - 0.15, FLOOR + 3.75, -8, false);
+}
+/** A duvet cover: soft blue with a broad lighter check, quilting stitched across it, and the shading of loose folds. */
+function duvet() {
+  const { c, ctx } = canvas(1024, 1024),
+    rand = noise(77);
+  ctx.fillStyle = "#4a6a96";
+  ctx.fillRect(0, 0, 1024, 1024);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.07)";
+  for (let i = 0; i < 8; i += 2) {
+    ctx.fillRect(i * 128, 0, 128, 1024);
+    ctx.fillRect(0, i * 128, 1024, 128);
+  }
+  ctx.strokeStyle = "rgba(230, 238, 250, 0.35)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 8]);
+  for (let i = 0; i <= 8; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 128, 0);
+    ctx.lineTo(i * 128, 1024);
+    ctx.moveTo(0, i * 128);
+    ctx.lineTo(1024, i * 128);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // Little white stars scattered over it.
+  ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+  for (let i = 0; i < 70; i++) {
+    const x = rand() * 1024,
+      y = rand() * 1024,
+      r = 5 + rand() * 6;
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const a = (k * Math.PI) / 5 - Math.PI / 2,
+        d = k % 2 ? r * 0.45 : r;
+      ctx.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d);
+    }
+    ctx.fill();
+  }
+  // Loose folds: long soft bands a little darker or lighter.
+  for (let i = 0; i < 9; i++) {
+    const x = rand() * 1024,
+      g = ctx.createLinearGradient(x - 60, 0, x + 60, 0),
+      dark = i % 2 === 0;
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(0.5, dark ? "rgba(10, 20, 40, 0.12)" : "rgba(255, 255, 255, 0.045)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.save();
+    ctx.translate(512, 512);
+    ctx.rotate((rand() - 0.5) * 0.9);
+    ctx.translate(-512, -512);
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 60, -300, 120, 1624);
+    ctx.restore();
+  }
+  return texture(c, 1.6, 2.2);
+}
+/** Wallpaper: pale cream with small sprigs. */
+function wallpaper() {
+  const { c, ctx } = canvas(256, 256);
+  ctx.fillStyle = "#f3ead8";
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = "rgba(150, 170, 140, 0.5)";
+  for (let y = 16; y < 256; y += 48)
+    for (let x = (y / 48) % 2 ? 40 : 16; x < 256; x += 48) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, 4, 9, 0.6, 0, Math.PI * 2);
+      ctx.ellipse(x + 7, y + 2, 4, 9, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  return texture(c, 10, 5);
+}
+/**
+ * A bedroom round a bed whose duvet is the table (the user asked for One Card on a bed): the duvet with its cover
+ * turned down at the head, two pillows, an upholstered headboard, a teddy bear, a phone and a bowl of popcorn on
+ * the bed, a nightstand with a lamp and an alarm clock, a low bookshelf with a plant, slippers and a rug on a
+ * wooden floor, and a papered wall. The duvet's top is at `y` 0 and covers the whole of the play.
+ */
+export function bedroom(scene: T.Object3D, own: Own) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.85, ...options })),
+    add = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x: number, y: number, z: number, parent: T.Object3D = scene) => {
+      const mesh = new T.Mesh(own(geometry), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    },
+    FLOOR = -5.7,
+    HEAD = -6.6,
+    W = 16.4,
+    L = 23;
+  // The floor, a rug and the wall behind the bed.
+  const floor = add(new T.PlaneGeometry(80, 70), standard({ ...stuff("boards", "#b48658", 8, own), roughness: 0.6 }), 0, FLOOR, 0);
+  floor.rotation.x = -Math.PI / 2;
+  floor.castShadow = false;
+  add(new T.CylinderGeometry(3.6, 3.6, 0.12, 40), standard({ color: "#e7b8c4", roughness: 1 }), 12.2, FLOOR + 0.06, 1.2).castShadow = false;
+  add(new T.PlaneGeometry(80, 30), standard({ map: own(wallpaper()), roughness: 0.95 }), 0, FLOOR + 15, HEAD - 1.2).castShadow = false;
+  add(new T.BoxGeometry(80, 0.8, 0.3), standard({ color: "#f6f2ea", roughness: 0.6 }), 0, FLOOR + 0.4, HEAD - 1.05);
+  // The bed: a wooden frame on legs, the mattress, and the duvet over it, rounded at its edges as it falls over the sides.
+  const frame = standard({ map: own(wood(false, 0.7)), color: "#d8b48a", roughness: 0.55 }),
+    cover = standard({ map: own(duvet()), roughness: 0.95 }),
+    sheet = standard({ color: "#f7f4ee", roughness: 0.9 });
+  add(new T.BoxGeometry(W + 0.6, 1.3, L + 0.6), frame, 0, -3.6, HEAD + L / 2);
+  for (const x of [-W / 2, W / 2]) for (const z of [HEAD + 0.4, HEAD + L - 0.4]) add(new T.BoxGeometry(0.6, 1.8, 0.6), frame, x, FLOOR + 0.9, z);
+  add(block(W, 1.7, L, 0.35), sheet, 0, -2.0, HEAD + L / 2);
+  add(block(W + 0.3, 1.25, L - 2.0, 0.55), cover, 0, -0.62, HEAD + 2.0 + (L - 2.0) / 2).castShadow = false;
+  // The cover turned down at the head, showing its white lining, and the sheet beyond it.
+  add(block(W + 0.35, 0.36, 1.0, 0.16), sheet, 0, -0.04, HEAD + 2.1);
+  // An upholstered headboard and two pillows.
+  add(block(W + 1.0, 6.5, 0.8, 0.35), standard({ color: "#8d8a84", roughness: 0.95 }), 0, FLOOR + 6.2, HEAD - 0.5);
+  const pillow = own(block(6.6, 1.3, 2.6, 0.6)),
+    case_ = standard({ color: "#f4efe6", roughness: 0.9 });
+  for (const x of [-3.7, 3.7]) {
+    const p = new T.Mesh(pillow, case_);
+    p.position.set(x, 0.1, HEAD + 1.2);
+    p.rotation.x = -0.12;
+    p.castShadow = p.receiveShadow = true;
+    scene.add(p);
+  }
+  // A teddy bear sitting by the pillows at the left.
+  const fur = standard({ color: "#b5794a", roughness: 1 }),
+    muzzle = standard({ color: "#e8c9a0", roughness: 1 }),
+    eye = standard({ color: "#1b1512", roughness: 0.3 }),
+    bear = new T.Group();
+  add(new T.SphereGeometry(0.85, 18, 14), fur, 0, 0.75, 0, bear).scale.set(1, 1.05, 0.9);
+  add(new T.SphereGeometry(0.62, 18, 14), fur, 0, 1.95, 0.05, bear);
+  add(new T.SphereGeometry(0.26, 12, 10), muzzle, 0, 1.85, 0.55, bear).scale.set(1, 0.8, 0.8);
+  add(new T.SphereGeometry(0.08, 8, 6), eye, 0, 1.92, 0.76, bear);
+  for (const side of [-1, 1]) {
+    add(new T.SphereGeometry(0.22, 12, 10), fur, side * 0.45, 2.45, 0, bear);
+    add(new T.SphereGeometry(0.11, 8, 6), muzzle, side * 0.45, 2.45, 0.12, bear);
+    add(new T.SphereGeometry(0.07, 8, 6), eye, side * 0.22, 2.08, 0.55, bear);
+    add(new T.CapsuleGeometry(0.22, 0.5, 6, 10), fur, side * 0.85, 0.95, 0.25, bear).rotation.z = side * 0.6;
+    add(new T.CapsuleGeometry(0.26, 0.5, 6, 10), fur, side * 0.42, 0.25, 0.65, bear).rotation.x = Math.PI / 2;
+  }
+  bear.position.set(-6.4, 0, HEAD + 2.6);
+  bear.rotation.y = 0.45;
+  scene.add(bear);
+  // A phone lying face up on the duvet, and a bowl of popcorn.
+  const phone = add(block(0.62, 0.08, 1.25, 0.08), standard({ color: "#1d1f24", roughness: 0.3, metalness: 0.4 }), -6.3, 0.04, 0.9);
+  phone.rotation.y = 0.4;
+  add(new T.BoxGeometry(0.52, 0.01, 1.08), own(new T.MeshStandardMaterial({ color: "#2a4a7a", emissive: "#3a6ab0", emissiveIntensity: 0.6, roughness: 0.2 })), 0, 0.045, 0, phone);
+  const bowl = new T.Group();
+  add(new T.LatheGeometry([[0.1, 0], [0.5, 0.03], [0.78, 0.4], [0.9, 0.85], [0.95, 0.9]].map(([r, h]) => new T.Vector2(r, h)), 28), own(new T.MeshStandardMaterial({ color: "#d94a3a", roughness: 0.5, side: T.DoubleSide })), 0, 0, 0, bowl);
+  const kernel = own(new T.SphereGeometry(0.13, 8, 6)),
+    pop = standard({ color: "#fbf3d8", roughness: 0.9 }),
+    rand = noise(13);
+  for (let i = 0; i < 40; i++) {
+    const a = rand() * Math.PI * 2,
+      r = rand() * 0.7,
+      k = new T.Mesh(kernel, pop);
+    k.position.set(Math.cos(a) * r, 0.62 + (0.7 - r) * 0.3 + rand() * 0.14, Math.sin(a) * r);
+    k.scale.set(1, 0.8 + rand() * 0.4, 1);
+    k.castShadow = true;
+    bowl.add(k);
+  }
+  bowl.position.set(6.4, 0, -1.9);
+  scene.add(bowl);
+  // A nightstand with a lamp and an alarm clock at the left of the head.
+  const stand = standard({ map: own(wood(false, 0.6)), color: "#e6cfae", roughness: 0.55 }),
+    sx = -W / 2 - 1.9,
+    sz = HEAD + 1.4;
+  add(new T.BoxGeometry(3.0, -FLOOR - 0.2, 2.6), stand, sx, (FLOOR - 0.2) / 2, sz);
+  add(new T.BoxGeometry(2.6, 1.4, 0.08), stand, sx, -1.6, sz + 1.32);
+  add(new T.SphereGeometry(0.12, 10, 8), standard({ color: "#c9a24a", metalness: 0.7, roughness: 0.3 }), sx, -1.6, sz + 1.42);
+  add(new T.CylinderGeometry(0.45, 0.55, 0.3, 20), standard({ color: "#efe8da", roughness: 0.4 }), sx - 0.4, 0.0, sz - 0.3);
+  add(new T.CylinderGeometry(0.07, 0.07, 1.6, 10), standard({ color: "#c9a24a", metalness: 0.7, roughness: 0.3 }), sx - 0.4, 0.9, sz - 0.3);
+  add(new T.CylinderGeometry(0.6, 1.05, 1.1, 24, 1, true), own(new T.MeshStandardMaterial({ color: "#fff2d6", emissive: "#ffcf80", emissiveIntensity: 0.55, roughness: 0.9, side: T.DoubleSide })), sx - 0.4, 2.0, sz - 0.3).castShadow = false;
+  const clock = new T.Group();
+  add(new T.CylinderGeometry(0.42, 0.42, 0.3, 24).rotateX(Math.PI / 2), standard({ color: "#d94a3a", roughness: 0.4 }), 0, 0.45, 0, clock);
+  add(new T.CircleGeometry(0.34, 24), standard({ color: "#fbfaf6", roughness: 0.5 }), 0, 0.45, 0.16, clock);
+  for (const side of [-1, 1]) add(new T.SphereGeometry(0.16, 10, 8), standard({ color: "#c9a24a", metalness: 0.7, roughness: 0.3 }), side * 0.3, 0.85, 0, clock);
+  clock.position.set(sx + 0.65, -0.15, sz + 0.5);
+  clock.rotation.y = 0.5;
+  scene.add(clock);
+  // A low bookshelf at the right with books and a small plant.
+  const bx = W / 2 + 2.2,
+    bz = HEAD + 1.8;
+  add(new T.BoxGeometry(3.2, -FLOOR + 0.2, 3.4), stand, bx, (FLOOR + 0.2) / 2, bz);
+  ["#c8321f", "#2f62c0", "#e0b020", "#2f8a52", "#7a4a8a", "#e8e2d4"].forEach((color, i) => {
+    const book = add(new T.BoxGeometry(2.2, 0.32, 1.6 - (i % 3) * 0.2), standard({ color, roughness: 0.7 }), bx - 0.2, 0.36 + i * 0.32, bz + 0.5);
+    book.rotation.y = (i % 2 ? 0.08 : -0.05) + 0.1;
+  });
+  add(new T.CylinderGeometry(0.42, 0.34, 0.7, 18), standard({ color: "#d9d2c0", roughness: 0.6 }), bx + 0.1, 0.55, bz - 0.9);
+  const leaf = own(new T.SphereGeometry(0.3, 8, 6)),
+    green = standard({ color: "#4f8a3f", roughness: 0.8 });
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2,
+      l = new T.Mesh(leaf, green);
+    l.position.set(bx + 0.1 + Math.cos(a) * 0.35, 1.15 + (i % 3) * 0.22, bz - 0.9 + Math.sin(a) * 0.35);
+    l.scale.set(0.7, 1.2, 0.35);
+    l.rotation.set(0.3, a, 0.4);
+    l.castShadow = true;
+    scene.add(l);
+  }
+  // Slippers by the bed.
+  const slipper = own(block(1.1, 0.4, 2.4, 0.2)),
+    plush = standard({ color: "#f0a8b8", roughness: 1 });
+  for (const [x, z, turn] of [[-W / 2 - 1.8, 3.2, 0.2], [-W / 2 - 3.1, 3.6, 0.35]]) {
+    const s = new T.Mesh(slipper, plush);
+    s.position.set(x, FLOOR + 0.2, z);
+    s.rotation.y = turn;
+    s.castShadow = s.receiveShadow = true;
+    scene.add(s);
+  }
 }

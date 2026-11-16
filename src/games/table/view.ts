@@ -211,8 +211,14 @@ export abstract class TableView<S> implements PointView<S> {
   protected hover(_point: number) {}
   /** Called when the canvas changes shape, before the camera is set. */
   protected layout(_aspect: number) {}
+  /** A view that can tell exactly what lies under the pointer (by striking its meshes) says so here; null leaves it to the spots. */
+  protected pick(_ray: T.Ray): number | null {
+    return null;
+  }
   /** The point of the spot nearest the ray, or -1. */
   private under(ray: T.Ray) {
+    const picked = this.pick(ray);
+    if (picked !== null) return picked;
     let best = -1,
       nearest = Infinity;
     const at = new T.Vector3();

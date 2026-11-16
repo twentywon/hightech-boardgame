@@ -1,5 +1,6 @@
 import * as T from "three";
 import { block } from "../../engine/scene-utils";
+import { bedroom } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { DeckView, type CardPose } from "../deck/view";
@@ -10,13 +11,29 @@ import { ONECARD as L, handX } from "./layout";
 export const ONECARD_COLORS: [string, string] = ["#c8321f", "#22355c"];
 /** My hand in order: by suit, then rank; the jokers at the end. */
 export const sorted = (hand: number[]) => [...hand].sort((a, b) => (isJoker(a) ? 99 : suitOf(a) * 13 + rankOf(a)) - (isJoker(b) ? 99 : suitOf(b) * 13 + rankOf(b)));
-/** The green table: my hand along the near edge, the computer's face down across, the pile and the discards between, and a sign telling the suit called and the cards owed. */
+/** A bed in a bedroom, the duvet for a table: my hand along the near edge, the computer's face down across, the pile and the discards between, and a sign telling the suit called and the cards owed. */
 export class OneCardView extends DeckView<State> {
   private sign: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; mesh: T.Mesh; said: string };
   private rings: T.Mesh[] = [];
   private cursor: T.Mesh;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, 54);
+    super(host, quality, 54, false);
+    // On a bed in a bedroom (the user asked): warm light from a window at the left, and the bedside lamp.
+    this.renderer.setClearColor("#efe4d2");
+    this.scene.add(new T.HemisphereLight("#fff6ea", "#6a5a4a", 1.6));
+    const sun = new T.DirectionalLight("#fff0d8", 2.0);
+    sun.position.set(-10, 16, 5);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = sun.shadow.camera.bottom = -11;
+    sun.shadow.camera.right = sun.shadow.camera.top = 11;
+    sun.shadow.normalBias = 0.02;
+    this.own(sun.shadow);
+    this.scene.add(sun);
+    const lamp = new T.PointLight("#ffd29a", 6, 14, 1.6);
+    lamp.position.set(-10.5, 2.2, -5.5);
+    this.scene.add(lamp);
+    bedroom(this.scene, (r) => this.own(r));
     const canvas = document.createElement("canvas");
     canvas.width = 256;
     canvas.height = 128;

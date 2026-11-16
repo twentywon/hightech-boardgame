@@ -292,6 +292,7 @@ export class OldMaidView extends DeckView<State> {
   }
   protected place(s: State) {
     super.place(s);
+    this.lifted = -1;
     this.pose(this.gripsOf(s));
     // My hands go out of sight when I hold no cards.
     this.grips[0].visible = s.winner === null && s.hands[0].length > 0;
@@ -347,7 +348,40 @@ export class OldMaidView extends DeckView<State> {
   protected spots(): Spot[] {
     const s = this.state;
     if (!s) return [];
-    return this.offered(s).map(({ id, at }) => ({ x: at.x, y: at.y, z: at.z, r: 0.24, point: id }));
+    return this.offered(s).map(({ id, at }) => ({ x: at.x, y: at.y, z: at.z, r: 0.3, point: id }));
+  }
+  private striker = new T.Raycaster();
+  /** A tap counts for the card it strikes first, the one in sight there (the user found taps landing on a neighbour). */
+  protected pick(ray: T.Ray) {
+    const s = this.state;
+    if (!s || this.animating) return null;
+    const ids = this.offered(s).map((c) => c.id);
+    if (!ids.length) return null;
+    this.striker.ray.copy(ray);
+    const meshes = ids.map((id) => this.cards[id]);
+    for (const mesh of meshes) mesh.updateMatrixWorld();
+    const hit = this.striker.intersectObjects(meshes, false)[0];
+    return hit ? ids[meshes.indexOf(hit.object as T.Mesh)] : null;
+  }
+  /** The card under the mouse is drawn a little out of the fan, so that it is plain which one a click takes. */
+  private lifted = -1;
+  protected hover(point: number) {
+    this.lift(point);
+  }
+  private lift(id: number) {
+    if (id === this.lifted) return;
+    const s = this.state,
+      was = this.poses.get(this.lifted);
+    if (this.lifted >= 0 && was) this.put(this.cards[this.lifted], was);
+    this.lifted = -1;
+    const card = s && !this.animating ? this.offered(s).find((c) => c.id === id) : undefined,
+      pose = card && this.poses.get(id);
+    if (card && pose) {
+      this.lifted = id;
+      const { u } = fanCard(card.hold, card.i, card.n);
+      this.cards[id].position.set(pose.x, pose.y, pose.z).addScaledVector(u, 0.22 * card.hold.s);
+    }
+    this.redraw();
   }
   protected mark(marks: Marks) {
     const s = this.state,
@@ -364,7 +398,9 @@ export class OldMaidView extends DeckView<State> {
     const chosen = lit.find((c) => c.id === marks.cursor);
     this.cursor.visible = !!chosen;
     if (chosen) {
-      this.cursor.position.copy(chosen.at);
+      this.lift(chosen.id);
+      const { u } = fanCard(chosen.hold, chosen.i, chosen.n);
+      this.cursor.position.copy(chosen.at).addScaledVector(u, 0.22 * chosen.hold.s);
       this.cursor.lookAt(this.camera.position);
     }
   }

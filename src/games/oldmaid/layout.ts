@@ -23,7 +23,7 @@ export const OLDMAID = {
   ],
   /** How large a computer's cards are drawn: a little larger than life, so that they can be told apart. */
   THEIRS: 1.25,
-  OFFERED: 1.4,
+  OFFERED: 1.5,
 };
 const UP = new Vector3(0, 1, 0);
 /** A seat's eyes. */
@@ -38,6 +38,10 @@ export interface Hold {
   n: Vector3;
   u: Vector3;
   s: number;
+  /** How far the fan opens at most (its whole arc) and between two cards, and how far each card is also slid sideways. */
+  arc: number;
+  step: number;
+  slide: number;
 }
 /** The fan's upward way for faces looking along `n`: as near to straight up as the fan allows, leaning back a little. */
 function upright(n: Vector3) {
@@ -73,18 +77,25 @@ export function holdOf(seat: number, to: number | null = null): Hold {
     const away = middle.clone().sub(eyeOf(to)).normalize();
     n = away.multiplyScalar(seat === 0 ? 0.55 : 1).addScaledVector(toHolder, seat === 0 ? 1 : 0.35).normalize();
   }
-  return { pivot, n, u: upright(n), s: s0 };
+  // Spread wide (the user asked): widest when held out to me, so that every card shows enough to be picked.
+  const spread = to === 0 ? { arc: Math.PI * 0.82, step: 0.24, slide: 0.075 } : seat === 0 ? { arc: Math.PI * 0.72, step: 0.2, slide: 0.03 } : { arc: Math.PI * 0.68, step: 0.19, slide: 0.03 };
+  return { pivot, n, u: upright(n), s: s0, ...spread };
 }
 /** The holder's right as it looks at its faces. */
 export const rightOf = (hold: Hold) => new Vector3().crossVectors(hold.u, hold.n).normalize();
 const basis = new Matrix4();
 /** The `i`-th of `count` cards in a held fan: where its middle is and its turn (face toward the holder). */
 export function fanCard(hold: Hold, i: number, count: number) {
-  const step = Math.min(0.17, (Math.PI * 0.62) / Math.max(1, count - 1)),
-    a = (i - (count - 1) / 2) * step,
+  const step = Math.min(hold.step, hold.arc / Math.max(1, count - 1)),
+    k = i - (count - 1) / 2,
+    a = k * step,
     r = rightOf(hold),
     u = hold.u.clone().multiplyScalar(Math.cos(a)).addScaledVector(r, Math.sin(a)),
-    centre = hold.pivot.clone().addScaledVector(u, 0.36 * CARD_H * hold.s).addScaledVector(hold.n, i * 0.008),
+    centre = hold.pivot
+      .clone()
+      .addScaledVector(u, 0.36 * CARD_H * hold.s)
+      .addScaledVector(r, k * hold.slide * hold.s)
+      .addScaledVector(hold.n, i * 0.008),
     x = new Vector3().crossVectors(u, hold.n),
     z = u.clone().negate(),
     q = new Quaternion().setFromRotationMatrix(basis.makeBasis(x, hold.n, z));
