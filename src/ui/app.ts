@@ -46,6 +46,9 @@ import { skylineConfig } from "../games/skyline/config";
 import { balanceConfig } from "../games/scale/config";
 import { snakeConfig } from "../games/snake/config";
 import { whackConfig } from "../games/whack/config";
+import { tictactoeConfig } from "../games/tictactoe/config";
+import { airHockeyConfig } from "../games/airhockey/config";
+import { basketballConfig } from "../games/basketball/config";
 import { clawConfig } from "../games/claw/config";
 import { foxGeeseConfig } from "../games/foxgeese/config";
 import { taflConfig } from "../games/tafl/config";
@@ -184,6 +187,9 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "balance-quiz": { config: balanceConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   snake: { config: snakeConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "whack-a-mole": { config: whackConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "tic-tac-toe": { config: tictactoeConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
+  "air-hockey": { config: airHockeyConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  basketball: { config: basketballConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "claw-machine": { config: clawConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fox-and-geese": { config: foxGeeseConfig, options: { mode: "ai", variant: "geese", level: "normal" } },
   hnefatafl: { config: taflConfig, options: { mode: "ai", variant: "defenders", level: "normal" } },
@@ -337,6 +343,9 @@ type GameSelection =
   | "balance-quiz"
   | "snake"
   | "whack-a-mole"
+  | "tic-tac-toe"
+  | "air-hockey"
+  | "basketball"
   | "claw-machine"
   | "fox-and-geese"
   | "hnefatafl"

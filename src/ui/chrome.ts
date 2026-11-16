@@ -114,7 +114,7 @@ const BACK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height
  * It stays until one is pressed or the game is begun again; the table itself can still be looked at round it.
  */
 /** Games that end when their clock runs out: their end says so instead of a win or a loss. */
-const TIMED = new Set(["meat-grill", "whack-a-mole"]);
+const TIMED = new Set(["meat-grill", "whack-a-mole", "basketball"]);
 export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   const board = document.querySelector<HTMLElement>(".board-area");
   if (!board || capturing()) return;

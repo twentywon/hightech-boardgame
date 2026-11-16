@@ -358,6 +358,44 @@ const play = {
     await wait(1250);
     await page.keyboard.press("p");
   },
+  // Marks laid by the keyboard (the computer answers each), so that the board shows a game under way.
+  "tic-tac-toe": async () => {
+    await page.locator("canvas").focus();
+    // The first arrow only brings the cursor to the middle; then up and right to the corner, then left along the top.
+    for (const path of [["ArrowUp"], ["ArrowUp", "ArrowRight"], ["ArrowLeft"]]) {
+      for (const key of path) await page.keyboard.press(key);
+      await page.keyboard.press("Enter");
+      await wait(1400);
+    }
+    await page.keyboard.press("Escape");
+  },
+  // My mallet pushed up the middle into the puck, and the table paused while the puck is on its way.
+  "air-hockey": async () => {
+    const box = await page.locator("canvas").boundingBox();
+    await page.mouse.move(box.x + box.width * 0.52, box.y + box.height * 0.86);
+    await page.mouse.down();
+    for (let k = 1; k <= 10; k++) {
+      await page.mouse.move(box.x + box.width * 0.52, box.y + box.height * (0.86 - k * 0.035));
+      await wait(25);
+    }
+    await page.mouse.up();
+    await wait(420);
+    await page.keyboard.press("p");
+  },
+  // A ball thrown up the lane, and the machine paused while it comes down toward the hoop.
+  basketball: async () => {
+    const box = await page.locator("canvas").boundingBox(),
+      x = box.x + box.width / 2,
+      y = box.y + box.height * 0.85,
+      length = 0.55 * 0.5 * box.height;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let k = 1; k <= 8; k++) await page.mouse.move(x, y - (length * k) / 8);
+    await page.mouse.up();
+    await wait(760);
+    await page.locator("canvas").focus();
+    await page.keyboard.press("p");
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {

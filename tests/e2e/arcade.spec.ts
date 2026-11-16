@@ -21,10 +21,10 @@ async function sit(page: Page, name: string) {
 test("the arcade games have a kind of their own in the collection", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "아케이드게임", exact: true }).click();
-  for (const name of ["스네이크", "두더지 잡기", "인형뽑기", "블록 내리기", "벽돌깨기", "과일 합치기", "고기 굽기", "테이블 사커"])
+  for (const name of ["스네이크", "두더지 잡기", "인형뽑기", "블록 내리기", "벽돌깨기", "과일 합치기", "고기 굽기", "테이블 사커", "에어하키", "농구"])
     await expect(page.getByRole("button", { name: `${name} 살펴보기`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "2048 살펴보기", exact: true })).toBeHidden();
-  await expect(page.locator(".game-entry:not([hidden])")).toHaveCount(8);
+  await expect(page.locator(".game-entry:not([hidden])")).toHaveCount(10);
   await page.getByRole("button", { name: "퍼즐게임", exact: true }).click();
   await expect(page.getByRole("button", { name: "블록 내리기 살펴보기", exact: true })).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

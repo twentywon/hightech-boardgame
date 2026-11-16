@@ -527,4 +527,28 @@ export const games = [
     icon: "♡",
     available: true,
   },
+  {
+    name: "틱택토",
+    en: "TIC-TAC-TOE",
+    category: "보드게임",
+    players: "2인용",
+    icon: "✕",
+    available: true,
+  },
+  {
+    name: "에어하키",
+    en: "AIR HOCKEY",
+    category: "아케이드게임",
+    players: "2인용",
+    icon: "◎",
+    available: true,
+  },
+  {
+    name: "농구",
+    en: "BASKETBALL",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "⊕",
+    available: true,
+  },
 ];

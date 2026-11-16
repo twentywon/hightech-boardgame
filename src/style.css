@@ -2751,7 +2751,7 @@ html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet .ship.wa
   html[data-game="battleship"] .game-layout.hud aside.game-sidebar li:has(.fleet) > span { grid-column:auto; }
 }
 /* No status line over these tables (the user asked); #turn stays in the page as the live region. */
-:is(html[data-game="meat-grill"], html[data-game="minesweeper"], html[data-game="lights-on"], html[data-game="water-pouring"], html[data-game="marble-shot"], html[data-game="brick-breaker"], html[data-game="2048"], html[data-game="falling-blocks"], html[data-game="fruit-merge"], html[data-game="snake"], html[data-game="whack-a-mole"], html[data-game="claw-machine"]) .game-layout .board-area > .board-hint { display:none !important; }
+:is(html[data-game="meat-grill"], html[data-game="minesweeper"], html[data-game="lights-on"], html[data-game="water-pouring"], html[data-game="marble-shot"], html[data-game="brick-breaker"], html[data-game="2048"], html[data-game="falling-blocks"], html[data-game="fruit-merge"], html[data-game="snake"], html[data-game="whack-a-mole"], html[data-game="claw-machine"], html[data-game="basketball"], html[data-game="air-hockey"]) .game-layout .board-area > .board-hint { display:none !important; }
 /* Every letter on a game screen is set in gomoku's face (the user asked): the status line, the lettering over
    the table, scores, money, buttons and the words that come up across the table. Letters painted into the
    pictures themselves (piece glyphs, board coordinates, card faces) keep their own. */
