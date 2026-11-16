@@ -75,7 +75,14 @@ export function holdOf(seat: number, to: number | null = null): Hold {
   if (to !== null) {
     // Held out: turned mostly away from the one who draws, still a little toward the one who holds.
     const away = middle.clone().sub(eyeOf(to)).normalize();
-    n = away.multiplyScalar(seat === 0 ? 0.55 : 1).addScaledVector(toHolder, seat === 0 ? 1 : 0.35).normalize();
+    if (seat === 0 || to === 0) n = away.multiplyScalar(seat === 0 ? 0.55 : 1).addScaledVector(toHolder, seat === 0 ? 1 : 0.35).normalize();
+    else {
+      // From one computer to another the faces must be turned from my eyes as well (the user saw the right-hand
+      // student's cards as they were held out across): away from both, level, a little toward the holder.
+      const flat = (v: Vector3) => v.setY(0).normalize(),
+        fromMe = flat(middle.clone().sub(OLDMAID.EYE));
+      n = flat(away).addScaledVector(fromMe, 1.2).addScaledVector(toHolder, 0.35).normalize();
+    }
   }
   // Spread wide (the user asked): widest when held out to me, so that every card shows enough to be picked.
   const spread = to === 0 ? { arc: Math.PI * 0.82, step: 0.24, slide: 0.075 } : seat === 0 ? { arc: Math.PI * 0.72, step: 0.2, slide: 0.03 } : { arc: Math.PI * 0.68, step: 0.19, slide: 0.03 };

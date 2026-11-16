@@ -1,26 +1,26 @@
 import * as T from "three";
-import { planks, block, glossy, veneer, wood } from "../../engine/scene-utils";
+import { block, glossy, veneer, wood } from "../../engine/scene-utils";
+import { jungle } from "../../engine/scenery";
+import { queenFigure, queenShapes, type QueenShapes } from "../queens/queen";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { BURNT, N, type State } from "./rules";
 
-export const AMAZON_COLORS: [string, string] = ["#f1ead8", "#2a2522"];
+export const AMAZON_COLORS: [string, string] = ["#ecdcb4", "#1d1a18"];
 const S = 0.7;
-export const AMAZON_SUBJECT: TableSubject = { half: 4.0, halfZ: 4.0, height: 1.0, lookY: 0, tilt: 1.08 };
+export const AMAZON_SUBJECT: TableSubject = { half: 4.0, halfZ: 4.0, height: 1.15, lookY: 0, tilt: 1.08 };
+/** The queens of 체스판의 퀸 stand here a little smaller, for the smaller squares (the user asked for that queen). */
+const QUEEN = 0.78;
 /** The centre of a square. */
 export const squareAt = (s: number) => ({ x: ((s % N) - 4.5) * S, z: (Math.floor(s / N) - 4.5) * S });
-/** An amazon: a turned figure with a crown of points, as a queen of chess but slimmer. */
-function figure() {
-  const profile = [
-    [0, 0], [0.27, 0], [0.28, 0.06], [0.22, 0.1], [0.2, 0.14], [0.13, 0.22], [0.1, 0.42], [0.09, 0.56], [0.15, 0.6], [0.11, 0.64], [0.13, 0.76], [0.16, 0.84], [0, 0.86],
-  ].map(([r, y]) => new T.Vector2(r, y));
-  return new T.LatheGeometry(profile, 28);
-}
-/** A board of maple and walnut squares in a dark frame, four amazons a side, and burnt squares where arrows have struck. */
+/**
+ * A board of maple and walnut squares in a dark frame on a mossy stone slab in a rainforest clearing (`jungle`), four
+ * amazons a side as the boxwood and ebony queens of 체스판의 퀸, and burnt squares where arrows have struck.
+ */
 export class AmazonsView extends TableView<State> {
   private amazons = new T.Group();
   private arrows = new T.Group();
-  private body: T.BufferGeometry;
+  private shapes: QueenShapes;
   private point: T.BufferGeometry;
   private paints: T.Material[];
   private char: T.BufferGeometry;
@@ -30,10 +30,11 @@ export class AmazonsView extends TableView<State> {
   private chosen: T.Mesh;
   private landing: T.Mesh;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#2b2017");
-    this.daylight("#fff5e4", "#4a3828", "#fff0d8", 7, 2.2);
+    super(host, quality, "#2c4a26");
+    this.daylight("#f2ffe0", "#2c3a22", "#fff3d6", 7, 2.3);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    this.add(new T.BoxGeometry(40, 0.4, 30), this.standard(planks(8, keep)), 0, -0.2, 0).castShadow = false;
+    // A clearing in a jungle (the user asked), the board on a stone slab in it.
+    jungle(this.scene, keep, (N * S) / 2 + 0.95, (N * S) / 2 + 0.95, -0.2);
     const frame = this.standard({ map: keep(wood(true)), roughness: 0.45 });
     this.add(block(N * S + 0.5, 0.22, N * S + 0.5, 0.08), frame, 0, -0.11, 0);
     const light = this.standard({ map: keep(veneer(false)), roughness: 0.5 }),
@@ -46,9 +47,10 @@ export class AmazonsView extends TableView<State> {
       mesh.receiveShadow = true;
       this.scene.add(mesh);
     }
-    this.body = keep(figure());
+    this.shapes = queenShapes(keep);
     this.point = keep(new T.ConeGeometry(0.035, 0.1, 8));
-    this.paints = AMAZON_COLORS.map((color) => keep(glossy({ color, roughness: 0.35 })));
+    // Boxwood and ebony, as in 체스판의 퀸 (the lathe shells are open, so both sides are painted).
+    this.paints = AMAZON_COLORS.map((color) => keep(glossy({ color, roughness: 0.4, side: T.DoubleSide })));
     // A burnt square: a charred plug set into the board, with a tuft of feathers where the arrow went in.
     this.char = keep(block(S * 0.86, 0.06, S * 0.86, 0.03));
     this.burnt = this.standard({ color: "#3a1f12", roughness: 0.9 });
@@ -64,18 +66,10 @@ export class AmazonsView extends TableView<State> {
     this.scene.add(this.amazons, this.arrows, this.cursor, this.chosen, this.landing);
     this.begin();
   }
+  /** An amazon: the turned queen of 체스판의 퀸, in boxwood or ebony. */
   private amazon(side: number) {
-    const g = new T.Group(),
-      body = new T.Mesh(this.body, this.paints[side]);
-    body.castShadow = body.receiveShadow = true;
-    g.add(body);
-    for (let i = 0; i < 6; i++) {
-      const tip = new T.Mesh(this.point, this.paints[side]),
-        a = (i / 6) * Math.PI * 2;
-      tip.position.set(Math.cos(a) * 0.12, 0.88, Math.sin(a) * 0.12);
-      g.add(tip);
-    }
-    g.scale.setScalar(0.95);
+    const g = queenFigure(this.shapes, this.paints[side]);
+    g.scale.setScalar(QUEEN);
     return g;
   }
   private arrow(s: number) {

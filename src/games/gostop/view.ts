@@ -1,6 +1,6 @@
 import * as T from "three";
 import { capturing as picturing } from "../../ui/banner";
-import { weave, block } from "../../engine/scene-utils";
+import { furry, block } from "../../engine/scene-utils";
 import { ondol } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -56,8 +56,9 @@ export class GostopView extends TableView<State> {
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
     // An ondol room (the user asked), and on its floor an olive wool blanket with a darker band round its edge.
     ondol(this.scene, keep, 6.1, 4.95);
-    const blanket = this.standard({ color: "#56603f", roughness: 1, ...weave(5, 4.2, keep, 1.2) }),
-      band = this.standard({ color: "#3d452c", roughness: 1, ...weave(5, 4.2, keep, 1.2) });
+    // The blanket's wool has a light pile (the user asked): fine strands, and their relief and sheen where a graphics card draws.
+    const blanket = keep(furry({ color: "#56603f", roughness: 1 }, 0.6, 9, 7.5, keep)),
+      band = keep(furry({ color: "#3d452c", roughness: 1 }, 0.6, 9, 7.5, keep));
     this.add(new T.BoxGeometry(12.2, 0.04, 9.9), band, 0, 0, 0).castShadow = false;
     this.add(new T.BoxGeometry(11.6, 0.045, 9.3), blanket, 0, 0.003, 0).castShadow = false;
     // The cards: one box each, the picture on top, the red back below.

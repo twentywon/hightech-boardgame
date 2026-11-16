@@ -4,6 +4,7 @@ import * as amz from "../src/games/amazons/rules";
 import * as bg from "../src/games/backgammon/rules";
 import * as one from "../src/games/onecard/rules";
 import * as om from "../src/games/oldmaid/rules";
+import * as oml from "../src/games/oldmaid/layout";
 import * as cur from "../src/games/curling/rules";
 import * as sb from "../src/games/starbattle/rules";
 import { rankOf, suitOf } from "../src/games/deck/cards";
@@ -143,6 +144,17 @@ describe("old maid", () => {
       expect(s.hands[s.thief!]).toEqual([om.JOKER]);
       expect(s.winner).toBe(s.thief === 0 ? 1 : 0);
     }
+  });
+  test("no computer's cards ever turn their faces to my eyes, held before it or out to anyone", () => {
+    for (let seat = 1; seat <= 3; seat++)
+      for (const to of [null, 0, 1, 2, 3]) {
+        if (to === seat) continue;
+        const hold = oml.holdOf(seat, to);
+        for (let i = 0; i < 8; i++) {
+          const { centre } = oml.fanCard(hold, i, 8);
+          expect(hold.n.dot(oml.OLDMAID.EYE.clone().sub(centre))).toBeLessThan(0);
+        }
+      }
   });
 });
 describe("curling", () => {

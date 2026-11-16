@@ -319,6 +319,59 @@ export function draughtsman(radius: number, height: number) {
     40,
   );
 }
+/** The strands of a pile (light and dark, lying mostly one way), painted once a page and tiling at its edges. */
+let strands: HTMLCanvasElement | null = null;
+function strandPattern() {
+  if (strands) return strands;
+  const size = 256,
+    canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const pen = canvas.getContext("2d")!;
+  let seed = 9173;
+  const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  pen.fillStyle = "#c8c8c8";
+  pen.fillRect(0, 0, size, size);
+  pen.lineCap = "round";
+  for (let k = 0; k < 14000; k++) {
+    const x = rand() * size,
+      y = rand() * size,
+      a = Math.PI / 2 + (rand() - 0.5) * 1.3,
+      long = 4 + rand() * 8,
+      tone = Math.round(150 + rand() * 105);
+    pen.strokeStyle = `rgba(${tone},${tone},${tone},0.55)`;
+    pen.lineWidth = 0.8 + rand() * 1.2;
+    // Drawn again across the edges, so that the pile has no seam where the picture repeats.
+    for (const dx of [-size, 0, size])
+      for (const dy of [-size, 0, size]) {
+        if (Math.abs(x + dx - size / 2) > size / 2 + 12 || Math.abs(y + dy - size / 2) > size / 2 + 12) continue;
+        pen.beginPath();
+        pen.moveTo(x + dx, y + dy);
+        pen.lineTo(x + dx + Math.cos(a) * long, y + dy + Math.sin(a) * long);
+        pen.stroke();
+      }
+  }
+  return (strands = canvas);
+}
+const pile = (across: number, down: number, data: boolean) => {
+  const texture = new T.CanvasTexture(strandPattern());
+  texture.wrapS = texture.wrapT = T.RepeatWrapping;
+  texture.repeat.set(across, down);
+  texture.colorSpace = data ? T.NoColorSpace : T.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+};
+/**
+ * A soft thing with a pile (a plush toy, a blanket, a duvet): its colour broken into fine strands (`strands`, unless
+ * the thing has a picture of its own), and where a graphics card draws the strands' relief and the soft sheen that
+ * fabric with a pile catches at its edges. `amount` 1 is a plush toy's fur; less is a lighter nap.
+ */
+export function furry(options: T.MeshStandardMaterialParameters, amount = 1, across = 3, down = across, keep: Keep = (r) => r, strands = !options.map): T.MeshStandardMaterial {
+  if (typeof document === "undefined") return new T.MeshStandardMaterial(options);
+  const params: T.MeshStandardMaterialParameters = { ...options, ...(strands ? { map: keep(pile(across, down, false)) } : {}) };
+  if (!capable()) return new T.MeshStandardMaterial(params);
+  const tint = new T.Color(options.color ?? "#ffffff").lerp(new T.Color("#ffffff"), 0.55);
+  return new T.MeshPhysicalMaterial({ ...params, bumpMap: keep(pile(across, down, true)), bumpScale: 2.2 * amount, sheen: amount, sheenRoughness: 0.55, sheenColor: tint });
+}
 /** A lacquered or glazed thing (a stone, a marble, a ball, a die): a clear coat over it where a graphics card draws. */
 export function glossy(options: T.MeshStandardMaterialParameters, coat = 1): T.MeshStandardMaterial {
   return capable() ? new T.MeshPhysicalMaterial({ ...options, clearcoat: coat, clearcoatRoughness: 0.14 }) : new T.MeshStandardMaterial(options);

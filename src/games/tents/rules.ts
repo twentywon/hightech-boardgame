@@ -11,7 +11,7 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  */
 export const EMPTY = 0,
   TENT = 1,
-  /** A square the player has marked as grass (no tent), only as a help to themselves. */
+  /** A square the player has marked with an X (no tent; a tent tapped again), only as a help to themselves. */
   GRASS = 2;
 export interface Stage {
   size: number;
@@ -151,7 +151,7 @@ export function lineState(state: State, row: boolean, k: number): "open" | "done
   return have > want ? "over" : have === want ? "done" : "open";
 }
 const solved = (state: State) => state.cells.every((k, i) => (k === TENT) === state.answer[i]);
-/** A tap or Enter: nothing → tent → grass → nothing. A set move (`put`) puts a chosen mark, for the hint. */
+/** A tap or Enter: nothing → tent → X → nothing. A set move (`put`) puts a chosen mark, for the hint. */
 export const SET = 1000,
   put = (cell: number, mark: number) => SET + cell * 3 + mark;
 export const moves = (state: State): Move[] => (state.winner !== null ? [] : state.cells.flatMap((_, to) => (state.trees[to] ? [] : [{ from: -1, to, extra: -1 }])));
@@ -171,7 +171,7 @@ export function play(state: State, move: Move): State | null {
   const next = { ...state, cells, last: cell, ply: state.ply + 1 };
   return { ...next, winner: solved(next) ? 0 : null };
 }
-/** A tent where none belongs is marked as grass; else a tent still missing is pitched. */
+/** A tent where none belongs is marked with an X; else a tent still missing is pitched. */
 export function hint(state: State): Move | null {
   if (state.winner !== null) return null;
   const wrong = state.cells.findIndex((k, i) => k === TENT && !state.answer[i]);

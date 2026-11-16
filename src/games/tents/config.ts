@@ -27,7 +27,7 @@ export const tentsConfig: PointConfig<State> = {
   view: (host, quality) => new TentsView(host, quality),
   colors: TENTS_COLORS,
   keyPoints: (state) => state.cells.map((_, i) => ({ x: i % state.size, z: Math.floor(i / state.size) })),
-  puzzle: { hint, hintText: "힌트 — 금색 고리가 쳐진 칸을 보세요. 텐트가 잘못 쳐진 칸이면 풀밭으로, 아니면 텐트를 칩니다." },
+  puzzle: { hint, hintText: "힌트 — 금색 고리가 쳐진 칸을 보세요. 텐트가 잘못 쳐진 칸이면 X로, 아니면 텐트를 칩니다." },
   stagesFirst: true,
   stages: STAGES.map((stage, i) => ({ value: String(i + 1), name: `${stage.size}×${stage.size} · ${NAMES[i]}`, note: `텐트 약 ${Math.round(stage.size * stage.size * stage.share)}개`, art: fieldArt(stage.size) })),
   tallyHtml: () => ["", ""],
@@ -52,11 +52,11 @@ export const tentsConfig: PointConfig<State> = {
         "나무 하나마다 <b>텐트 하나</b>를 칩니다. 텐트는 짝이 되는 나무의 <b>위·아래·왼쪽·오른쪽</b> 바로 옆 칸에 섭니다.",
         "텐트끼리는 <b>닿지 않습니다</b>. 대각선으로 맞닿아도 안 됩니다.",
         "왼쪽과 위쪽의 숫자는 그 가로줄과 세로줄에 서는 <b>텐트의 수</b>입니다.",
-        "칸을 누를 때마다 텐트 → 풀밭 표시 → 빈칸으로 바뀝니다. 풀밭 표시는 텐트가 없다고 적어 두는 것뿐입니다. 모든 텐트를 맞게 치면 성공입니다.",
+        "칸을 누를 때마다 텐트 → <b>X 표시</b> → 빈칸으로 바뀝니다. 텐트를 한 번 더 누르면 X가 되고, X는 텐트가 없다고 적어 두는 것뿐입니다. 모든 텐트를 맞게 치면 성공입니다.",
       ),
     ) +
-    part("처음이라면", notes("숫자가 <b>0</b>인 줄은 모두 풀밭입니다.", "어느 나무와도 닿지 않는 칸에는 텐트를 칠 수 없습니다.", "텐트를 친 칸의 둘레 여덟 칸에는 텐트가 올 수 없습니다.")),
-  help: "마우스·터치: 칸을 누를 때마다 텐트 → 풀밭 → 빈칸<br>키보드: 방향키로 칸을 고르고 Enter",
+    part("처음이라면", notes("숫자가 <b>0</b>인 줄은 모두 X입니다.", "어느 나무와도 닿지 않는 칸에는 텐트를 칠 수 없습니다.", "텐트를 친 칸의 둘레 여덟 칸에는 텐트가 올 수 없습니다.")),
+  help: "마우스·터치: 칸을 누를 때마다 텐트 → X → 빈칸<br>키보드: 방향키로 칸을 고르고 Enter",
   sides: ["나", ""],
   startWord: "캠핑장에 들어가기",
 };

@@ -1,5 +1,5 @@
 import * as T from "three";
-import { block, wood, stuff, weave } from "./scene-utils";
+import { block, wood, stuff, weave, furry } from "./scene-utils";
 
 /** Registers a resource with the view that must dispose it. */
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -1284,7 +1284,8 @@ export function bedroom(scene: T.Object3D, own: Own) {
   add(new T.BoxGeometry(80, 0.8, 0.3), standard({ color: "#f6f2ea", roughness: 0.6 }), 0, FLOOR + 0.4, HEAD - 1.05);
   // The bed: a wooden frame on legs, the mattress, and the duvet over it, rounded at its edges as it falls over the sides.
   const frame = standard({ map: own(wood(false, 0.7)), color: "#d8b48a", roughness: 0.55 }),
-    cover = standard({ map: own(duvet()), roughness: 0.95 }),
+    // The duvet has a light nap (the user asked): its own print, with the relief and sheen of a pile.
+    cover = own(furry({ map: own(duvet()), roughness: 0.95 }, 0.4, 14, 10, own)),
     sheet = standard({ color: "#f7f4ee", roughness: 0.9 });
   add(new T.BoxGeometry(W + 0.6, 1.3, L + 0.6), frame, 0, -3.6, HEAD + L / 2);
   for (const x of [-W / 2, W / 2]) for (const z of [HEAD + 0.4, HEAD + L - 0.4]) add(new T.BoxGeometry(0.6, 1.8, 0.6), frame, x, FLOOR + 0.9, z);
@@ -1304,8 +1305,9 @@ export function bedroom(scene: T.Object3D, own: Own) {
     scene.add(p);
   }
   // A teddy bear sitting by the pillows at the left.
-  const fur = standard({ color: "#b5794a", roughness: 1 }),
-    muzzle = standard({ color: "#e8c9a0", roughness: 1 }),
+  // Its fur is a pile of strands (the user asked for a little fur on it).
+  const fur = own(furry({ color: "#b5794a", roughness: 1 }, 0.6, 3, 2, own)),
+    muzzle = own(furry({ color: "#e8c9a0", roughness: 1 }, 0.4, 2, 1, own)),
     eye = standard({ color: "#1b1512", roughness: 0.3 }),
     bear = new T.Group();
   add(new T.SphereGeometry(0.85, 18, 14), fur, 0, 0.75, 0, bear).scale.set(1, 1.05, 0.9);
@@ -1809,4 +1811,307 @@ export function funfair(scene: T.Scene, own: Own, ground: number) {
     add(new T.SphereGeometry(0.7, 10, 8), leaves[0], x, ground + 0.7, z);
   }
   return { wheel, bulbs };
+}
+
+/** A pinnate leaf on a clear ground, its base at the bottom: a midrib with narrow leaflets either side (palms, ferns). */
+function pinnate(dark: string, light: string, seed: number) {
+  const { c, ctx } = canvas(128, 512),
+    rand = noise(seed);
+  ctx.lineCap = "round";
+  for (let y = 500; y > 14; y -= 8) {
+    const t = 1 - y / 512,
+      long = 58 * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.05)), 0.6) + 4;
+    for (const side of [-1, 1]) {
+      ctx.strokeStyle = rand() < 0.5 ? dark : light;
+      ctx.lineWidth = 5 + rand() * 2;
+      ctx.beginPath();
+      ctx.moveTo(64, y);
+      ctx.quadraticCurveTo(64 + side * long * 0.6, y - long * 0.25, 64 + side * long, y - long * 0.6);
+      ctx.stroke();
+    }
+  }
+  ctx.strokeStyle = "#5a6a2a";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(64, 512);
+  ctx.lineTo(64, 8);
+  ctx.stroke();
+  return texture(c);
+}
+/** A broad leaf on a clear ground, its base at the bottom, with a pale midrib, veins and a few splits cut into it. */
+function broadLeaf(base: string, edge: string, splits: boolean, seed: number) {
+  const { c, ctx } = canvas(256, 512),
+    rand = noise(seed);
+  const outline = () => {
+    ctx.beginPath();
+    ctx.moveTo(128, 506);
+    ctx.bezierCurveTo(20, 470, -10, 200, 128, 8);
+    ctx.bezierCurveTo(266, 200, 236, 470, 128, 506);
+    ctx.closePath();
+  };
+  const paint = ctx.createLinearGradient(0, 0, 256, 0);
+  paint.addColorStop(0, edge);
+  paint.addColorStop(0.5, base);
+  paint.addColorStop(1, edge);
+  outline();
+  ctx.fillStyle = paint;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(220, 240, 160, 0.55)";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(128, 506);
+  ctx.lineTo(128, 20);
+  ctx.stroke();
+  ctx.lineWidth = 2.5;
+  for (let y = 470; y > 60; y -= 34)
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(128, y);
+      ctx.quadraticCurveTo(128 + side * 60, y - 30, 128 + side * 110, y - 70);
+      ctx.stroke();
+    }
+  if (splits) {
+    // Cut from the edge toward the midrib, as on a monstera.
+    ctx.globalCompositeOperation = "destination-out";
+    for (let y = 420; y > 90; y -= 46 + rand() * 18)
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(128 + side * 130, y - 40);
+        ctx.lineTo(128 + side * (26 + rand() * 18), y);
+        ctx.lineTo(128 + side * 130, y - 20);
+        ctx.closePath();
+        ctx.fill();
+      }
+    ctx.globalCompositeOperation = "source-over";
+  }
+  return texture(c);
+}
+/** The light coming down through a canopy: deep green below, a glow of yellow-green above. */
+function canopyBack() {
+  const { c, ctx } = canvas(16, 512),
+    sky = ctx.createLinearGradient(0, 0, 0, 512);
+  sky.addColorStop(0, "#d8f0a8");
+  sky.addColorStop(0.35, "#8fbf6a");
+  sky.addColorStop(0.7, "#4f7a3c");
+  sky.addColorStop(1, "#2c4a26");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, 16, 512);
+  return texture(c);
+}
+/** A plane bent into a frond: `width` across, `length` outward along +z, rising by `rise` and drooping by `droop` toward its tip. */
+function frond(width: number, length: number, rise: number, droop: number) {
+  const g = new T.PlaneGeometry(width, length, 1, 12);
+  g.translate(0, length / 2, 0);
+  const pos = g.getAttribute("position");
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i),
+      along = pos.getY(i),
+      t = along / length;
+    // Narrower toward the base, and curled a little along the midrib.
+    pos.setXYZ(i, x * (0.35 + 0.65 * Math.sin(Math.PI * Math.min(1, t * 1.2 + 0.1))), rise * t - droop * t * t - Math.abs(x) * 0.25, along);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+/**
+ * A clearing in a rainforest round a mossy stone slab that the board lies on (the user asked for a jungle behind
+ * the game of the Amazons): dark earth under fallen leaves, great trunks with buttress roots and lianas, palms,
+ * ferns, broad and split leaves, red heliconias, rocks with moss, a scarlet macaw on a branch and blue butterflies,
+ * all built in code, in a green mist under a canopy's light. `half` and `depth` are half the slab's size; its top is
+ * at `top`. Everything stands clear of the slab, and nothing tall casts its shadow on it.
+ */
+export function jungle(scene: T.Scene, own: Own, half: number, depth: number, top: number) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.85, ...options })),
+    add = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, parent: T.Object3D = scene) => {
+      const mesh = new T.Mesh(own(geometry), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    },
+    GROUND = top - 2.4,
+    rand = noise(531),
+    m = new T.Matrix4(),
+    q = new T.Quaternion(),
+    e = new T.Euler(),
+    v = new T.Vector3(),
+    s = new T.Vector3(),
+    /** Clear of the slab (with a margin) and of the near side, where the camera looks from. */
+    clear = (x: number, z: number, margin = 1) => Math.abs(x) > half + margin || Math.abs(z) > depth + margin,
+    instanced = (geometry: T.BufferGeometry, material: T.Material, count: number, shadow = true) => {
+      const mesh = new T.InstancedMesh(own(geometry), material, count);
+      mesh.castShadow = shadow;
+      mesh.receiveShadow = true;
+      mesh.count = 0;
+      scene.add(mesh);
+      return mesh;
+    },
+    put = (mesh: T.InstancedMesh, x: number, y: number, z: number, rx: number, ry: number, rz: number, sx: number, sy = sx, sz = sx, color?: T.Color) => {
+      mesh.setMatrixAt(mesh.count, m.compose(v.set(x, y, z), q.setFromEuler(e.set(rx, ry, rz, "YXZ")), s.set(sx, sy, sz)));
+      if (color) mesh.setColorAt(mesh.count, color);
+      mesh.count++;
+    };
+  scene.background = own(canopyBack());
+  scene.fog = new T.Fog("#a9c49a", 22, 70);
+  // The forest floor: dark earth strewn with fallen leaves.
+  const floor = add(new T.PlaneGeometry(120, 100).rotateX(-Math.PI / 2), standard({ ...stuff("earth", "#4a3a26", 14, own), roughness: 1 }), 0, GROUND, 0);
+  floor.castShadow = false;
+  const litter = instanced(new T.CircleGeometry(0.22, 7).scale(1, 0.55, 1).rotateX(-Math.PI / 2), standard({ color: "#ffffff", roughness: 0.95, side: T.DoubleSide }), 1600, false),
+    browns = ["#7a5a2e", "#5e4422", "#8a6a34", "#4c5a26", "#6a4a2a", "#3e4a22"].map((c) => new T.Color(c));
+  for (let k = 0; k < 1600; k++) {
+    const x = (rand() - 0.5) * 50,
+      z = -30 + rand() * 42;
+    if (!clear(x, z, -0.4)) continue;
+    put(litter, x, GROUND + 0.01 + rand() * 0.02, z, (rand() - 0.5) * 0.3, rand() * 6.3, 0, 0.6 + rand() * 0.9, 1, 0.6 + rand() * 0.9, browns[k % browns.length]);
+  }
+  // The slab: a block of grey stone on two stone legs, moss creeping along its edges.
+  const stone = standard({ ...stuff("stone", "#8d8c7e", 2, own), roughness: 0.95 });
+  add(block(half * 2, 0.55, depth * 2, 0.16), stone, 0, top - 0.275, 0).castShadow = false;
+  for (const x of [-half * 0.62, half * 0.62]) add(block(1.3, top - 0.55 - GROUND, depth * 1.6, 0.12), stone, x, (top - 0.55 + GROUND) / 2, 0);
+  const moss = instanced(new T.SphereGeometry(0.3, 8, 6), standard({ color: "#ffffff", roughness: 1 }), 220, false),
+    greens = ["#4f7a2a", "#5f8a32", "#3f6a26", "#6f9a3a"].map((c) => new T.Color(c));
+  for (let k = 0; k < 180; k++) {
+    const along = rand() * 2 - 1,
+      side = Math.floor(rand() * 4),
+      [x, z] = side < 2 ? [along * half, (side ? 1 : -1) * depth] : [(side === 2 ? 1 : -1) * half, along * depth];
+    put(moss, x, top - 0.3 - rand() * 0.25, z, 0, rand() * 6, 0, 0.5 + rand() * 0.7, 0.25 + rand() * 0.3, 0.5 + rand() * 0.7, greens[k % 4]);
+  }
+  // Great trunks with buttress roots, beyond the slab, and lianas hanging between them.
+  const bark = own(wood(true));
+  bark.repeat.set(2, 6);
+  const trunkPaint = standard({ map: bark, color: "#8a7a5a", roughness: 0.95 }),
+    rootShape = new T.Shape([new T.Vector2(0, 0), new T.Vector2(2.4, 0), new T.Vector2(0, 3.2)]),
+    root = own(new T.ExtrudeGeometry(rootShape, { depth: 0.28, bevelEnabled: true, bevelSize: 0.08, bevelThickness: 0.08, bevelSegments: 2 })),
+    trunks: [number, number, number][] = [[-11.5, -9, 1.3], [12.5, -10, 1.5], [-15, 3, 1.1], [15.5, 2, 1.2], [-4, -18, 1.6], [6, -16, 1.2]];
+  for (const [x, z, r] of trunks) {
+    const trunk = add(new T.CylinderGeometry(r * 0.75, r, 34, 16), trunkPaint, x, GROUND + 17, z);
+    trunk.castShadow = false;
+    for (let k = 0; k < 5; k++) {
+      const fin = new T.Mesh(root, trunkPaint),
+        a = (k / 5) * Math.PI * 2 + x;
+      fin.position.set(x + Math.cos(a) * r * 0.8, GROUND, z + Math.sin(a) * r * 0.8);
+      fin.rotation.y = -a;
+      fin.scale.set(0.9 + rand() * 0.5, 0.8 + rand() * 0.5, 1);
+      fin.receiveShadow = true;
+      scene.add(fin);
+    }
+  }
+  const vine = standard({ color: "#5a5a2e", roughness: 0.9 }),
+    leaflet = instanced(new T.CircleGeometry(0.16, 6).scale(1, 1.6, 1), standard({ color: "#ffffff", roughness: 0.8, side: T.DoubleSide }), 900, false);
+  const liana = (points: [number, number, number][]) => {
+    const curve = new T.CatmullRomCurve3(points.map(([x, y, z]) => new T.Vector3(x, y, z)));
+    add(new T.TubeGeometry(curve, 40, 0.07, 6), vine, 0, 0, 0).castShadow = false;
+    for (let k = 0; k < 70; k++) {
+      const p = curve.getPoint(rand());
+      put(leaflet, p.x + (rand() - 0.5) * 0.2, p.y, p.z + (rand() - 0.5) * 0.2, rand() * 6, rand() * 6, rand() * 6, 0.7 + rand() * 0.6, undefined, undefined, greens[k % 4]);
+    }
+  };
+  liana([[-11.5, 14, -9], [-10, 6, -8], [-8.5, 3.2, -8.6], [-6.5, 7, -9.8], [-4, 15, -18]]);
+  liana([[12.5, 15, -10], [10.5, 5.5, -9], [8.6, 4.4, -9.6], [6.6, 9, -12], [6, 16, -16]]);
+  liana([[-15, 12, 3], [-13, 3.5, 1.5], [-12.4, 1.2, 0.2], [-12.2, 0.4, -0.4]]);
+  liana([[15.5, 13, 2], [13.6, 4, 0.8], [13, 1.4, -0.6], [12.8, 0.6, -1.2]]);
+  liana([[-9, 16, -12], [-9.4, 8, -11.6], [-9.2, 4.6, -11.2]]);
+  liana([[9.6, 16, -12.4], [9.8, 9, -12], [9.5, 5.2, -11.4]]);
+  // Palms: ringed trunks leaning a little, each with a crown of drooping fronds.
+  const palmFrond = standard({ map: own(pinnate("#2f6e28", "#4c9a36", 7)), alphaTest: 0.45, side: T.DoubleSide, roughness: 0.75 }),
+    fronds = instanced(frond(1.5, 4.6, 1.2, 3.2), palmFrond, 60, false),
+    ringed = own(wood(false));
+  ringed.repeat.set(1, 14);
+  const palmTrunk = standard({ map: ringed, color: "#a08a66", roughness: 0.9 });
+  for (const [x, z, h, lean] of [[-9.5, -4.5, 9, 0.12], [10, -5.5, 10, -0.1], [-7, -12, 12, 0.06], [17, -7, 11, -0.08]] as const) {
+    const trunk = add(new T.CylinderGeometry(0.2, 0.32, h, 10), palmTrunk, x, GROUND + h / 2, z);
+    trunk.rotation.z = lean;
+    trunk.castShadow = false;
+    const tx = x - Math.sin(lean) * h,
+      ty = GROUND + Math.cos(lean) * h;
+    for (let k = 0; k < 11; k++) put(fronds, tx, ty, z, (rand() - 0.6) * 0.5, (k / 11) * Math.PI * 2 + rand() * 0.3, 0, 1, 1, 0.85 + rand() * 0.3);
+  }
+  // Ferns low on the ground, and broad leaves on stalks (some split like a monstera's) round the clearing.
+  const fern = standard({ map: own(pinnate("#3d7a2a", "#5fa83e", 23)), alphaTest: 0.45, side: T.DoubleSide, roughness: 0.8 }),
+    ferns = instanced(frond(0.7, 1.9, 0.9, 1.3), fern, 160),
+    spots: [number, number][] = [[-7.2, 0.5], [7.4, -0.4], [-6.6, -5.6], [6.8, -6.2], [-8.6, 4.2], [8.8, 4.4], [-3.4, -7.0], [3.6, -7.4], [-11, -2], [11.2, -2.6], [0.2, -8.2], [-12.4, 6], [12.6, 6.6], [-5.6, 6.4], [5.8, 6.6]];
+  for (const [x, z] of spots) {
+    if (!clear(x, z, 0.6)) continue;
+    for (let k = 0; k < 9; k++) put(ferns, x, GROUND + 0.05, z, (rand() - 0.5) * 0.3, (k / 9) * Math.PI * 2 + rand() * 0.4, 0, 0.8 + rand() * 0.6);
+  }
+  const broad = standard({ map: own(broadLeaf("#2f7a2a", "#1f5a22", false, 3)), alphaTest: 0.45, side: T.DoubleSide, roughness: 0.6 }),
+    split = standard({ map: own(broadLeaf("#2a6e2a", "#1a4e1e", true, 9)), alphaTest: 0.45, side: T.DoubleSide, roughness: 0.6 }),
+    leafShape = frond(1.6, 2.6, 0.6, 1.5),
+    broadLeaves = instanced(leafShape, broad, 60),
+    splitLeaves = instanced(leafShape.clone(), split, 60),
+    stalks = instanced(new T.CylinderGeometry(0.04, 0.06, 1, 6).translate(0, 0.5, 0), standard({ color: "#4f7a2a", roughness: 0.8 }), 120);
+  for (const [x, z, which] of [[-8.2, -2.4, 0], [8.4, -2.8, 1], [-9.6, 1.8, 1], [9.4, 1.4, 0], [-4.8, -9.6, 0], [5.2, -9.2, 1], [-13.4, -5.4, 1], [13.6, -5.8, 0], [-1.6, -10.4, 1], [2.4, -11, 0]] as const) {
+    const leaves = which ? splitLeaves : broadLeaves;
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2 + rand(),
+        h = 1.4 + rand() * 1.2,
+        lean = 0.35 + rand() * 0.3,
+        tx = x + Math.sin(a) * Math.sin(lean) * h,
+        tz = z + Math.cos(a) * Math.sin(lean) * h;
+      put(stalks, x, GROUND, z, lean, a, 0, 1, h, 1);
+      put(leaves, tx, GROUND + Math.cos(lean) * h, tz, -0.2, a, 0, 0.9 + rand() * 0.4);
+    }
+  }
+  // Heliconias: red bracts climbing a stalk by turns, each tipped with yellow.
+  const bract = instanced(new T.ConeGeometry(0.12, 0.5, 6).rotateZ(-Math.PI / 2).translate(0.22, 0, 0), standard({ color: "#ffffff", roughness: 0.5 }), 120),
+    stems = instanced(new T.CylinderGeometry(0.035, 0.045, 1, 6).translate(0, 0.5, 0), standard({ color: "#5a7a2a", roughness: 0.8 }), 20),
+    red = new T.Color("#e2322a"),
+    yellow = new T.Color("#f2c22a");
+  for (const [x, z] of [[-6.2, -3.8], [6.4, -4.4], [-7.8, 3.0], [8.0, 2.4], [-2.2, -8.6], [2.8, -8.8]] as const)
+    for (let k = 0; k < 2; k++) {
+      const sx = x + (rand() - 0.5) * 0.8,
+        sz = z + (rand() - 0.5) * 0.8,
+        h = 1.6 + rand() * 0.6;
+      put(stems, sx, GROUND, sz, 0, 0, 0, 1, h + 0.6, 1);
+      for (let j = 0; j < 7; j++) put(bract, sx, GROUND + h + j * 0.11 - 0.3, sz, 0, rand() * 0.4 + (j % 2) * Math.PI, 0.5, 1 - j * 0.09, 1 - j * 0.09, 1 - j * 0.09, j % 2 ? yellow : red);
+    }
+  // Rocks with moss on their backs.
+  for (const [x, z, r] of [[-7, -1.6, 0.8], [7.2, 0.8, 0.7], [-5.6, -7.4, 1.0], [6.2, -7.8, 0.9], [-10.6, 5.4, 1.2]] as const) {
+    const rock = add(new T.DodecahedronGeometry(r, 0), stone, x, GROUND + r * 0.45, z);
+    rock.scale.set(1.3, 0.75, 1);
+    rock.rotation.y = x;
+    put(moss, x - r * 0.2, GROUND + r * 0.95, z - r * 0.2, 0, x, 0, r * 1.6, r * 0.4, r * 1.3, greens[1]);
+  }
+  // Toadstools by the slab's legs.
+  const cap = instanced(new T.SphereGeometry(0.16, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), standard({ color: "#d8562a", roughness: 0.5 }), 12),
+    stalk = instanced(new T.CylinderGeometry(0.04, 0.05, 0.22, 6), standard({ color: "#f2e6cc", roughness: 0.7 }), 12);
+  for (const [x, z] of [[-3.4, depth * 0.7], [-3.0, depth * 0.55], [3.3, -depth * 0.6], [3.6, -depth * 0.4], [3.1, -depth * 0.75]] as const) {
+    put(stalk, x, GROUND + 0.11, z, 0, 0, 0, 1);
+    put(cap, x, GROUND + 0.2, z, 0, 0, 0, 1);
+  }
+  // A branch from the right-hand trunk with a scarlet macaw on it.
+  const branch = add(new T.CylinderGeometry(0.16, 0.24, 7, 8), trunkPaint, 9.4, 6.2, -9.6);
+  branch.rotation.z = Math.PI / 2 + 0.12;
+  branch.castShadow = false;
+  const bird = new T.Group(),
+    scarlet = standard({ color: "#d8231e", roughness: 0.55 }),
+    blue = standard({ color: "#1f5ad8", roughness: 0.5 }),
+    gold = standard({ color: "#f2c21e", roughness: 0.5 }),
+    ivory = standard({ color: "#f2eee0", roughness: 0.6 }),
+    black = standard({ color: "#141210", roughness: 0.4 });
+  add(new T.SphereGeometry(0.34, 16, 12).scale(0.85, 1.25, 0.85), scarlet, 0, 0.5, 0, bird);
+  add(new T.SphereGeometry(0.24, 16, 12), scarlet, 0, 1.0, 0.05, bird);
+  add(new T.SphereGeometry(0.13, 12, 8).scale(1, 1, 0.5), ivory, 0, 1.0, 0.2, bird);
+  add(new T.ConeGeometry(0.09, 0.26, 10).rotateX(Math.PI * 0.62), ivory, 0, 0.94, 0.3, bird);
+  for (const side of [-1, 1]) {
+    add(new T.SphereGeometry(0.035, 8, 6), black, side * 0.1, 1.06, 0.2, bird);
+    const wing = add(new T.SphereGeometry(0.26, 12, 8).scale(0.35, 1.1, 0.8), side < 0 ? gold : blue, side * 0.26, 0.48, -0.04, bird);
+    wing.rotation.z = side * 0.12;
+  }
+  const tail = add(new T.ConeGeometry(0.12, 1.5, 8), scarlet, 0, -0.45, -0.18, bird);
+  tail.rotation.x = Math.PI - 0.25;
+  add(new T.ConeGeometry(0.07, 1.1, 6), blue, 0, -0.35, -0.24, bird).rotation.x = Math.PI - 0.3;
+  bird.position.set(7.4, 6.35, -9.4);
+  bird.rotation.y = -0.6;
+  bird.traverse((o) => (o.castShadow = false));
+  scene.add(bird);
+  // Blue morpho butterflies resting with their wings half open.
+  const wingPaint = standard({ color: "#2a7aff", emissive: "#0a2a7a", roughness: 0.3, metalness: 0.2, side: T.DoubleSide }),
+    wings = instanced(new T.CircleGeometry(0.22, 12).scale(1, 0.8, 1).translate(0.2, 0, 0), wingPaint, 12, false);
+  for (const [x, y, z, a] of [[-6.0, GROUND + 2.1, -3.7, 0.4], [6.6, GROUND + 2.0, -4.5, -0.8], [-8.4, GROUND + 1.0, 4.0, 1.6], [2.8, GROUND + 2.2, -8.7, 2.4], [8.6, GROUND + 0.6, 4.6, -2.2], [-2.0, GROUND + 2.0, -8.4, 0.9]] as const)
+    for (const side of [-1, 1]) put(wings, x, y, z, 0, a + (side > 0 ? 0 : Math.PI), side * 0.5, 1);
+  for (const mesh of [litter, moss, leaflet, fronds, ferns, broadLeaves, splitLeaves, stalks, bract, stems, cap, stalk, wings]) {
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
 }

@@ -58,7 +58,7 @@ function fieldTexture(size: number) {
 }
 /**
  * A campsite seen from above: a field of grass squares on a raised bed of earth, trees modelled in code (pines and
- * round leafy trees), orange tents pitched as ridged prisms with a dark doorway, tufts of grass for the squares
+ * round leafy trees), orange tents pitched as ridged prisms with a dark doorway, a white X for the squares
  * marked empty, and the numbers on wooden plates along the top and the left (green when met, red when passed).
  */
 export class TentsView extends TableView<State> {
@@ -90,7 +90,8 @@ export class TentsView extends TableView<State> {
     door.setIndex([0, 1, 2]);
     door.computeVertexNormals();
     g("door", door);
-    g("blade", new T.ConeGeometry(0.035, 0.22, 5));
+    // An X: one bar with rounded ends, laid twice across a square (a tent tapped again).
+    g("bar", block(0.6, 0.05, 0.11, 0.024));
     g("plate", block(0.5, 0.06, 0.5, 0.025));
     const p = (name: string, options: T.MeshStandardMaterialParameters) => (this.paint[name] = this.standard(options));
     p("bark", { color: "#6b4a2e", roughness: 0.9 });
@@ -99,7 +100,7 @@ export class TentsView extends TableView<State> {
     p("canvas", { color: "#e0782e", roughness: 0.7 });
     p("crowded", { color: "#d2352a", roughness: 0.6, emissive: "#5a0c06" });
     p("door", { color: "#3a2416", roughness: 0.9, side: T.DoubleSide });
-    p("tuft", { color: "#b9d97a", roughness: 0.8 });
+    p("cross", { color: "#f6f1e4", roughness: 0.55, emissive: "#3a3424" });
     p("earth", { ...stuff("earth", "#7a5a3a", 1.2, keep), roughness: 1 });
     p("wood", { color: "#8a5a32", roughness: 0.6 });
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
@@ -131,9 +132,10 @@ export class TentsView extends TableView<State> {
     this.mesh("door", "door", 0, 0.002, 0.282, group);
     return group;
   }
-  private tuft() {
+  /** The X a tent tapped again leaves: two white bars crossed on the grass, saying no tent goes there. */
+  private cross() {
     const group = new T.Group();
-    for (const [x, z, lean] of [[-0.08, 0, -0.3], [0, -0.05, 0], [0.08, 0.02, 0.3], [0.02, 0.07, 0.15]]) this.mesh("blade", "tuft", x, 0.1, z, group).rotation.z = lean;
+    for (const turn of [Math.PI / 4, -Math.PI / 4]) this.mesh("bar", "cross", 0, 0.03, 0, group).rotation.y = turn;
     return group;
   }
   private label(text: string, tone: "open" | "done" | "over") {
@@ -212,7 +214,7 @@ export class TentsView extends TableView<State> {
     state.cells.forEach((mark, i) => {
       if (mark !== TENT && mark !== GRASS) return;
       const p = cellAt(state.size, i),
-        model = mark === TENT ? this.tent(bad[i]) : this.tuft();
+        model = mark === TENT ? this.tent(bad[i]) : this.cross();
       model.position.set(p.x, TOP, p.z);
       this.things.add(model);
       this.meshes.set(i, model);
@@ -224,7 +226,7 @@ export class TentsView extends TableView<State> {
     this.place(state);
     const model = this.meshes.get(state.last);
     if (!model) return false;
-    // A tent goes up from the ground; a tuft springs up.
+    // A tent goes up from the ground; an X is laid down.
     this.tween(0, 240, (p) => {
       const e = 1 - (1 - p) ** 3;
       model.scale.set(1, Math.max(0.05, e), 1);
