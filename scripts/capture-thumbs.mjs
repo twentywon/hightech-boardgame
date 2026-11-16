@@ -335,6 +335,26 @@ const play = {
     await keys([" "]);
     await wait(2300);
   },
+  // Moles let come up for a while, a few knocked on the way, so that some are up, dazed or ducking when the picture is taken.
+  "whack-a-mole": async () => {
+    await page.locator("canvas").focus();
+    await wait(2400);
+    for (const key of ["4", "1", "6"]) {
+      await page.keyboard.press(key);
+      await wait(260);
+    }
+    await wait(150);
+  },
+  // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
+  // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
+  snake: async () => {
+    await page.locator("canvas").focus();
+    for (const [key, pause] of [["ArrowUp", 550], ["ArrowLeft", 1150], ["ArrowDown", 450]]) {
+      await page.keyboard.press(key);
+      await wait(pause);
+    }
+    await page.keyboard.press("p");
+  },
 };
 const only = process.argv[3];
 for (const game of games) {
@@ -355,7 +375,7 @@ for (const game of games) {
   await page.locator("h1").first().click();
   await wait(400);
   // Only the table: captions, the status line and buttons over it are hidden.
-  await page.addStyleTag({ content: ".board-label, .board-nav, .board-controls, .board-bottom, .board-hint, .bg-acting, .pg-tools, .tour-end, .tour-toast { display: none !important; } html[data-capture] .game-layout .board-area > .board-hint { display: none !important; }" });
+  await page.addStyleTag({ content: ".board-label, .board-nav, .board-controls, .board-pause, .board-bottom, .board-hint, .bg-acting, .pg-tools, .tour-end, .tour-toast { display: none !important; } html[data-capture] .game-layout .board-area > .board-hint { display: none !important; } #board[data-paused] canvas { filter: none !important; }" });
   await wait(200);
   await page.locator("canvas").screenshot({ path: `${out}/${id}.png` });
   console.log(id);

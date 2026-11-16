@@ -338,7 +338,7 @@ export const games = [
   {
     name: "테이블 사커",
     en: "TABLE SOCCER",
-    category: "보드게임",
+    category: "아케이드게임",
     players: "2인용",
     icon: "⚽",
     available: true,
@@ -346,7 +346,7 @@ export const games = [
   {
     name: "블록 내리기",
     en: "FALLING BLOCKS",
-    category: "퍼즐게임",
+    category: "아케이드게임",
     players: "1인용",
     icon: "▦",
     available: true,
@@ -362,7 +362,7 @@ export const games = [
   {
     name: "벽돌깨기",
     en: "BRICK BREAKER",
-    category: "퍼즐게임",
+    category: "아케이드게임",
     players: "1인용",
     icon: "▬",
     available: true,
@@ -490,7 +490,7 @@ export const games = [
   {
     name: "과일 합치기",
     en: "FRUIT MERGE",
-    category: "퍼즐게임",
+    category: "아케이드게임",
     players: "1인용",
     icon: "●",
     available: true,
@@ -498,9 +498,25 @@ export const games = [
   {
     name: "고기 굽기",
     en: "MEAT GRILL",
-    category: "퍼즐게임",
+    category: "아케이드게임",
     players: "1인용",
     icon: "♨",
+    available: true,
+  },
+  {
+    name: "스네이크",
+    en: "SNAKE",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "∿",
+    available: true,
+  },
+  {
+    name: "두더지 잡기",
+    en: "WHACK-A-MOLE",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "⚒",
     available: true,
   },
 ];

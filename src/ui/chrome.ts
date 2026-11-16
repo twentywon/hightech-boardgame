@@ -113,6 +113,8 @@ const BACK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height
  * after a moment 다시 하기 (the game's own new-game window) and 다른 게임 (back to the collection) under it.
  * It stays until one is pressed or the game is begun again; the table itself can still be looked at round it.
  */
+/** Games that end when their clock runs out: their end says so instead of a win or a loss. */
+const TIMED = new Set(["meat-grill", "whack-a-mole"]);
 export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   const board = document.querySelector<HTMLElement>(".board-area");
   if (!board || capturing()) return;
@@ -126,7 +128,7 @@ export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   word.className = "finale-word";
   word.setAttribute("aria-hidden", "true");
   // A game whose clock simply runs out is neither won nor lost.
-  word.textContent = document.documentElement.dataset.game === "meat-grill" ? "시간 종료" : ART[outcome].word;
+  word.textContent = TIMED.has(document.documentElement.dataset.game ?? "") ? "시간 종료" : ART[outcome].word;
   ways.className = "finale-ways";
   ways.hidden = true;
   again.id = "finale-again";
