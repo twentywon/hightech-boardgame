@@ -194,7 +194,7 @@ export class Sound {
   }
   /** Water poured from one beaker into another, glugging as it goes. */
   pour() {
-    if (!this.piece("pour", 1, 0.5)) return this.splash();
+    if (!this.piece("pour", 1, 0.5)) return this.plop();
     this.recording("gurgle-1", 0.22, 1, 0.35);
   }
   /** Chips sliding across the felt. */
@@ -233,14 +233,22 @@ export class Sound {
     [1568, 2093].forEach((f, i) => this.tone("triangle", f, f, 0.2 + i * 0.09, 0.5, 0.09));
     this.tone("sine", 3136, 3136, 0.29, 0.6, 0.04);
   }
-  /** Something heavy dropping into water: a plop and the wash after it. */
-  splash() {
+  /** Something dropping into water: a plop and the wash after it, made by the page (a boat's oars, a pour that has not loaded). */
+  plop() {
     this.tone("sine", 420, 90, 0, 0.22, 0.16);
     this.noise(0.03, 0.55, 0.2, 2600, "lowpass", 500);
     this.noise(0.2, 0.5, 0.08, 1200, "bandpass", 600);
   }
-  /** An explosion: a crack, a deep thump and a rumble dying away. */
+  /** A shell falling into the sea: a recording of a big splash, the same each time (made by the page until it is ready). */
+  splash() {
+    if (!this.piece("splash", 1, 0.6)) this.plop();
+  }
+  /** An explosion: a recording of a close blast and its rumble rolling away (made by the page until it is ready). */
   explosion() {
+    if (!this.piece("explosion", 1, 0.75)) this.blast();
+  }
+  /** An explosion made by the page: a crack, a deep thump and a rumble dying away. */
+  private blast() {
     this.noise(0, 0.12, 0.3, 3000, "highpass", 800);
     this.tone("sine", 140, 34, 0, 0.6, 0.4);
     this.tone("triangle", 90, 30, 0.02, 0.5, 0.2);

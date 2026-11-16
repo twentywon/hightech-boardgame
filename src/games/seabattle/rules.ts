@@ -13,14 +13,17 @@ export const TURN_SHIP = 200,
   LAY_REST = 201;
 export const SIZE = 10,
   CELLS = SIZE * SIZE,
-  /** Lengths of the five ships, with their names. */
+  /** Lengths of the five ships, with their names (the user asked for these five kinds): see `SHIP_KINDS` for their models. */
   FLEET: [string, number][] = [
     ["항공모함", 5],
     ["전함", 4],
-    ["순양함", 3],
+    ["구축함", 3],
     ["잠수함", 3],
-    ["구축함", 2],
+    ["고속정", 2],
   ];
+/** What each ship of `FLEET` is, for its model and its picture: carrier, battleship, destroyer, submarine, patrol boat. */
+export const SHIP_KINDS = ["carrier", "battleship", "destroyer", "submarine", "patrol"] as const;
+export type ShipKind = (typeof SHIP_KINDS)[number];
 export interface Ship {
   name: string;
   cells: number[];

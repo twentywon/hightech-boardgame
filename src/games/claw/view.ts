@@ -83,6 +83,23 @@ const plush = () =>
       pen.fillRect(random() * 512, random() * 512, 2, 2);
     }
   });
+/** The display case's sign: what is in it, in bubbly letters. */
+const caseSign = () =>
+  painted(512, 160, (pen) => {
+    pen.fillStyle = "#ff6fae";
+    pen.fillRect(0, 0, 512, 160);
+    pen.font = '900 84px "Inter", "Noto Sans KR", sans-serif';
+    pen.textAlign = "center";
+    pen.textBaseline = "middle";
+    pen.lineJoin = "round";
+    pen.lineWidth = 16;
+    pen.strokeStyle = "#7a1450";
+    pen.strokeText("내 인형", 256, 84);
+    pen.fillStyle = "#fff6c0";
+    pen.fillText("내 인형", 256, 84);
+  });
+/** The display case beside the machine: its middle (x, z), its turn toward the player, its size, the heights of its shelves and how many stand on one. */
+const SHOWCASE = { x0: -3.82, z: 1.75, turn: 0.42, width: 1.15, depth: 0.55, shelves: [0.55, 1.3, 2.05], each: 4 };
 /** The sign over the glass: the name in bubbly letters on pink, with a row of bulbs painted round it. */
 const signFace = () =>
   painted(1024, 220, (pen) => {
@@ -148,6 +165,8 @@ export class ClawView extends TableView<State> {
   private button!: T.Mesh;
   private pressed = -1e9;
   private led: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
+  /** The display case beside the machine, and the toys on its shelves. */
+  private case = new T.Group();
   private shelf = new T.Group();
   private shelved = -1;
   private bulbs: T.MeshStandardMaterial[] = [];
@@ -224,7 +243,7 @@ export class ClawView extends TableView<State> {
     this.target = ringMesh((r) => this.own(r), 0.16, 0.24, "#ff2a5a");
     this.scene.add(this.target);
     this.led = this.controls(keep);
-    this.scene.add(this.shelf);
+    this.showcase(keep);
     this.floor = new T.Plane(new T.Vector3(0, 1, 0), -AIM_HEIGHT);
     this.begin();
     const tick = () => {
@@ -338,11 +357,31 @@ export class ClawView extends TableView<State> {
     // The big button in a white ring (where `BUTTON` says, for taps and tests).
     this.add(new T.CylinderGeometry(0.27, 0.29, 0.06, 28), this.standard({ color: "#ffffff", roughness: 0.4 }), BUTTON.x, 0.03, 0, deck);
     this.button = this.add(new T.SphereGeometry(0.22, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), keep(glossy({ color: "#ff2a4a", emissive: "#600010", roughness: 0.3 }, 0.6)), BUTTON.x, 0.05, 0, deck);
-    // The prize tray at the left end.
-    this.add(block(0.8, 0.12, 0.75, 0.04), this.standard({ color: "#ffd6ea", roughness: 0.5 }), -2.15, 0.06, 0, deck);
-    deck.add(this.shelf);
-    this.shelf.position.set(-2.15, 0.16, 0);
     return { canvas, texture, said: "" };
+  }
+  /**
+   * A display case standing on the ground beside the machine, at its left where the chute is (the user asked for the
+   * toys won to be shown outside the machine): a pink frame with three open shelves before a pastel back and a sign
+   * on top. The toys caught stand on its shelves, four to a shelf (`stock`).
+   */
+  private showcase(keep: <R extends { dispose(): void }>(r: R) => R) {
+    const pink = keep(glossy({ color: "#ff6fae", roughness: 0.3 }, 0.5)),
+      white = this.standard({ color: "#fbf4f8", roughness: 0.45 }),
+      { x0, z, turn, width, depth, shelves } = SHOWCASE,
+      top = shelves[shelves.length - 1] + 0.75;
+    this.case.position.set(x0, 0, z);
+    this.case.rotation.y = turn;
+    this.scene.add(this.case);
+    // Its base, posts, shelves, back and roof.
+    this.add(block(width + 0.1, shelves[0] - CAB.ground, depth + 0.1, 0.05), white, 0, (shelves[0] + CAB.ground) / 2, 0, this.case);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) this.add(block(0.09, top - shelves[0], 0.09, 0.03), pink, (sx * width) / 2, (top + shelves[0]) / 2, (sz * depth) / 2, this.case);
+    for (const y of shelves) this.add(block(width, 0.06, depth, 0.02), white, 0, y - 0.03, 0, this.case);
+    const back = this.add(new T.PlaneGeometry(width, top - shelves[0]), this.standard({ color: "#ffd9ec", roughness: 0.7 }), 0, (top + shelves[0]) / 2, -depth / 2 + 0.02, this.case);
+    back.castShadow = false;
+    this.add(block(width + 0.16, 0.12, depth + 0.16, 0.04), pink, 0, top + 0.06, 0, this.case);
+    const sign = this.add(new T.PlaneGeometry(width, 0.4), this.standard({ map: keep(caseSign()), roughness: 0.5, emissive: "#ffffff", emissiveMap: keep(caseSign()), emissiveIntensity: 0.2 }), 0, top + 0.36, depth / 2 - 0.05, this.case);
+    sign.castShadow = false;
+    this.case.add(this.shelf);
   }
   /** Paints the lights: tries left, seconds to aim, prizes caught. */
   private lights(state: State) {
@@ -726,15 +765,20 @@ export class ClawView extends TableView<State> {
     });
   }
   /** The toys caught so far, small, in the tray on the deck. */
+  /** The toys caught so far stand in the display case beside the machine, four to a shelf from the top (the last twelve). */
   private stock(state: State) {
     if (state.prizes.length === this.shelved) return;
     this.shelved = state.prizes.length;
     for (const child of [...this.shelf.children]) child.removeFromParent();
-    state.prizes.slice(-6).forEach((kind, i) => {
-      const model = this.toy(kind, KINDS[kind].r * 0.45, false);
+    const { width, shelves, each } = SHOWCASE;
+    state.prizes.slice(-each * shelves.length).forEach((kind, i) => {
+      const r = KINDS[kind].r * 0.5,
+        model = this.toy(kind, r, false),
+        row = shelves.length - 1 - Math.floor(i / each),
+        slot = i % each;
       model.root.removeFromParent();
-      model.root.position.set(-0.24 + (i % 3) * 0.24, 0.12 + Math.floor(i / 3) * 0.16, 0.12 - Math.floor(i / 3) * 0.24);
-      model.root.rotation.set(-0.4, 0, 0);
+      model.root.position.set(-width / 2 + (width / each) * (slot + 0.5), shelves[row] + r * 0.92, 0.04);
+      model.root.rotation.set(-0.12, (slot - 1.5) * 0.12, 0);
       this.shelf.add(model.root);
     });
   }

@@ -63,6 +63,11 @@ function numberDisc(id: number) {
   t.colorSpace = T.SRGBColorSpace;
   return t;
 }
+/** The cue's length and its least tilt; the top of the rails and cushions, and how far the rails reach beyond the cloth. */
+const CUE_LENGTH = 5.2,
+  CUE_TILT = 0.075,
+  RAIL_TOP = 0.3,
+  RAIL_OUT = 0.68;
 /** A pool table under a lamp in a pub. */
 export class PoolView extends FlickView<State> {
   protected filmic() {
@@ -142,7 +147,7 @@ export class PoolView extends FlickView<State> {
     this.scene.add(this.ring, this.halo);
     // The cue: pale ash with a dark butt and a blue tip, lying behind the white ball along the line of the shot.
     const stick = new T.Group(),
-      length = 5.2,
+      length = CUE_LENGTH,
       piece = (from: number, to: number, a: number, b: number, color: string) => {
         // The geometry's upper end points away from the ball once laid down.
         const mesh = new T.Mesh(this.own(new T.CylinderGeometry(b, a, to - from, 14)), this.standard({ color, roughness: 0.4 }));
@@ -155,8 +160,8 @@ export class PoolView extends FlickView<State> {
     piece(0.05, 0.16, 0.03, 0.032, "#f4f1e6");
     piece(0.16, length * 0.62, 0.032, 0.052, "#d9b877");
     piece(length * 0.62, length, 0.052, 0.07, "#2a1a12");
-    // The butt is held a little higher than the tip, clear of the rail.
-    stick.rotation.z = -0.075;
+    // The butt is held a little higher than the tip; `aimed` raises it more where a rail is in the way.
+    stick.rotation.z = -CUE_TILT;
     this.cue.add(stick);
     this.cue.visible = false;
     this.scene.add(this.cue);
@@ -237,13 +242,40 @@ export class PoolView extends FlickView<State> {
     if (gone < 1e-6 || gone > 1) return;
     mesh.quaternion.premultiply(this.turn.setFromAxisAngle(this.axis.set(dz / gone, 0, -dx / gone), gone / R));
   }
+  /**
+   * The cue behind the white ball, drawn back farther the harder the shot. It never passes through the table (the
+   * user saw it cut into the rail when pulled far back): its tip stays on the cloth, short of the cushion behind the
+   * ball, and its butt is raised over the rail as a player jacks a cue up, as steeply as the rail needs.
+   */
   protected aimed(aim: { x: number; z: number; angle: number; power: number } | null) {
     this.cue.visible = !!aim;
     if (!aim) return;
-    // Drawn back farther the harder the shot.
+    const bx = -Math.cos(aim.angle),
+      bz = -Math.sin(aim.angle),
+      along = (d: number) => ({ x: aim.x + bx * d, z: aim.z + bz * d }),
+      onCloth = (d: number) => {
+        const p = along(d);
+        return Math.abs(p.x) < HALF_X - 0.12 && Math.abs(p.z) < HALF_Z - 0.12;
+      },
+      overRail = (d: number) => {
+        const p = along(d);
+        return Math.abs(p.x) < HALF_X + RAIL_OUT && Math.abs(p.z) < HALF_Z + RAIL_OUT;
+      };
+    let edge = 0;
+    while (edge < 20 && onCloth(edge)) edge += 0.02;
+    const offset = Math.min(R + 0.06 + aim.power * 0.05, Math.max(R + 0.06, edge - 0.08));
+    let tilt = CUE_TILT;
+    // Every part of the cue above the cushions and the rail must clear them, its own thickness and a little more.
+    for (let d = offset; d <= offset + CUE_LENGTH; d += 0.05) {
+      if (onCloth(d) || !overRail(d) || d - offset < 0.02) continue;
+      const need = RAIL_TOP + 0.035 + 0.04 * ((d - offset) / CUE_LENGTH) + 0.03;
+      tilt = Math.max(tilt, Math.atan2(need - R, d - offset));
+    }
     this.cue.position.set(aim.x, R, aim.z);
     this.cue.rotation.y = -aim.angle;
-    this.cue.children[0].position.x = -(R + 0.06 + aim.power * 0.05);
+    const stick = this.cue.children[0];
+    stick.position.x = -offset;
+    stick.rotation.z = -Math.min(tilt, 1.0);
   }
   protected mark(_marks: Marks) {
     const cue = this.state?.discs[CUE];

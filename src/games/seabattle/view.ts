@@ -2,12 +2,15 @@ import * as T from "three";
 import { wood, planks, block } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { CELLS, FLEET, SIZE, span, sunk, type Ship, type State } from "./rules";
+import { CELLS, FLEET, SHIP_KINDS, SIZE, span, sunk, type Ship, type ShipKind, type State } from "./rules";
 
 const CELL = 0.5,
   SIDE = CELL * SIZE,
-  /** How far each chart's centre lies from the middle of the table. */
-  APART = 3.15;
+  /** How far each chart's centre lies from the middle of the table, and how far both are set back on a wide screen. */
+  APART = 3.15,
+  BAND = 0.55;
+/** The band before the charts: wider on a short wide screen (a phone held sideways), where the board takes more of the height. */
+const bandFor = (aspect: number) => (aspect >= 2 ? 1.0 : BAND);
 export const SEA_COLORS: [string, string] = ["#3f7fd0", "#d2452f"];
 function chart(label: string) {
   const c = document.createElement("canvas");
@@ -75,6 +78,169 @@ function blocks() {
   t.repeat.set(7, 3);
   return t;
 }
+/** A canvas texture painted by `paint`, repeating. */
+function paintedTexture(width: number, height: number, paint: (ctx: CanvasRenderingContext2D) => void) {
+  const c = document.createElement("canvas");
+  c.width = width;
+  c.height = height;
+  paint(c.getContext("2d")!);
+  const t = new T.CanvasTexture(c);
+  t.colorSpace = T.SRGBColorSpace;
+  t.wrapS = t.wrapT = T.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+const sequence = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+/**
+ * A ship's side, from the waterline (bottom of the picture) to the deck edge (top): red antifouling, a black
+ * boot-top, then grey plating in strakes with welded seams and rivet rows, and rust weeping from the scuppers.
+ */
+function hullPlates() {
+  return paintedTexture(512, 128, (ctx) => {
+    const random = sequence(71);
+    ctx.fillStyle = "#7f8890";
+    ctx.fillRect(0, 0, 512, 128);
+    for (let i = 0; i < 2600; i++) {
+      ctx.fillStyle = i % 2 ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.05)";
+      ctx.fillRect(random() * 512, random() * 128, 2, 2);
+    }
+    ctx.strokeStyle = "rgba(40,45,50,0.55)";
+    ctx.lineWidth = 1.5;
+    for (const y of [26, 58, 86]) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(512, y);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(30,34,38,0.6)";
+      for (let x = 4; x < 512; x += 9) ctx.fillRect(x, y - 3.5, 1.6, 1.6);
+    }
+    for (let x = 0; x < 512; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x + (x % 128 ? 0 : 20), 0);
+      ctx.lineTo(x + (x % 128 ? 0 : 20), 100);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 9; i++) {
+      const x = 20 + random() * 470,
+        streak = ctx.createLinearGradient(0, 14, 0, 70 + random() * 30);
+      streak.addColorStop(0, "rgba(120,62,30,0.55)");
+      streak.addColorStop(1, "rgba(120,62,30,0)");
+      ctx.fillStyle = streak;
+      ctx.fillRect(x, 14, 3 + random() * 4, 80);
+      ctx.fillStyle = "#2c2f33";
+      ctx.fillRect(x - 1, 10, 6, 4);
+    }
+    ctx.fillStyle = "#1d1f22";
+    ctx.fillRect(0, 100, 512, 9);
+    ctx.fillStyle = "#8c2c22";
+    ctx.fillRect(0, 109, 512, 19);
+  });
+}
+/** A steel deck: dark grey non-slip paint, its plates' seams, and a pale line along each edge. */
+function deckPlates() {
+  return paintedTexture(256, 256, (ctx) => {
+    const random = sequence(73);
+    ctx.fillStyle = "#5d656d";
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 5000; i++) {
+      ctx.fillStyle = i % 2 ? "rgba(0,0,0,0.12)" : "rgba(255,255,255,0.07)";
+      ctx.fillRect(random() * 256, random() * 256, 1.5, 1.5);
+    }
+    ctx.strokeStyle = "rgba(25,28,32,0.5)";
+    ctx.lineWidth = 1.2;
+    for (let x = 0; x <= 256; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 256);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= 256; y += 85) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(256, y);
+      ctx.stroke();
+    }
+  });
+}
+/** A carrier's flight deck, the whole of it: dark asphalt grey, a white centre line, yellow guide lines, the angled landing strip and its number. */
+function flightDeck() {
+  return paintedTexture(1024, 192, (ctx) => {
+    const random = sequence(79);
+    ctx.fillStyle = "#4c5257";
+    ctx.fillRect(0, 0, 1024, 192);
+    for (let i = 0; i < 9000; i++) {
+      ctx.fillStyle = i % 2 ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.05)";
+      ctx.fillRect(random() * 1024, random() * 192, 2, 2);
+    }
+    // The angled deck: a strip across toward the stern, with its dashed centre line.
+    ctx.save();
+    ctx.translate(330, 96);
+    ctx.rotate(-0.16);
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-330, -42, 700, 84);
+    ctx.setLineDash([22, 16]);
+    ctx.beginPath();
+    ctx.moveTo(-330, 0);
+    ctx.lineTo(370, 0);
+    ctx.stroke();
+    ctx.restore();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#e8c23a";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(560, 112);
+    ctx.lineTo(1000, 112);
+    ctx.moveTo(620, 70);
+    ctx.lineTo(990, 70);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = '900 64px "Helvetica Neue", Arial, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.save();
+    ctx.translate(900, 150);
+    ctx.fillText("77", 0, 0);
+    ctx.restore();
+    for (const x of [60, 120]) {
+      ctx.strokeStyle = "rgba(255,255,255,0.6)";
+      ctx.beginPath();
+      ctx.moveTo(x, 40);
+      ctx.lineTo(x, 152);
+      ctx.stroke();
+    }
+  });
+}
+/** A superstructure's side: grey panels with seams, a dark band of bridge windows near its top. */
+function panels() {
+  return paintedTexture(128, 128, (ctx) => {
+    ctx.fillStyle = "#97a0a8";
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.strokeStyle = "rgba(40,45,50,0.45)";
+    ctx.lineWidth = 1.2;
+    for (let x = 0; x <= 128; x += 32) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 128);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#1f2a33";
+    for (let x = 6; x < 128; x += 15) ctx.fillRect(x, 14, 10, 13);
+    ctx.fillStyle = "rgba(160,210,240,0.35)";
+    for (let x = 6; x < 128; x += 15) ctx.fillRect(x, 14, 10, 4);
+  });
+}
+/** A submarine's skin of rubber tiles: near black, the tiles' edges faintly paler. */
+function subTiles() {
+  return paintedTexture(256, 128, (ctx) => {
+    ctx.fillStyle = "#23272b";
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.strokeStyle = "rgba(120,130,140,0.25)";
+    ctx.lineWidth = 1;
+    for (let y = 0; y <= 128; y += 16)
+      for (let x = (y / 16) % 2 ? 8 : 0; x < 256; x += 16) ctx.strokeRect(x + 0.5, y + 0.5, 15, 15);
+  });
+}
 /** Two sea charts on the table of a cellar war room. */
 export class SeaBattleView extends TableView<State> {
   private seas: T.Group[] = [];
@@ -85,6 +251,8 @@ export class SeaBattleView extends TableView<State> {
   private missPaint: T.Material;
   private steel: T.Material;
   private wreck: T.Material;
+  /** The ships' paints: hull sides, decks (steel, teak and a carrier's flight deck), superstructure, guns, a submarine's skin. */
+  private kit!: { hull: T.Material; deck: T.Material; teak: T.Material; flight: T.Material; panels: T.Material; gun: T.Material; sub: T.Material; white: T.Material };
   private shell: T.Mesh;
   private cursor: T.Mesh;
   private latest: T.Mesh;
@@ -153,6 +321,19 @@ export class SeaBattleView extends TableView<State> {
     this.missPaint = this.standard({ color: "#f3f1ea", roughness: 0.5 });
     this.steel = this.standard({ color: "#8d959c", roughness: 0.5, metalness: 0.3 });
     this.wreck = this.standard({ color: "#3a2a26", roughness: 0.9 });
+    // Painted like real warships (the user asked): plated sides with a red bottom, non-slip steel decks, a teak deck on
+    // the battleship, a marked flight deck on the carrier, panelled superstructures with bridge windows.
+    const flight = this.own(flightDeck());
+    this.kit = {
+      hull: this.standard({ map: this.own(hullPlates()), roughness: 0.55, metalness: 0.25 }),
+      deck: this.standard({ map: this.own(deckPlates()), roughness: 0.8, metalness: 0.15 }),
+      teak: this.standard({ map: this.own(wood(false)), color: "#d8b88a", roughness: 0.75 }),
+      flight: this.standard({ map: flight, roughness: 0.85 }),
+      panels: this.standard({ map: this.own(panels()), roughness: 0.5, metalness: 0.25 }),
+      gun: this.standard({ color: "#4f565d", roughness: 0.45, metalness: 0.5 }),
+      sub: this.standard({ map: this.own(subTiles()), roughness: 0.7 }),
+      white: this.standard({ color: "#e9eef2", roughness: 0.5 }),
+    };
     this.shell = this.add(new T.SphereGeometry(0.12, 12, 10), iron, 0, -9, 0);
     this.shell.visible = false;
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
@@ -164,15 +345,17 @@ export class SeaBattleView extends TableView<State> {
     this.begin();
   }
   protected layout(aspect: number) {
-    // Side by side on a wide screen; one above the other, the target farther, on a narrow one.
+    // Side by side on a wide screen, set back a little so that the fleets' board has the band before them (the user
+    // asked for it at the lower left); one above the other, the target farther, on a narrow one.
     this.stacked = aspect < 0.95;
-    this.seas[0].position.set(this.stacked ? 0 : -APART, 0, this.stacked ? APART : 0);
-    this.seas[1].position.set(this.stacked ? 0 : APART, 0, this.stacked ? -APART : 0);
+    const band = bandFor(aspect);
+    this.seas[0].position.set(this.stacked ? 0 : -APART, 0, this.stacked ? APART : -band);
+    this.seas[1].position.set(this.stacked ? 0 : APART, 0, this.stacked ? -APART : -band);
   }
   protected subject(aspect: number): TableSubject {
     return aspect < 0.95
       ? { half: 3.1, halfZ: 6.1, height: 0.8, lookY: 0, tilt: 1.12 }
-      : { half: 6.1, halfZ: 3.1, height: 0.8, lookY: 0, tilt: 0.9 };
+      : { half: 6.1, halfZ: 3.1 + bandFor(aspect), height: 0.8, lookY: 0, tilt: 0.9 };
   }
   /** Centre of a square in the scene. */
   private at(point: number) {
@@ -183,15 +366,130 @@ export class SeaBattleView extends TableView<State> {
   protected spots(): Spot[] {
     return Array.from({ length: CELLS * 2 }, (_, point) => ({ ...this.at(point), y: 0, r: CELL * 0.62, point }));
   }
-  /** A ship of grey blocks lying over its squares. */
+  /**
+   * A hull seen from above: a flat transom at the stern (-x), the sides running forward and drawing in to a pointed bow
+   * (+x), extruded up to its deck. The sides carry the plating picture from the waterline to the deck edge, the deck
+   * its own picture laid flat (`deckScale` units to a picture).
+   */
+  private hull(length: number, beam: number, high: number, deck: T.Material, deckScale = 1) {
+    const s = new T.Shape(),
+      half = beam / 2,
+      bow = Math.min(length * 0.3, 0.45);
+    s.moveTo(-length / 2, -half * 0.86);
+    s.lineTo(length / 2 - bow, -half);
+    s.quadraticCurveTo(length / 2 - bow * 0.2, -half * 0.75, length / 2, 0);
+    s.quadraticCurveTo(length / 2 - bow * 0.2, half * 0.75, length / 2 - bow, half);
+    s.lineTo(-length / 2, half * 0.86);
+    s.closePath();
+    const g = new T.ExtrudeGeometry(s, { depth: high, bevelEnabled: false, curveSegments: 10 });
+    g.rotateX(-Math.PI / 2);
+    // The sides: across the picture along the ship, up it from the waterline to the deck. The deck: its own units.
+    const uv = g.getAttribute("uv"),
+      at = g.getAttribute("position"),
+      [caps, sides] = g.groups;
+    for (let i = sides.start; i < sides.start + sides.count; i++) uv.setXY(i, (at.getX(i) + length / 2) * 1.6, at.getY(i) / high);
+    for (let i = caps.start; i < caps.start + caps.count; i++) uv.setXY(i, at.getX(i) / deckScale + 0.5, -at.getZ(i) / deckScale + 0.5);
+    const mesh = new T.Mesh(this.own(g), [deck, this.kit.hull]);
+    mesh.castShadow = mesh.receiveShadow = true;
+    return mesh;
+  }
+  /** A gun turret: a rounded housing with `barrels` guns, facing +x (or -x when `aft`). */
+  private turret(g: T.Group, x: number, y: number, size: number, barrels: number, aft = false) {
+    const t = new T.Group();
+    this.add(block(size, size * 0.42, size * 0.8, size * 0.12), this.kit.panels, 0, size * 0.21, 0, t);
+    for (let k = 0; k < barrels; k++) {
+      const gun = this.add(new T.CylinderGeometry(size * 0.06, size * 0.07, size * 1.1, 8).rotateZ(-Math.PI / 2), this.kit.gun, size * 0.9, size * 0.24, (k - (barrels - 1) / 2) * size * 0.24, t);
+      gun.castShadow = true;
+    }
+    t.position.set(x, y, 0);
+    if (aft) t.rotation.y = Math.PI;
+    g.add(t);
+  }
+  /** A mast with a cross-yard and a little radar. */
+  private mast(g: T.Group, x: number, y: number, tall: number) {
+    this.add(new T.CylinderGeometry(0.008, 0.012, tall, 6), this.kit.gun, x, y + tall / 2, 0, g);
+    this.add(new T.BoxGeometry(0.012, 0.008, tall * 0.5), this.kit.gun, x, y + tall * 0.75, 0, g);
+    this.add(block(0.05, 0.012, 0.012, 0.004), this.kit.white, x, y + tall + 0.006, 0, g);
+  }
+  /**
+   * A ship lying over its squares, modelled after its kind (the user asked for these five): a carrier with its flight
+   * deck, island and aircraft; a battleship with three triple turrets, a tower bridge and two funnels on a teak deck;
+   * a destroyer with one gun, a bridge, a funnel and a launcher; a submarine low in the water with its sail, planes and
+   * rudder; a patrol boat with a cabin and a gun at the bow. It points along +x before it is turned to lie down a column.
+   */
   private build(ship: Ship) {
     const g = new T.Group(),
       across = ship.cells.length > 1 && ship.cells[1] - ship.cells[0] === 1,
-      length = ship.cells.length * CELL - 0.12;
-    this.add(block(length, 0.16, 0.3), this.steel, 0, 0.0, 0, g);
-    this.add(block(Math.min(length * 0.4, 0.7), 0.14, 0.2), this.steel, 0, 0.14, 0, g);
-    this.add(new T.CylinderGeometry(0.05, 0.05, 0.2, 8), this.steel, length * 0.12, 0.3, 0, g);
-    if (!across) g.rotation.y = Math.PI / 2;
+      length = ship.cells.length * CELL - 0.12,
+      kind: ShipKind = SHIP_KINDS[Math.max(0, FLEET.findIndex(([name]) => name === ship.name))] ?? "destroyer",
+      k = this.kit;
+    if (kind === "carrier") {
+      g.add(this.hull(length - 0.1, 0.34, 0.1, k.deck));
+      // The flight deck overhangs the hull; its whole marking lies across it.
+      const deck = this.add(block(length, 0.03, 0.46, 0.012), [k.hull, k.hull, k.flight, k.hull, k.hull, k.hull], 0.04, 0.115, -0.02, g);
+      deck.receiveShadow = true;
+      this.add(block(0.34, 0.15, 0.07, 0.015), k.panels, length * 0.08, 0.205, 0.17, g);
+      this.add(block(0.14, 0.05, 0.06, 0.01), k.panels, length * 0.06, 0.305, 0.17, g);
+      this.mast(g, length * 0.06, 0.33, 0.14);
+      // Aircraft parked toward the stern: a fuselage, swept wings and a tail.
+      for (const [x, z] of [[-0.75, -0.12], [-0.6, -0.04], [-0.9, 0.06], [0.55, -0.12]]) {
+        const plane = new T.Group();
+        this.add(new T.CapsuleGeometry(0.018, 0.12, 3, 6).rotateZ(Math.PI / 2), k.panels, 0, 0, 0, plane);
+        this.add(new T.BoxGeometry(0.06, 0.006, 0.14), k.panels, -0.01, 0, 0, plane);
+        this.add(new T.BoxGeometry(0.025, 0.004, 0.06), k.panels, -0.07, 0.004, 0, plane);
+        this.add(new T.BoxGeometry(0.03, 0.04, 0.005), k.panels, -0.075, 0.022, 0, plane);
+        plane.position.set(x, 0.148, z);
+        plane.rotation.y = 0.5;
+        g.add(plane);
+      }
+    } else if (kind === "battleship") {
+      g.add(this.hull(length, 0.32, 0.1, k.teak, 0.5));
+      this.turret(g, length * 0.3, 0.1, 0.17, 3);
+      this.turret(g, length * 0.17, 0.15, 0.16, 3);
+      this.add(block(0.08, 0.05, 0.12, 0.02), k.panels, length * 0.17, 0.125, 0, g);
+      this.turret(g, -length * 0.3, 0.1, 0.17, 3, true);
+      // The tower bridge in steps, its mast, and two funnels with black caps.
+      this.add(block(0.4, 0.08, 0.2, 0.02), k.panels, 0, 0.14, 0, g);
+      this.add(block(0.2, 0.1, 0.13, 0.02), k.panels, 0.05, 0.23, 0, g);
+      this.add(block(0.1, 0.07, 0.09, 0.015), k.panels, 0.06, 0.31, 0, g);
+      this.mast(g, 0.06, 0.345, 0.16);
+      for (const x of [-0.12, -0.25]) {
+        this.add(new T.CylinderGeometry(0.038, 0.045, 0.15, 12), k.panels, x, 0.25, 0, g);
+        this.add(new T.CylinderGeometry(0.04, 0.04, 0.025, 12), k.gun, x, 0.33, 0, g);
+      }
+    } else if (kind === "destroyer") {
+      g.add(this.hull(length, 0.24, 0.09, k.deck));
+      this.turret(g, length * 0.3, 0.09, 0.12, 1);
+      this.add(block(0.22, 0.1, 0.16, 0.02), k.panels, length * 0.12, 0.14, 0, g);
+      this.add(block(0.12, 0.05, 0.12, 0.015), k.panels, length * 0.12, 0.215, 0, g);
+      this.mast(g, length * 0.02, 0.19, 0.2);
+      this.add(new T.CylinderGeometry(0.035, 0.04, 0.12, 10), k.panels, -0.12, 0.17, 0, g);
+      this.add(new T.CylinderGeometry(0.037, 0.037, 0.02, 10), k.gun, -0.12, 0.235, 0, g);
+      // A missile launcher abaft the funnel, and a deckhouse at the stern.
+      this.add(block(0.12, 0.06, 0.12, 0.015), k.gun, -length * 0.22, 0.12, 0, g);
+      this.add(block(0.14, 0.06, 0.15, 0.015), k.panels, -length * 0.38, 0.12, 0, g);
+    } else if (kind === "submarine") {
+      // Low in the water: a rounded body, its sail with planes, and a cross of fins at the stern.
+      const body = this.add(new T.CapsuleGeometry(0.1, length - 0.22, 6, 18).rotateZ(Math.PI / 2), k.sub, 0, 0.06, 0, g);
+      body.scale.set(1, 0.75, 1);
+      this.add(block(0.22, 0.14, 0.07, 0.03), k.sub, length * 0.15, 0.17, 0, g);
+      this.add(new T.BoxGeometry(0.06, 0.008, 0.2), k.sub, length * 0.17, 0.2, 0, g);
+      for (const r of [0, Math.PI / 2]) this.add(new T.BoxGeometry(0.1, 0.008, 0.2), k.sub, -length / 2 + 0.06, 0.07, 0, g).rotation.x = r;
+      this.add(new T.CylinderGeometry(0.006, 0.006, 0.08, 6), k.gun, length * 0.13, 0.27, 0, g);
+    } else {
+      g.add(this.hull(length, 0.2, 0.08, k.deck));
+      this.add(block(0.26, 0.08, 0.14, 0.02), k.panels, 0.02, 0.12, 0, g);
+      this.add(new T.CylinderGeometry(0.02, 0.026, 0.03, 8), k.gun, length * 0.32, 0.095, 0, g);
+      this.add(new T.CylinderGeometry(0.008, 0.008, 0.1, 6).rotateZ(-Math.PI / 2), k.gun, length * 0.32 + 0.05, 0.11, 0, g);
+      this.mast(g, -0.06, 0.16, 0.12);
+    }
+    g.traverse((part) => {
+      if (part instanceof T.Mesh) {
+        part.castShadow = true;
+        part.userData.paint = part.material;
+      }
+    });
+    if (!across) g.rotation.y = -Math.PI / 2;
     g.userData.middle = (ship.cells[0] + ship.cells[ship.cells.length - 1]) / 2;
     g.userData.cells = ship.cells;
     return g;
@@ -221,7 +519,7 @@ export class SeaBattleView extends TableView<State> {
         // Hidden until it goes down, unless its side plays with open charts or the battle is over.
         g.visible = this.open[side] || down || state.winner !== null;
         g.traverse((part) => {
-          if (part instanceof T.Mesh) part.material = down ? this.wreck : this.steel;
+          if (part instanceof T.Mesh) part.material = down ? this.wreck : part.userData.paint;
         });
       }),
     );
@@ -296,5 +594,5 @@ export class SeaBattleView extends TableView<State> {
 export const seaPoints = () =>
   Array.from({ length: CELLS * 2 }, (_, point) => ({
     x: (point < CELLS ? -APART : APART) + (((point % CELLS) % SIZE) - 4.5) * CELL,
-    z: (Math.floor((point % CELLS) / SIZE) - 4.5) * CELL,
+    z: (Math.floor((point % CELLS) / SIZE) - 4.5) * CELL - BAND,
   }));

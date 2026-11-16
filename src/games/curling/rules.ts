@@ -45,7 +45,8 @@ export const ARENA: Arena = { halfX: 7.2, halfZ: 1.75, cushions: false, pockets:
 /** How fast a stone leaves the hack for a strength of 1–20, and how much it curls for each turn (none, clockwise, counter). */
 /** It is set so that the distance it slides grows evenly with the strength: 11 to 15 stop in the house, harder clears it. */
 export const speedOf = (power: number) => Math.sqrt(2 * 0.42 * (3 + power * 0.62));
-export const CURL = [0, -0.05, 0.05];
+/** A stone turned clockwise (seen from above) curls to the thrower's right (+z), as on real ice; counter-clockwise to the left. */
+export const CURL = [0, 0.05, -0.05];
 export interface State {
   /** Stones on the ice this end (id: side × 4 + k). */
   stones: Disc[];
@@ -207,7 +208,7 @@ export const curling: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s, p) => total(s, p) - total(s, 1 - p),
-  hint: (s) => (s.turn === 0 ? `${s.end}/${s.ends}엔드 · 스톤 ${(s.done ? 0 : s.thrown[0]) + 1}/${STONES} — 스톤을 당겼다 놓고, 가는 동안 누르고 있으면 스위핑!` : `${s.end}/${s.ends}엔드 · 컴퓨터 차례`),
+  hint: (s) => (s.turn === 0 ? `${s.end}/${s.ends}엔드 · 스톤 ${(s.done ? 0 : s.thrown[0]) + 1}/${STONES} — 스톤을 당겼다 놓고, 가는 동안 연타하면 스위핑!` : `${s.end}/${s.ends}엔드 · 컴퓨터 차례`),
   tally: (s) => [0, 1].map((p) => `${total(s, p)}점`) as [string, string],
   reason: (s) => (s.winner === "draw" ? `${s.ends}엔드를 마치고 같은 점수입니다.` : `${s.ends}엔드를 마치고 ${total(s, 0)} 대 ${total(s, 1)}입니다.`),
 };

@@ -19,7 +19,7 @@ export const riverConfig: PointConfig<State> = {
   colors: RIVER_COLORS,
   // The keyboard walks the company and then the boat.
   keyPoints: (state) => [...state.actors.map((_, i) => ({ x: i * 1.5, z: 0 })), { x: state.actors.length * 1.5, z: 0 }],
-  contact: (sound) => sound.splash(),
+  contact: (sound) => sound.plop(),
   puzzle: { hint, hintText: "힌트 — 화살표가 가리키는 이를 누르세요. 배를 가리키면 배를 띄웁니다." },
   stagesFirst: true,
   stages: STAGES.map(([name, note], i) => ({ value: String(i + 1), name, note, art: stageArt(i + 1) })),

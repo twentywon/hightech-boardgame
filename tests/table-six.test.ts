@@ -164,11 +164,11 @@ describe("curling", () => {
       const [stone] = cur.rest(cur.slide([], 0, 0, power, 0), 0);
       expect(Math.hypot(stone.x - cur.TEE, stone.z) - cur.R).toBeLessThan(cur.HOUSE);
     }
-    // A turn makes it curl one way or the other.
-    const [left] = cur.rest(cur.slide([], 0, 0, 13, 1), 0),
-      [right] = cur.rest(cur.slide([], 0, 0, 13, 2), 0);
-    expect(left.z).toBeLessThan(-0.2);
-    expect(right.z).toBeGreaterThan(0.2);
+    // A turn makes it curl one way or the other: clockwise to the thrower's right (+z), as on real ice.
+    const [clockwise] = cur.rest(cur.slide([], 0, 0, 13, 1), 0),
+      [counter] = cur.rest(cur.slide([], 0, 0, 13, 2), 0);
+    expect(clockwise.z).toBeGreaterThan(0.2);
+    expect(counter.z).toBeLessThan(-0.2);
   });
   test("a stone swept slides a little farther and curls less; a throw carries its sweeping and is slid again the same", () => {
     const plain = cur.rest(cur.slide([], 0, 0, 11, 1), 0)[0],

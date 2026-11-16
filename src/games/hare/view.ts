@@ -1,5 +1,5 @@
 import * as T from "three";
-import { wood, planks, block } from "../../engine/scene-utils";
+import { wood, planks, block, furry } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { LINKS, PLACES, type State } from "./rules";
@@ -83,8 +83,9 @@ export class HareView extends TableView<State> {
   /** A sitting hound, facing +x (toward the hare's end). */
   private hound() {
     const g = new T.Group(),
-      coat = this.standard({ color: HARE_COLORS[0], roughness: 0.7 }),
-      dark = this.standard({ color: "#3d2414", roughness: 0.7 }),
+      // A coat with a pile of fur (the user asked).
+      coat = this.own(furry({ color: HARE_COLORS[0], roughness: 0.85 }, 0.8, 3, 2, (r) => this.own(r))),
+      dark = this.own(furry({ color: "#3d2414", roughness: 0.85 }, 0.8, 3, 2, (r) => this.own(r))),
       part = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {
         const mesh = this.add(geometry, material, x, y, z, g);
         mesh.scale.set(sx, sy, sz);
@@ -107,7 +108,7 @@ export class HareView extends TableView<State> {
   /** A hare on its haunches, facing -x (toward the hounds). */
   private rabbit() {
     const g = new T.Group(),
-      fur = this.standard({ color: HARE_COLORS[1], roughness: 0.9 }),
+      fur = this.own(furry({ color: HARE_COLORS[1], roughness: 0.9 }, 1, 3, 2, (r) => this.own(r))),
       pink = this.standard({ color: "#e9a9a4" }),
       dark = this.standard({ color: "#2a2320" }),
       part = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {

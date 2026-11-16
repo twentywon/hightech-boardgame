@@ -237,15 +237,15 @@ describe("Sea battle", () => {
   });
   it("fires at the other side's waters only, once a square, and reports hits and sinkings", () => {
     let s = B.createBattle(seededRandom(2));
-    const destroyer = s.fleets[1][4];
+    const patrol = s.fleets[1][4];
     expect(B.moves(s)).toHaveLength(100);
     expect(B.play(s, to(5))).toBeNull();
-    s = B.play(s, to(100 + destroyer.cells[0]))!;
+    s = B.play(s, to(100 + patrol.cells[0]))!;
     // A hit earns another shot: the turn stays with side 0.
-    expect([s.last, s.turn]).toEqual([{ point: 100 + destroyer.cells[0], hit: true, sunk: null }, 0]);
-    expect(B.play(s, to(100 + destroyer.cells[0]))).toBeNull();
-    s = B.play(s, to(100 + destroyer.cells[1]))!;
-    expect([s.last!.sunk, B.afloat(s, 1), B.afloat(s, 0), s.turn]).toEqual(["구축함", 4, 5, 0]);
+    expect([s.last, s.turn]).toEqual([{ point: 100 + patrol.cells[0], hit: true, sunk: null }, 0]);
+    expect(B.play(s, to(100 + patrol.cells[0]))).toBeNull();
+    s = B.play(s, to(100 + patrol.cells[1]))!;
+    expect([s.last!.sunk, B.afloat(s, 1), B.afloat(s, 0), s.turn]).toEqual(["고속정", 4, 5, 0]);
     // A miss passes the turn; side 1 then misses somewhere in side 0's waters and passes it back.
     const clear = Array.from({ length: 100 }, (_, c) => c).find((c) => !s.fleets[1].some((ship) => ship.cells.includes(c)))!;
     s = B.play(s, to(100 + clear))!;
@@ -254,7 +254,7 @@ describe("Sea battle", () => {
     s = B.play(s, to(empty))!;
     expect([s.last, s.turn]).toEqual([{ point: empty, hit: false, sunk: null }, 0]);
     // What is left afloat is told by name, never by place.
-    expect(B.seaBattle.tally(s)[1]).toBe("남은 배 4척 — 항공모함(5) · 전함(4) · 순양함(3) · 잠수함(3)");
+    expect(B.seaBattle.tally(s)[1]).toBe("남은 배 4척 — 항공모함(5) · 전함(4) · 구축함(3) · 잠수함(3)");
   });
   it("ends when a whole fleet is down", () => {
     let s = B.createBattle(seededRandom(3));

@@ -2732,9 +2732,24 @@ html[data-game="spider"] .game-layout.hud .table-layout > aside.game-sidebar { b
 /* Each line only as wide as its words, so that a score stands next to its name and not out over the table. */
 .game-layout.hud aside.game-sidebar { align-items:flex-start; }
 .game-layout.hud aside.game-sidebar .yut-sides li, .game-layout.hud aside.game-sidebar .player { width:max-content;max-width:100%; }
-/* Battleship is the exception: its two boards reach the lower left, so its fleets stay at the upper left. */
-html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { top:54px !important;bottom:auto; }
-@media (orientation: landscape) and (max-height: 540px) { html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { top:40px !important; } }
+/* Battleship's fleets stand at the lower left like the others (the user asked), in the band the charts leave free
+   below them, each ship drawn as its picture: mine in blue, the computer's in red, a sunk one grey and listing. */
+html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { bottom:34px;max-width:min(560px, 72%); }
+html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet { max-width:none;flex-wrap:nowrap;gap:2px 9px !important;align-items:flex-end; }
+html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet .ship svg { height:19px;width:calc(var(--cells) * 27px);display:block;fill:#9fd0ff;overflow:visible;filter:drop-shadow(0 1px 1.5px #000c); }
+html[data-game="battleship"] .game-layout.hud aside.game-sidebar #pg-side-1 .fleet .ship svg { fill:#ffa592; }
+html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet .ship.sunk svg { fill:#c9c5bd;opacity:.55;transform:rotate(7deg) translateY(2px); }
+html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet .ship .strike { stroke:#ff3b2b;stroke-width:1.6;fill:none; }
+html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet .ship.waiting svg { opacity:.35; }
+@media (orientation: landscape) and (max-height: 540px) {
+  html[data-game="battleship"] .game-layout.hud .table-layout > aside.game-sidebar { bottom:22px; }
+  html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet .ship svg { height:12px;width:calc(var(--cells) * 17px); }
+  html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet { gap:2px 6px !important; }
+  /* On a phone each side is one line: its colour and its ships (the name stays for readers). */
+  html[data-game="battleship"] .game-layout.hud aside.game-sidebar li:has(.fleet) { grid-template-columns:auto auto;gap:0 6px !important; }
+  html[data-game="battleship"] .game-layout.hud aside.game-sidebar li:has(.fleet) > b { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
+  html[data-game="battleship"] .game-layout.hud aside.game-sidebar li:has(.fleet) > span { grid-column:auto; }
+}
 /* No status line over these tables (the user asked); #turn stays in the page as the live region. */
 :is(html[data-game="meat-grill"], html[data-game="minesweeper"], html[data-game="lights-on"], html[data-game="water-pouring"], html[data-game="marble-shot"], html[data-game="brick-breaker"], html[data-game="2048"], html[data-game="falling-blocks"], html[data-game="fruit-merge"], html[data-game="snake"], html[data-game="whack-a-mole"], html[data-game="claw-machine"]) .game-layout .board-area > .board-hint { display:none !important; }
 /* Every letter on a game screen is set in gomoku's face (the user asked): the status line, the lettering over
@@ -2796,7 +2811,7 @@ html[data-capture] .game-layout.hud .table-layout > aside.game-sidebar { display
 @keyframes gs-print { from { clip-path:inset(0 0 100% 0); } to { clip-path:inset(0 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { .gs-receipt { animation:none; } }
 
-/* Curling: the button held to sweep while a stone of mine runs (a press anywhere on the ice and Space do the same). */
+/* Curling: the button tapped again and again to sweep while a stone of mine runs (a tap on the ice and Space do the same). */
 .cu-sweep { position:absolute;left:50%;bottom:11%;translate:-50% 0;z-index:5;padding:12px 30px 10px;border-radius:999px;border:3px solid #fff;background:#2f62c0;color:#fff;font:inherit;font-weight:900;font-size:clamp(17px, 2.8vmin, 24px);line-height:1.15;box-shadow:0 4px 14px rgba(0,0,0,.35);touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer; }
 .cu-sweep small { display:block;font-size:.58em;font-weight:700;opacity:.88; }
 .cu-sweep[aria-pressed="true"] { background:#1d3f86;scale:.95; }

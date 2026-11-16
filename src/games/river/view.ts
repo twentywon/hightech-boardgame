@@ -1,4 +1,5 @@
 import * as T from "three";
+import { capable, furry, wood } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { GO, type State } from "./rules";
@@ -80,6 +81,8 @@ export class RiverView extends TableView<State> {
   private alarms: T.Sprite[] = [];
   private shapes = new Map<Shape, T.BufferGeometry>();
   private paints = new Map<string, T.MeshStandardMaterial>();
+  /** Whether the parts being added are an animal's coat, which is furry. */
+  private furring = false;
   private clock = 0;
   private own_ = <R extends { dispose(): void }>(r: R) => this.own(r);
   constructor(host: HTMLElement, quality: "high" | "low") {
@@ -151,6 +154,129 @@ export class RiverView extends TableView<State> {
     texture.colorSpace = T.SRGBColorSpace;
     texture.wrapS = texture.wrapT = T.RepeatWrapping;
     texture.anisotropy = 4;
+    return texture;
+  }
+  /** Bark: deep furrows running up the trunk between paler ridges, with a few knots; light, so that each tree's colour shows through. */
+  private bark() {
+    const random = sequence(41);
+    const texture = this.painted(256, 512, (pen) => {
+      pen.fillStyle = "#d8cbb8";
+      pen.fillRect(0, 0, 256, 512);
+      pen.lineCap = "round";
+      for (let i = 0; i < 70; i++) {
+        // A furrow wanders up the trunk, darker in its depth; drawn again past the sides so that the trunk has no seam.
+        const x0 = random() * 256,
+          wide = 2 + random() * 5,
+          dark = 60 + Math.floor(random() * 50);
+        pen.strokeStyle = `rgba(${dark},${dark - 14},${dark - 26},${0.35 + random() * 0.35})`;
+        pen.lineWidth = wide;
+        for (const dx of [-256, 0, 256]) {
+          pen.beginPath();
+          let x = x0 + dx;
+          for (let y = -10; y <= 522; y += 16) {
+            x += (random() - 0.5) * 6;
+            pen.lineTo(x, y);
+          }
+          pen.stroke();
+        }
+      }
+      for (let i = 0; i < 900; i++) {
+        pen.fillStyle = random() < 0.5 ? "rgba(255,248,235,0.18)" : "rgba(60,44,30,0.16)";
+        pen.fillRect(random() * 256, random() * 512, 1 + random() * 3, 3 + random() * 9);
+      }
+      for (let i = 0; i < 4; i++) {
+        const x = 30 + random() * 196,
+          y = 40 + random() * 430;
+        pen.fillStyle = "rgba(70,50,32,0.55)";
+        pen.beginPath();
+        pen.ellipse(x, y, 7, 11, 0, 0, Math.PI * 2);
+        pen.fill();
+        pen.strokeStyle = "rgba(240,225,200,0.35)";
+        pen.lineWidth = 2;
+        pen.stroke();
+      }
+    });
+    texture.repeat.set(2, 1.5);
+    return texture;
+  }
+  /**
+   * The planks of a clinker-built boat: strakes running fore and aft, each overlapping the one below with a dark lap,
+   * the grain along them and a row of nails at each lap; light, so that the boat's paint shows through.
+   */
+  private strakes() {
+    const random = sequence(57);
+    const texture = this.painted(512, 256, (pen) => {
+      const STRAKES = 7,
+        high = 256 / STRAKES;
+      for (let k = 0; k < STRAKES; k++) {
+        const tone = 205 + Math.floor(random() * 40);
+        pen.fillStyle = `rgb(${tone},${tone - 8},${tone - 22})`;
+        pen.fillRect(0, k * high, 512, high);
+        // The grain, long and wavering along the strake.
+        for (let g = 0; g < 26; g++) {
+          const y = k * high + random() * high,
+            shade = random() < 0.5 ? "rgba(110,80,50,0.18)" : "rgba(255,245,225,0.2)";
+          pen.strokeStyle = shade;
+          pen.lineWidth = 0.6 + random() * 1.4;
+          pen.beginPath();
+          for (let x = -4; x <= 516; x += 32) pen.lineTo(x, y + Math.sin(x / 60 + g) * 1.6);
+          pen.stroke();
+        }
+        // The lap: a shadow under the strake above, and a pale edge.
+        const lap = pen.createLinearGradient(0, k * high, 0, k * high + 7);
+        lap.addColorStop(0, "rgba(45,28,16,0.75)");
+        lap.addColorStop(1, "rgba(45,28,16,0)");
+        pen.fillStyle = lap;
+        pen.fillRect(0, k * high, 512, 7);
+        pen.fillStyle = "rgba(255,240,215,0.45)";
+        pen.fillRect(0, (k + 1) * high - 2, 512, 2);
+        pen.fillStyle = "rgba(40,36,34,0.7)";
+        for (let x = 10; x < 512; x += 34) pen.fillRect(x, k * high + 3, 2.5, 2.5);
+      }
+    });
+    texture.repeat.set(3, 1);
+    return texture;
+  }
+  /**
+   * Small waves for the water's surface, as a normal map that tiles: a sum of crossing swells and ripples whose
+   * slopes are written as colours.
+   */
+  private waveMap() {
+    const size = 256,
+      canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const pen = canvas.getContext("2d")!,
+      image = pen.createImageData(size, size),
+      waves = [
+        [3, 1, 1.0, 0.3],
+        [-2, 3, 0.8, 1.7],
+        [5, -2, 0.45, 2.4],
+        [-7, -4, 0.3, 0.9],
+        [9, 6, 0.18, 4.1],
+        [-11, 9, 0.12, 5.3],
+      ];
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        let dx = 0,
+          dy = 0;
+        for (const [kx, ky, amp, phase] of waves) {
+          const angle = ((kx * x + ky * y) / size) * Math.PI * 2 + phase,
+            slope = Math.cos(angle) * amp;
+          dx += slope * kx * 0.05;
+          dy += slope * ky * 0.05;
+        }
+        const nx = -dx,
+          ny = -dy,
+          length = Math.hypot(nx, ny, 1),
+          i = (y * size + x) * 4;
+        image.data[i] = Math.round(((nx / length) * 0.5 + 0.5) * 255);
+        image.data[i + 1] = Math.round(((ny / length) * 0.5 + 0.5) * 255);
+        image.data[i + 2] = Math.round(((1 / length) * 0.5 + 0.5) * 255);
+        image.data[i + 3] = 255;
+      }
+    pen.putImageData(image, 0, 0);
+    const texture = this.own(new T.CanvasTexture(canvas));
+    texture.wrapS = texture.wrapT = T.RepeatWrapping;
     return texture;
   }
   /** Many copies of one solid, each with its place, size, turn and colour. */
@@ -236,6 +362,34 @@ export class RiverView extends TableView<State> {
             pen.stroke();
           }
         }
+        // The light's net on the river bed, seen through the shallows and fainter in the deep: crossing wavering lines.
+        for (let i = 0; i < 46; i++) {
+          const y0 = random() * 512,
+            tilt = (random() - 0.5) * 0.8;
+          pen.lineWidth = 0.8 + random() * 1.1;
+          for (const dy of [-512, 0, 512]) {
+            pen.beginPath();
+            for (let x = 0; x <= 256; x += 6) {
+              const deep = 1 - Math.abs(x - 128) / 128;
+              pen.strokeStyle = `rgba(220,250,255,${0.16 * (1 - deep * 0.7)})`;
+              pen.lineTo(x, y0 + dy + x * tilt + Math.sin(x / 9 + i) * 3 + Math.sin(x / 23 + i * 2) * 5);
+            }
+            pen.stroke();
+          }
+        }
+        // Slow swirls in the deep middle, where the current is strongest.
+        for (let i = 0; i < 26; i++) {
+          const x = 70 + random() * 116,
+            y = random() * 512,
+            r = 6 + random() * 14;
+          pen.strokeStyle = `rgba(15,60,120,${0.1 + random() * 0.1})`;
+          pen.lineWidth = 1.2;
+          for (const dy of [-512, 0, 512]) {
+            pen.beginPath();
+            pen.ellipse(x, y + dy, r, r * 2.4, 0, 0.3, Math.PI * 1.6);
+            pen.stroke();
+          }
+        }
         // Foam where the water meets the sand: a wavering line that joins end to end.
         for (const side of [0, 1]) {
           pen.strokeStyle = "rgba(255,255,255,0.8)";
@@ -266,7 +420,21 @@ export class RiverView extends TableView<State> {
     current.wrapS = sparkle.wrapS = T.ClampToEdgeWrapping;
     current.repeat.set(1, 4.5);
     sparkle.repeat.set(1, 7);
-    const river = this.add(new T.PlaneGeometry(5.2, 68), this.standard({ map: current, roughness: 0.3 }), 0, WATER, -12),
+    // Where a graphics card draws, small waves ruffle the surface too, running with the current at two sizes.
+    const surface: T.MeshStandardMaterialParameters = { map: current, roughness: 0.22, metalness: 0.05 };
+    if (capable()) {
+      const fine = this.waveMap(),
+        broad = this.waveMap();
+      fine.repeat.set(3, 36);
+      broad.repeat.set(1.2, 14);
+      Object.assign(surface, { normalMap: fine, normalScale: new T.Vector2(0.55, 0.55) });
+      this.flows.push({ texture: fine, speed: 0.11 }, { texture: broad, speed: 0.05 });
+      // The broad swells shade a faint layer laid over the first.
+      const swell = this.add(new T.PlaneGeometry(5.2, 68), this.own(new T.MeshStandardMaterial({ color: "#2f7fc6", transparent: true, opacity: 0.14, roughness: 0.1, normalMap: broad, normalScale: new T.Vector2(0.9, 0.9), depthWrite: false })), 0, WATER + 0.006, -12);
+      swell.rotation.x = -Math.PI / 2;
+      swell.castShadow = false;
+    }
+    const river = this.add(new T.PlaneGeometry(5.2, 68), this.standard(surface), 0, WATER, -12),
       glints = this.add(new T.PlaneGeometry(5.2, 68), this.own(new T.MeshBasicMaterial({ map: sparkle, transparent: true, opacity: 0.5, depthWrite: false })), 0, WATER + 0.012, -12);
     river.rotation.x = glints.rotation.x = -Math.PI / 2;
     river.castShadow = glints.castShadow = glints.receiveShadow = false;
@@ -359,7 +527,8 @@ export class RiverView extends TableView<State> {
         if (i % 3 === 0) blooms.push({ at: [side * x, WATER + 0.08, z], size: [0.2, 0.13, 0.2], color: i % 2 ? "#ff9fc0" : "#ffffff" });
       }
     }
-    this.scatter(new T.CylinderGeometry(0.4, 0.5, 1, 9), white, trunks);
+    // Trunks in bark (each tree's own brown laid over it).
+    this.scatter(new T.CylinderGeometry(0.4, 0.5, 1, 12), this.standard({ map: this.bark(), roughness: 0.95 }), trunks);
     this.scatter(new T.ConeGeometry(0.5, 1, 12), white, cones);
     this.scatter(ball, white, leaves);
     this.scatter(new T.DodecahedronGeometry(0.5, 0), this.standard({ color: "#ffffff", roughness: 1, flatShading: true }), stones);
@@ -373,8 +542,8 @@ export class RiverView extends TableView<State> {
   }
   /** A short landing of planks on posts at either bank. */
   private jetties() {
-    const plank = this.standard({ color: "#b98a55", roughness: 0.85 }),
-      post = this.standard({ color: "#7a5632", roughness: 0.9 });
+    const plank = this.standard({ map: this.own(wood(false)), color: "#e0b98a", roughness: 0.85 }),
+      post = this.standard({ map: this.own(wood(true)), color: "#c9a27a", roughness: 0.9 });
     for (const side of [-1, 1]) {
       for (let i = 0; i < 5; i++) this.add(new T.BoxGeometry(0.92, 0.07, 0.36), plank, side * 2.93, 0.03, (i - 2) * 0.4).rotation.y = ((i * 7) % 3) * 0.012 - 0.012;
       for (const z of [-1.02, 1.02])
@@ -386,10 +555,13 @@ export class RiverView extends TableView<State> {
   }
   /** The boat: a pointed hull with an inside, a rail round it, two thwarts and a pair of oars that row. */
   private launch() {
-    const outside = this.standard({ color: "#8a5a34", roughness: 0.7 }),
-      inside = this.standard({ color: "#c99b63", roughness: 0.85, side: T.BackSide }),
-      boards = this.standard({ color: "#d6ab72", roughness: 0.85 }),
-      rail = this.standard({ color: "#6d4526", roughness: 0.6 }),
+    // Clinker planking outside and in, a floor of boards with their grain, and a rail of darker wood (the user asked for the boat's texture).
+    const strakes = this.strakes(),
+      outside = this.standard({ map: strakes, color: "#9a643a", roughness: 0.7 }),
+      inside = this.standard({ map: strakes, color: "#d9a86e", roughness: 0.85, side: T.BackSide }),
+      grain = this.own(wood(false)),
+      boards = this.standard({ map: grain, color: "#ecc48e", roughness: 0.85 }),
+      rail = this.standard({ map: this.own(wood(true)), color: "#a8744a", roughness: 0.6 }),
       shell = new T.SphereGeometry(1, 40, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2),
       points = shell.getAttribute("position");
     // The half ball is drawn out to a point fore and aft.
@@ -484,16 +656,22 @@ export class RiverView extends TableView<State> {
     return geometry;
   }
   private paint(color: string) {
-    let material = this.paints.get(color);
+    const key = this.furring ? `fur ${color}` : color;
+    let material = this.paints.get(key);
     if (!material) {
-      material = this.standard({ color, roughness: 0.72 });
-      this.paints.set(color, material);
+      // An animal's coat has a pile of fur (the user asked); people and things are plain.
+      material = this.furring ? this.own(furry({ color, roughness: 0.9 }, 0.8, 3, 2, (r) => this.own(r))) : this.standard({ color, roughness: 0.72 });
+      this.paints.set(key, material);
     }
     return material;
   }
   /** A solid of a colour added to a figure: its size, its place and its turn. The solids and colours are shared by every figure. */
   private part(to: T.Object3D, shape: Shape, color: string, size: Triple, at: Triple, turn: Triple = [0, 0, 0], shadow = true) {
+    // An animal's small features (eyes, nose, stripes: the parts that cast no shadow) stay smooth.
+    const furring = this.furring;
+    this.furring &&= shadow;
     const mesh = new T.Mesh(this.geometry(shape), this.paint(color));
+    this.furring = furring;
     mesh.scale.set(...size);
     mesh.position.set(...at);
     mesh.rotation.set(...turn);
@@ -567,6 +745,7 @@ export class RiverView extends TableView<State> {
       head = o.head ?? coat,
       legs = o.legs ?? coat,
       snout = o.snout ?? 0.4;
+    this.furring = true;
     this.part(g, "ball", coat, [0.74, 0.64, 1.25], [0, 0.74, 0]);
     this.part(g, "ball", light, [0.6, 0.4, 1.0], [0, 0.6, 0.02]);
     this.part(g, "ball", light, [0.5, 0.52, 0.45], [0, 0.78, 0.44]);
@@ -594,7 +773,11 @@ export class RiverView extends TableView<State> {
         this.part(g, "cone", o.tip && o.tail === "bush" && o.inner ? o.inner : head, [0.2, 0.3, 0.12], [x * 0.17, 1.43, 0.7]);
         this.part(g, "cone", "#f3b3b8", [0.11, 0.19, 0.06], [x * 0.17, 1.41, 0.745], [0, 0, 0], false);
       }
-      if (o.horns) this.part(g, "cone", "#d9cdb5", [0.09, 0.4, 0.09], [x * 0.11, 1.5, 0.6], [-0.55, 0, x * -0.2]);
+      if (o.horns) {
+        this.furring = false;
+        this.part(g, "cone", "#d9cdb5", [0.09, 0.4, 0.09], [x * 0.11, 1.5, 0.6], [-0.55, 0, x * -0.2]);
+        this.furring = true;
+      }
     }
     if (o.beard) this.part(g, "cone", light, [0.12, 0.26, 0.1], [0, 0.82, 1.06], [Math.PI, 0, 0]);
     // The tail hangs from its root so that it can wag.
@@ -606,6 +789,7 @@ export class RiverView extends TableView<State> {
     } else if (o.tail === "thin") {
       this.part(tail, "rod", o.tip ?? coat, [0.065, 0.72, 0.065], [0, 0.19, -0.3], [-1.0, 0, 0]);
     } else this.part(tail, "ball", coat, [0.17, 0.17, 0.2], [0, 0.04, -0.08]);
+    this.furring = false;
     g.add(tail);
     return tail;
   }

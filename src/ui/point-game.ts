@@ -64,6 +64,8 @@ export interface PointConfig<S> {
   bankrupt?: (state: S) => boolean;
   /** A line to flash over the table for what a move has just done (a piece taken), or null. */
   cheer?: (before: S, state: S, mode: "local" | "ai") => string | null;
+  /** The cheer waits until the table has come to rest (curling's score is called only once the stones have stopped). */
+  cheerOnRest?: boolean;
   /** No table for two: one side's pieces are hidden from the other. */
   computerOnly?: boolean;
   /** A game for one: no other side, no computer, no level. `winner` 0 is a game won and 1 a game lost; the result is told by `reason` alone. */
@@ -402,6 +404,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     }
     present();
   }
+  /** A cheer held until the table rests (`cheerOnRest`). */
+  let waitingCheer: string | null = null;
   const busy = () =>
     !!view?.animating ||
     state !== shown ||
@@ -412,7 +416,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     hinted = null;
     notice = "";
     const shout = config.cheer?.(state, next, mode);
-    if (shout) cheer(shout);
+    if (shout && config.cheerOnRest && view) waitingCheer = shout;
+    else if (shout) cheer(shout);
     if (cursor !== null && config.rehome?.(state, next)) cursor = config.keyStart?.(next) ?? cursor;
     state = next;
     chosen = {};
@@ -582,6 +587,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function present() {
     if (disposed) return;
     shown = state;
+    if (waitingCheer) {
+      cheer(waitingCheer);
+      waitingCheer = null;
+    }
     update();
     if (over() && !announced) {
       announced = true;

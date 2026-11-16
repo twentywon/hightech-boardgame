@@ -101,6 +101,10 @@ function curlingStone(body: T.BufferGeometry, granite: T.Material, grip: T.Buffe
   g.add(b, h);
   return g;
 }
+/** How long one tap keeps the brooms sweeping, in milliseconds: tapped three times a second or more, they never stop. */
+const TAP_SWEEP = 380;
+/** How far a stone turns for each unit it slides (about three turns down the sheet), clockwise seen from above for spin 1. */
+const TURNS_PER_UNIT = 1.6;
 /** How far apart the sheets of the rink lie, centre to centre. */
 const PITCH = ARENA.halfZ * 2 + 1.1;
 /**
@@ -129,10 +133,15 @@ export class CurlingView extends FlickView<State> {
    */
   private live: { ply: number; point: number; code: number; id: number; sweep: number } | null = null;
   private made = -1;
-  /** Whether the player is sweeping now (holding the ice, the button or Space), whether the stone is being swept, and the sweeping of a throw replayed. */
-  private sweeping = false;
+  /**
+   * Sweeping is done by quick taps (the user asked, instead of holding): each tap on the ice, the button or Space
+   * keeps the brooms going until `sweepUntil`. Whether the stone is being swept, and the sweeping of a throw replayed.
+   */
+  private sweepUntil = 0;
   private swept = false;
   private replayed = 0;
+  /** Which way the stone in play turns (the spin chosen: 0 none, 1 clockwise, 2 counter-clockwise). */
+  private turning = 0;
   /** Two brooms that sweep before a swept stone, and the button to hold while a stone of mine runs. */
   private brooms: T.Group[] = [];
   private sweepButton: HTMLButtonElement;
@@ -194,52 +203,52 @@ export class CurlingView extends FlickView<State> {
       this.scene.add(broom);
       this.brooms.push(broom);
     }
-    // Held down while a stone of mine runs: sweeping. A press anywhere on the ice and Space (or S) do the same.
+    // Tapped again and again while a stone of mine runs: sweeping. A tap anywhere on the ice and Space (or S) do the same.
     this.sweepButton = document.createElement("button");
     this.sweepButton.className = "cu-sweep";
     this.sweepButton.type = "button";
     this.sweepButton.hidden = true;
-    this.sweepButton.setAttribute("aria-label", "스위핑: 누르고 있는 동안 얼음을 닦습니다");
-    this.sweepButton.innerHTML = "스위핑<small>누르고 있기</small>";
-    const hold = (on: boolean) => {
-      this.sweeping = on && !!this.live;
-      this.sweepButton.setAttribute("aria-pressed", String(this.sweeping));
+    this.sweepButton.setAttribute("aria-label", "스위핑: 빠르게 여러 번 누르세요");
+    this.sweepButton.innerHTML = "스위핑<small>연타!</small>";
+    // A tap sweeps for a moment; tapped again and again the brooms keep going. A key held down counts once.
+    let flash = 0;
+    const tap = () => {
+      if (!this.live) return;
+      this.sweepUntil = performance.now() + TAP_SWEEP;
+      this.sweepButton.setAttribute("aria-pressed", "true");
+      clearTimeout(flash);
+      flash = window.setTimeout(() => this.sweepButton.setAttribute("aria-pressed", "false"), 120);
     };
     this.sweepButton.addEventListener("pointerdown", (e) => {
       e.preventDefault();
-      this.sweepButton.setPointerCapture(e.pointerId);
-      hold(true);
+      tap();
     });
-    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) this.sweepButton.addEventListener(name, () => hold(false));
+    this.sweepButton.addEventListener("click", (e) => {
+      // A click from the keyboard (Enter on the focused button) is a tap too.
+      if (e.detail === 0) tap();
+    });
     this.sweepButton.addEventListener("contextmenu", (e) => e.preventDefault());
     host.append(this.sweepButton);
     const canvas = this.renderer.domElement,
-      press = () => this.live && hold(true),
-      lift = () => hold(false),
       SWEEP_KEYS = [" ", "s", "S", "ㄴ"],
       down = (e: KeyboardEvent) => {
         if (!this.live || !SWEEP_KEYS.includes(e.key)) return;
         e.preventDefault();
         e.stopPropagation();
-        hold(true);
+        if (!e.repeat) tap();
       },
       up = (e: KeyboardEvent) => {
-        if (!SWEEP_KEYS.includes(e.key)) return;
-        if (this.live) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        hold(false);
+        if (!this.live || !SWEEP_KEYS.includes(e.key)) return;
+        e.preventDefault();
+        e.stopPropagation();
       };
-    canvas.addEventListener("pointerdown", press);
-    for (const name of ["pointerup", "pointercancel", "pointerleave"]) canvas.addEventListener(name, lift);
+    canvas.addEventListener("pointerdown", tap);
     window.addEventListener("keydown", down, true);
     window.addEventListener("keyup", up, true);
-    window.addEventListener("blur", lift);
     this.unlisten = () => {
+      clearTimeout(flash);
       window.removeEventListener("keydown", down, true);
       window.removeEventListener("keyup", up, true);
-      window.removeEventListener("blur", lift);
     };
     this.begin();
   }
@@ -587,6 +596,8 @@ export class CurlingView extends FlickView<State> {
   /** The eye keeps the stone it follows a little ahead of the hack's place on the screen, as far as the house; the brooms sweep before it. */
   protected rolled(id: number, mesh: T.Object3D, dx: number, dz: number) {
     if (id !== this.chasing) return;
+    // It turns the way it was set to (clockwise, seen from above, is a negative turn about the upright), slower as it slows.
+    if (this.turning) mesh.rotation.y += (this.turning === 1 ? -1 : 1) * Math.hypot(dx, dz) * TURNS_PER_UNIT;
     this.shift = Math.max(this.shift, Math.min(CHASE, mesh.position.x + dx - (HACK.x + 1)));
     this.look();
     const now = performance.now(),
@@ -611,7 +622,7 @@ export class CurlingView extends FlickView<State> {
     const going = stone.vx !== 0 || stone.vz !== 0;
     if (live && n % SWEEP_SLICES === 0) {
       const spell = n / SWEEP_SLICES;
-      if (spell < SWEEP_WINDOWS && this.sweeping && going) live.sweep += 2 ** spell;
+      if (spell < SWEEP_WINDOWS && performance.now() < this.sweepUntil && going) live.sweep += 2 ** spell;
     }
     stone.slick = swept(live ? live.sweep : this.replayed, n) || undefined;
     this.swept = !!stone.slick && going;
@@ -619,7 +630,8 @@ export class CurlingView extends FlickView<State> {
   /** A run of my stone is over (or dropped): the button and the brooms go. */
   private endRun() {
     this.live = null;
-    this.sweeping = this.swept = false;
+    this.sweepUntil = 0;
+    this.swept = false;
     this.sweepButton.hidden = true;
     this.sweepButton.setAttribute("aria-pressed", "false");
     for (const broom of this.brooms) broom.visible = false;
@@ -652,6 +664,7 @@ export class CurlingView extends FlickView<State> {
       return null;
     }
     this.replayed = last.sweep;
+    this.turning = last.spin;
     const shot = shotOf(last.code)!,
       live = copy(before.done ? [] : before.stones),
       stone: Disc = { id: last.id, x: HACK.x, z: HACK.z, vx: 0, vz: 0, r: R, m: 1, on: true, curl: CURL[last.spin] || undefined };
@@ -688,6 +701,7 @@ export class CurlingView extends FlickView<State> {
     strike(stone, shot.angle, speedOf(shot.power));
     discs.push(stone);
     this.live = { ply: state.ply, point, code, id, sweep: 0 };
+    this.turning = state.spin;
     this.glide++;
     this.shift = 0;
     this.chasing = id;
