@@ -1,4 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
+import { PerspectiveCamera, Vector3 } from "three";
+import { FOV, cameraDistance } from "../../src/engine/camera";
+import { coinRest, panRest, subjectOf } from "../../src/games/scale/layout";
 import { selectGame } from "./library";
 
 const count = (page: Page) => page.locator("#move-count");
@@ -40,5 +43,65 @@ test("balance quiz: the four stages are laid, each takes a press, a hint is show
     await expect(count(page)).toHaveText("0수");
     await press(page, "1수");
   }
+  expect(errors).toEqual([]);
+});
+
+/** Where a place on the coins' table is on the screen, through the same camera as the view. */
+async function onScreen(page: Page, p: { x: number; y: number; z: number }) {
+  const box = (await page.locator("canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    subject = subjectOf("coins"),
+    distance = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120),
+    flat = Math.cos(subject.tilt) * distance;
+  camera.position.set(0, Math.sin(subject.tilt) * distance, flat);
+  camera.lookAt(0, subject.lookY, 0);
+  camera.updateMatrixWorld();
+  const v = new Vector3(p.x, p.y, p.z).project(camera);
+  return { x: box.x + ((v.x + 1) / 2) * box.width, y: box.y + ((1 - v.y) / 2) * box.height };
+}
+async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 });
+  await page.mouse.move(to.x, to.y, { steps: 4 });
+  await page.mouse.up();
+  await rest(page);
+}
+
+test("balance quiz: coins are dragged onto the pans and off again, and a bare tap moves nothing", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "저울 퀴즈");
+  await page.locator(".game-stage button.primary").click();
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "가짜 동전" }).click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await rest(page);
+  const coins = Number((await page.locator("#turn").innerText()).match(/동전 (\d+)개/)![1]),
+    coin = (i: number) => onScreen(page, coinRest(i, coins)),
+    pan = (side: number) => {
+      const p = panRest(side);
+      return onScreen(page, { ...p, y: p.y + 0.4 });
+    };
+  // A tap on a coin leaves it in the rack.
+  const first = await coin(0);
+  await page.mouse.click(first.x, first.y);
+  await rest(page);
+  await expect(count(page)).toHaveText("0수");
+  // One coin on each pan: they can be weighed.
+  await drag(page, await coin(0), await pan(0));
+  await expect(count(page)).toHaveText("1수");
+  await expect(page.locator("#pg-tool-0")).toBeDisabled();
+  await drag(page, await coin(1), await pan(1));
+  await expect(count(page)).toHaveText("2수");
+  await expect(page.locator("#pg-tool-0")).toBeEnabled();
+  // Carried off the pan, the coin goes back to the rack; let go over its own pan, nothing happens.
+  await drag(page, await pan(1), await onScreen(page, { x: 0, y: 0.6, z: 2.6 }));
+  await expect(count(page)).toHaveText("3수");
+  await expect(page.locator("#pg-tool-0")).toBeDisabled();
+  const left = panRest(0);
+  await drag(page, await pan(0), await onScreen(page, { ...left, y: left.y + 1.3 }));
+  await expect(count(page)).toHaveText("3수");
   expect(errors).toEqual([]);
 });

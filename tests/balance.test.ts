@@ -35,6 +35,28 @@ describe("balance quiz", () => {
     // One coin against one: the beam stays level, which leaves the most in doubt.
     expect(weighed.log[0].tip).toBe(0);
   });
+  test("a coin or weight dragged lies where it is let go; nothing is put where it already lies, nor while naming the false coin", () => {
+    const s = b.createGame(1, seededRandom(4)),
+      left = b.play(s, { from: -1, to: b.putOn(2, 1), extra: -1 })!;
+    expect(left.pans[2]).toBe(1);
+    expect(left.ply).toBe(1);
+    const right = b.play(left, { from: -1, to: b.putOn(2, 2), extra: -1 })!;
+    expect(right.pans[2]).toBe(2);
+    expect(b.play(right, { from: -1, to: b.putOn(2, 2), extra: -1 })).toBeNull();
+    expect(b.play(right, { from: -1, to: b.putOn(2, 0), extra: -1 })!.pans[2]).toBe(0);
+    expect(b.play(s, { from: -1, to: b.putOn(s.coins, 1), extra: -1 })).toBeNull();
+    const naming = b.play(s, { from: -1, to: b.ACCUSE, extra: -1 })!;
+    expect(b.play(naming, { from: -1, to: b.putOn(0, 1), extra: -1 })).toBeNull();
+    // The weights: dragged into the setting that levels it, the scale is level and the puzzle solved.
+    const w = b.createGame(2, seededRandom(3));
+    let done = w;
+    w.answer.forEach((pan, i) => {
+      if (pan) done = b.play(done, { from: -1, to: b.putOn(i, pan), extra: -1 })!;
+    });
+    expect(done.winner).toBe(0);
+    // The hint names where a coin or weight goes.
+    expect(b.putOf(b.hint(w)!.to)).not.toBeNull();
+  });
   test("weights: one setting levels the scale, and the hints find it", () => {
     for (let seed = 1; seed <= 30; seed++) {
       const s = b.createGame(2, seededRandom(seed));

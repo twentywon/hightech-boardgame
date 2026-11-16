@@ -20,13 +20,21 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  */
 export type Kind = "coins" | "weights" | "goods" | "mobile";
 export const KINDS: Kind[] = ["coins", "weights", "goods", "mobile"];
-/** Moves besides a tap on a coin or a weight (its own index): weigh, start or stop naming the false coin, turn a dial up or down, set it. */
+/**
+ * Moves besides a tap on a coin or a weight (its own index, which moves it on: left pan, right pan, off): weigh, start or
+ * stop naming the false coin, turn a dial up or down, set it, and put a coin or weight where it is dragged (`putOn`).
+ */
 export const WEIGH = 900,
   ACCUSE = 901,
   UP = 1000,
   DOWN = 1100,
-  SET = 2000;
+  SET = 2000,
+  PUT = 3000;
 export const setTo = (dial: number, value: number) => SET + dial * 64 + value;
+/** A coin or weight set down off the scale (0), on the left pan (1) or on the right (2). */
+export const putOn = (item: number, pan: number) => PUT + item * 3 + pan;
+/** The coin or weight and the place of a `putOn` move, or null for any other. */
+export const putOf = (to: number) => (to >= PUT ? { item: Math.floor((to - PUT) / 3), pan: (to - PUT) % 3 } : null);
 /** A weighing made: the coins on each pan and which way the beam fell (1 the left pan down, −1 the right, 0 level). */
 export interface Weighing {
   left: number[];
@@ -255,7 +263,7 @@ function coinHint(s: State): Move | null {
   put(c.l, plan.l1, plan.l2);
   put(c.g, plan.g1, plan.g2);
   const coin = want.findIndex((p, i) => p !== s.pans[i]);
-  return coin < 0 ? { from: -1, to: WEIGH, extra: -1 } : { from: -1, to: coin, extra: -1 };
+  return coin < 0 ? { from: -1, to: WEIGH, extra: -1 } : { from: -1, to: putOn(coin, want[coin]), extra: -1 };
 }
 
 /* -------------------------------------------------------------- weights */
@@ -486,8 +494,16 @@ export function moves(s: State): Move[] {
 }
 export function play(s: State, move: Move): State | null {
   if (s.winner !== null || move.from !== -1 || move.extra !== -1) return null;
-  const to = move.to,
-    next = { ...s, last: { to }, ply: s.ply + 1 };
+  const to = move.to;
+  const next = { ...s, last: { to }, ply: s.ply + 1 },
+    put = putOf(to),
+    items = s.kind === "coins" ? s.coins : s.kind === "weights" ? s.weights.length : 0;
+  // A coin or weight dragged somewhere: it lies there now (nothing is put where it already lies).
+  if (put) {
+    if (!Number.isInteger(to) || put.item >= items || s.pans[put.item] === put.pan || (s.kind === "coins" && s.accusing)) return null;
+    const placed = { ...next, last: { to: put.item }, pans: s.pans.map((p, i) => (i === put.item ? put.pan : p)) };
+    return s.kind === "weights" ? { ...placed, winner: leftWeight(placed) === rightWeight(placed) ? 0 : null } : placed;
+  }
   if (s.kind === "coins") {
     if (to === ACCUSE) return { ...next, accusing: !s.accusing };
     if (to === WEIGH) {
@@ -533,7 +549,7 @@ export function hint(s: State): Move | null {
   if (s.kind === "coins") return coinHint(s);
   if (s.kind === "weights") {
     const i = s.answer.findIndex((p, k) => p !== s.pans[k]);
-    return i < 0 ? null : { from: -1, to: i, extra: -1 };
+    return i < 0 ? null : { from: -1, to: putOn(i, s.answer[i]), extra: -1 };
   }
   const i = s.answer.findIndex((v, k) => v !== s.guess[k]);
   return i < 0 ? null : { from: -1, to: setTo(i, s.answer[i]), extra: -1 };

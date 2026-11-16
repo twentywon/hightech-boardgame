@@ -7,6 +7,21 @@ import { isLeaf, rods, type Kind, type Node, type Rod } from "./rules";
 export const TABLE = { half: 8.5, depth: 5 };
 /** The big scale (coins and weights): its foot, the height of its pivot, half its beam, its chains and pans. */
 export const BIG = { x: 0, z: -1.2, height: 3.6, beam: 2.7, chain: 2.0, pan: 1.15 };
+/** Where the big scale's pans are while its beam is level (the foot of each pan), for browser tests to aim at. */
+export const panRest = (side: number) => ({ x: BIG.x + (side === 0 ? -1 : 1) * BIG.beam, y: BIG.height - BIG.chain, z: BIG.z });
+/**
+ * Which pan (1 left, 2 right) a place `at` on the carrying plane is over as seen from `eye`, or 0: the line of sight is
+ * followed back to the scale's own plane, and a pan takes everything round it from a little below up to its beam.
+ */
+export function panUnder(eye: { x: number; y: number; z: number }, at: { x: number; y: number; z: number }, pans: { x: number; y: number }[]) {
+  const dz = at.z - eye.z;
+  if (Math.abs(dz) < 1e-6) return 0;
+  const t = (BIG.z - eye.z) / dz,
+    x = eye.x + (at.x - eye.x) * t,
+    y = eye.y + (at.y - eye.y) * t;
+  const side = pans.findIndex((pan) => Math.abs(x - pan.x) <= BIG.pan * 1.4 && y >= pan.y - 0.8 && y <= pan.y + BIG.chain + 0.2);
+  return side + 1;
+}
 /** A small scale of the goods' stage, as a share of the big one. */
 export const SMALL = 0.6;
 /**
@@ -20,6 +35,8 @@ export function subjectOf(kind: Kind) {
 }
 /** The coins wait upright in a stepped rack at the front, faces to the eye; each row a step higher and further back. */
 export const RACK = { z: 2.6, step: 0.5, depth: 0.62, gap: 0.78, radius: 0.33 };
+/** The upright plane a dragged coin or weight is carried on, as if held up in the hand: before the rack, so nothing hides it. */
+export const CARRY_Z = RACK.z + 0.8;
 /** How many coins a row of the rack takes. */
 export const rackRow = (n: number) => (n <= 9 ? n : n <= 12 ? 6 : 9);
 /** Where coin `i` of `n` stands in the rack (its middle). */

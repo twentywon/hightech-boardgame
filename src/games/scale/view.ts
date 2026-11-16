@@ -4,8 +4,8 @@ import { souk } from "../../engine/scenery";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { ACCUSE, DOWN, GOODS, SET, SPICES, UP, WEIGH, WEIGHT, hung, isLeaf, lean, onPans, panWeight, reach, rods, shownLeaves, type Kind, type State } from "./rules";
-import { BIG, MOBILE, RACK, SHELF, SMALL, TABLE, coinRest, goodsDial, hang, mobileDial, panRow, rackRow, smallAt, subjectOf, weightRest } from "./layout";
+import { ACCUSE, DOWN, GOODS, SET, SPICES, UP, WEIGH, WEIGHT, hung, isLeaf, lean, onPans, panWeight, putOf, putOn, reach, rods, shownLeaves, type Kind, type State } from "./rules";
+import { BIG, CARRY_Z, MOBILE, RACK, SHELF, SMALL, TABLE, coinRest, goodsDial, hang, mobileDial, panRow, panUnder, rackRow, smallAt, subjectOf, weightRest } from "./layout";
 
 export const BALANCE_COLORS: [string, string] = ["#c9a24a", "#22355c"];
 const UPWARD = new T.Vector3(0, 1, 0);
@@ -64,6 +64,13 @@ export class BalanceView extends TableView<State> {
   private marks2: Marks = { movable: [], selected: null, targets: [], removable: [], cursor: null };
   private brass: T.MeshStandardMaterial;
   private dark: T.MeshStandardMaterial;
+  /** A coin or weight being dragged: which, whether it has left its place yet, and where the press began. */
+  private carry: { item: number; moved: boolean; start: { x: number; y: number } } | null = null;
+  /** Where the last one dragged was let go, for its move to start from there. */
+  private dropped: { item: number; at: T.Vector3 } | null = null;
+  /** A pan a dragged coin or weight would be set on (white), and the pan a hint asks for (gold). */
+  private drop: T.Mesh;
+  private panRing: T.Mesh;
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#e6d6b8");
     this.scene.add(new T.HemisphereLight("#fff3df", "#7a5a3a", 1.7));
@@ -96,7 +103,14 @@ export class BalanceView extends TableView<State> {
     this.target.scale.set(1.0, 0.6, 1);
     this.target.renderOrder = 12;
     this.target.visible = false;
-    this.scene.add(this.arrow, this.ring, this.cursor, this.target);
+    this.drop = ringMesh(own, BIG.pan * 1.08, BIG.pan * 1.17, "#ffffff");
+    this.panRing = ringMesh(own, BIG.pan * 1.2, BIG.pan * 1.3, "#ffbf1f");
+    this.drop.rotation.x = this.panRing.rotation.x = 0;
+    // Both are seen whole, through the rack and the coins before them.
+    for (const ring of [this.drop, this.panRing]) (ring.material as T.MeshBasicMaterial).depthTest = false;
+    this.scene.add(this.arrow, this.ring, this.cursor, this.target, this.drop, this.panRing);
+    // Coins and weights are carried on an upright plane before the scale, the pointer holding them by the middle.
+    this.floor = new T.Plane(new T.Vector3(0, 0, 1), -CARRY_Z);
     this.begin();
   }
   /** How far the mobile reaches either way, for the view to fit it. */
@@ -497,9 +511,11 @@ export class BalanceView extends TableView<State> {
     const a0 = this.anglesOf(before),
       a1 = this.anglesOf(s),
       moved: { i: number; from: T.Vector3; to: T.Vector3 }[] = [];
+    const dropped = this.dropped;
+    this.dropped = null;
     if (s.kind === "coins" || s.kind === "weights")
       s.pans.forEach((p, i) => {
-        if (p !== before.pans[i]) moved.push({ i, from: this.itemAt(before, i, a0[0]), to: this.itemAt(s, i, a1[0]) });
+        if (p !== before.pans[i]) moved.push({ i, from: dropped?.item === i ? dropped.at : this.itemAt(before, i, a0[0]), to: this.itemAt(s, i, a1[0]) });
       });
     const weighed = s.kind === "coins" && s.log.length > before.log.length,
       duration = weighed ? 1100 : moved.length ? 420 : 380;
@@ -509,13 +525,73 @@ export class BalanceView extends TableView<State> {
         // A weighing swings past where it comes to rest and back.
         swing = weighed ? 1 - Math.cos(p * Math.PI * 2.5) * Math.exp(-p * 3.2) : e,
         angles = a1.map((x, i) => (a0[i] ?? 0) + (x - (a0[i] ?? 0)) * swing),
-        lift = new Map(moved.map((m) => [m.i, m.from.clone().lerp(m.to, e).add(new T.Vector3(0, Math.sin(Math.PI * p) * 0.9, 0))]));
+        // Carried by hand it is only set down; moved by the keyboard it is lifted over.
+        lift = new Map(moved.map((m) => [m.i, m.from.clone().lerp(m.to, e).add(new T.Vector3(0, Math.sin(Math.PI * p) * (dropped?.item === m.i ? 0.2 : 0.9), 0))]));
       this.lay(p === 1 ? s : before, angles, p === 1 ? new Map() : lift);
       if (p === 1) {
         if (moved.length || weighed) this.onContact();
       }
     });
     return true;
+  }
+  /** Where a pan's ring stands: upright round the pan and what is on it, just before it. */
+  private panMark(side: number) {
+    const pan = this.scales[0].pans[side].position;
+    return new T.Vector3(BIG.x + pan.x, pan.y + 0.42, BIG.z + BIG.pan + 0.12);
+  }
+  /** The pan (1 left, 2 right) under a place on the carrying plane, or 0, as the eye sees it. */
+  private panAt(at: { x: number; y: number; z: number }) {
+    const b = this.scales[0];
+    return panUnder(this.camera.position, at, b.pans.map((pan) => ({ x: BIG.x + pan.position.x, y: pan.position.y })));
+  }
+  /**
+   * A coin or weight is taken by a press and carried (the user asked for drag and drop): let go over a pan it is set
+   * on that pan, anywhere else it goes back to its place off the scale. A bare tap moves nothing; while naming the
+   * false coin a press names it, as a tap.
+   */
+  protected dragStart(point: number, at: { x: number; y: number; z: number }) {
+    const s = this.state;
+    if (!s || s.winner !== null || (s.kind !== "coins" && s.kind !== "weights") || point < 0 || point >= this.items.length) return false;
+    if (s.kind === "coins" && s.accusing) return false;
+    this.dropped = null;
+    this.carry = { item: point, moved: false, start: { x: at.x, y: at.y } };
+    return true;
+  }
+  protected dragMove(at: { x: number; y: number; z: number }) {
+    const carry = this.carry,
+      s = this.state;
+    if (!carry || !s) return;
+    if (!carry.moved && Math.hypot(at.x - carry.start.x, at.y - carry.start.y) < 0.15) return;
+    carry.moved = true;
+    // A coin is held by its middle; a weight by its body, its foot under the pointer.
+    this.items[carry.item].position.set(at.x, Math.max(at.y - (s.kind === "coins" ? 0 : 0.3), 0.05), CARRY_Z);
+    const pan = this.panAt(at);
+    this.drop.visible = pan > 0;
+    if (pan) this.drop.position.copy(this.panMark(pan - 1));
+    this.redraw();
+  }
+  protected dragEnd(at: { x: number; y: number; z: number } | null) {
+    const carry = this.carry,
+      s = this.state;
+    this.carry = null;
+    this.drop.visible = false;
+    if (!carry || !s) return;
+    if (!carry.moved) return;
+    const item = this.items[carry.item],
+      from = item.position.clone(),
+      pan = at ? this.panAt(at) : s.pans[carry.item];
+    if (pan !== s.pans[carry.item]) {
+      this.dropped = { item: carry.item, at: from };
+      this.onMove({ from: -1, to: putOn(carry.item, pan), extra: -1 });
+      if (this.state !== s) return;
+      this.dropped = null;
+    }
+    // Let go where it already lay, or refused: it glides back to its place.
+    const to = this.itemAt(s, carry.item, this.angles[0] ?? 0);
+    this.tween(0, 240, (p) => {
+      const e = p * p * (3 - 2 * p);
+      item.position.lerpVectors(from, to, e);
+    });
   }
   /** The place a press on each point counts, and where marks go. */
   private points(s: State): { point: number; at: T.Vector3; r: number }[] {
@@ -543,7 +619,7 @@ export class BalanceView extends TableView<State> {
   protected mark(marks: Marks) {
     this.marks2 = marks;
     const s = this.state;
-    this.arrow.visible = this.ring.visible = this.cursor.visible = this.target.visible = false;
+    this.arrow.visible = this.ring.visible = this.cursor.visible = this.target.visible = this.panRing.visible = false;
     if (!s || capturing()) return;
     const points = this.points(s),
       find = (point: number) => points.find((p) => p.point === point);
@@ -557,6 +633,24 @@ export class BalanceView extends TableView<State> {
     }
     const hinted = marks.hint?.to;
     if (hinted === undefined || hinted === null || s.winner !== null) return;
+    const put = putOf(hinted);
+    if (put) {
+      // A coin or weight to carry: the arrow over it, and a ring where it goes (a pan, or its place off the scale).
+      const spot = find(put.item);
+      if (!spot) return;
+      this.arrow.visible = true;
+      this.arrow.position.copy(spot.at).add(new T.Vector3(0, 0.75, 0));
+      if (put.pan) {
+        this.panRing.visible = true;
+        this.panRing.position.copy(this.panMark(put.pan - 1));
+      } else {
+        const rest = s.kind === "coins" ? coinRest(put.item, s.coins) : weightRest(put.item, s.weights.length);
+        this.ring.visible = true;
+        this.ring.position.set(rest.x, rest.y + (s.kind === "coins" ? 0 : 0.35), rest.z + 0.2);
+        this.ring.rotation.set(0, 0, 0);
+      }
+      return;
+    }
     if (hinted >= SET) {
       // A dial to set: a ring round it and the number it wants above.
       const i = Math.floor((hinted - SET) / 64),
