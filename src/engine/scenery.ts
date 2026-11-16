@@ -1259,7 +1259,7 @@ function wallpaper() {
 /**
  * A bedroom round a bed whose duvet is the table (the user asked for One Card on a bed): the duvet with its cover
  * turned down at the head, two pillows, an upholstered headboard, a teddy bear, a phone and a bowl of popcorn on
- * the bed, a nightstand with a lamp and an alarm clock, a low bookshelf with a plant, slippers and a rug on a
+ * the bed (clear of the four hands), a nightstand with a lamp and an alarm clock, a low bookshelf with a plant, slippers and a rug on a
  * wooden floor, and a papered wall. The duvet's top is at `y` 0 and covers the whole of the play.
  */
 export function bedroom(scene: T.Object3D, own: Own) {
@@ -1323,7 +1323,7 @@ export function bedroom(scene: T.Object3D, own: Own) {
   bear.rotation.y = 0.45;
   scene.add(bear);
   // A phone lying face up on the duvet, and a bowl of popcorn.
-  const phone = add(block(0.62, 0.08, 1.25, 0.08), standard({ color: "#1d1f24", roughness: 0.3, metalness: 0.4 }), -6.3, 0.04, 0.9);
+  const phone = add(block(0.62, 0.08, 1.25, 0.08), standard({ color: "#1d1f24", roughness: 0.3, metalness: 0.4 }), -7.2, 0.04, 2.9);
   phone.rotation.y = 0.4;
   add(new T.BoxGeometry(0.52, 0.01, 1.08), own(new T.MeshStandardMaterial({ color: "#2a4a7a", emissive: "#3a6ab0", emissiveIntensity: 0.6, roughness: 0.2 })), 0, 0.045, 0, phone);
   const bowl = new T.Group();
@@ -1340,7 +1340,7 @@ export function bedroom(scene: T.Object3D, own: Own) {
     k.castShadow = true;
     bowl.add(k);
   }
-  bowl.position.set(6.4, 0, -1.9);
+  bowl.position.set(7.15, 0, -3.5);
   scene.add(bowl);
   // A nightstand with a lamp and an alarm clock at the left of the head.
   const stand = standard({ map: own(wood(false, 0.6)), color: "#e6cfae", roughness: 0.55 }),

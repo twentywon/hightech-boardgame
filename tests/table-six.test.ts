@@ -64,40 +64,60 @@ describe("backgammon", () => {
   });
 });
 describe("one card", () => {
-  test("seven each and a plain card turned up; suit or rank goes on", () => {
+  test("four seats of seven and a plain card turned up; suit or rank goes on", () => {
     const s = one.createGame(seededRandom(2));
-    expect(s.hands[0]).toHaveLength(7);
-    expect(s.hands[1]).toHaveLength(7);
+    expect(s.hands).toHaveLength(4);
+    for (const hand of s.hands) expect(hand).toHaveLength(7);
+    expect(s.seat).toBe(0);
     const top = one.top(s);
     expect(one.power(top)).toBe(0);
     for (const c of s.hands[0]) if (c < 52) expect(one.playable(s, c)).toBe(suitOf(c) === suitOf(top) || rankOf(c) === rankOf(top));
   });
-  test("attacks pile up and pass on; a 7 names the suit; a jack plays again", () => {
+  test("attacks fall on the next player and pass on; a 7 names the suit; J jumps, Q turns round, K plays again", () => {
     const base = { ...one.createGame(seededRandom(3)), discard: [card(1, 5)] };
-    const attack = { ...base, hands: [[card(1, 2), card(0, 9)], [card(2, 2), card(3, 9)]] as [number[], number[]] };
-    const a = one.play(attack, { from: -1, to: card(1, 2), extra: -1 })!;
+    const four = (mine: number[], next: number[] = [card(3, 9)]) => ({ ...base, hands: [mine, next, [card(0, 4), card(3, 4)], [card(2, 9)]] });
+    const a = one.play(four([card(1, 2), card(0, 9)], [card(2, 2), card(3, 9)]), { from: -1, to: card(1, 2), extra: -1 })!;
     expect(a.attack).toBe(2);
+    expect(a.seat).toBe(1);
     expect(one.playable(a, card(2, 2))).toBe(true);
     expect(one.playable(a, card(3, 9))).toBe(false);
     const passed = one.play(a, { from: -1, to: card(2, 2), extra: -1 })!;
     expect(passed.attack).toBe(4);
+    expect(passed.seat).toBe(2);
     const took = one.play(passed, { from: -1, to: one.DRAW, extra: -1 })!;
-    expect(took.hands[0]).toHaveLength(5);
+    expect(took.hands[2]).toHaveLength(6);
     expect(took.attack).toBe(0);
-    const seven = { ...base, hands: [[card(1, 7), card(0, 9)], [card(3, 3)]] as [number[], number[]] };
-    const named = one.play(seven, { from: -1, to: card(1, 7), extra: -1 })!;
+    expect(took.seat).toBe(3);
+    const named = one.play(four([card(1, 7), card(0, 9)]), { from: -1, to: card(1, 7), extra: -1 })!;
     expect(named.phase).toBe("suit");
+    expect(named.seat).toBe(0);
     const clubs = one.play(named, { from: -1, to: one.SUIT_BASE + 3, extra: -1 })!;
     expect(clubs.suit).toBe(3);
+    expect(clubs.seat).toBe(1);
     expect(one.playable(clubs, card(3, 3))).toBe(true);
-    const jack = { ...base, hands: [[card(1, 11), card(0, 9)], [card(3, 3)]] as [number[], number[]] };
-    expect(one.play(jack, { from: -1, to: card(1, 11), extra: -1 })!.turn).toBe(0);
+    expect(one.play(four([card(1, 11), card(0, 9)]), { from: -1, to: card(1, 11), extra: -1 })!.seat).toBe(2);
+    const queen = one.play(four([card(1, 12), card(0, 9)]), { from: -1, to: card(1, 12), extra: -1 })!;
+    expect(queen.dir).toBe(-1);
+    expect(queen.seat).toBe(3);
+    expect(one.play(four([card(1, 13), card(0, 9)]), { from: -1, to: card(1, 13), extra: -1 })!.seat).toBe(0);
   });
-  test("games against the computer end", () => {
+  test("a computer that reaches twenty leaves the game; mine loses it", () => {
+    const base = one.createGame(seededRandom(4)),
+      full = Array.from({ length: one.BUST - 1 }, (_, i) => i);
+    const computer = one.play({ ...base, seat: 1, hands: [base.hands[0], full, base.hands[2], base.hands[3]], pile: [40, 41, 42] }, { from: -1, to: one.DRAW, extra: -1 })!;
+    expect(computer.out[1]).toBe(true);
+    expect(computer.hands[1]).toHaveLength(0);
+    expect(computer.winner).toBeNull();
+    expect(computer.seat).toBe(2);
+    expect(one.onward(computer, 0)).toBe(2);
+    const mine = one.play({ ...base, hands: [full, base.hands[1], base.hands[2], base.hands[3]], pile: [40, 41, 42] }, { from: -1, to: one.DRAW, extra: -1 })!;
+    expect(mine.winner).toBe(1);
+  });
+  test("games of four end", () => {
     for (let seed = 1; seed <= 20; seed++) {
       const random = seededRandom(seed);
       let s = one.createGame(random);
-      for (let n = 0; n < 2000 && s.winner === null; n++) s = one.play(s, one.chooseMove(s, "normal", random)!, random)!;
+      for (let n = 0; n < 4000 && s.winner === null; n++) s = one.play(s, one.chooseMove(s, "normal", random)!, random)!;
       expect(s.winner).not.toBeNull();
     }
   });
