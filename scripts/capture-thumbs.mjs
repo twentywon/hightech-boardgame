@@ -312,6 +312,13 @@ const play = {
       await wait(700);
     }
   },
+  "balance-quiz": async () => {
+    // The weights' stage: the parcel on its pan and a weight put up beside it, so that the beam leans.
+    await page.locator("dialog[open] .stage-card").nth(1).click();
+    await wait(1500);
+    await keys(["Enter"], 300);
+    await wait(1200);
+  },
   "river-crossing": async () => {
     await page.keyboard.press("Escape");
     await wait(300);

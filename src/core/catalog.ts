@@ -456,6 +456,14 @@ export const games = [
     available: true,
   },
   {
+    name: "저울 퀴즈",
+    en: "BALANCE QUIZ",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "⚖",
+    available: true,
+  },
+  {
     name: "텐트 치기",
     en: "TENTS",
     category: "퍼즐게임",

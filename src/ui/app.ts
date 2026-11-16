@@ -43,6 +43,7 @@ import { knightConfig } from "../games/knight/config";
 import { tiltConfig } from "../games/tilt/config";
 import { hauntConfig } from "../games/haunt/config";
 import { skylineConfig } from "../games/skyline/config";
+import { balanceConfig } from "../games/scale/config";
 import { foxGeeseConfig } from "../games/foxgeese/config";
 import { taflConfig } from "../games/tafl/config";
 import { urConfig } from "../games/ur/config";
@@ -177,6 +178,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "turning-maze": { config: tiltConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "haunted-mirrors": { config: hauntConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "building-puzzle": { config: skylineConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "balance-quiz": { config: balanceConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fox-and-geese": { config: foxGeeseConfig, options: { mode: "ai", variant: "geese", level: "normal" } },
   hnefatafl: { config: taflConfig, options: { mode: "ai", variant: "defenders", level: "normal" } },
   "royal-game-of-ur": { config: urConfig, options: { mode: "ai", variant: "", level: "normal" } },
@@ -326,6 +328,7 @@ type GameSelection =
   | "turning-maze"
   | "haunted-mirrors"
   | "building-puzzle"
+  | "balance-quiz"
   | "fox-and-geese"
   | "hnefatafl"
   | "royal-game-of-ur"

@@ -1390,3 +1390,178 @@ export function bedroom(scene: T.Object3D, own: Own) {
     scene.add(s);
   }
 }
+/** A kilim: rows of stepped lozenges in madder, indigo, saffron and cream between banded borders, a woven texture over it. */
+function kilim() {
+  const { c, ctx } = canvas(1024, 512),
+    rand = noise(29),
+    red = "#9e2f2a",
+    indigo = "#27365e",
+    saffron = "#d79a2b",
+    cream = "#efe2c4";
+  ctx.fillStyle = red;
+  ctx.fillRect(0, 0, 1024, 512);
+  // Borders: bands of colour with a running zigzag.
+  for (const [y, h, color] of [[0, 40, indigo], [40, 14, cream], [458, 14, cream], [472, 40, indigo]] as [number, number, string][]) {
+    ctx.fillStyle = color;
+    ctx.fillRect(0, y, 1024, h);
+  }
+  ctx.fillStyle = saffron;
+  for (const y0 of [8, 480])
+    for (let x = 0; x < 1024; x += 32) {
+      ctx.beginPath();
+      ctx.moveTo(x, y0 + 24);
+      ctx.lineTo(x + 16, y0);
+      ctx.lineTo(x + 32, y0 + 24);
+      ctx.fill();
+    }
+  // The field: large stepped lozenges in a row, each with a smaller one inside.
+  const lozenge = (cx: number, cy: number, r: number, color: string) => {
+    ctx.fillStyle = color;
+    for (let k = 0; k < r; k += 8) {
+      ctx.fillRect(cx - (r - k), cy - k - 8, (r - k) * 2, 8);
+      ctx.fillRect(cx - (r - k), cy + k, (r - k) * 2, 8);
+    }
+  };
+  for (let i = 0; i < 5; i++) {
+    const cx = 102 + i * 205;
+    lozenge(cx, 256, 150, i % 2 ? indigo : cream);
+    lozenge(cx, 256, 96, saffron);
+    lozenge(cx, 256, 48, i % 2 ? cream : indigo);
+    lozenge(cx, 256, 16, red);
+  }
+  // The weave: fine light and dark threads across.
+  for (let y = 0; y < 512; y += 3) {
+    ctx.fillStyle = `rgba(${rand() < 0.5 ? "255,240,220" : "40,20,10"}, ${0.04 + rand() * 0.05})`;
+    ctx.fillRect(0, y, 1024, 1);
+  }
+  return texture(c);
+}
+/** Zellige: a field of eight-pointed stars in glazed blue, green and white, set in a pale mortar. */
+function zellige() {
+  const { c, ctx } = canvas(512, 512),
+    rand = noise(61);
+  ctx.fillStyle = "#e9e1cf";
+  ctx.fillRect(0, 0, 512, 512);
+  const star = (cx: number, cy: number, r: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8,
+        d = k % 2 ? r * 0.62 : r;
+      ctx.lineTo(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+    }
+    ctx.fill();
+  };
+  for (let y = 0; y <= 512; y += 128)
+    for (let x = 0; x <= 512; x += 128) {
+      star(x, y, 56, rand() < 0.5 ? "#1f5f8a" : "#1f7a6a");
+      star(x, y, 26, "#f4efe2");
+      star(x + 64, y + 64, 34, rand() < 0.5 ? "#d9a441" : "#2a4a8a");
+    }
+  return texture(c, 6, 2);
+}
+/** An awning of striped canvas. */
+function awning() {
+  const { c, ctx } = canvas(256, 64);
+  for (let x = 0; x < 256; x += 32) {
+    ctx.fillStyle = "#b8322a";
+    ctx.fillRect(x, 0, 16, 64);
+    ctx.fillStyle = "#f1e6cc";
+    ctx.fillRect(x + 16, 0, 16, 64);
+  }
+  return texture(c, 6, 1);
+}
+/**
+ * A market stall in a Middle Eastern bazaar (the user asked for the balance quiz to stand on such a table): an old
+ * wooden table with a kilim runner, a brass tray with a coffee pot and tea glasses and a basket of dates on its back
+ * corners, open sacks of spices heaped at both sides, a wall of glazed star tiles behind with brass lanterns, a
+ * striped awning overhead and a paved floor. The table top is at `y` 0 and reaches `half` by `depth`.
+ */
+export function souk(scene: T.Object3D, own: Own, half: number, depth: number) {
+  const standard = (options: T.MeshStandardMaterialParameters) => own(new T.MeshStandardMaterial({ roughness: 0.8, ...options })),
+    add = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x: number, y: number, z: number, parent: T.Object3D = scene) => {
+      const mesh = new T.Mesh(own(geometry), material);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = mesh.receiveShadow = true;
+      parent.add(mesh);
+      return mesh;
+    },
+    FLOOR = -6.5;
+  const floor = add(new T.PlaneGeometry(90, 70), standard({ ...stuff("stone", "#b9a88e", 9, own), roughness: 0.95 }), 0, FLOOR, 0);
+  floor.rotation.x = -Math.PI / 2;
+  floor.castShadow = false;
+  // The table: thick old boards, a kilim runner along it.
+  const boards = own(wood(true));
+  boards.repeat.set(2, 1);
+  const timber = standard({ map: boards, color: "#b07a52", roughness: 0.75 });
+  add(new T.BoxGeometry(half * 2, 0.45, depth * 2), timber, 0, -0.225, 0).castShadow = false;
+  for (const x of [-half + 0.6, half - 0.6]) for (const z of [-depth + 0.6, depth - 0.6]) add(new T.BoxGeometry(0.6, -FLOOR - 0.45, 0.6), timber, x, (FLOOR - 0.45) / 2, z);
+  const rug = add(new T.PlaneGeometry(half * 2 - 1.6, depth * 1.25), standard({ map: own(kilim()), roughness: 1 }), 0, 0.006, -depth * 0.32);
+  rug.rotation.x = -Math.PI / 2;
+  rug.castShadow = false;
+  // A brass tray with a coffee pot and three glasses of tea at the back right.
+  const brass = standard({ color: "#c9a24a", roughness: 0.3, metalness: 0.85 }),
+    tray = new T.Group();
+  add(new T.CylinderGeometry(1.25, 1.25, 0.06, 40), brass, 0, 0.03, 0, tray);
+  add(new T.LatheGeometry([[0, 0], [0.42, 0.02], [0.5, 0.35], [0.36, 0.75], [0.22, 0.95], [0.26, 1.15], [0.18, 1.3], [0, 1.42]].map(([r, h]) => new T.Vector2(r, h)), 24), brass, -0.35, 0.06, -0.2, tray);
+  add(new T.CylinderGeometry(0.05, 0.09, 0.7, 10), brass, 0.05, 0.85, -0.2, tray).rotation.z = -0.9;
+  const glass = own(new T.MeshStandardMaterial({ color: "#f3f6f8", roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.45 })),
+    tea = standard({ color: "#8a2a12", roughness: 0.2 });
+  for (const [x, z] of [[0.5, 0.35], [0.75, -0.25], [0.1, 0.65]]) {
+    add(new T.CylinderGeometry(0.15, 0.12, 0.38, 16), glass, x, 0.25, z, tray);
+    add(new T.CylinderGeometry(0.13, 0.11, 0.26, 16), tea, x, 0.19, z, tray);
+  }
+  tray.position.set(half - 1.25, 0, -depth + 1.3);
+  scene.add(tray);
+  // A basket of dates at the back left.
+  const basket = standard({ color: "#b98b4a", roughness: 0.95 }),
+    date = own(new T.SphereGeometry(0.12, 8, 6)),
+    brown = standard({ color: "#5a2a14", roughness: 0.35 }),
+    rand = noise(37),
+    b = new T.Group();
+  add(new T.LatheGeometry([[0, 0], [0.7, 0.02], [0.95, 0.35], [1.0, 0.45]].map(([r, h]) => new T.Vector2(r, h)), 28), own(new T.MeshStandardMaterial({ color: "#b98b4a", roughness: 0.95, side: T.DoubleSide })), 0, 0, 0, b);
+  add(new T.TorusGeometry(1.0, 0.06, 6, 30).rotateX(Math.PI / 2), basket, 0, 0.45, 0, b);
+  for (let i = 0; i < 46; i++) {
+    const a = rand() * Math.PI * 2,
+      r = Math.sqrt(rand()) * 0.8,
+      d = new T.Mesh(date, brown);
+    d.position.set(Math.cos(a) * r, 0.36 + rand() * 0.12, Math.sin(a) * r);
+    d.scale.set(1, 0.8, 1.7);
+    d.rotation.y = rand() * 3;
+    d.castShadow = true;
+    b.add(d);
+  }
+  b.position.set(-half + 1.2, 0, -depth + 1.15);
+  scene.add(b);
+  // Open sacks of spice heaped up, at both sides of the table.
+  const sack = standard({ color: "#c8b48a", roughness: 1 }),
+    spices = ["#e0a31c", "#c0391e", "#7a3020", "#9a6a34", "#d8541c", "#7f9a4a", "#d76b8c", "#5a3a20"];
+  let k = 0;
+  for (const side of [-1, 1])
+    for (const [dx, dz] of [[1.4, -3.0], [1.6, -0.6], [1.3, 1.8], [3.3, -1.8], [3.4, 0.8]]) {
+      const x = side * (half + dx),
+        z = dz,
+        h = 3.6;
+      add(new T.CylinderGeometry(0.95, 0.85, h, 18, 1, true), own(new T.MeshStandardMaterial({ color: "#c8b48a", roughness: 1, side: T.DoubleSide })), x, FLOOR + h / 2, z);
+      add(new T.TorusGeometry(0.98, 0.16, 8, 24).rotateX(Math.PI / 2), sack, x, FLOOR + h, z);
+      add(new T.ConeGeometry(0.92, 0.9, 24), standard({ color: spices[k++ % spices.length], roughness: 1 }), x, FLOOR + h - 0.05, z);
+    }
+  // The wall behind: glazed star tiles over a plain plaster, an arch, and two brass lanterns.
+  const wallZ = -depth - 2.6;
+  add(new T.PlaneGeometry(50, 9), standard({ map: own(zellige()), roughness: 0.35 }), 0, FLOOR + 4.5, wallZ).castShadow = false;
+  add(new T.PlaneGeometry(50, 22), standard({ color: "#e6d6b8", roughness: 0.95 }), 0, FLOOR + 20, wallZ - 0.01).castShadow = false;
+  add(new T.BoxGeometry(50, 0.4, 0.3), standard({ color: "#a8875a", roughness: 0.7 }), 0, FLOOR + 9.1, wallZ + 0.1);
+  for (const x of [-half - 1.2, half + 1.2]) {
+    const lantern = new T.Group();
+    add(new T.CylinderGeometry(0.03, 0.03, 2.2, 6), brass, 0, 1.1, 0, lantern);
+    add(new T.CylinderGeometry(0.42, 0.3, 0.9, 8, 1, true), own(new T.MeshStandardMaterial({ color: "#ffc070", emissive: "#ff9a30", emissiveIntensity: 0.8, roughness: 0.4, transparent: true, opacity: 0.85, side: T.DoubleSide })), 0, -0.45, 0, lantern);
+    add(new T.ConeGeometry(0.48, 0.55, 8), brass, 0, 0.25, 0, lantern);
+    add(new T.ConeGeometry(0.3, 0.3, 8), brass, 0, -1.05, 0, lantern).rotation.x = Math.PI;
+    lantern.position.set(x, FLOOR + 14.5, wallZ + 1.4);
+    scene.add(lantern);
+  }
+  // A striped awning sloping out over the stall.
+  const canopy = add(new T.PlaneGeometry(40, 9), own(new T.MeshStandardMaterial({ map: own(awning()), roughness: 0.95, side: T.DoubleSide })), 0, 13.5, wallZ + 4);
+  canopy.rotation.x = Math.PI / 2 + 0.35;
+  canopy.castShadow = false;
+}
