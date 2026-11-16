@@ -25,10 +25,18 @@ describe("balance quiz", () => {
       expect(guessed.winner).toBe(1);
     }
   });
-  test("coins: a weighing needs as many coins on each pan, and the beam is never forced to tell more than it must", () => {
+  test("coins: the scale is weighed whatever lies on it, unequal numbers tell nothing, and the beam is never forced to tell more than it must", () => {
     const s = b.createGame(1, seededRandom(4)),
       one = b.play(s, { from: -1, to: 0, extra: -1 })!;
-    expect(b.play(one, { from: -1, to: b.WEIGH, extra: -1 })).toBeNull();
+    // One coin against none: the scale is weighed, goes down on the left, and rules nothing out.
+    const lopsided = b.play(one, { from: -1, to: b.WEIGH, extra: -1 })!;
+    expect(lopsided.log).toEqual([{ left: [0], right: [], tip: 1 }]);
+    expect(b.doubts(lopsided)).toEqual(b.doubts(s));
+    expect(b.play(s, { from: -1, to: b.WEIGH, extra: -1 })!.log[0].tip).toBe(0);
+    // Once every weighing is used, no more.
+    let spent = s;
+    for (let k = 0; k < s.allowed; k++) spent = b.play(spent, { from: -1, to: b.WEIGH, extra: -1 })!;
+    expect(b.play(spent, { from: -1, to: b.WEIGH, extra: -1 })).toBeNull();
     const two = b.play(b.play(one, { from: -1, to: 1, extra: -1 })!, { from: -1, to: 1, extra: -1 })!,
       weighed = b.play(two, { from: -1, to: b.WEIGH, extra: -1 })!;
     expect(weighed.log).toHaveLength(1);

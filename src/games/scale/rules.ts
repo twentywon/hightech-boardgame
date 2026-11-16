@@ -132,14 +132,16 @@ const between = (random: Random, low: number, high: number) => low + (Math.floor
 
 type Doubt = [coin: number, way: 1 | -1];
 const predict = (w: Pick<Weighing, "left" | "right">, coin: number, way: number) => (w.left.includes(coin) ? way : w.right.includes(coin) ? -way : 0);
-/** Every (coin, heavier or lighter) the weighings so far leave possible. */
+/** Whether a weighing could tell anything: as many coins on each pan (more on one side only weighs it down). */
+export const fair = (w: Pick<Weighing, "left" | "right">) => w.left.length === w.right.length;
+/** Every (coin, heavier or lighter) the weighings so far leave possible; a weighing of unequal numbers rules nothing out. */
 export function doubts(s: Pick<State, "coins" | "heavy" | "log">): Doubt[] {
   let out: Doubt[] = [];
   for (let c = 0; c < s.coins; c++) {
     if (s.heavy !== -1) out.push([c, 1]);
     if (s.heavy !== 1) out.push([c, -1]);
   }
-  for (const w of s.log) out = out.filter(([c, d]) => predict(w, c, d) === w.tip);
+  for (const w of s.log) if (fair(w)) out = out.filter(([c, d]) => predict(w, c, d) === w.tip);
   return out;
 }
 /** The coins that may still be the false one. */
@@ -209,9 +211,12 @@ export function solvable(s: State) {
 }
 /** The coins on each pan now. */
 export const onPans = (s: Pick<State, "pans">) => ({ left: s.pans.flatMap((p, i) => (p === 1 ? [i] : [])), right: s.pans.flatMap((p, i) => (p === 2 ? [i] : [])) });
-const weighable = (s: State) => {
+/** The scale may be weighed whatever lies on it (the user asked), as long as weighings are left. */
+const weighable = (s: State) => !s.accusing && s.log.length < s.allowed;
+/** A weighing worth making: as many coins on each pan, and some. */
+const telling = (s: State) => {
   const { left, right } = onPans(s);
-  return !s.accusing && s.log.length < s.allowed && left.length > 0 && left.length === right.length;
+  return weighable(s) && left.length > 0 && left.length === right.length;
 };
 /** Which way the beam falls: the way that leaves the most coins (and then the most cases) in doubt. */
 function fall(s: State, w: Pick<Weighing, "left" | "right">): -1 | 0 | 1 {
@@ -242,7 +247,7 @@ function coinHint(s: State): Move | null {
   const k = s.allowed - s.log.length,
     list = doubts(s);
   // The coins on the pans now make a good weighing: weigh.
-  if (weighable(s)) {
+  if (telling(s)) {
     const now = onPans(s),
       good = ([1, -1, 0] as const).every((tip) => {
         const left = list.filter(([c, d]) => predict(now, c, d) === tip);
@@ -508,8 +513,10 @@ export function play(s: State, move: Move): State | null {
     if (to === ACCUSE) return { ...next, accusing: !s.accusing };
     if (to === WEIGH) {
       if (!weighable(s)) return null;
-      const { left, right } = onPans(s);
-      return { ...next, log: [...s.log, { left, right, tip: fall(s, { left, right }) }] };
+      const { left, right } = onPans(s),
+        // Unequal numbers: the side with more coins goes down, whichever is false (it differs by less than a coin).
+        tip = fair({ left, right }) ? fall(s, { left, right }) : left.length > right.length ? 1 : -1;
+      return { ...next, log: [...s.log, { left, right, tip }] };
     }
     if (!Number.isInteger(to) || to < 0 || to >= s.coins) return null;
     if (!s.accusing) return { ...next, pans: s.pans.map((p, i) => (i === to ? (p + 1) % 3 : p)) };

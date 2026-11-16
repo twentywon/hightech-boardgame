@@ -20,7 +20,7 @@ async function press(page: Page, moves: string) {
   await rest(page);
 }
 
-test("balance quiz: the four stages are laid, each takes a press, a hint is shown, and coins are weighed only in equal numbers", async ({ page }) => {
+test("balance quiz: the four stages are laid, each takes a press, a hint is shown, and coins are weighed whatever lies on the pans", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -32,11 +32,16 @@ test("balance quiz: the four stages are laid, each takes a press, a hint is show
   await press(page, "1수");
   await page.locator("#pz-hint").click();
   await expect(page.locator(".board-hint")).toContainText("힌트");
-  // The coins: one coin on a pan and none on the other cannot be weighed.
+  // The coins: one coin on a pan and none on the other can be weighed too, and a weighing is spent.
   await page.locator('.puzzle-level[data-stage="1"]').click();
   await expect(count(page)).toHaveText("0수");
   await press(page, "1수");
-  await expect(page.locator("#pg-tool-0")).toBeDisabled();
+  const left = Number((await page.locator("#turn").innerText()).match(/저울 (\d+)번 남음/)![1]);
+  await expect(page.locator("#pg-tool-0")).toBeEnabled();
+  await page.locator("#pg-tool-0").click();
+  await expect(count(page)).toHaveText("2수");
+  await expect(page.locator("#turn")).toContainText(`저울 ${left - 1}번 남음`);
+  await rest(page);
   await expect(page.locator("#pg-tool-1")).toHaveText("가짜 지목하기");
   for (const stage of ["3", "4"]) {
     await page.locator(`.puzzle-level[data-stage="${stage}"]`).click();
@@ -92,14 +97,11 @@ test("balance quiz: coins are dragged onto the pans and off again, and a bare ta
   // One coin on each pan: they can be weighed.
   await drag(page, await coin(0), await pan(0));
   await expect(count(page)).toHaveText("1수");
-  await expect(page.locator("#pg-tool-0")).toBeDisabled();
   await drag(page, await coin(1), await pan(1));
   await expect(count(page)).toHaveText("2수");
-  await expect(page.locator("#pg-tool-0")).toBeEnabled();
   // Carried off the pan, the coin goes back to the rack; let go over its own pan, nothing happens.
   await drag(page, await pan(1), await onScreen(page, { x: 0, y: 0.6, z: 2.6 }));
   await expect(count(page)).toHaveText("3수");
-  await expect(page.locator("#pg-tool-0")).toBeDisabled();
   const left = panRest(0);
   await drag(page, await pan(0), await onScreen(page, { ...left, y: left.y + 1.3 }));
   await expect(count(page)).toHaveText("3수");

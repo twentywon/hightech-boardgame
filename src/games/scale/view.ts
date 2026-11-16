@@ -22,7 +22,20 @@ interface Balance {
   C: number;
   R: number;
 }
-/** A painted label: a number or a word on a small card. */
+const FACE = '"Inter", "Noto Sans KR", sans-serif';
+/** Sets a font of `size` for `text`, made smaller if need be so that it fits within `room`: nothing written is cut off. */
+function fit(ctx: CanvasRenderingContext2D, text: string, weight: number, size: number, room: number) {
+  ctx.font = `${weight} ${size}px ${FACE}`;
+  const wide = ctx.measureText(text).width;
+  if (wide > room) ctx.font = `${weight} ${Math.floor((size * room) / wide)}px ${FACE}`;
+}
+/** How wide a canvas must be for `text` in a label `h` high, with a margin either side. */
+function labelWidth(text: string, h: number, font = 900) {
+  const ctx = document.createElement("canvas").getContext("2d")!;
+  ctx.font = `${font} ${Math.round(h * 0.62)}px ${FACE}`;
+  return Math.ceil(ctx.measureText(text).width + h * 0.5);
+}
+/** A painted label: a number or a word on a small card, shrunk to fit if it is too long for it. */
 function label(text: string, w: number, h: number, colour = "#2a1d14", ground = "#f3e9d2", font = 900) {
   const c = document.createElement("canvas");
   c.width = w;
@@ -33,7 +46,7 @@ function label(text: string, w: number, h: number, colour = "#2a1d14", ground = 
   ctx.fillStyle = colour;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = `${font} ${Math.round(h * 0.62)}px "Inter", "Noto Sans KR", sans-serif`;
+  fit(ctx, text, font, Math.round(h * 0.62), w * 0.9);
   ctx.fillText(text, w / 2, h / 2 + h * 0.04);
   const t = new T.CanvasTexture(c);
   t.colorSpace = T.SRGBColorSpace;
@@ -300,7 +313,10 @@ export class BalanceView extends TableView<State> {
         this.part(sack, new T.SphereGeometry(0.55, 18, 14), cloth, 0, 0.5).scale.set(1, 0.95, 1);
         this.part(sack, new T.CylinderGeometry(0.2, 0.32, 0.35, 14), cloth, 0, 1.05);
         this.part(sack, new T.ConeGeometry(0.34, 0.3, 16), this.standard({ color: colour, roughness: 1 }), 0, 1.3);
-        const tag = this.part(sack, new T.PlaneGeometry(1.5, 0.62), this.standard({ map: this.own(label(`${name} ${s.load}g`, 300, 124, "#3a2410", "#f6edd6", 800)), roughness: 0.8, side: T.DoubleSide }), 0, 1.75, 0.15);
+        // The tag is as wide as its words need (a long name such as 장미 꽃잎 was cut off on a card of one width).
+        const words = `${name} ${s.load}g`,
+          wide = Math.max(300, labelWidth(words, 124, 800));
+        const tag = this.part(sack, new T.PlaneGeometry((1.5 * wide) / 300, 0.62), this.standard({ map: this.own(label(words, wide, 124, "#3a2410", "#f6edd6", 800)), roughness: 0.8, side: T.DoubleSide }), 0, 1.75, 0.15);
         tag.rotation.x = -0.1;
         this.scales[0].pans[0].add(sack);
         sack.position.y = 0.22;
@@ -466,38 +482,41 @@ export class BalanceView extends TableView<State> {
     this.redraw();
   }
   private writeLog(s: State) {
-    const lines = s.log.map((w, k) => `${k + 1}. ${w.left.map((c) => c + 1).join("·")}  대  ${w.right.map((c) => c + 1).join("·")}  →  ${w.tip === 0 ? "수평" : w.tip === 1 ? "왼쪽이 무겁다" : "오른쪽이 무겁다"}`),
-      said = `${s.allowed}|${s.heavy}|${lines.join("\n")}`;
+    const told = (w: (typeof s.log)[number]) => (w.tip === 0 ? "수평" : w.tip === 1 ? "왼쪽이 무겁다" : "오른쪽이 무겁다"),
+      list = (coins: number[]) => (coins.length ? coins.map((c) => c + 1).join(" ") : "없음"),
+      said = `${s.allowed}|${s.heavy}|${s.log.map((w) => `${w.left}/${w.right}/${w.tip}`).join(";")}`;
     if (!this.log || said === this.log.said) return;
     this.log.said = said;
-    const ctx = this.log.canvas.getContext("2d")!;
+    const ctx = this.log.canvas.getContext("2d")!,
+      room = 464,
+      write = (text: string, weight: number, size: number, x: number, y: number) => {
+        fit(ctx, text, weight, size, room - (x - 24));
+        ctx.fillText(text, x, y);
+      };
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
     ctx.fillStyle = "#f4ead2";
     ctx.fillRect(0, 0, 512, 640);
     ctx.strokeStyle = "rgba(120, 90, 50, 0.25)";
     ctx.lineWidth = 2;
-    for (let y = 290; y < 640; y += 150) {
+    for (let y = 298; y < 640; y += 150) {
       ctx.beginPath();
       ctx.moveTo(24, y);
       ctx.lineTo(488, y);
       ctx.stroke();
     }
     ctx.fillStyle = "#3a2410";
-    ctx.font = '800 50px "Inter", "Noto Sans KR", sans-serif';
-    ctx.fillText(`저울 기록 ${s.log.length}/${s.allowed}`, 32, 66);
-    ctx.font = '700 34px "Inter", "Noto Sans KR", sans-serif';
+    write(`저울 기록 ${s.log.length}/${s.allowed}`, 800, 50, 32, 66);
     ctx.fillStyle = "#9a3a1a";
-    ctx.fillText(s.heavy === 1 ? "가짜는 더 무겁다" : s.heavy === -1 ? "가짜는 더 가볍다" : "가짜의 무게는 모른다", 32, 120);
-    ctx.fillStyle = "#2a1d14";
+    write(s.heavy === 1 ? "가짜는 더 무겁다" : s.heavy === -1 ? "가짜는 더 가볍다" : "가짜의 무게는 모른다", 700, 34, 32, 120);
+    // Each weighing on three lines (the left pan, the right pan, which way it fell), every line kept within the sheet.
     s.log.forEach((w, k) => {
       const y = 150 + k * 150;
-      ctx.font = '800 32px "Inter", "Noto Sans KR", sans-serif';
-      const pans = `${w.left.map((c) => c + 1).join(" ")}  |  ${w.right.map((c) => c + 1).join(" ")}`;
-      ctx.font = `700 ${pans.length > 26 ? 24 : 32}px "Inter", "Noto Sans KR", sans-serif`;
-      ctx.fillText(`${k + 1}) ${pans}`, 24, y + 48);
-      ctx.font = '800 34px "Inter", "Noto Sans KR", sans-serif';
-      ctx.fillStyle = w.tip === 0 ? "#2a6a3a" : "#9a2a1a";
-      ctx.fillText(`→ ${w.tip === 0 ? "수평" : w.tip === 1 ? "왼쪽이 무겁다" : "오른쪽이 무겁다"}`, 60, y + 100);
       ctx.fillStyle = "#2a1d14";
+      write(`${k + 1}) 왼쪽  ${list(w.left)}`, 700, 30, 24, y + 40);
+      write(`오른쪽  ${list(w.right)}`, 700, 30, 58, y + 82);
+      ctx.fillStyle = w.tip === 0 ? "#2a6a3a" : "#9a2a1a";
+      write(`→ ${told(w)}${w.left.length === w.right.length ? "" : " (개수 다름)"}`, 800, 32, 58, y + 126);
     });
     this.log.texture.needsUpdate = true;
   }
