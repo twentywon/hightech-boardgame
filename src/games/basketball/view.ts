@@ -5,8 +5,8 @@ import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { GROUND, shooterCamera, swipe } from "./layout";
-import { FINAL, MISS, SCORE, SHOT, TICK, onFire, worth, type State } from "./rules";
-import { BALL, BOARD, DT, HAND, HOOP, LANE, READY, arc, canShoot, createWorld, flightTime, floorAt, shoot, step, type Happening, type World } from "./sim";
+import { FINAL, GOAL, MISS, SCORE, SHOT, TICK, onFire, worth, type State } from "./rules";
+import { BALL, BOARD, DT, HAND, HOOP, LANE, READY, arc, createWorld, flightTime, floorAt, inTray, nextStage, readyBall, shoot, step, type Happening, type World } from "./sim";
 
 export const BASKETBALL_COLORS: [string, string] = ["#e8641c", "#1f4fae"];
 /** A tiny fixed sequence, so that painted pictures come out the same every time. */
@@ -239,6 +239,8 @@ export class BasketballView extends TableView<State> {
   private charge: { from: number; yaw: number } | null = null;
   private keyYaw = 0;
   private lift = 0;
+  /** The ball being taken up for the throw under way, or -1. */
+  private held = -1;
   private paused = false;
   private last = performance.now();
   private left = 0;
@@ -414,10 +416,10 @@ export class BasketballView extends TableView<State> {
     this.scene.add(sign);
     return { canvas, texture, said: "" };
   }
-  /** Paints the lit panel: the score, the seconds left, and how many points a basket is worth now. */
+  /** Paints the lit panel: this stage's points against its goal, the stage and what a basket is worth now, the seconds left. */
   private lights(state: State) {
     const fire = onFire(state),
-      said = `${state.score}|${state.left}|${worth(state)}|${fire}|${state.level}`;
+      said = `${state.stageScore}|${state.left}|${worth(state)}|${fire}|${state.stage}`;
     if (said === this.led.said) return;
     this.led.said = said;
     const ctx = this.led.canvas.getContext("2d")!;
@@ -427,9 +429,9 @@ export class BasketballView extends TableView<State> {
     ctx.textAlign = "center";
     ctx.font = '800 34px "Inter", "Noto Sans KR", Arial, sans-serif';
     ctx.fillStyle = "#ffd45a";
-    ctx.fillText("SCORE", 230, 40);
+    ctx.fillText(`SCORE / ${GOAL}`, 230, 40);
     ctx.fillText("TIME", 800, 40);
-    ctx.fillText(fire ? "ON FIRE" : state.left <= FINAL ? "3 POINTS" : `LEVEL ${state.level}`, 515, 40);
+    ctx.fillText(fire ? "ON FIRE" : state.left <= FINAL ? "3 POINTS" : `STAGE ${state.stage}`, 515, 40);
     ctx.font = '900 150px "Courier New", monospace';
     const digit = (text: string, x: number, colour: string) => {
       ctx.shadowColor = colour;
@@ -437,7 +439,7 @@ export class BasketballView extends TableView<State> {
       ctx.fillStyle = colour;
       ctx.fillText(text, x, 152);
     };
-    digit(String(state.score).padStart(3, "0"), 230, "#ff4a2a");
+    digit(String(state.stageScore).padStart(2, "0"), 230, state.stageScore >= GOAL - 10 ? "#ffd45a" : "#ff4a2a");
     digit(String(state.left).padStart(2, "0"), 800, state.left <= FINAL ? "#ff4a2a" : "#3aff7a");
     ctx.font = '900 110px "Inter", Arial, sans-serif';
     digit(`×${worth(state)}`, 515, fire ? "#ff9a2a" : "#ffd45a");
@@ -503,7 +505,8 @@ export class BasketballView extends TableView<State> {
     return null;
   }
   private throwBall(power: number, yaw: number) {
-    if (!shoot(this.world, power, yaw)) return;
+    if (!shoot(this.world, power, yaw, this.held)) return;
+    this.held = -1;
     this.lift = 0;
     this.onMove({ from: -1, to: SHOT, extra: -1 });
   }
@@ -590,7 +593,10 @@ export class BasketballView extends TableView<State> {
     // The ready ball comes up into the hand while a throw is being aimed.
     const aim = this.running() ? this.aiming(now) : null;
     this.lift += ((aim ? 1 : 0) - this.lift) * Math.min(1, real * 12);
-    const ready = canShoot(world) ? world.tray[0] : -1;
+    // The ball the hand takes up is chosen when the aim begins and kept while it lasts.
+    if (!aim) this.held = -1;
+    else if (this.held < 0 || world.balls[this.held]?.phase === "flight") this.held = readyBall(world);
+    const ready = this.held;
     world.balls.forEach((ball, k) => {
       const mesh = this.balls[k],
         target = new T.Vector3(ball.x, ball.y, ball.z);
@@ -631,7 +637,7 @@ export class BasketballView extends TableView<State> {
       return true;
     });
     const data = this.renderer.domElement.dataset;
-    data.balls = String(world.tray.length);
+    data.balls = String(inTray(world).length);
     data.hoop = world.hoopX.toFixed(2);
   }
   protected subject(): TableSubject {
@@ -649,11 +655,15 @@ export class BasketballView extends TableView<State> {
     // A new round, known by the count of moves going back to nothing: every ball back in the tray, the clock stopped.
     const anew = state.ply === 0 && this.shown > 0;
     this.shown = state.ply;
-    if (anew || this.world.level !== state.level) {
-      this.world = createWorld(state.level);
+    if (anew) {
+      this.world = createWorld(state.stage);
       this.press = this.charge = null;
+      this.held = -1;
       for (const word of this.words) word.sprite.removeFromParent();
       this.words = [];
+    } else if (this.world.level !== state.stage) {
+      // A stage made: the next begins where the balls lie, its clock waiting for its first throw.
+      nextStage(this.world, state.stage);
     }
     this.lights(state);
     this.pose(performance.now(), 0);

@@ -26,7 +26,7 @@ export function swipeFor(power: number, yaw: number, height: number) {
   return { dx: Math.sin(slant) * length, dy: -Math.cos(slant) * length };
 }
 /** The shooter's eye: behind the tray, a little above the hand, looking down the lane under the hoop. */
-export const EYE = { y: 2.7, z: 6.8 },
+export const EYE = { y: 2.8, z: 7.6 },
   LOOK = { y: 1.95, z: HOOP.z };
 export function shooterCamera(camera: T.PerspectiveCamera, aspect: number) {
   // Narrow screens step back so that the cabinet's sides stay in sight.

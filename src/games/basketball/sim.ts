@@ -5,7 +5,9 @@
  * slices and reports what happens; the rules know only the score and the clock.
  *
  * The player stands at +z and throws toward -z. The lane's floor rises gently toward the back (`floorAt`), so a ball
- * that has come down rolls back to the tray by itself.
+ * that has come down rolls back to the tray by itself. In the tray the balls lie as they came down, every which way
+ * (the user asked): nothing lines them up; they knock into each other and stop where they stop, and the hand takes up
+ * the one nearest to it (`readyBall`).
  */
 /**
  * Gravity at the machine's scale (the user asked for a ball as heavy and quick as a real one): a ball's radius of 0.2
@@ -23,10 +25,19 @@ export const HOOP = { y: 2.9, z: -4.45, r: 0.4, tube: 0.028 };
 export const BOARD = { z: -4.95, half: 1.0, bottom: 2.5, top: 3.8 };
 /** The lane between the side nets: its half width, the tray's front, the back wall and the roof net. */
 export const LANE = { half: 1.3, front: 1.45, back: -5.25, roof: 4.45 };
-/** Where the ready ball lies, how far apart balls wait behind it, and where the hand lets a ball go. */
+/** The middle of the tray, and where the hand lets a ball go. */
 export const READY = { z: 1.1 },
-  HAND = { y: 1.45, z: 1.25 },
-  SPACING = BALL * 2 + 0.03;
+  HAND = { y: 1.45, z: 1.25 };
+/** The farthest forward a ball's middle comes in the tray: against the padded lip. */
+export const TRAY_FRONT = 1.28;
+/** Where the balls happen to lie when the machine is switched on: scattered over the tray, not in a row. */
+const SPOTS: [number, number][] = [
+  [-0.68, 1.16],
+  [0.06, 1.24],
+  [0.6, 1.02],
+  [-0.22, 0.8],
+  [0.36, 0.66],
+];
 /** The tray's floor, and where the ramp begins to rise from it. */
 const TRAY_Y = 0.5,
   RAMP_FROM = 0.55,
@@ -40,13 +51,18 @@ export const LAUNCH = (55 * Math.PI) / 180,
   REACH = { short: 3.0, long: 8.0 };
 /** The widest a throw may be turned to either side. */
 export const MOST_YAW = 0.32;
-/** The levels: how far the hoop slides to each side, how long a slide there and back takes, and from what second. */
+/** The stages: how far the hoop slides to each side, and how long a slide there and back takes. */
 export const LEVELS = [
-  { sway: 0, period: 1, from: 0 },
-  { sway: 0.55, period: 5.2, from: 20 },
-  { sway: 0.8, period: 3.4, from: 0 },
+  { sway: 0, period: 1 },
+  { sway: 0.45, period: 5.6 },
+  { sway: 0.65, period: 4.2 },
+  { sway: 0.8, period: 3.2 },
+  { sway: 0.9, period: 2.5 },
 ];
-export type Phase = "tray" | "flight" | "roll";
+/** The fastest the hoop goes on its way to where its stage wants it (so that a new stage does not make it jump). */
+const HOOP_SPEED = 2.6;
+/** A ball in flight, rolling on the floor, or at rest in the tray. */
+export type Phase = "rest" | "flight" | "roll";
 export interface Ball {
   x: number;
   y: number;
@@ -64,8 +80,8 @@ export interface Ball {
 export interface World {
   level: number;
   balls: Ball[];
-  /** The order the balls wait in the tray (indices into `balls`), the ready one first. */
-  tray: number[];
+  /** A fixed sequence for the small unevenness of the net and the ramp, so that balls do not come back in a line. */
+  seed: number;
   /** Seconds since the first throw (the clock starts with it), and the time to the next whole second. */
   time: number;
   tick: number;
@@ -85,19 +101,42 @@ export type Happening =
   | { kind: "board"; strength: number }
   | { kind: "bounce"; strength: number }
   | { kind: "net" };
-/** A machine with every ball waiting in the tray. */
-export function createWorld(level = 1): World {
-  const balls: Ball[] = Array.from({ length: BALLS }, (_, k) => {
-    const z = READY.z - k * SPACING;
-    return { x: 0, y: floorAt(z) + BALL, z, vx: 0, vy: 0, vz: 0, phase: "tray", scored: false, judged: true, spin: 0 };
-  });
-  return { level: Math.max(1, Math.min(LEVELS.length, level)), balls, tray: balls.map((_, k) => k), time: 0, tick: 1, started: false, hoopX: 0, since: 9, swish: -9 };
+/** A machine with every ball lying in the tray. */
+export function createWorld(level = 1, seed = 7): World {
+  const balls: Ball[] = SPOTS.slice(0, BALLS).map(([x, z]) => ({ x, y: floorAt(z) + BALL, z, vx: 0, vy: 0, vz: 0, phase: "rest", scored: false, judged: true, spin: 0 }));
+  return { level: clampLevel(level), balls, seed, time: 0, tick: 1, started: false, hoopX: 0, since: 9, swish: -9 };
 }
-/** Where the hoop is at a moment of the round. */
+const clampLevel = (level: number) => Math.max(1, Math.min(LEVELS.length, Math.round(level) || 1));
+/** The next stage: the clock stops until the next throw and starts again from nothing; the balls stay where they are. */
+export function nextStage(world: World, level: number) {
+  world.level = clampLevel(level);
+  world.time = 0;
+  world.tick = 1;
+  world.started = false;
+}
+/** Where a stage wants the hoop at a moment of its round. */
 export function hoopAt(level: number, time: number) {
-  const { sway, period, from } = LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level - 1))];
-  if (!sway || time < from) return 0;
-  return sway * Math.sin(((time - from) / period) * Math.PI * 2);
+  const { sway, period } = LEVELS[clampLevel(level) - 1];
+  return sway ? sway * Math.sin((time / period) * Math.PI * 2) : 0;
+}
+/** A number from -1 to 1 out of the world's sequence. */
+function jitter(world: World) {
+  world.seed = (world.seed * 16807) % 2147483647;
+  return ((world.seed - 1) / 2147483646) * 2 - 1;
+}
+/** Whether a ball lies in the tray, still or nearly, where the hand can take it up. */
+const takeable = (ball: Ball) => ball.phase === "rest" || (ball.phase === "roll" && ball.z >= RAMP_FROM && Math.hypot(ball.vx, ball.vz) < 0.5);
+/** The balls lying in the tray. */
+export const inTray = (world: World) => world.balls.flatMap((ball, k) => (takeable(ball) ? [k] : []));
+/** The ball the hand would take up: of those in the tray, the nearest to it; -1 when there is none. */
+export function readyBall(world: World) {
+  let best = -1,
+    nearest = Infinity;
+  world.balls.forEach((ball, k) => {
+    const far = Math.hypot(ball.x, ball.z - HAND.z);
+    if (takeable(ball) && far < nearest) [best, nearest] = [k, far];
+  });
+  return best;
 }
 /** How far a throw of `power` (0 to 1, a little more is allowed) carries before it comes back to the rim's height. */
 export const carryOf = (power: number) => REACH.short + Math.max(0, power) * (REACH.long - REACH.short);
@@ -122,15 +161,12 @@ export function launch(power: number, yaw: number) {
     flat = speed * Math.cos(LAUNCH);
   return { vx: flat * Math.sin(turn), vy: speed * Math.sin(LAUNCH), vz: -flat * Math.cos(turn) };
 }
-/** Whether the ready ball lies in its place and may be thrown. */
-export function canShoot(world: World) {
-  const k = world.tray[0];
-  return k !== undefined && Math.abs(world.balls[k].z - READY.z) < 0.04 && world.since > 0.18;
-}
-/** Throws the ready ball; false when none is ready. */
-export function shoot(world: World, power: number, yaw: number) {
+/** Whether a ball lies in the tray and the hand is free to throw it. */
+export const canShoot = (world: World) => readyBall(world) >= 0 && world.since > 0.18;
+/** Throws ball `held` (the one taken up while aiming, if it is still in the tray) or else the nearest; false when none can be. */
+export function shoot(world: World, power: number, yaw: number, held = -1) {
   if (!canShoot(world)) return false;
-  const k = world.tray.shift()!,
+  const k = held >= 0 && world.balls[held] && takeable(world.balls[held]) ? held : readyBall(world),
     ball = world.balls[k],
     v = launch(power, yaw);
   // Picked up and thrown from the hand, over the balls waiting down the lane.
@@ -182,38 +218,44 @@ export function step(world: World): Happening[] {
       out.push({ kind: "second" });
     }
   }
-  world.hoopX = hoopAt(world.level, world.time);
+  const wanted = hoopAt(world.level, world.time),
+    most = HOOP_SPEED * DT;
+  world.hoopX += Math.max(-most, Math.min(most, wanted - world.hoopX));
   world.balls.forEach((ball, k) => {
-    if (ball.phase === "tray") {
-      // Waiting balls close up toward the front of the tray.
-      const slot = READY.z - world.tray.indexOf(k) * SPACING,
-        gap = slot - ball.z;
-      ball.z += Math.sign(gap) * Math.min(Math.abs(gap), 1.4 * DT);
-      ball.x *= 1 - 6 * DT;
-      ball.y = floorAt(ball.z) + BALL;
-      ball.spin = Math.abs(gap) > 1e-4 ? 1.4 / BALL : 0;
-      return;
-    }
+    if (ball.phase === "rest") return;
     if (ball.phase === "roll") {
-      // Down the ramp toward the tray, drawn to the middle as it nears it, until it reaches the next free place.
-      ball.vz += ROLL * DT;
-      ball.vz *= 1 - 0.2 * DT;
-      if (ball.z > -1) ball.vx += -ball.x * 5 * DT;
-      ball.vx *= 1 - 0.8 * DT;
+      // Down the ramp toward the tray, going on sideways as it came; in the flat tray it soon stops, wherever it is.
+      const flat = ball.z >= RAMP_FROM;
+      if (!flat) ball.vz += ROLL * DT;
+      const drag = flat ? 2.4 : 0.2;
+      ball.vx *= 1 - drag * DT;
+      ball.vz *= 1 - drag * DT;
+      const speed = Math.hypot(ball.vx, ball.vz);
+      if (flat && speed > 0) {
+        // Rolling resistance on the padded tray.
+        const left = Math.max(0, speed - 0.7 * DT) / speed;
+        ball.vx *= left;
+        ball.vz *= left;
+      }
       ball.x += ball.vx * DT;
       ball.z += ball.vz * DT;
       if (Math.abs(ball.x) > LANE.half - BALL) {
         ball.x = Math.sign(ball.x) * (LANE.half - BALL);
-        ball.vx *= -0.4;
+        ball.vx *= -0.35;
+      }
+      if (ball.z > TRAY_FRONT) {
+        ball.z = TRAY_FRONT;
+        ball.vz = -Math.abs(ball.vz) * 0.3;
+      }
+      if (ball.z < LANE.back + BALL) {
+        ball.z = LANE.back + BALL;
+        ball.vz = Math.abs(ball.vz);
       }
       ball.y = floorAt(ball.z) + BALL;
       ball.spin = ball.vz / BALL;
-      const place = READY.z - world.tray.length * SPACING;
-      if (ball.z >= place) {
-        ball.z = place;
+      if (flat && Math.hypot(ball.vx, ball.vz) < 0.04) {
         ball.vx = ball.vz = ball.vy = 0;
-        ball.phase = "tray";
-        world.tray.push(k);
+        ball.phase = "rest";
       }
       return;
     }
@@ -231,11 +273,16 @@ export function step(world: World): Happening[] {
       world.swish = world.time;
       out.push({ kind: "score", ball: k }, { kind: "net" });
     }
-    // The net under the rim gathers the ball toward the middle and slows it.
-    if (ball.y < HOOP.y && ball.y > HOOP.y - 0.75 && off < HOOP.r) {
+    // The net under the rim gathers the ball toward the middle and slows it, and lets it out a little to one side.
+    const low = HOOP.y - 0.75;
+    if (ball.y < HOOP.y && ball.y > low && off < HOOP.r) {
       ball.vx += ((world.hoopX - ball.x) * 10 - ball.vx * 9) * DT;
       ball.vz += ((HOOP.z - ball.z) * 10 - ball.vz * 9) * DT;
       ball.vy *= 1 - 2.5 * DT;
+      if (ball.y + ball.vy * DT <= low) {
+        ball.vx += jitter(world) * 1.1;
+        ball.vz += jitter(world) * 0.4;
+      }
     }
     // The backboard (the ball only meets its face), the back wall, the side nets and the roof net.
     const netted = ball.y < HOOP.y && off < HOOP.r + 0.05;
@@ -272,7 +319,8 @@ export function step(world: World): Happening[] {
       const blow = -ball.vy;
       if (blow > 1.6) {
         ball.vy = blow * 0.5;
-        ball.vx *= 0.8;
+        // The padded ramp is never quite even: each bounce sends the ball a little aside.
+        ball.vx = ball.vx * 0.8 + jitter(world) * blow * 0.12;
         ball.vz *= 0.8;
         out.push({ kind: "bounce", strength: Math.min(1, blow / 7) });
       } else {
@@ -281,12 +329,12 @@ export function step(world: World): Happening[] {
       }
     }
   });
-  // Balls in play knock each other apart (the ones waiting in the tray do not give way).
+  // Balls knock each other apart, the ones lying in the tray as well: a ball rolling down pushes into them and they move.
   for (let a = 0; a < world.balls.length; a++)
     for (let b = a + 1; b < world.balls.length; b++) {
       const p = world.balls[a],
         q = world.balls[b];
-      if (p.phase === "tray" && q.phase === "tray") continue;
+      if (p.phase === "rest" && q.phase === "rest") continue;
       const dx = q.x - p.x,
         dy = q.y - p.y,
         dz = q.z - p.z,
@@ -296,9 +344,34 @@ export function step(world: World): Happening[] {
         ny = dy / far,
         nz = dz / far,
         overlap = BALL * 2 - far,
-        fixedP = p.phase === "tray",
-        fixedQ = q.phase === "tray";
-      const [sp, sq] = fixedP ? [0, 1] : fixedQ ? [1, 0] : [0.5, 0.5];
+        // On the floor the two stay on it: they are pushed apart along it only.
+        floor = p.phase !== "flight" && q.phase !== "flight",
+        sp = 0.5,
+        sq = 0.5;
+      if (floor) {
+        const flat = Math.hypot(dx, dz) || 1e-9;
+        p.x -= (dx / flat) * overlap * sp;
+        p.z -= (dz / flat) * overlap * sp;
+        q.x += (dx / flat) * overlap * sq;
+        q.z += (dz / flat) * overlap * sq;
+        const ux = dx / flat,
+          uz = dz / flat,
+          meet = (q.vx - p.vx) * ux + (q.vz - p.vz) * uz;
+        if (meet < 0) {
+          const share = 1.6 * meet;
+          p.vx += share * ux * sp;
+          p.vz += share * uz * sp;
+          q.vx -= share * ux * sq;
+          q.vz -= share * uz * sq;
+        }
+        for (const ball of [p, q]) {
+          ball.z = Math.min(TRAY_FRONT, ball.z);
+          ball.x = Math.max(-LANE.half + BALL, Math.min(LANE.half - BALL, ball.x));
+          ball.y = floorAt(ball.z) + BALL;
+          if (ball.phase === "rest" && Math.hypot(ball.vx, ball.vz) > 0.04) ball.phase = "roll";
+        }
+        continue;
+      }
       p.x -= nx * overlap * sp;
       p.y -= ny * overlap * sp;
       p.z -= nz * overlap * sp;
@@ -314,6 +387,13 @@ export function step(world: World): Happening[] {
       q.vx -= share * nx * sq;
       q.vy -= share * ny * sq;
       q.vz -= share * nz * sq;
+      // A ball lying on the floor that is struck from the air rolls away on the floor.
+      for (const ball of [p, q])
+        if (ball.phase !== "flight") {
+          ball.vy = 0;
+          ball.y = floorAt(ball.z) + BALL;
+          if (ball.phase === "rest" && Math.hypot(ball.vx, ball.vz) > 0.04) ball.phase = "roll";
+        }
     }
   return out;
 }

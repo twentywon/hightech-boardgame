@@ -113,8 +113,13 @@ const BACK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height
  * after a moment 다시 하기 (the game's own new-game window) and 다른 게임 (back to the collection) under it.
  * It stays until one is pressed or the game is begun again; the table itself can still be looked at round it.
  */
-/** Games that end when their clock runs out: their end says so instead of a win or a loss. */
-const TIMED = new Set(["meat-grill", "whack-a-mole", "basketball"]);
+/** Games that end when their clock runs out: their end says so instead of a win or a loss. Basketball's run is
+ *  lost when a stage's clock runs out first and won when every stage is made. */
+const TIMED: Record<string, Partial<Record<Outcome, string>>> = {
+  "meat-grill": { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
+  "whack-a-mole": { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
+  basketball: { win: "성공", lose: "시간 종료" },
+};
 export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   const board = document.querySelector<HTMLElement>(".board-area");
   if (!board || capturing()) return;
@@ -128,7 +133,7 @@ export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   word.className = "finale-word";
   word.setAttribute("aria-hidden", "true");
   // A game whose clock simply runs out is neither won nor lost.
-  word.textContent = TIMED.has(document.documentElement.dataset.game ?? "") ? "시간 종료" : ART[outcome].word;
+  word.textContent = TIMED[document.documentElement.dataset.game ?? ""]?.[outcome] ?? ART[outcome].word;
   ways.className = "finale-ways";
   ways.hidden = true;
   again.id = "finale-again";

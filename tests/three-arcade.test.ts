@@ -78,12 +78,21 @@ describe("tic-tac-toe", () => {
   });
 });
 describe("air hockey", () => {
-  test("a goal is a move for the side that scored, and seven win the match", () => {
+  test("five goals win a set, the set starts again from nothing, and two sets of three win the match", () => {
     let s = ah.createGame();
-    for (let k = 0; k < ah.GOALS - 1; k++) s = ah.play(s, at(1))!;
+    for (let k = 0; k < ah.POINTS - 1; k++) s = ah.play(s, at(1))!;
+    expect(s.score).toEqual([0, ah.POINTS - 1]);
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(0))!;
+    // My fifth goal took the first set: the score is back to nothing.
+    expect(s.sets).toEqual([1, 0]);
+    expect(s.score).toEqual([0, 0]);
+    expect(s.done).toEqual([[ah.POINTS, ah.POINTS - 1]]);
+    expect(ah.setNumber(s)).toBe(2);
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(1))!;
+    expect(s.sets).toEqual([1, 1]);
     expect(s.winner).toBeNull();
-    for (let k = 0; k < ah.GOALS; k++) s = ah.play(s, at(0)) ?? s;
-    expect(s.score).toEqual([ah.GOALS, ah.GOALS - 1]);
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(0))!;
+    expect(s.sets).toEqual([2, 1]);
     expect(s.winner).toBe(0);
     expect(ah.play(s, at(1))).toBeNull();
   });
@@ -141,8 +150,32 @@ describe("basketball", () => {
     const { w, seen } = throwOnce(ideal.power, ideal.yaw);
     expect(seen).toContain("score");
     expect(seen).not.toContain("miss");
-    expect(w.tray).toHaveLength(bs.BALLS);
+    expect(bs.inTray(w)).toHaveLength(bs.BALLS);
     expect(bs.canShoot(w)).toBe(true);
+  });
+  test("the balls lie in the tray as they came down, not in a row, and the hand takes up the nearest", () => {
+    const w = bs.createWorld(1),
+      ideal = bs.idealThrow(0);
+    let thrown = 0;
+    for (let k = 0; k < 240 * 40; k++) {
+      if (thrown < 12 && k % 150 === 0 && bs.shoot(w, ideal.power, 0)) thrown++;
+      bs.step(w);
+    }
+    expect(thrown).toBe(12);
+    const lying = bs.inTray(w).map((k) => w.balls[k]);
+    expect(lying).toHaveLength(bs.BALLS);
+    // Spread across the tray and at different depths: no line along the lane or across it.
+    const xs = lying.map((b) => b.x),
+      zs = lying.map((b) => b.z);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.8);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(0.05);
+    // None in another, all inside the tray.
+    for (const a of lying) {
+      expect(a.z).toBeLessThanOrEqual(bs.TRAY_FRONT + 1e-9);
+      for (const b of lying) if (a !== b) expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(bs.BALL * 2 - 0.02);
+    }
+    const ready = w.balls[bs.readyBall(w)];
+    for (const b of lying) expect(Math.hypot(ready.x, ready.z - bs.HAND.z)).toBeLessThanOrEqual(Math.hypot(b.x, b.z - bs.HAND.z));
   });
   test("too weak or too far aside misses", () => {
     const ideal = bs.idealThrow(0);
@@ -177,12 +210,19 @@ describe("basketball", () => {
     bs.shoot(w, 0.5, 0);
     expect(bs.canShoot(w)).toBe(false);
   });
-  test("the hoop stands still at the first level and slides at the hardest", () => {
+  test("the hoop stands still at the first stage and slides wider and quicker at each after, never jumping", () => {
     expect(bs.hoopAt(1, 30)).toBe(0);
-    expect(bs.hoopAt(2, 10)).toBe(0);
-    expect(Math.abs(bs.hoopAt(2, 21.3))).toBeGreaterThan(0.1);
-    const places = Array.from({ length: 20 }, (_, k) => bs.hoopAt(3, k * 0.4));
-    expect(Math.max(...places) - Math.min(...places)).toBeGreaterThan(1);
+    expect(Math.abs(bs.hoopAt(2, 1.3))).toBeGreaterThan(0.1);
+    const reach = (level: number) => Math.max(...Array.from({ length: 200 }, (_, k) => Math.abs(bs.hoopAt(level, k * 0.05))));
+    for (let level = 2; level < bs.LEVELS.length; level++) expect(reach(level + 1)).toBeGreaterThan(reach(level));
+    // A new stage starts its clock again, but the hoop goes there at its own pace.
+    const w = bs.createWorld(5);
+    bs.shoot(w, 0.5, 0);
+    for (let k = 0; k < 150; k++) bs.step(w);
+    const before = w.hoopX;
+    bs.nextStage(w, 2);
+    bs.step(w);
+    expect(Math.abs(w.hoopX - before)).toBeLessThan(0.02);
   });
   test("a swipe up throws with the power of its length and the turn of its slant", () => {
     const made = swipeFor(0.54, 0.05, 800),
@@ -191,6 +231,27 @@ describe("basketball", () => {
     expect(read.yaw).toBeCloseTo(0.05, 5);
     expect(swipe(0, 20, 800)).toBeNull();
     expect(swipe(0, -10, 800)).toBeNull();
+  });
+  test("fifty points in a stage clear it, the next begins with a full clock, and the last one cleared wins", () => {
+    let s = br.createGame(1);
+    s = br.play(s, at(br.SHOT))!;
+    for (let k = 0; k < 10; k++) s = br.play(s, at(br.TICK))!;
+    while (s.stage === 1) s = br.play(s, at(br.SCORE + 2))!;
+    expect(s.stage).toBe(2);
+    expect(s.cleared).toBe(1);
+    expect(s.stageScore).toBe(0);
+    expect(s.left).toBe(br.ROUND);
+    expect(s.score).toBeGreaterThanOrEqual(br.GOAL);
+    // Running out of time before the goal ends the run.
+    let late = s;
+    while (late.winner === null) late = br.play(late, at(br.TICK))!;
+    expect(late.winner).toBe(1);
+    // The last stage made wins it.
+    let last = br.createGame(br.LAST_STAGE);
+    while (last.winner === null) last = br.play(last, at(br.SCORE + 4))!;
+    expect(last.winner).toBe(0);
+    expect(last.cleared).toBe(1);
+    expect(br.createGame(99).stage).toBe(br.LAST_STAGE);
   });
   test("a basket is worth 2, 3 in the last seconds and one more on fire; a miss puts the fire out", () => {
     let s = br.createGame(1);
@@ -205,6 +266,7 @@ describe("basketball", () => {
     expect(br.play(s, at(br.SCORE + 5))).toBeNull();
     while (s.winner === null) s = br.play(s, at(br.TICK))!;
     expect(s.left).toBe(0);
+    expect(s.winner).toBe(1);
     // Two, two, two (the third made the fire), then a miss.
     expect(s.score).toBe(2 + 2 + 2);
     expect(br.play(s, at(br.SHOT))).toBeNull();
