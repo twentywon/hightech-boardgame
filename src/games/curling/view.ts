@@ -24,6 +24,17 @@ export function throwerCamera(camera: T.PerspectiveCamera, shift = 0) {
   camera.lookAt(HACK.x + EYE.ahead + shift, 0, HACK.z);
   camera.updateMatrixWorld();
 }
+/**
+ * The scoreboard (the user sent a stadium's and asked for one): a lit board hung from the roof by two cables over
+ * the next sheet at the right, turned square to the thrower's eye, its shape (`width`, `height`, scaled to fit) and
+ * where it is seen while the eye is at the hack, as shares of the screen (its right edge, its top, and how much of
+ * the height it takes) at a fixed distance before the eye (`depth`, short of the far wall, which would hide it), so
+ * that it is the same on any shape of screen and clear of the status line at the top.
+ * It leaves the view when the eye follows a stone down the ice.
+ */
+export const BOARD = { width: 5.4, height: 1.8, right: 0.975, top: 0.08, share: 0.19, depth: 12.5 };
+/** On a short screen (a phone held sideways) it is larger, and lower, below the status line. */
+export const SMALL_BOARD = { top: 0.12, share: 0.26, depth: 9 };
 /** Where the stones not yet thrown wait, beside the sheet at the hack's end: mine on the near side, the computer's across. */
 export const waitingAt = (side: number, k: number) => ({ x: -6.9 + k * 0.48, z: side === 0 ? 2.15 : -2.15 });
 /** The ice: pebbled white with the house in blue and red rings, and the lines across. */
@@ -107,7 +118,15 @@ export class CurlingView extends FlickView<State> {
   private chasing: number | null = null;
   private landed = false;
   private glide = 0;
-  constructor(host: HTMLElement, quality: "high" | "low") {
+  /** The scoreboard: its case, the lit face painted on a canvas and what it shows now, and the cables it hangs by. */
+  private board = new T.Group();
+  private face: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
+  private cables: T.Mesh[] = [];
+  constructor(
+    host: HTMLElement,
+    quality: "high" | "low",
+    private mode: "local" | "ai" = "ai",
+  ) {
     super(host, quality, "#1c2630");
     this.daylight("#f2f7ff", "#5a6878", "#ffffff", 9, 2.0);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
@@ -130,6 +149,7 @@ export class CurlingView extends FlickView<State> {
       }
     });
     this.rink(ice.map!, boards, granite, body, grip, post);
+    this.face = this.scoreboard();
     // An arrow on the ice by the hack shows the turn chosen.
     const shape = new T.Shape();
     shape.absarc(0, 0, 0.32, 0.3, Math.PI * 1.6, false);
@@ -297,12 +317,169 @@ export class CurlingView extends FlickView<State> {
       this.scene.add(mesh);
     }
   }
+  /** Builds the scoreboard: a black case, the lit face, two cables up to the roof. */
+  private scoreboard() {
+    const { width, height } = BOARD,
+      canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 400;
+    const texture = this.own(new T.CanvasTexture(canvas));
+    texture.colorSpace = T.SRGBColorSpace;
+    texture.anisotropy = 8;
+    const steel = this.standard({ color: "#16191f", roughness: 0.45, metalness: 0.6 });
+    this.add(block(width + 0.2, height + 0.2, 0.16, 0.04), steel, 0, 0, 0, this.board);
+    // Lit from within: the face is not shaded by the hall's lights.
+    const lit = this.add(new T.PlaneGeometry(width, height), this.own(new T.MeshBasicMaterial({ map: texture, toneMapped: false })), 0, 0, 0.085, this.board);
+    lit.castShadow = lit.receiveShadow = false;
+    const cable = this.own(new T.CylinderGeometry(0.02, 0.02, 1, 6));
+    for (let k = 0; k < 2; k++) {
+      const mesh = new T.Mesh(cable, steel);
+      mesh.scale.y = 14;
+      this.scene.add(mesh);
+      this.cables.push(mesh);
+    }
+    this.scene.add(this.board);
+    return { canvas, texture, said: "" };
+  }
+  /** Stands the scoreboard where it is seen at the same place on the screen from the hack, turned to the eye. */
+  private stand() {
+    const base = this.camera.clone();
+    throwerCamera(base, 0);
+    const chosen = this.host.clientHeight < 500 ? SMALL_BOARD : BOARD,
+      top = chosen.top,
+      // Never wider than a third of the screen, or on a squarer screen it would reach over the house.
+      share = Math.min(chosen.share, (0.33 * this.camera.aspect * BOARD.height) / BOARD.width),
+      tan = Math.tan((base.fov * Math.PI) / 360),
+      depth = chosen.depth,
+      size = (share * 2 * depth * tan) / BOARD.height,
+      across = (BOARD.width * size) / (2 * depth * tan * base.aspect),
+      ndc = new T.Vector3((BOARD.right - across / 2) * 2 - 1, 1 - (top + share / 2) * 2, 0.5).unproject(base),
+      ray = ndc.sub(base.position).normalize(),
+      forward = base.getWorldDirection(new T.Vector3()),
+      at = base.position.clone().addScaledVector(ray, depth / ray.dot(forward));
+    // Square to the eye at the hack, so that it reads as a plain rectangle there (it leans back a little in the hall).
+    this.board.position.copy(at);
+    this.board.quaternion.copy(base.quaternion);
+    this.board.scale.setScalar(size);
+    this.board.updateMatrixWorld();
+    // The cables rise straight up from the top corners of its case, out of sight.
+    this.cables.forEach((cable, k) => {
+      const corner = new T.Vector3((k ? 1 : -1) * BOARD.width * 0.36, BOARD.height / 2 + 0.1, 0).applyMatrix4(this.board.matrixWorld);
+      cable.position.set(corner.x, corner.y + 7, corner.z);
+    });
+  }
+  /** Paints the scoreboard: each side's points end by end and in all, the end being played, the hammer, the last end scored. */
+  private score(state: State) {
+    const names = this.mode === "ai" ? ["나", "컴퓨터"] : ["빨강", "노랑"],
+      said = `${names}|${state.ends}|${state.scores[0]}|${state.scores[1]}|${state.end}|${state.hammer}|${state.done}|${state.winner}`;
+    if (said === this.face.said) return;
+    this.face.said = said;
+    const ctx = this.face.canvas.getContext("2d")!,
+      W = 1200,
+      H = 400,
+      font = (weight: number, size: number) => `${weight} ${size}px "Inter", "Noto Sans KR", sans-serif`,
+      bright = ["#ff4f3c", "#ffc83c"];
+    // A deep blue field crossed by lighter bands, as such boards are.
+    const field = ctx.createLinearGradient(0, 0, W, H);
+    field.addColorStop(0, "#1a2c8c");
+    field.addColorStop(1, "#14217a");
+    ctx.fillStyle = field;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(90, 120, 230, 0.22)";
+    for (const [a, b] of [[300, 520], [640, 760], [880, 1180]]) {
+      ctx.beginPath();
+      ctx.moveTo(a, 0);
+      ctx.lineTo(b, 0);
+      ctx.lineTo(b - 260, H);
+      ctx.lineTo(a - 260, H);
+      ctx.closePath();
+      ctx.fill();
+    }
+    const n = state.ends,
+      left = 470,
+      totalX = W - 120,
+      step = Math.min(190, (totalX - 120 - left) / Math.max(1, n - 1)),
+      colX = (k: number) => (n === 1 ? left : left + k * step),
+      rows = [178, 312],
+      played = state.scores[0].length,
+      // The end on now (or next), unless the game is over.
+      current = state.winner === null ? played : -1;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // The column of the end on now is a little lighter.
+    if (current >= 0 && current < n) {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.09)";
+      ctx.fillRect(colX(current) - step * 0.42, 96, step * 0.84, 280);
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.font = font(700, 40);
+    for (let k = 0; k < n; k++) ctx.fillText(String(k + 1), colX(k), 62);
+    ctx.fillText("Total", totalX, 62);
+    ctx.textAlign = "left";
+    ctx.font = font(800, 34);
+    ctx.fillStyle = state.winner === null ? "rgba(255,255,255,0.7)" : "#ffe27a";
+    ctx.fillText(state.winner === null ? `${Math.min(played + 1, n)}엔드` : "FINAL", 40, 62);
+    // Both names in one size, the largest that lets the longer fit before the first end's column.
+    ctx.font = font(900, 84);
+    const room = left - 90 - 140,
+      nameSize = Math.min(84, ...names.map((name) => Math.floor((84 * room) / ctx.measureText(name).width)));
+    names.forEach((name, side) => {
+      const y = rows[side];
+      // The side's colour as a stone seen from above: granite and its handle.
+      ctx.fillStyle = "#9aa0a8";
+      ctx.beginPath();
+      ctx.arc(80, y, 40, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CURLING_COLORS[side];
+      ctx.beginPath();
+      ctx.arc(80, y, 26, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#e9ecef";
+      ctx.fillRect(66, y - 6, 28, 12);
+      ctx.textAlign = "left";
+      ctx.fillStyle = bright[side];
+      ctx.font = font(900, nameSize);
+      ctx.fillText(name, 140, y + 4);
+      // The hammer, the last stone of the end on now.
+      if (state.winner === null && state.hammer === side) {
+        ctx.fillStyle = "#ffffff";
+        ctx.font = font(900, 64);
+        ctx.textAlign = "center";
+        ctx.fillText("*", left - 62, y + 10);
+      }
+      ctx.textAlign = "center";
+      ctx.font = font(800, 96);
+      ctx.fillStyle = "#ffffff";
+      state.scores[side].forEach((points, k) => ctx.fillText(String(points), colX(k), y + 4));
+      ctx.fillStyle = bright[side];
+      ctx.fillText(String(state.scores[side].reduce((a, b) => a + b, 0)), totalX, y + 4);
+    });
+    // The end last scored is boxed in the colour of the side that scored it.
+    if (played) {
+      const k = played - 1,
+        side = state.scores[0][k] ? 0 : state.scores[1][k] ? 1 : -1;
+      if (side >= 0) {
+        ctx.strokeStyle = bright[side];
+        ctx.lineWidth = 5;
+        ctx.strokeRect(colX(k) - 42, rows[side] - 58, 84, 116);
+      }
+    }
+    ctx.textAlign = "left";
+    ctx.font = font(700, 22);
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillText("WORLD TABLE GAMES", 40, 378);
+    ctx.textAlign = "right";
+    ctx.fillText(`CURLING · ${n} ENDS`, W - 40, 378);
+    this.face.texture.needsUpdate = true;
+    this.redraw();
+  }
   private look() {
     throwerCamera(this.camera, this.shift);
     this.redraw();
   }
   protected resize() {
     super.resize();
+    this.stand();
     this.look();
   }
   /** The replay of a shot is over (or dropped): the next laying out brings the eye back. */
@@ -373,6 +550,7 @@ export class CurlingView extends FlickView<State> {
   }
   protected place(state: State) {
     super.place(state);
+    this.score(state);
     // After a shot the eye rests on the house for a moment, then glides back to the hack.
     if (this.chasing !== null && this.landed) {
       this.chasing = null;

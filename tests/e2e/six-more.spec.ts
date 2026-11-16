@@ -100,6 +100,8 @@ test("curling: a stone is pulled back from the hack and let go", async ({ page }
   test.skip(info.project.name === "mobile", "the mouse pulls here");
   const errors = await sit(page, "컬링");
   await ready(page);
+  // Three ends unless five were chosen, and the scoreboard counts them.
+  await expect(page.locator(".board-hint")).toContainText("1/3엔드");
   // Seen from behind the hack: the stone is pulled straight back toward the eye.
   const box = (await page.locator("canvas").boundingBox())!,
     camera = new PerspectiveCamera(FOV, box.width / box.height, 0.1, 120);

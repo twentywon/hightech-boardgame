@@ -10,12 +10,13 @@ import { copy, settle, shotCode, shotOf, strike, type Arena, type Disc } from ".
  * makes a stone curl as it slows. A stone must cross the hog line and stay
  * short of the back line and on the sheet. When all eight have been played,
  * the side with the stone nearest the button scores one for every stone of
- * its own nearer than the other side's nearest, inside the house. Four ends;
- * the side that scores throws first in the next end, so the other has the
- * last stone (the hammer).
+ * its own nearer than the other side's nearest, inside the house. Three or
+ * five ends, chosen before the game (the user asked); the side that scores
+ * throws first in the next end, so the other has the last stone (the hammer).
  */
 export const STONES = 4,
-  ENDS = 4,
+  /** The lengths of game offered, in ends; the first is the default. */
+  END_CHOICES = [3, 5],
   R = 0.17,
   HACK = { x: -6.6, z: 0 },
   HOG = 1.6,
@@ -36,6 +37,8 @@ export interface State {
   /** Stones each side has thrown this end. */
   thrown: [number, number];
   end: number;
+  /** How many ends the game lasts. */
+  ends: number;
   /** Points each side made in each end so far. */
   scores: [number[], number[]];
   /** The side with the last stone this end. */
@@ -49,9 +52,11 @@ export interface State {
   winner: Winner;
   ply: number;
 }
-export function createGame(): State {
-  return { stones: [], thrown: [0, 0], end: 1, scores: [[], []], hammer: 1, turn: 0, spin: 0, done: false, last: null, winner: null, ply: 0 };
+export function createGame(ends = END_CHOICES[0]): State {
+  return { stones: [], thrown: [0, 0], end: 1, ends, scores: [[], []], hammer: 1, turn: 0, spin: 0, done: false, last: null, winner: null, ply: 0 };
 }
+/** The game's length from the variant chosen ("3" or "5"). */
+export const endsOf = (variant: string) => (END_CHOICES.includes(Number(variant)) ? Number(variant) : END_CHOICES[0]);
 const total = (s: State, side: number) => s.scores[side].reduce((n, p) => n + p, 0);
 const toButton = (d: Disc) => Math.hypot(d.x - TEE, d.z);
 /** Who scores how many with the stones as they lie. */
@@ -103,7 +108,7 @@ export function play(s: State, move: Move): State | null {
     // The side that scores throws first next end: the other has the hammer. A blank end leaves it where it was.
     hammer = scorer === null ? s.hammer : ((1 - scorer) as 0 | 1);
   next = { ...next, scores, done: true, hammer, last: { ...next.last!, points }, end: s.end + 1, turn: (1 - hammer) as 0 | 1 };
-  if (s.end >= ENDS) {
+  if (s.end >= s.ends) {
     const a = scores[0].reduce((n, p) => n + p, 0),
       b = scores[1].reduce((n, p) => n + p, 0);
     return { ...next, end: s.end, winner: a > b ? 0 : b > a ? 1 : "draw" };
@@ -149,7 +154,7 @@ export function chooseMove(s: State, level: Level, random: Random = Math.random)
 }
 const effect = (): Effect | null => null;
 export const curling: PointGame<State> = {
-  create: () => createGame(),
+  create: (variant) => createGame(endsOf(variant)),
   moves,
   play,
   choose: (s, level, random) => chooseMove(s, level, random),
@@ -159,8 +164,8 @@ export const curling: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s, p) => total(s, p) - total(s, 1 - p),
-  hint: (s) => (s.turn === 0 ? `${s.end}엔드 · 스톤 ${(s.done ? 0 : s.thrown[0]) + 1}/${STONES} — 스톤을 뒤로 당겼다 놓아 미세요.` : `${s.end}엔드 · 컴퓨터 차례`),
+  hint: (s) => (s.turn === 0 ? `${s.end}/${s.ends}엔드 · 스톤 ${(s.done ? 0 : s.thrown[0]) + 1}/${STONES} — 스톤을 뒤로 당겼다 놓아 미세요.` : `${s.end}/${s.ends}엔드 · 컴퓨터 차례`),
   tally: (s) => [0, 1].map((p) => `${total(s, p)}점`) as [string, string],
-  reason: (s) => (s.winner === "draw" ? `${ENDS}엔드를 마치고 같은 점수입니다.` : `${ENDS}엔드를 마치고 ${total(s, 0)} 대 ${total(s, 1)}입니다.`),
+  reason: (s) => (s.winner === "draw" ? `${s.ends}엔드를 마치고 같은 점수입니다.` : `${s.ends}엔드를 마치고 ${total(s, 0)} 대 ${total(s, 1)}입니다.`),
 };
 export const totals = (s: State) => [total(s, 0), total(s, 1)];

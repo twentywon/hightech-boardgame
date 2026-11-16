@@ -158,7 +158,7 @@ describe("curling", () => {
     expect(left.z).toBeLessThan(-0.2);
     expect(right.z).toBeGreaterThan(0.2);
   });
-  test("the nearest stones score; a game of four ends is played out", () => {
+  test("the nearest stones score; a game of the ends chosen is played out", () => {
     const at = (id: number, x: number, z = 0) => ({ id, x, z, vx: 0, vz: 0, r: cur.R, m: 1, on: true });
     expect(cur.count([at(0, cur.TEE), at(1, cur.TEE + 0.5), at(4, cur.TEE + 0.8)])).toEqual([2, 0]);
     expect(cur.count([at(0, cur.TEE + 1), at(4, cur.TEE)])).toEqual([0, 1]);
@@ -167,7 +167,14 @@ describe("curling", () => {
     expect(cur.play(s, { from: -1, to: cur.SPIN, extra: -1 })!.ply).toBe(0);
     for (let n = 0; n < 200 && s.winner === null; n++) s = cur.play(s, cur.chooseMove(s, "easy", random)!)!;
     expect(s.winner).not.toBeNull();
-    expect(s.scores[0]).toHaveLength(cur.ENDS);
+    expect(s.scores[0]).toHaveLength(3);
+    // Five ends when chosen; anything else is the default three.
+    let five = cur.curling.create("5");
+    expect(five.ends).toBe(5);
+    expect(cur.curling.create("x").ends).toBe(3);
+    // Played out quickly with one plain shot (the computer's search is slow for forty stones).
+    for (let n = 0; n < 300 && five.winner === null; n++) five = cur.play(five, cur.moves(five)[2])!;
+    expect(five.scores[1]).toHaveLength(5);
   });
 });
 describe("star battle", () => {

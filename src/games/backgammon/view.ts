@@ -108,7 +108,8 @@ export class BackgammonView extends TableView<State> {
     this.daylight("#fff4e2", "#4a3828", "#ffeed6", 8, 2.2);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.add(new T.BoxGeometry(40, 0.4, 30), this.standard(planks(8, keep)), 0, -0.2, 0).castShadow = false;
-    const frame = this.standard({ map: keep(wood(true)), roughness: 0.45 }),
+    // The case is pale polished maple, so that it stands apart from the dark table under it (the user found the two alike).
+    const frame = this.standard({ map: keep(wood(false)), color: "#f3dcb0", roughness: 0.32 }),
       width = 12 * W + BAR_W;
     this.add(block(width + 2.1, 0.12, HALF * 2 + 0.5, 0.06), frame, 0.6, 0.0, 0);
     const felt = this.standard({ map: keep(feltTexture()), roughness: 0.95 }),

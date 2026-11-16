@@ -1,6 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { ENDS, SPIN, STONES, curling, totals, type State } from "./rules";
+import { END_CHOICES, SPIN, STONES, curling, endsOf, totals, type State } from "./rules";
 import { CURLING_COLORS, CurlingView } from "./view";
 
 const TURNS = ["없음", "시계 방향 ↻", "반시계 방향 ↺"];
@@ -8,7 +8,10 @@ export const curlingConfig: PointConfig<State> = {
   game: curling,
   contact: (sound) => sound.stone(3),
   noPanel: true,
-  view: (host, quality) => new CurlingView(host, quality),
+  view: (host, quality, _variant, mode) => new CurlingView(host, quality, mode),
+  // The length of the game is chosen before it starts (the user asked).
+  variants: END_CHOICES.map((n) => ({ value: String(n), label: `${n}엔드` })),
+  variantLabel: "엔드 수",
   colors: CURLING_COLORS,
   // A stone slid cannot be taken back, and a turn being set is not a move of the stone.
   noUndo: true,
@@ -23,13 +26,13 @@ export const curlingConfig: PointConfig<State> = {
   name: "컬링",
   english: "Curling",
   number: "NO. 63 — SLIDE TO THE BUTTON",
-  intro: `<p>얼음판 위로 스톤을 밀어 하우스 한가운데에 가깝게 세웁니다.<br>엔드마다 네 개씩, 상대 스톤을 쳐내기도 하며 ${ENDS}엔드를 겨룹니다.</p>`,
-  meta: `2인 · ${ENDS}엔드 · 스톤 ${STONES}개씩`,
+  intro: `<p>얼음판 위로 스톤을 밀어 하우스 한가운데에 가깝게 세웁니다.<br>엔드마다 네 개씩, 상대 스톤을 쳐내기도 하며 3엔드나 5엔드를 겨룹니다.</p>`,
+  meta: `2인 · ${END_CHOICES.join("·")}엔드 · 스톤 ${STONES}개씩`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>SLIDE TO THE BUTTON</span>`,
   artClass: "ludo-art",
   artLabel: "컬링 미리보기",
   tableLabel: "THE SHEET",
-  tableNote: () => `${ENDS}엔드 · 스톤 ${STONES}개씩`,
+  tableNote: (variant) => `${endsOf(variant)}엔드 · 스톤 ${STONES}개씩`,
   rulesTitle: "버튼에 가장 가깝게",
   rules:
     part(
@@ -37,7 +40,7 @@ export const curlingConfig: PointConfig<State> = {
       steps(
         `한 엔드에 두 사람이 스톤을 <b>${STONES}개씩</b> 번갈아 밉니다. 내 앞 핵(발판)의 스톤을 <b>내 쪽으로 당겼다 놓으면</b> 그 반대쪽으로 나갑니다. 많이 당길수록 멀리 갑니다. 미는 사람의 눈으로 얼음판을 내려다보며, 스톤이 나가면 시점이 스톤을 따라갑니다.`,
         "엔드가 끝나면 얼음판 저 끝의 <b>하우스</b>(과녁) 한가운데 버튼에 가장 가까운 스톤의 편이, 상대의 가장 가까운 스톤보다 안쪽에 있는 자기 스톤 수만큼 점수를 얻습니다. 하우스 밖의 스톤은 세지 않습니다.",
-        `${ENDS}엔드를 마치고 점수가 많은 쪽이 이깁니다.`,
+        "시작할 때 고른 엔드 수(3엔드나 5엔드)를 마치고 점수가 많은 쪽이 이깁니다. 엔드마다 낸 점수는 경기장 오른쪽 위의 <b>전광판</b>에 나옵니다.",
       ),
     ) +
     part(

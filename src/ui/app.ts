@@ -187,7 +187,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   backgammon: { config: backgammonConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "one-card": { config: oneCardConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "old-maid": { config: oldMaidConfig, options: { mode: "ai", variant: "", level: "normal" } },
-  curling: { config: curlingConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  curling: { config: curlingConfig, options: { mode: "ai", variant: "3", level: "normal" } },
   "star-battle": { config: starBattleConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
