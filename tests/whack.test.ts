@@ -56,4 +56,36 @@ describe("whack-a-mole", () => {
     expect(ws.holeAt(ws.HOLES[4][0] + 0.3, ws.HOLES[4][1])).toBe(4);
     expect(ws.holeAt(0, -1.1)).toBe(-1);
   });
+  test("moles come up in patterns drawn at random: one, several at once, a row, a crowd, a wave", () => {
+    const world = ws.createWorld(3, seededRandom(8)),
+      drawn = new Set<ws.Pattern>();
+    for (let k = 0; k < 400; k++) {
+      world.time = (k % 45) + 0.5;
+      drawn.add(ws.choosePattern(world, wr.ROUND));
+    }
+    expect([...drawn].sort()).toEqual([...ws.PATTERNS].sort());
+    // A row comes up whole; a wave comes up one by one along its holes.
+    const fresh = ws.createWorld(2, seededRandom(9));
+    expect(ws.launch(fresh, "row", wr.ROUND)).toBeGreaterThanOrEqual(2);
+    const up = fresh.moles.flatMap((m, i) => (m ? [i] : []));
+    expect(ws.ROWS.some((row) => row.every((h) => up.includes(h)) && row.length === up.length)).toBe(true);
+    const waving = ws.createWorld(2, seededRandom(10));
+    const count = ws.launch(waving, "wave", wr.ROUND);
+    expect(count).toBeGreaterThanOrEqual(2);
+    expect(waving.moles.every((m) => !m)).toBe(true);
+    for (let k = 0; k < 60; k++) ws.step(waving, wr.ROUND);
+    expect(waving.moles.filter(Boolean).length).toBeGreaterThanOrEqual(2);
+    // Over a whole round several moles are often out at once, and never two golden ones.
+    const round = ws.createWorld(3, seededRandom(11));
+    let most = 0;
+    for (let k = 0; k < wr.ROUND / ws.DT; k++) {
+      ws.step(round, wr.ROUND);
+      most = Math.max(most, round.moles.filter(Boolean).length);
+      expect(round.moles.filter((m) => m?.kind === ws.GOLDEN).length).toBeLessThanOrEqual(1);
+    }
+    expect(most).toBeGreaterThanOrEqual(4);
+    // When the round is over the moles duck back in.
+    for (let k = 0; k < 30; k++) ws.retire(round);
+    expect(round.moles.every((m) => !m)).toBe(true);
+  });
 });

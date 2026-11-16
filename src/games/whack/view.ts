@@ -6,9 +6,15 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
 import { FIELD, WHACK_SUBJECT } from "./layout";
 import { CLINK, ESCAPE, HIT, MISS, ROUND, TICK, type State } from "./rules";
-import { DT, GOLDEN, HELMET, HOLES, HOLE_R, createWorld, holeAt, step, whack, type Happening, type World } from "./sim";
+import { DT, GOLDEN, HELMET, HOLES, HOLE_R, createWorld, holeAt, retire, step, whack, type Happening, type World } from "./sim";
 
 export const WHACK_COLORS: [string, string] = ["#1f5fd0", "#b9b3a4"];
+/**
+ * The mallet: the handle's length from the hand to the head, the head's radius and drum, the handle's slope at the
+ * blow (the hand a little above the head), how far it is raised between blows, where the hand is held from the point
+ * struck (toward the player and to the right), and the blow's timing in milliseconds (down, held, back up).
+ */
+const MALLET = { length: 2.3, radius: 0.34, drum: 0.78, rise: 0.32, raised: 0.6, back: [0.55, 1], down: 75, hold: 45, up: 170 };
 
 /** A small repeatable source of numbers, so that the print is the same each time. */
 const sequence = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
@@ -248,8 +254,10 @@ export class WhackView extends TableView<State> {
   private mallet = new T.Group();
   private head = new T.Group();
   /** Where the mallet hovers, and when it last came down. */
-  private aimAt = new T.Vector3(1.5, 0, 2.6);
+  private aimAt = new T.Vector3(1.3, 0, 2.05);
   private swing = -1e9;
+  /** How high the mallet's face comes down at the blow under way: on a mole's head, or on the rim of an empty hole. */
+  private impact = 0.12;
   private led: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
   private words: { sprite: T.Sprite; at: number; x: number; y: number; z: number }[] = [];
   private paused = false;
@@ -285,8 +293,11 @@ export class WhackView extends TableView<State> {
     const el = this.renderer.domElement;
     el.addEventListener("pointermove", (e) => {
       if (e.pointerType !== "mouse" || this.disposed) return;
-      const at = this.ground(e, 0.55);
-      if (at) this.aimAt.copy(at);
+      aim(this.striker, e, el, this.camera);
+      const hole = this.moleUnder(this.striker.ray),
+        at = hole >= 0 ? null : this.ground(e, 0);
+      if (hole >= 0) this.aimAt.set(HOLES[hole][0], 0, HOLES[hole][1]);
+      else if (at) this.aimAt.copy(at);
     });
     // Keys 1 to 7 bring the mallet down on the holes, in rows from the back, left to right.
     el.addEventListener("keydown", (e) => {
@@ -524,32 +535,48 @@ export class WhackView extends TableView<State> {
     return { root, hat, open, dazed, stars, fur, kind };
   }
   /** A soft mallet: a red padded head with pale ends on a wooden handle that runs toward the near right. */
+  /**
+   * A soft mallet held at its grip: the group's origin is the hand, the handle runs from it along −z to the head,
+   * and the head's padded drum stands across the handle's end, so that it comes down flat on its face. The swing
+   * turns the whole about the hand (see `pose`).
+   */
   private malletModel(keep: <R extends { dispose(): void }>(r: R) => R) {
     const pad = keep(glossy({ color: "#e8352a", roughness: 0.42 }, 0.4)),
       cap = this.standard({ color: "#fff2e0", roughness: 0.5 }),
       wood = this.standard({ color: "#c98a4a", roughness: 0.55 }),
-      grip = this.standard({ color: "#2a2a30", roughness: 0.7 });
-    const body = new T.Mesh(keep(new T.CylinderGeometry(0.38, 0.38, 0.9, 28).rotateZ(Math.PI / 2)), pad);
-    const ends = keep(new T.CylinderGeometry(0.4, 0.4, 0.12, 28).rotateZ(Math.PI / 2));
-    this.head.add(body);
+      grip = this.standard({ color: "#2a2a30", roughness: 0.7 }),
+      { length } = MALLET;
+    const handle = new T.Mesh(keep(new T.CylinderGeometry(0.07, 0.085, length, 14).rotateX(Math.PI / 2)), wood);
+    handle.position.z = -length / 2;
+    const wrap = new T.Mesh(keep(new T.CylinderGeometry(0.1, 0.1, 0.7, 14).rotateX(Math.PI / 2)), grip);
+    wrap.position.z = -0.2;
+    this.head.position.z = -length;
+    this.head.add(new T.Mesh(keep(new T.CylinderGeometry(MALLET.radius, MALLET.radius, MALLET.drum, 28)), pad));
+    const ends = keep(new T.CylinderGeometry(MALLET.radius + 0.02, MALLET.radius + 0.02, 0.1, 28));
     for (const s of [-1, 1]) {
       const end = new T.Mesh(ends, cap);
-      end.position.x = s * 0.48;
+      end.position.y = s * (MALLET.drum / 2 + 0.04);
       this.head.add(end);
     }
-    // The handle leaves the head's middle toward the player, a little to the right.
-    const handle = new T.Mesh(keep(new T.CylinderGeometry(0.075, 0.09, 2.6, 14)), wood);
-    handle.rotation.x = Math.PI / 2;
-    handle.position.set(0, 0, 1.6);
-    const wrap = new T.Mesh(keep(new T.CylinderGeometry(0.1, 0.1, 0.7, 14)), grip);
-    wrap.rotation.x = Math.PI / 2;
-    wrap.position.set(0, 0, 2.6);
-    this.head.add(handle, wrap);
-    this.head.traverse((o) => ((o as T.Mesh).castShadow = true));
-    this.mallet.add(this.head);
-    // Turned so that the head lies across the hole and the handle runs to the near right.
-    this.mallet.rotation.y = 0.55;
+    this.mallet.add(handle, wrap, this.head);
+    this.mallet.traverse((o) => ((o as T.Mesh).castShadow = true));
+    this.mallet.rotation.order = "YXZ";
     this.scene.add(this.mallet);
+  }
+  /** The hole of the mole a line of sight strikes first (its body, as drawn), or −1. */
+  private moleUnder(ray: T.Ray) {
+    this.striker.ray.copy(ray);
+    const shown = this.moles.flatMap((model, hole) => (model && model.root.visible && this.world.moles[hole] && this.world.moles[hole]!.height > 0.3 ? [{ model, hole }] : []));
+    const hits = this.striker.intersectObjects(shown.map((m) => m.model.root), true);
+    if (!hits.length) return -1;
+    let object: T.Object3D | null = hits[0].object;
+    while (object && !shown.some((m) => m.model.root === object)) object = object.parent;
+    return shown.find((m) => m.model.root === object)?.hole ?? -1;
+  }
+  /** A press on a mole is taken by the mole it strikes, before anything else (a head may stand in front of another hole). */
+  protected pick(ray: T.Ray) {
+    const hole = this.moleUnder(ray);
+    return hole >= 0 ? hole : null;
   }
   protected subject() {
     return WHACK_SUBJECT;
@@ -558,26 +585,24 @@ export class WhackView extends TableView<State> {
   protected spots(): Spot[] {
     return [];
   }
-  /** A press anywhere brings the mallet down there at once: on the mole whose head is under it, or on the hole. */
-  protected dragStart(_point: number, at: { x: number; y: number; z: number }) {
+  /**
+   * A press anywhere brings the mallet down there at once: on the mole it strikes (found by its drawn body, `pick`),
+   * or else on the hole under the pointer, or on the top of the machine.
+   */
+  protected dragStart(point: number, at: { x: number; y: number; z: number }) {
     if (!this.running()) return false;
-    const eye = this.camera.position,
-      // A mole's head stands above its hole: the line of sight is followed to that height first.
-      lift = (h: number) => {
-        const t = (eye.y - h) / (eye.y - at.y);
-        return new T.Vector3(eye.x + (at.x - eye.x) * t, h, eye.z + (at.z - eye.z) * t);
-      },
-      high = lift(0.6),
-      up = holeAt(high.x, high.z),
-      hole = up >= 0 && this.world.moles[up] ? up : holeAt(at.x, at.z);
-    this.aimAt.copy(hole >= 0 ? new T.Vector3(HOLES[hole][0], 0, HOLES[hole][1]) : high);
+    const hole = point >= 0 ? point : holeAt(at.x, at.z);
+    if (hole < 0) this.aimAt.set(at.x, 0, at.z);
     this.strike(hole);
     return true;
   }
   /** The mallet comes down; on a hole it is a blow the machine judges. */
   private strike(hole: number) {
     if (!this.running()) return;
+    const mole = hole >= 0 ? this.world.moles[hole] : null;
     if (hole >= 0) this.aimAt.set(HOLES[hole][0], 0, HOLES[hole][1]);
+    // The face comes down on the mole's head when one is out, else on the rim.
+    this.impact = mole && mole.height > 0.35 && mole.phase !== "bonked" ? -1.25 + mole.height * 1.4 + 0.95 : 0.14;
     this.swing = performance.now();
     if (hole < 0) return;
     this.report([whack(this.world, hole)]);
@@ -667,6 +692,9 @@ export class WhackView extends TableView<State> {
         this.left -= DT;
         this.report(step(this.world, ROUND));
       }
+    } else if (this.state && this.state.winner !== null) {
+      // Time is up: the moles still out duck back into their holes.
+      for (let k = Math.round(real / DT); k > 0; k--) retire(this.world);
     }
     this.pose(now);
     this.redraw();
@@ -705,13 +733,26 @@ export class WhackView extends TableView<State> {
       const since = now - this.flash[hole];
       paint.emissiveIntensity = 0.45 + 0.15 * Math.sin(now / 190 + hole * 1.7) + (since < 360 ? 2.2 * (1 - since / 360) : 0);
     });
-    // The mallet hovers over where it is aimed and comes down when struck.
-    const swing = (now - this.swing) / 150,
-      down = swing >= 0 && swing < 2 ? (swing < 1 ? swing : 2 - swing) : 0,
-      blow = Math.sin((down * Math.PI) / 2);
+    // The mallet: held from the near right, raised over where it is aimed, and swung down about the hand so that its
+    // face lands flat on the mole's head (or the rim) at the blow, then lifted again.
+    const t = now - this.swing,
+      blow = t < 0 ? 0 : t < MALLET.down ? Math.pow(t / MALLET.down, 2) : t < MALLET.down + MALLET.hold ? 1 : t < MALLET.down + MALLET.hold + MALLET.up ? 1 - (t - MALLET.down - MALLET.hold) / MALLET.up : 0,
+      { length, rise, back } = MALLET,
+      reach = Math.hypot(back[0], back[1]),
+      away = { x: back[0] / reach, z: back[1] / reach },
+      // The hand stands where the handle, at its angle at the blow, puts the face on the point struck: held over a
+      // mole's height between blows, and drawn down to what is struck as the blow comes (the hand moves with the arm).
+      handFor = (lowest: number) => {
+        const y = lowest + MALLET.drum / 2 + 0.1;
+        return new T.Vector3(this.aimAt.x + away.x * length * Math.cos(rise), y + length * Math.sin(rise), this.aimAt.z + away.z * length * Math.cos(rise));
+      },
+      hand = handFor(1.0).lerp(handFor(this.impact), blow);
     this.mallet.visible = !capturing() && live;
-    this.mallet.position.set(this.aimAt.x + 0.15, 2.1 - blow * 1.25, this.aimAt.z + 0.35 - blow * 0.25);
-    this.head.rotation.x = -0.55 + blow * 0.55;
+    this.mallet.position.copy(hand);
+    // Turned so that the handle runs from the hand to the head, then tipped up about the hand (raised) or down (the blow).
+    this.mallet.rotation.set(-rise + MALLET.raised * (1 - blow), Math.atan2(away.x, away.z), 0);
+    // The drum stands upright at the blow, whatever the handle's angle.
+    this.head.rotation.x = rise;
     // Words rise and fade.
     this.words = this.words.filter((word) => {
       const p = (now - word.at) / 850;
