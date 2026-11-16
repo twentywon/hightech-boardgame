@@ -75,25 +75,37 @@ export abstract class FlickView<S> extends TableView<S> {
   protected animate(before: S, state: S) {
     const live = this.struck(before, state);
     if (!live) return false;
-    const arena = this.arena(before),
-      heard: Heard = { hits: 0, discs: 0, walls: 0, force: 0 },
+    this.replay(live, this.arena(before), () => this.finish(state));
+    return true;
+  }
+  /** Called before each slice of a shot that is run (`n` from 0): for a table where something changes as it goes (a stone swept). */
+  protected beforeStep(_live: Disc[], _n: number) {}
+  /**
+   * Runs discs in step with the clock until they all rest, moving their meshes and sounding what they strike, then
+   * calls `done`. A shot from a state is replayed so (the rules have already said where it ends); a table may also
+   * run one live this way before it is made, as curling does while its stone is swept.
+   */
+  protected replay(live: Disc[], arena: Arena, done: () => void) {
+    cancelAnimationFrame(this.ticker);
+    const heard: Heard = { hits: 0, discs: 0, walls: 0, force: 0 },
       falling = new Map<number, number>();
-    let done = 0,
+    let count = 0,
       sounded = 0,
       discs = 0,
       walls = 0;
-    // Replayed in step with the clock; the rules have already said where it ends.
-    this.tween(0, 14000, () => {});
+    // Run in step with the clock; a long tween stands for it meanwhile, so that the table counts as busy.
+    this.tween(0, 20000, () => {});
     const started = performance.now(),
       run = () => {
         const due = Math.floor((performance.now() - started) / (DT * 1000));
         let dropped = false;
-        while (done < due && moving(live)) {
+        while (count < due && moving(live)) {
+          this.beforeStep(live, count);
           for (const id of step(live, arena, heard)) {
             falling.set(id, 0);
             dropped = true;
           }
-          done++;
+          count++;
         }
         const knock = this.onKnock;
         if (knock) {
@@ -124,10 +136,13 @@ export abstract class FlickView<S> extends TableView<S> {
         }
         this.redraw();
         if (moving(live) || [...falling.values()].some((n) => n < 18)) this.ticker = requestAnimationFrame(run);
-        else this.finish(state);
+        else done();
       };
     this.ticker = requestAnimationFrame(run);
-    return true;
+  }
+  /** Stops a shot being run, leaving its discs where they are. */
+  protected stopReplay() {
+    cancelAnimationFrame(this.ticker);
   }
   private ticker = 0;
   /** Ends the replay: the long placeholder tween is dropped and the state laid out. */

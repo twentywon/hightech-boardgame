@@ -3,9 +3,9 @@ import { block, glossy, stuff } from "../../engine/scene-utils";
 import { speckled } from "../../engine/scenery";
 import type { Marks } from "../points/view";
 import { FlickView } from "../flick/view";
-import { copy, shotOf, strike, type Disc } from "../flick/physics";
+import { copy, shotCode, shotOf, strike, type Disc } from "../flick/physics";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
-import { ARENA, BACK, CURL, HACK, HOG, HOUSE, R, STONE, STONES, TEE, speedOf, type State } from "./rules";
+import { ARENA, BACK, CURL, HACK, HOG, HOUSE, R, STONE, STONES, SWEEP_SLICES, SWEEP_WINDOWS, TEE, speedOf, swept, type State } from "./rules";
 
 export const CURLING_COLORS: [string, string] = ["#c8321f", "#e0b020"];
 export const CURLING_SUBJECT: TableSubject = { half: 7.5, halfZ: 2.7, height: 0.4, lookY: 0, tilt: 1.0 };
@@ -122,6 +122,21 @@ export class CurlingView extends FlickView<State> {
   private board = new T.Group();
   private face: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
   private cables: T.Mesh[] = [];
+  /**
+   * A stone of mine being thrown (the user asked for sweeping): it runs live before the throw is made, and the
+   * spells it was swept in are gathered into `sweep`, which the throw then carries. `made` is the count of moves the
+   * throw leads to, whose state is then laid out without running the shot again.
+   */
+  private live: { ply: number; point: number; code: number; id: number; sweep: number } | null = null;
+  private made = -1;
+  /** Whether the player is sweeping now (holding the ice, the button or Space), whether the stone is being swept, and the sweeping of a throw replayed. */
+  private sweeping = false;
+  private swept = false;
+  private replayed = 0;
+  /** Two brooms that sweep before a swept stone, and the button to hold while a stone of mine runs. */
+  private brooms: T.Group[] = [];
+  private sweepButton: HTMLButtonElement;
+  private unlisten: () => void;
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
@@ -161,6 +176,71 @@ export class CurlingView extends FlickView<State> {
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.cursor = ringMesh(own, 0.26, 0.32, "#ffd24a");
     this.scene.add(this.cursor);
+    // The sweepers' brooms: a black shaft rising back toward the sweeper's hands at the side, and a red or blue pad on the ice.
+    const shaft = keep(new T.CylinderGeometry(0.022, 0.022, 1.45, 8).translate(0, 0.725, 0)),
+      pad = keep(block(0.13, 0.06, 0.36, 0.025)),
+      black = this.standard({ color: "#1d1f23", roughness: 0.5 });
+    for (const [side, color] of [[-1, "#c8321f"], [1, "#2f62c0"]] as const) {
+      const broom = new T.Group(),
+        stick = new T.Mesh(shaft, black),
+        head = new T.Mesh(pad, this.standard({ color, roughness: 0.9 }));
+      head.position.y = 0.03;
+      stick.position.y = 0.05;
+      stick.rotation.set(side * 0.55, 0, 0.95);
+      stick.castShadow = head.castShadow = true;
+      broom.add(stick, head);
+      broom.visible = false;
+      broom.userData.side = side;
+      this.scene.add(broom);
+      this.brooms.push(broom);
+    }
+    // Held down while a stone of mine runs: sweeping. A press anywhere on the ice and Space (or S) do the same.
+    this.sweepButton = document.createElement("button");
+    this.sweepButton.className = "cu-sweep";
+    this.sweepButton.type = "button";
+    this.sweepButton.hidden = true;
+    this.sweepButton.setAttribute("aria-label", "스위핑: 누르고 있는 동안 얼음을 닦습니다");
+    this.sweepButton.innerHTML = "스위핑<small>누르고 있기</small>";
+    const hold = (on: boolean) => {
+      this.sweeping = on && !!this.live;
+      this.sweepButton.setAttribute("aria-pressed", String(this.sweeping));
+    };
+    this.sweepButton.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      this.sweepButton.setPointerCapture(e.pointerId);
+      hold(true);
+    });
+    for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) this.sweepButton.addEventListener(name, () => hold(false));
+    this.sweepButton.addEventListener("contextmenu", (e) => e.preventDefault());
+    host.append(this.sweepButton);
+    const canvas = this.renderer.domElement,
+      press = () => this.live && hold(true),
+      lift = () => hold(false),
+      SWEEP_KEYS = [" ", "s", "S", "ㄴ"],
+      down = (e: KeyboardEvent) => {
+        if (!this.live || !SWEEP_KEYS.includes(e.key)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        hold(true);
+      },
+      up = (e: KeyboardEvent) => {
+        if (!SWEEP_KEYS.includes(e.key)) return;
+        if (this.live) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        hold(false);
+      };
+    canvas.addEventListener("pointerdown", press);
+    for (const name of ["pointerup", "pointercancel", "pointerleave"]) canvas.addEventListener(name, lift);
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up, true);
+    window.addEventListener("blur", lift);
+    this.unlisten = () => {
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up, true);
+      window.removeEventListener("blur", lift);
+    };
     this.begin();
   }
   /**
@@ -488,6 +568,12 @@ export class CurlingView extends FlickView<State> {
     if (this.chasing !== null) this.landed = true;
   }
   sync(state: State, animate = true) {
+    // While a stone of mine runs, the same state shown again changes nothing; anything else ends the run.
+    if (this.live) {
+      if (animate && state.ply === this.live.ply) return;
+      this.stopReplay();
+      this.endRun();
+    }
     // A state laid out without its shot (a new game, a test) is seen from the hack.
     if (!animate) {
       this.glide++;
@@ -498,11 +584,45 @@ export class CurlingView extends FlickView<State> {
     super.sync(state, animate);
     this.look();
   }
-  /** The eye keeps the stone it follows a little ahead of the hack's place on the screen, as far as the house. */
-  protected rolled(id: number, mesh: T.Object3D, dx: number) {
+  /** The eye keeps the stone it follows a little ahead of the hack's place on the screen, as far as the house; the brooms sweep before it. */
+  protected rolled(id: number, mesh: T.Object3D, dx: number, dz: number) {
     if (id !== this.chasing) return;
     this.shift = Math.max(this.shift, Math.min(CHASE, mesh.position.x + dx - (HACK.x + 1)));
     this.look();
+    const now = performance.now(),
+      x = mesh.position.x + dx,
+      z = mesh.position.z + dz;
+    for (const broom of this.brooms) {
+      const side = broom.userData.side as number;
+      broom.visible = this.swept && !this.reducedMotion;
+      // Quick strokes side to side, the two brooms out of step, just before the stone.
+      broom.position.set(x + R + (side < 0 ? 0.22 : 0.48), 0, z + side * 0.1 + Math.sin(now / 55 + (side < 0 ? 0 : 1.7)) * 0.16);
+      broom.rotation.y = Math.sin(now / 55 + (side < 0 ? 0 : 1.7)) * 0.25;
+    }
+  }
+  /** Before each slice of a shot: a stone of mine is swept while the player sweeps (a spell at a time); a throw replayed is swept as it was. */
+  protected beforeStep(discs: Disc[], n: number) {
+    const live = this.live,
+      stone = discs.find((d) => d.id === (live ? live.id : this.chasing) && d.on);
+    if (!stone) {
+      this.swept = false;
+      return;
+    }
+    const going = stone.vx !== 0 || stone.vz !== 0;
+    if (live && n % SWEEP_SLICES === 0) {
+      const spell = n / SWEEP_SLICES;
+      if (spell < SWEEP_WINDOWS && this.sweeping && going) live.sweep += 2 ** spell;
+    }
+    stone.slick = swept(live ? live.sweep : this.replayed, n) || undefined;
+    this.swept = !!stone.slick && going;
+  }
+  /** A run of my stone is over (or dropped): the button and the brooms go. */
+  private endRun() {
+    this.live = null;
+    this.sweeping = this.swept = false;
+    this.sweepButton.hidden = true;
+    this.sweepButton.setAttribute("aria-pressed", "false");
+    for (const broom of this.brooms) broom.visible = false;
   }
   /** A pull is followed farther than the pointer goes (`PULL`), in the same direction. */
   protected dragMove(at: { x: number; y: number; z: number }) {
@@ -526,6 +646,12 @@ export class CurlingView extends FlickView<State> {
   protected struck(before: State, state: State) {
     const last = state.last;
     if (!last || state.ply !== before.ply + 1) return null;
+    // A throw of mine has been run already, as it was swept: its state is laid out as it stands.
+    if (state.ply === this.made) {
+      this.made = -1;
+      return null;
+    }
+    this.replayed = last.sweep;
     const shot = shotOf(last.code)!,
       live = copy(before.done ? [] : before.stones),
       stone: Disc = { id: last.id, x: HACK.x, z: HACK.z, vx: 0, vz: 0, r: R, m: 1, on: true, curl: CURL[last.spin] || undefined };
@@ -545,8 +671,40 @@ export class CurlingView extends FlickView<State> {
   protected shooter(point: number) {
     return point === STONE && this.marks.movable.includes(STONE) ? { ...HACK } : null;
   }
+  /**
+   * A stone of mine let go: it runs live before the throw is made, so that it can be swept on its way (the user
+   * asked), and when everything has come to rest the throw is made with the spells it was swept in. The rules then
+   * slide it again with the same physics and the same sweeping, and come to the same stones.
+   */
   protected shoot(point: number, degrees: number, power: number) {
-    this.onMove({ from: point, to: 1000 + ((((Math.round(degrees) % 360) + 360) % 360) * 32 + Math.max(1, Math.min(20, power))), extra: -1 });
+    const state = this.state;
+    if (!state || state.winner !== null) return;
+    const code = shotCode(degrees, power),
+      shot = shotOf(code)!,
+      side = state.turn,
+      id = side * STONES + (state.done ? 0 : state.thrown[side]),
+      discs = copy(state.done ? [] : state.stones),
+      stone: Disc = { id, x: HACK.x, z: HACK.z, vx: 0, vz: 0, r: R, m: 1, on: true, curl: CURL[state.spin] || undefined };
+    strike(stone, shot.angle, speedOf(shot.power));
+    discs.push(stone);
+    this.live = { ply: state.ply, point, code, id, sweep: 0 };
+    this.glide++;
+    this.shift = 0;
+    this.chasing = id;
+    this.look();
+    if (state.done) for (const g of this.stones) g.visible = false;
+    for (const g of this.ready) g.visible = false;
+    this.mesh(id).visible = true;
+    this.sweepButton.hidden = false;
+    this.replay(discs, ARENA, () => {
+      const live = this.live;
+      if (!live) return;
+      this.endRun();
+      this.made = live.ply + 1;
+      // The eye comes back once the throw's state is laid out.
+      this.settleNow();
+      this.onMove({ from: live.point, to: live.code, extra: live.sweep > 0 ? live.sweep : -1 });
+    });
   }
   protected place(state: State) {
     super.place(state);
@@ -589,6 +747,11 @@ export class CurlingView extends FlickView<State> {
   }
   protected spots(): Spot[] {
     return [{ ...HACK, y: 0.1, r: 0.4, point: STONE }];
+  }
+  dispose() {
+    this.unlisten();
+    this.sweepButton.remove();
+    super.dispose();
   }
   protected mark(marks: Marks) {
     const mine = marks.movable.includes(STONE) && !this.animating;

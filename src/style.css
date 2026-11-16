@@ -2795,3 +2795,10 @@ html[data-capture] .game-layout.hud .table-layout > aside.game-sidebar { display
 .gs-receipt .gs-code { text-align:center;letter-spacing:-.05em;font-size:1.5em;line-height:1;margin-top:6px;transform:scaleY(1.6);color:#24211d;overflow:hidden;white-space:nowrap; }
 @keyframes gs-print { from { clip-path:inset(0 0 100% 0); } to { clip-path:inset(0 0 0 0); } }
 @media (prefers-reduced-motion: reduce) { .gs-receipt { animation:none; } }
+
+/* Curling: the button held to sweep while a stone of mine runs (a press anywhere on the ice and Space do the same). */
+.cu-sweep { position:absolute;left:50%;bottom:11%;translate:-50% 0;z-index:5;padding:12px 30px 10px;border-radius:999px;border:3px solid #fff;background:#2f62c0;color:#fff;font:inherit;font-weight:900;font-size:clamp(17px, 2.8vmin, 24px);line-height:1.15;box-shadow:0 4px 14px rgba(0,0,0,.35);touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer; }
+.cu-sweep small { display:block;font-size:.58em;font-weight:700;opacity:.88; }
+.cu-sweep[aria-pressed="true"] { background:#1d3f86;scale:.95; }
+.cu-sweep[hidden] { display:none; }
+html[data-capture] .cu-sweep { display:none !important; }

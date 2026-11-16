@@ -170,6 +170,31 @@ describe("curling", () => {
     expect(left.z).toBeLessThan(-0.2);
     expect(right.z).toBeGreaterThan(0.2);
   });
+  test("a stone swept slides a little farther and curls less; a throw carries its sweeping and is slid again the same", () => {
+    const plain = cur.rest(cur.slide([], 0, 0, 11, 1), 0)[0],
+      swept = cur.rest(cur.slide([], 0, 0, 11, 1), 0, cur.ALL_SWEPT)[0],
+      run = (s: { x: number }) => s.x - cur.HACK.x;
+    expect(run(swept)).toBeGreaterThan(run(plain) * 1.05);
+    expect(run(swept)).toBeLessThan(run(plain) * 1.2);
+    expect(Math.abs(swept.z)).toBeLessThan(Math.abs(plain.z));
+    // Swept only for its first second (four spells): between the two.
+    const early = cur.rest(cur.slide([], 0, 0, 11, 1), 0, 15)[0];
+    expect(run(early)).toBeGreaterThan(run(plain));
+    expect(run(early)).toBeLessThan(run(swept));
+    // A throw with its sweeping: the stones the rules come to are those the sweeping makes.
+    const start = cur.createGame(),
+      code = cur.moves(start)[1].to,
+      thrown = cur.play(start, { from: cur.STONE, to: code, extra: cur.ALL_SWEPT })!,
+      unswept = cur.play(start, { from: cur.STONE, to: code, extra: -1 })!;
+    expect(thrown.last!.sweep).toBe(cur.ALL_SWEPT);
+    expect(thrown.stones[0].x).toBeGreaterThan(unswept.stones[0].x);
+    expect(cur.play(start, { from: cur.STONE, to: code, extra: 0 })!.stones).toEqual(unswept.stones);
+    for (const bad of [1.5, -2, 2 ** 53]) expect(cur.play(start, { from: cur.STONE, to: code, extra: bad })).toBeNull();
+    expect(cur.play(start, { from: -1, to: cur.SPIN, extra: 3 })).toBeNull();
+    expect(cur.swept(1, 0)).toBe(true);
+    expect(cur.swept(1, cur.SWEEP_SLICES)).toBe(false);
+    expect(cur.swept(2 ** 51, cur.SWEEP_SLICES * 51)).toBe(true);
+  });
   test("the nearest stones score; a game of the ends chosen is played out", () => {
     const at = (id: number, x: number, z = 0) => ({ id, x, z, vx: 0, vz: 0, r: cur.R, m: 1, on: true });
     expect(cur.count([at(0, cur.TEE), at(1, cur.TEE + 0.5), at(4, cur.TEE + 0.8)])).toEqual([2, 0]);

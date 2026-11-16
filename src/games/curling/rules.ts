@@ -1,7 +1,7 @@
 import { cryptoRandom, type Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
-import { copy, settle, shotCode, shotOf, strike, type Arena, type Disc } from "../flick/physics";
+import { MAX_STEPS, copy, moving, settle, shotCode, shotOf, step, strike, type Arena, type Disc } from "../flick/physics";
 
 /**
  * Curling on a short sheet of ice seen from the side: the hack at the left,
@@ -13,6 +13,11 @@ import { copy, settle, shotCode, shotOf, strike, type Arena, type Disc } from ".
  * its own nearer than the other side's nearest, inside the house. Three or
  * five ends, chosen before the game (the user asked); the side that scores
  * throws first in the next end, so the other has the last stone (the hammer).
+ *
+ * A stone thrown may be swept on its way (the user asked): the ice before it is
+ * polished and it slides a little farther and curls less. A throw carries when
+ * it was swept, as a mask of quarter-second spells (`extra`), so that the rules
+ * slide it again exactly as it was seen.
  */
 export const STONES = 4,
   /** The lengths of game offered, in ends; the first is the default. */
@@ -26,6 +31,16 @@ export const STONES = 4,
   /** The stone at the hack is the point a pull begins on; the turn is a tool. */
   STONE = 100,
   SPIN = 300;
+/** Sweeping is decided a spell at a time: `SWEEP_SLICES` slices of the physics (a quarter of a second), at most `SWEEP_WINDOWS` spells. */
+export const SWEEP_SLICES = 30,
+  SWEEP_WINDOWS = 52,
+  /** Swept all the way. */
+  ALL_SWEPT = 2 ** SWEEP_WINDOWS - 1;
+/** Whether the stone is swept in slice `n` of its way, by the mask of a throw. */
+export const swept = (mask: number, n: number) => {
+  const spell = Math.floor(n / SWEEP_SLICES);
+  return mask > 0 && spell < SWEEP_WINDOWS && Math.floor(mask / 2 ** spell) % 2 === 1;
+};
 export const ARENA: Arena = { halfX: 7.2, halfZ: 1.75, cushions: false, pockets: [], friction: 0.42, bounce: 0.85 };
 /** How fast a stone leaves the hack for a strength of 1–20, and how much it curls for each turn (none, clockwise, counter). */
 /** It is set so that the distance it slides grows evenly with the strength: 11 to 15 stop in the house, harder clears it. */
@@ -48,7 +63,7 @@ export interface State {
   spin: number;
   /** The end has been scored and its stones still lie as they stopped, until the next stone is thrown. */
   done: boolean;
-  last: { side: 0 | 1; id: number; code: number; spin: number; points: [number, number] | null } | null;
+  last: { side: 0 | 1; id: number; code: number; spin: number; sweep: number; points: [number, number] | null } | null;
   winner: Winner;
   ply: number;
 }
@@ -76,8 +91,20 @@ export function slide(stones: Disc[], id: number, degrees: number, power: number
   discs.push(stone);
   return discs;
 }
-export function rest(discs: Disc[], thrown: number) {
-  settle(discs, ARENA);
+/** The stones come to rest, the one just thrown swept as `sweep` says; those out of play are taken off. */
+export function rest(discs: Disc[], thrown: number, sweep = 0) {
+  if (sweep > 0) {
+    // Slice by slice, as a view runs it while the player sweeps.
+    const stone = discs.find((d) => d.id === thrown);
+    for (let n = 0; moving(discs) && n < MAX_STEPS; n++) {
+      if (stone) stone.slick = swept(sweep, n) || undefined;
+      step(discs, ARENA);
+    }
+    for (const d of discs) {
+      d.vx = d.vz = 0;
+      delete d.slick;
+    }
+  } else settle(discs, ARENA);
   // Short of the hog line (the stone just thrown), past the back line, or off the sheet: out of play.
   return discs.filter((d) => d.on && d.x - R <= BACK && !(d.id === thrown && d.x - R <= HOG)).map((d) => ({ ...d, curl: undefined }));
 }
@@ -86,18 +113,21 @@ export function moves(s: State): Move[] {
   // A few shots stand for every pull of the stone at the hack; the turn is chosen first.
   return [{ from: -1, to: SPIN, extra: -1 }, ...[11, 13, 18].map((power) => ({ from: STONE, to: shotCode(0, power), extra: -1 }))];
 }
+/** Whether a throw's `extra` is a sweeping it could have had: none (-1), or a mask of spells. */
+const sweeping = (extra: number) => extra === -1 || (Number.isInteger(extra) && extra >= 0 && extra <= ALL_SWEPT);
 export function play(s: State, move: Move): State | null {
-  if (s.winner !== null || move.extra !== -1) return null;
-  if (move.to === SPIN) return { ...s, spin: (s.spin + 1) % 3 };
+  if (s.winner !== null) return null;
+  if (move.to === SPIN) return move.extra === -1 ? { ...s, spin: (s.spin + 1) % 3 } : null;
   const shot = shotOf(move.to);
-  if (!shot || move.from !== STONE) return null;
+  if (!shot || move.from !== STONE || !sweeping(move.extra)) return null;
+  const sweep = Math.max(0, move.extra);
   const side = s.turn,
     base = s.done ? { ...s, stones: [], thrown: [0, 0] as [number, number], done: false } : s,
     id = side * STONES + base.thrown[side],
-    stones = rest(slide(base.stones, id, shot.degrees, shot.power, s.spin), id),
+    stones = rest(slide(base.stones, id, shot.degrees, shot.power, s.spin), id, sweep),
     thrown: [number, number] = [base.thrown[0], base.thrown[1]];
   thrown[side]++;
-  let next: State = { ...base, stones, thrown, spin: 0, ply: s.ply + 1, last: { side, id, code: move.to, spin: s.spin, points: null } };
+  let next: State = { ...base, stones, thrown, spin: 0, ply: s.ply + 1, last: { side, id, code: move.to, spin: s.spin, sweep, points: null } };
   if (thrown[0] + thrown[1] < 2 * STONES) {
     // The side without the hammer throws first; then by turns.
     return { ...next, turn: (1 - side) as 0 | 1 };
@@ -144,13 +174,26 @@ export function chooseMove(s: State, level: Level, random: Random = Math.random)
           best = { degrees, power, spin };
         }
       }
+  // Its sweepers may carry a softer stone the rest of the way, and run straighter: tried for the shot found.
+  let sweep = -1;
+  if (level !== "easy")
+    for (const less of [1, 2, 3]) {
+      const power = best.power - less;
+      if (power < 1) break;
+      const value = judge(rest(slide(base, id, best.degrees, power, best.spin), id, ALL_SWEPT), side) + random() * 0.05;
+      if (value > top) {
+        top = value;
+        best = { ...best, power };
+        sweep = ALL_SWEPT;
+      }
+    }
   // The hand shakes a little: more at the easy level.
   const shake = level === "easy" ? 1.6 : level === "normal" ? 0.6 : 0.2,
     degrees = Math.round(best.degrees + (random() - 0.5) * shake * 2),
     power = Math.max(1, Math.min(20, Math.round(best.power + (random() - 0.5) * shake * 1.5)));
   // The turn is set first (a move of its own), then the stone is slid.
   if (s.spin !== best.spin) return { from: -1, to: SPIN, extra: -1 };
-  return { from: STONE, to: shotCode(degrees, power), extra: -1 };
+  return { from: STONE, to: shotCode(degrees, power), extra: sweep };
 }
 const effect = (): Effect | null => null;
 export const curling: PointGame<State> = {
@@ -164,7 +207,7 @@ export const curling: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s, p) => total(s, p) - total(s, 1 - p),
-  hint: (s) => (s.turn === 0 ? `${s.end}/${s.ends}엔드 · 스톤 ${(s.done ? 0 : s.thrown[0]) + 1}/${STONES} — 스톤을 뒤로 당겼다 놓아 미세요.` : `${s.end}/${s.ends}엔드 · 컴퓨터 차례`),
+  hint: (s) => (s.turn === 0 ? `${s.end}/${s.ends}엔드 · 스톤 ${(s.done ? 0 : s.thrown[0]) + 1}/${STONES} — 스톤을 당겼다 놓고, 가는 동안 누르고 있으면 스위핑!` : `${s.end}/${s.ends}엔드 · 컴퓨터 차례`),
   tally: (s) => [0, 1].map((p) => `${total(s, p)}점`) as [string, string],
   reason: (s) => (s.winner === "draw" ? `${s.ends}엔드를 마치고 같은 점수입니다.` : `${s.ends}엔드를 마치고 ${total(s, 0)} 대 ${total(s, 1)}입니다.`),
 };

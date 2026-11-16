@@ -1,13 +1,13 @@
 import * as T from "three";
 import { cryptoRandom } from "../../core/random";
-import { block, glossy } from "../../engine/scene-utils";
+import { block, furry, glossy } from "../../engine/scene-utils";
 import { funfair } from "../../engine/scenery";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot } from "../table/view";
 import { AIM_HEIGHT, BUTTON, CLAW_SUBJECT, DECK, STICK } from "./layout";
 import { BONUS, DROP, MISSED, PRIZE, RELEASE, STEER, type State } from "./rules";
-import { AIM_TIME, CHUTE, DT, KINDS, PIT, RAIL, REACH, aimAt, createWorld, drop, hubOf, lean, letGo, leverOf, press, step, surface, type Happening, type World } from "./sim";
+import { AIM_TIME, CHUTE, DT, KINDS, LEAN, LIMBS, PIT, RAIL, REACH, aimAt, createWorld, drop, gripOf, hubOf, lean, letGo, leverOf, press, step, surface, type Happening, type World } from "./sim";
 
 export const CLAW_COLORS: [string, string] = ["#ff6fae", "#b9b3a4"];
 /** The cabinet: its posts' corners, the ground of the park under it, the gantry's height, and the top of the glass. */
@@ -105,7 +105,28 @@ const signFace = () =>
 interface ToyModel {
   root: T.Group;
   body: T.Group;
+  /** Its limbs, for a toy in the pit: each hangs from its joint and swings (a point at its tip, where it was a step ago). */
+  limbs: { pivot: T.Group; tip: T.Vector3; was: T.Vector3 }[];
+  /** When it was caught by a limb (it then turns to hang from it), and whether its limbs have been laid yet. */
+  hungAt: number;
+  laid: boolean;
 }
+/** Vectors and turns the limbs' physics works in, kept rather than made every frame. */
+const SPARE = {
+  q: new T.Quaternion(),
+  h: new T.Quaternion(),
+  e: new T.Euler(),
+  a: new T.Vector3(),
+  b: new T.Vector3(),
+  c: new T.Vector3(),
+  j: new T.Vector3(),
+  r: new T.Vector3(),
+  v: new T.Vector3(),
+  o: new T.Vector3(),
+};
+/** A limb's own axis, which the limb is turned from to point the way it lies or hangs. */
+const LIMB_AXIS = new T.Vector3(0, -1, 0);
+const GRAVITY = new T.Vector3(0, -9.8, 0);
 /**
  * A claw machine in an amusement park, seen from where a player stands before it: a glass cabinet on a pink
  * frame, a pit of soft toys, the claw hanging by a cable from a gantry under the sign (it swings as the trolley
@@ -136,6 +157,7 @@ export class ClawView extends TableView<State> {
   private words: { sprite: T.Sprite; at: number }[] = [];
   private paused = false;
   private shown = 0;
+  private limbClock = performance.now();
   private last = performance.now();
   private left = 0;
   private ticker = 0;
@@ -349,8 +371,9 @@ export class ClawView extends TableView<State> {
     cell("인형", String(state.prizes.length).padStart(2, "0"), 530, "#5aff8a");
     this.led.texture.needsUpdate = true;
   }
-  /** Shapes and paints the toys share. */
+  /** Shapes and paints the toys share: the toys' coats are plush, with a pile of fur (the user asked). */
   private toyKit(keep: <R extends { dispose(): void }>(r: R) => R) {
+    const plush = (color: string, amount = 1) => keep(furry({ color, roughness: 0.95 }, amount, 4, 3, keep));
     return {
       ball: keep(new T.SphereGeometry(1, 24, 18)),
       ear: keep(new T.SphereGeometry(0.3, 14, 10)),
@@ -361,19 +384,52 @@ export class ClawView extends TableView<State> {
       black: this.standard({ color: "#141018", roughness: 0.3 }),
       white: this.standard({ color: "#ffffff", roughness: 0.6 }),
       blush: this.own(new T.MeshBasicMaterial({ color: "#ff9ab8", transparent: true, opacity: 0.8 })),
-      fur0: this.standard({ color: "#a86a3a", roughness: 0.95 }),
-      snout0: this.standard({ color: "#f0d2a8", roughness: 0.95 }),
-      fur1: this.standard({ color: "#ffd2e4", roughness: 0.95 }),
-      inner1: this.standard({ color: "#ff8ab4", roughness: 0.9 }),
-      fur2: this.standard({ color: "#ffd83a", roughness: 0.9 }),
+      fur0: plush("#a86a3a"),
+      snout0: plush("#f0d2a8", 0.7),
+      fur1: plush("#ffd2e4"),
+      inner1: plush("#ff8ab4", 0.6),
+      fur2: plush("#ffd83a"),
       beak2: this.standard({ color: "#ff8a1a", roughness: 0.6 }),
-      fur3: this.standard({ color: "#5aa0f0", roughness: 0.9 }),
-      belly3: this.standard({ color: "#e8f2ff", roughness: 0.9 }),
-      fur4: this.standard({ color: "#6ac85a", roughness: 0.9 }),
+      fur3: plush("#5aa0f0"),
+      belly3: plush("#e8f2ff", 0.7),
+      fur4: plush("#6ac85a"),
+      paw: keep(new T.SphereGeometry(1, 14, 10)),
     } as Record<string, T.BufferGeometry | T.Material>;
   }
   /** Builds a soft toy of a kind: a plump body with a face, ears or a beak, sized to its radius. */
-  private toy(kind: number, r: number): ToyModel {
+  /**
+   * One limb as built, in units of the toy's radius: a plush capsule hanging from its joint along -y, with a paw, a
+   * foot or a tail's fluke at its end. A wing, a flipper and a tail are flattened.
+   */
+  private limb(kind: number, i: number, fur: T.Material) {
+    const k = this.kit,
+      spec = LIMBS[kind][i],
+      key = `limb${kind}-${i}`,
+      shape = (k[key] ??= this.own(new T.CapsuleGeometry(spec.thick, Math.max(0.02, spec.long - 2 * spec.thick), 4, 12).translate(0, -spec.long / 2, 0))) as T.BufferGeometry,
+      leg = i >= 2,
+      paint = kind === 2 && leg ? (k.beak2 as T.Material) : fur,
+      pivot = new T.Group(),
+      mesh = new T.Mesh(shape, paint);
+    if (spec.flat) mesh.scale.z = 0.45;
+    mesh.castShadow = true;
+    pivot.add(mesh);
+    const end = (material: T.Material, sx: number, sy: number, sz: number) => {
+      const piece = new T.Mesh(k.paw as T.BufferGeometry, material);
+      piece.position.y = -spec.long + spec.thick * 0.6;
+      piece.scale.set(sx, sy, sz);
+      piece.castShadow = true;
+      pivot.add(piece);
+    };
+    const t = spec.thick;
+    if (kind === 0 && leg) end(k.snout0 as T.Material, t * 1.05, t * 0.7, t * 1.05);
+    else if (kind === 1 && leg) end(fur, t * 1.15, t * 0.75, t * 1.7);
+    else if (kind === 2 && leg) end(k.beak2 as T.Material, t * 2.2, t * 0.6, t * 2.6);
+    else if (kind === 3 && i === 2) end(fur, t * 3, t * 0.5, t * 1.3);
+    else if (kind === 4 && leg) end(fur, t * 1.7, t * 0.5, t * 1.5);
+    return pivot;
+  }
+  /** Builds a toy; one for the pit (`live`) has its limbs apart, to hang and swing, one for the shelf has them as built. */
+  private toy(kind: number, r: number, live = true): ToyModel {
     const k = this.kit as Record<string, never>,
       root = new T.Group(),
       body = new T.Group(),
@@ -414,21 +470,30 @@ export class ClawView extends TableView<State> {
     } else if (kind === 2) {
       const beak = part(k.beak, k.beak2 as T.Material, 0, 0.02, 1.02, 1);
       beak.rotation.x = Math.PI / 2;
-      for (const s of [-1, 1]) part(k.ear, fur, s * 0.9, -0.15, 0, [0.6, 1, 1.2]);
       part(k.ear, fur, 0, 1.0, 0, [0.5, 0.8, 0.5]);
     } else if (kind === 3) {
       part(k.ball, k.belly3 as T.Material, 0, -0.32, 0.25, [0.85, 0.45, 0.72]);
-      for (const s of [-1, 1]) {
-        const fin = part(k.ball, fur, s * 0.32, 0.18, -1.05, [0.35, 0.12, 0.3]);
-        fin.rotation.y = s * 0.6;
-      }
     } else {
       part(k.ball, k.inner1 as T.Material, 0, -0.08, 0.78, [0.42, 0.08, 0.2]);
     }
     body.scale.setScalar(r);
     root.add(body);
     this.scene.add(root);
-    return { root, body };
+    const limbs: ToyModel["limbs"] = [];
+    LIMBS[kind].forEach((spec, i) => {
+      const pivot = this.limb(kind, i, fur);
+      if (live) {
+        pivot.scale.setScalar(r);
+        this.scene.add(pivot);
+        limbs.push({ pivot, tip: new T.Vector3(), was: new T.Vector3() });
+      } else {
+        // On the shelf the limbs lie as built.
+        pivot.position.set(...spec.joint);
+        pivot.quaternion.setFromUnitVectors(LIMB_AXIS, new T.Vector3(...spec.rest));
+        body.add(pivot);
+      }
+    });
+    return { root, body, limbs, hungAt: 0, laid: false };
   }
   protected subject() {
     return CLAW_SUBJECT;
@@ -528,6 +593,54 @@ export class ClawView extends TableView<State> {
     this.pose(now);
     this.redraw();
   }
+  /**
+   * A toy's limbs, each a point at its tip on a fixed length from its joint (Verlet): lying, they settle where the
+   * toy was laid with them; lifted or falling, they hang under their own weight, lag behind as the toy is moved and
+   * swing on, kept out of the body and off the floor. A limb the claw holds has its tip in the prongs.
+   */
+  private limbs(model: ToyModel, toy: World["toys"][number], index: number, dt: number) {
+    if (!model.limbs.length) return;
+    const { claw } = this.world,
+      resting = toy.vy === null && !toy.held,
+      grip = toy.held && claw.holding === index && claw.hang ? gripOf(claw) : null,
+      centre = SPARE.c.set(toy.x, toy.y, toy.z),
+      steps = dt > 0 ? Math.max(1, Math.ceil(dt / (1 / 120))) : 0,
+      h = steps ? dt / steps : 0;
+    model.root.updateMatrixWorld();
+    LIMBS[toy.kind].forEach((spec, i) => {
+      const limb = model.limbs[i],
+        joint = SPARE.j.set(...spec.joint).multiplyScalar(toy.r).applyMatrix4(model.root.matrixWorld),
+        rest = SPARE.r.set(...spec.rest).applyQuaternion(model.root.quaternion).multiplyScalar(spec.long * toy.r).add(joint),
+        long = spec.long * toy.r,
+        thick = spec.thick * toy.r,
+        clear = toy.r * 0.78 + thick * 0.6;
+      if (!model.laid) {
+        limb.tip.copy(rest);
+        limb.was.copy(rest);
+      }
+      for (let n = 0; n < steps; n++) {
+        const moved = SPARE.v.copy(limb.tip).sub(limb.was).multiplyScalar(resting ? 0.5 : 0.985);
+        limb.was.copy(limb.tip);
+        limb.tip.add(moved);
+        if (resting) limb.tip.lerp(rest, 1 - Math.exp(-h * 12));
+        else limb.tip.addScaledVector(GRAVITY, h * h);
+        // Its length from the joint, then out of the body, then off the floor.
+        limb.tip.sub(joint).setLength(long).add(joint);
+        const out = SPARE.o.copy(limb.tip).sub(centre);
+        if (out.length() < clear) limb.tip.copy(centre).addScaledVector(out.normalize(), clear);
+        if (limb.tip.y < thick * 0.7 && toy.y > 0) limb.tip.y = thick * 0.7;
+      }
+      if (grip && i === claw.part) limb.tip.set(grip.x, grip.y, grip.z);
+      const way = SPARE.v.copy(limb.tip).sub(joint),
+        reach = way.length();
+      limb.pivot.visible = !toy.gone;
+      limb.pivot.position.copy(joint);
+      if (reach > 1e-5) limb.pivot.quaternion.setFromUnitVectors(LIMB_AXIS, way.divideScalar(reach));
+      // Held in the prongs a plush limb stretches a little, or bunches up.
+      limb.pivot.scale.set(toy.r, toy.r * (grip && i === claw.part ? Math.max(0.7, Math.min(1.5, reach / long)) : 1), toy.r);
+    });
+    model.laid = true;
+  }
   /** Puts everything where the machine has it. */
   private pose(now: number) {
     const { claw, toys } = this.world,
@@ -537,24 +650,38 @@ export class ClawView extends TableView<State> {
       swayX = Math.atan2(claw.sz, length);
     // Models for toys laid since the last time (a new game lays a new pit).
     while (this.toys.length < toys.length) this.toys.push(this.toy(toys[this.toys.length].kind, toys[this.toys.length].r));
+    const dt = Math.min(0.05, Math.max(0, (now - this.limbClock) / 1000));
+    this.limbClock = now;
     toys.forEach((toy, i) => {
       const model = this.toys[i];
       model.root.visible = !toy.gone;
       model.root.position.set(toy.x, toy.y, toy.z);
-      // Lying, a toy leans back to look up out of the pit, and it is lifted just so, swinging with the claw and
-      // hanging over on the side it was caught by; falling, it tumbles.
-      if (toy.vy !== null) model.root.rotation.set(-0.5 + (now / 140) % (Math.PI * 2), toy.turn, 0.3);
-      else if (toy.held) {
+      const byLimb = toy.held && claw.holding === i && claw.hang !== null;
+      // Lying, a toy leans back to look up out of the pit. Lifted by its body it rises just so, swinging with the
+      // claw and hanging over on the side it was caught by; by a limb it turns to hang from it; falling, it tumbles.
+      if (toy.vy !== null) model.root.rotation.set(LEAN + 0.05 + (now / 140) % (Math.PI * 2), toy.turn, 0.3);
+      else if (byLimb) {
+        model.hungAt ||= now;
+        const flat = SPARE.q.setFromEuler(SPARE.e.set(LEAN, toy.turn, 0)),
+          joint = SPARE.a.set(...LIMBS[toy.kind][claw.part].joint).normalize().applyQuaternion(flat),
+          grip = gripOf(claw),
+          up = SPARE.b.set(grip.x - toy.x, grip.y - toy.y, grip.z - toy.z).normalize(),
+          hung = SPARE.h.setFromUnitVectors(joint, up).multiply(flat),
+          k = Math.min(1, (now - model.hungAt) / 500);
+        model.root.quaternion.copy(flat).slerp(hung, k * k * (3 - 2 * k));
+      } else if (toy.held) {
         const { offset } = claw;
-        model.root.rotation.set(-0.55 - swayX + offset.z * 0.9, toy.turn, swayZ - offset.x * 0.9);
-      } else model.root.rotation.set(-0.55, toy.turn, 0);
+        model.root.rotation.set(LEAN - swayX + offset.z * 0.9, toy.turn, swayZ - offset.x * 0.9);
+      } else model.root.rotation.set(LEAN, toy.turn, 0);
+      if (!byLimb) model.hungAt = 0;
+      this.limbs(model, toy, i, dt);
     });
     // The claw hangs from the trolley on its cable, tilted as far as it has swung; the trolley runs on its bridge.
     const hub = hubOf(claw);
     this.hub.position.set(hub.x, claw.y, hub.z);
     this.hub.rotation.set(-swayX, 0, swayZ);
     // Holding a toy the prongs close only as far as the toy lets them.
-    const open = 0.08 + Math.max(claw.open, claw.holding !== null ? 0.4 : 0) * 0.5;
+    const open = 0.08 + Math.max(claw.open, claw.holding === null ? 0 : claw.hang ? 0.15 : 0.4) * 0.5;
     for (const arm of this.prongs) arm.rotation.z = open;
     const top = new T.Vector3(claw.x, CAB.rail - 0.16, claw.z),
       end = new T.Vector3(hub.x, claw.y + 0.16, hub.z),
@@ -604,7 +731,7 @@ export class ClawView extends TableView<State> {
     this.shelved = state.prizes.length;
     for (const child of [...this.shelf.children]) child.removeFromParent();
     state.prizes.slice(-6).forEach((kind, i) => {
-      const model = this.toy(kind, KINDS[kind].r * 0.45);
+      const model = this.toy(kind, KINDS[kind].r * 0.45, false);
       model.root.removeFromParent();
       model.root.position.set(-0.24 + (i % 3) * 0.24, 0.12 + Math.floor(i / 3) * 0.16, 0.12 - Math.floor(i / 3) * 0.24);
       model.root.rotation.set(-0.4, 0, 0);
@@ -616,7 +743,10 @@ export class ClawView extends TableView<State> {
     const anew = state.ply === 0 && this.shown > 0;
     if (anew || this.world.level !== state.level) {
       this.world = createWorld(state.level, cryptoRandom);
-      for (const model of this.toys) model.root.removeFromParent();
+      for (const model of this.toys) {
+        model.root.removeFromParent();
+        for (const limb of model.limbs) limb.pivot.removeFromParent();
+      }
       this.toys = [];
       for (const word of this.words) word.sprite.removeFromParent();
       this.words = [];

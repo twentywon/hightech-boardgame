@@ -19,7 +19,12 @@ export interface Disc {
   flight?: number;
   /** A curling stone's turn: it drifts sideways as it slides, more as it slows (left out, a disc runs straight). */
   curl?: number;
+  /** Swept: the ice before it is polished, so that it slows less (`SLICK`) and curls less (`SLICK_CURL`). */
+  slick?: boolean;
 }
+/** What sweeping leaves of the friction a stone meets and of its curl. */
+export const SLICK = 0.9,
+  SLICK_CURL = 0.6;
 export interface Arena {
   halfX: number;
   halfZ: number;
@@ -68,12 +73,12 @@ export function step(discs: Disc[], arena: Arena, heard?: Heard): number[] {
       d.vx = d.vz = 0;
       continue;
     }
-    const slowed = Math.max(0, speed - arena.friction * DT);
+    const slowed = Math.max(0, speed - arena.friction * (d.slick ? SLICK : 1) * DT);
     d.vx *= slowed / speed;
     d.vz *= slowed / speed;
     if (d.curl && slowed > 0) {
       // Sideways, across the way it goes, and harder as it slows.
-      const push = d.curl * Math.min(2.5, 1.4 / slowed) * DT;
+      const push = d.curl * (d.slick ? SLICK_CURL : 1) * Math.min(2.5, 1.4 / slowed) * DT;
       const vx = d.vx,
         vz = d.vz;
       d.vx += (-vz / slowed) * push;
