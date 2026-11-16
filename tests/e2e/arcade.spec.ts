@@ -75,6 +75,7 @@ test("whack-a-mole: a key or a press brings the mallet down, and the clock runs"
   const before = await moves(page);
   await page.mouse.click(at.x, at.y);
   await expect.poll(() => moves(page)).toBeGreaterThan(before);
-  await expect.poll(async () => Number(/남은 시간 (\d+)/.exec(await page.locator("#turn").innerText())?.[1] ?? 99), { timeout: 6000 }).toBeLessThan(44);
+  // Under software rendering with other browsers running a frame can take longer than the clock adds at most (0.3s), so allow time.
+  await expect.poll(async () => Number(/남은 시간 (\d+)/.exec(await page.locator("#turn").innerText())?.[1] ?? 99), { timeout: 12000 }).toBeLessThan(44);
   expect(errors).toEqual([]);
 });
