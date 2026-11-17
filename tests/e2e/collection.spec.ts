@@ -7,7 +7,8 @@ test("a tile enters its game at once and asks its settings in a window, without 
   let navigations = 0;
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("worker", (w) => workers.push(w.url()));
-  page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
+  // Pages loaded (a history entry pushed for the window is no navigation).
+  page.on("load", () => navigations++);
   await page.goto("/");
   const url = page.url();
   await expect(page.locator(".game-card")).toHaveCount(games.length);

@@ -112,7 +112,8 @@ test("yut in the yard: tap a piece, then a gold ring; corners take the short roa
 });
 
 test("yut against the computer plays on to a result, and the screen fits", async ({ page }, info) => {
-  test.setTimeout(240000);
+  // A whole game against the computer: with three browsers at once one game took close to four minutes.
+  test.setTimeout(400000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await sit(page, "ai");
@@ -127,7 +128,7 @@ test("yut against the computer plays on to a result, and the screen fits", async
     if (await toss.isEnabled()) await toss.click({ timeout: 1000 });
     else if ((await first.isVisible()) && (await first.isEnabled())) await first.click({ timeout: 1000 });
     await expect(page.locator("#yut-result")).toBeVisible({ timeout: 700 });
-  }).toPass({ timeout: 220000, intervals: [100] });
+  }).toPass({ timeout: 370000, intervals: [100] });
   await expect(page.locator("#yut-final")).toContainText(/이겼습니다|컴퓨터가 먼저/);
   // No window comes up at the end.
   await page.waitForTimeout(1600);

@@ -30,6 +30,8 @@ async function sit(page: Page, name: string) {
   await selectGame(page, name);
   await expect(page.getByLabel("로컬 2인", { exact: true })).toBeHidden();
   await expect(page.locator("#pg-level-field")).toBeHidden();
+  // A puzzle for one is entered through its stage window: the test picks its card there.
+  if (await page.locator("dialog[open] .stage-entry").count()) return errors;
   await page.locator(".game-stage button.primary").click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await expect(page.locator("#pg-side-1")).toBeHidden();
@@ -39,7 +41,7 @@ const score = async (page: Page) => Number(/점수 (\d+)/.exec(await page.locato
 
 test("peg solitaire: a marble jumps into the middle, and the jump is taken back", async ({ page }) => {
   const errors = await sit(page, "페그 솔리테어");
-  // The stages come up in a window over the board; the whole board is the first card.
+  // The game is entered through its stage window; the whole board is the first card.
   const cards = page.getByRole("dialog").locator(".stage-card");
   await expect(cards).toHaveCount(6);
   await cards.filter({ hasText: "기본" }).click();
@@ -73,16 +75,17 @@ test("peg solitaire: a marble jumps into the middle, and the jump is taken back"
   expect(errors).toEqual([]);
 });
 
-test("peg solitaire: the stage is chosen from pictures in a window after sitting down", async ({ page }) => {
+test("peg solitaire: the stage is chosen from pictures in the window it is entered through", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, "페그 솔리테어");
-  // Nothing is chosen in the collection: no list of stages there.
+  // No list of stages: the window it is entered through is its stage window, the start where 계속하기 stood.
   await expect(page.locator("#pg-variant")).toHaveCount(0);
-  await page.locator(".game-stage button.primary").click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("스테이지 선택");
+  await expect(dialog).toContainText("하고 싶은 배치를 고르세요");
+  await expect(dialog.locator(".dialog-actions").getByRole("button", { name: /판 앞에 앉기/ })).toBeVisible();
+  await expect(dialog.locator(".dialog-actions").getByRole("button", { name: "← 컬렉션으로" })).toBeVisible();
   // A card for each stage, with its picture, name and number of marbles.
   await expect(dialog.locator(".stage-card")).toHaveCount(6);
   await expect(dialog.locator(".stage-card svg")).toHaveCount(6);
@@ -248,7 +251,7 @@ test("marble shooting: the difficulty is asked on sitting down, and the panel hi
     return (seed * 2) / 4294967296;
   };
   const errors = await sit(page, "구슬치기");
-  // The difficulties come up in a window as soon as one sits down.
+  // The difficulties are the cards of the window it is entered through.
   const dialog = page.getByRole("dialog");
   await expect(dialog.locator(".stage-card")).toHaveCount(5);
   await dialog.locator(".stage-card").filter({ hasText: "아주 쉬움" }).click();

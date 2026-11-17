@@ -18,6 +18,8 @@ async function sit(page: Page, game: string, mode: "local" | "ai", variant?: str
   await selectGame(page, game);
   if (await page.locator(`input[name=pg-mode][value=${mode}]`).count()) await page.locator(`input[name=pg-mode][value=${mode}]`).check();
   if (variant) await page.locator("#pg-variant").selectOption(variant);
+  // A puzzle for one is entered through its stage window: the test picks its card there.
+  if (await page.locator("dialog[open] .stage-entry").count()) return errors;
   await page.locator(".game-stage button.primary").click();
   return errors;
 }

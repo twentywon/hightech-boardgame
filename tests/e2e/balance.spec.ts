@@ -25,7 +25,7 @@ test("balance quiz: the four stages are laid, each takes a press, a hint is show
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, "저울 퀴즈");
-  await page.locator(".game-stage button.primary").click();
+  // Entered through its stage window: a card sits down at that stage.
   await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(4);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "추 달기" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
@@ -86,7 +86,6 @@ test("balance quiz: coins are dragged onto the pans and off again, and a bare ta
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, "저울 퀴즈");
-  await page.locator(".game-stage button.primary").click();
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "가짜 동전" }).click();
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await rest(page);

@@ -18,6 +18,8 @@ async function sit(page: Page, game: string) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, game);
+  // A puzzle for one is entered through its stage window: the test picks its card there.
+  if (await page.locator("dialog[open] .stage-entry").count()) return errors;
   await page.locator(".game-stage button.primary").click();
   return errors;
 }
