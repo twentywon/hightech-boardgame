@@ -647,12 +647,4 @@ export const games = [
     icon: "🐸",
     available: true,
   },
-  {
-    name: "구슬 낙하 미로",
-    en: "MARBLE DROP MAZE",
-    category: "퍼즐게임",
-    players: "1인용",
-    icon: "◉",
-    available: true,
-  },
 ];

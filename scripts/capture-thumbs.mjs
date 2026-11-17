@@ -286,21 +286,6 @@ const play = {
   "frog-hop": async () => {
     await stage(2);
   },
-  // The 5×5 bench (보통) with two of the tray's pieces set down by the keyboard (the last one turned), the third
-  // still in the tray: down to the tray, a piece picked up there, up onto the board and set down, tried again from
-  // another place in the tray until two have been set (the puzzle is random, so a plot may be taken).
-  "marble-drop-maze": async () => {
-    await stage(1);
-    await wait(800);
-    const made = async () => Number((await page.locator("#move-count").textContent()).replace(/\D/g, "")) || 0;
-    const tries = [["ArrowLeft"], ["ArrowRight"], [], ["ArrowLeft", "ArrowLeft"], ["ArrowRight", "ArrowRight"], ["ArrowLeft"]];
-    for (let k = 0; k < tries.length && (await made()) < 2; k++) {
-      await keys(["Escape", ...Array(8).fill("ArrowDown"), ...tries[k], "Enter", "ArrowUp", ...(k % 2 ? ["ArrowUp"] : []), "Enter"], 160);
-      await wait(500);
-    }
-    await keys(["Enter", "Enter"], 220);
-    await wait(900);
-  },
   // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
   darts: async () => {
     await keys(["Enter"]);
