@@ -180,10 +180,15 @@ export function ballNear(world: World, x: number, z: number) {
   });
   return best;
 }
-/** Throws ball `held` (the one taken up while aiming, if it is still in the tray) or else the nearest; false when none can be. */
-export function shoot(world: World, power: number, yaw: number, held = -1) {
+/**
+ * Throws ball `held` (the one taken up while aiming, if it is still in the tray) or else the nearest; false when none
+ * can be. With `exact`, only `held` may be thrown (the hand took that ball up: a press must be on a ball).
+ */
+export function shoot(world: World, power: number, yaw: number, held = -1, exact = false) {
   if (!canShoot(world)) return false;
-  const k = held >= 0 && world.balls[held] && takeable(world.balls[held]) ? held : readyBall(world),
+  const kept = held >= 0 && !!world.balls[held] && takeable(world.balls[held]);
+  if (exact && !kept) return false;
+  const k = kept ? held : readyBall(world),
     ball = world.balls[k],
     v = launch(power, yaw);
   // Lifted straight up where it lay (the user asked: not brought to the middle) and thrown from there, over the

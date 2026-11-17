@@ -509,9 +509,12 @@ export class BasketballView extends TableView<State> {
     const el = this.renderer.domElement;
     el.addEventListener("pointerdown", (e) => {
       if ((e.pointerType === "mouse" && e.button !== 0) || !this.running() || this.press) return;
+      // Only a ball pressed on is taken up (the user asked): a press on the air or beside the balls takes nothing,
+      // and the swipe that follows throws nothing.
+      const held = this.ballAt(e);
+      if (held < 0) return;
       this.press = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
-      // The ball pressed on is the one taken up (or, pressed beside the balls, the nearest to the press).
-      this.held = this.ballAt(e);
+      this.held = held;
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
@@ -529,7 +532,8 @@ export class BasketballView extends TableView<State> {
       this.press = null;
       if (cancelled || !this.running()) return;
       const made = swipe(e.clientX - x, e.clientY - y, el.clientHeight || 1);
-      if (made) this.throwBall(made.power, made.yaw);
+      // The ball taken up must still lie in the tray to be thrown; another is never thrown in its place.
+      if (made && this.held >= 0) this.throwBall(made.power, made.yaw, true);
     };
     el.addEventListener("pointerup", (e) => end(e, false));
     el.addEventListener("pointercancel", (e) => end(e, true));
@@ -555,7 +559,7 @@ export class BasketballView extends TableView<State> {
     });
     el.addEventListener("blur", () => (this.charge = null));
   }
-  /** The ball in the tray under a press, by the line of sight (a little wider than a ball), else the nearest to where it meets the tray. */
+  /** The ball in the tray under a press, by the line of sight (a little wider than a ball), or −1 when the press is on none. */
   private ballAt(e: PointerEvent) {
     aimRay(this.sight, e, this.renderer.domElement, this.camera);
     let best = -1,
@@ -568,9 +572,7 @@ export class BasketballView extends TableView<State> {
       const far = this.sight.ray.origin.distanceTo(centre);
       if (far < nearest) [best, nearest] = [k, far];
     });
-    if (best >= 0) return best;
-    const tray = new T.Plane(new T.Vector3(0, 1, 0), -(floorAt(READY.z) + BALL));
-    return this.sight.ray.intersectPlane(tray, at) ? ballNear(this.world, at.x, at.z) : readyBall(this.world);
+    return best;
   }
   /** The keyboard's charge: up to full power in 1.2 seconds and back down, over and over. */
   private charged(now: number) {
@@ -584,8 +586,9 @@ export class BasketballView extends TableView<State> {
     if (this.charge) return { power: this.charged(now), yaw: this.keyYaw };
     return null;
   }
-  private throwBall(power: number, yaw: number) {
-    if (!shoot(this.world, power, yaw, this.held)) return;
+  /** Throws the ball taken up; `exact` (a hand's swipe) throws only that ball, the keyboard any that lies ready. */
+  private throwBall(power: number, yaw: number, exact = false) {
+    if (!shoot(this.world, power, yaw, this.held, exact)) return;
     this.held = -1;
     this.lift = 0;
     this.onMove({ from: -1, to: SHOT, extra: -1 });
@@ -732,6 +735,17 @@ export class BasketballView extends TableView<State> {
     });
     const data = this.renderer.domElement.dataset;
     data.balls = String(inTray(world).length);
+    // Where each ball in the tray lies, in the world and on the canvas (x, z; then pixels from the canvas's corner),
+    // for browser tests, which must press on a ball to take it up.
+    const point = new T.Vector3(),
+      canvas = this.renderer.domElement;
+    data.tray = inTray(world)
+      .map((k) => {
+        const ball = world.balls[k];
+        point.set(ball.x, ball.y, ball.z).project(this.camera);
+        return `${ball.x.toFixed(3)},${ball.z.toFixed(3)},${(((point.x + 1) / 2) * canvas.clientWidth).toFixed(1)},${(((1 - point.y) / 2) * canvas.clientHeight).toFixed(1)}`;
+      })
+      .join(";");
     data.hoop = world.hoopX.toFixed(2);
   }
   protected subject(): TableSubject {

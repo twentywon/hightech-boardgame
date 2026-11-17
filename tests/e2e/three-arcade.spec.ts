@@ -94,9 +94,19 @@ test("basketball: a swipe up throws the ball in, the clock starts, and Space thr
   // Nothing runs before the first throw.
   await page.waitForTimeout(1200);
   expect(await moves(page)).toBe(0);
-  const ideal = idealThrow(0),
+  // A swipe that does not begin on a ball takes nothing up and throws nothing (the user asked).
+  const air = { x: box.x + box.width / 2, y: box.y + box.height * 0.3 };
+  await page.mouse.move(air.x, air.y);
+  await page.mouse.down();
+  for (let k = 1; k <= 8; k++) await page.mouse.move(air.x, air.y - (box.height * 0.25 * k) / 8);
+  await page.mouse.up();
+  await page.waitForTimeout(600);
+  expect(await moves(page)).toBe(0);
+  // A ball pressed on is taken up where it lies and thrown from there.
+  const [bx, bz, sx, sy] = (await canvas.getAttribute("data-tray"))!.split(";")[0].split(",").map(Number),
+    ideal = idealThrow(0, { x: bx, z: bz }),
     swipe = swipeFor(ideal.power, ideal.yaw, box.height),
-    from = { x: box.x + box.width / 2, y: box.y + box.height * 0.85 };
+    from = { x: box.x + sx, y: box.y + sy };
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   for (let k = 1; k <= 8; k++) await page.mouse.move(from.x + (swipe.dx * k) / 8, from.y + (swipe.dy * k) / 8);
