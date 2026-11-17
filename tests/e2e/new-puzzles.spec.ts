@@ -1,0 +1,113 @@
+import { test, expect, type Page } from "@playwright/test";
+import { PerspectiveCamera, Vector3 } from "three";
+import { selectGame } from "./library";
+import { FOV, cameraDistance, type Subject } from "../../src/engine/camera";
+import * as pipeRules from "../../src/games/pipes/rules";
+import { TILE_TOP, cellAt as pipeCell, pipesSubject } from "../../src/games/pipes/view";
+import * as bridgeRules from "../../src/games/bridges/rules";
+import { ISLAND_TOP, bridgesSubject, cellAt as islandCell } from "../../src/games/bridges/view";
+
+const settled = (page: Page) => expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 30000 });
+const moves = (page: Page) => page.locator("#move-count");
+
+/** Stubs the random numbers so that the puzzle laid can be laid here too. */
+async function seeded(page: Page, start: number) {
+  await page.addInitScript((first) => {
+    let seed = first;
+    crypto.getRandomValues = ((buffer: Uint32Array) => {
+      for (let i = 0; i < buffer.length; i++) {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        buffer[i] = seed * 2;
+      }
+      return buffer;
+    }) as typeof crypto.getRandomValues;
+  }, start);
+  let seed = start;
+  return () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return (seed * 2) / 4294967296;
+  };
+}
+/** Enters a puzzle for one through its stage window and sits down at the first stage by its card. */
+async function sit(page: Page, name: string) {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, name);
+  const dialog = page.getByRole("dialog");
+  // The window it is entered through is its stage window, with its 게임 방법.
+  await expect(dialog.locator(".stage-card")).toHaveCount(5);
+  await expect(dialog.getByRole("button", { name: "게임 방법" })).toBeVisible();
+  await dialog.locator(".stage-card").first().click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await settled(page);
+  return errors;
+}
+/** Taps the point (x, y, z) as the view's camera shows it. */
+async function tap(page: Page, subject: Subject & { tilt: number }, x: number, y: number, z: number, mobile: boolean) {
+  const box = (await page.locator("canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    d = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+  camera.position.set(0, Math.sin(subject.tilt) * d, Math.cos(subject.tilt) * d);
+  camera.lookAt(0, subject.lookY, 0);
+  camera.updateMatrixWorld();
+  const v = new Vector3(x, y, z).project(camera),
+    px = box.x + ((v.x + 1) * box.width) / 2,
+    py = box.y + ((1 - v.y) * box.height) / 2;
+  if (mobile) await page.touchscreen.tap(px, py);
+  else await page.mouse.click(px, py);
+}
+
+test("pipes: each piece is turned by taps until the water reaches every house", async ({ page }, info) => {
+  const mobile = info.project.name === "mobile",
+    random = await seeded(page, 71),
+    errors = await sit(page, "파이프 잇기");
+  // A garden was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
+  pipeRules.createGame(1, random);
+  const state = pipeRules.createGame(1, random),
+    box = (await page.locator("canvas").boundingBox())!,
+    subject = pipesSubject(state.size, box.width / box.height);
+  let taps = 0;
+  for (let i = 0; i < state.tiles.length; i++) {
+    const turns = pipeRules.turnsBetween(state.tiles[i], state.answer[i]);
+    for (let k = 0; k < turns; k++) {
+      const p = pipeCell(state.size, i);
+      await tap(page, subject, p.x, TILE_TOP, p.z, mobile);
+      taps++;
+      await expect(moves(page)).toHaveText(`${taps}수`, { timeout: 20000 });
+      await settled(page);
+    }
+  }
+  expect(taps).toBeGreaterThan(0);
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("bridges: an island and then its neighbour lay a bridge, and every number is met", async ({ page }, info) => {
+  const mobile = info.project.name === "mobile",
+    random = await seeded(page, 73),
+    errors = await sit(page, "다리 놓기");
+  // A sea was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
+  bridgeRules.createGame(1, random);
+  const state = bridgeRules.createGame(1, random),
+    box = (await page.locator("canvas").boundingBox())!,
+    subject = bridgesSubject(state.size, box.width / box.height),
+    at = async (cell: number) => {
+      const p = islandCell(state.size, cell);
+      await tap(page, subject, p.x, ISLAND_TOP, p.z, mobile);
+    };
+  let laid = 0;
+  for (const [k, edge] of state.edges.entries())
+    for (let n = 0; n < state.answer[k]; n++) {
+      await at(edge.a);
+      await at(edge.b);
+      laid++;
+      await expect(moves(page)).toHaveText(`${laid}수`, { timeout: 20000 });
+      await settled(page);
+    }
+  expect(laid).toBeGreaterThan(0);
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});

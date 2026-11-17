@@ -255,6 +255,14 @@ const play = {
     await keys(["ArrowRight", "Enter", "Enter", "ArrowRight", "Enter", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "ArrowLeft", "Enter", "Enter", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "Enter"], 260);
     await wait(700);
   },
+  // The 5×5 garden as it is laid: some pipes run full from the tank, the rest lie turned wrong.
+  pipes: async () => {
+    await stage(1);
+  },
+  // The 8×8 sea and its islands, before any bridge is laid.
+  bridges: async () => {
+    await stage(1);
+  },
   "star-battle": async () => {
     await stage(2);
     await wait(800);

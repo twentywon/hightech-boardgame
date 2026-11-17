@@ -480,6 +480,22 @@ export const games = [
     available: true,
   },
   {
+    name: "파이프 잇기",
+    en: "PIPES",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "╋",
+    available: true,
+  },
+  {
+    name: "다리 놓기",
+    en: "BRIDGES",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "═",
+    available: true,
+  },
+  {
     name: "지뢰찾기",
     en: "MINESWEEPER",
     category: "퍼즐게임",

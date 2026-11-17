@@ -132,8 +132,7 @@ test("tents: every tent is pitched by taps and the puzzle is solved", async ({ p
   await page.getByRole("dialog").locator(".stage-card").first().click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await ready(page);
-  // Puzzles were laid when the game was looked at and when sitting down; the third is the one chosen.
-  tentsRules.createGame(1, random);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   tentsRules.createGame(1, random);
   const state = tentsRules.createGame(1, random),
     box = (await page.locator("canvas").boundingBox())!,

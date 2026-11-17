@@ -266,8 +266,7 @@ test("marble shooting: the difficulty is asked on sitting down, and the panel hi
   await expect(panel.locator('.puzzle-level[aria-pressed="true"]')).toContainText("아주 쉬움");
   for (const name of ["힌트", "무르기", "처음부터", "다른 퍼즐"]) await expect(panel.getByRole("button", { name, exact: true })).toBeVisible();
   await expect(panel.locator("#pz-next")).toBeHidden();
-  // Trays were laid when the game was looked at in the collection and when sitting down; the third is the one chosen.
-  layTray(6, random);
+  // A tray was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   layTray(6, random);
   let tray = layTray(4, random),
     cursor = 0;
@@ -353,8 +352,7 @@ test("water pouring: the level is asked, pours are counted against the fewest, a
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await rest(page);
-  // Puzzles were drawn when the game was looked at and when sitting down; the third is the one chosen.
-  layJugs(1, random);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   layJugs(1, random);
   const puzzle = layJugs(1, random),
     way = solveJugs(puzzle)!;
@@ -549,8 +547,7 @@ test("lights on: a board laid at random is lit in the fewest presses", async ({ 
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "4×4" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  // Boards were laid when the game was looked at and when sitting down; the third is the one chosen.
-  lamps.createGame(1, random);
+  // A board was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   lamps.createGame(1, random);
   let state = lamps.createGame(2, random);
   const way = lamps.solve(state.size, state.on)!,
@@ -729,8 +726,7 @@ test("queens on the board: a puzzle laid at random is finished by setting the mi
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "6×6" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  // Puzzles were laid when the game was looked at and when sitting down; the third is the one chosen.
-  queenRules.createGame(1, random);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   queenRules.createGame(1, random);
   const state = queenRules.createGame(2, random),
     size = state.size,
@@ -760,8 +756,7 @@ test("knight tour: a board laid at random is travelled square by square, and a w
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "4×4" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  // Boards were laid when the game was looked at and when sitting down; the third is the one chosen.
-  tourRules.createGame(1, random);
+  // A board was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   tourRules.createGame(1, random);
   const state = tourRules.createGame(2, random),
     way = tourRules.solve(state)!,
@@ -790,8 +785,7 @@ test("turning maze: the knobs and the arrow keys turn the dial, and the blocks a
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "5×5" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  // Mazes were laid when the game was looked at and when sitting down; the third is the one chosen.
-  mazeRules.createGame(1, random);
+  // A maze was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   mazeRules.createGame(1, random);
   let state = mazeRules.createGame(1, random);
   const way: number[] = [];
@@ -827,8 +821,7 @@ test("haunted mirrors: each square is tapped round to its monster and the puzzle
   await page.getByRole("dialog").locator(".stage-card").first().click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  // Puzzles were laid when the game was looked at and when sitting down; the third is the one chosen.
-  hauntRules.createGame(1, random);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   hauntRules.createGame(1, random);
   const state = hauntRules.createGame(1, random),
     board = walker(page, state.size, state.size);
@@ -856,7 +849,6 @@ test("haunted mirrors: a monster is dragged from the row in front onto a square,
   await page.getByRole("dialog").locator(".stage-card").first().click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  hauntRules.createGame(1, random);
   hauntRules.createGame(1, random);
   const state = hauntRules.createGame(1, random),
     [a, b] = state.mirror.flatMap((m, i) => (m === hauntRules.NONE && !state.fixed[i] ? [i] : [])),
@@ -906,8 +898,7 @@ test("building puzzle: each plot is tapped up to its height and the city is fini
   await page.getByRole("dialog").locator(".stage-card").first().click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  // Puzzles were laid when the game was looked at and when sitting down; the third is the one chosen.
-  cityRules.createGame(1, random);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   cityRules.createGame(1, random);
   const state = cityRules.createGame(1, random),
     board = walker(page, state.size, state.size);
@@ -934,7 +925,6 @@ test("building puzzle: a building is dragged from the row in front, raised by a 
   await page.getByRole("dialog").locator(".stage-card").first().click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
-  cityRules.createGame(1, random);
   cityRules.createGame(1, random);
   const state = cityRules.createGame(1, random),
     [a, b] = state.fixed.flatMap((f, i) => (f ? [] : [i])),

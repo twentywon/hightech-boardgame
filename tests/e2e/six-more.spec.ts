@@ -149,7 +149,6 @@ test("star battle: every star is set by a tap and the puzzle is solved", async (
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await ready(page);
   starRules.createGame(1, random);
-  starRules.createGame(1, random);
   const state = starRules.createGame(1, random),
     box = (await page.locator("canvas").boundingBox())!,
     subject = starSubject(state.size, box.width / box.height);
