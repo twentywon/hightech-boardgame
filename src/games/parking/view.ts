@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block, glossy, stuff } from "../../engine/scene-utils";
+import { CAFE, cafe } from "./cafe";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CELLS, EXIT_ROW, SIZE, reach, vehicleAt, type State, type Vehicle } from "./rules";
@@ -262,7 +263,8 @@ function shapes(kind: Kind | "stripes") {
 }
 /**
  * A parking lot seen from above, a little tilted: worn bay lines on dark asphalt inside a concrete kerb, a low
- * brick wall and trees beyond it, a hedge at either side, and at the right of the third row the exit lane with a
+ * brick wall and trees beyond it, a hedge along the near side, a café of our own at the left (`cafe.ts`: PARK COFFEE,
+ * with its terrace and a paved walk to the kerb), and at the right of the third row the exit lane with a
  * ticket booth and a striped boom that rises when the red car reaches it; the car then drives out onto the road.
  * Cars, box vans and lorries are modelled in code. A vehicle is dragged along its own length; it follows the
  * pointer only as far as the squares are free, and settles on the nearest square when let go.
@@ -432,7 +434,8 @@ export class ParkingView extends TableView<State> {
       leafDark = this.standard({ color: "#3e7432", roughness: 0.85 }),
       pole = this.standard({ color: "#3a3d42", roughness: 0.5, metalness: 0.5 }),
       glow = this.standard({ color: "#fff8e0", emissive: "#fff2c8", emissiveIntensity: 0.7 });
-    const wallLeft = -5,
+    // The wall runs from the café's back corner to the gate's side.
+    const wallLeft = CAFE.right,
       wallRight = LANE_END - 0.2,
       wallZ = -(KERB + 0.55);
     this.add(block(wallRight - wallLeft, 0.34, 0.24, 0.03), brick, (wallLeft + wallRight) / 2, 0.17, wallZ);
@@ -449,11 +452,11 @@ export class ParkingView extends TableView<State> {
       t.castShadow = c.castShadow = true;
       this.scene.add(t, c);
     });
-    // Hedges along the left and the near side, low enough to hide nothing.
-    this.add(block(0.42, 0.36, 2 * KERB + 0.6, 0.14), hedge, -(KERB + 0.55), 0.18, 0);
-    this.add(block(LANE_END - 0.1 + 5, 0.26, 0.36, 0.12), hedge, (LANE_END - 0.1 - 5) / 2, 0.13, KERB + 0.5);
-    // Two lamp posts at the far corners.
-    for (const x of [-(KERB + 1.05), LOT + 0.9]) {
+    // A hedge along the near side, low enough to hide nothing, from beyond the café's terrace to the lane.
+    const hedgeLeft = CAFE.left - 0.05;
+    this.add(block(LANE_END - 0.1 - hedgeLeft, 0.26, 0.36, 0.12), hedge, (LANE_END - 0.1 + hedgeLeft) / 2, 0.13, KERB + 0.5);
+    // Two lamp posts at the far corners (the left one on the café's walk).
+    for (const x of [-(KERB + 0.6), LOT + 0.9]) {
       const z = wallZ + 0.35;
       this.add(new T.CylinderGeometry(0.04, 0.05, 2, 10), pole, x, 1, z);
       this.add(block(0.42, 0.05, 0.08, 0.02), pole, x + (x < 0 ? 0.18 : -0.18), 1.98, z);
@@ -469,6 +472,8 @@ export class ParkingView extends TableView<State> {
     this.add(block(0.58, 0.24, 0.5, 0.02), pane, bx, 0.56, bz);
     this.add(block(0.4, 0.24, 0.68, 0.02), pane, bx, 0.56, bz);
     this.add(block(0.74, 0.07, 0.84, 0.03), roof, bx, 0.82, bz);
+    // The café at the left, with its terrace and its walk to the kerb.
+    cafe({ root: this.scene, keep, paint: (options) => this.standard(options) });
   }
   private paintOf(color: number) {
     let material = this.paints.get(color);

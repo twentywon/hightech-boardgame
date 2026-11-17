@@ -205,7 +205,8 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   curling: { config: curlingConfig, options: { mode: "ai", variant: "3", level: "normal" } },
   "star-battle": { config: starBattleConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   pipes: { config: pipesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
-  bridges: { config: bridgesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  // Titled 하시 (HASHI) at the user's request; its id follows the catalog's English name.
+  hashi: { config: bridgesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "parking-escape": { config: parkingConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -364,7 +365,7 @@ type GameSelection =
   | "curling"
   | "star-battle"
   | "pipes"
-  | "bridges"
+  | "hashi"
   | "parking-escape"
   | "minesweeper"
   | "fruit-merge"

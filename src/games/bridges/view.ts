@@ -4,6 +4,7 @@ import { capable, fall, stuff } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { blocked, edgeBetween, islandState, setOf, type State } from "./rules";
+import { SEA, causticTile, lagoonPictures, laceTile, oceanTile, sequence, sheenTile } from "./sea";
 
 export const BRIDGES_COLORS: [string, string] = ["#a8743f", "#2f8fb8"];
 /** The width of a cell of the sea. */
@@ -29,8 +30,24 @@ export function bridgesSubject(size: number, aspect: number): TableSubject {
   const half = (size * CELL) / 2 + MARGIN;
   return { half: aspect < 1 ? half : half + 0.2, halfZ: half + 0.15, height: 0.45, lookY: 0.08, tilt: 1.12 };
 }
-/** A fixed sequence, so the islands' shapes and the things on them are the same each time a puzzle is shown. */
-const sequence = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+/** Table units a tile of the fine ripples and of the long swells spans (where a graphics card draws), and of the light's net. */
+const RIPPLE = 2.2,
+  SWELL = 7,
+  NET = 1.8;
+/**
+ * Gives a flat plane a second set of coordinates, in table units, so that the ripples, the swells and the light's net
+ * run on from one plane into another of any size without a seam: textures on channel 1 read it.
+ */
+function worldUv(geometry: T.PlaneGeometry) {
+  const at = geometry.getAttribute("position"),
+    uv = new Float32Array(at.count * 2);
+  for (let i = 0; i < at.count; i++) {
+    uv[i * 2] = at.getX(i);
+    uv[i * 2 + 1] = at.getY(i);
+  }
+  geometry.setAttribute("uv1", new T.BufferAttribute(uv, 2));
+  return geometry;
+}
 type Tone = "open" | "done" | "over" | "win";
 const FACE: Record<Tone, [string, string]> = {
   open: ["#f7f0dc", "#26313a"],
@@ -44,8 +61,11 @@ interface Built {
   mesh: T.InstancedMesh;
 }
 /**
- * A lagoon seen from above: turquoise shallows over a deeper sea, with faint dots where islands may stand; round
- * sandy islands with a grassy top, some with a palm or a few rocks, modelled in code; each island's number on a
+ * A lagoon seen from above, inside a reef with surf breaking on it and the open ocean beyond: deeper blue between
+ * the islands, turquoise over the sand round each, with the light's net, coral heads and surf at the beaches, painted
+ * from where the islands lie (`sea.ts`), and a faint dot in every cell; where a graphics card draws, ripples, swells
+ * and the light's net move over it and the surf breathes. Round sandy islands with a grassy top, some with a palm or
+ * a few rocks, modelled in code; each island's number on a
  * round wooden plate (light, green when its bridges are all there, red when there are too many); bridges of
  * planks on two beams with posts and rails, arched a little, two narrower ones side by side for a double.
  */
@@ -59,7 +79,18 @@ export class BridgesView extends TableView<State> {
   private numbers = new Map<string, T.Material>();
   private parts: Record<string, T.BufferGeometry> = {};
   private paint: Record<string, T.Material> = {};
-  private waves: T.Texture[] = [];
+  /** What moves over the water while the table waits (only where a graphics card draws): textures and how fast they drift. */
+  private flows: { texture: T.Texture; x: number; z: number }[] = [];
+  /** The fine ripples and the long swells (normal maps), and the light's net as it moves; null where nothing is drawn so. */
+  private ripples: T.Texture | null = null;
+  private swells: T.Texture | null = null;
+  private nets: T.Texture[] = [];
+  /** The light's net as a picture, painted once for the view and laid into every puzzle's lagoon. */
+  private caustics: HTMLCanvasElement | null = null;
+  /** The surf round each island, which breathes in and out while the table waits. */
+  private foams: T.Mesh[] = [];
+  /** The pictures, shapes and paints of the present puzzle's sea, let go when the next is laid. */
+  private sea: { dispose(): void }[] = [];
   private clock = 0;
   private chosen: T.Mesh;
   private aims: T.Mesh[];
@@ -72,7 +103,7 @@ export class BridgesView extends TableView<State> {
   /** The island a move made by a drag began on, while the screen plays it: its bridge runs out from there. */
   private launch: number | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#1b5c86");
+    super(host, quality, SEA.ocean);
     this.daylight("#eaf6ff", "#2c6f8e", "#fff3d8", 8, 2.2);
     this.floor = new T.Plane(new T.Vector3(0, 1, 0), -ISLAND_TOP);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
@@ -106,7 +137,7 @@ export class BridgesView extends TableView<State> {
     p("bark", this.standard({ color: "#7a5532", roughness: 0.9 }));
     p("frond", this.standard({ color: "#3f8f3a", roughness: 0.75, side: T.DoubleSide }));
     p("rock", this.standard({ color: "#8d8a84", roughness: 0.85, flatShading: true }));
-    p("foam", this.own(new T.MeshBasicMaterial({ map: this.foamTexture(), transparent: true, depthWrite: false })));
+    p("foam", this.own(new T.MeshBasicMaterial({ map: this.texture(laceTile()), transparent: true, depthWrite: false })));
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.chosen = ringMesh(own, 0.48, 0.56, "#ff8a3c");
     this.aims = [0, 1, 2, 3].map(() => ringMesh(own, 0.49, 0.55, "#ffd24a"));
@@ -118,9 +149,10 @@ export class BridgesView extends TableView<State> {
     this.strip.renderOrder = 5;
     this.strip.visible = false;
     this.scene.add(this.board, this.spans, this.chosen, ...this.aims, this.cursor, ...this.hints, this.preview, this.strip);
+    this.ocean();
     this.begin();
-    // Where a graphics card draws, the small waves of the sea drift.
-    if (capable() && !this.reducedMotion) this.clock = requestAnimationFrame(this.idle);
+    // Where a graphics card draws, the ripples, the swells, the light's net and the surf move.
+    if (this.flows.length && !this.reducedMotion) this.clock = requestAnimationFrame(this.idle);
   }
   /** A turned profile whose edge wanders a little round its middle, so that no two islands are quite round alike. */
   private wander(profile: [number, number][], phase: number, amount: number) {
@@ -232,44 +264,32 @@ export class BridgesView extends TableView<State> {
       }
     });
   }
-  /** The foam round an island, a soft white ring where the beach meets the water, fading outward. */
-  private foamTexture() {
-    return this.painted(128, 128, (pen) => {
-      const ring = pen.createRadialGradient(64, 64, 0, 64, 64, 64);
-      ring.addColorStop(0.7, "rgba(255,255,255,0)");
-      ring.addColorStop(0.8, "rgba(255,255,255,0.55)");
-      ring.addColorStop(0.88, "rgba(235,250,255,0.18)");
-      ring.addColorStop(1, "rgba(255,255,255,0)");
-      pen.fillStyle = ring;
-      pen.fillRect(0, 0, 128, 128);
-    });
+  /** A texture of a canvas already painted: owned by the view unless `keep` says otherwise; `data` for numbers, not colours. */
+  private texture(canvas: HTMLCanvasElement, keep: <R extends { dispose(): void }>(r: R) => R = (r) => this.own(r), data = false) {
+    const texture = keep(new T.CanvasTexture(canvas));
+    if (!data) texture.colorSpace = T.SRGBColorSpace;
+    texture.wrapS = texture.wrapT = T.RepeatWrapping;
+    texture.anisotropy = 4;
+    return texture;
   }
   /**
-   * Small waves, as a normal map that tiles: a sum of crossing swells and ripples whose slopes are written as
-   * colours (the river crossing's water is made the same way).
+   * Small waves, as a normal map that tiles: a sum of crossing waves whose slopes are written as colours (the river
+   * crossing's water is made the same way). `waves` are [across, down, height, phase]; whole numbers keep the tile joined.
    */
-  private waveMap() {
+  private waveMap(waves: [number, number, number, number][], slope: number) {
     const size = 256,
       canvas = document.createElement("canvas");
     canvas.width = canvas.height = size;
     const pen = canvas.getContext("2d")!,
-      image = pen.createImageData(size, size),
-      waves = [
-        [2, 1, 1, 0.2],
-        [-1, 3, 0.8, 1.4],
-        [4, -3, 0.45, 2.6],
-        [-6, -2, 0.3, 0.8],
-        [7, 5, 0.2, 4],
-        [-9, 8, 0.12, 5.1],
-      ];
+      image = pen.createImageData(size, size);
     for (let y = 0; y < size; y++)
       for (let x = 0; x < size; x++) {
         let dx = 0,
           dy = 0;
         for (const [kx, ky, amp, phase] of waves) {
-          const slope = Math.cos(((kx * x + ky * y) / size) * Math.PI * 2 + phase) * amp;
-          dx += slope * kx * 0.05;
-          dy += slope * ky * 0.05;
+          const s = Math.cos(((kx * x + ky * y) / size) * Math.PI * 2 + phase) * amp;
+          dx += s * kx * slope;
+          dy += s * ky * slope;
         }
         const length = Math.hypot(dx, dy, 1),
           i = (y * size + x) * 4;
@@ -279,100 +299,135 @@ export class BridgesView extends TableView<State> {
         image.data[i + 3] = 255;
       }
     pen.putImageData(image, 0, 0);
-    const texture = this.own(new T.CanvasTexture(canvas));
-    texture.wrapS = texture.wrapT = T.RepeatWrapping;
-    return texture;
+    return this.texture(canvas, undefined, true);
   }
   /**
-   * The sea of a puzzle: the deep blue all round, painted with the shadows of swells, and in the middle a lagoon of
-   * turquoise shallows the size of the grid, with light dancing over it, a faint dot in every cell and foam on the
-   * reef at its edge. Where a graphics card draws, small waves ruffle it all.
+   * The water that every puzzle shares: the open ocean all round, far past the edges of any screen. Where a graphics
+   * card draws, the ripples, the long swells and the light's net are made here too: all of them are laid in table
+   * units (channel 1), so that they run on from the ocean into the lagoon without a seam.
    */
-  private water(size: number) {
-    const span = size * CELL,
-      across = span + 12,
-      px = 1024,
-      unit = px / across,
-      random = sequence(size * 131 + 7),
-      map = this.painted(px, px, (pen) => {
-        pen.fillStyle = "#1b5c86";
-        pen.fillRect(0, 0, px, px);
-        pen.lineCap = "round";
-        for (let i = 0; i < 260; i++) {
-          const x = random() * px,
-            y = random() * px,
-            length = 10 + random() * 30;
-          pen.strokeStyle = i % 3 ? `rgba(255,255,255,${0.04 + random() * 0.05})` : `rgba(8,40,70,${0.12 + random() * 0.1})`;
-          pen.lineWidth = 1 + random() * 1.5;
-          pen.beginPath();
-          pen.moveTo(x, y);
-          pen.quadraticCurveTo(x + length / 2, y - 3 - random() * 3, x + length, y);
-          pen.stroke();
-        }
-        const mid = px / 2,
-          half = (span / 2 + MARGIN * 0.8) * unit,
-          lagoon = (inset: number) => {
-            pen.beginPath();
-            pen.roundRect(mid - half - inset, mid - half - inset, (half + inset) * 2, (half + inset) * 2, CELL * unit * 0.9 + inset);
-          };
-        // The reef: a darker teal band, then the shallows, pale in the middle.
-        lagoon(0.35 * unit);
-        pen.fillStyle = "#24788f";
-        pen.fill();
-        lagoon(0);
-        const shallow = pen.createRadialGradient(mid, mid, half * 0.2, mid, mid, half * 1.45);
-        shallow.addColorStop(0, "#5fd0d3");
-        shallow.addColorStop(0.65, "#45b8cc");
-        shallow.addColorStop(1, "#2f97ba");
-        pen.fillStyle = shallow;
-        pen.fill();
-        pen.save();
-        lagoon(0);
-        pen.clip();
-        // The light's net on the sand under the shallows.
-        for (let i = 0; i < 70; i++) {
-          const y0 = mid - half + random() * half * 2,
-            tilt = (random() - 0.5) * 0.6;
-          pen.strokeStyle = `rgba(230,255,255,${0.07 + random() * 0.07})`;
-          pen.lineWidth = 1 + random() * 1.4;
-          pen.beginPath();
-          for (let x = mid - half; x <= mid + half; x += 8) pen.lineTo(x, y0 + (x - mid) * tilt + Math.sin(x / 11 + i) * 4 + Math.sin(x / 27 + i * 2) * 6);
-          pen.stroke();
-        }
-        // A faint dot in every cell, so that a line of cells can be followed by eye.
-        pen.fillStyle = "rgba(255,255,255,0.28)";
-        for (let r = 0; r < size; r++)
-          for (let c = 0; c < size; c++) {
-            const x = mid + (c - (size - 1) / 2) * CELL * unit,
-              y = mid + (r - (size - 1) / 2) * CELL * unit;
-            pen.beginPath();
-            pen.arc(x, y, CELL * unit * 0.045, 0, Math.PI * 2);
-            pen.fill();
-          }
-        pen.restore();
-        // Foam on the reef: a wavering white line round the lagoon, broken here and there.
-        pen.strokeStyle = "rgba(255,255,255,0.6)";
-        for (let i = 0; i < 3; i++) {
-          pen.lineWidth = 3 - i;
-          pen.setLineDash([40 + random() * 60, 8 + random() * 20]);
-          lagoon((0.12 + i * 0.1) * unit);
-          pen.stroke();
-        }
-        pen.setLineDash([]);
-      });
-    map.wrapS = map.wrapT = T.ClampToEdgeWrapping;
-    const surface: T.MeshStandardMaterialParameters = { map, roughness: 0.3, metalness: 0.02 };
-    this.waves = [];
+  private ocean() {
     if (capable()) {
-      const ripple = this.waveMap();
-      ripple.repeat.set(across / 2.2, across / 2.2);
-      this.waves.push(ripple);
-      Object.assign(surface, { normalMap: ripple, normalScale: new T.Vector2(0.35, 0.35), roughness: 0.18 });
+      this.ripples = this.waveMap(
+        [
+          [2, 1, 1, 0.2],
+          [-1, 3, 0.8, 1.4],
+          [4, -3, 0.45, 2.6],
+          [-6, -2, 0.3, 0.8],
+          [7, 5, 0.2, 4],
+          [-9, 8, 0.12, 5.1],
+        ],
+        0.05,
+      );
+      this.swells = this.waveMap(
+        [
+          [1, 0, 1, 0.5],
+          [1, 2, 0.6, 2.2],
+          [-2, 1, 0.45, 4.1],
+          [3, -1, 0.25, 1.3],
+        ],
+        0.07,
+      );
+      const net = (this.caustics ??= causticTile());
+      this.nets = [0, 1].map(() => this.texture(net));
+      this.ripples.repeat.set(1 / RIPPLE, 1 / RIPPLE);
+      this.swells.repeat.set(1 / SWELL, 1 / SWELL);
+      this.nets[0].repeat.set(1 / NET, 1 / NET);
+      // The second net is larger and turned, so that the two never line up as they cross.
+      this.nets[1].repeat.set(1 / (NET * 1.37), 1 / (NET * 1.37));
+      this.nets[1].rotation = 0.7;
+      for (const texture of [this.ripples, this.swells, ...this.nets]) texture.channel = 1;
+      this.flows.push(
+        { texture: this.ripples, x: 0.012, z: 0.008 },
+        { texture: this.swells, x: -0.006, z: 0.004 },
+        { texture: this.nets[0], x: 0.018, z: 0.011 },
+        { texture: this.nets[1], x: -0.013, z: 0.016 },
+      );
     }
-    const sea = new T.Mesh(this.own(new T.PlaneGeometry(across, across)), this.standard(surface));
-    sea.rotation.x = -Math.PI / 2;
-    sea.receiveShadow = true;
-    this.board.add(sea);
+    const across = 90,
+      map = this.texture(oceanTile());
+    map.repeat.set(across / 6, across / 6);
+    map.anisotropy = 8;
+    // Cut into smaller pieces and laid well under the lagoon: one triangle of a plane this large, clipped by the camera,
+    // loses so much depth precision that a lagoon only a hair above it vanished along a diagonal on the largest sea.
+    const ocean = new T.Mesh(this.own(worldUv(new T.PlaneGeometry(across, across, 12, 12))), this.waterPaint({ map }, (r) => this.own(r)));
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.y = -0.04;
+    ocean.receiveShadow = true;
+    this.scene.add(ocean);
+  }
+  /** The paint of water: glassy, with the ripples and, as a clear coat over them, the long swells where a graphics card draws. */
+  private waterPaint(options: T.MeshStandardMaterialParameters, keep: <R extends { dispose(): void }>(r: R) => R) {
+    if (!this.ripples || !this.swells) return keep(new T.MeshStandardMaterial({ roughness: 0.3, metalness: 0.02, ...options }));
+    return keep(
+      new T.MeshPhysicalMaterial({
+        roughness: 0.2,
+        metalness: 0.02,
+        ...options,
+        normalMap: this.ripples,
+        normalScale: new T.Vector2(0.3, 0.3),
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.1,
+        clearcoatNormalMap: this.swells,
+        clearcoatNormalScale: new T.Vector2(0.45, 0.45),
+      }),
+    );
+  }
+  /**
+   * The sea of a puzzle (`lagoonPictures`): a lagoon the size of the grid inside a reef, deeper blue between the
+   * islands and turquoise over the sand round each, with the light's net, surf at the beaches and on the reef and a
+   * faint dot in every cell, fading at its edge into the ocean; over it the sky's sheen on the far water and, where a
+   * graphics card draws, the light's net moving over the shallows.
+   */
+  private water(state: State) {
+    for (const resource of this.sea) resource.dispose();
+    this.sea = [];
+    const keep = <R extends { dispose(): void }>(r: R) => (this.sea.push(r), r),
+      size = state.size,
+      span = size * CELL,
+      half = span / 2 + MARGIN * 0.8,
+      extent = 2 * (half + 1.9),
+      pictures = lagoonPictures({
+        px: capable() ? 2048 : 1024,
+        extent,
+        half,
+        round: CELL * 0.9,
+        islands: state.islands.map((island) => cellAt(size, island.cell)),
+        cells: Array.from({ length: size * size }, (_, i) => cellAt(size, i)),
+        dot: CELL * 0.045,
+        seed: state.islands.reduce((sum, island) => (Math.imul(sum, 31) + island.cell + island.need * 7) >>> 0, size * 131 + 7),
+        caustics: (this.caustics ??= causticTile()),
+        causticSize: NET,
+      }),
+      map = this.texture(pictures.color, keep),
+      plane = keep(worldUv(new T.PlaneGeometry(extent, extent)));
+    map.wrapS = map.wrapT = T.ClampToEdgeWrapping;
+    // The lagoon fades at its edge into the ocean under it; it is drawn before every other see-through thing.
+    const lagoon = new T.Mesh(plane, this.waterPaint({ map, transparent: true }, keep));
+    lagoon.rotation.x = -Math.PI / 2;
+    lagoon.receiveShadow = true;
+    lagoon.renderOrder = -3;
+    this.board.add(lagoon);
+    if (this.nets.length) {
+      const shallow = this.texture(pictures.shallow, keep, true);
+      shallow.wrapS = shallow.wrapT = T.ClampToEdgeWrapping;
+      this.nets.forEach((net, i) => {
+        const layer = new T.Mesh(plane, keep(new T.MeshBasicMaterial({ map: net, alphaMap: shallow, color: "#eaffff", transparent: true, opacity: i ? 0.1 : 0.14, blending: T.AdditiveBlending, depthWrite: false })));
+        layer.rotation.x = -Math.PI / 2;
+        layer.position.y = 0.0025 + i * 0.001;
+        layer.renderOrder = -2;
+        this.board.add(layer);
+      });
+    }
+    // The sky in the far water: a light that grows toward the far side, nothing on the near half.
+    const sheenMap = this.texture(sheenTile(), keep),
+      depth = 2 * (half + 4);
+    sheenMap.wrapS = sheenMap.wrapT = T.ClampToEdgeWrapping;
+    const sheen = new T.Mesh(keep(new T.PlaneGeometry(extent + 30, depth, 8, 4)), keep(new T.MeshBasicMaterial({ map: sheenMap, transparent: true, opacity: 0.35, blending: T.AdditiveBlending, depthWrite: false })));
+    sheen.rotation.x = -Math.PI / 2;
+    sheen.position.y = 0.0055;
+    sheen.renderOrder = -1;
+    this.board.add(sheen);
   }
   private mesh(part: string, paint: string | T.Material, parent: T.Object3D, x = 0, y = 0, z = 0) {
     const m = new T.Mesh(this.parts[part], typeof paint === "string" ? this.paint[paint] : paint);
@@ -417,7 +472,8 @@ export class BridgesView extends TableView<State> {
     for (const edge of [...this.bridges.keys()]) this.unbuild(edge);
     this.board.clear();
     this.plates.clear();
-    this.water(state.size);
+    this.foams = [];
+    this.water(state);
     for (const island of state.islands) {
       const random = sequence(island.cell * 7919 + state.size),
         p = cellAt(state.size, island.cell),
@@ -429,6 +485,9 @@ export class BridgesView extends TableView<State> {
       const foam = this.mesh("foam", "foam", group);
       foam.castShadow = foam.receiveShadow = false;
       foam.rotation.y = random() * Math.PI * 2;
+      // Its breath is set by the cell, so that the island's own sequence (its shape, its palm, its rocks) stays as it was.
+      foam.userData.phase = island.cell * 2.39;
+      this.foams.push(foam);
       const plate = new T.Group();
       this.mesh("plate", "rim", plate);
       const face = this.mesh("face", this.face(island.need, "open"), plate);
@@ -727,18 +786,23 @@ export class BridgesView extends TableView<State> {
     }
     this.redraw();
   }
-  /** The drift of the small waves, while the table waits. */
+  /** The ripples and swells drifting, the light's net crossing itself over the shallows and the surf breathing at the beaches. */
   private idle = (now: number) => {
     if (this.disposed) return;
     this.clock = requestAnimationFrame(this.idle);
-    if (!this.waves.length) return;
     const t = now / 1000;
-    for (const wave of this.waves) wave.offset.set((t * 0.012) % 1, (t * 0.008) % 1);
+    for (const flow of this.flows) flow.texture.offset.set((t * flow.x) % 1, (t * flow.z) % 1);
+    for (const foam of this.foams) {
+      const breath = Math.sin(t * 1.25 + foam.userData.phase);
+      foam.scale.set(1 + 0.035 * breath, 1, 1 + 0.035 * breath);
+    }
     this.redraw();
   };
   dispose() {
     cancelAnimationFrame(this.clock);
     for (const edge of [...this.bridges.keys()]) this.unbuild(edge);
+    for (const resource of this.sea) resource.dispose();
+    this.sea = [];
     super.dispose();
   }
 }

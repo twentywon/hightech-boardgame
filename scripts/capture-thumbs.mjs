@@ -260,7 +260,7 @@ const play = {
     await stage(1);
   },
   // The 8×8 sea and its islands, before any bridge is laid.
-  bridges: async () => {
+  hashi: async () => {
     await stage(1);
   },
   // A lot of the second stage as it is laid, the red car hemmed in.
