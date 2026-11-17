@@ -2907,3 +2907,8 @@ dialog.setup-dialog .choice-group[data-count="5"] .choice-text { font-size:12px;
 dialog.setup-dialog.entry .stage-entry .stage-grid { margin-top:12px; }
 dialog.setup-dialog.entry .dialog-actions:has([data-entry-action]) { justify-content:space-between;gap:10px; }
 dialog.setup-dialog.entry .dialog-actions [data-entry-action] { width:auto;margin:0;padding-inline:22px; }
+/* On a phone held sideways a puzzle's stage window has room for its cards only: the short intro gives way. */
+@media (orientation: landscape) and (max-height: 540px) {
+  dialog.setup-dialog.entry .stage-entry .feature-copy > p { display:none; }
+  dialog.setup-dialog.entry .stage-entry .stage-grid { margin-top:4px; }
+}
