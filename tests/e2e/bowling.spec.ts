@@ -25,6 +25,9 @@ async function bowl(page: Page) {
 }
 
 test("bowling: a ball swiped up the lane knocks pins down and the next ball comes", async ({ page }) => {
+  // A ball takes about twelve seconds to roll, strike and be set again under software rendering, more with three
+  // browsers at once (one minute ran out in the run beside the others).
+  test.setTimeout(240000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");

@@ -31,6 +31,9 @@ async function throwAt(page: Page, x: number, y: number) {
 }
 
 test("darts: three swipes throw three darts, the score comes down, and the turn passes to the computer and back", async ({ page }) => {
+  // Seven throws and the computer's three, each resting first: the pub draws a few frames a second under software
+  // rendering, and slower still with three browsers at once (one minute ran out in the run beside the others).
+  test.setTimeout(240000);
   await seeded(page, 91);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
