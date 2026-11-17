@@ -575,4 +575,12 @@ export const games = [
     icon: "⊕",
     available: true,
   },
+  {
+    name: "바둑",
+    en: "GO",
+    category: "보드게임",
+    players: "2인용",
+    icon: "◉",
+    available: true,
+  },
 ];

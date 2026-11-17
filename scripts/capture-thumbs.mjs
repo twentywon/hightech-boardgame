@@ -267,6 +267,15 @@ const play = {
   "parking-escape": async () => {
     await stage(1);
   },
+  // A few stones on the 19×19 board, the computer answering each.
+  go: async () => {
+    await keys(["ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "Enter"], 60);
+    await wait(3500);
+    await keys(["ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight", "Enter"], 60);
+    await wait(3500);
+    await keys(["ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "ArrowDown", "Enter"], 60);
+    await wait(3500);
+  },
   "star-battle": async () => {
     await stage(2);
     await wait(800);

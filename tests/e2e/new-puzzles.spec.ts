@@ -7,6 +7,7 @@ import { TILE_TOP, cellAt as pipeCell, pipesSubject } from "../../src/games/pipe
 import * as bridgeRules from "../../src/games/bridges/rules";
 import { ISLAND_TOP, bridgesSubject, cellAt as islandCell } from "../../src/games/bridges/view";
 import * as parkingRules from "../../src/games/parking/rules";
+import { goSubject, pointAt as goPoint, stoneLift } from "../../src/games/go/layout";
 import { GRAB_HEIGHT, cellAt as lotCell, parkingSubject } from "../../src/games/parking/view";
 
 const settled = (page: Page) => expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 30000 });
@@ -149,5 +150,34 @@ test("parking escape: each car is dragged along its line, and the red car drives
   }
   expect(state.winner).toBe(0);
   await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("go: a tap lays a stone, the computer answers, a pass is offered, and resigning ends the game", async ({ page }, info) => {
+  const mobile = info.project.name === "mobile",
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "바둑");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "게임 방법" })).toBeVisible();
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await page.locator("#pg-variant").selectOption("9");
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await settled(page);
+  const box = (await page.locator("canvas").boundingBox())!,
+    subject = goSubject(9, box.width / box.height),
+    // The 3-3 point of the near right corner: row 6, column 6.
+    p = goPoint(9, 6 * 9 + 6);
+  await tap(page, subject, p.x, stoneLift(9), p.z, mobile);
+  await expect(moves(page)).toHaveText("1수", { timeout: 20000 });
+  // The computer answers with a stone of its own (or a pass).
+  await expect(moves(page)).toHaveText("2수", { timeout: 30000 });
+  await settled(page);
+  await expect(page.getByRole("button", { name: "한 수 쉬기" })).toBeVisible();
+  await page.getByRole("button", { name: "기권" }).click();
+  await expect(page.locator("#turn")).toContainText("불계승", { timeout: 20000 });
   expect(errors).toEqual([]);
 });
