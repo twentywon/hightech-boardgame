@@ -1,7 +1,7 @@
 import { announce, dress } from "./chrome";
 import { bankrupt, mirrorStatus, shout } from "./banner";
 import type { Action } from "../games/cards/betting";
-import type { BettingGame, TableView } from "../games/cards/game";
+import type { BettingGame, Decision, TableView } from "../games/cards/game";
 import { CardTableView, type CardSkin } from "../games/cards/table-view";
 import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
@@ -15,7 +15,7 @@ export interface BettingOptions {
 }
 /** Everything that differs between the betting card games. */
 export interface BettingConfig<S> {
-  game: BettingGame<S>;
+  game: BettingGame<S, Action | Decision>;
   skin: CardSkin;
   name: string;
   english: string;
@@ -36,6 +36,10 @@ export interface BettingConfig<S> {
   peekWord?: string;
   /** Forms of the game offered at the table, when there is more than one. */
   variants?: { value: string; label: string }[];
+  /** How many computers may sit at the table; one to three when left out. */
+  opponents?: number[];
+  /** The game's own words for giving up and for its raise button; "다이" and "하프" when left out. */
+  words?: { fold?: string; raise?: string };
 }
 interface Navigation {
   header: () => string;
@@ -85,7 +89,33 @@ export function mountBettingGame<S>(
     // Cards dealt face down to seat 0 that the person has uncovered.
     peeked = new Set<number>(),
     // Cards tapped on the table toward a choice that needs more than one.
-    picked: number[] = [];
+    picked: number[] = [],
+    // No-limit games: which of the offered raise sizes is chosen, and for which offer.
+    size = 0,
+    sizeKey = "";
+  const foldWord = config.words?.fold ?? "다이",
+    raiseWord = config.words?.raise ?? "하프";
+  /** The chosen raise size among those offered now; a new offer starts at its own first size. */
+  const sizeIndex = (s: S) => {
+    const sizing = game.sizing?.(s);
+    if (!sizing?.amounts.length) return 0;
+    const key = `${game.round(s)}|${game.turn(s)}|${sizing.amounts.join(",")}`;
+    if (key !== sizeKey) {
+      sizeKey = key;
+      size = sizing.start;
+    }
+    return (size = Math.max(0, Math.min(sizing.amounts.length - 1, size)));
+  };
+  const offeredSize = (s: S) => {
+    const sizing = game.sizing?.(s);
+    return sizing?.amounts.length ? sizing.amounts[sizeIndex(s)] : null;
+  };
+  function resize(step: number) {
+    if (busy() || game.turn(state) !== 0) return;
+    sizeIndex(state);
+    size += step;
+    update();
+  }
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as E;
@@ -106,7 +136,7 @@ export function mountBettingGame<S>(
   }
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="ai-options"><label>상대 수<select id="bg-opponents">${[1, 2, 3].map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label>${config.variants ? `<label>방식<select id="bg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="ai-options"><label>상대 수<select id="bg-opponents">${(config.opponents ?? [1, 2, 3]).map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label>${config.variants ? `<label>방식<select id="bg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const remember = () => {
       preferences = {
         opponents: Number($<HTMLSelectElement>("bg-opponents").value),
@@ -134,7 +164,7 @@ export function mountBettingGame<S>(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div id="bg-acting" class="bj-controls bg-acting" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">다이</button></div><div class="bj-row"><button id="bg-raise">하프</button><button id="bg-allin">올인</button></div></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-peeking" class="bj-controls tap-only" hidden><button id="bg-peek" class="primary"></button></div><div id="bg-prompt" class="bj-controls bg-prompt" role="group" hidden></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="sr-only">${config.dealWord}</button></div><div id="bg-after" class="bj-controls"><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
+      `<main class="game-layout betting-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote}</span></div><div id="board"></div><div id="bg-acting" class="bj-controls bg-acting" role="group" aria-label="내 차례"><div class="bj-row"><button id="bg-call" class="primary">체크</button><button id="bg-fold">${foldWord}</button></div><div class="bj-row"><button id="bg-raise">${raiseWord}</button><button id="bg-allin">올인</button></div>${game.sizing ? '<div class="bj-row bg-sizes"><button id="bg-less" aria-label="금액 줄이기">−</button><button id="bg-more" aria-label="금액 늘리기">+</button></div>' : ""}</div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0판</span></div></section><aside class="game-sidebar bj-sidebar bg-sidebar"><div id="turn" role="status" aria-live="polite"></div><dl class="bj-money"><div><dt>내 칩</dt><dd id="bg-chips"></dd></div><div><dt>판돈</dt><dd id="bg-pot"></dd></div></dl><ul id="bg-seats" class="bg-seats" aria-label="좌석 상황"></ul><div id="bg-peeking" class="bj-controls tap-only" hidden><button id="bg-peek" class="primary"></button></div><div id="bg-prompt" class="bj-controls bg-prompt" role="group" hidden></div><div id="bg-between" class="bj-controls bj-result" role="group" aria-label="판 결과"><ul id="bg-outcome"></ul><button id="bg-deal" class="sr-only">${config.dealWord}</button></div><div id="bg-after" class="bj-controls"><button id="bg-rebuy" class="primary">칩 다시 받기</button></div><p id="bg-note" class="input-help"></p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
@@ -142,7 +172,17 @@ export function mountBettingGame<S>(
     const play = (action: Action) => () => act((s) => game.act(s, action));
     $("bg-call").onclick = play("call");
     $("bg-fold").onclick = play("fold");
-    $("bg-raise").onclick = play("raise");
+    $("bg-raise").onclick = game.sizing
+      ? () => {
+          // A raise of the size offered now; the game refuses a size that no longer fits.
+          const amount = offeredSize(state);
+          if (amount !== null) act((s) => game.act(s, "raise", amount));
+        }
+      : play("raise");
+    if (game.sizing) {
+      $("bg-less").onclick = () => resize(-1);
+      $("bg-more").onclick = () => resize(1);
+    }
     $("bg-allin").onclick = play("allIn");
     $("bg-deal").onclick = () => act((s) => game.start(s, random), true);
     $("bg-rebuy").onclick = newSession;
@@ -274,8 +314,9 @@ export function mountBettingGame<S>(
         return;
       }
       const seat = game.turn(state),
+        decision = game.decide(state, "normal", 1 + game.round(state) * 31 + seat),
         next =
-          game.act(state, game.decide(state, "normal", 1 + game.round(state) * 31 + seat)) ??
+          (typeof decision === "string" ? game.act(state, decision) : game.act(state, decision.action, decision.amount)) ??
           // A refused choice must not stall the table.
           game.act(state, "call") ??
           game.act(state, "fold");
@@ -362,9 +403,20 @@ export function mountBettingGame<S>(
     $("bg-seats").innerHTML = seats.seats
       .map(
         (seat) =>
-          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${seat.name}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? "다이" : seat.cards.length ? seat.cards.map((c) => (c.face && c.text ? `<span class="bj-card${c.secret ? " secret" : ""}"${c.secret ? ' title="상대에게 보이지 않는 카드"' : ""}>${c.text}</span>` : `<span class="bj-card hidden">${c.covered ? "확인 전" : "비공개"}</span>`)).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
+          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${seat.name}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? foldWord : seat.cards.length ? seat.cards.map((c) => (c.face && c.text ? `<span class="bj-card${c.secret ? " secret" : ""}"${c.secret ? ' title="상대에게 보이지 않는 카드"' : ""}>${c.text}</span>` : `<span class="bj-card hidden">${c.covered ? "확인 전" : "비공개"}</span>`)).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
       )
       .join("");
+    // The community cards in words, in games that have them.
+    if (seats.board) {
+      let line = document.getElementById("bg-board");
+      if (!line) {
+        line = document.createElement("p");
+        line.id = "bg-board";
+        line.className = "bg-board";
+        $("bg-seats").before(line);
+      }
+      line.innerHTML = `<b>공용 카드</b> ${seats.board.length ? seats.board.map((c) => `<span class="bj-card">${c.text}</span>`).join(" ") : "—"}`;
+    }
     $("bg-acting").hidden = phase !== "betting" || sealed;
     $("bg-between").hidden = phase === "betting" || phase === "choosing";
     $("bg-peeking").hidden = !sealed || state !== shown;
@@ -400,7 +452,14 @@ export function mountBettingGame<S>(
     off("bg-raise", waiting || !choice || choice.raise === null);
     off("bg-allin", waiting || !choice || choice.allIn === null);
     $("bg-call").textContent = choice && choice.call > 0 ? `콜 (${chips(choice.call)})` : "체크";
-    $("bg-raise").textContent = choice?.raise != null ? `하프 (${chips(choice.raise)})` : "하프";
+    const sizing = choice && choice.raise !== null ? (game.sizing?.(s) ?? null) : null,
+      raising = sizing ? sizing.amounts[sizeIndex(s)] : (choice?.raise ?? null),
+      word = sizing?.word ?? raiseWord;
+    $("bg-raise").textContent = raising != null ? `${word} (${chips(raising)})` : word;
+    if (game.sizing) {
+      off("bg-less", waiting || !sizing || sizeIndex(s) <= 0);
+      off("bg-more", waiting || !sizing || sizeIndex(s) >= sizing.amounts.length - 1);
+    }
     $("bg-allin").textContent = choice?.allIn != null ? `올인 (${chips(choice.allIn)})` : "올인";
     $("bg-outcome").innerHTML = (result?.rows ?? [])
       .map(
@@ -417,7 +476,11 @@ export function mountBettingGame<S>(
     $("bg-note").textContent = !mine || !choice
       ? ""
       : choice.raise === null && choice.allIn === null
-        ? "더 올릴 수 없습니다. 콜하거나 다이하세요."
+        ? `더 올릴 수 없습니다. 콜하거나 ${foldWord}하세요.`
+        : game.sizing
+          ? choice.raise === null
+            ? "올인만 할 수 있습니다."
+            : `−와 +로 금액을 고른 뒤 ${word}를 누르세요.`
         : choice.raise === null
           ? "하프는 한 번에 세 번까지이며 칩이 충분해야 합니다."
           : "하프는 판돈의 절반을 더 겁니다.";

@@ -37,6 +37,10 @@ export interface SeatView {
 export interface TableView {
   seats: SeatView[];
   pot: number;
+  /** Cards dealt face up in the middle for every seat to use (hold'em); games without them leave it out. */
+  board?: CardView[];
+  /** The seat with the dealer button, in games that pass one round the table. */
+  dealer?: number;
 }
 export interface ResultView {
   headline: string;
@@ -45,14 +49,28 @@ export interface ResultView {
   rematch: boolean;
 }
 export type Phase = "idle" | "choosing" | "betting" | "handOver" | "sessionOver";
+/** A betting choice with the chips a raise puts in now, for games where a raise may be of any size. */
+export interface Decision {
+  action: Action;
+  amount?: number;
+}
+/** The sizes a raise may take, offered to seat 0 smallest first (chips put in now). */
+export interface Sizing {
+  /** What the raise is called now, such as "베팅" with nothing bet yet and "레이즈" after a bet. */
+  word: string;
+  amounts: number[];
+  /** Index of the size offered first. */
+  start: number;
+}
 /**
  * What the shared table screen needs from a betting card game. Seat 0 is the
  * person; the other seats are played by `decide`.
  */
-export interface BettingGame<S> {
+export interface BettingGame<S, D extends Action | Decision = Action> {
   create(opponents: number, variant?: string): S;
   start(state: S, random: Random): S | null;
-  act(state: S, action: Action): S | null;
+  /** `amount` is what a raise puts in now, for games with `sizing`; others leave it out. */
+  act(state: S, action: Action, amount?: number): S | null;
   phase(state: S): Phase;
   /** The choice seat 0 has to make now, when the phase is "choosing". */
   prompt(state: S): Prompt | null;
@@ -68,6 +86,8 @@ export interface BettingGame<S> {
   /** True when seat 0 took every chip, false when it lost them, else null. */
   won(state: S): boolean | null;
   round(state: S): number;
-  decide(state: S, difficulty: Difficulty, seed: number): Action;
+  decide(state: S, difficulty: Difficulty, seed: number): D;
+  /** No-limit games: the sizes seat 0 may raise by now, or null when it may not raise. */
+  sizing?(state: S): Sizing | null;
 }
 export const NAMES = ["나", "컴퓨터 1", "컴퓨터 2", "컴퓨터 3"];

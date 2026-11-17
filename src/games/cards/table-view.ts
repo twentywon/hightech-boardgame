@@ -1,7 +1,7 @@
 import { capturing } from "../../ui/banner";
 import * as T from "three";
 import { afterGPUFrame, aim, realism, weave } from "../../engine/scene-utils";
-import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
+import { FOV, SUBJECTS, TILT, cameraDistance, type Subject } from "../../engine/camera";
 import type { TableView, Tone } from "./game";
 
 /** How a game's cards look. Painters draw on a canvas of `pixels` size. */
@@ -20,6 +20,31 @@ export interface CardSkin {
    * the left of the row; a card dealt face down later keeps its place at the right.
    */
   secretLeft?: number;
+  /** A table and room of the game's own in place of the endless felt (hold'em); left out by the others. */
+  setting?: TableSetting;
+}
+/** Where a seat's row of cards lies, and how large its cards are. */
+export interface SeatRow {
+  x: number;
+  z: number;
+  width: number;
+  scale: number;
+}
+type Own = <X extends { dispose(): void }>(resource: X) => X;
+/** A game's own table: its layouts, what it builds round the cards and what it moves with the play. */
+export interface TableSetting {
+  wide: Layout;
+  square: Layout;
+  /** Very wide screens (phones held sideways), when the game lays its table out longer there. */
+  long?: Layout;
+  /** The colour behind everything. */
+  clear?: string;
+  /** Builds the room and the table round the cards; `own` disposes a resource with the view. */
+  build(scene: T.Scene, own: Own): void;
+  /** The table changed: `row` says where each seat's cards lie; `quick` when nothing should move slowly. */
+  place?(model: TableView, row: (seat: number) => SeatRow, layout: Layout, quick: boolean): void;
+  /** Every frame; true while something of the setting moves and the picture must be drawn again. */
+  frame?(now: number): boolean;
 }
 const FONT =
   '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif';
@@ -160,12 +185,8 @@ interface Tween {
   contact: boolean;
   done?: () => void;
 }
-interface Layout {
-  subject: (typeof SUBJECTS)[
-    | "cardsWide"
-    | "cardsSquare"
-    | "cardsCompact"
-    | "cardsCompactSquare"];
+export interface Layout {
+  subject: Subject;
   /** Centre x of the opposing seats, by how many there are. */
   rivals: number[][];
   /** Width of an opposing row and card scale, by how many there are. */
@@ -182,6 +203,14 @@ interface Layout {
   discard: T.Vector3;
   /** Deck and discard for a number of rivals whose rows would lie over the usual places. */
   corner?: { rivals: number; deck: T.Vector3; discard: T.Vector3 };
+  /** Where seat 0's row lies from front to back, when not the usual place. */
+  mineZ?: number;
+  /** The community cards' row (hold'em): five places from `x`, `gap` apart, at `z`. */
+  board?: { x: number; z: number; gap: number; scale: number };
+  /** Where the pot's chips and its label lie, when not the usual place (across the middle unless `x` is given). */
+  pot?: { z: number; label: number; x?: number };
+  /** Chips go to the pot from the side of each row that faces the middle of the table, whatever side it sits at. */
+  inward?: boolean;
 }
 const LAYOUTS: Record<"wide" | "square" | "compact" | "compactSquare", Layout> = {
   compact: {
@@ -321,7 +350,7 @@ export class CardTableView {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;
-    this.renderer.setClearColor("#184539");
+    this.renderer.setClearColor(skin.setting?.clear ?? "#184539");
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     host.append(this.renderer.domElement);
     // The table is described in text beside it; the canvas itself is decorative.
@@ -338,27 +367,31 @@ export class CardTableView {
     light.shadow.normalBias = 0.02;
     this.own(light.shadow);
     this.scene.add(light);
+    if (skin.setting) skin.setting.build(this.scene, (resource) => this.own(resource));
+    else {
+      const felt = new T.Mesh(
+        this.own(new T.PlaneGeometry(60, 60)),
+        this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95, ...weave(45, 45, (r) => this.own(r)) })),
+      );
+      felt.rotation.x = -Math.PI / 2;
+      felt.receiveShadow = true;
+      this.scene.add(felt);
+      const marking = new T.Mesh(
+        this.own(new T.PlaneGeometry(4.2, 4.2 * (160 / 1024))),
+        this.own(
+          new T.MeshBasicMaterial({
+            map: this.own(markingTexture(skin.lines)),
+            transparent: true,
+            depthWrite: false,
+          }),
+        ),
+      );
+      marking.rotation.x = -Math.PI / 2;
+      marking.position.set(0, 0.004, -0.92);
+      this.scene.add(marking);
+    }
+    // After every lamp of the table is in the scene, so that all of them are tuned alike.
     realism(this.renderer, this.scene);
-    const felt = new T.Mesh(
-      this.own(new T.PlaneGeometry(60, 60)),
-      this.own(new T.MeshStandardMaterial({ map: this.own(feltTexture()), roughness: 0.95, ...weave(45, 45, (r) => this.own(r)) })),
-    );
-    felt.rotation.x = -Math.PI / 2;
-    felt.receiveShadow = true;
-    this.scene.add(felt);
-    const marking = new T.Mesh(
-      this.own(new T.PlaneGeometry(4.2, 4.2 * (160 / 1024))),
-      this.own(
-        new T.MeshBasicMaterial({
-          map: this.own(markingTexture(skin.lines)),
-          transparent: true,
-          depthWrite: false,
-        }),
-      ),
-    );
-    marking.rotation.x = -Math.PI / 2;
-    marking.position.set(0, 0.004, -0.92);
-    this.scene.add(marking);
     this.glow = new T.Mesh(
       this.own(new T.PlaneGeometry(1, 1)),
       this.own(
@@ -410,7 +443,7 @@ export class CardTableView {
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
       const now = performance.now(),
-        moved = this.step(now),
+        moved = this.step(now) || !!this.skin.setting?.frame?.(now),
         // The arrow bobs over the deck; it is left out of the collection's captures.
         pointing = this.deckOpen && !this.animating && !capturing();
       if (pointing !== this.arrow.visible) this.dirty = true;
@@ -458,7 +491,13 @@ export class CardTableView {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const square = w / h < 1.25;
-    this.layout = this.skin.compact
+    this.layout = this.skin.setting
+      ? square
+        ? this.skin.setting.square
+        : w / h >= 2 && this.skin.setting.long
+          ? this.skin.setting.long
+          : this.skin.setting.wide
+      : this.skin.compact
       ? square
         ? LAYOUTS.compactSquare
         : LAYOUTS.compact
@@ -466,9 +505,10 @@ export class CardTableView {
         ? LAYOUTS.square
         : LAYOUTS.wide;
     const subject = this.layout.subject,
-      distance = cameraDistance(this.camera.aspect, false, subject);
-    this.camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
-    this.camera.lookAt(0, 0, 0);
+      distance = cameraDistance(this.camera.aspect, false, subject),
+      tilt = subject.tilt ?? TILT;
+    this.camera.position.set(0, Math.sin(tilt) * distance, Math.cos(tilt) * distance);
+    this.camera.lookAt(0, subject.lookY, 0);
     this.deck.position.copy(this.piles().deck);
     // A new shape moves every target: place the current table without animation.
     this.sync(this.model, false);
@@ -480,7 +520,7 @@ export class CardTableView {
   /** Row centre, width and card scale of a seat. */
   private row(seat: number) {
     const rivals = this.model.seats.length - 1;
-    if (seat === 0) return { x: 0, z: MINE_Z, width: this.layout.mineWidth, scale: this.layout.mineScale ?? 1 };
+    if (seat === 0) return { x: 0, z: this.layout.mineZ ?? MINE_Z, width: this.layout.mineWidth, scale: this.layout.mineScale ?? 1 };
     return {
       x: this.layout.rivals[rivals - 1][seat - 1],
       z: this.layout.rivalZ?.[rivals - 1]?.[seat - 1] ?? RIVAL_Z,
@@ -539,6 +579,18 @@ export class CardTableView {
         }),
       );
     });
+    // The community cards lie face up in a row of five places in the middle of the table.
+    const middle = this.layout.board;
+    if (middle)
+      model.board?.forEach((card, i) =>
+        targets.set(card.id, {
+          face: card.face,
+          scale: middle.scale,
+          covered: false,
+          dim: false,
+          at: new T.Vector3(middle.x + i * middle.gap, 0.02, middle.z),
+        }),
+      );
     let removed = false;
     for (const [id, entry] of this.cards)
       if (!targets.has(id)) {
@@ -601,6 +653,7 @@ export class CardTableView {
     }
     this.moveChips(quick, now);
     this.dressTable();
+    this.skin.setting?.place?.(model, (seat) => this.row(seat), this.layout, quick);
     if (quick) this.finish();
     if (!this.tweens.length) this.settle();
     else if (removed) this.showPlaques(false);
@@ -735,12 +788,21 @@ export class CardTableView {
   private chipSpot(seat: number) {
     const { x, z, scale } = this.row(seat),
       reach = (this.skin.height * scale) / 2 + 0.55;
+    if (this.layout.inward) {
+      // Toward the pot from wherever the seat sits round the table.
+      const pot = this.potSpot(),
+        way = new T.Vector3(pot.x - x, 0, pot.z - z);
+      return way.lengthSq() > 1e-6 ? way.setLength(Math.min(reach, way.length())).add(new T.Vector3(x, 0.05, z)) : pot;
+    }
     return new T.Vector3(x, 0.05, seat === 0 ? z - reach : z + reach);
+  }
+  private potSpot() {
+    return new T.Vector3(this.layout.pot?.x ?? 0, 0.05, this.layout.pot?.z ?? POT_Z);
   }
   /** Chips fly to the pot when a seat bets and from it when the pot is paid. */
   private moveChips(quick: boolean, now: number) {
     const model = this.model,
-      pot = new T.Vector3(0, 0.05, POT_Z),
+      pot = this.potSpot(),
       fly = (from: T.Vector3, to: T.Vector3, amount: number, delay: number) => {
         const count = Math.min(4, Math.max(1, Math.round(amount / 100)));
         for (let i = 0; i < count; i++) {
@@ -850,7 +912,7 @@ export class CardTableView {
     stacks.forEach((stack, column) => {
       for (let i = 0; i < stack.count; i++) {
         const mesh = new T.Mesh(this.chipGeometry, this.chipMaterials[stack.kind]);
-        mesh.position.set((column - (stacks.length - 1) / 2) * 0.56, 0.035 + i * 0.062, POT_Z);
+        mesh.position.set((this.layout.pot?.x ?? 0) + (column - (stacks.length - 1) / 2) * 0.56, 0.035 + i * 0.062, this.layout.pot?.z ?? POT_Z);
         mesh.rotation.y = Math.PI / 2;
         mesh.castShadow = true;
         this.chips.add(mesh);
@@ -909,7 +971,7 @@ export class CardTableView {
       }
     });
     if (this.model.pot > 0)
-      add(`판돈 ${this.model.pot.toLocaleString("ko-KR")}`, "neutral", 0, POT_LABEL_Z, 0.8);
+      add(`판돈 ${this.model.pot.toLocaleString("ko-KR")}`, "neutral", this.layout.pot?.x ?? 0, this.layout.pot?.label ?? POT_LABEL_Z, 0.8);
   }
   dispose() {
     if (this.disposed) return;

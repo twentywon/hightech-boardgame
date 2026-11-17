@@ -38,7 +38,8 @@ const computer = (x: number, y: number, s = 1) =>
 /** `n` of something side by side, centred in a picture `w` wide. */
 const row = (n: number, w: number, gap: number, draw: (x: number) => string) => Array.from({ length: n }, (_, k) => draw(w / 2 + (k - (n - 1) / 2) * gap)).join("");
 const people = (n: number) => svg(48, 26, row(n, 48, n > 3 ? 10.5 : 12, (x) => person(x, 15, n > 3 ? 0.85 : 1)));
-const computers = (n: number) => svg(48, 26, row(n, 48, 15, (x) => computer(x, 14)));
+// Up to three at full size; four or five (hold'em's tables) smaller and closer, so that they fit the picture.
+const computers = (n: number) => svg(48, 26, row(n, 48, n > 4 ? 9.4 : n > 3 ? 11.5 : 15, (x) => computer(x, 14, n > 4 ? 0.66 : n > 3 ? 0.8 : 1)));
 /** Rising bars, `n` of `of` filled: how hard the computer plays. */
 const bars = (n: number, of: number) =>
   svg(
@@ -54,6 +55,16 @@ const cards = (n: number) =>
     Array.from({ length: n }, (_, k) => {
       const turn = (k - (n - 1) / 2) * 16;
       return `<g transform="rotate(${turn} 22 30)"><rect x="16" y="3" width="12" height="18" rx="2" fill="#b3261e" stroke="#fff" stroke-width="1.2"/><rect x="18.3" y="5.3" width="7.4" height="13.4" rx="1" fill="none" stroke="#f3d27a" stroke-width="0.9"/></g>`;
+    }).join(""),
+  );
+/** Playing cards turned up from a stock, `n` of them fanned: how many a turn brings in Klondike. */
+const turned = (n: number) =>
+  svg(
+    44,
+    28,
+    Array.from({ length: n }, (_, k) => {
+      const turn = (k - (n - 1) / 2) * 15;
+      return `<g transform="rotate(${turn} 22 30)"><rect x="16" y="3" width="12" height="18" rx="2" fill="#fbfaf6" stroke="#8c8678" stroke-width="1.1"/><path d="M22 8.6l2.4 3.4-2.4 3.4-2.4-3.4z" fill="#d33"/></g>`;
     }).join(""),
   );
 /** A three by three board with marks, for tic-tac-toe's modes. */
@@ -104,6 +115,7 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "jg-formation" || select === "jg-formation-2")
     return { svg: svg(52, 16, [...value].map((c, k) => piece(7 + k * 12.6, 8, 6.4, c === "N" ? "馬" : "象", "#3b2a14")).join("")), only: false };
   if (select === "sp-suits") return { svg: suits(Number(value)), only: false };
+  if (select === "kl-draw") return { svg: turned(Number(value)), only: false };
   if (select === "bg-variant" && /두 장|세 장/.test(label)) return { svg: cards(label.includes("세 장") ? 3 : 2), only: false };
   if (select === "pg-variant" && game === "tic-tac-toe" && TTT[value]) return { svg: TTT[value], only: false };
   if (select === "pg-variant" && game === "dots-and-boxes" && Number(value) > 1) return { svg: dots(Number(value)), only: false };
