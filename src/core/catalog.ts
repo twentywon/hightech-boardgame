@@ -488,8 +488,8 @@ export const games = [
     available: true,
   },
   {
-    name: "다리 놓기",
-    en: "BRIDGES",
+    name: "하시",
+    en: "HASHI",
     category: "퍼즐게임",
     players: "1인용",
     icon: "═",

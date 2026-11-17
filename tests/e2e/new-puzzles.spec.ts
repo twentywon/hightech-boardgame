@@ -93,7 +93,7 @@ test("pipes: each piece is turned by taps until the water reaches every house", 
 test("bridges: an island and then its neighbour lay a bridge, and every number is met", async ({ page }, info) => {
   const mobile = info.project.name === "mobile",
     random = await seeded(page, 73),
-    errors = await sit(page, "다리 놓기");
+    errors = await sit(page, "하시");
   // A sea was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
   bridgeRules.createGame(1, random);
   const state = bridgeRules.createGame(1, random),

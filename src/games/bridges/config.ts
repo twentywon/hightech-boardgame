@@ -65,14 +65,14 @@ export const bridgesConfig: PointConfig<State> = {
   stagesFirst: true,
   stages: STAGES.map((stage, i) => ({ value: String(i + 1), name: `${stage.size}×${stage.size} · ${NAMES[i]}`, note: `섬 ${stage.islands}개`, art: lagoonArt(stage.size) })),
   tallyHtml: () => ["", ""],
-  name: "다리 놓기",
-  english: "Bridges",
+  name: "하시",
+  english: "Hashi",
   number: "NO. 73 — LINK EVERY ISLAND",
   intro: `<p>푸른 바다에 흩어진 작은 섬들.<br>섬에 적힌 숫자만큼 다리를 놓아 모든 섬을 하나로 이으세요. 'Hashiwokakero'로 알려진 오래된 퍼즐이고 문제는 매번 새로 만들어집니다.</p>`,
   meta: "1인 · 7×7부터 12×12 · 문제는 무작위 · 답은 하나",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>LINK EVERY ISLAND</span>`,
   artClass: "morris-art",
-  artLabel: "다리 놓기 미리보기",
+  artLabel: "하시 미리보기",
   tableLabel: "THE LAGOON",
   tableNote: (variant) => {
     const stage = STAGES[Math.max(1, Math.min(STAGES.length, Number(variant) || 1)) - 1];
