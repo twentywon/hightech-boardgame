@@ -1,12 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
-import { PerspectiveCamera, Plane, Raycaster, Vector2, Vector3 } from "three";
+import { Box3, PerspectiveCamera, Ray, Vector3 } from "three";
 import { selectGame } from "./library";
 import { FOV, cameraDistance } from "../../src/engine/camera";
-import * as marbleRules from "../../src/games/marbledrop/rules";
-import { BOARD_TOP, STOREY, TRAY_TOP, funnelAt, marbleSubject, plotAt, trayAt } from "../../src/games/marbledrop/layout";
+import * as rules from "../../src/games/marbledrop/rules";
+import { BOARD_TOP, CARRY, CELL, FUNNEL, HIGH, TRAY_SCALE, TRAY_TOP, TURNTABLE, WIDE, boardMiddle, cellAt, funnelAt, levelY, marbleSubject, trayHeight, trayPlaces } from "../../src/games/marbledrop/layout";
 
 const settled = (page: Page) => expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 30000 });
 const moves = (page: Page) => page.locator("#move-count");
+const { CELLS, GO } = rules;
 
 /** Stubs the random numbers so that the puzzle laid can be laid here too. */
 async function seeded(page: Page, start: number) {
@@ -34,7 +35,7 @@ async function sit(page: Page, stage: number) {
   await selectGame(page, "구슬 낙하 미로");
   const dialog = page.getByRole("dialog");
   // The window it is entered through is its stage window, with its 게임 방법.
-  await expect(dialog.locator(".stage-card")).toHaveCount(marbleRules.STAGES.length);
+  await expect(dialog.locator(".stage-card")).toHaveCount(rules.STAGES.length);
   await expect(dialog.getByRole("button", { name: "게임 방법" })).toBeVisible();
   await dialog.locator(".stage-card").nth(stage - 1).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
@@ -43,40 +44,69 @@ async function sit(page: Page, stage: number) {
   return errors;
 }
 /**
- * The table as its camera shows it: where a point is on the screen, a tap (a touch on the phone), and the drag of
- * a tray piece by its top onto a plot. A carried piece keeps the offset from the pointer it was taken up with,
- * followed on the board's top, so the drag ends where that offset brings the piece's foot onto the plot.
+ * The table as its camera shows it. The camera follows the view's tilt and the turntable its turn, both read from
+ * the canvas each time (`data-lift`, `data-turn`), so that every aim follows a view the player has turned. A press is
+ * judged by a solid box for every unit (the frames are open), so an aim is taken only where the box of what is aimed
+ * at is the first the line of sight meets; otherwise the turntable is turned a little by a drag on its rim.
  */
-async function table(page: Page, size: number, mobile: boolean) {
-  const box = (await page.locator("canvas").boundingBox())!,
-    aspect = box.width / box.height,
-    subject = marbleSubject(size, aspect),
-    distance = cameraDistance(aspect, false, subject),
-    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
-  camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
-  camera.lookAt(0, subject.lookY, 0);
-  camera.updateMatrixWorld();
-  const at = (x: number, y: number, z: number) => {
-    const v = new Vector3(x, y, z).project(camera);
-    return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+async function table(page: Page, mobile: boolean) {
+  const canvas = page.locator("#board canvas"),
+    box = (await canvas.boundingBox())!,
+    aspect = box.width / box.height;
+  const view = async () => {
+    const turn = Number(await canvas.getAttribute("data-turn")),
+      lift = Number(await canvas.getAttribute("data-lift")),
+      subject = marbleSubject(aspect, lift),
+      distance = cameraDistance(aspect, false, subject),
+      camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+    camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
+    camera.lookAt(0, subject.lookY, 0);
+    camera.updateMatrixWorld();
+    const screen = (x: number, y: number, z: number) => {
+      const v = new Vector3(x, y, z).project(camera);
+      return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+    };
+    return { turn, camera, screen };
   };
-  const ground = (p: { x: number; y: number }) => {
-    const ray = new Raycaster(),
-      hit = new Vector3();
-    ray.setFromCamera(new Vector2(((p.x - box.x) / box.width) * 2 - 1, -(((p.y - box.y) / box.height) * 2 - 1)), camera);
-    ray.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -BOARD_TOP), hit);
-    return hit;
+  /** The tag of what the line of sight to `point` meets first: a unit of the board ("start", "g0", "t1"), or "". */
+  const firstHit = (state: rules.State, turn: number, camera: PerspectiveCamera, point: Vector3) => {
+    let best = Infinity,
+      tag = "";
+    const up = new Vector3(0, 1, 0),
+      test = (owner: string, cell: number, bottom: number, top: number, middle = cellAt(cell, turn, aspect), angle = turn, half = WIDE / 2) => {
+        // Into the unit's own frame: about its middle, the turntable's turn undone.
+        const from = camera.position.clone().sub(new Vector3(middle.x, 0, middle.z)).applyAxisAngle(up, -angle),
+          way = point.clone().sub(camera.position).normalize().applyAxisAngle(up, -angle),
+          hit = new Ray(from, way).intersectBox(new Box3(new Vector3(-half, bottom, -half), new Vector3(half, top, half)), new Vector3());
+        if (hit && hit.distanceTo(from) < best) {
+          best = hit.distanceTo(from);
+          tag = owner;
+        }
+      },
+      add = (piece: rules.Piece, owner: string) => {
+        for (const v of rules.voxelsOf(piece)) test(owner, v.cell, levelY(v.level), levelY(v.level) + HIGH);
+      };
+    add(state.start, "start");
+    const s = state.start;
+    test("start", s.at, levelY(s.level + s.units.length), levelY(s.level + s.units.length) + FUNNEL + 0.1);
+    state.given.forEach((p, g) => add(p, `g${g}`));
+    // The tray's pieces where they stand in the tray (smaller, a beam lying along x), which the turntable does not turn.
+    const places = trayPlaces(state.tray, aspect);
+    state.tray.forEach((p, j) => {
+      if (p.at >= 0) return add(p, `t${j}`);
+      const mid = rules.middle(p.units.length);
+      p.units.forEach((_, i) => {
+        const column = p.shape === "column",
+          bottom = TRAY_TOP + (column ? i : 0) * HIGH * TRAY_SCALE,
+          middle = { x: places[j].x + (column ? 0 : (i - mid) * CELL * TRAY_SCALE), z: places[j].z };
+        test(`tray${j}`, -1, bottom, bottom + HIGH * TRAY_SCALE, middle, 0, (WIDE / 2) * TRAY_SCALE);
+      });
+    });
+    return tag;
   };
   const tap = async (p: { x: number; y: number }) => {
     if (mobile) await page.touchscreen.tap(p.x, p.y);
     else await page.mouse.click(p.x, p.y);
-  };
-  /** The middle of the top of tray piece j, where it stands. */
-  const top = (state: marbleRules.State, j: number) => {
-    const piece = state.tray[j],
-      foot = piece.at >= 0 ? plotAt(size, piece.at, aspect) : trayAt(size, state.tray.length, j, aspect),
-      base = piece.at >= 0 ? BOARD_TOP : TRAY_TOP + 0.01;
-    return { foot, screen: at(foot.x, base + piece.height * STOREY, foot.z) };
   };
   const drag = async (a: { x: number; y: number }, b: { x: number; y: number }) => {
     await page.mouse.move(a.x, a.y);
@@ -85,97 +115,151 @@ async function table(page: Page, size: number, mobile: boolean) {
     await page.mouse.move(b.x, b.y, { steps: 4 });
     await page.mouse.up();
   };
+  /** Turns the turntable by dragging across its left rim, where nothing stands. */
+  const spin = async (pixels: number) => {
+    const { screen } = await view(),
+      m = boardMiddle(aspect),
+      rim = screen(m.x - TURNTABLE + 0.12, BOARD_TOP, m.z + 0.25);
+    await drag(rim, { x: rim.x + pixels, y: rim.y });
+    await settled(page);
+  };
+  /** A point on a placed piece (or the funnel) that nothing hides, turning the table until there is one. */
+  const visible = async (state: rules.State, owner: string, points: (turn: number) => Vector3[]) => {
+    for (let tries = 0; tries < 8; tries++) {
+      const v = await view(),
+        seen = points(v.turn).find((p) => firstHit(state, v.turn, v.camera, p) === owner);
+      if (seen) return v.screen(seen.x, seen.y, seen.z);
+      await spin(90);
+    }
+    throw new Error(`${owner} stays hidden`);
+  };
   return {
-    at,
+    view,
+    spin,
     tap,
-    /** Taps tray piece j's top (a piece on the board turns a quarter). */
-    onPiece: (state: marbleRules.State, j: number) => tap(top(state, j).screen),
-    /** Drags tray piece j by its top onto `plot`. */
-    carry: async (state: marbleRules.State, j: number, plot: number) => {
-      const { foot, screen } = top(state, j),
-        grip = ground(screen),
-        to = plotAt(size, plot, aspect);
-      await drag(screen, at(to.x + grip.x - foot.x, BOARD_TOP, to.z + grip.z - foot.z));
+    /** Drags tray piece j by the top of it in the tray, over the cell `cell` (at the height a carried piece hovers). */
+    put: async (state: rules.State, j: number, cell: number) => {
+      const { turn, screen } = await view(),
+        at = trayPlaces(state.tray, aspect)[j],
+        to = cellAt(cell, turn, aspect);
+      await drag(screen(at.x, TRAY_TOP + trayHeight(state.tray[j]) - 0.03, at.z), screen(to.x, CARRY, to.z));
     },
-    /** Drags tray piece j by its top off the board's left edge, onto the bench. */
-    away: async (state: marbleRules.State, j: number) => {
-      const { foot, screen } = top(state, j),
-        edge = plotAt(size, 0, aspect);
-      await drag(screen, at(edge.x - 1.1, BOARD_TOP, foot.z));
+    /** Drags placed tray piece j off the board onto the bench (it goes back to the tray). */
+    away: async (state: rules.State, j: number) => {
+      const top = rules.voxelsOf(state.tray[j]).sort((a, b) => b.level - a.level)[0],
+        from = await visible(state, `t${j}`, (turn) => {
+          const c = cellAt(top.cell, turn, aspect);
+          return [new Vector3(c.x, levelY(top.level) + HIGH - 0.03, c.z)];
+        }),
+        { screen } = await view(),
+        m = boardMiddle(aspect);
+      await drag(from, screen(m.x - TURNTABLE - 0.6, CARRY, m.z));
     },
-    funnel: (state: marbleRules.State) => {
-      const f = funnelAt(size, state.start.at, state.start.level, aspect);
-      return tap(at(f.x, f.y, f.z));
+    /** Taps placed tray piece j (it turns a quarter, on to the next way that fits). */
+    turn: async (state: rules.State, j: number) => {
+      const units = rules.voxelsOf(state.tray[j]).sort((a, b) => b.level - a.level),
+        at = await visible(state, `t${j}`, (turn) =>
+          units.map((u) => {
+            const c = cellAt(u.cell, turn, aspect);
+            return new Vector3(c.x, levelY(u.level) + HIGH - 0.03, c.z);
+          }),
+        );
+      await tap(at);
     },
+    /** Taps the funnel over the start. */
+    funnel: async (state: rules.State) => {
+      const at = await visible(state, "start", (turn) => {
+        const f = funnelAt(state.start, turn, aspect);
+        return [new Vector3(f.x, f.y, f.z)];
+      });
+      await tap(at);
+    },
+    /** Drags on the rim to turn the table, and reads back the turn. */
+    turned: async () => Number(await canvas.getAttribute("data-turn")),
   };
 }
+const count = async (page: Page) => Number(((await moves(page).textContent()) ?? "").replace(/\D/g, ""));
+const counted = async (page: Page, made: number) => {
+  await expect(moves(page)).toHaveText(`${made}수`, { timeout: 30000 });
+  await settled(page);
+};
 
-test("marble drop maze: the tray's pieces are dragged onto their plots, turned by taps, and the marble runs home", async ({ page }, info) => {
+test("marble drop maze: the tray's pieces are dragged to their places, turned by taps, and the marble runs home", async ({ page }, info) => {
+  test.setTimeout(180000);
   const mobile = info.project.name === "mobile",
     random = await seeded(page, 80),
-    errors = await sit(page, 2);
-  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
-  marbleRules.createGame(1, random);
-  let state = marbleRules.createGame(2, random);
-  const n = state.size * state.size,
-    { onPiece, carry, funnel } = await table(page, state.size, mobile);
+    errors = await sit(page, 3);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the third stage's, the one chosen.
+  rules.createGame(1, random);
+  let state = rules.createGame(3, random);
+  expect(state.tray.some((p) => p.shape === "beam")).toBe(true);
+  const hand = await table(page, mobile);
   let made = 0;
-  for (const [j, want] of state.answer.entries()) {
-    await carry(state, j, want.at);
-    await expect(moves(page)).toHaveText(`${++made}수`, { timeout: 20000 });
-    await settled(page);
-    state = marbleRules.play(state, { from: n + j, to: want.at, extra: -1 })!;
-    expect(state.tray[j].at).toBe(want.at);
-    // A bare tap on a piece set down turns it a quarter clockwise, until it faces as the answer has it.
-    while (marbleRules.normal(state.tray[j].kind, state.tray[j].rot) !== want.rot) {
-      await onPiece(state, j);
-      await expect(moves(page)).toHaveText(`${++made}수`, { timeout: 20000 });
-      await settled(page);
-      state = marbleRules.play(state, { from: want.at, to: want.at, extra: -1 })!;
+  // The pieces go in the hint's order: from the bottom up, so that every support is there before what it carries.
+  for (let guard = 0; guard < 4 * CELLS; guard++) {
+    const move = rules.hint(state)!;
+    if (move.to === GO) break;
+    expect(move.from).toBeGreaterThanOrEqual(CELLS);
+    const j = move.from - CELLS,
+      cell = Math.floor((move.to - rules.PUT) / 4);
+    await hand.put(state, j, cell);
+    state = rules.play(state, { from: CELLS + j, to: cell, extra: -1 })!;
+    await counted(page, ++made);
+    // A bare tap on a piece set down turns it, until it stands as the answer has it.
+    while (rules.matched(state).slotOf[j] < 0) {
+      await hand.turn(state, j);
+      const from = rules.handle(state, rules.world(state), j);
+      state = rules.play(state, { from, to: from, extra: -1 })!;
+      await counted(page, ++made);
     }
   }
-  expect(marbleRules.hint(state)).toEqual({ from: -1, to: marbleRules.GO, extra: -1 });
-  // A tap on the start tower's funnel drops the marble.
-  await funnel(state);
-  await expect(moves(page)).toHaveText(`${made + 1}수`, { timeout: 20000 });
-  await settled(page);
+  expect(rules.hint(state)).toEqual({ from: -1, to: GO, extra: -1 });
+  // A tap on the funnel drops the marble.
+  await hand.funnel(state);
+  await counted(page, ++made);
   await expect(page.locator("#turn")).toContainText("성공!");
   await expect(page.locator("#pz-next")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test("marble drop maze: a piece goes back to the tray, a failing drop is shown and taken back with 무르기", async ({ page }, info) => {
+test("marble drop maze: a refused place, a piece back to the tray, a failing drop taken back, and the view turned and set back", async ({ page }, info) => {
+  test.setTimeout(150000);
   const mobile = info.project.name === "mobile",
     random = await seeded(page, 81),
     errors = await sit(page, 1);
-  marbleRules.createGame(1, random);
-  let state = marbleRules.createGame(1, random);
-  const n = state.size * state.size,
-    { carry, away, funnel } = await table(page, state.size, mobile);
-  // Set down, then carried off the board: back in its place in the tray.
-  // A plot of the near row, which nothing stands before.
-  const free = Array.from({ length: n }, (_, i) => n - 1 - i).find((i) => marbleRules.empty(state, i) && !state.answer.some((a) => a.at === i))!;
-  await carry(state, 0, free);
-  await expect(moves(page)).toHaveText("1수", { timeout: 20000 });
+  rules.createGame(1, random);
+  let state = rules.createGame(1, random);
+  const hand = await table(page, mobile);
+  // Onto the start's cell: refused, the reason in the status line, and nothing made.
+  await hand.put(state, 0, state.start.at);
   await settled(page);
-  state = marbleRules.play(state, { from: n, to: free, extra: -1 })!;
-  await away(state, 0);
-  await expect(moves(page)).toHaveText("2수", { timeout: 20000 });
-  await settled(page);
-  state = marbleRules.play(state, { from: free, to: n, extra: -1 })!;
+  await expect(page.locator("#turn")).toContainText("출발점과 도착점 위에는 아무것도 놓을 수 없습니다.");
+  expect(await count(page)).toBe(0);
+  // Set down on a free cell of the near row, then dragged off the board: back in the tray.
+  const free = [15, 14, 13, 12, 11, 10, 9, 8].find((c) => c !== state.goal && c !== state.start.at && !state.given.some((p) => rules.voxelsOf(p).some((v) => v.cell === c)))!;
+  await hand.put(state, 0, free);
+  state = rules.play(state, { from: CELLS, to: free, extra: -1 })!;
+  await counted(page, 1);
+  await hand.away(state, 0);
+  state = rules.play(state, { from: rules.handle(state, rules.world(state), 0), to: CELLS, extra: -1 })!;
+  await counted(page, 2);
   expect(state.tray[0].at).toBe(-1);
-  // Dropped with nothing set: the marble comes to grief, and the table says why.
-  const trouble = marbleRules.judge(state).trouble!;
-  expect(trouble.fault).not.toBeNull();
-  await funnel(state);
-  await expect(moves(page)).toHaveText("3수", { timeout: 20000 });
-  await settled(page);
-  await expect(page.locator("#turn")).toContainText(`실패! ${marbleRules.why(trouble.fault)}`);
+  // Dropped with the tray still full: the marble comes to grief, and the table says why.
+  const trouble = rules.judge(state).trouble!;
+  await hand.funnel(state);
+  await counted(page, 3);
+  await expect(page.locator("#turn")).toContainText(`실패! ${rules.why(trouble.fault)}`);
   await expect(page.locator("#pz-hint")).toBeDisabled();
   await page.locator("#pg-undo").click();
-  await expect(moves(page)).toHaveText("2수");
-  await settled(page);
+  await counted(page, 2);
   await expect(page.locator("#turn")).not.toContainText("실패!");
   await expect(page.locator("#pz-hint")).toBeEnabled();
+  // A drag across the rim turns the turntable; 시점 전환 sets it square again.
+  await hand.spin(140);
+  expect(Math.abs(await hand.turned())).toBeGreaterThan(0.5);
+  await page.locator("#camera").click();
+  await settled(page);
+  await expect(page.locator("#board canvas")).toHaveAttribute("data-turn", "0.0000");
+  await expect(page.locator("#board canvas")).toHaveAttribute("data-lift", "0.0000");
   expect(errors).toEqual([]);
 });

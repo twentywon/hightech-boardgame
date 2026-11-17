@@ -28,6 +28,8 @@ export interface PointView<S> {
   onMove?: (move: Move) => void;
   /** Stops and starts the clock of a table that runs in real time. */
   setPaused?: (paused: boolean) => void;
+  /** Brings a view the player has turned back to where it started (the 시점 전환 of a `turnable` table). */
+  resetView?: () => void;
   sync(state: S, animate?: boolean): void;
   setMarks(marks: Marks): void;
   setQuality(quality: "high" | "low"): void;
@@ -88,6 +90,10 @@ export interface PointConfig<S> {
    */
   /** `hintText` may depend on the move hinted at, for a puzzle whose hints point at different kinds of things. */
   puzzle?: { hint: (state: S) => Move | null; hintText?: string | ((state: S, move: Move) => string) };
+  /** Why a move of mine is refused, said in the status line until the next move (a piece that may not stand there). */
+  refusal?: (state: S, move: Move) => string | null;
+  /** The player turns the view by dragging the table; a 시점 전환 button over the table brings it back (`resetView`). */
+  turnable?: boolean;
   /** The stage window comes up as soon as one sits down, not only from 새 게임. */
   stagesFirst?: boolean;
   /** The tools stand at the lower left as the arrow keys of a keyboard do; each names its place with `area` (up, left, down, right, or drop beside them). */
@@ -184,6 +190,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     // A puzzle: the move a hint points at, a line for the panel, and which puzzle of the stage this is.
     hinted: Move | null = null,
     notice = "",
+    // Why a move of mine was refused (a game with `refusal`), told while the state it was refused in stands.
+    warned: { state: S; text: string } | null = null,
     stageNo = 1,
     // The points chosen so far toward a move, and the keyboard's place on the board.
     chosen: { from?: number; to?: number } = {},
@@ -354,7 +362,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       `<li id="pg-side-${p}"${solo && p ? " hidden" : ""}><i class="yut-dot" style="background:${(spec?.colors ?? config.colorsOf?.(variant) ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.toolsLayout ? ` tools-${config.toolsLayout}` : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}"${tool.area ? ` style="grid-area:${tool.area}"` : ""}${tool.name ? ` aria-label="${tool.name}"` : ""} hidden>${tool.label}</button>`).join("")}</div>${config.pausable ? `<div class="board-pause"><button id="pg-pause" class="board-icon pause-icon" aria-label="일시정지"><i aria-hidden="true"></i></button></div>` : ""}<div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul>${config.puzzle ? `<div class="puzzle-panel"><p class="puzzle-stage" id="pz-stage"></p><div class="puzzle-levels" role="group" aria-label="난이도">${(config.stages ?? []).map((stage) => `<button class="puzzle-level" data-stage="${stage.value}" aria-pressed="${stage.value === variant}"><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div><div class="puzzle-actions"><button id="pz-hint">힌트</button><button id="pg-undo">무르기</button><button id="pz-restart">처음부터</button><button id="pz-new">다른 퍼즐</button></div><button id="pz-next" class="primary" hidden>다음 스테이지 →</button></div>` : ""}<div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}${config.puzzle ? "" : `<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button>`}<p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.toolsLayout ? ` tools-${config.toolsLayout}` : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button>${config.turnable ? `<button id="camera">시점 전환</button>` : ""}<button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}"${tool.area ? ` style="grid-area:${tool.area}"` : ""}${tool.name ? ` aria-label="${tool.name}"` : ""} hidden>${tool.label}</button>`).join("")}</div>${config.pausable ? `<div class="board-pause"><button id="pg-pause" class="board-icon pause-icon" aria-label="일시정지"><i aria-hidden="true"></i></button></div>` : ""}<div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul>${config.puzzle ? `<div class="puzzle-panel"><p class="puzzle-stage" id="pz-stage"></p><div class="puzzle-levels" role="group" aria-label="난이도">${(config.stages ?? []).map((stage) => `<button class="puzzle-level" data-stage="${stage.value}" aria-pressed="${stage.value === variant}"><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div><div class="puzzle-actions"><button id="pz-hint">힌트</button><button id="pg-undo">무르기</button><button id="pz-restart">처음부터</button><button id="pz-new">다른 퍼즐</button></div><button id="pz-next" class="primary" hidden>다음 스테이지 →</button></div>` : ""}<div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}${config.puzzle ? "" : `<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button>`}<p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
@@ -431,6 +439,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       };
     });
     if (config.pausable) $("pg-pause").onclick = togglePause;
+    if (config.turnable) $("camera").onclick = () => view?.resetView?.();
     if (config.newGameLabel) $("restart").textContent = config.newGameLabel;
     try {
       if (config.view) view = config.view($("board"), settings.quality, variant, mode, level);
@@ -489,6 +498,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function apply(next: S) {
     hinted = null;
     notice = "";
+    warned = null;
     const shout = config.cheer?.(state, next, mode);
     if (shout && config.cheerOnRest && view) waitingCheer = shout;
     else if (shout) cheer(shout);
@@ -556,7 +566,16 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function commit(move: Move) {
     if (paused || (!config.live && busy()) || computerTurn() || over()) return;
     const next = game.play(state, move, cryptoRandom);
-    if (!next) return;
+    if (!next) {
+      // A game that says why a move is refused has it said in the status line.
+      const text = config.refusal?.(state, move);
+      if (text) {
+        warned = { state, text };
+        hinted = null;
+        update();
+      }
+      return;
+    }
     sound.unlock();
     if (config.live) return apply(next);
     // In a game without undo, a choice that is not yet a move (a bet being set, a ball put down by hand) is followed by no pause.
@@ -706,7 +725,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
           ? typeof config.puzzle.hintText === "function"
             ? config.puzzle.hintText(s, hinted)
             : (config.puzzle.hintText ?? "힌트 — 금색 고리의 구슬을 화살표 쪽으로 치세요.")
-          : game.hint(s)
+          : warned && warned.state === s
+            ? warned.text
+            : game.hint(s)
       : solo
       ? done
         ? "게임이 끝났습니다."
