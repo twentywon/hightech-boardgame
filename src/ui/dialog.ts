@@ -31,12 +31,15 @@ export function modal(
  */
 function buttonize(host: HTMLElement) {
   const groups = new Map<HTMLSelectElement, HTMLElement>(),
-    rebuild = (select: HTMLSelectElement, group: HTMLElement) =>
+    rebuild = (select: HTMLSelectElement, group: HTMLElement) => {
+      // Up to five choices stand in one row (the user asked for the five levels of the computer on one line).
+      group.dataset.count = String(select.options.length);
       group.replaceChildren(
         ...[...select.options].map((option) => {
           const button = document.createElement("button"),
             label = option.textContent ?? "",
-            icon = choiceIcon(select.id, option.value, label, document.documentElement.dataset.game);
+            // A setup may give an option its own picture (`data-icon`, as the point games' boards); else one is drawn.
+            icon = option.dataset.icon ? { svg: option.dataset.icon, only: false } : choiceIcon(select.id, option.value, label, document.documentElement.dataset.game);
           button.type = "button";
           button.className = icon ? "choice with-icon" : "choice";
           button.dataset.value = option.value;
@@ -63,7 +66,8 @@ function buttonize(host: HTMLElement) {
           };
           return button;
         }),
-      ),
+      );
+    },
     sync = () => {
       for (const [select, group] of groups) {
         // A list gone from the page (its window closed) is let go; nothing is drawn for it again.
@@ -165,13 +169,18 @@ export function entryDialog(title: string, label: string, content: Node[], back:
   const host = d.querySelector<HTMLElement>(".setup-host")!;
   host.setAttribute("aria-label", label);
   host.append(...content);
+  // A setup may give the window its own note, and a button to stand in its row of actions (a puzzle entered through
+  // its stage window has its start where that window's 계속하기 stood).
+  const note = host.querySelector<HTMLElement>("[data-entry-note]")?.dataset.entryNote;
+  if (note) d.querySelector(".setup-note")!.textContent = note;
+  host.querySelectorAll("[data-entry-action]").forEach((button) => d.querySelector(".dialog-actions")!.append(button));
   document.body.append(d);
   buttonize(host);
   // The start (any primary button, also one a setup draws anew, as the tour's form when the number of people
   // changes) closes the window before its own handler runs: a table that starts under an open window holds its
   // buttons and its computer, as it does under any window. The window stays in the page while the handler runs,
   // for the choices are read from its form; a game that asks its stage next has already put its own in its place.
-  host.addEventListener(
+  d.addEventListener(
     "click",
     (event) => {
       if (!(event.target instanceof Element) || !event.target.closest("button.primary") || !d.open) return;

@@ -71,7 +71,8 @@ interface Tween {
   update: (p: number) => void;
   done?: () => void;
 }
-const INK = { yard: "rgba(74, 50, 26, 0.85)", wood: "#2c2118", lab: "#8fd6c4" };
+/** The colour a board's lines are drawn in, by its setting (shared with the settings window's pictures). */
+export const INK = { yard: "rgba(74, 50, 26, 0.85)", wood: "#2c2118", lab: "#8fd6c4" };
 
 /** A board of points with two sides' pieces, in one of three settings. */
 export class PointBoardView {

@@ -2858,21 +2858,24 @@ html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sideba
 main.entry-backdrop { position:fixed;inset:0;background:#1a1714;overflow:hidden; }
 main.entry-backdrop img { width:100%;height:100%;object-fit:cover;filter:blur(3px) brightness(.8);transform:scale(1.04); }
 dialog.setup-dialog.entry .feature-copy > p { display:block;margin:2px 0 4px;font-size:13.5px;line-height:1.6;color:var(--ink-soft, #5c5a55); }
-/* In the entry window the stage cards are small, five to a row, so that the start stays in view below them. */
-dialog.setup-dialog.entry .feature-copy .stage-grid { margin-top:14px;grid-template-columns:repeat(auto-fill, minmax(92px, 1fr));gap:6px; }
-dialog.setup-dialog.entry .feature-copy .stage-card { padding:6px 4px 6px;border-radius:12px; }
-dialog.setup-dialog.entry .feature-copy .stage-art { width:min(100%, 64px); }
-dialog.setup-dialog.entry .feature-copy .stage-card b { margin-top:2px;font-size:13px; }
-dialog.setup-dialog.entry .feature-copy .stage-card small { display:none; }
-/* The settings window chooses with buttons, as the puzzles' stage panels do (the user asked): the mode and a rule
-   to switch are pills over their real, full-size inputs; a list is a row of buttons over its unseen select. */
+/* In the entry window the stage cards are small, five to a row, so that the start stays in view below them; a puzzle
+   entered through its stage window (`.stage-entry`) shows them as that window does, its start in the window's row. */
+dialog.setup-dialog.entry .featured:not(.stage-entry) .feature-copy .stage-grid { margin-top:14px;grid-template-columns:repeat(auto-fill, minmax(92px, 1fr));gap:6px; }
+dialog.setup-dialog.entry .featured:not(.stage-entry) .feature-copy .stage-card { padding:6px 4px 6px;border-radius:12px; }
+dialog.setup-dialog.entry .featured:not(.stage-entry) .feature-copy .stage-art { width:min(100%, 64px); }
+dialog.setup-dialog.entry .featured:not(.stage-entry) .feature-copy .stage-card b { margin-top:2px;font-size:13px; }
+dialog.setup-dialog.entry .featured:not(.stage-entry) .feature-copy .stage-card small { display:none; }
+/* The settings window chooses with buttons, as the puzzles' stage panels do (the user asked): the mode is pills over
+   its real, full-size radios; a list is a row of buttons over its unseen select; a rule only on or off is a checkbox. */
 dialog.setup-dialog .mode-select { display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:6px;margin:14px 0 4px;padding:0;border:0;background:none;font-size:14px; }
-dialog.setup-dialog .mode-select label, dialog.setup-dialog .rule-option { position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fffdf7;color:var(--ink, #16181a);font-weight:600;text-align:center;cursor:pointer; }
-dialog.setup-dialog .mode-select input, dialog.setup-dialog .rule-option input { position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer; }
-dialog.setup-dialog .mode-select label:has(input:checked), dialog.setup-dialog .rule-option:has(input:checked) { background:#16181a;border-color:#16181a;color:#fff; }
-dialog.setup-dialog .mode-select label:has(input:focus-visible), dialog.setup-dialog .rule-option:has(input:focus-visible) { outline:3px solid var(--brass, #b8892f);outline-offset:2px; }
-dialog.setup-dialog .rule-option { flex-direction:column;gap:2px;margin:12px 0 4px; }
-dialog.setup-dialog .rule-option small { flex-basis:auto;font-weight:400;color:inherit;opacity:.72; }
+dialog.setup-dialog .mode-select label { position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fffdf7;color:var(--ink, #16181a);font-weight:600;text-align:center;cursor:pointer; }
+dialog.setup-dialog .mode-select input { position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer; }
+dialog.setup-dialog .mode-select label:has(input:checked) { background:#16181a;border-color:#16181a;color:#fff; }
+dialog.setup-dialog .mode-select label:has(input:focus-visible) { outline:3px solid var(--brass, #b8892f);outline-offset:2px; }
+/* A rule that is only on or off stays a checkbox (the user asked, after seeing it as a pill). */
+dialog.setup-dialog .rule-option { display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:10px;row-gap:2px;margin:14px 0 4px;font-size:14px;font-weight:600;color:var(--ink, #16181a);cursor:pointer; }
+dialog.setup-dialog .rule-option input { width:20px;height:20px;margin:0;accent-color:#16181a;cursor:pointer; }
+dialog.setup-dialog .rule-option small { grid-column:2;font-weight:400;font-size:12px;color:var(--ink-soft, #5c5a55); }
 dialog.setup-dialog .ai-options { grid-template-columns:1fr;max-width:none;gap:12px;margin:14px 0 4px; }
 dialog.setup-dialog .ai-options label, dialog.setup-dialog label:has(> .choice-group) { position:relative;display:grid;gap:6px;font-size:12px;color:var(--ink-soft, #5c5a55); }
 dialog.setup-dialog select.choice-source { position:absolute !important;left:0;top:0;width:1px !important;height:1px !important;min-height:0 !important;padding:0 !important;border:0 !important;opacity:0;overflow:hidden;pointer-events:none; }
@@ -2891,3 +2894,16 @@ dialog.setup-dialog .choice-text { font-size:12.5px;line-height:1.2; }
 dialog.setup-dialog .mode-select label.with-icon { flex-direction:column;gap:3px;padding:8px 12px 7px; }
 
 dialog.setup-dialog .game-detail { margin:0; }
+/* A variant that lays its own board shows that board (hexa germ war's maps, gonu's boards; the user asked). */
+dialog.setup-dialog .choice-icon img.board-map { display:block;width:64px;height:64px;border-radius:8px; }
+dialog.setup-dialog .choice.with-icon:has(img.board-map) { padding:8px 6px 7px;gap:5px; }
+/* Up to five choices stand in one row, the five levels of the computer included (the user asked). */
+dialog.setup-dialog .choice-group[data-count="2"] { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+dialog.setup-dialog .choice-group[data-count="3"] { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+dialog.setup-dialog .choice-group[data-count="4"] { grid-template-columns:repeat(4, minmax(0, 1fr)); }
+dialog.setup-dialog .choice-group[data-count="5"] { grid-template-columns:repeat(5, minmax(0, 1fr));gap:5px; }
+dialog.setup-dialog .choice-group[data-count="5"] .choice { padding-inline:3px;font-size:12.5px; }
+dialog.setup-dialog .choice-group[data-count="5"] .choice-text { font-size:12px;white-space:nowrap; }
+dialog.setup-dialog.entry .stage-entry .stage-grid { margin-top:12px; }
+dialog.setup-dialog.entry .dialog-actions:has([data-entry-action]) { justify-content:space-between;gap:10px; }
+dialog.setup-dialog.entry .dialog-actions [data-entry-action] { width:auto;margin:0;padding-inline:22px; }

@@ -25,6 +25,7 @@ export const hexaConfig: PointConfig<State> = {
     part("그 밖에", notes("새 게임 설정에서 맵과 컴퓨터 난이도(쉬움·보통·어려움)를 고릅니다.", "<b>무르기</b>는 직전 수를 되돌립니다. 컴퓨터 대전에서는 내 차례로 돌아갑니다.", "저장은 없습니다. 새로고침하면 처음으로 돌아갑니다.")),
   sides: ["파랑", "빨강"],
   variantLabel: "맵",
+  variantArt: true,
   variants: Object.entries(MAPS).map(([value, map]) => ({ value, label: map.name })),
   startWord: "테이블에 앉기",
 };

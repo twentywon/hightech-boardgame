@@ -25,6 +25,15 @@ const press = async (selector) => {
   // A button may vanish between the check and the click; that is not an error here.
   if ((await button.isVisible()) && (await button.isEnabled())) await button.click({ timeout: 800 }).catch(() => {});
 };
+/**
+ * A puzzle for one is entered through its stage window: a card sits down at that stage, and with none given the
+ * window's start sits down at the stage laid.
+ */
+const stage = async (n) => {
+  await (n === undefined ? page.locator("dialog[open] [data-entry-action]") : page.locator("dialog[open] .stage-card").nth(n)).click();
+  await page.locator("canvas").waitFor();
+  await wait(1800);
+};
 /** A few moves so that the table shows a game under way. */
 const play = {
   gomoku: async () => {
@@ -205,13 +214,12 @@ const play = {
   2048: async () => {
     await keys(["ArrowLeft", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowRight", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowLeft", "ArrowDown", "ArrowRight", "ArrowDown", "ArrowLeft", "ArrowDown"], 330);
   },
-  // The stage window that opens over the board is closed: the whole board stays.
+  // Sat down at the stage laid (the whole board).
   "peg-solitaire": async () => {
-    await page.keyboard.press("Escape");
-    await wait(300);
+    await stage();
   },
   "tower-of-hanoi": async () => {
-    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await stage(2);
     await wait(500);
     await page.locator("canvas").focus();
     await keys(["ArrowLeft", "ArrowLeft", "Enter", "ArrowRight", "ArrowRight", "Enter"], 260);
@@ -221,34 +229,34 @@ const play = {
   },
   "queens-on-the-board": async () => {
     // The 8×8 board with its three given queens.
-    await page.locator("dialog[open] .stage-card").nth(3).click();
+    await stage(3);
     await wait(900);
   },
   "knight-tour": async () => {
     // The 5×5 board, a few hops along the hinted way.
-    await page.locator("dialog[open] .stage-card").nth(3).click();
+    await stage(3);
     await wait(800);
   },
   "turning-maze": async () => {
-    await page.locator("dialog[open] .stage-card").nth(1).click();
+    await stage(1);
     await wait(800);
   },
   "haunted-mirrors": async () => {
     // The 5×5 board with a few monsters set.
-    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await stage(2);
     await wait(800);
     await keys(["Enter", "ArrowRight", "Enter", "Enter", "ArrowDown", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "Enter", "Enter"], 320);
     await wait(700);
   },
   "building-puzzle": async () => {
     // The 5×5 block with a few buildings up.
-    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await stage(2);
     await wait(800);
     await keys(["ArrowRight", "Enter", "Enter", "ArrowRight", "Enter", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "ArrowDown", "ArrowLeft", "ArrowLeft", "Enter", "Enter", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowDown", "Enter", "Enter", "Enter", "Enter", "Enter"], 260);
     await wait(700);
   },
   "star-battle": async () => {
-    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await stage(2);
     await wait(800);
     await keys(["Enter", "ArrowRight", "ArrowRight", "Enter", "Enter", "ArrowDown", "ArrowDown", "Enter", "ArrowRight", "ArrowDown", "Enter", "Enter"], 260);
     await wait(700);
@@ -266,7 +274,7 @@ const play = {
   },
   tents: async () => {
     // The 7×7 field with a few tents and grass marks.
-    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await stage(2);
     await wait(800);
     await keys(["ArrowRight", "Enter", "ArrowDown", "ArrowDown", "Enter", "Enter", "ArrowRight", "ArrowRight", "ArrowRight", "Enter", "ArrowDown", "ArrowDown", "ArrowLeft", "Enter"], 260);
     await wait(700);
@@ -284,7 +292,7 @@ const play = {
     await wait(2500);
   },
   "lights-on": async () => {
-    await page.locator("dialog[open] .stage-card").nth(2).click();
+    await stage(2);
     await wait(500);
   },
   minesweeper: async () => {
@@ -314,22 +322,19 @@ const play = {
   },
   "balance-quiz": async () => {
     // The weights' stage: the parcel on its pan and a weight put up beside it, so that the beam leans.
-    await page.locator("dialog[open] .stage-card").nth(1).click();
+    await stage(1);
     await wait(1500);
     await keys(["Enter"], 300);
     await wait(1200);
   },
   "river-crossing": async () => {
-    await page.keyboard.press("Escape");
-    await wait(300);
+    await stage();
   },
   "water-pouring": async () => {
-    await page.keyboard.press("Escape");
-    await wait(300);
+    await stage();
   },
   "marble-shot": async () => {
-    await page.keyboard.press("Escape");
-    await wait(300);
+    await stage();
   },
   "brick-breaker": async () => {
     await keys([" "]);
@@ -414,9 +419,14 @@ for (const game of games) {
   const id = game.en.toLowerCase().replaceAll(" ", "-");
   await page.goto("http://localhost:4175/");
   await page.getByRole("button", { name: `${game.name} 살펴보기`, exact: true }).click();
-  await page.locator(".game-stage button.primary").first().click();
-  await page.locator("canvas").waitFor();
-  await wait(1800);
+  await page.locator("dialog.entry[open]").waitFor();
+  await wait(800);
+  // A puzzle entered through its stage window sits down in its own step (`stage`).
+  if (!(await page.locator("dialog[open] .stage-entry").count())) {
+    await page.locator(".game-stage button.primary").first().click();
+    await page.locator("canvas").waitFor();
+    await wait(1800);
+  }
   await play[id]?.();
   await wait(800);
   // No selection rings or cursor: the screens leave them out while this flag is set.

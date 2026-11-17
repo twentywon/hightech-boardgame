@@ -3,7 +3,7 @@ import { bankrupt, capturing, cheer, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
 import type { Move, PointGame } from "../games/points/types";
-import { PointBoardView, type BoardSpec, type Marks } from "../games/points/view";
+import { INK, PointBoardView, type BoardSpec, type Marks } from "../games/points/view";
 import { cryptoRandom } from "../core/random";
 import { Sound } from "../engine/sound";
 import type { Settings } from "../core/storage";
@@ -135,6 +135,8 @@ export interface PointConfig<S> {
   variants?: { value: string; label: string }[];
   /** What the variants are called in the setup panel. */
   variantLabel?: string;
+  /** The variants lay different boards: each choice in the settings window shows its board, pieces set out. */
+  variantArt?: boolean;
   /** False to mark only the piece that was picked up, not every piece that can move. */
   showMovable?: boolean;
   startWord: string;
@@ -226,18 +228,68 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       r.onchange = remember;
     });
     if (document.getElementById("pg-variant")) $("pg-variant").onchange = remember;
+    // Each board a variant lays is shown on its choice (the settings window's buttons take `data-icon`).
+    if (config.variantArt)
+      for (const option of host.querySelectorAll<HTMLOptionElement>("#pg-variant option")) {
+        const art = boardPicture(option.value);
+        if (art) option.dataset.icon = art;
+      }
     $("pg-level").onchange = remember;
     $("pg-options").hidden = $("pg-level-field").hidden = solo || preferences.mode !== "ai";
+    // A game with stages offers its cards here too, so the window a game is entered through chooses the stage as
+    // well; the start keeps the one laid. A game that has nothing else to set (`stagesFirst`: the puzzles for one)
+    // is entered through its stage window itself (the user asked to have the two windows made one): the cards as
+    // that window shows them, and the start where its 계속하기 stood.
+    const merged = !!config.stages && !!config.stagesFirst;
     $("pg-start").onclick = () => {
       stageNo = 1;
-      start();
+      start(merged ? false : undefined);
     };
-    // A game whose stage is chosen from 레벨 선택 offers its cards here too, so the window a game is entered
-    // through chooses the stage as well; the start keeps the one laid.
-    if (config.stages && !config.stagesFirst) {
+    if (config.stages) {
       $("pg-start").insertAdjacentHTML("beforebegin", stageCards());
       bindStages(host, null);
     }
+    if (merged) {
+      host.querySelector(".featured")?.classList.add("stage-entry");
+      host.querySelector(".featured")?.setAttribute("data-entry-note", "하고 싶은 배치를 고르세요. 카드를 누르면 바로 시작합니다.");
+      $("pg-start").dataset.entryAction = "";
+    }
+  }
+  /**
+   * A small picture of the board a variant lays, drawn by the board's own `paint` on its own ground, with the pieces
+   * where they start: the settings window shows it on the variant's button (the user asked to see the maps).
+   */
+  function boardPicture(value: string) {
+    const spec = config.board?.(value),
+      canvas = document.createElement("canvas"),
+      ctx = canvas.getContext("2d");
+    if (!spec || !ctx) return null;
+    const size = 144,
+      unit = size / (spec.half * 2),
+      px = (x: number, z: number): [number, number] => [size / 2 + x * unit, size / 2 + z * unit];
+    canvas.width = canvas.height = size;
+    ctx.fillStyle = spec.theme === "yard" ? "#d2b282" : spec.theme === "wood" ? "#c99a66" : "#18263a";
+    ctx.beginPath();
+    ctx.roundRect(0, 0, size, size, size * 0.12);
+    ctx.fill();
+    ctx.strokeStyle = ctx.fillStyle = spec.theme === "yard" ? "#4a321a" : INK[spec.theme];
+    ctx.lineWidth = unit * (spec.theme === "yard" ? 0.16 : 0.06);
+    ctx.lineCap = ctx.lineJoin = "round";
+    spec.paint(ctx, px, unit);
+    const owners = game.owners(game.create(value)),
+      colors = spec.colors ?? config.colorsOf?.(value) ?? config.colors ?? ["#16181a", "#efe7d6"];
+    spec.points.forEach((p, i) => {
+      const owner = owners[i];
+      if (owner !== 0 && owner !== 1) return;
+      ctx.beginPath();
+      ctx.arc(...px(p.x, p.z), Math.max(spec.radius * unit, 4), 0, Math.PI * 2);
+      ctx.fillStyle = colors[owner];
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+      ctx.stroke();
+    });
+    return `<img class="board-map" src="${canvas.toDataURL("image/png")}" alt="">`;
   }
   /** In the new-game window of a game with stages: a card with a picture for each, and a press on one starts it. */
   function stagePicker(host: HTMLElement) {
