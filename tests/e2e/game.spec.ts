@@ -73,7 +73,6 @@ test("AI responds and settings persist", async ({ page }, info) => {
   await page.goto("/");
   await selectGame(page);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
-  await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   const canvas = page.locator("canvas");
   await canvas.focus();
@@ -118,7 +117,6 @@ test("five difficulties, white opening, next-game policy and persisted preferenc
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await expect(page.getByLabel("AI 난이도")).toHaveValue("hard");
   await expect(page.getByLabel("플레이어 색상")).toHaveValue("white");
-  await selectGame(page);
   const openingWorker = page.waitForEvent("worker", { timeout: 15000 });
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await openingWorker;
@@ -274,7 +272,11 @@ test("AI selection remains usable when storage writes are blocked", async ({
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.getByLabel("AI 난이도").selectOption("expert");
   await page.getByLabel("플레이어 색상").selectOption("white");
+  // Leaving the window and coming back keeps the computer's level and colour (in memory, storage being blocked);
+  // the window opens on the mode played last, so the computer is chosen again.
   await selectGame(page);
+  await page.getByLabel("컴퓨터 대전", { exact: true }).check();
+  await expect(page.getByLabel("AI 난이도")).toHaveValue("expert");
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 전문가",

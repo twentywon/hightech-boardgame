@@ -167,18 +167,19 @@ export function entryDialog(title: string, label: string, content: Node[], back:
   host.append(...content);
   document.body.append(d);
   buttonize(host);
-  host.querySelectorAll<HTMLButtonElement>("button.primary").forEach((button) => {
-    const begin = button.onclick;
-    button.onclick = (event) => {
-      // The choices are read from the form, so it must outlive the handler; a game that asks its stage next has
-      // already put its own window in place of this one.
-      begin?.call(button, event);
-      if (d.isConnected) {
-        d.close();
-        d.remove();
-      }
-    };
-  });
+  // The start (any primary button, also one a setup draws anew, as the tour's form when the number of people
+  // changes) closes the window before its own handler runs: a table that starts under an open window holds its
+  // buttons and its computer, as it does under any window. The window stays in the page while the handler runs,
+  // for the choices are read from its form; a game that asks its stage next has already put its own in its place.
+  host.addEventListener(
+    "click",
+    (event) => {
+      if (!(event.target instanceof Element) || !event.target.closest("button.primary") || !d.open) return;
+      d.close();
+      setTimeout(() => d.isConnected && !d.open && d.remove());
+    },
+    true,
+  );
   const leave = () => {
     if (!d.isConnected) return;
     d.close();

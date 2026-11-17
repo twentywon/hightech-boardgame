@@ -416,10 +416,13 @@ function enter(id: Exclude<GameSelection, null>, category: string, people: strin
   const panel = document.getElementById("game-detail"),
     game = games.find((g) => g.en.toLowerCase().replaceAll(" ", "-") === id);
   if (!panel || !game) return;
-  const content = [...panel.childNodes],
-    shot = thumb(id);
+  const shot = thumb(id);
+  // The panel itself goes into the window, so that a setup that draws itself again (the tour's names, a game whose
+  // choices change its form) draws there; the window's body is now the region its name was given to.
+  panel.removeAttribute("role");
+  panel.removeAttribute("aria-label");
   app.innerHTML = `<main class="entry-backdrop" aria-hidden="true">${shot ? `<img src="${shot}" alt="">` : ""}</main>`;
-  entryDialog(game.name, `${game.name} 대국 설정`, content, leave);
+  entryDialog(game.name, `${game.name} 대국 설정`, [panel], leave);
 }
 function leave() {
   const id = document.documentElement.dataset.game;

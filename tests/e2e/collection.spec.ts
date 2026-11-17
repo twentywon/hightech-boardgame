@@ -46,7 +46,8 @@ test("a tile enters its game at once and asks its settings in a window, without 
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.locator(".game-stage button.primary").click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
-  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(page.locator("canvas")).toHaveAttribute("aria-label", "3D 오목판", { timeout: 20000 });
+  await expect(page.locator(".player").filter({ hasText: "컴퓨터" })).toHaveCount(1);
   expect(page.url()).toBe(url);
   expect(navigations).toBe(1);
   expect(errors).toEqual([]);

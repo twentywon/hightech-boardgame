@@ -109,10 +109,13 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "pg-variant" && game === "dots-and-boxes" && Number(value) > 1) return { svg: dots(Number(value)), only: false };
   return null;
 }
-/** The mode buttons: one person alone, two (or more) at one screen, a person against the computer. */
+/**
+ * The mode buttons: one person alone, two (or more) at one screen, a person against the computer. No letters as text:
+ * the picture sits inside the radio's label, whose words find the radio ("VS" as text read "VS컴퓨터 대전").
+ */
 export function modeIcon(value: string, label: string): string | null {
   if (value === "solo") return svg(48, 26, person(24, 15));
   if (value === "local") return /2[–-]4/.test(label) ? people(3) : people(2);
-  if (value === "ai") return svg(48, 26, person(16, 15) + `<text x="24.5" y="17" font-size="8" font-weight="800" text-anchor="middle" fill="currentColor" font-family="Inter, sans-serif">VS</text>` + computer(34, 14));
+  if (value === "ai") return svg(48, 26, person(16, 15) + `<path d="M19.6 11.6 L21.6 17 L23.6 11.6 M29 12.4 C28.4 11.5 25.6 11.4 25.5 12.9 C25.4 14.3 29 14.1 28.9 15.7 C28.8 17.3 25.8 17.2 25.2 16.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>` + computer(34, 14));
   return null;
 }
