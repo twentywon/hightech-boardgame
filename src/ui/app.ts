@@ -62,6 +62,7 @@ import { curlingConfig } from "../games/curling/config";
 import { starBattleConfig } from "../games/starbattle/config";
 import { pipesConfig } from "../games/pipes/config";
 import { bridgesConfig } from "../games/bridges/config";
+import { parkingConfig } from "../games/parking/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -205,6 +206,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "star-battle": { config: starBattleConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   pipes: { config: pipesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   bridges: { config: bridgesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "parking-escape": { config: parkingConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -363,6 +365,7 @@ type GameSelection =
   | "star-battle"
   | "pipes"
   | "bridges"
+  | "parking-escape"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"

@@ -496,6 +496,14 @@ export const games = [
     available: true,
   },
   {
+    name: "주차장 탈출",
+    en: "PARKING ESCAPE",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "🚗",
+    available: true,
+  },
+  {
     name: "지뢰찾기",
     en: "MINESWEEPER",
     category: "퍼즐게임",

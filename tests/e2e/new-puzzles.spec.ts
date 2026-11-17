@@ -6,6 +6,8 @@ import * as pipeRules from "../../src/games/pipes/rules";
 import { TILE_TOP, cellAt as pipeCell, pipesSubject } from "../../src/games/pipes/view";
 import * as bridgeRules from "../../src/games/bridges/rules";
 import { ISLAND_TOP, bridgesSubject, cellAt as islandCell } from "../../src/games/bridges/view";
+import * as parkingRules from "../../src/games/parking/rules";
+import { GRAB_HEIGHT, cellAt as lotCell, parkingSubject } from "../../src/games/parking/view";
 
 const settled = (page: Page) => expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 30000 });
 const moves = (page: Page) => page.locator("#move-count");
@@ -29,14 +31,14 @@ async function seeded(page: Page, start: number) {
   };
 }
 /** Enters a puzzle for one through its stage window and sits down at the first stage by its card. */
-async function sit(page: Page, name: string) {
+async function sit(page: Page, name: string, stages = 5) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, name);
   const dialog = page.getByRole("dialog");
   // The window it is entered through is its stage window, with its 게임 방법.
-  await expect(dialog.locator(".stage-card")).toHaveCount(5);
+  await expect(dialog.locator(".stage-card")).toHaveCount(stages);
   await expect(dialog.getByRole("button", { name: "게임 방법" })).toBeVisible();
   await dialog.locator(".stage-card").first().click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
@@ -44,8 +46,8 @@ async function sit(page: Page, name: string) {
   await settled(page);
   return errors;
 }
-/** Taps the point (x, y, z) as the view's camera shows it. */
-async function tap(page: Page, subject: Subject & { tilt: number }, x: number, y: number, z: number, mobile: boolean) {
+/** Where the point (x, y, z) is on the screen, as the view's camera shows it. */
+async function screen(page: Page, subject: Subject & { tilt: number }, x: number, y: number, z: number) {
   const box = (await page.locator("canvas").boundingBox())!,
     aspect = box.width / box.height,
     d = cameraDistance(aspect, false, subject),
@@ -53,11 +55,14 @@ async function tap(page: Page, subject: Subject & { tilt: number }, x: number, y
   camera.position.set(0, Math.sin(subject.tilt) * d, Math.cos(subject.tilt) * d);
   camera.lookAt(0, subject.lookY, 0);
   camera.updateMatrixWorld();
-  const v = new Vector3(x, y, z).project(camera),
-    px = box.x + ((v.x + 1) * box.width) / 2,
-    py = box.y + ((1 - v.y) * box.height) / 2;
-  if (mobile) await page.touchscreen.tap(px, py);
-  else await page.mouse.click(px, py);
+  const v = new Vector3(x, y, z).project(camera);
+  return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+}
+/** Taps the point (x, y, z) as the view's camera shows it. */
+async function tap(page: Page, subject: Subject & { tilt: number }, x: number, y: number, z: number, mobile: boolean) {
+  const p = await screen(page, subject, x, y, z);
+  if (mobile) await page.touchscreen.tap(p.x, p.y);
+  else await page.mouse.click(p.x, p.y);
 }
 
 test("pipes: each piece is turned by taps until the water reaches every house", async ({ page }, info) => {
@@ -108,6 +113,41 @@ test("bridges: an island and then its neighbour lay a bridge, and every number i
       await settled(page);
     }
   expect(laid).toBeGreaterThan(0);
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("parking escape: each car is dragged along its line, and the red car drives out", async ({ page }) => {
+  const random = await seeded(page, 72),
+    errors = await sit(page, "주차장 탈출", 4);
+  // A lot was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
+  parkingRules.createGame(1, random);
+  let state = parkingRules.createGame(1, random);
+  const box = (await page.locator("canvas").boundingBox())!,
+    subject = parkingSubject(box.width / box.height),
+    plan = parkingRules.solve(state)!;
+  expect(plan.length).toBeGreaterThan(0);
+  // A bare tap on a car moves nothing.
+  const first = lotCell(plan[0].from);
+  const still = await screen(page, subject, first.x, GRAB_HEIGHT, first.z);
+  await page.mouse.click(still.x, still.y);
+  await page.waitForTimeout(400);
+  await expect(moves(page)).toHaveText("0수");
+  for (const [n, move] of plan.entries()) {
+    const from = lotCell(move.from),
+      to = lotCell(move.to),
+      a = await screen(page, subject, from.x, GRAB_HEIGHT, from.z),
+      b = await screen(page, subject, to.x, GRAB_HEIGHT, to.z);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+    await page.mouse.move(b.x, b.y, { steps: 4 });
+    await page.mouse.up();
+    await expect(moves(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await settled(page);
+    state = parkingRules.play(state, move)!;
+  }
+  expect(state.winner).toBe(0);
   await expect(page.locator("#turn")).toContainText("성공!");
   expect(errors).toEqual([]);
 });

@@ -263,6 +263,10 @@ const play = {
   bridges: async () => {
     await stage(1);
   },
+  // A lot of the second stage as it is laid, the red car hemmed in.
+  "parking-escape": async () => {
+    await stage(1);
+  },
   "star-battle": async () => {
     await stage(2);
     await wait(800);
