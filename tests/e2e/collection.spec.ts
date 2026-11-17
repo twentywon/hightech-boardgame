@@ -2,10 +2,11 @@ import { test, expect } from "@playwright/test";
 import { selectGame } from "./library";
 import { games } from "../../src/core/catalog";
 
-test("a tile enters its game at once and asks its settings in a window over the table, without navigation", async ({ page }, info) => {
-  const errors: string[] = [];
+test("a tile enters its game at once and asks its settings in a window, without navigation or a game begun", async ({ page }, info) => {
+  const errors: string[] = [], workers: string[] = [];
   let navigations = 0;
   page.on("pageerror", (e) => errors.push(e.message));
+  page.on("worker", (w) => workers.push(w.url()));
   page.on("framenavigated", (frame) => { if (frame === page.mainFrame()) navigations++; });
   await page.goto("/");
   const url = page.url();
@@ -19,21 +20,29 @@ test("a tile enters its game at once and asks its settings in a window over the 
 
   await selectGame(page, "리버시");
   const window = page.locator("dialog[open]");
-  await expect(window.getByRole("heading", { name: "게임 설정" })).toBeVisible();
+  await expect(window.getByRole("heading", { name: "리버시", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "리버시 대국 설정" })).toBeVisible();
   await expect(window.getByRole("button", { name: "테이블에 앉기" })).toHaveCount(1);
   await expect(window.getByLabel("로컬 2인")).toBeChecked();
   await window.getByLabel("컴퓨터 대전", { exact: true }).check();
-  await expect(window.getByLabel("AI 난이도")).toHaveValue("normal");
+  // The lists are chosen with buttons (the user asked); the list itself follows them, unseen.
+  await window.getByRole("button", { name: "쉬움", exact: true }).click();
+  await expect(window.getByLabel("AI 난이도")).toHaveValue("easy");
+  await expect(window.getByRole("button", { name: "쉬움", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await window.getByLabel("AI 난이도").selectOption("normal");
+  await expect(window.getByRole("button", { name: "보통", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(window.getByLabel("플레이어 색상")).toHaveValue("black");
+  // Nothing is played behind the window: the page shows the game's picture.
+  await expect(page.locator("canvas")).toHaveCount(0);
+  await expect(page.locator("main.entry-backdrop")).toHaveCount(1);
   await page.screenshot({ path: `test-results/${info.project.name}-entry-reversi.png` });
-  // Closed, the window leaves the game already laid on the table, as it was set up.
-  await window.getByRole("button", { name: "이대로 하기" }).click();
-  await expect(page.locator("dialog[open]")).toHaveCount(0);
-  await expect(page.locator("canvas")).toHaveCount(1);
+  // Back from the window is back to the collection, at the game's tile.
+  await window.getByRole("button", { name: "← 컬렉션으로" }).click();
+  await expect(page.locator("main.library")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "리버시 살펴보기" })).toBeFocused();
 
-  // Another game: the window's start sits down with what was chosen in it.
+  // Another game: its start sits down with what was chosen in the window.
   await selectGame(page);
-  await expect(page.locator("dialog[open] .featured")).toHaveCount(1);
   await page.getByLabel("컴퓨터 대전", { exact: true }).check();
   await page.locator(".game-stage button.primary").click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
@@ -50,11 +59,14 @@ test("collection keeps its filters, supports keyboard/touch, and leaving a table
   await gomoku.focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("dialog[open]")).toBeVisible();
-  // Escape closes the window; the table's own back comes back to the collection, at the tile.
+  // Escape closes the window and comes back to the collection, at the tile; so does the browser's back.
   await page.keyboard.press("Escape");
   await expect(page.locator("dialog[open]")).toHaveCount(0);
-  await page.locator("#back").click();
   await expect(gomoku).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("dialog[open]")).toBeVisible();
+  await page.goBack();
+  await expect(page.locator("main.library")).toHaveCount(1);
   const reversi = page.getByRole("button", { name: "리버시 살펴보기" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   // The games lie in a grid, row under row, not in one line to be scrolled sideways.
@@ -83,7 +95,6 @@ test("collection keeps its filters, supports keyboard/touch, and leaving a table
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
   } else await reversi.click();
   await expect(page.locator("dialog[open]")).toBeVisible();
-  await expect(page.locator("main.game-layout")).toHaveCount(1);
   await page.reload();
   await expect(page.locator(".featured")).toHaveCount(0);
   await expect(page.locator("main.library")).toHaveCount(1);

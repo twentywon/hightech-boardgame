@@ -232,34 +232,38 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       stageNo = 1;
       start();
     };
+    // A game whose stage is chosen from 레벨 선택 offers its cards here too, so the window a game is entered
+    // through chooses the stage as well; the start keeps the one laid.
+    if (config.stages && !config.stagesFirst) {
+      $("pg-start").insertAdjacentHTML("beforebegin", stageCards());
+      bindStages(host, null);
+    }
   }
   /** In the new-game window of a game with stages: a card with a picture for each, and a press on one starts it. */
   function stagePicker(host: HTMLElement) {
     const dialog = host.closest("dialog");
     if (dialog) {
       dialog.querySelector("h2")!.textContent = config.newGameLabel ?? "스테이지 선택";
-      dialog.querySelector(".setup-note")!.textContent = dialog.classList.contains("entry")
-        ? "하고 싶은 것을 누르면 바로 시작합니다. 닫으면 지금 그대로 합니다."
-        : "하고 싶은 배치를 고르세요. 하던 게임은 끝내고 새로 시작합니다.";
+      dialog.querySelector(".setup-note")!.textContent = "하고 싶은 배치를 고르세요. 하던 게임은 끝내고 새로 시작합니다.";
     }
-    // Entered from the collection, the window also offers to sit down with the stage as it is laid.
-    const entry = !!dialog?.classList.contains("entry");
-    host.innerHTML = `<div class="stage-grid">${config.stages!.map((stage) => `<button class="stage-card${stage.value === variant ? " current" : ""}" data-stage="${stage.value}"><span class="stage-art" aria-hidden="true">${stage.art}</span><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div>${entry ? `<button class="primary stage-start">${config.startWord} <span>↗</span></button>` : ""}`;
-    const sit = host.querySelector<HTMLButtonElement>(".stage-start");
-    if (sit)
-      sit.onclick = () => {
-        dialog?.close();
-        dialog?.remove();
-        stageNo = 1;
-        start();
-      };
+    host.innerHTML = stageCards();
+    bindStages(host, dialog);
+  }
+  /** The stage cards: a picture, a name and a note for each, the stage laid now marked. */
+  function stageCards() {
+    return `<div class="stage-grid">${config.stages!.map((stage) => `<button class="stage-card${stage.value === preferences.variant ? " current" : ""}" data-stage="${stage.value}"><span class="stage-art" aria-hidden="true">${stage.art}</span><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div>`;
+  }
+  /** A press on a stage card sits down at that stage, closing the window it is in. */
+  function bindStages(host: HTMLElement, dialog: HTMLDialogElement | null) {
     host.querySelectorAll<HTMLButtonElement>(".stage-card").forEach(
       (card) =>
         (card.onclick = () => {
           preferences = { ...preferences, variant: card.dataset.stage! };
           nav.remember({ ...preferences });
-          dialog?.close();
-          dialog?.remove();
+          // Drawn into the setup, the cards are carried into the entry window later: they close whichever holds them.
+          const holder = dialog ?? card.closest("dialog");
+          holder?.close();
+          holder?.remove();
           stageNo = 1;
           start(false);
         }),

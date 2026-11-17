@@ -2854,6 +2854,31 @@ html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sideba
   html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .ah-row em { font-size:11px; }
   html[data-game="air-hockey"] .game-layout.hud.panel-scoreboard aside.game-sidebar .ah-set { top:4px;font-size:9px; }
 }
-/* Entered from the collection, a stage window also offers to sit down with the stage as it is laid. */
-dialog .stage-start { display:flex;justify-content:center;align-items:center;gap:6px;width:100%;margin-top:16px; }
+/* A game is entered through a window over its own table (its picture), named for the game, with its short intro. */
+main.entry-backdrop { position:fixed;inset:0;background:#1a1714;overflow:hidden; }
+main.entry-backdrop img { width:100%;height:100%;object-fit:cover;filter:blur(3px) brightness(.8);transform:scale(1.04); }
+dialog.setup-dialog.entry .feature-copy > p { display:block;margin:2px 0 4px;font-size:13.5px;line-height:1.6;color:var(--ink-soft, #5c5a55); }
+/* In the entry window the stage cards are small, five to a row, so that the start stays in view below them. */
+dialog.setup-dialog.entry .feature-copy .stage-grid { margin-top:14px;grid-template-columns:repeat(auto-fill, minmax(92px, 1fr));gap:6px; }
+dialog.setup-dialog.entry .feature-copy .stage-card { padding:6px 4px 6px;border-radius:12px; }
+dialog.setup-dialog.entry .feature-copy .stage-art { width:min(100%, 64px); }
+dialog.setup-dialog.entry .feature-copy .stage-card b { margin-top:2px;font-size:13px; }
+dialog.setup-dialog.entry .feature-copy .stage-card small { display:none; }
+/* The settings window chooses with buttons, as the puzzles' stage panels do (the user asked): the mode and a rule
+   to switch are pills over their real, full-size inputs; a list is a row of buttons over its unseen select. */
+dialog.setup-dialog .mode-select { display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:6px;margin:14px 0 4px;padding:0;border:0;background:none;font-size:14px; }
+dialog.setup-dialog .mode-select label, dialog.setup-dialog .rule-option { position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fffdf7;color:var(--ink, #16181a);font-weight:600;text-align:center;cursor:pointer; }
+dialog.setup-dialog .mode-select input, dialog.setup-dialog .rule-option input { position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer; }
+dialog.setup-dialog .mode-select label:has(input:checked), dialog.setup-dialog .rule-option:has(input:checked) { background:#16181a;border-color:#16181a;color:#fff; }
+dialog.setup-dialog .mode-select label:has(input:focus-visible), dialog.setup-dialog .rule-option:has(input:focus-visible) { outline:3px solid var(--brass, #b8892f);outline-offset:2px; }
+dialog.setup-dialog .rule-option { flex-direction:column;gap:2px;margin:12px 0 4px; }
+dialog.setup-dialog .rule-option small { flex-basis:auto;font-weight:400;color:inherit;opacity:.72; }
+dialog.setup-dialog .ai-options { grid-template-columns:1fr;max-width:none;gap:12px;margin:14px 0 4px; }
+dialog.setup-dialog .ai-options label, dialog.setup-dialog label:has(> .choice-group) { position:relative;display:grid;gap:6px;font-size:12px;color:var(--ink-soft, #5c5a55); }
+dialog.setup-dialog select.choice-source { position:absolute !important;left:0;top:0;width:1px !important;height:1px !important;min-height:0 !important;padding:0 !important;border:0 !important;opacity:0;overflow:hidden;pointer-events:none; }
+dialog.setup-dialog .choice-group { display:grid;grid-template-columns:repeat(auto-fit, minmax(84px, 1fr));gap:6px; }
+dialog.setup-dialog .choice-group[hidden] { display:none; }
+dialog.setup-dialog .choice { min-height:40px;padding:6px 8px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-size:13.5px;font-weight:600;word-break:keep-all;cursor:pointer; }
+dialog.setup-dialog .choice[aria-pressed="true"] { background:#16181a;border-color:#16181a;color:#fff; }
+dialog.setup-dialog .choice:disabled { opacity:.4;cursor:default; }
 

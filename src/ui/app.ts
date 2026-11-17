@@ -77,7 +77,7 @@ import { pokerConfig } from "../games/poker/skin";
 import { mountJanggi, type JanggiController, type JanggiOptions } from "./janggi";
 import { mountReversi, type ReversiController } from "./reversi";
 import { getOptions as getReversiOptions, setOptions as setReversiOptions } from "../games/reversi/storage";
-import { asEntry, modal, setupDialog } from "./dialog";
+import { entryDialog, modal, setupDialog } from "./dialog";
 import { games } from "../core/catalog";
 import {
   getSettings,
@@ -407,31 +407,19 @@ function askNewGame() {
  * the screen and in focus (the user asked: not the top of the page).
  */
 /**
- * A tile pressed enters its game at once (the user asked): the setup is laid where the panel used to be, its start
- * pressed with the settings as they stand, and then the game's own setup window (what 새 게임 over the table opens)
- * comes up over the table, unless the game has just asked for its stage in a window of its own.
+ * A tile pressed enters its game at once (the user asked): the setup is laid where the panel used to be (unseen),
+ * the page behind becomes the game's own table (its picture), and the setup is carried into the entry window over
+ * it. Nothing is played until its start is pressed, so a game begins once, with what was chosen.
  */
 function enter(id: Exclude<GameSelection, null>, category: string, people: string) {
   menu(id, category, people);
-  const begin = document.querySelector<HTMLButtonElement>("#game-detail button.primary");
-  if (!begin) return;
-  // The window is the game's setup, named for readers as the collection's panel was.
-  const name = games.find((g) => g.en.toLowerCase().replaceAll(" ", "-") === id)?.name ?? "",
-    label = () => {
-      const host = document.querySelector<HTMLElement>("dialog.entry[open] .setup-host");
-      host?.setAttribute("role", "region");
-      host?.setAttribute("aria-label", `${name} 대국 설정`);
-    };
-  asEntry(() => begin.click());
-  const ask = (tries = 0) => {
-    if (document.querySelector("dialog[open]")) return label();
-    const restart = document.querySelector<HTMLButtonElement>("main.game-layout #restart");
-    if (restart) {
-      asEntry(() => restart.click());
-      label();
-    } else if (tries < 30) requestAnimationFrame(() => ask(tries + 1));
-  };
-  ask();
+  const panel = document.getElementById("game-detail"),
+    game = games.find((g) => g.en.toLowerCase().replaceAll(" ", "-") === id);
+  if (!panel || !game) return;
+  const content = [...panel.childNodes],
+    shot = thumb(id);
+  app.innerHTML = `<main class="entry-backdrop" aria-hidden="true">${shot ? `<img src="${shot}" alt="">` : ""}</main>`;
+  entryDialog(game.name, `${game.name} 대국 설정`, content, leave);
 }
 function leave() {
   const id = document.documentElement.dataset.game;
@@ -454,8 +442,8 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
       const id = g.en.toLowerCase().replaceAll(" ", "-"), expanded = selected === id;
       const out = (category !== "전체" && category !== g.category) || (people !== "전체" && people !== g.players);
       return `<article class="game-entry ${expanded ? "expanded" : ""}" data-game="${id}" data-category="${g.category}" data-players="${g.players}" ${out ? "hidden" : ""}><button class="game-card" id="select-game-${i}" ${g.available ? `aria-label="${g.name} 살펴보기" aria-haspopup="dialog"` : `disabled aria-label="${g.name} 개발 예정"`}><span class="card-index" aria-hidden="true">${String(i + 1).padStart(2, "0")}</span><span class="game-icon icon-${i}${thumb(id) ? " shot" : ""}" aria-hidden="true">${thumb(id) ? `<img src="${thumb(id)}" alt="" loading="lazy">` : g.icon}</span><span class="card-copy"><span class="card-title">${g.name}</span><small>${g.en}</small></span><span class="card-category">${g.available ? `${g.category} · ${g.players}` : "개발 예정"}</span></button></article>${
-        // The chosen game's setup is laid in a panel that is never shown: the game is entered at once from it, and the
-        // same setup comes up in a window over the table (`enter`).
+        // The chosen game's setup is laid in a panel that is never shown: it is carried into the window the game is
+        // entered through (`enter`).
         expanded ? `<div class="game-stage" data-category="${g.category}" data-players="${g.players}" hidden><div id="game-detail" class="game-detail" role="region" aria-label="${g.name} 대국 설정">${selected === "gomoku" ? gomokuSetup() : ""}</div></div>` : ""
       }`;
     }).join("")}</div><footer><span>World Table Games</span><span>설치 없이, 함께 즐기는 세계의 게임</span></footer></main>`;

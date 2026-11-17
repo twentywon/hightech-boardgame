@@ -40,7 +40,8 @@ document.getElementById("rotate-go")?.addEventListener("click", async () => {
 
 // The browser's (or the phone's) back button leaves a table for the collection instead of leaving the page.
 // Sitting down adds one history entry; going back from it presses the table's own ← 컬렉션.
-const atTable = () => !!root.querySelector(":scope > main.game-layout");
+// The window a game is entered through counts as the table: its page behind is the game's own.
+const atTable = () => !!root.querySelector(":scope > main.game-layout, :scope > main.entry-backdrop");
 // The page puts the collection where it belongs itself (at the game just left): the browser must not scroll it back
 // to where the page stood when the table's history entry was made.
 try {
@@ -65,6 +66,11 @@ new MutationObserver(() => {
 window.addEventListener("popstate", () => {
   if (!atTable() || history.state?.table) return;
   const open = document.querySelector<HTMLDialogElement>("dialog[open]");
+  // Back from the window a game is entered through is back to the collection.
+  if (open?.classList.contains("entry")) {
+    open.querySelector<HTMLButtonElement>("#setup-cancel")?.click();
+    return;
+  }
   if (open) {
     // A window over the table is closed first; the table stays.
     open.close();
