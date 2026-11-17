@@ -16,7 +16,7 @@ export const dartsConfig: PointConfig<State> = {
   ponder: () => 250,
   name: "다트",
   english: "Darts",
-  number: "NO. 76 — THREE IN THE BOARD",
+  number: "NO. 77 — THREE IN THE BOARD",
   intro: `<p>펍 벽에 걸린 다트판 앞, 던지는 선에 섭니다.<br>화면을 위로 밀어 다트를 던지세요. 501은 남은 점수를 정확히 0으로, 카운트업은 ${ROUNDS}라운드 동안 더 많이 넣으면 이깁니다.</p>`,
   meta: `2인 · 한 차례 다트 ${DARTS}개 · 501 더블 아웃 · 카운트업 ${ROUNDS}라운드`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>THREE IN THE BOARD</span>`,

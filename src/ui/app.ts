@@ -48,6 +48,7 @@ import { snakeConfig } from "../games/snake/config";
 import { whackConfig } from "../games/whack/config";
 import { tictactoeConfig } from "../games/tictactoe/config";
 import { airHockeyConfig } from "../games/airhockey/config";
+import { tableTennisConfig } from "../games/pingpong/config";
 import { basketballConfig } from "../games/basketball/config";
 import { clawConfig } from "../games/claw/config";
 import { foxGeeseConfig } from "../games/foxgeese/config";
@@ -67,9 +68,15 @@ import { parkingConfig } from "../games/parking/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
+import { slideConfig } from "../games/slide/config";
+import { dartsConfig } from "../games/darts/config";
+import { bowlingConfig } from "../games/bowling/config";
 import type { PointConfig } from "./point-game";
 import { thumb } from "./thumbs";
 import { mountSpider, type SpiderController, type SpiderOptions } from "./spider";
+import { mountPatience, type PatienceController } from "./patience";
+import { klondikeConfig, type KlondikeOptions } from "../games/klondike/config";
+import { freecellConfig, type FreeCellOptions } from "../games/freecell/config";
 import { mountTour, type TourController, type TourOptions } from "./tour";
 import {
   mountBettingGame,
@@ -78,6 +85,7 @@ import {
 } from "./betting-game";
 import { seotdaConfig } from "../games/seotda/skin";
 import { pokerConfig } from "../games/poker/skin";
+import { holdemConfig } from "../games/holdem/skin";
 import { mountJanggi, type JanggiController, type JanggiOptions } from "./janggi";
 import { mountReversi, type ReversiController } from "./reversi";
 import { getOptions as getReversiOptions, setOptions as setReversiOptions } from "../games/reversi/storage";
@@ -137,6 +145,7 @@ let janggiOptions: JanggiOptions = {
 const bettingOptions: Record<string, BettingOptions> = {
   seotda: { opponents: 2, variant: "two" },
   "seven-poker": { opponents: 3 },
+  "texas-holdem": { opponents: 3 },
 };
 // Kept for this page only, like the chess preferences.
 let yachtOptions: YachtOptions = { mode: "solo" };
@@ -145,6 +154,10 @@ let yutOptions: YutOptions = { mode: "ai", players: 2, names: [] };
 let points: PointController | null = null;
 let spider: SpiderController | null = null;
 let spiderOptions: SpiderOptions = { suits: "1" };
+/** Klondike and FreeCell share the patience screen; what was last chosen for each is kept for this page only. */
+let patience: PatienceController | null = null;
+let klondikeOptions: KlondikeOptions = { draw: "1" };
+let freecellOptions: FreeCellOptions = { deal: "random", number: "1" };
 let tour: TourController | null = null;
 let tourOptions: TourOptions = { opponents: 1, humans: 1, names: [] };
 /** The games that share the point-board screen, and what was last chosen for each. */
@@ -193,6 +206,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "whack-a-mole": { config: whackConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "tic-tac-toe": { config: tictactoeConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   "air-hockey": { config: airHockeyConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "table-tennis": { config: tableTennisConfig, options: { mode: "ai", variant: "3", level: "normal" } },
   basketball: { config: basketballConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "claw-machine": { config: clawConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fox-and-geese": { config: foxGeeseConfig, options: { mode: "ai", variant: "geese", level: "normal" } },
@@ -213,6 +227,9 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   go: { config: goConfig, options: { mode: "ai", variant: "19", level: "normal" } },
+  "sliding-puzzle": { config: slideConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  darts: { config: dartsConfig, options: { mode: "ai", variant: "501", level: "normal" } },
+  bowling: { config: bowlingConfig, options: { mode: "ai", variant: "duel", level: "normal" } },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
@@ -280,6 +297,8 @@ function clear() {
   points = null;
   spider?.dispose();
   spider = null;
+  patience?.dispose();
+  patience = null;
   tour?.dispose();
   tour = null;
   blackjack?.dispose();
@@ -307,6 +326,7 @@ type GameSelection =
   | "yacht-dice"
   | "seotda"
   | "seven-poker"
+  | "texas-holdem"
   | "janggi"
   | "yut-nori"
   | "hexa-germ-war"
@@ -318,6 +338,8 @@ type GameSelection =
   | "mancala"
   | "snakes-and-ladders"
   | "spider"
+  | "klondike"
+  | "freecell"
   | "world-tour"
   | "battleship"
   | "four-in-a-row"
@@ -354,6 +376,7 @@ type GameSelection =
   | "whack-a-mole"
   | "tic-tac-toe"
   | "air-hockey"
+  | "table-tennis"
   | "basketball"
   | "claw-machine"
   | "fox-and-geese"
@@ -373,6 +396,9 @@ type GameSelection =
   | "fruit-merge"
   | "meat-grill"
   | "go"
+  | "sliding-puzzle"
+  | "darts"
+  | "bowling"
   | null;
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" ${mode === "local" ? "checked" : ""}> 로컬 2인</label><label><input type="radio" name="mode" value="ai" ${mode === "ai" ? "checked" : ""}> 컴퓨터 대전</label></div>${aiForm()}<label class="rule-option"><input type="checkbox" id="allow-33" ${allowDoubleThree ? "checked" : ""}> 삼삼(3-3) 허용<small>끄면 열린 삼을 한 번에 두 개 만드는 수를 둘 수 없습니다.</small></label><button class="primary" id="start">테이블에 앉기 <span>↗</span></button></div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
@@ -435,7 +461,7 @@ function enter(id: Exclude<GameSelection, null>, category: string, people: strin
   panel.removeAttribute("role");
   panel.removeAttribute("aria-label");
   // The window offers the game's own 게임 방법 too (the user asked), over it, and back to it when closed.
-  const rules = id === "gomoku" ? showRules : (reversi ?? chess ?? betting ?? janggi ?? spider ?? tour ?? points ?? yut ?? yacht ?? blackjack)?.rules;
+  const rules = id === "gomoku" ? showRules : (reversi ?? chess ?? betting ?? janggi ?? spider ?? patience ?? tour ?? points ?? yut ?? yacht ?? blackjack)?.rules;
   app.innerHTML = `<main class="entry-backdrop" aria-hidden="true">${shot ? `<img src="${shot}" alt="">` : ""}</main>`;
   entryDialog(game.name, `${game.name} 대국 설정`, [panel], leave, rules);
 }
@@ -510,7 +536,7 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
       remember: (options) => { chessOptions = options; },
     });
   }
-  if (selected === "seotda" || selected === "seven-poker") {
+  if (selected === "seotda" || selected === "seven-poker" || selected === "texas-holdem") {
     const nav = {
       header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: bettingOptions[selected],
@@ -518,7 +544,9 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
     };
     betting = selected === "seotda"
       ? mountBettingGame(app, nav, seotdaConfig)
-      : mountBettingGame(app, nav, pokerConfig);
+      : selected === "texas-holdem"
+        ? mountBettingGame(app, nav, holdemConfig)
+        : mountBettingGame(app, nav, pokerConfig);
   }
   if (selected === "janggi") {
     janggi = mountJanggi(app, {
@@ -534,6 +562,18 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
       remember: (options) => { spiderOptions = options; },
     });
   }
+  if (selected === "klondike")
+    patience = mountPatience(app, {
+      header, bindHeader, back: leave, settings,
+      setupHost: $("game-detail"), preferences: klondikeOptions,
+      remember: (options: KlondikeOptions) => { klondikeOptions = options; },
+    }, klondikeConfig);
+  if (selected === "freecell")
+    patience = mountPatience(app, {
+      header, bindHeader, back: leave, settings,
+      setupHost: $("game-detail"), preferences: freecellOptions,
+      remember: (options: FreeCellOptions) => { freecellOptions = options; },
+    }, freecellConfig);
   if (selected === "world-tour") {
     tour = mountTour(app, {
       header, bindHeader, back: leave, settings,
@@ -893,6 +933,7 @@ function showSettings() {
     yut?.setSettings(settings);
     points?.setSettings(settings);
     spider?.setSettings(settings);
+    patience?.setSettings(settings);
     tour?.setSettings(settings);
     betting?.setSettings(settings);
     janggi?.setSettings(settings);

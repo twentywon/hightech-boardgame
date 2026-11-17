@@ -70,6 +70,8 @@ export interface PointConfig<S> {
   computerOnly?: boolean;
   /** A game for one: no other side, no computer, no level. `winner` 0 is a game won and 1 a game lost; the result is told by `reason` alone. */
   solo?: boolean;
+  /** A variant played alone in a game that is otherwise for two (bowling by oneself): one player is named, and the result is told by `reason` alone. */
+  soloOf?: (variant: string) => boolean;
   /** The table runs in real time: what it reports is never refused for being busy, and nothing is kept for undo. */
   live?: boolean;
   /** A table that runs in real time and can be stopped: a 일시정지 button stands with the tools (and the P key does the same). */
@@ -200,8 +202,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     alone = solo || !!config.computerOnly;
   const computerTurn = (s: S = state) => mode === "ai" && !solo && game.turn(s) === 1 && !over(s);
   const sides = () => config.sidesOf?.(variant) ?? config.sides;
+  /** Played alone: the game is for one, or this variant of it is. */
+  const lone = () => solo || !!config.soloOf?.(variant);
   const who = (player: number) =>
-    solo ? "나" : mode === "local" ? `${sides()[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${sides()[0]})` : `컴퓨터 · ${LEVELS[level].label} (${sides()[1]})`;
+    lone() ? "나" : mode === "local" ? `${sides()[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${sides()[0]})` : `컴퓨터 · ${LEVELS[level].label} (${sides()[1]})`;
   function stop() {
     generation++;
     thinking = false;
@@ -770,7 +774,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     $("pg-result").hidden = !done || !!config.puzzle;
     if (done) {
       const winner = game.winner(s);
-      $("pg-final").textContent = solo
+      $("pg-final").textContent = lone()
         ? game.reason(s)
         : winner === "draw"
           ? `비겼습니다. ${game.reason(s)}`

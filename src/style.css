@@ -2581,15 +2581,15 @@ dialog .result-art + p:not(.result-text)::first-line { font-size:24px;font-weigh
 
 
 /* ── Icons before the words on buttons that take a move back or begin again (every game) ───────── */
-#undo::before, #pg-undo::before, #sp-undo::before,
-#pz-restart::before, #restart::before, #pg-again::before, #yut-again::before, #jg-again::before, #yd-again::before {
+#undo::before, #pg-undo::before, #sp-undo::before, #pc-undo::before,
+#pz-restart::before, #restart::before, #pg-again::before, #yut-again::before, #jg-again::before, #yd-again::before, #pc-again::before {
   content:"";display:inline-block;width:1.05em;height:1.05em;margin-right:0.4em;vertical-align:-0.16em;background:currentColor;
   -webkit-mask:var(--button-icon) center / contain no-repeat;mask:var(--button-icon) center / contain no-repeat;
 }
 /* Take back: an arrow curving round to the left. */
-#undo, #pg-undo, #sp-undo { --button-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14 4 9l5-5'/%3E%3Cpath d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/%3E%3C/svg%3E"); }
+#undo, #pg-undo, #sp-undo, #pc-undo { --button-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14 4 9l5-5'/%3E%3Cpath d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/%3E%3C/svg%3E"); }
 /* Begin again: an arrow going round in a circle. */
-#pz-restart, #restart, #pg-again, #yut-again, #jg-again, #yd-again { --button-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 3-6.7'/%3E%3Cpath d='M3 4v5h5'/%3E%3C/svg%3E"); }
+#pz-restart, #restart, #pg-again, #yut-again, #jg-again, #yd-again, #pc-again { --button-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 3-6.7'/%3E%3Cpath d='M3 4v5h5'/%3E%3C/svg%3E"); }
 
 /* ── Words are never broken in the middle: the status line over the table and the stage cards ───────── */
 .board-area > .board-hint { word-break:keep-all;text-wrap:balance; }
@@ -2916,3 +2916,70 @@ dialog.setup-dialog.entry .dialog-actions [data-entry-action] { width:auto;margi
 dialog.setup-dialog.entry { position:fixed; }
 dialog.setup-dialog.entry .entry-rules { position:absolute;top:22px;right:22px;min-height:34px;padding:6px 14px;border:1.5px solid var(--line, #d9d3c4);border-radius:999px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-size:13px;font-weight:600;cursor:pointer; }
 dialog.setup-dialog.entry .entry-rules:hover, dialog.setup-dialog.entry .entry-rules:focus-visible { border-color:var(--ink, #16181a); }
+/* Table tennis: the score stands on a lit board of its own at the top of the table, as air hockey's does: the game
+   being played over the middle, each side's points in it (mine red, the computer's blue) with a ball by the server's,
+   and beside it every game's score in its column with the games won at the end. No status line over the table. */
+html[data-game="table-tennis"] .game-layout .board-area > .board-hint { display:none !important; }
+html[data-game="table-tennis"] .game-layout.hud .table-layout > aside.game-sidebar { left:50% !important;right:auto !important;top:12px !important;bottom:auto !important;translate:-50% 0;max-width:none !important;gap:0;text-shadow:none; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides { display:flex !important;flex-direction:row !important;justify-content:center;align-items:flex-start;gap:0 40px !important;padding:22px 26px 10px !important;border-radius:12px;background:linear-gradient(#171a21, #07080b) !important;border:3px solid #333944 !important;box-shadow:0 8px 22px #000a, inset 0 0 18px #000d !important;position:relative; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides::after { display:block;content:":";position:absolute;left:50%;top:52px;translate:-50% 0;color:#ffd45a;font:800 40px/1 var(--mono, ui-monospace, monospace);text-shadow:0 0 10px #ffb21a; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li { display:flex !important;flex-direction:column;align-items:center;gap:4px !important;width:auto;position:static;flex:0 0 150px;min-width:0; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li .yut-dot { display:none; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li b { color:#ffd45a;font-size:12px;font-weight:700;letter-spacing:.06em;white-space:nowrap; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li > span[id^="pg-count-"] { display:flex;flex-direction:row;align-items:center;gap:8px;font:inherit !important;text-shadow:none !important;color:inherit !important; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-points { font:800 54px/1 var(--mono, ui-monospace, monospace);min-width:1.2em;text-align:center; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar #pg-side-0 .tt-points { color:#ff4a3a !important;text-shadow:0 0 14px #ff2a1a, 0 0 2px #fff6; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar #pg-side-1 .tt-points { color:#4aa8ff !important;text-shadow:0 0 14px #1a7aff, 0 0 2px #fff6; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar #pg-side-0 .tt-serve { order:-1; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-serve { display:block;width:12px;height:12px;border-radius:50%;background:#2a2e36;box-shadow:inset 0 0 3px #000; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-serve.on { background:radial-gradient(circle at 35% 35%, #ffd7a0, #ff8a1c 60%, #c45a00);box-shadow:0 0 10px #ff9a2a; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-table { position:absolute;left:calc(100% + 10px);top:-3px;bottom:-3px;width:max-content;display:grid !important;align-content:center;gap:3px;padding:6px 14px !important;background:linear-gradient(#171a21, #07080b) !important;border:3px solid #333944 !important;border-radius:12px !important;box-shadow:0 8px 22px #000a, inset 0 0 18px #000d !important; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-row { display:flex !important;align-items:center;gap:4px;font:700 13px/1.25 var(--mono, ui-monospace, monospace); }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-row b { color:#d8d4c8 !important;font:600 12px/1 "Inter", "Noto Sans KR", sans-serif;text-align:left;letter-spacing:0;white-space:nowrap;width:46px;flex:0 0 46px; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-cell { flex:0 0 28px;font-style:normal;text-align:center;color:#6e6a60;padding:2px 0;border-radius:4px; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-head .tt-cell { color:#8a8576;font-size:11px; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-cell.now { background:#1d2733;color:#7fe0ff; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-side-0 .tt-cell.won { color:#ff5a46;text-shadow:0 0 8px #ff2a1a; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-side-1 .tt-cell.won { color:#5ab4ff;text-shadow:0 0 8px #1a7aff; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-row em { flex:0 0 36px;font-style:normal;text-align:center;color:#ffd45a !important;font-size:15px;font-weight:800; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-head em { color:#8a8576 !important;font:600 11px/1 "Inter", "Noto Sans KR", sans-serif; }
+html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-game { position:absolute;inset:6px 0 auto 0;width:auto;text-align:center;translate:none;color:#7fe0ff !important;font:800 11px/1 var(--mono, ui-monospace, monospace);letter-spacing:.14em;text-shadow:0 0 8px #2ab0ff;white-space:nowrap; }
+@media (orientation: landscape) and (max-height: 540px) {
+  html[data-game="table-tennis"] .game-layout.hud .table-layout > aside.game-sidebar { top:6px !important; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides { gap:0 26px !important;padding:15px 16px 6px !important; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li { flex-basis:112px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides::after { font-size:26px;top:34px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-points { font-size:32px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-serve { width:9px;height:9px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides li b { font-size:10px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-table { padding:3px 8px !important;left:calc(100% + 6px); }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-row { font-size:10px;gap:2px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-cell { flex-basis:19px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-row b { font-size:9.5px;width:36px;flex-basis:36px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-row em { font-size:11px;flex-basis:26px; }
+  html[data-game="table-tennis"] .game-layout.hud.panel-scoreboard aside.game-sidebar .tt-game { top:4px;font-size:9px; }
+}
+/* The word over the table while it is my serve (nothing moves on it then). */
+.tt-tip { position:absolute;left:50%;bottom:42%;translate:-50% 0;z-index:3;padding:8px 18px;border-radius:999px;background:rgba(10,18,36,.62);color:#fff;font-weight:800;font-size:clamp(13px, 2vmin, 17px);white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.3); }
+.tt-tip[hidden] { display:none; }
+html[data-capture] .tt-tip { display:none !important; }
+/* Texas hold'em: the table itself shows every seat's chips and the community cards, so the lettering over it keeps
+   only my chips and the pot. The seats' list and the community cards stay in the page for readers and tests. */
+.holdem-art { background: radial-gradient(ellipse at 45% 40%, #2f6496, #12304f); }
+html[data-game="texas-holdem"] .game-layout.hud aside.game-sidebar :is(.bg-seats, .bg-board) { position:absolute !important;width:1px !important;height:1px !important;overflow:hidden !important;clip-path:inset(50%);white-space:nowrap;margin:0 !important;padding:0 !important; }
+/* Patience (Klondike, FreeCell) sits at spider's table (its classes too): the figures and the two buttons stand in
+   the lower left corner, below the stock or the free cells, the buttons one under the other and the figures over
+   them, one under the other, so that both keep clear of the first column. */
+.patience-game .board-area .board-controls { width:112px; }
+.patience-game .board-area .board-controls button { flex-basis:100% !important;max-width:none; }
+html:is([data-game="klondike"], [data-game="freecell"]) .game-layout.hud .table-layout > aside.game-sidebar { bottom:122px; }
+html:is([data-game="klondike"], [data-game="freecell"]) .game-layout.hud aside.game-sidebar .bj-money { flex-direction:column;gap:4px !important; }
+@media (orientation: landscape) and (max-height: 540px) {
+  .patience-game .board-area .board-controls { width:84px; }
+  html:is([data-game="klondike"], [data-game="freecell"]) .game-layout.hud .table-layout > aside.game-sidebar { bottom:100px; }
+  html:is([data-game="klondike"], [data-game="freecell"]) .game-layout.hud aside.game-sidebar .bj-money { gap:0 !important; }
+}
+/* FreeCell's deal number, asked for when a numbered deal is chosen. */
+#fc-number-row[hidden] { display:none !important; }
+#fc-number { width:100%;min-height:42px;padding:0 12px;border:1.5px solid #cfc6b2;border-radius:12px;background:#fff;color:#16181a;font:inherit;font-size:16px;font-variant-numeric:tabular-nums; }
+#fc-number:focus-visible { outline:3px solid var(--brass, #c9a85c);outline-offset:1px; }

@@ -64,6 +64,17 @@ const play = {
       await press("#bg-call");
     }
   },
+  // The deal button is a pixel (a tap on the deck deals), so it is pressed from the page; a few calls bring out
+  // the flop and more.
+  "texas-holdem": async () => {
+    await page.evaluate(() => document.querySelector("#bg-deal")?.click());
+    for (let i = 0; i < 30; i++) {
+      await wait(1000);
+      const flop = (await page.locator("#bg-board .bj-card").count()) >= 3;
+      if (flop && (await page.locator("#board").getAttribute("data-animating")) === "false") break;
+      if (!flop) await press("#bg-call");
+    }
+  },
   "yut-nori": async () => {
     for (let i = 0; i < 12; i++) {
       await press("#yut-throw");
@@ -267,6 +278,17 @@ const play = {
   "parking-escape": async () => {
     await stage(1);
   },
+  // The 4×4 picture (the pavilion by the lake in spring) as it is shuffled.
+  "sliding-puzzle": async () => {
+    await stage(4);
+  },
+  // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
+  darts: async () => {
+    await keys(["Enter"]);
+    await wait(1800);
+    await keys(["ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "Enter"], 60);
+    await wait(1800);
+  },
   // A few stones on the 19×19 board, the computer answering each.
   go: async () => {
     await keys(["ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "Enter"], 60);
@@ -407,6 +429,17 @@ const play = {
     await page.mouse.up();
     // A frame of the capture takes over a second: wait for the strike to be drawn.
     await wait(1500);
+    await page.keyboard.press("p");
+  },
+  // The computer's serve on its way over the net toward me, and the hall paused there.
+  "table-tennis": async () => {
+    const canvas = page.locator("canvas");
+    for (let k = 0; k < 300; k++) {
+      const ball = ((await canvas.getAttribute("data-ball")) ?? "").split(",").map(Number);
+      if ((await canvas.getAttribute("data-phase")) === "rally" && ball[2] > 0.15) break;
+      await wait(30);
+    }
+    await canvas.focus();
     await page.keyboard.press("p");
   },
   // A ball thrown up the lane, and the machine paused while it comes down toward the hoop.

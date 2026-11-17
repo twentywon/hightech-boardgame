@@ -310,6 +310,26 @@ export class Sound {
     this.tone("triangle", 880, 1760, 0.5, 1.3, 0.02);
     this.noise(0.2, 1.4, 0.03, 4000, "bandpass", 900);
   }
+  /** A bowling ball rolling away down its lane for `length` seconds: a low rumble that swells and fades as it goes. */
+  rumble(length = 2.4) {
+    if (!this.enabled || !this.context) return;
+    this.noise(0, length, 0.22, 190, "lowpass", 110);
+    this.noise(0.05, length * 0.8, 0.05, 420, "bandpass", 260);
+    this.tone("sine", 58, 46, 0, length, 0.05);
+  }
+  /** Pins scattered by a ball (`strength` 0 to 1): hard knocks one after another, with their clatter, dying away. */
+  pins(strength = 1) {
+    if (!this.enabled || !this.context) return;
+    const knocks = 3 + Math.round(Math.min(1, strength) * 9);
+    let at = 0;
+    for (let i = 0; i < knocks; i++) {
+      const loud = (0.45 * Math.min(1, strength) + 0.15) * (1 - i / (knocks + 2));
+      if (!this.recording(`knock-${1 + (i % 4)}`, loud, 0.9 + Math.random() * 0.35, at)) this.click(at, loud * 0.4, 0.5);
+      this.noise(at, 0.06, loud * 0.22, 2400 + Math.random() * 1600, "bandpass", 1400);
+      at += (0.02 + Math.random() * 0.05) * (1 + i * 0.2);
+    }
+    this.tone("sine", 160, 70, 0, 0.25, 0.08 * Math.min(1, strength));
+  }
   /** A soft bell: a note with two partials over it, struck and left to ring. */
   private bell(frequency: number, at: number, length: number, volume: number) {
     this.tone("sine", frequency, frequency, at, length, volume);

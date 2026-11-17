@@ -54,7 +54,7 @@ export const slideConfig: PointConfig<State> = {
   tallyHtml: () => ["", ""],
   name: "슬라이딩 퍼즐",
   english: "Sliding Puzzle",
-  number: "NO. 75 — SLIDE THEM HOME",
+  number: "NO. 76 — SLIDE THEM HOME",
   intro: `<p>나무 쟁반 위의 조각들과 빈칸 하나.<br>빈칸 쪽으로 조각을 밀어 숫자를 차례대로, 또는 그림을 제자리로 맞추세요. '15 퍼즐'로 알려진 오래된 퍼즐이고 문제는 매번 새로 섞입니다.</p>`,
   meta: "1인 · 3×3부터 5×5 · 숫자와 그림 · 언제나 풀림",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>SLIDE THEM HOME</span>`,
