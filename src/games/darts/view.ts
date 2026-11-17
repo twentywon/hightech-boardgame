@@ -31,6 +31,38 @@ const FLIGHT = 420,
   SUNK = 0.03,
   /** The darts are drawn a little larger than life, so that they read at a glance across the room. */
   LARGER = 1.3;
+/**
+ * A repeating tile of specks, light ones of `tint` and (when `dark` is given) black ones, each a few pixels across,
+ * covering about `cover` of the tile: the fibres of sisal seen end on.
+ */
+function speckles(ctx: CanvasRenderingContext2D, random: () => number, tint: [number, number, number], light: [number, number], dark: [number, number] | null, cover: number) {
+  const size = 256,
+    tile = document.createElement("canvas");
+  tile.width = tile.height = size;
+  const t = tile.getContext("2d")!,
+    image = t.createImageData(size, size),
+    data = image.data;
+  // Specks two or three pixels square, laid on a grid of cells so that they overlap little.
+  for (let y = 0; y < size; y += 2)
+    for (let x = 0; x < size; x += 2) {
+      if (random() > cover) continue;
+      const lit = !dark || random() < 0.5,
+        [lo, hi] = lit ? light : dark!,
+        alpha = Math.round((lo + random() * (hi - lo)) * 255),
+        [r, g, b] = lit ? tint : [0, 0, 0],
+        w = 2 + (random() < 0.4 ? 1 : 0);
+      for (let dy = 0; dy < w; dy++)
+        for (let dx = 0; dx < w; dx++) {
+          const i = (((y + dy) % size) * size + ((x + dx) % size)) * 4;
+          data[i] = r;
+          data[i + 1] = g;
+          data[i + 2] = b;
+          data[i + 3] = alpha;
+        }
+    }
+  t.putImageData(image, 0, 0);
+  return ctx.createPattern(tile, "repeat")!;
+}
 /** The face of the board: sisal beds in black and cream with red and green rings, the wire spider and the numbers. */
 function boardFace() {
   const px = 2048,
@@ -76,13 +108,10 @@ function boardFace() {
   ctx.beginPath();
   ctx.arc(o, o, DOUBLE_OUT * k, 0, Math.PI * 2);
   ctx.clip();
-  for (let n = 0; n < 150000; n++) {
-    const x = random() * px,
-      y = random() * px,
-      light = random() < 0.5;
-    ctx.fillStyle = light ? `rgba(255,248,230,${0.05 + random() * 0.08})` : `rgba(0,0,0,${0.08 + random() * 0.12})`;
-    ctx.fillRect(x, y, 1.5 + random() * 2.5, 1.5 + random() * 2.5);
-  }
+  // Painted once into a small tile of specks and laid as a pattern: drawn speck by speck, the 150,000 of them held
+  // the table's first picture back by about ten seconds under software rendering.
+  ctx.fillStyle = speckles(ctx, random, [255, 248, 230], [0.05, 0.13], [0.08, 0.2], 0.55);
+  ctx.fillRect(0, 0, px, px);
   for (const [deg, r, spread, count] of [[0, 103, 22, 70], [0, 0, 18, 40], [-36, 103, 20, 26], [198, 103, 20, 26], [0, 166, 14, 18], [-90 + 288, 166, 12, 10]] as const) {
     const a = at(deg);
     for (let n = 0; n < count; n++) {
@@ -98,12 +127,14 @@ function boardFace() {
   }
   ctx.restore();
   // The surround's own fibres, darker.
-  for (let n = 0; n < 40000; n++) {
-    const a = random() * Math.PI * 2,
-      r = (DOUBLE_OUT + random() * (BOARD_EDGE - DOUBLE_OUT)) * k;
-    ctx.fillStyle = `rgba(255,255,255,${0.02 + random() * 0.04})`;
-    ctx.fillRect(o + Math.cos(a) * r, o + Math.sin(a) * r, 2, 2);
-  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(o, o, BOARD_EDGE * k, 0, Math.PI * 2);
+  ctx.arc(o, o, DOUBLE_OUT * k, 0, Math.PI * 2, true);
+  ctx.clip();
+  ctx.fillStyle = speckles(ctx, random, [255, 255, 255], [0.02, 0.06], null, 0.12);
+  ctx.fillRect(0, 0, px, px);
+  ctx.restore();
   // The spider: wires round each ring and between the segments, raised (a shadow below, a glint above).
   const wire = (draw: () => void) => {
     ctx.lineWidth = 6;
@@ -433,11 +464,9 @@ export class DartsView extends TableView<State> {
     }
     // Chalk does not cover evenly: a grain rubs some of every stroke away.
     ctx.globalCompositeOperation = "destination-out";
-    const grain = sequence(77);
-    for (let n = 0; n < 9000; n++) {
-      ctx.fillStyle = `rgba(0,0,0,${0.25 + grain() * 0.5})`;
-      ctx.fillRect(grain() * W, grain() * H, 1.5, 1.5);
-    }
+    // A tile of grain laid as a pattern (repainted with every throw, speck by speck it was slow).
+    ctx.fillStyle = speckles(ctx, sequence(77), [0, 0, 0], [0.25, 0.75], null, 0.02);
+    ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = "destination-over";
     slate(ctx, W, H, sequence(3));
     ctx.globalCompositeOperation = "source-over";
