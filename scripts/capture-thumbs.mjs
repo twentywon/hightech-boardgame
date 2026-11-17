@@ -282,6 +282,10 @@ const play = {
   "sliding-puzzle": async () => {
     await stage(4);
   },
+  // The row of seven stumps (어려움) as it is laid, its frogs out of place.
+  "frog-hop": async () => {
+    await stage(2);
+  },
   // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
   darts: async () => {
     await keys(["Enter"]);

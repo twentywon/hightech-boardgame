@@ -639,4 +639,12 @@ export const games = [
     icon: "◍",
     available: true,
   },
+  {
+    name: "개구리 징검다리",
+    en: "FROG HOP",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "🐸",
+    available: true,
+  },
 ];

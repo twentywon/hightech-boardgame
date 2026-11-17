@@ -375,6 +375,25 @@ export class Sound {
     if (this.recording("hop-1", 0.5, 1.25)) return;
     this.pop();
   }
+  /** A frog landing on a stump: a soft pat (the first cloth recording, played lower) and a small wet click, the same each time. */
+  pat() {
+    if (!this.recording("soft-1", 0.42, 0.82)) this.noise(0, 0.08, 0.2, 900, "lowpass", 300);
+    this.tone("sine", 1150, 380, 0.004, 0.05, 0.05);
+  }
+  /** Frogs croaking (every frog home): a few rib-bits, each a buzz of quick pulses, lower and higher. */
+  croak() {
+    [
+      [0.12, 1],
+      [0.42, 1.18],
+      [0.7, 0.88],
+    ].forEach(([at, pitch]) => {
+      for (const [start, pulses, base] of [
+        [0, 5, 205],
+        [0.14, 7, 170],
+      ])
+        for (let k = 0; k < pulses; k++) this.tone("square", base * pitch, base * pitch * 0.82, at + start + k * 0.021, 0.018, 0.035);
+    });
+  }
   /** Three light, quick notes rising (a merge of fruit; the hare's hop while its recording is not ready). */
   pop() {
     [0, 0.11, 0.22].forEach((at, i) => {
