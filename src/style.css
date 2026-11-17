@@ -2881,4 +2881,12 @@ dialog.setup-dialog .choice-group[hidden] { display:none; }
 dialog.setup-dialog .choice { min-height:40px;padding:6px 8px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-size:13.5px;font-weight:600;word-break:keep-all;cursor:pointer; }
 dialog.setup-dialog .choice[aria-pressed="true"] { background:#16181a;border-color:#16181a;color:#fff; }
 dialog.setup-dialog .choice:disabled { opacity:.4;cursor:default; }
+/* Choices a picture can show carry one (the user asked): the picture over its words, or alone. */
+dialog.setup-dialog .choice.with-icon { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:7px 6px; }
+dialog.setup-dialog .choice-icon { display:flex;align-items:center;justify-content:center;line-height:0;pointer-events:none; }
+dialog.setup-dialog .choice-icon svg { display:block;height:28px;width:auto;max-width:100%; }
+dialog.setup-dialog .choice.with-icon:has(> .sr-only) .choice-icon svg { height:34px; }
+dialog.setup-dialog .choice.with-icon:has(> .sr-only) { min-height:52px; }
+dialog.setup-dialog .choice-text { font-size:12.5px;line-height:1.2; }
+dialog.setup-dialog .mode-select label.with-icon { flex-direction:column;gap:3px;padding:8px 12px 7px; }
 

@@ -1,3 +1,4 @@
+import { choiceIcon, modeIcon } from "./choice-icons";
 import { shownGuide } from "./guide";
 export function modal(
   title: string,
@@ -33,11 +34,25 @@ function buttonize(host: HTMLElement) {
     rebuild = (select: HTMLSelectElement, group: HTMLElement) =>
       group.replaceChildren(
         ...[...select.options].map((option) => {
-          const button = document.createElement("button");
+          const button = document.createElement("button"),
+            label = option.textContent ?? "",
+            icon = choiceIcon(select.id, option.value, label, document.documentElement.dataset.game);
           button.type = "button";
-          button.className = "choice";
+          button.className = icon ? "choice with-icon" : "choice";
           button.dataset.value = option.value;
-          button.textContent = option.textContent;
+          button.dataset.label = label;
+          // What a picture can show is shown as one (the user asked); the words stay for readers, or under it.
+          if (icon) {
+            const picture = document.createElement("span"),
+              words = document.createElement("span");
+            picture.className = "choice-icon";
+            picture.setAttribute("aria-hidden", "true");
+            picture.innerHTML = icon.svg;
+            words.className = icon.only ? "sr-only" : "choice-text";
+            words.textContent = label;
+            button.append(picture, words);
+            if (icon.only) button.title = label;
+          } else button.textContent = label;
           button.onclick = () => {
             if (select.value !== option.value) {
               select.value = option.value;
@@ -58,7 +73,7 @@ function buttonize(host: HTMLElement) {
         }
         const options = [...select.options],
           buttons = [...group.children] as HTMLButtonElement[];
-        if (buttons.length !== options.length || options.some((o, i) => buttons[i].dataset.value !== o.value || buttons[i].textContent !== o.textContent)) {
+        if (buttons.length !== options.length || options.some((o, i) => buttons[i].dataset.value !== o.value || buttons[i].dataset.label !== o.textContent)) {
           rebuild(select, group);
           return sync();
         }
@@ -70,6 +85,18 @@ function buttonize(host: HTMLElement) {
       }
     },
     adopt = () => {
+      // The mode buttons get their pictures too (one person, two, a person against the computer).
+      host.querySelectorAll<HTMLLabelElement>(".mode-select label:not(.with-icon)").forEach((label) => {
+        const input = label.querySelector<HTMLInputElement>("input"),
+          icon = input && modeIcon(input.value, label.textContent ?? "");
+        if (!input || !icon) return;
+        label.classList.add("with-icon");
+        const picture = document.createElement("span");
+        picture.className = "choice-icon";
+        picture.setAttribute("aria-hidden", "true");
+        picture.innerHTML = icon;
+        input.after(picture);
+      });
       host.querySelectorAll<HTMLSelectElement>("select").forEach((select) => {
         if (groups.has(select) || select.multiple || !select.isConnected) return;
         const group = document.createElement("div");
