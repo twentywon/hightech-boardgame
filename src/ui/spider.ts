@@ -21,6 +21,8 @@ interface Navigation {
   remember: (options: SpiderOptions) => void;
 }
 export interface SpiderController {
+  /** Shows the game's 게임 방법. */
+  rules(): void;
   dispose(): void;
   setSettings(settings: Settings): void;
 }
@@ -189,6 +191,8 @@ export function mountSpider(root: HTMLElement, nav: Navigation, random: Random =
   window.addEventListener("pagehide", hide);
   setup();
   return {
+    /** The game's own 게임 방법, also offered by the window it is entered through. */
+    rules,
     dispose() {
       disposed = true;
       stop();

@@ -65,7 +65,8 @@ new MutationObserver(() => {
 }).observe(root, { childList: true });
 window.addEventListener("popstate", () => {
   if (!atTable() || history.state?.table) return;
-  const open = document.querySelector<HTMLDialogElement>("dialog[open]");
+  // The topmost window first: the 게임 방법 opened over the window a game is entered through is closed before it.
+  const open = [...document.querySelectorAll<HTMLDialogElement>("dialog[open]")].pop();
   // Back from the window a game is entered through is back to the collection.
   if (open?.classList.contains("entry")) {
     open.querySelector<HTMLButtonElement>("#setup-cancel")?.click();

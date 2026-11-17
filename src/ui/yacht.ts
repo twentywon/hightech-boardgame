@@ -39,6 +39,8 @@ interface Navigation {
   remember: (options: YachtOptions) => void;
 }
 export interface YachtController {
+  /** Shows the game's 게임 방법. */
+  rules(): void;
   dispose(): void;
   setSettings(settings: Settings): void;
 }
@@ -374,6 +376,8 @@ export function mountYacht(
   window.addEventListener("pageshow", show);
   setup();
   return {
+    /** The game's own 게임 방법, also offered by the window it is entered through. */
+    rules,
     dispose() {
       disposed = true;
       stop();

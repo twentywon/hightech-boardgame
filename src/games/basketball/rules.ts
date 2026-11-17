@@ -13,7 +13,7 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 export const ROUND = 45,
   FINAL = 10,
   FIRE = 3,
-  GOAL = 50,
+  GOAL = 40,
   TICK = 0,
   SHOT = 1,
   MISS = 2,

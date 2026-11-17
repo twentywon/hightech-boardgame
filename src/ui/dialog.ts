@@ -7,7 +7,9 @@ export function modal(
     { text: "확인", action: () => {} },
   ],
 ) {
-  document.querySelector("dialog")?.remove();
+  // A window over the window a game is entered through (its 게임 방법) leaves that one open beneath it.
+  const under = document.querySelector("dialog");
+  if (under && !under.matches("dialog.entry[open]")) under.remove();
   const d = document.createElement("dialog");
   d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>${title}</h2><div class="dialog-body">${shownGuide(body)}</div><div class="dialog-actions">${actions.map((a, i) => `<button ${i === actions.length - 1 ? 'class="primary"' : ""}>${a.text}</button>`).join("")}</div>`;
   document.body.append(d);
@@ -160,12 +162,22 @@ export function setupDialog(fill: (host: HTMLElement) => void) {
  * 컬렉션으로, Escape or the browser's back go back to the collection through `back`. Its panel carries `game-stage`
  * and the old region name (`label`), so readers and tests find the setup where they did.
  */
-export function entryDialog(title: string, label: string, content: Node[], back: () => void) {
+export function entryDialog(title: string, label: string, content: Node[], back: () => void, rules?: () => void) {
   document.querySelector("dialog")?.remove();
   const d = document.createElement("dialog");
   d.className = "setup-dialog entry";
   d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2></h2><p class="setup-note">설정을 고른 뒤 시작하세요.</p><div class="dialog-body setup-host game-stage" role="region"></div><div class="dialog-actions"><button id="setup-cancel">← 컬렉션으로</button></div>`;
   d.querySelector("h2")!.textContent = title;
+  // The game's 게임 방법 opens over this window and comes back to it when closed (the user asked for it here).
+  if (rules) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "entry-rules";
+    button.className = "entry-rules";
+    button.textContent = "게임 방법";
+    button.onclick = rules;
+    d.querySelector("h2")!.after(button);
+  }
   const host = d.querySelector<HTMLElement>(".setup-host")!;
   host.setAttribute("aria-label", label);
   host.append(...content);

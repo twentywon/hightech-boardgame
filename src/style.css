@@ -2912,3 +2912,7 @@ dialog.setup-dialog.entry .dialog-actions [data-entry-action] { width:auto;margi
   dialog.setup-dialog.entry .stage-entry .feature-copy > p { display:none; }
   dialog.setup-dialog.entry .stage-entry .stage-grid { margin-top:4px; }
 }
+/* The window a game is entered through offers the game's 게임 방법 in its upper right corner (the user asked). */
+dialog.setup-dialog.entry { position:fixed; }
+dialog.setup-dialog.entry .entry-rules { position:absolute;top:22px;right:22px;min-height:34px;padding:6px 14px;border:1.5px solid var(--line, #d9d3c4);border-radius:999px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-size:13px;font-weight:600;cursor:pointer; }
+dialog.setup-dialog.entry .entry-rules:hover, dialog.setup-dialog.entry .entry-rules:focus-visible { border-color:var(--ink, #16181a); }

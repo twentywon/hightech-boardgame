@@ -421,8 +421,10 @@ function enter(id: Exclude<GameSelection, null>, category: string, people: strin
   // choices change its form) draws there; the window's body is now the region its name was given to.
   panel.removeAttribute("role");
   panel.removeAttribute("aria-label");
+  // The window offers the game's own 게임 방법 too (the user asked), over it, and back to it when closed.
+  const rules = id === "gomoku" ? showRules : (reversi ?? chess ?? betting ?? janggi ?? spider ?? tour ?? points ?? yut ?? yacht ?? blackjack)?.rules;
   app.innerHTML = `<main class="entry-backdrop" aria-hidden="true">${shot ? `<img src="${shot}" alt="">` : ""}</main>`;
-  entryDialog(game.name, `${game.name} 대국 설정`, [panel], leave);
+  entryDialog(game.name, `${game.name} 대국 설정`, [panel], leave, rules);
 }
 function leave() {
   const id = document.documentElement.dataset.game;
