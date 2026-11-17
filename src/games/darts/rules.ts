@@ -3,21 +3,25 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 
 /**
  * Darts on a standard board: twenty numbered segments in the classic order round a bull, each with a thin double
- * ring at the edge and a treble ring half way in. A throw is a move whose `to` is the point aimed at (in millimetres
- * from the bull, `aimCode`) and whose `extra` is how widely the thrower scatters (one standard deviation, in
- * millimetres); `play` draws the scatter from the `random` passed in, so where a dart lands, and what it scores, is
- * decided there and can be replayed. Without `random` a dart lands where it was aimed.
+ * ring at the edge and a treble ring half way in. A throw is a move whose `to` is the point aimed at (millimetres
+ * from the bull, to a tenth, `aimCode`) and whose `extra` is how widely the dart scatters round it (one standard
+ * deviation, in millimetres). A person's throw scatters not at all (0): a person's unsteady hand is the aiming ring
+ * trembling while they aim (`tremor` in layout.ts), and the throw names the point where the ring's dot was when
+ * they let go, so the dart lands on that dot. The computer's throws carry its level's scatter, drawn in `play` from
+ * the `random` passed in. Either way where a dart lands, and what it scores, is decided in `play` and can be
+ * replayed; without `random` a dart lands where it was aimed.
  *
  * Two games: 501, double out (each side counts down from 501; the last dart must be a double or the bull; a visit
  * that would leave less than nothing, exactly one, or nothing without a double is a bust and counts nothing), and
  * count-up (eight rounds of three darts, the higher total wins). A visit is three darts; then the turn passes.
  */
 export type Mode = "501" | "countup";
+/** Count-up, the easier, comes first and is the one played unless 501 is chosen. */
 export const MODES: { value: Mode; label: string }[] = [
-  { value: "501", label: "501" },
   { value: "countup", label: "카운트업" },
+  { value: "501", label: "501" },
 ];
-export const modeOf = (variant: string): Mode => (variant === "countup" ? "countup" : "501");
+export const modeOf = (variant: string): Mode => (variant === "501" ? "501" : "countup");
 /** The radii of the rings, in millimetres from the centre: the bull, the outer bull, the treble and double rings, and the board's edge. */
 export const BULL = 6.35,
   OUTER_BULL = 15.9,
@@ -35,9 +39,8 @@ export const DARTS = 3,
   ROUNDS = 8,
   START = 501,
   LIMIT = 30;
-/** How widely a person's darts scatter, and the widest scatter a move may name. */
-export const HUMAN_SPREAD = 20,
-  MAX_SPREAD = 80;
+/** The widest scatter a move may name (a person's throws name none). */
+export const MAX_SPREAD = 80;
 /** The computer's levels: how widely its darts scatter round the point it aims at. */
 export const LEVELS: Record<"easy" | "normal" | "hard", { label: string; spread: number }> = {
   easy: { label: "쉬움", spread: 40 },
@@ -107,13 +110,17 @@ export function hitAt(x: number, y: number): Dart {
   if (r >= TREBLE_IN && r <= TREBLE_OUT) return dart("treble", n, n * 3, false, `T${n}`);
   return dart("single", n, n, false, String(n));
 }
-/** The point aimed at as one number, and back: millimetres from the centre, each within ±`REACH`. */
-const REACH = 400,
-  SPAN = REACH * 2 + 1;
-export const aimCode = (x: number, y: number) => (Math.max(-REACH, Math.min(REACH, Math.round(x))) + REACH) * SPAN + Math.max(-REACH, Math.min(REACH, Math.round(y))) + REACH;
+/**
+ * The point aimed at as one number, and back: millimetres from the centre to a tenth (as finely as a dart's landing
+ * is kept, so that a steady throw lands exactly where it was aimed), each within ±400 mm.
+ */
+const REACH = 4000,
+  SPAN = REACH * 2 + 1,
+  tenths = (v: number) => Math.max(-REACH, Math.min(REACH, Math.round(v * 10))) + REACH;
+export const aimCode = (x: number, y: number) => tenths(x) * SPAN + tenths(y);
 export function aimOf(code: number) {
   if (!Number.isInteger(code) || code < 0 || code >= SPAN * SPAN) return null;
-  return { x: Math.floor(code / SPAN) - REACH, y: (code % SPAN) - REACH };
+  return { x: (Math.floor(code / SPAN) - REACH) / 10, y: ((code % SPAN) - REACH) / 10 };
 }
 /** A target the computer aims at: a bed of the board, by its name, value and middle. */
 export interface Target {
@@ -184,10 +191,10 @@ export function createGame(mode: Mode = "501"): State {
   const begin = mode === "501" ? START : 0;
   return { mode, scores: [begin, begin], turn: 0, darts: [], start: begin, visits: [[], []], last: null, ended: false, bust: false, thrower: 0, winner: null, ply: 0 };
 }
-/** A few throws that stand for all of them (any point may be aimed at): one at each bed, as a person throws. */
+/** A few throws that stand for all of them (any point may be aimed at): one at each bed, as a person throws (no scatter). */
 export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
-  return TARGETS.map((t) => ({ from: -1, to: aimCode(t.x, t.y), extra: HUMAN_SPREAD }));
+  return TARGETS.map((t) => ({ from: -1, to: aimCode(t.x, t.y), extra: 0 }));
 }
 /** A point drawn round `aim`, `spread` millimetres wide one way (two draws from `random`). */
 function scatter(x: number, y: number, spread: number, random: Random) {
@@ -198,12 +205,15 @@ function scatter(x: number, y: number, spread: number, random: Random) {
   return { x: x + Math.cos(a) * r, y: y + Math.sin(a) * r };
 }
 const other = (side: 0 | 1): 0 | 1 => (side ? 0 : 1);
-/** A throw: where it lands is drawn here; the scores, a bust, the end of the visit and of the game follow. */
+/**
+ * A throw: where it lands is drawn here (round the point aimed at by the move's scatter; a throw with none, a
+ * person's, lands on that point and draws nothing); the scores, a bust, the end of the visit and of the game follow.
+ */
 export function play(state: State, move: Move, random?: Random): State | null {
   if (state.winner !== null || move.from !== -1) return null;
   const aim = aimOf(move.to);
   if (!aim || !Number.isInteger(move.extra) || move.extra < 0 || move.extra > MAX_SPREAD) return null;
-  const at = random ? scatter(aim.x, aim.y, move.extra, random) : aim,
+  const at = random && move.extra > 0 ? scatter(aim.x, aim.y, move.extra, random) : aim,
     hit = hitAt(Math.round(at.x * 10) / 10, Math.round(at.y * 10) / 10),
     dart: Dart = hit.fell ? { ...hit, ring: "miss", number: 0, points: 0, double: false, label: "MISS" } : hit,
     side = state.turn,

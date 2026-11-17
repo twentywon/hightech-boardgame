@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { seededRandom } from "../src/core/ai";
 import * as D from "../src/games/darts/rules";
-import { CENTRE, GAIN, LEAST, boardPoint, swipe, swipeFor } from "../src/games/darts/layout";
+import { CENTRE, GAIN, LEAST, TREMOR, boardPoint, swipe, swipeFor, tremor } from "../src/games/darts/layout";
 
 /** A point at `radius` millimetres in the middle of the segment of number `n`. */
 function at(n: number, radius: number) {
@@ -54,7 +54,7 @@ describe("darts", () => {
     expect(D.hitAt(400, 0).fell).toBe(true);
     expect(D.hitAt(200, 0).fell).toBe(false);
   });
-  test("a throw is decided in play from the random passed in, the same draws landing the same dart", () => {
+  test("a scattered throw (the computer's) is decided in play from the random passed in, the same draws landing the same dart", () => {
     const start = D.createGame("501"),
       move = { from: -1, to: D.aimCode(0, 103), extra: 22 },
       a = D.play(start, move, seededRandom(9))!,
@@ -62,9 +62,8 @@ describe("darts", () => {
       c = D.play(start, move, seededRandom(10))!;
     expect(a.last).toEqual(b.last);
     expect(a.last).not.toEqual(c.last);
-    // Without random it lands where aimed; with no scatter too.
+    // Without random it lands where aimed.
     expect(D.play(start, move)!.last!.label).toBe("T20");
-    expect(D.play(start, { ...move, extra: 0 }, seededRandom(3))!.last!.label).toBe("T20");
     // The scatter is about as wide as asked.
     const random = seededRandom(5);
     let sum = 0;
@@ -74,6 +73,9 @@ describe("darts", () => {
     }
     expect(Math.sqrt(sum / 2000 / 2)).toBeGreaterThan(17);
     expect(Math.sqrt(sum / 2000 / 2)).toBeLessThan(23);
+    // Aims are kept to a tenth of a millimetre, within reach of the cabinet and a little beyond.
+    expect(D.aimOf(D.aimCode(-37.26, 151.04))).toEqual({ x: -37.3, y: 151 });
+    expect(D.aimOf(D.aimCode(999, -999))).toEqual({ x: 400, y: -400 });
     // Refused: a piece moved, a scatter out of range, a point out of reach, a game over; the input is never changed.
     expect(D.play(start, { ...move, from: 3 })).toBeNull();
     expect(D.play(start, { ...move, extra: -1 })).toBeNull();
@@ -81,6 +83,77 @@ describe("darts", () => {
     expect(D.play(start, { ...move, to: -5 })).toBeNull();
     expect(start).toEqual(D.createGame("501"));
     expect(D.aimOf(D.aimCode(-37, 151))).toEqual({ x: -37, y: 151 });
+  });
+  test("a person's throw has no scatter: whatever the random, the dart lands exactly on the point aimed at", () => {
+    const start = D.createGame("countup"),
+      random = seededRandom(17);
+    for (let k = 0; k < 400; k++) {
+      // Anywhere on the board and round it, to the tenth of a millimetre the ring's dot is thrown at.
+      const x = Math.round((random() - 0.5) * 5000) / 10 + 0,
+        y = Math.round((random() - 0.5) * 5000) / 10 + 0,
+        move = { from: -1, to: D.aimCode(x, y), extra: 0 },
+        dart = D.play(start, move, seededRandom(k))!.last!,
+        still = D.play(start, move)!.last!;
+      expect([dart.x, dart.y]).toEqual([x, y]);
+      expect(dart).toEqual(still);
+      const at = D.hitAt(x, y);
+      expect(dart.label).toBe(at.fell ? "MISS" : at.label);
+    }
+    // Thrown on a wire's either side, it counts for the side it is on.
+    expect(D.play(start, { from: -1, to: D.aimCode(0, 98.9), extra: 0 }, seededRandom(1))!.last!.label).toBe("20");
+    expect(D.play(start, { from: -1, to: D.aimCode(0, 99), extra: 0 }, seededRandom(1))!.last!.label).toBe("T20");
+    // A steady throw draws nothing from the random, so the computer's next draws are its own.
+    let draws = 0;
+    D.play(start, { from: -1, to: D.aimCode(0, 103), extra: 0 }, () => (draws++, 0.5));
+    expect(draws).toBe(0);
+    // The throws that stand for every one are a person's.
+    expect(D.moves(start).every((m) => m.extra === 0)).toBe(true);
+  });
+  test("the aiming ring trembles like a hand: a slow drift about as wide as a person's darts once scattered, a faint quick tremor, smooth all the way", () => {
+    let sum = 0,
+      count = 0,
+      widest = 0,
+      jump = 0,
+      quick = 0;
+    for (let seed = 0; seed < 40; seed++) {
+      let before = tremor(0, seed * 13.7);
+      for (let t = 1 / 60; t < 30; t += 1 / 60) {
+        const at = tremor(t, seed * 13.7);
+        sum += at.x * at.x + at.y * at.y;
+        count += 2;
+        widest = Math.max(widest, Math.abs(at.x), Math.abs(at.y));
+        jump = Math.max(jump, Math.hypot(at.x - before.x, at.y - before.y));
+        before = at;
+      }
+      // The quick tremor: what is left when the drift is smoothed away over a tenth of a second.
+      for (let t = 0.05; t < 10; t += 0.013) {
+        let mean = 0;
+        for (let k = -5; k <= 5; k++) mean += tremor(t + k / 100, seed).x / 11;
+        quick = Math.max(quick, Math.abs(tremor(t, seed).x - mean));
+      }
+    }
+    const spread = Math.sqrt(sum / count);
+    expect(spread).toBeGreaterThan(TREMOR.drift * 0.8);
+    expect(spread).toBeLessThan(TREMOR.drift * 1.2);
+    expect(TREMOR.drift).toBeGreaterThanOrEqual(12);
+    expect(TREMOR.drift).toBeLessThanOrEqual(22);
+    // It never goes far off, and never jumps: at sixty frames a second it moves a few millimetres at most.
+    expect(widest).toBeLessThan(TREMOR.drift * 3);
+    expect(jump).toBeLessThan(6);
+    // The quick tremor is there, and faint.
+    expect(quick).toBeGreaterThan(0.5);
+    expect(quick).toBeLessThan(5);
+    // Each aim starts somewhere else in it, and the same aim is the same tremor.
+    expect(tremor(0, 1)).not.toEqual(tremor(0, 2));
+    expect(tremor(2.5, 7)).toEqual(tremor(2.5, 7));
+  });
+  test("count-up is the game played unless 501 is chosen, and comes first", () => {
+    expect(D.MODES.map((m) => m.value)).toEqual(["countup", "501"]);
+    expect(D.modeOf("countup")).toBe("countup");
+    expect(D.modeOf("501")).toBe("501");
+    expect(D.modeOf("")).toBe("countup");
+    expect(D.darts.create("").mode).toBe("countup");
+    expect(D.darts.create("501").scores).toEqual([501, 501]);
   });
   test("501: three darts a visit come off the score, then the turn passes", () => {
     let s = D.createGame("501");
@@ -185,11 +258,26 @@ describe("darts", () => {
       const move = D.chooseThrow(D.createGame("501"), level)!;
       expect(move.from).toBe(-1);
       expect(move.extra).toBe(D.LEVELS[level].spread);
-      expect(D.aimOf(move.to)).toEqual({ x: Math.round(D.target("T20").x), y: Math.round(D.target("T20").y) });
+      expect(D.aimOf(move.to)).toEqual({ x: Math.round(D.target("T20").x * 10) / 10, y: Math.round(D.target("T20").y * 10) / 10 });
       expect(D.play(D.createGame("501"), move, seededRandom(1))).not.toBeNull();
     }
     expect(D.LEVELS.easy.spread).toBeGreaterThan(D.LEVELS.normal.spread);
     expect(D.LEVELS.normal.spread).toBeGreaterThan(D.LEVELS.hard.spread);
+    // Its darts do scatter, as widely as its level says, round the bed it goes for.
+    for (const level of ["easy", "normal", "hard"] as const) {
+      const random = seededRandom(23),
+        aim = D.aimOf(D.chooseThrow(D.createGame("countup"), level)!.to)!;
+      let sum = 0,
+        off = 0;
+      for (let k = 0; k < 1500; k++) {
+        const dart = D.play(D.createGame("countup"), D.chooseThrow(D.createGame("countup"), level)!, random)!.last!;
+        sum += (dart.x - aim.x) ** 2 + (dart.y - aim.y) ** 2;
+        if (dart.x !== aim.x || dart.y !== aim.y) off++;
+      }
+      expect(off).toBeGreaterThan(1400);
+      expect(Math.sqrt(sum / 1500 / 2)).toBeGreaterThan(D.LEVELS[level].spread * 0.88);
+      expect(Math.sqrt(sum / 1500 / 2)).toBeLessThan(D.LEVELS[level].spread * 1.12);
+    }
     // Whole games, 501 and count-up, between two computers.
     for (const [mode, level, seed] of [["501", "hard", 1], ["501", "normal", 2], ["501", "easy", 3], ["countup", "normal", 4]] as const) {
       const random = seededRandom(seed);

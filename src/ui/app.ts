@@ -228,7 +228,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   go: { config: goConfig, options: { mode: "ai", variant: "19", level: "normal" } },
   "sliding-puzzle": { config: slideConfig, options: { mode: "ai", variant: "1", level: "normal" } },
-  darts: { config: dartsConfig, options: { mode: "ai", variant: "501", level: "normal" } },
+  darts: { config: dartsConfig, options: { mode: "ai", variant: "countup", level: "normal" } },
   bowling: { config: bowlingConfig, options: { mode: "ai", variant: "duel", level: "normal" } },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
@@ -474,7 +474,8 @@ function leave() {
   entry.querySelector<HTMLButtonElement>(".game-card")?.focus({ preventScroll: true });
 }
 function menu(selected: GameSelection = null, category = "전체", people = "전체") {
-  // The table sat down at from here plays this game's music (Korean or Indian for some, jazz for the rest).
+  // The table sat down at from here plays this game's music (Korean or Indian for some, arcade pop or rock for some
+  // arcade games, jazz for the rest).
   if (selected) {
     music.game = selected;
     // The table sat down at knows which game it is (its information is laid over the table for some).

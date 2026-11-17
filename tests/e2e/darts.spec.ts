@@ -1,12 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
 import { selectGame } from "./library";
 import { swipeFor } from "../../src/games/darts/layout";
-import { TREBLE_IN, TREBLE_OUT } from "../../src/games/darts/rules";
+import { START, TREBLE_IN, TREBLE_OUT } from "../../src/games/darts/rules";
 
 const moves = async (page: Page) => Number(/(\d+)/.exec((await page.locator("#move-count").textContent()) ?? "")?.[1] ?? 0);
+/** What a side has left in 501, from its line in the panel. */
+const left = async (page: Page, side: number) => Number(/남은 (\d+)점/.exec((await page.locator(`#pg-count-${side}`).textContent()) ?? "")?.[1] ?? NaN);
 const resting = (page: Page) => expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 40000 });
 
-/** Fixes the scatter of every dart, so that the run is the same each time. */
+/** Fixes the scatter of the computer's darts (a person's have none: they land where the trembling ring was). */
 async function seeded(page: Page, start: number) {
   await page.addInitScript((first) => {
     let seed = first;
@@ -30,7 +32,7 @@ async function throwAt(page: Page, x: number, y: number) {
   await page.mouse.up();
 }
 
-test("darts: three swipes throw three darts, the score comes down, and the turn passes to the computer and back", async ({ page }) => {
+test("darts: three swipes throw three darts, the score comes down, the turn passes to the computer and back, and the ring trembles", async ({ page }) => {
   // Seven throws and the computer's three, each resting first: the pub draws a few frames a second under software
   // rendering, and slower still with three browsers at once (one minute ran out in the run beside the others).
   test.setTimeout(240000);
@@ -54,7 +56,8 @@ test("darts: three swipes throw three darts, the score comes down, and the turn 
   await page.mouse.up();
   await page.waitForTimeout(400);
   expect(await moves(page)).toBe(0);
-  // Three darts at the treble twenty.
+  // Three darts at the treble twenty. The hand trembles, so where each lands is not fixed, but always on the board
+  // round the top of it: each scores something and none more than a treble.
   for (let k = 1; k <= 3; k++) {
     await throwAt(page, 0, (TREBLE_IN + TREBLE_OUT) / 2);
     await expect.poll(() => moves(page), { timeout: 20000 }).toBe(k);
@@ -65,6 +68,9 @@ test("darts: three swipes throw three darts, the score comes down, and the turn 
   }
   // The visit is written off the score, and the computer takes its three darts.
   await expect(page.locator("#pg-count-0")).not.toHaveText("남은 501점", { timeout: 20000 });
+  const mine = await left(page, 0);
+  expect(mine).toBeGreaterThanOrEqual(START - 180);
+  expect(mine).toBeLessThanOrEqual(START - 3);
   await expect(page.locator("#board")).toHaveAttribute("data-turn", "1", { timeout: 20000 });
   await expect.poll(() => moves(page), { timeout: 40000 }).toBe(6);
   await expect(page.locator("#board")).toHaveAttribute("data-turn", "0", { timeout: 40000 });
@@ -73,6 +79,16 @@ test("darts: three swipes throw three darts, the score comes down, and the turn 
   await resting(page);
   await page.locator("canvas").focus();
   await page.keyboard.press("ArrowUp");
+  // The ring trembles like a hand while the keys aim: where its dot is moves by itself, round the point aimed at
+  // (the middle of the treble twenty, moved up a step).
+  const dot = () => page.locator("canvas").getAttribute("data-aim");
+  const first = (await dot()) ?? "";
+  expect(first).toMatch(/^-?\d+\.\d,-?\d+\.\d$/);
+  await expect.poll(dot, { timeout: 20000 }).not.toBe(first);
+  for (const at of [first, (await dot()) ?? ""]) {
+    const [x, y] = at.split(",").map(Number);
+    expect(Math.hypot(x, y - ((TREBLE_IN + TREBLE_OUT) / 2 + 5))).toBeLessThan(75);
+  }
   await page.keyboard.press("Enter");
   await expect.poll(() => moves(page), { timeout: 20000 }).toBe(7);
   expect(errors).toEqual([]);

@@ -17,7 +17,7 @@ import {
   total,
   type State,
 } from "../src/games/bowling/rules";
-import { HEAD, bowl, createWorld, deepest, rack, settled, step } from "../src/games/bowling/sim";
+import { HEAD, OUT, bowl, createWorld, deepest, rack, settled, step } from "../src/games/bowling/sim";
 
 /** A small fixed sequence of numbers in [0, 1), so that racks and hands come out the same each run. */
 function seeded(seed: number) {
@@ -123,6 +123,15 @@ describe("bowling moves", () => {
     expect(next.spin[0]).toBe((state.spin[0] + 1) % 3);
     expect(next.spin[1]).toBe(state.spin[1]);
   });
+  it("starts every game with a straight ball, and keeps the spin a side has set from ball to ball", () => {
+    expect(createGame(true).spin).toEqual([0, 0]);
+    expect(createGame(false).spin).toEqual([0, 0]);
+    let state = play(createGame(false), { from: -1, to: SPIN, extra: -1 })!;
+    expect(state.spin[0]).toBe(1);
+    state = play(state, throwMove({ x: 0.2, angle: 0, speed: 8, spin: state.spin[0] }))!;
+    expect(state.ply).toBe(1);
+    expect(state.spin[0]).toBe(1);
+  });
 });
 
 describe("bowling physics", () => {
@@ -138,6 +147,39 @@ describe("bowling physics", () => {
     const world = createWorld(pins, t);
     while (!settled(world)) step(world);
     expect(world.pins.map((p) => [p.mode, p.x, p.d])).toEqual(a.world.pins.map((p) => [p.mode, p.x, p.d]));
+  });
+  it("strikes most of the time with a hook into the pocket, and leaves pins, splits among them, on a ball at the head pin", () => {
+    let hooks = 0,
+      noses = 0,
+      splits = 0;
+    const N = 60;
+    for (let seed = 1; seed <= N; seed++) {
+      const random = seeded(seed * 104729),
+        target = POCKET + (random() - 0.5) * 0.02,
+        hook = bowl(rack(random), { x: 0.24, angle: aimAt(0.24, 8, 1, target), speed: 8, spin: 1 }),
+        nose = bowl(rack(random), { x: (random() - 0.5) * 0.02, angle: 0, speed: 8, spin: 0 });
+      if (hook.knocked.length === 10) hooks++;
+      if (nose.knocked.length === 10) noses++;
+      // A split: the head pin down, and two pins left with a gap of more than a pin between them.
+      const xs = nose.left.map((p) => p.x).sort((a, b) => a - b);
+      if (!nose.left.some((p) => p.id === 1) && xs.some((x, k) => k > 0 && x - xs[k - 1] > 0.5)) splits++;
+    }
+    expect(hooks).toBeGreaterThan(N * 0.7);
+    expect(noses).toBeLessThan(N * 0.3);
+    expect(splits).toBeGreaterThan(N * 0.1);
+  });
+  it("throws pins struck hard up off the deck, and they come down again", () => {
+    const world = createWorld(rack(), { x: 0.24, angle: aimAt(0.24, 8, 1, POCKET), speed: 8, spin: 1 });
+    let highest = 0;
+    while (!settled(world)) {
+      step(world);
+      for (const p of world.pins) highest = Math.max(highest, p.y);
+    }
+    expect(highest).toBeGreaterThan(0.15);
+    // Never so high that a pin would reach the masking unit over the deck (0.78 m, a pin is 0.38 m tall).
+    expect(highest).toBeLessThan(0.38);
+    // Those left on the deck lie on it (those in the pit are out of the game wherever they went in).
+    expect(world.pins.filter((p) => p.mode !== OUT).every((p) => p.y === 0 && p.vy === 0)).toBe(true);
   });
   it("strikes more often than not with a straight ball at full speed into the pocket", () => {
     let strikes = 0;

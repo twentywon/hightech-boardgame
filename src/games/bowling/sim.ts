@@ -12,7 +12,9 @@
  * - A pin standing is a disc on its base. Struck, it is pushed and tipped: a light touch only rocks it, and it
  *   settles upright again; past the tipping angle it falls, its outline on the deck growing into a capsule as it
  *   goes down; fallen, it is a capsule that slides and spins until it rests. Tipping and fallen pins strike the
- *   others as they sweep across the deck, which is how one pin takes out the ones behind it.
+ *   others as they sweep across the deck, which is how one pin takes out the ones behind it. A hard knock throws a
+ *   pin up off the deck (its height is kept for that alone) and it bounces when it comes down; pins are a little
+ *   lighter than the rule book's and give back much of their speed when they meet, so that they scatter lively.
  * - Pins bounce off the kickbacks at the sides of the deck and drop into the pit behind it. A pin pushed off the
  *   deck into a gutter cannot stand there.
  */
@@ -33,7 +35,8 @@ export const LANE_HALF = 0.527,
   BALL_M = 6.8,
   PIN_R = 0.06,
   PIN_H = 0.381,
-  PIN_M = 1.53,
+  /** Lighter than the rule book's pin (about 1.5 kg), so that the pins fly and scatter livelier. */
+  PIN_M = 1.3,
   /** The ball lies here before it is thrown, just behind the foul line. */
   START_D = -0.3,
   DT = 1 / 360,
@@ -51,7 +54,14 @@ const KNOCK = 2.6;
 const LYING_I = (PIN_H * PIN_H) / 12,
   FOOT_I = (PIN_H * PIN_H) / 3;
 const BALL_DRAG = { oil: 0.12, dry: 0.42 },
-  PIN_DRAG = { up: 4.2, lying: 2.6, spin: 9 };
+  PIN_DRAG = { up: 4.2, lying: 2.0, spin: 6.5 };
+/**
+ * How much of their speed toward each other things keep in a knock: the ball and a pin, two pins standing or
+ * falling, a lying pin and anything; a pin and a kickback; a pin coming down on the deck.
+ */
+const BOUNCE = { ball: 0.6, pins: 0.66, lying: 0.5, wall: 0.5, deck: 0.38 };
+/** A knock harder than `from` (metres a second) throws a pin up, at `lift` of the knock's speed and at most `most`. */
+const FLY = { from: 1.5, lift: 0.26, most: 2.4 };
 /** Sideways pull of the hook in the dry back end (m/s²), for each spin: none, to the left, to the right. */
 export const HOOK = [0, -1.15, 1.15];
 /** How much sideways speed a spin can give before the ball has rolled out and goes straight on. */
@@ -277,7 +287,7 @@ function movePin(p: Pin) {
       p.td = ud;
       p.wx = 0;
       p.wd = 0;
-      if (p.y <= 0) p.vy = Math.min(0.6, omega * 0.03);
+      if (p.y <= 0) p.vy = Math.min(0.9, omega * 0.05);
     } else {
       p.tx = ux * theta;
       p.td = ud * theta;
@@ -311,7 +321,7 @@ function movePin(p: Pin) {
     p.y += p.vy * DT;
     if (p.y <= 0) {
       p.y = 0;
-      p.vy = p.vy < -0.5 ? -p.vy * 0.2 : 0;
+      p.vy = p.vy < -0.4 ? -p.vy * BOUNCE.deck : 0;
     }
   }
   // Pushed off the deck into a gutter, a pin cannot stand: it falls outward.
@@ -331,7 +341,7 @@ function movePin(p: Pin) {
   if (p.d > HEAD - 0.7 && widest > KICK) {
     const side = Math.sign(Math.abs(shape.ax) > Math.abs(shape.bx) ? shape.ax : shape.bx);
     p.x -= side * (widest - KICK);
-    if (p.vx * side > 0) p.vx = -p.vx * 0.45;
+    if (p.vx * side > 0) p.vx = -p.vx * BOUNCE.wall;
     if (p.mode === LYING) p.wx *= -0.5;
   }
   // Over the edge of the deck into the pit.
@@ -438,8 +448,8 @@ function push(body: Body, px: number, pd: number, jx: number, jd: number, world:
     const cross = (px - p.x) * jd - (pd - p.d) * jx;
     p.wx = clamp(p.wx + cross / (p.m * LYING_I), -40, 40);
   }
-  // A hard knock sends it flying a little.
-  if (dv > 2.4 && p.y <= 0) p.vy = Math.max(p.vy, Math.min(1.9, dv * 0.16));
+  // A hard knock sends it flying.
+  if (dv > FLY.from && p.y <= 0) p.vy = Math.max(p.vy, Math.min(FLY.most, dv * FLY.lift));
   if (dv > 0.6) world.knocks++;
   world.force = Math.max(world.force, dv);
 }
@@ -469,7 +479,7 @@ function collide(a: Body, b: Body, world: World) {
     kb = give(b, cx, cd, nx, nd);
   if (vn < 0) {
     const lying = a.pin?.mode === LYING || b.pin?.mode === LYING,
-      bounce = a.ball || b.ball ? 0.62 : lying ? 0.4 : 0.5,
+      bounce = a.ball || b.ball ? BOUNCE.ball : lying ? BOUNCE.lying : BOUNCE.pins,
       j = (-(1 + bounce) * vn) / (ka + kb);
     push(a, cx, cd, nx * j, nd * j, world);
     push(b, cx, cd, -nx * j, -nd * j, world);

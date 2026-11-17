@@ -51,3 +51,39 @@ export function swipe(dx: number, dy: number, height: number) {
 export function swipeFor(x: number, y: number, height: number) {
   return { dx: (x / GAIN) * height, dy: -(y / GAIN + CENTRE) * height };
 }
+/**
+ * A person's unsteady hand while aiming, in millimetres of the board: `drift` is how far the aim wanders (about one
+ * standard deviation each way, much as far as a person's darts used to scatter), `shake` the faint quick tremor of
+ * the muscles over it.
+ */
+export const TREMOR = { drift: 16, shake: 1.4 };
+/** The swells of the drift across and up (cycles a second, and share of the largest), and of the quick tremor. */
+const SWELLS = [
+    [[0.17, 1], [0.31, 0.62], [0.53, 0.4]],
+    [[0.21, 1], [0.37, 0.58], [0.61, 0.42]],
+  ],
+  QUICK = [[8.3, 1], [11.1, 0.6]],
+  /** How steady the hand is from moment to moment: the drift's size swells between `CALM - EASE` and `CALM + EASE` of itself. */
+  CALM = 0.85,
+  EASE = 0.15,
+  /** The drift's largest swell, so that the drift's spread each way comes to `TREMOR.drift`. */
+  SWELL = SWELLS.map((axis) => TREMOR.drift / Math.sqrt((axis.reduce((s, [, w]) => s + w * w, 0) / 2) * (CALM * CALM + (EASE * EASE) / 2)));
+/**
+ * Where a person's hand has moved the aim `t` seconds into aiming (millimetres, y up): a slow drift of a few swells
+ * at unrelated rates, now and then steadier, and a faint quick tremor over it; smooth at every moment. `seed` (any
+ * number) starts each aim somewhere else in it, so that the hand is not steadiest just as the aim begins.
+ */
+export function tremor(t: number, seed: number) {
+  // The phases of the swells, spread from the seed.
+  let s = Math.abs(Math.floor(seed * 9973)) % 2147483646 + 1;
+  const phase = () => ((s = (s * 16807) % 2147483647) / 2147483647) * Math.PI * 2,
+    calm = CALM + EASE * Math.sin(2 * Math.PI * 0.11 * t + phase()),
+    out = [0, 0];
+  for (let axis = 0; axis < 2; axis++) {
+    let v = 0;
+    for (const [rate, share] of SWELLS[axis]) v += SWELL[axis] * share * calm * Math.sin(2 * Math.PI * rate * t + phase());
+    for (const [rate, share] of QUICK) v += TREMOR.shake * share * Math.sin(2 * Math.PI * rate * t + phase());
+    out[axis] = v;
+  }
+  return { x: out[0], y: out[1] };
+}

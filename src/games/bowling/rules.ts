@@ -76,14 +76,14 @@ export interface State {
   ball: number;
   /** The pins standing for the next ball. */
   standing: Spot[];
-  /** The spin each side has set for its next ball. */
+  /** The spin each side has set for its next ball: straight at the start of a game, then as the side last set it. */
   spin: [number, number];
   last: Last | null;
   winner: Winner;
   ply: number;
 }
 export function createGame(two = true, random?: Random): State {
-  return { two, frames: [[], []], turn: 0, frame: 0, ball: 0, standing: rack(random), spin: [1, 1], last: null, winner: null, ply: 0 };
+  return { two, frames: [[], []], turn: 0, frame: 0, ball: 0, standing: rack(random), spin: [0, 0], last: null, winner: null, ply: 0 };
 }
 /** Whether a frame's balls are all thrown: the tenth (`k` 9) gives a third ball after a strike or a spare. */
 export function frameDone(rolls: number[], k: number) {

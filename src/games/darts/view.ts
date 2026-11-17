@@ -4,8 +4,8 @@ import { pub } from "../../engine/scenery";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { BOARD_X, BOARD_Y, CHALK, EYE, FACE_Z, FLOOR, MM, WALL_Z, boardPoint, dartsCamera, swipe } from "./layout";
-import { BOARD_EDGE, BULL, DOUBLE_IN, DOUBLE_OUT, HUMAN_SPREAD, LIMIT, ORDER, OUTER_BULL, ROUNDS, TREBLE_IN, TREBLE_OUT, aimCode, suggestion, type Dart, type State } from "./rules";
+import { BOARD_X, BOARD_Y, CHALK, EYE, FACE_Z, FLOOR, MM, WALL_Z, boardPoint, dartsCamera, swipe, tremor } from "./layout";
+import { BOARD_EDGE, BULL, DOUBLE_IN, DOUBLE_OUT, LIMIT, ORDER, OUTER_BULL, ROUNDS, TREBLE_IN, TREBLE_OUT, aimCode, suggestion, type Dart, type State } from "./rules";
 
 /** The flights of each side's darts. */
 export const DART_COLORS: [string, string] = ["#d8342a", "#2a6fd8"];
@@ -30,7 +30,11 @@ const FLIGHT = 420,
   /** How far a stuck dart's point is in the board. */
   SUNK = 0.03,
   /** The darts are drawn a little larger than life, so that they read at a glance across the room. */
-  LARGER = 1.3;
+  LARGER = 1.3,
+  /** The aiming ring's radius, in millimetres of the board. */
+  RING = 40,
+  /** How far the dart in the hand moves for each millimetre the tremor moves the ring: the hand is about a third as far from the eye as the board, so the two move together on the screen. */
+  HAND_SHAKE = 0.3;
 /**
  * A repeating tile of specks, light ones of `tint` and (when `dark` is given) black ones, each a few pixels across,
  * covering about `cover` of the tile: the fibres of sisal seen end on.
@@ -229,8 +233,9 @@ function slate(ctx: CanvasRenderingContext2D, w: number, h: number, random: () =
 /**
  * A pub's darts corner, seen from the oche: a board of our own making on a walnut cabinet under a brass lamp on the
  * pub's brick wall, and at its right a chalk scoreboard. A swipe up throws: its slant and length set the point
- * aimed at (a ring shows it while the finger moves); the dart flies in an arc from the hand, sticks with a thud and
- * a wobble, and its score floats up. After the third dart the darts are pulled and the turn passes.
+ * aimed at, and a ring shows it while the finger moves, trembling as a hand does (`tremor`); the dart lands on the
+ * ring's dot where it was when the finger let go. It flies in an arc from the hand, sticks with a thud and a wobble,
+ * and its score floats up. After the third dart the darts are pulled and the turn passes.
  */
 export class DartsView extends TableView<State> {
   /** Three darts a side, used in turn for the darts of a visit, and the one waiting in the hand. */
@@ -243,6 +248,10 @@ export class DartsView extends TableView<State> {
   /** The swipe under way (where it began, in page pixels) and the keyboard's aim (millimetres from the bull). */
   private press: { id: number; x: number; y: number; dx: number; dy: number } | null = null;
   private keyAim: { x: number; y: number } | null = null;
+  /** The hand while it aims: when this aim began (-1 at rest), where in the tremor it began, and how far it has the ring moved now (millimetres). */
+  private hand = { since: -1, seed: 0, x: 0, y: 0 };
+  /** The tremor's own frame, asked for while the ring is shown. */
+  private shaking = 0;
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
@@ -315,17 +324,21 @@ export class DartsView extends TableView<State> {
       for (let k = 0; k < 3; k++) this.sets[side].push(dart(DART_COLORS[side]));
       this.hands.push(dart(DART_COLORS[side]));
     }
-    // The aiming ring: a white ring with a dark edge and a cross, as wide as a person's darts mostly scatter.
-    const r = HUMAN_SPREAD * 2 * MM,
+    // The aiming ring: a white ring with a dark edge, a cross and a dot in the middle, where the dart will land.
+    const r = RING * MM,
       ringPaint = keep(new T.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.95, depthTest: false, depthWrite: false })),
       edgePaint = keep(new T.MeshBasicMaterial({ color: "#101418", transparent: true, opacity: 0.6, depthTest: false, depthWrite: false }));
     const ring = new T.Mesh(keep(new T.RingGeometry(r - 0.006, r, 48)), ringPaint),
       edge = new T.Mesh(keep(new T.RingGeometry(r - 0.011, r + 0.005, 48)), edgePaint),
       cross = new T.Mesh(keep(new T.PlaneGeometry(r * 0.9, 0.005)), ringPaint),
       down = new T.Mesh(keep(new T.PlaneGeometry(0.005, r * 0.9)), ringPaint);
+    const dot = new T.Mesh(keep(new T.CircleGeometry(0.0105, 20)), ringPaint),
+      dotEdge = new T.Mesh(keep(new T.CircleGeometry(0.0155, 20)), edgePaint);
     edge.renderOrder = 11;
     ring.renderOrder = cross.renderOrder = down.renderOrder = 12;
-    this.reticle.add(edge, ring, cross, down);
+    dotEdge.renderOrder = 13;
+    dot.renderOrder = 14;
+    this.reticle.add(edge, ring, cross, down, dotEdge, dot);
     this.reticle.visible = false;
     this.scene.add(this.reticle);
     // The thrower's eye is the camera; presses are swipes, taken here and not as picks.
@@ -498,11 +511,13 @@ export class DartsView extends TableView<State> {
     });
     const end = (e: PointerEvent, cancelled: boolean) => {
       if (!this.press || this.press.id !== e.pointerId) return;
-      const { x, y } = this.press;
+      const { x, y } = this.press,
+        made = cancelled || !this.canThrow() ? null : swipe(e.clientX - x, e.clientY - y, el.clientHeight || 1),
+        // Where the hand had the ring as the finger let go.
+        hand = this.trembled();
       this.press = null;
-      const made = cancelled || !this.canThrow() ? null : swipe(e.clientX - x, e.clientY - y, el.clientHeight || 1);
       this.aimShown();
-      if (made) this.throwAt(made.x, made.y);
+      if (made) this.throwAt(made.x + hand.x, made.y + hand.y);
     };
     el.addEventListener("pointerup", (e) => end(e, false));
     el.addEventListener("pointercancel", (e) => end(e, true));
@@ -518,8 +533,9 @@ export class DartsView extends TableView<State> {
       } else if ((e.key === "Enter" || e.key === " ") && !e.repeat) {
         e.preventDefault();
         if (!this.canThrow()) return;
-        const aim = this.keyAim ?? { x: 0, y: (TREBLE_IN + TREBLE_OUT) / 2 };
-        this.throwAt(aim.x, aim.y);
+        const aim = this.keyAim ?? { x: 0, y: (TREBLE_IN + TREBLE_OUT) / 2 },
+          hand = this.trembled();
+        this.throwAt(aim.x + hand.x, aim.y + hand.y);
       }
     });
     el.addEventListener("blur", () => {
@@ -527,22 +543,46 @@ export class DartsView extends TableView<State> {
       this.aimShown();
     });
   }
+  /** A person's throw at the point (x, y) of the board, where the ring's dot is: it lands there, with no scatter of its own. */
   private throwAt(x: number, y: number) {
     this.reticle.visible = false;
-    this.onMove({ from: -1, to: aimCode(x, y), extra: HUMAN_SPREAD });
+    this.onMove({ from: -1, to: aimCode(x, y), extra: 0 });
   }
-  /** Lays the aiming ring where the swipe under way, or the keyboard, aims. */
+  /** How far the hand had moved the ring when it was last drawn; a throw made before it was ever shown is caught somewhere in the tremor. */
+  private trembled() {
+    return this.hand.since >= 0 ? { x: this.hand.x, y: this.hand.y } : tremor(0, Math.random() * 1000);
+  }
+  /** Lays the aiming ring where the swipe under way, or the keyboard, aims, moved as far as the hand has trembled. */
   private aimShown() {
-    const aim = this.press ? swipe(this.press.dx, this.press.dy, this.renderer.domElement.clientHeight || 1) : this.keyAim;
-    this.reticle.visible = !!aim && !capturing() && this.canThrow();
-    if (aim) {
-      const p = boardPoint(aim.x, aim.y);
+    const el = this.renderer.domElement,
+      aim = this.press ? swipe(this.press.dx, this.press.dy, el.clientHeight || 1) : this.keyAim,
+      shown = !!aim && !capturing() && this.canThrow();
+    // With nothing aimed the hand rests; the next aim begins somewhere else in the tremor.
+    if (!aim) this.hand.since = -1;
+    if (aim && shown) {
+      const now = performance.now();
+      if (this.hand.since < 0) this.hand = { since: now, seed: Math.random() * 1000, x: 0, y: 0 };
+      const off = tremor((now - this.hand.since) / 1000, this.hand.seed);
+      this.hand.x = off.x;
+      this.hand.y = off.y;
+      const p = boardPoint(aim.x + off.x, aim.y + off.y);
       this.reticle.position.set(p.x, p.y, p.z + 0.012);
+      // The ring trembles on whether or not the finger moves.
+      if (!this.shaking) this.shaking = requestAnimationFrame(this.tremble);
     }
+    this.reticle.visible = shown;
+    // Where the ring's dot is, for readers of the page and the tests (millimetres from the bull).
+    const said = aim && shown ? `${(aim.x + this.hand.x).toFixed(1)},${(aim.y + this.hand.y).toFixed(1)}` : "";
+    if (el.dataset.aim !== said) el.dataset.aim = said;
     // The dart in the hand draws back a little as the swipe goes up.
     this.handPose();
     this.redraw();
   }
+  /** The tremor's frames: the ring is laid again each frame while it is shown. */
+  private tremble = () => {
+    this.shaking = 0;
+    if (!this.disposed) this.aimShown();
+  };
   /** Every press is the hand's (a swipe), never a pick. */
   protected dragStart() {
     return this.canThrow();
@@ -579,6 +619,11 @@ export class DartsView extends TableView<State> {
       if (!hand.visible) return;
       const at = this.handAt(),
         board = new T.Vector3(BOARD_X, BOARD_Y + 0.25, FACE_Z);
+      // The hand trembles with the ring it aims.
+      if (this.reticle.visible) {
+        at.x += this.hand.x * MM * HAND_SHAKE;
+        at.y += this.hand.y * MM * HAND_SHAKE;
+      }
       hand.position.copy(at);
       this.point(hand, at.clone().sub(board));
       hand.rotateZ(0.6);
@@ -741,6 +786,7 @@ export class DartsView extends TableView<State> {
   protected mark(_marks: Marks) {}
   dispose() {
     cancelAnimationFrame(this.ticker);
+    cancelAnimationFrame(this.shaking);
     for (const word of this.words) {
       (word.sprite.material as T.SpriteMaterial).map?.dispose();
       word.sprite.material.dispose();
