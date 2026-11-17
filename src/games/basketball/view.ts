@@ -262,9 +262,16 @@ interface Word {
  * sides and over the top, and a lit sign with the score and the clock. A swipe up throws the ready ball; the view
  * plays the machine in real time (`sim.ts`) and reports throws, baskets, misses and seconds as moves.
  */
+/** What the machine is heard doing: a ball on the rim, the backboard, the floor, another ball or the tray's lip, through the net, and rolling. */
+export type Noise = "rim" | "board" | "floor" | "ball" | "lip" | "net" | "roll";
 export class BasketballView extends TableView<State> {
-  /** A knock to be heard: the rim (`disc`), the backboard or the floor (`cushion`), the net (`pocket`). */
-  onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
+  /**
+   * A sound to be heard (`Noise`) and how hard (0 to 1); the rolling is a level, asked for every frame. The screen
+   * passes the kind on to the config's `knock` as it is.
+   */
+  onKnock: ((kind: string, strength: number) => void) | null = null;
+  /** When each kind of knock was last heard, so that balls jostling in the tray do not rattle like a machine gun. */
+  private heard = new Map<Noise, number>();
   private world: World = createWorld(1);
   private balls: T.Mesh[] = [];
   /** Where each ball was drawn last frame, for its roll. */
@@ -598,6 +605,12 @@ export class BasketballView extends TableView<State> {
   protected dragStart() {
     return this.running();
   }
+  /** A knock heard, unless one of its kind was heard a moment ago (`gap` milliseconds) or it is too soft to matter. */
+  private hear(kind: Noise, strength: number, now: number, gap: number, least = 0.05) {
+    if (strength < least || now - (this.heard.get(kind) ?? -Infinity) < gap) return;
+    this.heard.set(kind, now);
+    this.onKnock?.(kind, strength);
+  }
   /** Tells the screen what has happened in the machine, with a word over the hoop for a basket. */
   private report(events: Happening[], now: number) {
     const move = (to: number) => this.onMove({ from: -1, to, extra: -1 });
@@ -607,10 +620,13 @@ export class BasketballView extends TableView<State> {
         const points = worth(this.state);
         this.say(`+${points}`, points >= 4 ? "#ffb02a" : "#ffffff", now);
         move(SCORE + points);
-        this.onKnock?.("pocket", 1);
       } else if (event.kind === "miss") move(MISS);
-      else if (event.kind === "rim") this.onKnock?.("disc", event.strength);
-      else if (event.kind === "board" || event.kind === "bounce") this.onKnock?.("cushion", event.strength);
+      else if (event.kind === "net") this.hear("net", 1, now, 120);
+      else if (event.kind === "rim") this.hear("rim", event.strength, now, 45);
+      else if (event.kind === "board") this.hear("board", event.strength, now, 45);
+      else if (event.kind === "bounce") this.hear("floor", event.strength, now, 45);
+      else if (event.kind === "knock") this.hear("ball", event.strength, now, 110, 0.12);
+      else if (event.kind === "lip") this.hear("lip", event.strength, now, 140, 0.12);
     }
   }
   /** A word that rises from the hoop and fades. */
@@ -648,6 +664,10 @@ export class BasketballView extends TableView<State> {
         if (running && this.state?.winner === null) this.report(events, now);
       }
     }
+    // Balls rolling back down the ramp rumble as long as they roll, louder the more and the quicker (silent while the
+    // machine stands).
+    const rolling = running ? this.world.balls.reduce((sum, ball) => (ball.phase === "roll" ? sum + Math.hypot(ball.vx, ball.vz) : sum), 0) : 0;
+    this.onKnock?.("roll", Math.min(1, rolling / 5));
     this.pose(now, real);
     this.redraw();
   }
@@ -748,6 +768,7 @@ export class BasketballView extends TableView<State> {
   protected mark(_marks: Marks) {}
   dispose() {
     cancelAnimationFrame(this.ticker);
+    this.onKnock?.("roll", 0);
     for (const word of this.words) {
       (word.sprite.material as T.SpriteMaterial).map?.dispose();
       word.sprite.material.dispose();

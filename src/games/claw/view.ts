@@ -7,7 +7,7 @@ import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot } from "../table/view";
 import { AIM_HEIGHT, BUTTON, CLAW_SUBJECT, DECK, STICK } from "./layout";
 import { BONUS, DROP, MISSED, PRIZE, RELEASE, STEER, type State } from "./rules";
-import { AIM_TIME, CHUTE, DT, KINDS, LEAN, LIMBS, PIT, RAIL, REACH, aimAt, createWorld, drop, gripOf, hubOf, lean, letGo, leverOf, press, step, surface, type Happening, type World } from "./sim";
+import { AIM_TIME, CHUTE, DT, KINDS, LEAN, LIMBS, PIT, RAIL, REACH, SPEED, aimAt, createWorld, drop, gripOf, hubOf, lean, letGo, leverOf, press, step, surface, type Happening, type World } from "./sim";
 
 export const CLAW_COLORS: [string, string] = ["#ff6fae", "#b9b3a4"];
 /** The cabinet: its posts' corners, the ground of the park under it, the gantry's height, and the top of the glass. */
@@ -176,6 +176,14 @@ export class ClawView extends TableView<State> {
   private words: { sprite: T.Sprite; at: number }[] = [];
   private paused = false;
   private shown = 0;
+  /**
+   * What the machine is heard doing: the gantry's motor (`motor`) and the winch letting the claw down (`lower`) or
+   * winding it up (`raise`) are levels, asked for every frame while they go on (0 lets them fade); the prongs' clack
+   * (`clasp`) is a knock. The screen passes the kind on to the config's `knock` as it is.
+   */
+  onKnock: ((kind: string, strength: number) => void) | null = null;
+  /** The claw's phase as last heard, to hear the prongs open over the chute once. */
+  private heardPhase = "rest";
   private limbClock = performance.now();
   private last = performance.now();
   private left = 0;
@@ -576,8 +584,25 @@ export class ClawView extends TableView<State> {
   }
   setPaused(paused: boolean) {
     this.paused = paused;
-    // Paused, every hand is off the lever (a key let go meanwhile would not be heard).
-    if (paused) letGo(this.world);
+    // Paused, every hand is off the lever (a key let go meanwhile would not be heard), and the machine is silent.
+    if (paused) {
+      letGo(this.world);
+      this.hum(false);
+    }
+  }
+  /**
+   * The motor while the trolley runs, as loud and as high as it is quick, and the winch while the claw goes down or up;
+   * silence while the machine stands (paused, a window open, the page hidden, the round over).
+   */
+  private hum(running: boolean) {
+    const { claw } = this.world,
+      moving = running && (claw.phase === "aim" || claw.phase === "home"),
+      winding = running && (claw.phase === "drop" || claw.phase === "lift");
+    this.onKnock?.("motor", moving ? Math.min(1, Math.hypot(claw.vx, claw.vz) / SPEED) : 0);
+    this.onKnock?.(claw.phase === "lift" ? "raise" : "lower", winding ? 1 : 0);
+    // The prongs open over the chute with a lighter clack than they close with.
+    if (running && claw.phase === "release" && this.heardPhase !== "release") this.onKnock?.("clasp", 0.6);
+    this.heardPhase = claw.phase;
   }
   private running() {
     return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
@@ -585,7 +610,7 @@ export class ClawView extends TableView<State> {
   /** Tells the screen what a try came to. */
   private report(events: Happening[]) {
     for (const event of events) {
-      if (event.kind === "closed") this.onContact();
+      if (event.kind === "closed") this.onKnock?.("clasp", 1);
       else if (event.kind === "missed") {
         this.onMove({ from: -1, to: MISSED, extra: -1 });
         this.onContact();
@@ -628,6 +653,7 @@ export class ClawView extends TableView<State> {
         this.report(step(this.world));
       }
     }
+    this.hum(this.running());
     if (this.state) this.lights(this.state);
     this.pose(now);
     this.redraw();
@@ -814,6 +840,7 @@ export class ClawView extends TableView<State> {
   protected mark(_marks: Marks) {}
   dispose() {
     cancelAnimationFrame(this.ticker);
+    this.hum(false);
     for (const word of this.words) {
       (word.sprite.material as T.SpriteMaterial).map?.dispose();
       word.sprite.material.dispose();

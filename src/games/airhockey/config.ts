@@ -36,8 +36,8 @@ export const airHockeyConfig: PointConfig<State> = {
     [0, 1].map((p) => `${p === 0 ? `<span class="ah-set">SET ${setNumber(state)}</span>${setTable(state)}` : ""}<span class="ah-points">${state.score[p]}</span>`) as [string, string],
   view: (host, quality, _variant, _mode, level) => new AirHockeyView(host, quality, level),
   colors: AIRHOCKEY_COLORS,
-  // The puck knocks on a mallet or a rail.
-  contact: (sound) => sound.plastic(),
+  // The puck clacks off a mallet, knocks on a rail and clatters down a goal's chute, each as hard as it was struck.
+  knock: (sound, kind, strength) => (kind === "disc" ? sound.puck(strength) : kind === "cushion" ? sound.rail(strength) : sound.slot()),
   name: "에어하키",
   english: "Air Hockey",
   number: "NO. 69 — BEST OF THREE SETS",

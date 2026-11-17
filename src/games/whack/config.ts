@@ -24,10 +24,15 @@ export const whackConfig: PointConfig<State> = {
   view: (host, quality) => new WhackView(host, quality),
   colors: WHACK_COLORS,
   tallyHtml: (state) => [stat("점수", state.score) + stat("남은 시간", `${state.left}초`), ""],
-  // A mole knocked squeaks, a golden one rings, a hard hat clinks, a blow on an empty hole thuds.
+  // A mole knocked takes the mallet with a heavy, dull thud (a golden one rings over it), a hard hat clinks, a blow on
+  // an empty hole knocks lightly on the deck.
   contact: (sound, state) => {
     const last = state.last ?? -1;
-    if (last >= HIT) return last - HIT >= WORTH[1] ? sound.sparkle() : sound.pop();
+    if (last >= HIT) {
+      sound.thud();
+      if (last - HIT >= WORTH[1]) sound.sparkle();
+      return;
+    }
     if (last === CLINK) return sound.tile(2);
     if (last === MISS) return sound.soft(1);
   },

@@ -100,7 +100,10 @@ export type Happening =
   | { kind: "rim"; strength: number }
   | { kind: "board"; strength: number }
   | { kind: "bounce"; strength: number }
-  | { kind: "net" };
+  | { kind: "net" }
+  /** Two balls knocking together, and a ball rolling into the tray's padded lip (for the view's sound only). */
+  | { kind: "knock"; strength: number }
+  | { kind: "lip"; strength: number };
 /** A machine with every ball lying in the tray. */
 export function createWorld(level = 1, seed = 7): World {
   const balls: Ball[] = SPOTS.slice(0, BALLS).map(([x, z]) => ({ x, y: floorAt(z) + BALL, z, vx: 0, vy: 0, vz: 0, phase: "rest", scored: false, judged: true, spin: 0 }));
@@ -260,6 +263,7 @@ export function step(world: World): Happening[] {
       }
       if (ball.z > TRAY_FRONT) {
         ball.z = TRAY_FRONT;
+        if (ball.vz > 0.5) out.push({ kind: "lip", strength: Math.min(1, ball.vz / 4) });
         ball.vz = -Math.abs(ball.vz) * 0.3;
       }
       if (ball.z < LANE.back + BALL) {
@@ -373,6 +377,7 @@ export function step(world: World): Happening[] {
           uz = dz / flat,
           meet = (q.vx - p.vx) * ux + (q.vz - p.vz) * uz;
         if (meet < 0) {
+          if (meet < -0.5) out.push({ kind: "knock", strength: Math.min(1, -meet / 5) });
           const share = 1.6 * meet;
           p.vx += share * ux * sp;
           p.vz += share * uz * sp;
@@ -395,6 +400,7 @@ export function step(world: World): Happening[] {
       q.z += nz * overlap * sq;
       const closing = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny + (q.vz - p.vz) * nz;
       if (closing >= 0) continue;
+      if (closing < -0.5) out.push({ kind: "knock", strength: Math.min(1, -closing / 6) });
       const share = 1.7 * closing;
       p.vx += share * nx * sp;
       p.vy += share * ny * sp;

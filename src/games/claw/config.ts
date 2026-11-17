@@ -27,12 +27,19 @@ export const clawConfig: PointConfig<State> = {
   keyMove: (key, _state, repeat) => (repeat ? null : key in ARROWS ? made(STEER + ARROWS[key]) : key === " " || key === "Enter" ? made(DROP) : null),
   keyUp: (key) => (key in ARROWS ? made(RELEASE + ARROWS[key]) : null),
   tallyHtml: (state) => [stat("뽑은 인형", state.prizes.length) + stat("남은 횟수", state.tries), ""],
-  // A toy down the chute rings, a try that comes to nothing thuds, the prongs closing clack.
+  // A toy down the chute rings, a try that comes to nothing thuds.
   contact: (sound, state) => {
     const last = state.last ?? -1;
     if (last >= PRIZE) return sound.sparkle();
     if (last === MISSED) return sound.soft(2);
     return sound.knock(1);
+  },
+  // The gantry's motor whirs while the trolley runs, the winch winds while the claw goes down (higher) and up, the
+  // prongs clack shut and, softer, open (`onKnock` in the view: the motor and the winch are levels, 0 is silence).
+  knock: (sound, kind: string, strength) => {
+    if (kind === "motor") sound.motor(strength);
+    else if (kind === "lower" || kind === "raise") sound.winch(strength, kind === "raise");
+    else if (kind === "clasp") sound.clasp(strength);
   },
   // The arrow keys at the lower left, held down as a lever is, and the button beside them.
   toolsLayout: "arrows",

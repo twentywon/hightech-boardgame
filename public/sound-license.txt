@@ -55,3 +55,44 @@ for a real splash and a real explosion):
   its low end raised, trimmed and faded
 
 Both were mixed to 22.05 kHz mono MP3 and levelled (src/engine/sounds/).
+
+The arcade tables (bowling, air hockey, basketball, the claw machine and
+whack-a-mole) were given sounds of their own. Every one is made from
+recordings released under Creative Commons Zero (CC0 1.0); none of them is
+a recording of a bowling alley, an air hockey table or a basketball machine
+(no free recording of those was found), so each is put together from the
+nearest real sounds:
+
+- Recorded by Joseph Sardin for BigSoundBank (https://bigsoundbank.com):
+  "Juggling 3 clubs" (s1805), "Plastic cup falling" (s0630), "Ball Kicked"
+  (s1044), "Flag #2" (s1788), "Electric car window, opening #1" (s1502) and
+  "Little electric winch" (s0708)
+- Recorded by Clarisse for BigSoundBank: "Poker Chips" (s0942)
+- From "Impact Sounds" (1.0) by Kenney Vleugels (www.kenney.nl),
+  https://kenney.nl/assets/impact-sounds: impactWood_heavy, impactWood_medium,
+  impactGeneric_light, impactMetal_medium, impactPlank_medium_001 and
+  impactPunch_heavy_000
+- "Bowling Ball Rolling" by qubodup (Iwan Gabovitch), OpenGameArt,
+  https://opengameart.org/content/bowling-ball-rolling
+
+What each file is:
+
+- pins-1 to pins-3 (bowling): single knocks of the juggling clubs (hollow,
+  pin-shaped), played lower to a pin's size and laid one after another as a
+  rack falls (24 for a strike, 9 for a few pins, 2 for a nudge), over a heavy
+  wooden thump and a few wooden knocks on the deck, with a hall's echo added
+- puck-1 to puck-3 (air hockey): the poker chips' clack played lower over a
+  light knock (the mallet), a duller and shorter knock (a rail), and the
+  plastic cup falling, played lower over a thump (a goal's chute)
+- bounce-1, hoop-1, board-1 (basketball): the kicked ball's thump and the ring
+  of its air, played lower to a basketball's; with a metal clang over it for
+  the rim, and with a plank's knock for the backboard
+- swish-1 (basketball): the nylon flag shaken once, its low end taken off
+- roll-1 (basketball): the ball rolling, played higher, as a seamless loop
+- motor-1, winch-1 (claw machine): steady stretches of the window motor and
+  the winch, as seamless loops
+- clasp-1 (claw machine): a metal knock over a wooden thump
+- thud-1 (whack-a-mole): impactPunch_heavy_000 as it is
+
+Changes to all of these: cut, pitched, mixed, faded, levelled and converted
+to 22.05 kHz mono MP3 (src/engine/sounds/).

@@ -4,7 +4,7 @@ import { pub } from "../../engine/scenery";
 import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import type { State } from "./rules";
-import { DT, GOAL, HALF_X, HALF_Z, MALLET, PUCK, createWorld, keep, step, think, type World } from "./sim";
+import { DT, GOAL, HALF_X, HALF_Z, MALLET, MAX_PUCK, PUCK, createWorld, keep, step, think, type World } from "./sim";
 import { DROP, ORBIT, RAIL, airHockeySubject } from "./layout";
 
 export const AIRHOCKEY_COLORS: [string, string] = ["#e0322a", "#2a6fe0"];
@@ -84,7 +84,10 @@ export class AirHockeyView extends TableView<State> {
   private left = 0;
   private paused = false;
   private frame = 0;
-  private clicked = 0;
+  /** When a mallet's strike and a rail's knock were last heard, so that a puck pushed along is not a rattle. */
+  private clicked = { mallet: 0, rail: 0 };
+  /** A knock heard: the puck struck by a mallet (`disc`), against a rail (`cushion`), into a goal slot (`pocket`). */
+  onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
   private ticker = 0;
   private shown = 0;
   constructor(
@@ -236,18 +239,24 @@ export class AirHockeyView extends TableView<State> {
           Object.assign(this.world.mallets[0], { x: mine.x, z: mine.z });
           this.world.targets[0] = { x: mine.x, z: mine.z };
           this.sent = { x: mine.x, z: mine.z };
+          this.onKnock?.("pocket", 1);
           this.onMove({ from: -1, to: scorer, extra: -1 });
           break;
         }
       }
       if (slices) this.sent = { ...this.world.targets[0] };
-      if (this.world.hit || this.world.wall) {
-        if (now - this.clicked > 60) {
-          this.clicked = now;
-          this.onContact();
-        }
-        this.world.hit = this.world.wall = 0;
+      // A strike or a knock is as loud as the puck is quick after it; a puck merely nudged along is not heard again at once.
+      const { puck } = this.world,
+        strength = Math.min(1, Math.hypot(puck.vx, puck.vz) / (MAX_PUCK * 0.75));
+      if (this.world.hit && strength > 0.03 && now - this.clicked.mallet > 70) {
+        this.clicked.mallet = now;
+        this.onKnock?.("disc", strength);
       }
+      if (this.world.wall && strength > 0.03 && now - this.clicked.rail > 60) {
+        this.clicked.rail = now;
+        this.onKnock?.("cushion", strength);
+      }
+      this.world.hit = this.world.wall = 0;
     }
     this.pose();
     this.redraw();

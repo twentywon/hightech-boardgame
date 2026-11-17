@@ -33,8 +33,17 @@ export const basketballConfig: PointConfig<State> = {
         : before.left > FINAL && state.left === FINAL
           ? "3점 타임"
           : null,
-  // The rim rings, the board and the floor thud, the net swishes.
-  knock: (sound, kind, strength) => (kind === "disc" ? sound.tile(5) : kind === "cushion" ? sound.cushion(strength) : sound.soft(2)),
+  // The rim rings, the backboard knocks, a ball bounces on the floor (softer off another ball or the tray's lip), the
+  // net swishes, and balls rolling back down the ramp rumble (`Noise` in the view).
+  knock: (sound, kind: string, strength) => {
+    if (kind === "rim") sound.rim(strength);
+    else if (kind === "board") sound.backboard(strength);
+    else if (kind === "floor") sound.bounce(strength);
+    else if (kind === "ball") sound.bounce(strength * 0.55);
+    else if (kind === "lip") sound.bounce(strength * 0.35);
+    else if (kind === "net") sound.swish();
+    else if (kind === "roll") sound.rolling(strength);
+  },
   contact: (sound, state) => {
     if ((state.last ?? 0) >= SCORE + 4) sound.sparkle();
   },

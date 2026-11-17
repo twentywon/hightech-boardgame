@@ -1,5 +1,5 @@
 // Recorded effects, inlined so nothing is fetched at run time. They are
-// Kenney's "Casino Audio", "RPG Audio" and "UI Audio" (all CC0); see
+// Kenney's packs, BigSoundBank's recordings and a few more (all CC0); see
 // public/sound-license.txt. Each kind of sound has several recordings
 // ("wood-1" … "wood-4"): a game takes one of them for its pieces and keeps
 // to it, so that a game always sounds the same and no two games quite alike.
@@ -24,9 +24,31 @@ function decode(context: AudioContext) {
       .catch(() => {});
   }
 }
+/**
+ * The loops (motor-1, winch-1, roll-1) carry this many seconds of their own continuation before and after the stretch
+ * that loops, so that the loop is seamless whether or not the decoder keeps the MP3's padding.
+ */
+const LOOP_MARGIN = 0.15;
+/**
+ * A loop that is not asked for again within this many seconds fades away by itself (a safety net: views ask every
+ * frame and say 0 when they stop; long enough for a slow software-drawn frame not to cut the loop off).
+ */
+const LOOP_HOLD = 1;
+interface Loop {
+  source: AudioBufferSourceNode;
+  gain: GainNode;
+  /** The loudness and the rate it was last sent toward. */
+  volume: number;
+  rate: number;
+  /** The context's time after which it fades unless asked for again. */
+  until: number;
+}
 export class Sound {
   private context: AudioContext | null = null;
   enabled = true;
+  /** Sounds that last while something goes on (a motor, a winch, balls rolling), by recording. */
+  private loops = new Map<string, Loop>();
+  private watch = 0;
   unlock() {
     if (!this.enabled) return;
     try {
@@ -36,8 +58,82 @@ export class Sound {
     } catch {}
   }
   dispose() {
+    this.hush();
     void this.context?.close().catch(() => {});
     this.context = null;
+  }
+  /** A page put away silences what goes on (a view's clock stops with it and can no longer say so). */
+  private readonly hidden = () => {
+    if (document.hidden) this.hush();
+  };
+  /**
+   * A sound that lasts while something goes on: the recording `name` looped at `volume` (0 lets it fade out), played
+   * at `rate`. It has to be asked for again at least every `LOOP_HOLD` seconds (a view does so every frame), or it
+   * fades away by itself: a view that stops (a page hidden, a view thrown away) never leaves it running.
+   */
+  private hum(name: string, volume: number, rate = 1) {
+    const c = this.context,
+      held = this.loops.get(name);
+    if (!c || !this.enabled || volume <= 0.002) {
+      if (held) this.fade(name, held);
+      return;
+    }
+    const now = c.currentTime;
+    if (held) {
+      // Only a change worth hearing is sent, so that a view asking every frame does not pile up automation.
+      if (Math.abs(volume - held.volume) > 0.005) held.gain.gain.setTargetAtTime((held.volume = volume), now, 0.05);
+      if (Math.abs(rate - held.rate) > 0.005) held.source.playbackRate.setTargetAtTime((held.rate = rate), now, 0.08);
+      held.until = now + LOOP_HOLD;
+      return;
+    }
+    const buffer = samples.get(name);
+    if (!buffer || buffer.duration < LOOP_MARGIN * 3) return;
+    const source = c.createBufferSource(),
+      gain = c.createGain();
+    source.buffer = buffer;
+    source.loop = true;
+    source.loopStart = LOOP_MARGIN;
+    source.loopEnd = buffer.duration - LOOP_MARGIN;
+    source.playbackRate.value = rate;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(volume, now + 0.06);
+    source.connect(gain);
+    gain.connect(c.destination);
+    source.start(now, LOOP_MARGIN);
+    this.loops.set(name, { source, gain, volume, rate, until: now + LOOP_HOLD });
+    if (!this.watch) {
+      this.watch = window.setInterval(() => this.lapse(), 100);
+      document.addEventListener("visibilitychange", this.hidden);
+    }
+  }
+  /** A loop let go: a quick fade, then it stops. */
+  private fade(name: string, loop: Loop) {
+    this.loops.delete(name);
+    const c = this.context;
+    try {
+      if (c) {
+        loop.gain.gain.cancelScheduledValues(c.currentTime);
+        loop.gain.gain.setTargetAtTime(0, c.currentTime, 0.03);
+        loop.source.stop(c.currentTime + 0.25);
+      } else loop.source.stop();
+    } catch {}
+    if (!this.loops.size) this.unwatch();
+  }
+  /** Loops that have not been asked for again lately fade away. */
+  private lapse() {
+    const now = this.context?.currentTime ?? Infinity;
+    for (const [name, loop] of this.loops) if (now > loop.until) this.fade(name, loop);
+  }
+  private unwatch() {
+    if (!this.watch) return;
+    clearInterval(this.watch);
+    this.watch = 0;
+    document.removeEventListener("visibilitychange", this.hidden);
+  }
+  /** Every lasting sound faded out at once (paused, a window opened, the page hidden, the table left). */
+  hush() {
+    for (const [name, loop] of this.loops) this.fade(name, loop);
+    this.unwatch();
   }
   private tone(
     type: OscillatorType,
@@ -317,9 +413,19 @@ export class Sound {
     this.noise(0.05, length * 0.8, 0.05, 420, "bandpass", 260);
     this.tone("sine", 58, 46, 0, length, 0.05);
   }
-  /** Pins scattered by a ball (`strength` 0 to 1): hard knocks one after another, with their clatter, dying away. */
+  /**
+   * Pins scattered by a ball (`strength` 0 to 1): the full crash of a rack going down for a strong hit, a few pins
+   * for a lighter one, a pin or two knocking for the knocks after; louder the harder (made by the page until the
+   * recordings are ready).
+   */
   pins(strength = 1) {
     if (!this.enabled || !this.context) return;
+    const s = Math.max(0, Math.min(1, strength)),
+      name = s >= 0.55 ? "pins-1" : s >= 0.22 ? "pins-2" : "pins-3";
+    if (!this.recording(name, 0.28 + 0.34 * s)) this.knocked(s);
+  }
+  /** Pins made by the page: hard knocks one after another, with their clatter, dying away. */
+  private knocked(strength: number) {
     const knocks = 3 + Math.round(Math.min(1, strength) * 9);
     let at = 0;
     for (let i = 0; i < knocks; i++) {
@@ -329,6 +435,58 @@ export class Sound {
       at += (0.02 + Math.random() * 0.05) * (1 + i * 0.2);
     }
     this.tone("sine", 160, 70, 0, 0.25, 0.08 * Math.min(1, strength));
+  }
+  /** An air hockey puck struck by a mallet (`strength` 0 to 1): a hard plastic clack. */
+  puck(strength = 0.6) {
+    if (!this.recording("puck-1", 0.12 + 0.4 * Math.min(1, strength))) this.plastic();
+  }
+  /** The puck against a rail: a duller knock. */
+  rail(strength = 0.6) {
+    if (!this.recording("puck-2", 0.1 + 0.38 * Math.min(1, strength))) this.plastic();
+  }
+  /** The puck dropping into a goal slot and clattering down the chute under it. */
+  slot() {
+    if (!this.recording("puck-3", 0.55)) this.plastic();
+  }
+  /** A basketball against the rim (`strength` 0 to 1): the steel rings over the ball's thump. */
+  rim(strength = 0.6) {
+    if (!this.recording("hoop-1", 0.14 + 0.42 * Math.min(1, strength))) this.tile(5);
+  }
+  /** A basketball against the backboard. */
+  backboard(strength = 0.6) {
+    if (!this.recording("board-1", 0.14 + 0.42 * Math.min(1, strength))) this.cushion(strength);
+  }
+  /** A basketball bouncing on the floor, or knocking another (`strength` 0 to 1): its thump and the ring of its air. */
+  bounce(strength = 0.6) {
+    if (!this.recording("bounce-1", 0.06 + 0.46 * Math.min(1, strength))) this.soft(2);
+  }
+  /** A basketball through the net: the swish of the cords. */
+  swish() {
+    if (!this.recording("swish-1", 0.5)) this.noise(0, 0.3, 0.06, 3200, "bandpass", 1800);
+  }
+  /** Balls rolling back down the ramp (`level` 0 to 1, 0 is silence), as long as it is asked for. */
+  rolling(level: number) {
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("roll-1", 0.24 * l, 0.85 + 0.3 * l);
+  }
+  /** The claw machine's gantry motor (`level` 0 to 1, how fast the trolley goes; 0 is silence), as long as it is asked for. */
+  motor(level: number) {
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("motor-1", l > 0.03 ? 0.1 + 0.18 * l : 0, 0.82 + 0.22 * l);
+  }
+  /** The claw machine's winch letting the claw down (quicker, higher) or winding it up, as long as it is asked for. */
+  winch(level: number, rising = false) {
+    this.hum("winch-1", 0.26 * Math.max(0, Math.min(1, level)), rising ? 0.92 : 1.08);
+  }
+  /** The claw's prongs closing on their solenoid (or, softer, opening). */
+  clasp(strength = 1) {
+    if (!this.recording("clasp-1", 0.2 + 0.32 * Math.min(1, strength), strength < 1 ? 1.15 : 1)) this.knock(1);
+  }
+  /** A heavy, dull thud: a soft mallet striking a mole. */
+  thud() {
+    if (this.recording("thud-1", 0.6)) return;
+    this.tone("sine", 150, 55, 0, 0.18, 0.3);
+    this.noise(0, 0.08, 0.12, 700, "lowpass", 300);
   }
   /** A soft bell: a note with two partials over it, struck and left to ring. */
   private bell(frequency: number, at: number, length: number, volume: number) {
