@@ -56,11 +56,10 @@ test("janggi opens inline; pointer and keyboard moves, pass, undo, views and res
   });
   await page.goto("/");
   const card = page.getByRole("button", { name: "장기 살펴보기", exact: true });
-  await expect(card).toHaveAttribute("aria-expanded", "false");
+  await expect(card).toHaveAttribute("aria-haspopup", "dialog");
   const url = page.url();
   await card.click();
   await expect(page.getByRole("region", { name: "장기 대국 설정" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "장기판 미리보기" })).toBeVisible();
   await expect(page.getByLabel("로컬 2인")).toBeChecked();
   await expect(page.getByLabel("AI 난이도")).toBeHidden();
   // Two local players each choose their own formation.

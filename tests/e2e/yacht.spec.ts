@@ -57,16 +57,14 @@ test("yacht dice opens inline; roll, keep, score, and a whole solo game", async 
   await loadDice(page, [3, 3, 4, 5, 6, 2]);
   await page.goto("/");
   const card = page.getByRole("button", { name: "요트 다이스 살펴보기", exact: true });
-  await expect(card).toHaveAttribute("aria-expanded", "false");
+  await expect(card).toHaveAttribute("aria-haspopup", "dialog");
   await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(0);
   const url = page.url();
   await card.click();
   await expect(page.getByRole("region", { name: "요트 다이스 대국 설정" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "요트 다이스 테이블 미리보기" })).toBeVisible();
   await expect(page.getByLabel("혼자 하기", { exact: true })).toBeChecked();
   // The computer has one fixed strength and there is no hint.
   await expect(page.getByLabel("AI 난이도")).toHaveCount(0);
-  await expect(page.locator("canvas")).toHaveCount(0);
   expect(page.url()).toBe(url);
   await page.screenshot({ path: `test-results/${info.project.name}-yacht-setup.png`, fullPage: true });
   await button(page, /테이블에 앉기/).click();

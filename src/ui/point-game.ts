@@ -238,9 +238,21 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const dialog = host.closest("dialog");
     if (dialog) {
       dialog.querySelector("h2")!.textContent = config.newGameLabel ?? "스테이지 선택";
-      dialog.querySelector(".setup-note")!.textContent = "하고 싶은 배치를 고르세요. 하던 게임은 끝내고 새로 시작합니다.";
+      dialog.querySelector(".setup-note")!.textContent = dialog.classList.contains("entry")
+        ? "하고 싶은 것을 누르면 바로 시작합니다. 닫으면 지금 그대로 합니다."
+        : "하고 싶은 배치를 고르세요. 하던 게임은 끝내고 새로 시작합니다.";
     }
-    host.innerHTML = `<div class="stage-grid">${config.stages!.map((stage) => `<button class="stage-card${stage.value === variant ? " current" : ""}" data-stage="${stage.value}"><span class="stage-art" aria-hidden="true">${stage.art}</span><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div>`;
+    // Entered from the collection, the window also offers to sit down with the stage as it is laid.
+    const entry = !!dialog?.classList.contains("entry");
+    host.innerHTML = `<div class="stage-grid">${config.stages!.map((stage) => `<button class="stage-card${stage.value === variant ? " current" : ""}" data-stage="${stage.value}"><span class="stage-art" aria-hidden="true">${stage.art}</span><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div>${entry ? `<button class="primary stage-start">${config.startWord} <span>↗</span></button>` : ""}`;
+    const sit = host.querySelector<HTMLButtonElement>(".stage-start");
+    if (sit)
+      sit.onclick = () => {
+        dialog?.close();
+        dialog?.remove();
+        stageNo = 1;
+        start();
+      };
     host.querySelectorAll<HTMLButtonElement>(".stage-card").forEach(
       (card) =>
         (card.onclick = () => {

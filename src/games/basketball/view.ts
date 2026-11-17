@@ -1,12 +1,12 @@
 import * as T from "three";
-import { block, glossy } from "../../engine/scene-utils";
+import { aim as aimRay, block, capable, glossy } from "../../engine/scene-utils";
 import { funfair } from "../../engine/scenery";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { GROUND, shooterCamera, swipe } from "./layout";
 import { FINAL, GOAL, MISS, SCORE, SHOT, TICK, onFire, worth, type State } from "./rules";
-import { BALL, BOARD, DT, HAND, HOOP, LANE, READY, arc, createWorld, flightTime, floorAt, inTray, nextStage, readyBall, shoot, step, type Happening, type World } from "./sim";
+import { BALL, BOARD, DT, HAND, HOOP, LANE, READY, arc, ballNear, createWorld, flightTime, floorAt, inTray, nextStage, readyBall, shoot, step, type Happening, type World } from "./sim";
 
 export const BASKETBALL_COLORS: [string, string] = ["#e8641c", "#1f4fae"];
 /** A tiny fixed sequence, so that painted pictures come out the same every time. */
@@ -24,42 +24,86 @@ const canvasTexture = (canvas: HTMLCanvasElement, repeat?: [number, number]) => 
   }
   return texture;
 };
-/** A basketball's skin: orange pebbled leather with the black seams (two great circles and the two curved ones). */
+/**
+ * A basketball's skin (the user asked for its texture): orange pebbled leather, each pebble a small raised dot lit from
+ * above and shaded below, a little uneven in colour, with the black seams sunk into it (two great circles and the two
+ * curved ones). Two pictures: the colour, and the relief (light pebbles, dark grooves) for where a graphics card draws.
+ */
 function ballSkin() {
-  const W = 512,
-    H = 256,
-    c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
-  const ctx = c.getContext("2d")!,
+  const W = 1024,
+    H = 512,
+    colour = document.createElement("canvas"),
+    relief = document.createElement("canvas");
+  colour.width = relief.width = W;
+  colour.height = relief.height = H;
+  const ctx = colour.getContext("2d")!,
+    bump = relief.getContext("2d")!,
     random = sequence(7);
-  ctx.fillStyle = "#d8611f";
+  // The leather: a warm orange, a little darker and lighter in broad patches.
+  ctx.fillStyle = "#cf5a1c";
   ctx.fillRect(0, 0, W, H);
-  for (let k = 0; k < 14000; k++) {
-    ctx.fillStyle = random() < 0.5 ? "rgba(110,36,6,0.28)" : "rgba(255,178,120,0.2)";
-    ctx.fillRect(random() * W, random() * H, 1.6, 1.6);
+  for (let k = 0; k < 90; k++) {
+    const g = ctx.createRadialGradient(random() * W, random() * H, 0, random() * W, random() * H, 60 + random() * 120);
+    g.addColorStop(0, random() < 0.5 ? "rgba(235,120,50,0.18)" : "rgba(150,50,10,0.16)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
   }
-  ctx.strokeStyle = "#1b120d";
-  ctx.lineWidth = 6;
-  ctx.lineCap = "round";
-  const line = (points: [number, number][]) => {
-    ctx.beginPath();
-    points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    ctx.stroke();
+  bump.fillStyle = "#7a7a7a";
+  bump.fillRect(0, 0, W, H);
+  // The pebbles, close together: a shadow below, the dot, a highlight above.
+  for (let y = 2; y < H; y += 4.2)
+    for (let x = (Math.round(y / 4.2) % 2) * 2.1; x < W; x += 4.2) {
+      const px = x + (random() - 0.5) * 1.6,
+        py = y + (random() - 0.5) * 1.6,
+        r = 1.35 + random() * 0.5;
+      ctx.fillStyle = "rgba(90,30,5,0.35)";
+      ctx.beginPath();
+      ctx.arc(px + 0.5, py + 0.6, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(${230 + random() * 20},${110 + random() * 25},${50 + random() * 20},0.55)`;
+      ctx.beginPath();
+      ctx.arc(px, py, r * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,210,170,0.25)";
+      ctx.fillRect(px - r * 0.45, py - r * 0.55, r * 0.6, r * 0.45);
+      bump.fillStyle = `rgb(${190 + random() * 40},${190 + random() * 40},${190 + random() * 40})`;
+      bump.beginPath();
+      bump.arc(px, py, r, 0, Math.PI * 2);
+      bump.fill();
+    }
+  // The seams: a black groove with a darker hollow either side of it.
+  const line = (pen: CanvasRenderingContext2D, points: [number, number][], width: number, style: string) => {
+    pen.strokeStyle = style;
+    pen.lineWidth = width;
+    pen.lineCap = "round";
+    pen.lineJoin = "round";
+    pen.beginPath();
+    points.forEach(([x, y], i) => (i ? pen.lineTo(x, y) : pen.moveTo(x, y)));
+    pen.stroke();
   };
-  line([[0, H / 2], [W, H / 2]]);
-  for (const x of [3, W / 2, W - 3]) line([[x, 0], [x, H]]);
+  const seams: [number, number][][] = [[[0, H / 2], [W, H / 2]], ...[3, W / 2, W - 3].map((x): [number, number][] => [[x, 0], [x, H]])];
   for (const centre of [0.25, 0.75])
     for (const side of [-1, 1]) {
       const points: [number, number][] = [];
-      for (let k = 0; k <= 40; k++) {
-        const v = k / 40,
+      for (let k = 0; k <= 60; k++) {
+        const v = k / 60,
           lat = (0.5 - v) * Math.PI;
         points.push([(centre + side * 0.15 * Math.cos(lat) ** 0.7) * W, v * H]);
       }
-      line(points);
+      seams.push(points);
     }
-  return canvasTexture(c);
+  for (const seam of seams) {
+    line(ctx, seam, 20, "rgba(110,35,5,0.35)");
+    line(ctx, seam, 10, "#1a100b");
+    line(ctx, seam, 3, "rgba(70,45,35,0.8)");
+    line(bump, seam, 18, "#555555");
+    line(bump, seam, 10, "#000000");
+  }
+  const map = canvasTexture(colour),
+    rough = canvasTexture(relief);
+  rough.colorSpace = T.NoColorSpace;
+  return { map, bump: rough };
 }
 /** A net: knotted cord in diamonds on nothing, `colour` on a clear ground. */
 function netTexture(colour: string, width: number, repeat: [number, number]) {
@@ -239,6 +283,7 @@ export class BasketballView extends TableView<State> {
   private charge: { from: number; yaw: number } | null = null;
   private keyYaw = 0;
   private lift = 0;
+  private sight = new T.Raycaster();
   /** The ball being taken up for the throw under way, or -1. */
   private held = -1;
   private paused = false;
@@ -284,8 +329,14 @@ export class BasketballView extends TableView<State> {
     this.net.castShadow = false;
     this.scene.add(this.hoop);
     // The balls: pebbled orange leather, and the aiming dots.
-    this.ballPaint = keep(new T.MeshStandardMaterial({ map: keep(ballSkin()), roughness: 0.62, emissive: "#ff5a00", emissiveIntensity: 0 }));
-    const ballShape = keep(new T.SphereGeometry(BALL, 40, 24));
+    // The leather's pebbles and sunk seams stand out in relief where a graphics card draws (and its sheen with them).
+    const skin = ballSkin();
+    keep(skin.map);
+    keep(skin.bump);
+    this.ballPaint = keep(
+      new T.MeshStandardMaterial({ map: skin.map, roughness: 0.66, emissive: "#ff5a00", emissiveIntensity: 0, ...(capable() ? { bumpMap: skin.bump, bumpScale: 1.6, roughness: 0.58 } : {}) }),
+    );
+    const ballShape = keep(new T.SphereGeometry(BALL, 56, 32));
     for (const _ of this.world.balls) {
       const mesh = new T.Mesh(ballShape, this.ballPaint);
       mesh.castShadow = mesh.receiveShadow = true;
@@ -452,6 +503,8 @@ export class BasketballView extends TableView<State> {
     el.addEventListener("pointerdown", (e) => {
       if ((e.pointerType === "mouse" && e.button !== 0) || !this.running() || this.press) return;
       this.press = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0 };
+      // The ball pressed on is the one taken up (or, pressed beside the balls, the nearest to the press).
+      this.held = this.ballAt(e);
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
@@ -476,7 +529,10 @@ export class BasketballView extends TableView<State> {
     el.addEventListener("keydown", (e) => {
       if (e.key === " " || e.key === "Spacebar") {
         e.preventDefault();
-        if (!e.repeat && !this.charge && this.running()) this.charge = { from: performance.now(), yaw: this.keyYaw };
+        if (!e.repeat && !this.charge && this.running()) {
+          this.charge = { from: performance.now(), yaw: this.keyYaw };
+          this.held = readyBall(this.world);
+        }
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         this.keyYaw = Math.max(-0.3, Math.min(0.3, this.keyYaw + (e.key === "ArrowLeft" ? -0.02 : 0.02)));
@@ -491,6 +547,23 @@ export class BasketballView extends TableView<State> {
       if (this.running()) this.throwBall(power, this.keyYaw);
     });
     el.addEventListener("blur", () => (this.charge = null));
+  }
+  /** The ball in the tray under a press, by the line of sight (a little wider than a ball), else the nearest to where it meets the tray. */
+  private ballAt(e: PointerEvent) {
+    aimRay(this.sight, e, this.renderer.domElement, this.camera);
+    let best = -1,
+      nearest = Infinity;
+    const at = new T.Vector3();
+    inTray(this.world).forEach((k) => {
+      const ball = this.world.balls[k],
+        centre = at.set(ball.x, ball.y, ball.z);
+      if (this.sight.ray.distanceToPoint(centre) > BALL * 1.35) return;
+      const far = this.sight.ray.origin.distanceTo(centre);
+      if (far < nearest) [best, nearest] = [k, far];
+    });
+    if (best >= 0) return best;
+    const tray = new T.Plane(new T.Vector3(0, 1, 0), -(floorAt(READY.z) + BALL));
+    return this.sight.ray.intersectPlane(tray, at) ? ballNear(this.world, at.x, at.z) : readyBall(this.world);
   }
   /** The keyboard's charge: up to full power in 1.2 seconds and back down, over and over. */
   private charged(now: number) {
@@ -590,17 +663,18 @@ export class BasketballView extends TableView<State> {
       glow = fire ? 0.55 + 0.25 * Math.sin(now / 90) : 0;
     this.ballPaint.emissiveIntensity = glow * 0.6;
     this.rimPaint.emissiveIntensity = glow;
-    // The ready ball comes up into the hand while a throw is being aimed.
-    const aim = this.running() ? this.aiming(now) : null;
-    this.lift += ((aim ? 1 : 0) - this.lift) * Math.min(1, real * 12);
-    // The ball the hand takes up is chosen when the aim begins and kept while it lasts.
-    if (!aim) this.held = -1;
-    else if (this.held < 0 || world.balls[this.held]?.phase === "flight") this.held = readyBall(world);
-    const ready = this.held;
+    // The ball taken up (chosen when the press or the charge began) is lifted straight up where it lay.
+    const holding = this.running() && (!!this.press || !!this.charge),
+      aim = holding ? this.aiming(now) : null;
+    if (!holding) this.held = -1;
+    else if (this.held >= 0 && world.balls[this.held]?.phase === "flight") this.held = -1;
+    this.lift += ((holding && this.held >= 0 ? 1 : 0) - this.lift) * Math.min(1, real * 12);
+    const ready = this.held,
+      from = ready >= 0 ? { x: world.balls[ready].x, z: world.balls[ready].z } : undefined;
     world.balls.forEach((ball, k) => {
       const mesh = this.balls[k],
         target = new T.Vector3(ball.x, ball.y, ball.z);
-      if (k === ready && this.lift > 0.001) target.lerp(new T.Vector3(0, HAND.y, HAND.z), this.lift);
+      if (k === ready && this.lift > 0.001) target.y += (HAND.y - target.y) * this.lift;
       const was = this.drawn[k];
       if (ball.phase === "flight") mesh.rotateOnWorldAxis(new T.Vector3(1, 0, 0), ball.spin * real);
       else {
@@ -613,7 +687,7 @@ export class BasketballView extends TableView<State> {
       was.copy(target);
     });
     // The aiming dots: the first part of the throw's way, up to a little past the top of its arc.
-    const shown = aim && !capturing() ? arc(aim.power, aim.yaw, flightTime(aim.power) * 0.5, (flightTime(aim.power) * 0.5) / this.dots.length) : [];
+    const shown = aim && from && !capturing() ? arc(aim.power, aim.yaw, flightTime(aim.power) * 0.5, (flightTime(aim.power) * 0.5) / this.dots.length, from) : [];
     this.dots.forEach((dot, k) => {
       dot.visible = k < shown.length;
       if (dot.visible) dot.position.set(shown[k].x, shown[k].y, shown[k].z);

@@ -60,13 +60,11 @@ test("blackjack opens inline, then bet → deal → hit → dealer → settlemen
   await stack(page, ["5S", "9H", "6D", "7C", "10D", "2S", "5H", "10S", "6C", "8D", "9S"]);
   await page.goto("/");
   const card = page.getByRole("button", { name: "블랙잭 살펴보기", exact: true });
-  await expect(card).toHaveAttribute("aria-expanded", "false");
+  await expect(card).toHaveAttribute("aria-haspopup", "dialog");
   const url = page.url();
   await card.click();
   await expect(page.getByRole("region", { name: "블랙잭 대국 설정" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "블랙잭 테이블 미리보기" })).toBeVisible();
   await expect(page.locator(".featured")).toContainText("시작 칩 1,000");
-  await expect(page.locator("canvas")).toHaveCount(0);
   expect(page.url()).toBe(url);
   await page.screenshot({ path: `test-results/${info.project.name}-blackjack-setup.png`, fullPage: true });
   await button(page, /테이블에 앉기/).click();

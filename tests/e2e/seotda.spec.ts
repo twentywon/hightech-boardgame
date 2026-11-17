@@ -37,12 +37,10 @@ test("seotda opens inline; a hand is dealt, bet and shown down with hidden cards
   await loadShuffles(page, [...deal(["3광", "10열", "8광", "10"]), ...deal(["9열", "2열", "9", "8열"])]);
   await page.goto("/");
   const card = page.getByRole("button", { name: "섯다 살펴보기", exact: true });
-  await expect(card).toHaveAttribute("aria-expanded", "false");
+  await expect(card).toHaveAttribute("aria-haspopup", "dialog");
   const url = page.url();
   await card.click();
   await expect(page.getByRole("region", { name: "섯다 대국 설정" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "섯다 테이블 미리보기" })).toBeVisible();
-  await expect(page.locator("canvas")).toHaveCount(0);
   expect(page.url()).toBe(url);
   await page.getByLabel("상대 수").selectOption("1");
   await page.screenshot({ path: `test-results/${info.project.name}-seotda-setup.png`, fullPage: true });

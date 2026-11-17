@@ -149,10 +149,14 @@ export function speedFor(carry: number) {
     lift = carry * Math.tan(LAUNCH) - rise;
   return lift <= 0.05 ? 3 : Math.sqrt((G * carry * carry) / (2 * cos * cos * lift));
 }
-/** The power and turn that throw a ball from the ready place through the middle of a hoop standing at `x`. */
-export function idealThrow(x = 0) {
-  const dz = HAND.z - HOOP.z;
-  return { power: powerFor(Math.hypot(dz, x)), yaw: Math.atan2(x, dz) };
+/** Where a place on the floor is let go from: the ball is lifted straight up there, to the hand's height. */
+export type Spot = { x: number; z: number };
+export const MIDDLE: Spot = { x: 0, z: HAND.z };
+/** The power and turn that throw a ball lifted at `from` through the middle of a hoop standing at `x`. */
+export function idealThrow(x = 0, from: Spot = MIDDLE) {
+  const dz = from.z - HOOP.z,
+    dx = x - from.x;
+  return { power: powerFor(Math.hypot(dz, dx)), yaw: Math.atan2(dx, dz) };
 }
 /** The velocity a throw of `power` turned by `yaw` leaves the hand with. */
 export function launch(power: number, yaw: number) {
@@ -163,14 +167,25 @@ export function launch(power: number, yaw: number) {
 }
 /** Whether a ball lies in the tray and the hand is free to throw it. */
 export const canShoot = (world: World) => readyBall(world) >= 0 && world.since > 0.18;
+/** The ball the hand would take up at a place of the tray: the nearest lying there; -1 when there is none. */
+export function ballNear(world: World, x: number, z: number) {
+  let best = -1,
+    nearest = Infinity;
+  world.balls.forEach((ball, k) => {
+    const far = Math.hypot(ball.x - x, ball.z - z);
+    if (takeable(ball) && far < nearest) [best, nearest] = [k, far];
+  });
+  return best;
+}
 /** Throws ball `held` (the one taken up while aiming, if it is still in the tray) or else the nearest; false when none can be. */
 export function shoot(world: World, power: number, yaw: number, held = -1) {
   if (!canShoot(world)) return false;
   const k = held >= 0 && world.balls[held] && takeable(world.balls[held]) ? held : readyBall(world),
     ball = world.balls[k],
     v = launch(power, yaw);
-  // Picked up and thrown from the hand, over the balls waiting down the lane.
-  Object.assign(ball, v, { x: 0, y: HAND.y, z: HAND.z, phase: "flight", scored: false, judged: false, spin: -Math.hypot(v.vy, v.vz) / BALL / 4 });
+  // Lifted straight up where it lay (the user asked: not brought to the middle) and thrown from there, over the
+  // balls lying round it; the turn of the throw is from that place.
+  Object.assign(ball, v, { y: HAND.y, phase: "flight", scored: false, judged: false, spin: -Math.hypot(v.vy, v.vz) / BALL / 4 });
   world.since = 0;
   world.started = true;
   return true;
@@ -397,11 +412,11 @@ export function step(world: World): Happening[] {
     }
   return out;
 }
-/** Where a throw of `power` turned by `yaw` passes, every `gap` seconds for `span` seconds (the aiming dots). */
-export function arc(power: number, yaw: number, span: number, gap: number) {
+/** Where a throw of `power` turned by `yaw` from `from` passes, every `gap` seconds for `span` seconds (the aiming dots). */
+export function arc(power: number, yaw: number, span: number, gap: number, from: Spot = MIDDLE) {
   const v = launch(power, yaw),
     out: { x: number; y: number; z: number }[] = [];
-  for (let t = gap; t <= span + 1e-9; t += gap) out.push({ x: v.vx * t, y: HAND.y + v.vy * t - (G * t * t) / 2, z: HAND.z + v.vz * t });
+  for (let t = gap; t <= span + 1e-9; t += gap) out.push({ x: from.x + v.vx * t, y: HAND.y + v.vy * t - (G * t * t) / 2, z: from.z + v.vz * t });
   return out;
 }
 /** How long a throw of `power` takes to reach the rim's height again. */

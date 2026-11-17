@@ -35,13 +35,11 @@ test("seven-card stud opens inline; a hand runs from the third card to the showd
   await loadShuffles(page, deal("AS 2S AD 7D AH 9C KS 4H KD JD 2C 8C 3D 6S"));
   await page.goto("/");
   const card = page.getByRole("button", { name: "세븐 포커 살펴보기", exact: true });
-  await expect(card).toHaveAttribute("aria-expanded", "false");
+  await expect(card).toHaveAttribute("aria-haspopup", "dialog");
   const url = page.url();
   await card.click();
   await expect(page.getByRole("region", { name: "세븐 포커 대국 설정" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "세븐 포커 테이블 미리보기" })).toBeVisible();
   await expect(page.getByLabel("상대 수")).toHaveValue("3");
-  await expect(page.locator("canvas")).toHaveCount(0);
   expect(page.url()).toBe(url);
   await page.getByLabel("상대 수").selectOption("1");
   await page.screenshot({ path: `test-results/${info.project.name}-poker-setup.png`, fullPage: true });

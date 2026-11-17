@@ -195,6 +195,23 @@ describe("basketball", () => {
     expect(ball.phase).not.toBe("flight");
     expect(bounces).toBeLessThanOrEqual(4);
   });
+  test("a ball is lifted and thrown from where it lay, and a throw turned toward the hoop from there goes in", () => {
+    const w = bs.createWorld(1),
+      k = bs.ballNear(w, -0.7, 1.2),
+      ball = w.balls[k],
+      from = { x: ball.x, z: ball.z };
+    expect(from.x).toBeLessThan(-0.5);
+    const ideal = bs.idealThrow(0, from);
+    // From the left of the tray the throw is turned toward the middle.
+    expect(ideal.yaw).toBeGreaterThan(0.05);
+    expect(bs.shoot(w, ideal.power, ideal.yaw, k)).toBe(true);
+    expect([ball.x, ball.y, ball.z]).toEqual([from.x, bs.HAND.y, from.z]);
+    let scored = false;
+    for (let s = 0; s < 240 * 3 && !scored; s++) scored = bs.step(w).some((e) => e.kind === "score");
+    expect(scored).toBe(true);
+    // The aiming dots start there too.
+    expect(bs.arc(ideal.power, ideal.yaw, 0.1, 0.05, from)[0].x).toBeLessThan(-0.4);
+  });
   test("the clock starts with the first throw and tells whole seconds", () => {
     const w = bs.createWorld(1);
     const seconds = (steps: number) => {

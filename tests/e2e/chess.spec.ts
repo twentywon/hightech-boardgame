@@ -64,16 +64,10 @@ test("chess inline setup, actual mouse/touch capture, orientation, restart and o
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await expect(page.locator(".game-card[aria-expanded=false]")).toHaveCount(games.length);
+  await expect(page.locator(".game-card[aria-haspopup=dialog]")).toHaveCount(games.length);
   await expect(page.getByRole("button", { name: "개발 예정" })).toHaveCount(0);
   await selectGame(page, "체스");
-  await expect(
-    page.getByRole("heading", { name: "World Table Games", level: 1 }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("img", { name: "체스판 미리보기" }),
-  ).toBeVisible();
-  await expect(page.locator("canvas")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "체스 대국 설정" })).toBeVisible();
   await expect(page.getByRole("button", { name: /이어하기/ })).toHaveCount(0);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
   await ready(page);
