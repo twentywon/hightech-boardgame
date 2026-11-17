@@ -15,6 +15,12 @@ export const STUMP_RADIUS = 0.4;
 /** How high a sitting frog's middle is over the top of its stump (taps aim there). */
 export const FROG_MIDDLE = 0.22;
 /** The middle of stump `index` of a row of `count`, at its top. */
+/** How long a hop to the next stump and a jump over a frog last (ms), and the share of that time the frog lands at. */
+export const HOP_MS = 420,
+  JUMP_MS = 560,
+  LANDS_AT = 0.84;
+/** Seconds from a frog leaving its stump (`from`) to its landing on `to`: where its 폴짝 sets it down. */
+export const landingAfter = (from: number, to: number) => ((Math.abs(to - from) === 2 ? JUMP_MS : HOP_MS) * LANDS_AT) / 1000;
 export function stumpAt(count: number, index: number) {
   return { x: (index - (count - 1) / 2) * SPACING, z: WOBBLE[index % WOBBLE.length], top: TOPS[index % TOPS.length] };
 }

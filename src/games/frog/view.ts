@@ -4,7 +4,7 @@ import { cameraDistance } from "../../engine/camera";
 import { capable, glossy, hop, travel, weave } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { FROG_PAINTS, SPACING, STUMP_RADIUS, SYMBOLS, frogSubject, stumpAt } from "./layout";
+import { FROG_PAINTS, HOP_MS, JUMP_MS, LANDS_AT, SPACING, STUMP_RADIUS, SYMBOLS, frogSubject, stumpAt } from "./layout";
 import { NONE, targets, type State } from "./rules";
 import { symbolPath } from "./symbols";
 
@@ -1353,7 +1353,9 @@ export class FrogView extends TableView<State> {
       dir = Math.sign(b.x - a.x);
     this.dropped = null;
     let landed = false;
-    this.tween(0, jump ? 560 : 420, (p) => {
+    // The sound is the leap (폴짝) and is begun as the frog leaves; it carries its own landing (`landingAfter`).
+    this.onContact();
+    this.tween(0, jump ? JUMP_MS : HOP_MS, (p) => {
       const q = travel(p);
       frog.root.position.set(start.x + (b.x - start.x) * q, start.y + (b.top - start.y) * q + hop(p) * lift, start.z + (b.z - start.z) * q);
       // Turned toward where it goes while in the air, and round to the front again as it lands.
@@ -1374,9 +1376,8 @@ export class FrogView extends TableView<State> {
         wide = 1 + 0.12 * s;
       }
       frog.squash.scale.set(wide, up, wide);
-      if (!landed && p >= 0.84) {
+      if (!landed && p >= LANDS_AT) {
         landed = true;
-        this.onContact();
         this.ripple(last.to);
       }
       this.reflect(frog);

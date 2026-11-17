@@ -1,6 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { FROG_PAINTS } from "./layout";
+import { FROG_PAINTS, landingAfter } from "./layout";
 import { NONE, STAGES, frogHop, hint, stageOf, type State } from "./rules";
 import { FROG_COLORS, FrogView } from "./view";
 
@@ -50,9 +50,13 @@ const NAMES = ["쉬움", "보통", "어려움", "고수"],
   NOTES = ["그루터기 다섯 개", "그루터기 여섯 개", "그루터기 일곱 개", "아홉 개 · 같은 색 둘"];
 export const frogConfig: PointConfig<State> = {
   game: frogHop,
+  // Heard as the frog leaves its stump (the view calls it then): a springy 폴짝 and its soft landing, not a knock on wood (the user asked).
   contact: (sound, state) => {
-    sound.pat();
-    if (state.winner === 0) sound.croak();
+    const last = state.last;
+    if (!last) return;
+    const land = landingAfter(last.from, last.to);
+    sound.leap(Math.abs(last.to - last.from) === 2, land);
+    if (state.winner === 0) sound.croak(land);
   },
   solo: true,
   showMovable: false,
