@@ -13,6 +13,12 @@
  * place, slower and quieter, the bass in two, brushes only and fewer notes, so
  * that it stays behind the game. One fades into the other.
  *
+ * Some tables have music of their own instead (`OWN`): Korean and Indian music for the tables of those countries,
+ * bright pop for the amusement park's machines (`ARCADE`) and rock for the bowling alley (`ROCK`). Those two are
+ * made the same way: their changes are drawn four bars at a time from happy pop or rock progressions, each four
+ * bars are a section of their own (a groove, a hook, a lift; a verse, a chorus, a break), and their lines are
+ * drawn from the chord's scale, so they never come round the same way twice either.
+ *
  * It begins only after the first touch or key (a page may not make a sound
  * before that), rests while the page is hidden, and can be switched off in
  * the settings.
@@ -30,6 +36,10 @@ const KINDS: Record<string, { tones: number[]; voicing: number[]; scale: number[
   "9": { tones: [0, 4, 7, 10], voicing: [4, 7, 10, 14], scale: [0, 2, 4, 7, 9, 10] },
   "7b9": { tones: [0, 4, 7, 10], voicing: [4, 7, 10, 13], scale: [0, 1, 4, 7, 8, 10] },
   m7b5: { tones: [0, 3, 6, 10], voicing: [3, 6, 10, 15], scale: [0, 3, 5, 6, 8, 10] },
+  // Pop's plain triads, a line drawn from the chord's own pentatonic (all of it in the key), and rock's power chord.
+  "": { tones: [0, 4, 7], voicing: [0, 4, 7], scale: [0, 2, 4, 7, 9] },
+  m: { tones: [0, 3, 7], voicing: [0, 3, 7], scale: [0, 3, 5, 7, 10] },
+  "5": { tones: [0, 7], voicing: [0, 7, 12], scale: [0, 3, 5, 7, 10] },
 };
 interface Chord {
   root: number;
@@ -198,12 +208,222 @@ const INDIA: Raga = {
   tabla: 0.05,
   sitar: 0.05,
 };
-type Piece = Jazz | Gugak | Raga;
+/** A bass's eighth: semitones above the chord's root, "a" a step into the next root, null a rest. */
+type Step = number | "a" | null;
+/**
+ * Bright pop for the amusement park's machines (whack-a-mole, the claw machine, basketball): a four-on-the-floor
+ * kick with claps on two and four and hats on the off-beats, a driving synth bass in eighths, a plucked synth chord
+ * stabbing the off-beats, and over it a toy-like arpeggio or a catchy hook drawn from the chord's scale.
+ */
+interface Arcade {
+  style: "arcade";
+  tempo: number;
+  /** How far the whole piece is moved from C, in semitones. */
+  key: number;
+  /** Rounds of four bars, a chord a bar; one is drawn after another. */
+  rounds: string[][];
+  /** Where the chord stab strikes in a bar, in beats (on the off-beats, mostly); one is drawn a phrase. */
+  stabs: number[][];
+  /** The bass's eight eighths a bar; one pattern is drawn a phrase. */
+  basses: Step[][];
+  /** The arpeggio's eight eighths a bar, as places among the chord's notes from the lowest up (two octaves). */
+  arps: number[][];
+  /** Rhythms a hook's motif is drawn from (one bar, in beats), and the range of the hook. */
+  hooks: number[][];
+  range: [number, number];
+  /** How often a phrase is a lift: no kick, the chords held, and a roll into the next phrase. */
+  lift: number;
+  /** How loud each part is. */
+  kick: number;
+  clap: number;
+  hat: number;
+  bass: number;
+  stab: number;
+  lead: number;
+  arp: number;
+}
+const ARCADE: Arcade = {
+  style: "arcade",
+  tempo: 132,
+  key: 2,
+  rounds: [
+    ["C", "G", "Am", "F"],
+    ["Am", "F", "C", "G"],
+    ["C", "Am", "F", "G"],
+    ["F", "G", "Em", "Am"],
+    ["C", "F", "Am", "G"],
+    ["F", "C", "G", "Am"],
+    ["C", "G", "F", "G"],
+    ["Dm", "G", "C", "Am"],
+    ["F", "G", "C", "C"],
+  ],
+  stabs: [
+    [0.5, 1.5, 2.5, 3.5],
+    [0.5, 1.5, 2.5, 3.5],
+    [0.5, 1.5, 2.5, 3.25, 3.75],
+    [0.5, 1.75, 2.5, 3.5],
+    [0.75, 1.5, 2.75, 3.5],
+  ],
+  basses: [
+    [0, 12, 0, 12, 0, 12, 0, 12],
+    [0, 12, 0, 12, 0, 12, 7, "a"],
+    [0, 0, 0, 0, 0, 0, 0, "a"],
+    [0, 0, 12, 0, 7, 0, 12, "a"],
+    [0, null, 0, 12, null, 12, 7, "a"],
+  ],
+  arps: [
+    [0, 1, 2, 3, 4, 3, 2, 1],
+    [0, 2, 1, 3, 2, 4, 3, 5],
+    [3, 2, 1, 2, 3, 4, 3, 2],
+    [0, 1, 2, 1, 3, 2, 4, 2],
+    [0, 2, 3, 2, 4, 3, 5, 3],
+  ],
+  hooks: [
+    [0, 0.5, 1, 1.5, 2.5, 3],
+    [0, 0.75, 1.5, 2, 3],
+    [0.5, 1, 1.5, 2.5, 3, 3.5],
+    [0, 1, 1.5, 2.5, 3],
+    [0, 0.5, 1.5, 2, 2.5, 3.5],
+    [0, 0.75, 1.5, 2.25, 3],
+    [0, 1.5, 2, 3],
+  ],
+  range: [7, 24],
+  lift: 0.1,
+  kick: 0.12,
+  clap: 0.24,
+  hat: 0.04,
+  bass: 0.058,
+  stab: 0.04,
+  lead: 0.026,
+  arp: 0.02,
+};
+/** A power chord struck in a bar: where (in beats), for how many beats, and how: "m" palm-muted, "o" open, "n" open and the next bar's chord, pushed ahead of it. */
+type Strike = [number, number, "m" | "o" | "n"];
+/**
+ * Rock for the bowling alley: power chords on an overdriven guitar (the oscillators through one shared amplifier: an
+ * overdrive and a cabinet that keeps the low and the middle), a bass on the roots in eighths, a rock kit (kick,
+ * snare, hats, a crash at the head of a phrase, fills round the toms) and now and then a short lead fill.
+ */
+interface Rock {
+  style: "rock";
+  tempo: number;
+  key: number;
+  /** The key's tonic as a pitch class: lead fills are drawn from its minor pentatonic. */
+  tonic: number;
+  rounds: string[][];
+  /** Riffs a phrase is drawn from, by section. */
+  riffs: Record<"verse" | "chorus" | "break", Strike[][]>;
+  /** Where the kick falls in a bar; one is drawn a phrase. */
+  kicks: number[][];
+  /** Rhythms of a bar of lead fill, in beats, and its range. */
+  licks: number[][];
+  range: [number, number];
+  /** How often a phrase ends in a drum fill, and in a lead fill. */
+  fill: number;
+  solo: number;
+  kick: number;
+  snare: number;
+  hat: number;
+  crash: number;
+  tom: number;
+  /** How loud the guitar's and the lead's amplifiers are, and the bass. */
+  guitar: number;
+  lead: number;
+  bass: number;
+}
+/** Eighths, every one muted. */
+const CHUGS: Strike[] = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((position) => [position, 0.42, "m"]);
+const ROCK: Rock = {
+  style: "rock",
+  tempo: 138,
+  key: 0,
+  tonic: 4,
+  rounds: [
+    ["E5", "D5", "A5", "E5"],
+    ["E5", "D5", "A5", "A5"],
+    ["E5", "C5", "D5", "E5"],
+    ["E5", "C5", "D5", "D5"],
+    ["E5", "G5", "A5", "E5"],
+    ["E5", "G5", "A5", "C5"],
+    ["A5", "G5", "D5", "A5"],
+    ["E5", "A5", "B5", "A5"],
+    ["E5", "E5", "D5", "A5"],
+  ],
+  riffs: {
+    verse: [
+      CHUGS,
+      [[0, 1.4, "o"], [1.5, 0.42, "m"], [2, 0.42, "m"], [2.5, 0.42, "m"], [3, 0.42, "m"], [3.5, 0.42, "m"]],
+      [[0, 0.42, "m"], [0.5, 0.42, "m"], [1, 0.42, "m"], [1.5, 0.9, "o"], [2.5, 0.42, "m"], [3, 0.42, "m"], [3.5, 0.42, "m"]],
+      [[0, 0.7, "o"], [1, 0.42, "m"], [1.5, 0.42, "m"], [2, 0.7, "o"], [3, 0.42, "m"], [3.5, 0.42, "m"]],
+    ],
+    chorus: [
+      [[0, 1.9, "o"], [2, 1.4, "o"], [3.5, 0.42, "m"]],
+      [[0, 1.4, "o"], [1.5, 1.4, "o"], [3, 0.42, "m"], [3.5, 0.5, "n"]],
+      [[0, 0.9, "o"], [1, 0.42, "m"], [1.5, 0.9, "o"], [2.5, 0.42, "m"], [3, 0.9, "o"]],
+      [[0, 3.8, "o"]],
+    ],
+    break: [[[0, 3.8, "o"]], [[0, 1.9, "o"], [2, 1.9, "o"]]],
+  },
+  kicks: [[0, 2], [0, 2, 2.5], [0, 1.5, 2], [0, 0.5, 2, 2.5], [0, 2, 3.5]],
+  licks: [[2, 2.5, 3, 3.5], [1.5, 2, 2.5, 3], [2, 2.25, 2.5, 3], [0, 0.5, 1, 2], [2.5, 2.75, 3, 3.25, 3.5], [1, 1.5, 2, 2.5, 3]],
+  range: [4, 19],
+  fill: 0.45,
+  solo: 0.35,
+  kick: 0.11,
+  snare: 0.13,
+  hat: 0.03,
+  crash: 0.045,
+  tom: 0.08,
+  guitar: 0.031,
+  lead: 0.019,
+  bass: 0.06,
+};
+type Piece = Jazz | Gugak | Raga | Arcade | Rock;
 const PIECES = { lobby: LOBBY, table: TABLE };
-/** Tables that have music of their own country instead of the jazz. */
-const OWN: Record<string, Piece> = { gonu: KOREA, "yut-nori": KOREA, mancala: INDIA, carrom: INDIA, "peg-solitaire": INDIA };
+/** Tables that have music of their own instead of the jazz: their country's, or the place's. */
+const OWN: Record<string, Piece> = {
+  gonu: KOREA,
+  "yut-nori": KOREA,
+  mancala: INDIA,
+  carrom: INDIA,
+  "peg-solitaire": INDIA,
+  "whack-a-mole": ARCADE,
+  "claw-machine": ARCADE,
+  basketball: ARCADE,
+  bowling: ROCK,
+};
 /** How long a bar of a piece lasts, in seconds. */
-const barLength = (piece: Piece) => (piece.style === "jazz" ? (60 / piece.tempo) * 4 : piece.beat * 4);
+const barLength = (piece: Piece) => ("tempo" in piece ? (60 / piece.tempo) * 4 : piece.beat * 4);
+/** The four bars of a pop or rock piece now played: what they are and what they are made of, drawn at their first bar. */
+interface Phrase {
+  section: "groove" | "hook" | "lift" | "verse" | "chorus" | "break";
+  /** A crash on its first beat; a fill (drums) at its end. */
+  crash: boolean;
+  fill: boolean;
+  /** Pop: where the stab strikes, the bass's and the arpeggio's patterns, and whether the hook's last bar answers it. */
+  stabs: number[];
+  bass: Step[];
+  arp: number[];
+  answer: boolean;
+  /** Rock: the guitar's riff, where the kick falls, and how many of its last bars carry a lead fill. */
+  riff: Strike[];
+  kicks: number[];
+  solo: number;
+}
+const QUIET: Phrase = { section: "groove", crash: false, fill: false, stabs: [], bass: [], arp: [], answer: false, riff: [], kicks: [], solo: 0 };
+/** The note of pitch class `n` from `low` up to an octave above it. */
+const within = (n: number, low: number) => low + pitchClass(n - low);
+/** An amplifier's overdrive: a soft curve that rounds the wave off instead of cutting it, kept a strength. */
+const curves = new Map<number, Float32Array<ArrayBuffer>>();
+function overdrive(strength: number) {
+  let curve = curves.get(strength);
+  if (!curve) {
+    curve = new Float32Array(1024);
+    for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(strength * ((i / (curve.length - 1)) * 2 - 1)) / Math.tanh(strength);
+    curves.set(strength, curve);
+  }
+  return curve;
+}
 const pick = <X>(list: X[]) => list[Math.floor(Math.random() * list.length)];
 const jitter = (seconds: number) => (Math.random() * 2 - 1) * seconds;
 const pitchClass = (n: number) => ((n % 12) + 12) % 12;
@@ -218,6 +438,11 @@ class Music {
   /** The piano's own way into the bus, through a slow tremolo as an electric piano has. */
   private keysBus: GainNode | null = null;
   private tremolo: OscillatorNode | null = null;
+  /** The piece's way out that keeps out of the room (a kick and a bass sound better dry); it fades with the bus. */
+  private dry: GainNode | null = null;
+  /** What the piece's instruments share: a filter, an amplifier. Its nodes go with the bus. */
+  private lanes: Partial<Record<"lead" | "bass" | "guitar", AudioNode>> = {};
+  private chain: AudioNode[] = [];
   private noiseBuffer: AudioBuffer | null = null;
   private piece: Piece = LOBBY;
   private timer = 0;
@@ -230,6 +455,10 @@ class Music {
   private bassNote = -24;
   private lineNote = 19;
   private line = 0;
+  /** Pop and rock: the four bars now played, the hook's motif and how many phrases have played it. */
+  private phrase: Phrase = QUIET;
+  private motif = { rhythm: [0], steps: [0] };
+  private motifUses = 0;
   /** The game chosen last in the collection: a table plays its music. */
   game: string | null = null;
   private wanted = true;
@@ -251,10 +480,12 @@ class Music {
     this.piece = piece;
     this.bars = 0;
     this.line = 0;
-    if (piece.style === "jazz") {
-      this.coming = pick(piece.rounds);
-      this.lineNote = Math.round((piece.lines.range[0] + piece.lines.range[1]) / 2);
-    } else this.lineNote = piece.style === "korea" ? 9 : piece.sa + 12;
+    this.phrase = QUIET;
+    this.motifUses = 0;
+    if ("rounds" in piece) this.coming = pick(piece.rounds);
+    if (piece.style === "jazz") this.lineNote = Math.round((piece.lines.range[0] + piece.lines.range[1]) / 2);
+    else if (piece.style === "arcade" || piece.style === "rock") this.lineNote = Math.round((piece.range[0] + piece.range[1]) / 2);
+    else this.lineNote = piece.style === "korea" ? 9 : piece.sa + 12;
     const c = this.context;
     if (!c) return;
     this.change();
@@ -342,32 +573,46 @@ class Music {
   private change() {
     const c = this.context!,
       old = this.bus,
+      oldDry = this.dry,
       oldKeys = this.keysBus,
       oldTremolo = this.tremolo,
+      oldChain = this.chain,
       bus = c.createGain(),
+      dry = c.createGain(),
       wet = c.createGain(),
       keys = c.createGain(),
       tremolo = c.createOscillator(),
       depth = c.createGain(),
       tone = c.createBiquadFilter();
     if (old) {
-      old.gain.cancelScheduledValues(c.currentTime);
-      old.gain.setValueAtTime(old.gain.value, c.currentTime);
-      old.gain.linearRampToValueAtTime(0.0001, c.currentTime + 1.4);
+      for (const gain of [old.gain, oldDry?.gain]) {
+        if (!gain) continue;
+        gain.cancelScheduledValues(c.currentTime);
+        gain.setValueAtTime(gain.value, c.currentTime);
+        gain.linearRampToValueAtTime(0.0001, c.currentTime + 1.4);
+      }
       window.setTimeout(() => {
         old.disconnect();
+        oldDry?.disconnect();
         oldKeys?.disconnect();
+        for (const node of oldChain) node.disconnect();
         try {
           oldTremolo?.stop();
         } catch {}
       }, 1600);
     }
-    bus.gain.setValueAtTime(0.0001, c.currentTime);
-    bus.gain.linearRampToValueAtTime(1, c.currentTime + (old ? 3.5 : 0.05));
-    wet.gain.value = 0.32;
+    for (const gain of [bus.gain, dry.gain]) {
+      gain.setValueAtTime(0.0001, c.currentTime);
+      gain.linearRampToValueAtTime(1, c.currentTime + (old ? 3.5 : 0.05));
+    }
+    // The pop and the rock are played closer to the ear than the jazz, with less of the room.
+    wet.gain.value = this.piece.style === "arcade" ? 0.2 : this.piece.style === "rock" ? 0.16 : 0.32;
     bus.connect(this.out!);
     bus.connect(wet);
     wet.connect(this.room!);
+    dry.connect(this.out!);
+    this.dry = dry;
+    this.lay(this.piece, bus, dry);
     // The electric piano: a slow tremolo and the top taken off.
     tremolo.frequency.value = 4.2;
     depth.gain.value = 0.18;
@@ -382,6 +627,54 @@ class Music {
     this.bus = bus;
     this.keysBus = keys;
     this.tremolo = tremolo;
+  }
+  /** The lanes a pop or rock piece's instruments share, laid between them and the piece's bus. */
+  private lay(piece: Piece, bus: GainNode, dry: GainNode) {
+    const c = this.context!,
+      chain: AudioNode[] = [],
+      filter = (type: BiquadFilterType, frequency: number, q: number, gain = 0) => {
+        const f = c.createBiquadFilter();
+        f.type = type;
+        f.frequency.value = frequency;
+        f.Q.value = q;
+        f.gain.value = gain;
+        return f;
+      },
+      // Nodes one into the next; the first is the lane's way in.
+      line = (...nodes: AudioNode[]) => {
+        for (let i = 0; i + 1 < nodes.length; i++) nodes[i].connect(nodes[i + 1]);
+        chain.push(...nodes.slice(0, -1));
+        return nodes[0];
+      },
+      // A guitar amplifier: the low end tightened before the overdrive, then a cabinet that keeps the low and the
+      // middle and rolls the top off steeply (no fizz), and the level it plays at.
+      amplifier = (strength: number, top: number, level: number) => {
+        const drive = c.createWaveShaper(),
+          out = c.createGain();
+        drive.curve = overdrive(strength);
+        drive.oversample = "4x";
+        out.gain.value = level;
+        return line(
+          filter("highpass", 95, 0.7),
+          drive,
+          filter("lowshelf", 160, 0, 3),
+          filter("peaking", 650, 0.9, 2.5),
+          filter("lowpass", top, 0.9),
+          filter("lowpass", top * 1.4, 0.6),
+          out,
+          bus,
+        );
+      };
+    if (piece.style === "arcade")
+      this.lanes = { lead: line(filter("lowpass", 2600, 0.7), bus), bass: line(filter("lowpass", 760, 1.1), dry) };
+    else if (piece.style === "rock")
+      this.lanes = {
+        guitar: amplifier(5, 2900, piece.guitar),
+        lead: amplifier(3, 2700, piece.lead),
+        bass: line(filter("lowpass", 680, 0.8), dry),
+      };
+    else this.lanes = {};
+    this.chain = chain;
   }
   /** An oscillator through its own envelope into `to`: struck, dying away, and let go at `end`. */
   private voice(to: AudioNode, type: OscillatorType, frequency: number, at: number, attack: number, peak: number, decay: number, end: number) {
@@ -398,6 +691,7 @@ class Music {
     g.connect(to);
     o.start(at);
     o.stop(end + 0.5);
+    o.onended = () => g.disconnect();
   }
   /** One note of the electric piano: a sine with its octave fading quickly and a faint bell of the tine. */
   private key(semitones: number, at: number, length: number, volume: number) {
@@ -427,7 +721,7 @@ class Music {
     this.voice(body, "sine", f, at, 0.008, volume * 0.8, 0.7, at + length);
   }
   /** A burst of noise through a filter: a cymbal, a brush, a stroke. */
-  private hiss(at: number, attack: number, length: number, volume: number, type: BiquadFilterType, frequency: number, q = 0.8) {
+  private hiss(at: number, attack: number, length: number, volume: number, type: BiquadFilterType, frequency: number, q = 0.8, to: AudioNode = this.bus!) {
     const c = this.context!,
       source = c.createBufferSource(),
       filter = c.createBiquadFilter(),
@@ -442,9 +736,10 @@ class Music {
     g.gain.exponentialRampToValueAtTime(0.0001, at + attack + length);
     source.connect(filter);
     filter.connect(g);
-    g.connect(this.bus!);
+    g.connect(to);
     source.start(at, Math.random() * 0.9);
     source.stop(at + attack + length + 0.05);
+    source.onended = () => g.disconnect();
   }
   /** Writes the bars that begin within the next second and a half. */
   private write() {
@@ -462,6 +757,8 @@ class Music {
     const piece = this.piece;
     if (piece.style === "korea") return this.gugak(at, piece);
     if (piece.style === "india") return this.raga(at, piece);
+    if (piece.style === "arcade") return this.arcade(at, piece);
+    if (piece.style === "rock") return this.rock(at, piece);
     this.jazz(at, piece);
   }
   /** A note drawn from `scale` (absolute semitones) by a step or two from the last one. */
@@ -471,7 +768,7 @@ class Music {
     return index;
   }
   /** A drum's low skin: a thump falling in pitch. */
-  private thump(at: number, from: number, to: number, length: number, volume: number) {
+  private thump(at: number, from: number, to: number, length: number, volume: number, into: AudioNode = this.bus!) {
     const c = this.context!,
       o = c.createOscillator(),
       g = c.createGain();
@@ -482,9 +779,10 @@ class Music {
     g.gain.linearRampToValueAtTime(volume, at + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, at + length);
     o.connect(g);
-    g.connect(this.bus!);
+    g.connect(into);
     o.start(at);
     o.stop(at + length + 0.05);
+    o.onended = () => g.disconnect();
   }
   /** A plucked string with its own shaking and bending: a gayageum or a sitar. */
   private string(semitones: number, at: number, length: number, volume: number, how: { bright: boolean; shake: number; bend: number; glide: number }) {
@@ -817,6 +1115,410 @@ class Music {
       else this.key(note, t, length * 0.95, loud);
     });
   }
+  /** The next four bars' round of chords is the one drawn before; another is drawn to follow it. */
+  private nextRound(rounds: string[][]) {
+    this.round = this.coming;
+    this.coming = pick(rounds);
+  }
+  /** A bar of the arcade's pop. */
+  private arcade(at: number, p: Arcade) {
+    const beat = 60 / p.tempo,
+      place = this.bars % 4,
+      when = (position: number) => at + position * beat;
+    if (place === 0) {
+      this.nextRound(p.rounds);
+      this.popPhrase(p);
+    }
+    const now = chord(this.round[place]),
+      then = chord(place === 3 ? this.coming[0] : this.round[place + 1]),
+      root = now.root + p.key,
+      nextRoot = then.root + p.key,
+      phrase = this.phrase,
+      lift = phrase.section === "lift",
+      hook = phrase.section === "hook";
+    // The drums: the kick on every beat (none in a lift), claps on two and four, hats on the off-beats, and ticking
+    // on the beats as well under a hook.
+    if (place === 0 && phrase.crash) this.crash(at, p.hat * 1.3);
+    for (let b = 0; b < 4; b++) {
+      if (!lift) this.kick(when(b), p.kick * (b === 0 ? 1 : 0.92), 0.12);
+      if (b % 2 === 1) this.clap(when(b) + jitter(0.003), p.clap * (lift ? 0.6 : 1));
+      if (lift || place < 3 || b < 3) this.hiss(when(b + 0.5) + jitter(0.004), 0.001, 0.045, p.hat * (0.85 + Math.random() * 0.3), "highpass", 6600, 0.7);
+      if (hook) this.hiss(when(b) + jitter(0.003), 0.001, 0.03, p.hat * 0.45, "highpass", 7200, 0.7);
+    }
+    if (place === 3) {
+      if (lift)
+        // A roll of claps growing through the last two beats, into the next phrase.
+        for (let i = 0; i < 8; i++) this.clap(when(2 + i * 0.25), p.clap * (0.2 + i * 0.09));
+      else {
+        // An open hat lets the phrase go; now and then a pair of claps leads into the next one.
+        this.hiss(when(3.5), 0.002, 0.24, p.hat * 1.1, "highpass", 6000, 0.6);
+        if (phrase.fill) [3.5, 3.75].forEach((position, i) => this.clap(when(position), p.clap * (0.55 + i * 0.2)));
+      }
+    }
+    // The bass: eighths of the phrase's pattern, softer on the beats where the kick falls (as if it ducked under
+    // it); in a lift, the root held.
+    const bass = this.lanes.bass!,
+      low = within(root, -27);
+    if (lift) [0, 2].forEach((position) => this.voice(bass, "sawtooth", hertz(low), when(position), 0.01, p.bass * 0.7, 0.9, when(position + 1.9)));
+    else
+      phrase.bass.forEach((step, i) => {
+        if (step === null) return;
+        const note = step === "a" ? within(nextRoot, -27) + pick([-1, 2, -2]) : low + step,
+          t = when(i * 0.5) + jitter(0.003);
+        this.voice(bass, "sawtooth", hertz(note), t, 0.004, p.bass * (i % 2 ? 1 : 0.78), 0.22, t + 0.42 * beat);
+      });
+    // The stab: the chord laid close round the middle of the keyboard, so that one chord goes to the next by small
+    // steps; struck short on the off-beats, or held in a lift.
+    const voicing = now.voicing.map((v) => within(root + v, -2)).sort((a, b) => a - b);
+    for (const position of lift ? [0, 2] : phrase.stabs)
+      this.stab(voicing, when(position) + jitter(0.004), (lift ? 1.9 : 0.32) * beat, p.stab * (lift ? 0.75 : 0.9 + Math.random() * 0.2), lift ? 1500 : 3000, lift ? 0.06 : 0.004);
+    // Outside the hook, a toy-like arpeggio through the chord's notes, two octaves of them.
+    if (!hook && phrase.arp.length) {
+      const lowest = within(root, 3),
+        notes = [0, 12].flatMap((octave) => now.tones.map((t) => lowest + t + octave));
+      phrase.arp.forEach((k, i) => {
+        const t = when(i * 0.5) + jitter(0.003);
+        this.voice(this.bus!, "triangle", hertz(notes[Math.min(k, notes.length - 1)]), t, 0.003, p.arp * (i % 2 ? 0.75 : 1), 0.14, t + 0.2);
+      });
+    }
+    if (hook) this.hook(p, now, root, place, when, beat);
+  }
+  /** Draws what the next four bars of the pop are: a groove, a hook (its motif kept for a second phrase, then a new one drawn), or now and then a lift. */
+  private popPhrase(p: Arcade) {
+    const last = this.phrase.section,
+      first = this.bars === 0,
+      r = Math.random(),
+      section: Phrase["section"] = first
+        ? "groove"
+        : last === "lift"
+          ? r < 0.8
+            ? "hook"
+            : "groove"
+          : r < p.lift
+            ? "lift"
+            : r < p.lift + (last === "hook" ? 0.4 : 0.55)
+              ? "hook"
+              : "groove";
+    if (section === "hook" && (last !== "hook" || this.motifUses >= 2)) {
+      // A motif: a rhythm, and the steps through the chord's scale from one of its notes to the next (often none, so
+      // that a note is struck again, as a hook does).
+      const rhythm = pick(p.hooks);
+      this.motif = { rhythm, steps: rhythm.map((_, i) => (i === 0 ? 0 : pick([-2, -1, -1, 0, 0, 1, 1, 2]))) };
+      this.motifUses = 0;
+    }
+    if (section === "hook") this.motifUses++;
+    this.phrase = {
+      ...QUIET,
+      section,
+      crash: first || last === "lift" || (section === "hook" && last !== "hook"),
+      fill: Math.random() < 0.4,
+      stabs: pick(p.stabs),
+      bass: pick(p.basses),
+      arp: section === "groove" && Math.random() < 0.3 ? [] : pick(p.arps),
+      answer: Math.random() < 0.6,
+    };
+  }
+  /** A bar of the hook: its motif played on the chord now, from the chord's note nearest where the last bar began. */
+  private hook(p: Arcade, now: Chord, root: number, place: number, when: (position: number) => number, beat: number) {
+    const scale: number[] = [],
+      colours = new Set(now.scale.map((s) => pitchClass(s + root))),
+      tones = new Set(now.tones.map((t) => pitchClass(t + root)));
+    for (let n = p.range[0]; n <= p.range[1]; n++) if (colours.has(pitchClass(n))) scale.push(n);
+    const nearest = (fits: (n: number) => boolean) =>
+      scale.reduce((best, n, i) => (fits(n) && (best < 0 || Math.abs(n - this.lineNote) < Math.abs(scale[best] - this.lineNote)) ? i : best), -1);
+    let index = nearest((n) => tones.has(pitchClass(n)));
+    this.lineNote = scale[index];
+    const { rhythm, steps } = this.motif,
+      // The phrase's last bar may answer the motif: its first half, then a long note on the chord's root.
+      answer = place === 3 && this.phrase.answer,
+      positions = answer ? [...rhythm.filter((x) => x < 2), 2] : rhythm;
+    positions.forEach((position, i) => {
+      const last = i === positions.length - 1;
+      if (i > 0) index = Math.max(0, Math.min(scale.length - 1, index + (steps[i] ?? 0)));
+      if (answer && last) index = nearest((n) => pitchClass(n - root) === 0);
+      const length = (last ? Math.min(answer ? 1.75 : 1, 4 - position) : Math.min((positions[i + 1] - position) * 0.9, 1.2)) * beat,
+        loud = p.lead * (position % 1 === 0 ? 1 : 0.85) * (0.9 + Math.random() * 0.15);
+      this.lead(scale[index], when(position) + jitter(0.004), length, loud);
+    });
+  }
+  /** One note of the hook: a square softened by its lane, with a little of the octave above. */
+  private lead(semitones: number, at: number, length: number, volume: number) {
+    const f = hertz(semitones),
+      lane = this.lanes.lead!;
+    this.voice(lane, "square", f, at, 0.005, volume, 0.5, at + length);
+    this.voice(lane, "triangle", f * 2, at, 0.003, volume * 0.3, 0.18, at + length);
+  }
+  /** A plucked synth chord: detuned saws through one filter that closes as it dies (or opens slowly, held). */
+  private stab(notes: number[], at: number, length: number, volume: number, bright: number, attack: number) {
+    const c = this.context!,
+      tone = c.createBiquadFilter(),
+      g = c.createGain();
+    tone.type = "lowpass";
+    tone.Q.value = 1.6;
+    tone.frequency.setValueAtTime(bright, at);
+    tone.frequency.setTargetAtTime(bright * 0.35, at, 0.06 + length * 0.25);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(volume, at + attack);
+    g.gain.setTargetAtTime(0.0001, at + attack, Math.max(0.06, length * 0.5));
+    g.gain.setTargetAtTime(0.0001, at + length, 0.04);
+    tone.connect(g);
+    g.connect(this.bus!);
+    let o: OscillatorNode | null = null;
+    for (const n of notes) {
+      o = c.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = hertz(n);
+      o.detune.value = jitter(7);
+      o.connect(tone);
+      o.start(at);
+      o.stop(at + length + 0.3);
+    }
+    if (o)
+      o.onended = () => {
+        tone.disconnect();
+        g.disconnect();
+      };
+  }
+  /** A kick drum: a thump that falls fast to its low note, and the click of the beater when `click` is given; kept out of the room. */
+  private kick(at: number, volume: number, click: number) {
+    const c = this.context!,
+      o = c.createOscillator(),
+      g = c.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(165, at);
+    o.frequency.exponentialRampToValueAtTime(60, at + 0.045);
+    o.frequency.exponentialRampToValueAtTime(44, at + 0.32);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(volume, at + 0.003);
+    g.gain.setTargetAtTime(0.0001, at + 0.03, 0.085);
+    o.connect(g);
+    g.connect(this.dry!);
+    o.start(at);
+    o.stop(at + 0.55);
+    o.onended = () => g.disconnect();
+    if (click) this.hiss(at, 0.0005, 0.012, volume * click, "bandpass", 3200, 0.8, this.dry!);
+  }
+  /** A hand clap: three quick slaps and a short ring after them, one burst of noise. */
+  private clap(at: number, volume: number) {
+    const c = this.context!,
+      source = c.createBufferSource(),
+      filter = c.createBiquadFilter(),
+      g = c.createGain();
+    source.buffer = this.noiseBuffer;
+    source.loop = true;
+    filter.type = "bandpass";
+    filter.frequency.value = 1250;
+    filter.Q.value = 1.1;
+    for (const d of [0, 0.01, 0.021]) {
+      g.gain.setValueAtTime(volume, at + d);
+      g.gain.exponentialRampToValueAtTime(volume * 0.2, at + d + 0.008);
+    }
+    g.gain.setValueAtTime(volume * 0.85, at + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.2);
+    source.connect(filter);
+    filter.connect(g);
+    g.connect(this.bus!);
+    source.start(at, Math.random() * 0.9);
+    source.stop(at + 0.22);
+    source.onended = () => g.disconnect();
+  }
+  /** A snare drum: its skin's tone and the rattle of its wires. */
+  private snare(at: number, volume: number) {
+    this.thump(at, 240, 180, 0.12, volume * 0.9);
+    this.hiss(at, 0.001, 0.18, volume, "bandpass", 1900, 0.6);
+    this.hiss(at, 0.001, 0.07, volume * 0.45, "highpass", 5200, 0.7);
+  }
+  /** A crash cymbal, washing away over a second and a half. */
+  private crash(at: number, volume: number) {
+    this.hiss(at, 0.002, 1.6, volume, "highpass", 4600, 0.6);
+    this.hiss(at, 0.002, 0.7, volume * 0.6, "bandpass", 3100, 0.5);
+  }
+  /** A bar of the bowling alley's rock. */
+  private rock(at: number, p: Rock) {
+    const beat = 60 / p.tempo,
+      place = this.bars % 4,
+      when = (position: number) => at + position * beat + jitter(0.004);
+    if (place === 0) {
+      this.nextRound(p.rounds);
+      this.rockPhrase(p);
+    }
+    const now = chord(this.round[place]),
+      then = chord(place === 3 ? this.coming[0] : this.round[place + 1]),
+      root = now.root + p.key,
+      nextRoot = then.root + p.key,
+      phrase = this.phrase,
+      half = phrase.section === "break",
+      open = phrase.section === "chorus",
+      // The last bar's second half is the drummer's when the phrase ends in a fill.
+      filling = phrase.fill && place === 3,
+      kept = (position: number) => !(filling && position >= 2),
+      crash = place === 0 && phrase.crash;
+    // The kit: a crash at the head of a phrase, hats in eighths (looser in a chorus, quarters in a break), the kick
+    // where the phrase has it, the snare on two and four (on three in a break, half time).
+    if (crash) this.crash(at, p.crash);
+    for (let i = 0; i < 8; i++) {
+      const position = i * 0.5;
+      if (!kept(position) || (half && i % 2) || (crash && i === 0)) continue;
+      this.hiss(when(position), 0.001, open ? 0.12 : 0.04, p.hat * (i % 2 ? 0.65 : 1) * (open ? 1.15 : 1), "highpass", open ? 5600 : 6600, 0.7);
+    }
+    for (const position of half ? [0, 2.5] : phrase.kicks) if (kept(position)) this.kick(when(position), p.kick, 0.18);
+    for (const position of half ? [2] : [1, 3]) if (kept(position)) this.snare(when(position), p.snare);
+    if (filling) this.drumFill(p, when);
+    // The guitar: the phrase's riff on this bar's power chord (the next bar's, where it is pushed ahead).
+    const low = within(root, -22),
+      ahead = within(nextRoot, -22);
+    let push = 4;
+    for (const [position, length, how] of phrase.riff) {
+      if (how === "n") push = Math.min(push, position);
+      this.power(how === "n" ? ahead : low, when(position), length * beat, how !== "m");
+    }
+    // The bass: the guitar's root an octave down, in eighths (held in a break).
+    const bass = this.lanes.bass!;
+    if (half) [0, 2].forEach((position) => this.voice(bass, "sawtooth", hertz(low - 12), when(position), 0.005, p.bass, 0.8, when(position + 1.85)));
+    else
+      for (let i = 0; i < 8; i++) {
+        const position = i * 0.5,
+          t = when(position);
+        this.voice(bass, "sawtooth", hertz((position >= push ? ahead : low) - 12), t, 0.004, p.bass * (i % 2 ? 0.8 : 1), 0.25, t + 0.42 * beat);
+      }
+    // Now and then a lead fill over the phrase's last bar or two.
+    if (place >= 4 - phrase.solo) this.lick(p, root, when, beat);
+  }
+  /** Draws what the next four bars of the rock are: a verse, a chorus, or now and then a break. */
+  private rockPhrase(p: Rock) {
+    const last = this.phrase,
+      first = this.bars === 0,
+      r = Math.random(),
+      section: "verse" | "chorus" | "break" = first
+        ? "verse"
+        : last.section === "break"
+          ? r < 0.7
+            ? "chorus"
+            : "verse"
+          : r < 0.1
+            ? "break"
+            : last.section === "chorus"
+              ? r < 0.55
+                ? "verse"
+                : "chorus"
+              : r < 0.6
+                ? "chorus"
+                : "verse";
+    this.phrase = {
+      ...QUIET,
+      section,
+      crash: first || last.fill || section !== last.section,
+      fill: Math.random() < p.fill,
+      riff: pick(p.riffs[section]),
+      kicks: pick(p.kicks),
+      solo: section !== "break" && Math.random() < p.solo ? (section === "chorus" && Math.random() < 0.5 ? 2 : 1) : 0,
+    };
+  }
+  /** A power chord on the overdriven guitar: root and fifth, and the octave when it rings open; a palm on the strings keeps a muted one short and dark. */
+  private power(root: number, at: number, length: number, open: boolean) {
+    const c = this.context!,
+      tone = c.createBiquadFilter(),
+      g = c.createGain(),
+      peak = open ? 0.3 : 0.24;
+    tone.type = "lowpass";
+    tone.frequency.setValueAtTime(open ? 3400 : 1200, at);
+    tone.frequency.setTargetAtTime(open ? 1700 : 480, at, open ? 0.5 : 0.04);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(peak, at + 0.004);
+    g.gain.setTargetAtTime(0.0001, at + 0.004, open ? 1.6 : 0.1);
+    g.gain.setTargetAtTime(0.0001, at + length, 0.03);
+    tone.connect(g);
+    g.connect(this.lanes.guitar!);
+    let o: OscillatorNode | null = null;
+    for (const ratio of open ? [1, 1.5, 2] : [1, 1.5]) {
+      o = c.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = hertz(root) * ratio;
+      o.detune.value = jitter(6);
+      o.connect(tone);
+      o.start(at);
+      o.stop(at + length + 0.25);
+    }
+    if (o)
+      o.onended = () => {
+        tone.disconnect();
+        g.disconnect();
+      };
+  }
+  /** The drummer's fill over the last two beats of a phrase: the snare, and down the toms. */
+  private drumFill(p: Rock, when: (position: number) => number) {
+    const toms: Record<string, number> = { h: 196, m: 147, l: 110 };
+    for (const [position, drum] of pick(FILLS)) {
+      const t = when(position),
+        loud = 0.8 + (position - 2) * 0.12;
+      if (drum === "s") this.snare(t, p.snare * loud);
+      else this.thump(t, toms[drum] * 1.3, toms[drum], 0.34, p.tom * loud);
+    }
+    this.kick(when(2), p.kick, 0.18);
+  }
+  /** A bar of lead fill, by steps through the key's minor pentatonic, bent up into some notes, the last one held and shaken, on the chord's root or fifth where it can. */
+  private lick(p: Rock, root: number, when: (position: number) => number, beat: number) {
+    const tonic = p.tonic + p.key,
+      scale: number[] = [];
+    for (let n = p.range[0]; n <= p.range[1]; n++) if ([0, 3, 5, 7, 10].includes(pitchClass(n - tonic))) scale.push(n);
+    const rhythm = pick(p.licks);
+    rhythm.forEach((position, i) => {
+      const last = i === rhythm.length - 1;
+      let index = this.wander(scale, [-2, -1, -1, 1, 1, 0]);
+      if (last) {
+        const home = scale.filter((n) => [0, 7].includes(pitchClass(n - root)));
+        if (home.length) index = scale.indexOf(home.reduce((a, b) => (Math.abs(b - this.lineNote) < Math.abs(a - this.lineNote) ? b : a)));
+      }
+      const note = scale[index],
+        below = index > 0 ? note - scale[index - 1] : 0,
+        bend = below > 0 && below <= 2 && Math.random() < (last ? 0.45 : 0.15) ? below : 0,
+        length = (last ? Math.max(0.5, 4 - position) * 0.95 : (rhythm[i + 1] - position) * 0.9) * beat;
+      this.lineNote = note;
+      this.wail(note, when(position), length, bend, last);
+    });
+  }
+  /** One note of the lead guitar: a saw into its own amplifier, bent up into the note, or shaken as it is held. */
+  private wail(semitones: number, at: number, length: number, bend: number, shake: boolean) {
+    const c = this.context!,
+      f = hertz(semitones),
+      o = c.createOscillator(),
+      g = c.createGain();
+    o.type = "sawtooth";
+    if (bend) {
+      const from = f * 2 ** (-bend / 12);
+      o.frequency.setValueAtTime(from, at);
+      o.frequency.setValueAtTime(from, at + 0.03);
+      o.frequency.exponentialRampToValueAtTime(f, at + 0.15);
+    } else o.frequency.setValueAtTime(f, at);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(0.4, at + 0.006);
+    g.gain.setTargetAtTime(0.0001, at + 0.006, 1.4);
+    g.gain.setTargetAtTime(0.0001, at + length, 0.05);
+    o.connect(g);
+    g.connect(this.lanes.lead!);
+    o.start(at);
+    o.stop(at + length + 0.4);
+    o.onended = () => g.disconnect();
+    if (shake && length > 0.3) {
+      const lfo = c.createOscillator(),
+        depth = c.createGain();
+      lfo.frequency.value = 5.5;
+      depth.gain.setValueAtTime(0, at);
+      depth.gain.linearRampToValueAtTime(0, at + 0.2);
+      depth.gain.linearRampToValueAtTime(f * 0.012, at + length);
+      lfo.connect(depth);
+      depth.connect(o.frequency);
+      lfo.start(at);
+      lfo.stop(at + length + 0.4);
+    }
+  }
 }
+/** The drummer's fills: where in the bar each stroke falls, and on what (s the snare, h m l the toms high to low). */
+const FILLS: [number, "s" | "h" | "m" | "l"][][] = [
+  [[2, "s"], [2.25, "s"], [2.5, "h"], [2.75, "h"], [3, "m"], [3.25, "m"], [3.5, "l"], [3.75, "l"]],
+  [[2, "s"], [2.5, "s"], [3, "s"], [3.25, "s"], [3.5, "s"], [3.75, "s"]],
+  [[2, "h"], [2.5, "m"], [3, "l"], [3.5, "s"], [3.75, "s"]],
+  [[2, "s"], [2.5, "h"], [2.75, "h"], [3, "m"], [3.5, "l"], [3.75, "l"]],
+];
 /** The one music of the page. */
 export const music = new Music();
