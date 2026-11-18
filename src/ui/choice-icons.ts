@@ -93,6 +93,22 @@ const suits = (n: number) => {
     shown = n === 1 ? [all[0]] : n === 2 ? [all[0], all[1]] : all;
   return svg(48, 24, shown.map(([s, fill], k) => `<text x="${24 + (k - (shown.length - 1) / 2) * 11}" y="18" font-size="16" text-anchor="middle" fill="${fill}" font-family="'Noto Sans Symbols 2','Segoe UI Symbol','DejaVu Sans',sans-serif">${s}&#xFE0E;</text>`).join(""));
 };
+/** 님's two modes: rings standing on a rod over a base, in fives of walnut and maple; and a scoop of ice cream in a cup. */
+const NIM: Record<string, string> = {
+  nim: svg(
+    44,
+    26,
+    `<rect x="2" y="21" width="40" height="3.4" rx="1.2" fill="#e9cfa2" stroke="#9a7444" stroke-width=".8"/><rect x="38.6" y="5" width="2.6" height="17" rx="1" fill="#e9cfa2" stroke="#9a7444" stroke-width=".8"/><path d="M8 12.6H39" stroke="#c9a46e" stroke-width="1.6" stroke-linecap="round"/>` +
+      Array.from({ length: 8 }, (_, k) => `<rect x="${17.4 + k * 2.6}" y="5.4" width="2.3" height="14.6" rx="1.1" fill="${k < 3 ? "#f0dcb4" : "#6b3f22"}" stroke="#4a2c16" stroke-width=".5"/>`).join(""),
+  ),
+  "31": svg(
+    30,
+    28,
+    `<path d="M8.6 15.5h12.8l-2 10.5h-8.8z" fill="#bfe8da" stroke="#5aa58c" stroke-width="1"/><path d="M9.6 19.4h10.8" stroke="#fff" stroke-width="1.6"/><path d="M6.8 15.8c0-5.4 3.6-8.6 8.2-8.6s8.2 3.2 8.2 8.6c-2.6 1.4-13.8 1.4-16.4 0z" fill="#fbe58a" stroke="#c9a23c" stroke-width="1"/><path d="M10 12.4c1.6-1.2 3-1.6 4.6-1.4M14.8 9.6c1.6.2 3.2 1.2 4 2.6" fill="none" stroke="#e2c25a" stroke-width="1"/><circle cx="15.6" cy="5.4" r="2.6" fill="#d21f33"/><path d="M15.8 2.9c.6-1.4 1.8-2.2 3-2.2" fill="none" stroke="#5d3a1c" stroke-width=".9" stroke-linecap="round"/>`,
+  ),
+};
+/** A die, for a choice left to chance. */
+const die = svg(26, 26, `<rect x="4" y="4" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/>${[[9, 9], [17, 9], [13, 13], [9, 17], [17, 17]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" fill="currentColor"/>`).join("")}`);
 const LEVEL_BARS: Record<string, [number, number]> = { beginner: [1, 5], easy: [2, 5], normal: [3, 5], hard: [4, 5], expert: [5, 5] };
 const POINT_LEVEL: Record<string, [number, number]> = { easy: [1, 3], normal: [2, 3], hard: [3, 3] };
 export function choiceIcon(select: string, value: string, label: string, game = ""): ChoiceIcon | null {
@@ -119,6 +135,9 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "bg-variant" && /두 장|세 장/.test(label)) return { svg: cards(label.includes("세 장") ? 3 : 2), only: false };
   if (select === "pg-variant" && game === "tic-tac-toe" && TTT[value]) return { svg: TTT[value], only: false };
   if (select === "pg-variant" && game === "dots-and-boxes" && Number(value) > 1) return { svg: dots(Number(value)), only: false };
+  if (select === "pg-variant" && game === "nim" && NIM[value]) return { svg: NIM[value], only: false };
+  // Who moves first against the computer: me, the computer, or a throw of a die.
+  if (select === "pg-set-first") return value === "me" ? { svg: svg(26, 26, person(13, 14)), only: false } : value === "computer" ? { svg: svg(26, 26, computer(13, 14)), only: false } : value === "random" ? { svg: die, only: false } : null;
   return null;
 }
 /**

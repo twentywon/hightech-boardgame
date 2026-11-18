@@ -655,4 +655,12 @@ export const games = [
     icon: "◉",
     available: true,
   },
+  {
+    name: "님 게임",
+    en: "NIM",
+    category: "보드게임",
+    players: "2인용",
+    icon: "⦾",
+    available: true,
+  },
 ];

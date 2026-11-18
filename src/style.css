@@ -2680,6 +2680,19 @@ dialog .stage-card small, dialog .stage-card b { word-break:keep-all; }
 .game-layout.hud aside.game-sidebar .bg-seats li { padding:0 !important; }
 .game-layout.hud aside.game-sidebar .yd-result { padding:0 !important;gap:8px; }
 .game-layout.hud aside.game-sidebar .yd-result p { font-weight:700; }
+/* 님 keeps its rule in words under the two sides (how many at once, and what the last one does): it was set by the players. */
+html[data-game="nim"] .game-layout.hud aside.game-sidebar .side-mode:not(#_) { display:block !important;order:5;margin:0;font-size:13px;font-weight:600;opacity:.9; }
+/* The ice-cream parlour is all pale: there its lettering is dark with a light halo, as on the light tables (`hud-ink`). */
+html[data-game="nim"] .game-layout.hud:has(canvas[data-mode="ice"]) .table-layout > aside.game-sidebar { color:#1d2024;text-shadow:0 0 2px #fff, 0 0 8px #fffd, 0 0 14px #fff9; }
+/* 님's takes as buttons (1개 가져가기 …) are for the keyboard and readers alone: a pixel each, beside the corner's buttons
+   and clear of them (the corner's rule for its buttons gave them their full width, unseen over 무르기). */
+html[data-game="nim"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;bottom:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
+html[data-game="nim"] .board-area .board-controls #pg-tool-0 { left:-16px; }
+html[data-game="nim"] .board-area .board-controls #pg-tool-1 { left:-19px; }
+html[data-game="nim"] .board-area .board-controls #pg-tool-2 { left:-22px; }
+html[data-game="nim"] .board-area .board-controls #pg-tool-3 { left:-25px; }
+html[data-game="nim"] .board-area .board-controls #pg-tool-4 { left:-28px; }
+html[data-game="nim"] .board-area .board-controls #pg-tool-5 { left:-31px; }
 /* Table soccer's stadium figures keep their amber glow without the board behind them. */
 .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides { flex-direction:row !important;gap:22px !important; }
 .game-layout.hud.panel-scoreboard aside.game-sidebar .yut-sides::after { display:none; }
@@ -2876,6 +2889,18 @@ dialog.setup-dialog .mode-select label:has(input:focus-visible) { outline:3px so
 dialog.setup-dialog .rule-option { display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:10px;row-gap:2px;margin:14px 0 4px;font-size:14px;font-weight:600;color:var(--ink, #16181a);cursor:pointer; }
 dialog.setup-dialog .rule-option input { width:20px;height:20px;margin:0;accent-color:#16181a;cursor:pointer; }
 dialog.setup-dialog .rule-option small { grid-column:2;font-weight:400;font-size:12px;color:var(--ink-soft, #5c5a55); }
+/* Numbers a game lets the player set (`PointConfig.settings`): the name at the left, − value + at the right, the value
+   typeable too; a rule among them that is only on or off keeps its checkbox. */
+dialog.setup-dialog .pg-number { display:grid;grid-template-columns:minmax(0, 1fr) auto;align-items:center;gap:0 12px;font-size:13px;font-weight:600;color:var(--ink, #16181a); }
+dialog.setup-dialog .pg-number > label { grid-column:1;grid-row:1;cursor:default; }
+dialog.setup-dialog .pg-number > small { grid-column:1;grid-row:2;font-size:11.5px;font-weight:400;color:var(--ink-soft, #5c5a55); }
+dialog.setup-dialog .pg-number .stepper { grid-column:2;grid-row:1 / span 2;display:flex;align-items:center;gap:6px; }
+dialog.setup-dialog .pg-number .stepper button { width:40px;height:40px;padding:0;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-size:20px;font-weight:700;line-height:1;cursor:pointer; }
+dialog.setup-dialog .pg-number .stepper button:disabled { opacity:.35;cursor:default; }
+dialog.setup-dialog .pg-number .stepper input { width:62px;height:40px;margin:0;padding:0 4px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fff;color:var(--ink, #16181a);font:inherit;font-size:18px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;appearance:textfield;-moz-appearance:textfield; }
+dialog.setup-dialog .pg-number .stepper input::-webkit-inner-spin-button, dialog.setup-dialog .pg-number .stepper input::-webkit-outer-spin-button { -webkit-appearance:none;margin:0; }
+dialog.setup-dialog .pg-number .stepper input:focus-visible { outline:3px solid var(--brass, #b8892f);outline-offset:1px; }
+dialog.setup-dialog .ai-options label.rule-option { display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0;font-size:13px;font-weight:600;color:var(--ink, #16181a); }
 dialog.setup-dialog .ai-options { grid-template-columns:1fr;max-width:none;gap:12px;margin:14px 0 4px; }
 dialog.setup-dialog .ai-options label, dialog.setup-dialog label:has(> .choice-group) { position:relative;display:grid;gap:6px;font-size:12px;color:var(--ink-soft, #5c5a55); }
 dialog.setup-dialog select.choice-source { position:absolute !important;left:0;top:0;width:1px !important;height:1px !important;min-height:0 !important;padding:0 !important;border:0 !important;opacity:0;overflow:hidden;pointer-events:none; }

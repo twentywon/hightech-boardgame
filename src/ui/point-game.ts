@@ -2,7 +2,7 @@ import { dress } from "./chrome";
 import { bankrupt, capturing, cheer, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
-import type { Move, PointGame } from "../games/points/types";
+import type { GameOptions, Move, PointGame } from "../games/points/types";
 import { INK, PointBoardView, type BoardSpec, type Marks } from "../games/points/view";
 import { cryptoRandom } from "../core/random";
 import { Sound } from "../engine/sound";
@@ -12,7 +12,26 @@ export interface PointOptions {
   mode: "local" | "ai";
   variant: string;
   level: Level;
+  /** What was set for a game's own `settings`, by id (kept for this page only, like the rest). */
+  settings?: GameOptions;
 }
+/**
+ * Something a game lets the player set before it starts, beyond its variant (the user asked for a game whose numbers
+ * can be chosen): a number is offered as − value + (the value may be typed too), a rule only on or off as a
+ * checkbox, a list as buttons. It is not offered for the variants in `fixed`, nor out of play against the computer
+ * when it is `ai`; `value` is then what `create` receives.
+ */
+export type PointSetting = {
+  id: string;
+  label: string;
+  note?: string;
+  ai?: boolean;
+  fixed?: string[];
+} & (
+  | { kind: "number"; value: number; min: number; max: number }
+  | { kind: "flag"; value: boolean }
+  | { kind: "choice"; value: string; options: { value: string; label: string }[] }
+);
 /** What the screen needs from a board, whichever way it is drawn. */
 export interface PointView<S> {
   readonly renderer: { domElement: HTMLCanvasElement };
@@ -135,7 +154,8 @@ export interface PointConfig<S> {
   artClass: string;
   artLabel: string;
   tableLabel: string;
-  tableNote: (variant: string) => string;
+  /** What the game was set up as, in words; `options` are those its `create` received. */
+  tableNote: (variant: string, options: GameOptions) => string;
   rulesTitle: string;
   rules: string;
   /** Names of the two sides; side 0 moves first. */
@@ -143,6 +163,8 @@ export interface PointConfig<S> {
   variants?: { value: string; label: string }[];
   /** What the variants are called in the setup panel. */
   variantLabel?: string;
+  /** Numbers and rules set before the game, passed to `create` as its `options` (none for most games). */
+  settings?: PointSetting[];
   /** The variants lay different boards: each choice in the settings window shows its board, pieces set out. */
   variantArt?: boolean;
   /** False to mark only the piece that was picked up, not every piece that can move. */
@@ -165,6 +187,33 @@ export interface PointController {
   setSettings(settings: Settings): void;
 }
 
+/** Whether a setting is offered for a variant and a mode (`settings` of a `PointConfig`). */
+const offered = (setting: PointSetting, variant: string, mode: PointOptions["mode"]) => !setting.fixed?.includes(variant) && (!setting.ai || mode === "ai");
+/** A setting's value as it may be used: a whole number within its bounds, a rule on or off, one of its choices; else its own. */
+function settled(setting: PointSetting, value: unknown): number | boolean | string {
+  if (setting.kind === "number") {
+    const n = Math.round(Number(value));
+    return Number.isFinite(n) && value !== "" && value !== null ? Math.min(setting.max, Math.max(setting.min, n)) : setting.value;
+  }
+  if (setting.kind === "flag") return typeof value === "boolean" ? value : setting.value;
+  return setting.options.some((o) => o.value === value) ? (value as string) : setting.value;
+}
+/** What `create` receives: each setting as chosen where it is offered, else at its own value. */
+function optionsOf(settings: PointSetting[] | undefined, preferences: PointOptions, mode: PointOptions["mode"]): GameOptions {
+  const out: GameOptions = {};
+  for (const setting of settings ?? [])
+    out[setting.id] = offered(setting, preferences.variant, mode) ? settled(setting, preferences.settings?.[setting.id]) : setting.value;
+  return out;
+}
+/** The setup's field for a setting: − value + for a number, a checkbox for a rule, a list (turned into buttons) for a choice. */
+function settingField(setting: PointSetting, value: number | boolean | string) {
+  const id = `pg-set-${setting.id}`;
+  if (setting.kind === "number")
+    return `<div class="pg-number" data-setting="${setting.id}"><label for="${id}">${setting.label}</label><div class="stepper"><button type="button" class="step" data-step="-1" aria-label="${setting.label} 줄이기">−</button><input type="number" id="${id}" min="${setting.min}" max="${setting.max}" step="1" value="${value}" inputmode="numeric"><button type="button" class="step" data-step="1" aria-label="${setting.label} 늘리기">+</button></div><small>${setting.note ?? `${setting.min}~${setting.max}`}</small></div>`;
+  if (setting.kind === "flag")
+    return `<label class="rule-option" data-setting="${setting.id}"><input type="checkbox" id="${id}" ${value ? "checked" : ""}> ${setting.label}${setting.note ? `<small>${setting.note}</small>` : ""}</label>`;
+  return `<label data-setting="${setting.id}">${setting.label}<select id="${id}">${setting.options.map((o) => `<option value="${o.value}" ${o.value === value ? "selected" : ""}>${o.label}</option>`).join("")}</select></label>`;
+}
 /** Mounts a point-board game: its setup panel in the collection, then its table. */
 export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: PointConfig<S>): PointController {
   const { game } = config,
@@ -175,7 +224,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     mode = preferences.mode,
     variant = preferences.variant,
     level = preferences.level,
-    state = game.create(variant),
+    // The numbers and rules the game now on the table was set up with (none for most games).
+    options = optionsOf(config.settings, preferences, config.solo || config.computerOnly ? "ai" : mode),
+    state = game.create(variant, options),
     // What the panel describes: the last state whose pieces have come to rest.
     shown = state,
     past: S[] = [],
@@ -225,13 +276,34 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
     else if (config.stages) return stagePicker(host);
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
+    /** The game's own settings as the form has them, each shown only where it is offered. */
+    const readSettings = () => {
+      if (!config.settings) return preferences.settings;
+      const out: GameOptions = { ...preferences.settings };
+      for (const setting of config.settings) {
+        const field = host.querySelector<HTMLElement>(`[data-setting="${setting.id}"]`),
+          input = host.querySelector<HTMLInputElement & HTMLSelectElement>(`#pg-set-${setting.id}`);
+        if (!field || !input) continue;
+        const value = settled(setting, setting.kind === "flag" ? input.checked : input.value);
+        // A number half typed (nothing, or "1" on the way to "12") keeps what was set before it.
+        if (setting.kind !== "number" || (input.value !== "" && Number(input.value) >= setting.min && Number(input.value) <= setting.max)) out[setting.id] = value;
+        if (setting.kind === "number") {
+          const now = settled(setting, out[setting.id]) as number;
+          field.querySelector<HTMLButtonElement>('[data-step="-1"]')!.disabled = now <= setting.min;
+          field.querySelector<HTMLButtonElement>('[data-step="1"]')!.disabled = now >= setting.max;
+        }
+        field.hidden = !offered(setting, document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant, [...radios].find((r) => r.checked)?.value === "ai" || alone ? "ai" : "local");
+      }
+      return out;
+    };
     const remember = () => {
       preferences = {
         mode: [...radios].find((r) => r.checked)!.value as PointOptions["mode"],
         variant: document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant,
         level: $<HTMLSelectElement>("pg-level").value as Level,
+        ...(config.settings ? { settings: readSettings() } : preferences.settings ? { settings: preferences.settings } : {}),
       };
       $("pg-options").hidden = $("pg-level-field").hidden = solo || preferences.mode !== "ai";
       nav.remember({ ...preferences });
@@ -250,6 +322,28 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       }
     $("pg-level").onchange = remember;
     $("pg-options").hidden = $("pg-level-field").hidden = solo || preferences.mode !== "ai";
+    // A game's own numbers: − and + step within bounds, a typed number counts once it is whole and in bounds (and is
+    // brought within them when the field is left); rules and choices are remembered as they change.
+    for (const setting of config.settings ?? []) {
+      const input = host.querySelector<HTMLInputElement & HTMLSelectElement>(`#pg-set-${setting.id}`);
+      if (!input) continue;
+      if (setting.kind === "number") {
+        host.querySelectorAll<HTMLButtonElement>(`[data-setting="${setting.id}"] button.step`).forEach(
+          (button) =>
+            (button.onclick = () => {
+              const now = settled(setting, preferences.settings?.[setting.id] ?? setting.value) as number;
+              input.value = String(settled(setting, now + Number(button.dataset.step)));
+              remember();
+            }),
+        );
+        input.oninput = remember;
+        input.onchange = () => {
+          input.value = String(settled(setting, input.value === "" ? (preferences.settings?.[setting.id] ?? setting.value) : input.value));
+          remember();
+        };
+      } else input.onchange = remember;
+    }
+    if (config.settings) preferences = { ...preferences, settings: readSettings() };
     // A game with stages offers its cards here too, so the window a game is entered through chooses the stage as
     // well; the start keeps the one laid. A game that has nothing else to set (`stagesFirst`: the puzzles for one)
     // is entered through its stage window itself (the user asked to have the two windows made one): the cards as
@@ -339,7 +433,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     mode = alone ? "ai" : preferences.mode;
     variant = preferences.variant;
     level = preferences.level;
-    state = shown = game.create(variant);
+    options = optionsOf(config.settings, preferences, mode);
+    state = shown = game.create(variant, options);
     spec = config.board?.(variant) ?? null;
     past = [];
     chosen = {};
@@ -362,7 +457,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       `<li id="pg-side-${p}"${solo && p ? " hidden" : ""}><i class="yut-dot" style="background:${(spec?.colors ?? config.colorsOf?.(variant) ?? config.colors ?? ["#16181a", "#b9b3a4"])[p]}"></i><b>${who(p)}</b><span id="pg-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.toolsLayout ? ` tools-${config.toolsLayout}` : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button>${config.turnable ? `<button id="camera">시점 전환</button>` : ""}<button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}"${tool.area ? ` style="grid-area:${tool.area}"` : ""}${tool.name ? ` aria-label="${tool.name}"` : ""} hidden>${tool.label}</button>`).join("")}</div>${config.pausable ? `<div class="board-pause"><button id="pg-pause" class="board-icon pause-icon" aria-label="일시정지"><i aria-hidden="true"></i></button></div>` : ""}<div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul>${config.puzzle ? `<div class="puzzle-panel"><p class="puzzle-stage" id="pz-stage"></p><div class="puzzle-levels" role="group" aria-label="난이도">${(config.stages ?? []).map((stage) => `<button class="puzzle-level" data-stage="${stage.value}" aria-pressed="${stage.value === variant}"><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div><div class="puzzle-actions"><button id="pz-hint">힌트</button><button id="pg-undo">무르기</button><button id="pz-restart">처음부터</button><button id="pz-new">다른 퍼즐</button></div><button id="pz-next" class="primary" hidden>다음 스테이지 →</button></div>` : ""}<div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}${config.puzzle ? "" : `<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button>`}<p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
+      `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.toolsLayout ? ` tools-${config.toolsLayout}` : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button>${config.turnable ? `<button id="camera">시점 전환</button>` : ""}<button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant, options)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}"${tool.area ? ` style="grid-area:${tool.area}"` : ""}${tool.name ? ` aria-label="${tool.name}"` : ""} hidden>${tool.label}</button>`).join("")}</div>${config.pausable ? `<div class="board-pause"><button id="pg-pause" class="board-icon pause-icon" aria-label="일시정지"><i aria-hidden="true"></i></button></div>` : ""}<div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul>${config.puzzle ? `<div class="puzzle-panel"><p class="puzzle-stage" id="pz-stage"></p><div class="puzzle-levels" role="group" aria-label="난이도">${(config.stages ?? []).map((stage) => `<button class="puzzle-level" data-stage="${stage.value}" aria-pressed="${stage.value === variant}"><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div><div class="puzzle-actions"><button id="pz-hint">힌트</button><button id="pg-undo">무르기</button><button id="pz-restart">처음부터</button><button id="pz-new">다른 퍼즐</button></div><button id="pz-next" class="primary" hidden>다음 스테이지 →</button></div>` : ""}<div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}${config.puzzle ? "" : `<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button>`}<p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
@@ -742,7 +837,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
             ? `${who(turn)} 차례 — ${config.extraHint ?? "떼어낼 상대 말을 고르세요."}`
             : next?.field === "to" && chosen.from !== undefined
               ? `${who(turn)} 차례 — 갈 곳을 고르세요.`
-              : `${who(turn)} 차례 — ${game.hint(s)}`;
+              : warned && warned.state === s
+                ? `${who(turn)} 차례 — ${warned.text}`
+                : `${who(turn)} 차례 — ${game.hint(s)}`;
     const tally = game.tally(s);
     for (const p of [0, 1]) {
       // A game may draw its tally (a fleet) instead of writing it.

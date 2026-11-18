@@ -11,6 +11,8 @@ export interface Move {
   extra: number;
 }
 export type Winner = 0 | 1 | "draw" | null;
+/** What the setup window set beyond the variant (numbers, rules on or off, choices), by the ids of `PointConfig.settings`. */
+export type GameOptions = Record<string, number | boolean | string>;
 /** What the last move did, for the board to animate. */
 export interface Effect {
   kind: "move" | "jump" | "clone" | "place";
@@ -22,7 +24,8 @@ export interface Effect {
   removed: number[];
 }
 export interface PointGame<S> {
-  create(variant: string): S;
+  /** A new game of `variant`; `options` are the numbers and rules set in the setup window, for a game that offers them. */
+  create(variant: string, options?: GameOptions): S;
   /** Every legal move of the player to move; empty once the game is over. */
   moves(state: S): Move[];
   /**

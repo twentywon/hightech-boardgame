@@ -433,6 +433,13 @@ const play = {
     }
     await page.keyboard.press("Escape");
   },
+  // Two takes of mine (three rings, then two), each answered by the computer, so that both trays hold rings.
+  nim: async () => {
+    for (const tool of [2, 1]) {
+      await page.evaluate((i) => document.getElementById(`pg-tool-${i}`)?.click(), tool);
+      await wait(4500);
+    }
+  },
   // My mallet swept from my goal (at the left) into the puck, and the table paused while the puck is on its way.
   "air-hockey": async () => {
     const box = await page.locator("canvas").boundingBox();
