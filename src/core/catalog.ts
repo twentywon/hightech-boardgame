@@ -250,7 +250,7 @@ export const games = [
   {
     name: "컬링",
     en: "CURLING",
-    category: "보드게임",
+    category: "스포츠게임",
     players: "2인용",
     icon: "◎",
     available: true,
@@ -298,7 +298,7 @@ export const games = [
   {
     name: "포켓볼",
     en: "POCKET BALL",
-    category: "보드게임",
+    category: "스포츠게임",
     players: "2인용",
     icon: "●",
     available: true,
@@ -594,7 +594,7 @@ export const games = [
   {
     name: "다트",
     en: "DARTS",
-    category: "아케이드게임",
+    category: "스포츠게임",
     players: "2인용",
     icon: "◎",
     available: true,
@@ -610,7 +610,7 @@ export const games = [
   {
     name: "탁구",
     en: "TABLE TENNIS",
-    category: "아케이드게임",
+    category: "스포츠게임",
     players: "2인용",
     icon: "◐",
     available: true,
@@ -634,7 +634,7 @@ export const games = [
   {
     name: "볼링",
     en: "BOWLING",
-    category: "아케이드게임",
+    category: "스포츠게임",
     players: "2인용",
     icon: "◍",
     available: true,
