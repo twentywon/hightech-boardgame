@@ -48,7 +48,7 @@ export const tacticsConfig: PointConfig<State> = {
   firstNote: "컴퓨터 대전에서는 내가 청군을 이끕니다. 빠른 병사부터 움직입니다.",
   name: "전술 대전",
   english: "Tactical Battle",
-  number: "NO. 82 — SPEED DECIDES",
+  number: "NO. 87 — SPEED DECIDES",
   intro: `<p>높낮이가 있는 전장에서 여섯 명씩의 부대가 맞섭니다.<br>빠른 병사부터 차례가 오고, 높은 곳과 등 뒤를 잡으면 더 세게 칩니다. 플래시 게임 '택틱스 코어'를 떠올리게 하는 쿼터뷰 전술 게임입니다.</p>`,
   meta: `2인 · 6 대 6 · ${FIELDS.map((f) => f.name).join(" / ")}`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>SPEED DECIDES</span>`,

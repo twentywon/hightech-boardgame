@@ -207,7 +207,9 @@ export class TacticsView extends TableView<State> {
   /** The effects of strikes, reused: an arrow, a ball of fire with its flames, a beam, sparkles, a lance of light, a burst. */
   private arrow = new T.Group();
   private orb!: T.Mesh;
-  private flames: T.Mesh[] = [];
+  private flames: T.Group[] = [];
+  private fireOuter!: T.MeshBasicMaterial;
+  private fireInner!: T.MeshBasicMaterial;
   private beam = new T.Group();
   private sparkles: T.Mesh[] = [];
   private pillar!: T.Mesh;
@@ -300,6 +302,7 @@ export class TacticsView extends TableView<State> {
     cancel.textContent = "취소";
     cancel.onclick = () => this.onPick(CANCEL);
     cancel.hidden = true;
+    cancel.setAttribute("aria-hidden", "true");
     this.cancel = cancel;
     this.ring.append(info);
     this.confirm = document.createElement("button");
@@ -346,7 +349,6 @@ export class TacticsView extends TableView<State> {
     }, { capture: true });
     el.addEventListener("pointermove", track, { capture: true });
     el.addEventListener("keydown", (e) => this.key(e));
-    (window as unknown as { __tx: unknown }).__tx = this; // DEBUG-TX
     el.addEventListener("focus", () => {
       if (this.keyCell === null && this.state) this.keyCell = this.state.units[this.state.active].cell;
     });
@@ -500,9 +502,18 @@ export class TacticsView extends TableView<State> {
     this.orb = new T.Mesh(keep(new T.SphereGeometry(0.1, 16, 12)), keep(additive("#ff8a2a", 1)));
     const core = new T.Mesh(keep(new T.SphereGeometry(0.06, 12, 8)), keep(additive("#fff2b0", 1)));
     this.orb.add(core);
-    const flame = keep(new T.ConeGeometry(0.4, 0.8, 12, 1, true).translate(0, 0.4, 0)),
-      fire = keep(additive("#ff7a22", 0.85));
-    for (let k = 0; k < 5; k++) this.flames.push(new T.Mesh(flame, fire));
+    // A flame on each tile of the cross: an orange tongue round a yellow core, over a glowing patch.
+    const outer = keep(new T.ConeGeometry(0.42, 1, 14, 1, true).translate(0, 0.5, 0)),
+      tongue = keep(new T.ConeGeometry(0.24, 0.8, 12, 1, true).translate(0, 0.4, 0)),
+      patch = keep(new T.CircleGeometry(0.46, 24).rotateX(-Math.PI / 2));
+    this.fireOuter = keep(additive("#ff5a12", 0.95));
+    this.fireInner = keep(additive("#ffd44a", 1));
+    this.fireOuter.side = this.fireInner.side = T.DoubleSide;
+    for (let k = 0; k < 5; k++) {
+      const flame = new T.Group();
+      flame.add(new T.Mesh(outer, this.fireOuter), new T.Mesh(tongue, this.fireInner), new T.Mesh(patch, this.fireOuter));
+      this.flames.push(flame);
+    }
     const ray = new T.Mesh(keep(new T.CylinderGeometry(0.1, 0.1, 1, 12, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5)), keep(additive("#ffe27a", 0.8))),
       inner = new T.Mesh(keep(new T.CylinderGeometry(0.04, 0.04, 1, 8).rotateX(Math.PI / 2).translate(0, 0, 0.5)), keep(additive("#ffffff", 1)));
     this.beam.add(ray, inner);
@@ -761,11 +772,11 @@ export class TacticsView extends TableView<State> {
     }
     const stats = JOBS[unit.job],
       who = this.mode === "ai" ? (unit.side === 0 ? "나" : "컴퓨터") : `플레이어 ${unit.side + 1}`,
-      looks = ["뒤쪽(홍군 쪽)", "오른쪽", "앞쪽(청군 쪽)", "왼쪽"][unit.facing],
+      looks = ["홍군 쪽", "동쪽", "청군 쪽", "서쪽"][unit.facing],
       power = unit.job === "healer" ? ["회복", `${14}`] : unit.job === "angel" ? ["공격", "한 번에 쓰러뜨림"] : ["공격", String(stats.power)];
     this.card.hidden = false;
     this.card.className = `tx-card side-${unit.side}`;
-    this.card.innerHTML = `<header>${icon(unit.job)}<b>${SIDES[unit.side]} ${stats.name}</b><small>${who}${unit.id === s.active && s.winner === null ? " · 지금 차례" : ""}</small></header><div class="tx-hp" style="--hp:${(100 * unit.hp) / unit.max}%"><i></i><span>체력 ${unit.hp} / ${unit.max}</span></div><dl><dt>${power[0]}</dt><dd>${power[1]}</dd><dt>방어</dt><dd>${stats.def}</dd><dt>속도</dt><dd>${stats.speed}</dd><dt>이동</dt><dd>${stats.move}칸 · 오르내림 ${unit.job === "angel" ? "날아감" : stats.jump}</dd><dt>사거리</dt><dd>${stats.reach}</dd><dt>충전</dt><dd>${Math.min(100, Math.max(0, unit.charge))} / 100</dd><dt>바라봄</dt><dd>${looks}</dd></dl><p>${stats.note}</p>`;
+    this.card.innerHTML = `<div class="tx-head">${icon(unit.job)}<b>${SIDES[unit.side]} ${stats.name}</b><small>${who}${unit.id === s.active && s.winner === null ? " · 지금 차례" : ""}</small></div><div class="tx-hp" style="--hp:${(100 * unit.hp) / unit.max}%"><i></i><span>체력 ${unit.hp} / ${unit.max}</span></div><dl><dt>${power[0]}</dt><dd>${power[1]}</dd><dt>방어</dt><dd>${stats.def}</dd><dt>속도</dt><dd>${stats.speed}</dd><dt>이동</dt><dd>${stats.move}칸 · ${unit.job === "angel" ? "날아감" : `높이 ${stats.jump}`}</dd><dt>충전</dt><dd>${Math.min(100, Math.max(0, unit.charge))} / 100</dd><dt>바라봄</dt><dd>${looks}</dd></dl><p class="tx-reach"><b>사거리</b> ${stats.reach}</p><p>${stats.note}</p>`;
   }
   protected mark(marks: Marks) {
     const s = this.state;
@@ -1003,11 +1014,12 @@ export class TacticsView extends TableView<State> {
         area.forEach((cell, k) => {
           const flame = this.flames[k],
             base = this.local(cell, 0.02);
-          this.tween(impact, 560, (p) => {
+          this.tween(impact, 640, (p) => {
             flame.visible = p < 1;
             flame.position.copy(base);
-            flame.scale.set(0.6 + p * 0.6, 0.3 + Math.sin(Math.PI * Math.min(1, p * 1.4)) * 1.1, 0.6 + p * 0.6);
-            (flame.material as T.MeshBasicMaterial).opacity = 0.9 * (1 - p);
+            flame.scale.set(0.7 + p * 0.5, 0.25 + Math.sin(Math.PI * Math.min(1, p * 1.3)) * 1.25, 0.7 + p * 0.5);
+            this.fireOuter.opacity = 0.95 * (1 - p * p);
+            this.fireInner.opacity = 1 - p;
           });
         });
         break;

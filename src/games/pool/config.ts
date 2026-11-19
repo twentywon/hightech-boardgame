@@ -13,6 +13,7 @@ export const poolConfig: PointConfig<State> = {
   contact: (sound) => sound.ball(),
   // Balls click as billiard balls do, thud on the cushions and drop rattling into the pockets.
   knock: (sound, kind, strength) => (kind === "disc" ? sound.ball(strength) : kind === "cushion" ? sound.cushion(strength) : sound.pocket()),
+  movingText: "공이 구르는 중…",
   name: "포켓볼",
   english: "Pocket Ball",
   number: "NO. 32 — EIGHT BALL",

@@ -649,7 +649,7 @@ function labelPlace(map: WorldMap, continent: Continent, taken: { x: number; y: 
       if (!near) continue;
       for (const o of taken) if (Math.abs(o.x - x) < o.w + w + 0.5 && Math.abs(o.y - y) < h * 2 + 0.6) cost += 40;
       for (const d of dashes) if (Math.abs(d.x - x) < w + 0.3 && Math.abs(d.y - y) < h + 0.3) cost += 5;
-      if (x - w < cols * 0.28 && y + h > rows * 0.74) cost += 30;
+      if (x - w < cols * 0.3 && y + h > rows * 0.72) cost += 1000;
       cost += Math.hypot(x - mx, (y - my) * 1.3) * 0.35;
       if (cost < lowest) {
         lowest = cost;

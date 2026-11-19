@@ -89,7 +89,7 @@ export const numberCodeConfig: PointConfig<State> = {
   ],
   name: "숫자 코드",
   english: "Number Code",
-  number: "NO. 87 — CRACK THE CODE",
+  number: "NO. 85 — CRACK THE CODE",
   intro: `<p>검은 타일과 흰 타일에 숨은 숫자를 추리해 맞히는 게임. 흔히 '다빈치 코드'라는 이름으로 알려져 있습니다.<br>작은 수부터 늘어선 상대의 타일을 하나씩 짚어 숫자를 말하고, 모두의 코드를 먼저 풀어내세요.</p>`,
   meta: "나 대 컴퓨터 1~3명 · 타일 24장과 조커 2장",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>CRACK THE CODE</span>`,

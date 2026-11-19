@@ -33,6 +33,7 @@ export const bowlingConfig: PointConfig<State> = {
   // The roll is a rumble as long as the ball takes down the lane; the pins crash, then knock; the gutter and the pit thud.
   knock: (sound, kind, strength) => (kind === "cushion" ? sound.rumble(Math.max(1.8, Math.min(4.5, 19 / (Math.max(0.3, strength) * 9.5)))) : kind === "disc" ? sound.pins(strength) : sound.knock(3)),
   contact: (sound) => sound.knock(2),
+  movingText: "공이 굴러가는 중…",
   name: "볼링",
   english: "Bowling",
   number: "NO. 78 — TEN PINS",

@@ -33,6 +33,7 @@ export const minigolfConfig: PointConfig<State> = {
   // The putter's click (and a rubber bumper's), the knock of a rail, the drop into the cup; a pond splashes.
   knock: (sound, kind, strength) => (kind === "pocket" ? sound.pocket() : kind === "cushion" ? sound.cushion(strength) : sound.ball(strength)),
   contact: (sound) => sound.splash(),
+  movingText: "공이 구르는 중…",
   name: "미니골프",
   english: "Mini Golf",
   number: "NO. 89 — NINE HOLES BY THE SEA",

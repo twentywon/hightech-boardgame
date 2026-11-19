@@ -25,6 +25,7 @@ export const curlingConfig: PointConfig<State> = {
   },
   tools: [{ label: "회전", point: SPIN, text: (s) => `회전: ${TURNS[s.spin]}` }],
   tallyHtml: (s) => totals(s).map((n) => String(n)) as [string, string],
+  movingText: "스톤이 미끄러지는 중…",
   name: "컬링",
   english: "Curling",
   number: "NO. 63 — SLIDE TO THE BUTTON",

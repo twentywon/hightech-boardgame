@@ -66,6 +66,8 @@ export interface PointConfig<S> {
   view?: (host: HTMLElement, quality: "high" | "low", variant: string, mode: "local" | "ai", level: Level) => PointView<S>;
   /** What the further choice of a move is, when it is not a piece to take off. */
   extraHint?: string;
+  /** What the status line says while the table is still moving (a ball rolling, an arrow in flight); the default speaks of pieces. */
+  movingText?: string;
   /** A table that needs more height on a narrow screen: an upright rack, or two boards one above the other. */
   shape?: "tall" | "taller";
   /** Buttons that play the move to a point which is not on the board (turn the ship, lay the fleet at random). */
@@ -830,7 +832,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       : done
       ? "대국이 끝났습니다."
       : state !== shown
-        ? "말이 움직이는 중…"
+        ? (config.movingText ?? "말이 움직이는 중…")
         : bot
           ? `${who(1)}가 생각하는 중…`
           : next?.field === "extra"

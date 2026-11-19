@@ -32,9 +32,10 @@ export const archeryConfig: PointConfig<State> = {
     else if (strength >= 0.9) sound.applause(0.4);
   },
   contact: () => {},
+  movingText: "화살이 날아가는 중…",
   name: "양궁",
   english: "Archery",
-  number: "NO. 88 — SEVENTY METRES",
+  number: "NO. 84 — SEVENTY METRES",
   intro: `<p>잔디 사로에 서서 ${DISTANCE}m 앞 과녁을 겨눕니다.<br>누르고 있는 동안 활을 당기고, 흔들리는 조준점을 바람만큼 비켜 맞춘 뒤 손을 떼세요. 올림픽처럼 세트제로 겨루거나 혼자 점수를 쌓습니다.</p>`,
   meta: `1–2인 · ${DISTANCE}m 리커브 · 세트당 화살 ${SET_ARROWS}발 · ${WIN}세트점 선승`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>SEVENTY METRES</span>`,

@@ -88,7 +88,7 @@ export const laserConfig: PointConfig<State> = {
   tallyHtml: () => ["", ""],
   name: "레이저 반사 퍼즐",
   english: "Laser Reflection",
-  number: "NO. 86 — LIGHT THE TARGETS",
+  number: "NO. 88 — LIGHT THE TARGETS",
   intro: `<p>광학 실험대의 5×5 받침판.<br>쟁반의 거울과 부품을 받침판에 세우고 돌려서, 레이저 빛이 판 위의 모든 부품에 닿으며 정해진 수의 표적에 불을 켜게 하세요. ThinkFun의 'Laser Maze'와 같은 규칙의 퍼즐이고, 문제는 매번 새로 만들어지며 답은 하나뿐입니다.</p>`,
   meta: "1인 · 5×5 받침판 · 문제는 무작위 · 답은 하나",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>LIGHT THE TARGETS</span>`,

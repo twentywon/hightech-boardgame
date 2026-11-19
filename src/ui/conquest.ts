@@ -2,7 +2,6 @@ import { dress } from "./chrome";
 import { notes, part, steps, table } from "./guide";
 import { cheer, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
-import { games } from "../core/catalog";
 import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
 import type { Settings } from "../core/storage";
@@ -126,7 +125,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
   function setupForm(host: HTMLElement) {
     const h = people(),
       computers = computersFor(h, preferences.opponents),
-      number = String(games.findIndex((g) => g.en === "CONTINENT CONQUEST") + 1).padStart(2, "0"),
+      number = "86",
       option = (value: string | number, label: string, chosen: boolean) => `<option value="${value}" ${chosen ? "selected" : ""}>${label}</option>`;
     host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. ${number} — WORLD CONQUEST</span><h2>대륙 쟁탈전 <span>Continent Conquest</span></h2><p>판마다 새로 그려지는 세계에서 병력을 늘리고 주사위로 싸워 대륙을 차지하세요.<br>보드게임 ‘리스크’와 같은 방식의 세계 정복 게임입니다.</p><div class="game-meta">2–6명 (사람 1–6명, 나머지는 컴퓨터) · 판마다 새 지도</div><div class="ai-options"><label>사람 수<select id="cq-humans">${[1, 2, 3, 4, 5, 6].map((n) => option(n, `${n}명`, n === h)).join("")}</select></label><label>컴퓨터 수<select id="cq-opponents">${Array.from({ length: SEATS - h - (h === 1 ? 1 : 0) + 1 }, (_, k) => k + (h === 1 ? 1 : 0)).map((n) => option(n, n ? `컴퓨터 ${n}명` : "없음", n === computers)).join("")}</select></label><label>지도 크기<select id="cq-size">${(Object.keys(SIZES) as Size[]).map((s) => option(s, `${SIZES[s].label} (영토 약 ${SIZES[s].territories})`, s === preferences.size)).join("")}</select></label><label>승리 조건<select id="cq-mode">${(Object.keys(MODES) as Mode[]).map((m) => option(m, MODES[m], m === preferences.mode)).join("")}</select></label>${preferences.mode === "turns" ? `<label>라운드 수<select id="cq-rounds">${ROUND_CHOICES.map((r) => option(r, `${r}라운드`, r === preferences.rounds)).join("")}</select></label>` : ""}${computers ? `<label>컴퓨터 난이도<select id="cq-difficulty">${(Object.keys(LEVELS) as Level[]).map((l) => option(l, LEVELS[l].label, l === preferences.level)).join("")}</select></label>` : ""}</div><div class="tour-names" role="group" aria-label="플레이어 이름">${Array.from({ length: h }, (_, i) => `<label>${h === 1 ? "내 이름" : `플레이어 ${i + 1} 이름`}<input class="cq-name" data-seat="${i}" maxlength="8" autocomplete="off" placeholder="${h === 1 ? "나" : `플레이어 ${i + 1}`}" value="${escape(preferences.names[i] ?? "")}"></label>`).join("")}</div><button id="cq-start" class="primary">작전 시작 <span>↗</span></button></div><div class="feature-art cq-art" role="img" aria-label="대륙 쟁탈전 지도 미리보기"><div class="cq-mini"><i></i><i></i><i></i><i></i></div><span>REINFORCE, ATTACK, MOVE</span></div></section>`;
     const field = <E extends HTMLElement>(id: string) => host.querySelector<E>(`#${id}`);

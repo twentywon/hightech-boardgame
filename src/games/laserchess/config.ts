@@ -40,7 +40,7 @@ export const laserChessConfig: PointConfig<State> = {
   knock: (sound, kind) => sound.laser(kind === "disc" ? "fire" : kind === "pocket" ? "burst" : "block"),
   name: "레이저 체스",
   english: "Laser Chess",
-  number: "NO. 85 — BEND THE BEAM",
+  number: "NO. 83 — BEND THE BEAM",
   intro: `<p>거울과 방패를 옮기고 돌려 레이저를 꺾고, 상대의 왕을 맞히는 두뇌 게임입니다.<br>한 수를 둘 때마다 내 레이저포가 저절로 발사됩니다. 말과 시작 배치는 이 테이블만의 것입니다.</p>`,
   meta: "2인 · 10×8 · 기본 / 공격형",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>BEND THE BEAM</span>`,

@@ -36,6 +36,7 @@ export const caromConfig: PointConfig<State> = {
     { id: "target3", kind: "choice", label: "목표 점수", value: "10", fixed: ["four"], options: TARGETS.three.map((n) => ({ value: String(n), label: `${n}점` })) },
   ],
   firstNote: "컴퓨터 대전에서는 내가 흰 공으로 먼저 칩니다. 컴퓨터는 노란 공입니다.",
+  movingText: "공이 구르는 중…",
   name: "당구",
   english: "Carom Billiards",
   number: "NO. 82 — FOUR BALL · THREE CUSHION",
