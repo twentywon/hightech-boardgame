@@ -37,7 +37,7 @@ const computer = (x: number, y: number, s = 1) =>
   `<rect x="${x - 6 * s}" y="${y - 7 * s}" width="${12 * s}" height="${8.5 * s}" rx="${1.4 * s}" fill="none" stroke="currentColor" stroke-width="${1.8 * s}"/><path d="M${x - 2 * s} ${y + 3.2 * s}h${4 * s}M${x} ${y + 1.6 * s}v${1.6 * s}" stroke="currentColor" stroke-width="${1.8 * s}" stroke-linecap="round"/><circle cx="${x}" cy="${y - 2.8 * s}" r="${1.3 * s}" fill="currentColor"/>`;
 /** `n` of something side by side, centred in a picture `w` wide. */
 const row = (n: number, w: number, gap: number, draw: (x: number) => string) => Array.from({ length: n }, (_, k) => draw(w / 2 + (k - (n - 1) / 2) * gap)).join("");
-const people = (n: number) => svg(48, 26, row(n, 48, n > 3 ? 10.5 : 12, (x) => person(x, 15, n > 3 ? 0.85 : 1)));
+const people = (n: number) => svg(48, 26, row(n, 48, n > 4 ? 8 : n > 3 ? 10.5 : 12, (x) => person(x, 15, n > 4 ? 0.68 : n > 3 ? 0.85 : 1)));
 // Up to three at full size; four or five (hold'em's tables) smaller and closer, so that they fit the picture.
 const computers = (n: number) => svg(48, 26, row(n, 48, n > 4 ? 9.4 : n > 3 ? 11.5 : 15, (x) => computer(x, 14, n > 4 ? 0.66 : n > 3 ? 0.8 : 1)));
 /** Rising bars, `n` of `of` filled: how hard the computer plays. */
@@ -107,8 +107,12 @@ const NIM: Record<string, string> = {
     `<path d="M8.6 15.5h12.8l-2 10.5h-8.8z" fill="#bfe8da" stroke="#5aa58c" stroke-width="1"/><path d="M9.6 19.4h10.8" stroke="#fff" stroke-width="1.6"/><path d="M6.8 15.8c0-5.4 3.6-8.6 8.2-8.6s8.2 3.2 8.2 8.6c-2.6 1.4-13.8 1.4-16.4 0z" fill="#fbe58a" stroke="#c9a23c" stroke-width="1"/><path d="M10 12.4c1.6-1.2 3-1.6 4.6-1.4M14.8 9.6c1.6.2 3.2 1.2 4 2.6" fill="none" stroke="#e2c25a" stroke-width="1"/><circle cx="15.6" cy="5.4" r="2.6" fill="#d21f33"/><path d="M15.8 2.9c.6-1.4 1.8-2.2 3-2.2" fill="none" stroke="#5d3a1c" stroke-width=".9" stroke-linecap="round"/>`,
   ),
 };
+/** 당구's two kinds: a blue carom cloth in a wooden rail with its balls, two reds for 4구 and one for 3쿠션. */
+const caromTable = (balls: string[]) =>
+  svg(44, 26, `<rect x="1.5" y="3" width="41" height="21" rx="3" fill="#8a5a3a"/><rect x="4.5" y="6" width="35" height="15" rx="1" fill="#2b5fae"/>` + balls.map((fill, k) => `<circle cx="${11 + k * 7.4}" cy="${k % 2 ? 11 : 16}" r="2.7" fill="${fill}" stroke="#00000055" stroke-width=".6"/>`).join(""));
+const CAROM: Record<string, string> = { four: caromTable(["#f6f3ea", "#f2c230", "#d0302a", "#d0302a"]), three: caromTable(["#f6f3ea", "#f2c230", "#d0302a"]) };
 /** A die, for a choice left to chance. */
-const die = svg(26, 26, `<rect x="4" y="4" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/>${[[9, 9], [17, 9], [13, 13], [9, 17], [17, 17]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" fill="currentColor"/>`).join("")}`);
+const die =svg(26, 26, `<rect x="4" y="4" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/>${[[9, 9], [17, 9], [13, 13], [9, 17], [17, 17]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" fill="currentColor"/>`).join("")}`);
 const LEVEL_BARS: Record<string, [number, number]> = { beginner: [1, 5], easy: [2, 5], normal: [3, 5], hard: [4, 5], expert: [5, 5] };
 const POINT_LEVEL: Record<string, [number, number]> = { easy: [1, 3], normal: [2, 3], hard: [3, 3] };
 export function choiceIcon(select: string, value: string, label: string, game = ""): ChoiceIcon | null {
@@ -125,8 +129,9 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (/difficulty$/.test(select) && LEVEL_BARS[value]) return { svg: bars(...LEVEL_BARS[value]), only: false };
   if (select === "pg-level" && POINT_LEVEL[value]) return { svg: bars(...POINT_LEVEL[value]), only: false };
   // How many: people, and computers.
-  if (select === "tour-humans" || select === "yut-players") return { svg: people(Number(value)), only: true };
-  if ((select === "tour-opponents" || select === "bg-opponents") && Number(value) > 0) return { svg: computers(Number(value)), only: true };
+  if (select === "tour-humans" || select === "yut-players" || select === "cq-humans") return { svg: people(Number(value)), only: true };
+  if (select === "cq-opponents" && Number(value) > 0) return { svg: computers(Number(value)), only: true };
+  if ((select === "tour-opponents" || select === "bg-opponents" || select === "pg-set-rivals") && Number(value) > 0) return { svg: computers(Number(value)), only: true };
   // A janggi formation: its four pieces in order, 馬 and 象.
   if (select === "jg-formation" || select === "jg-formation-2")
     return { svg: svg(52, 16, [...value].map((c, k) => piece(7 + k * 12.6, 8, 6.4, c === "N" ? "馬" : "象", "#3b2a14")).join("")), only: false };
@@ -136,6 +141,7 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "pg-variant" && game === "tic-tac-toe" && TTT[value]) return { svg: TTT[value], only: false };
   if (select === "pg-variant" && game === "dots-and-boxes" && Number(value) > 1) return { svg: dots(Number(value)), only: false };
   if (select === "pg-variant" && game === "nim" && NIM[value]) return { svg: NIM[value], only: false };
+  if (select === "pg-variant" && game === "carom-billiards" && CAROM[value]) return { svg: CAROM[value], only: false };
   // Who moves first against the computer: me, the computer, or a throw of a die.
   if (select === "pg-set-first") return value === "me" ? { svg: svg(26, 26, person(13, 14)), only: false } : value === "computer" ? { svg: svg(26, 26, computer(13, 14)), only: false } : value === "random" ? { svg: die, only: false } : null;
   return null;

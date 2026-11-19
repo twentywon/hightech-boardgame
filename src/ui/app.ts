@@ -71,9 +71,16 @@ import { grillConfig } from "../games/grill/config";
 import { slideConfig } from "../games/slide/config";
 import { dartsConfig } from "../games/darts/config";
 import { bowlingConfig } from "../games/bowling/config";
+import { minigolfConfig } from "../games/minigolf/config";
 import { frogConfig } from "../games/frog/config";
 import { marbleDropConfig } from "../games/marbledrop/config";
+import { laserConfig } from "../games/laser/config";
 import { nimConfig } from "../games/nim/config";
+import { tacticsConfig } from "../games/tactics/config";
+import { numberCodeConfig } from "../games/numbercode/config";
+import { caromConfig } from "../games/carom/config";
+import { laserChessConfig } from "../games/laserchess/config";
+import { archeryConfig } from "../games/archery/config";
 import type { PointConfig } from "./point-game";
 import { thumb } from "./thumbs";
 import { mountSpider, type SpiderController, type SpiderOptions } from "./spider";
@@ -81,6 +88,7 @@ import { mountPatience, type PatienceController } from "./patience";
 import { klondikeConfig, type KlondikeOptions } from "../games/klondike/config";
 import { freecellConfig, type FreeCellOptions } from "../games/freecell/config";
 import { mountTour, type TourController, type TourOptions } from "./tour";
+import { CONQUEST_DEFAULTS, mountConquest, type ConquestController, type ConquestOptions } from "./conquest";
 import {
   mountBettingGame,
   type BettingController,
@@ -163,6 +171,8 @@ let klondikeOptions: KlondikeOptions = { draw: "1" };
 let freecellOptions: FreeCellOptions = { deal: "random", number: "1" };
 let tour: TourController | null = null;
 let tourOptions: TourOptions = { opponents: 1, humans: 1, names: [] };
+let conquest: ConquestController | null = null;
+let conquestOptions: ConquestOptions = { ...CONQUEST_DEFAULTS, names: [] };
 /** The games that share the point-board screen, and what was last chosen for each. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pointGames: Record<string, { config: PointConfig<any>; options: PointOptions }> = {
@@ -233,9 +243,16 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "sliding-puzzle": { config: slideConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   darts: { config: dartsConfig, options: { mode: "ai", variant: "countup", level: "normal" } },
   bowling: { config: bowlingConfig, options: { mode: "ai", variant: "duel", level: "normal" } },
+  "mini-golf": { config: minigolfConfig, options: { mode: "ai", variant: "duel", level: "normal" } },
   "frog-hop": { config: frogConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "marble-drop-maze": { config: marbleDropConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "laser-reflection": { config: laserConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   nim: { config: nimConfig, options: { mode: "ai", variant: "nim", level: "normal" } },
+  "tactical-battle": { config: tacticsConfig, options: { mode: "ai", variant: "forest", level: "normal" } },
+  "number-code": { config: numberCodeConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  "carom-billiards": { config: caromConfig, options: { mode: "ai", variant: "four", level: "normal" } },
+  "laser-chess": { config: laserChessConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
+  archery: { config: archeryConfig, options: { mode: "ai", variant: "match", level: "normal" } },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
@@ -307,6 +324,8 @@ function clear() {
   patience = null;
   tour?.dispose();
   tour = null;
+  conquest?.dispose();
+  conquest = null;
   blackjack?.dispose();
   blackjack = null;
   chess?.dispose();
@@ -347,6 +366,7 @@ type GameSelection =
   | "klondike"
   | "freecell"
   | "world-tour"
+  | "continent-conquest"
   | "battleship"
   | "four-in-a-row"
   | "twist-five"
@@ -405,9 +425,16 @@ type GameSelection =
   | "sliding-puzzle"
   | "darts"
   | "bowling"
+  | "mini-golf"
   | "frog-hop"
   | "marble-drop-maze"
+  | "laser-reflection"
   | "nim"
+  | "tactical-battle"
+  | "number-code"
+  | "carom-billiards"
+  | "laser-chess"
+  | "archery"
   | null;
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" ${mode === "local" ? "checked" : ""}> 로컬 2인</label><label><input type="radio" name="mode" value="ai" ${mode === "ai" ? "checked" : ""}> 컴퓨터 대전</label></div>${aiForm()}<label class="rule-option"><input type="checkbox" id="allow-33" ${allowDoubleThree ? "checked" : ""}> 삼삼(3-3) 허용<small>끄면 열린 삼을 한 번에 두 개 만드는 수를 둘 수 없습니다.</small></label><button class="primary" id="start">테이블에 앉기 <span>↗</span></button></div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
@@ -470,7 +497,7 @@ function enter(id: Exclude<GameSelection, null>, category: string, people: strin
   panel.removeAttribute("role");
   panel.removeAttribute("aria-label");
   // The window offers the game's own 게임 방법 too (the user asked), over it, and back to it when closed.
-  const rules = id === "gomoku" ? showRules : (reversi ?? chess ?? betting ?? janggi ?? spider ?? patience ?? tour ?? points ?? yut ?? yacht ?? blackjack)?.rules;
+  const rules = id === "gomoku" ? showRules : (reversi ?? chess ?? betting ?? janggi ?? spider ?? patience ?? tour ?? conquest ?? points ?? yut ?? yacht ?? blackjack)?.rules;
   app.innerHTML = `<main class="entry-backdrop" aria-hidden="true">${shot ? `<img src="${shot}" alt="">` : ""}</main>`;
   entryDialog(game.name, `${game.name} 대국 설정`, [panel], leave, rules);
 }
@@ -589,6 +616,13 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
       header, bindHeader, back: leave, settings,
       setupHost: $("game-detail"), preferences: tourOptions,
       remember: (options) => { tourOptions = options; },
+    });
+  }
+  if (selected === "continent-conquest") {
+    conquest = mountConquest(app, {
+      header, bindHeader, back: leave, settings,
+      setupHost: $("game-detail"), preferences: conquestOptions,
+      remember: (options) => { conquestOptions = options; },
     });
   }
   if (selected && pointGames[selected]) {
@@ -945,6 +979,7 @@ function showSettings() {
     spider?.setSettings(settings);
     patience?.setSettings(settings);
     tour?.setSettings(settings);
+    conquest?.setSettings(settings);
     betting?.setSettings(settings);
     janggi?.setSettings(settings);
     d.close();

@@ -298,12 +298,35 @@ const play = {
     }
     await wait(900);
   },
+  // The 어려움 answer set out by the hint's moves and the laser fired (H plays them, the firing too, while capturing):
+  // the beam split and bent, two targets lit.
+  "laser-reflection": async () => {
+    await stage(2);
+    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
+    await wait(800);
+    for (let k = 0; k < 14; k++) {
+      await keys(["h"], 100);
+      await wait(700);
+    }
+    await wait(1600);
+  },
   // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
   darts: async () => {
     await keys(["Enter"]);
     await wait(1800);
     await keys(["ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "Enter"], 60);
     await wait(1800);
+  },
+  // Two arrows of mine by the keyboard (Space held draws the bow, let go it shoots), each answered by the computer,
+  // so that the scoreboard on the field shows a set under way.
+  archery: async () => {
+    await page.locator("canvas").focus();
+    for (let k = 0; k < 2; k++) {
+      await page.keyboard.down(" ");
+      await wait(1300);
+      await page.keyboard.up(" ");
+      await wait(9000);
+    }
   },
   // A few stones on the 19×19 board, the computer answering each.
   go: async () => {
@@ -439,6 +462,80 @@ const play = {
       await page.evaluate((i) => document.getElementById(`pg-tool-${i}`)?.click(), tool);
       await wait(4500);
     }
+  },
+  // The first turn's reinforcements all on my strongest front, then its weakest neighbour attacked to the end, so
+  // that the dice lie in the tray; the front is let go at the end so that nothing is picked out.
+  "continent-conquest": async () => {
+    const table = () =>
+      page.evaluate(() => {
+        const c = document.querySelector("canvas");
+        return { owners: c.dataset.owners.split(",").map(Number), armies: c.dataset.armies.split(",").map(Number), places: JSON.parse(c.dataset.places), neighbours: JSON.parse(c.dataset.neighbours) };
+      });
+    const tap = async ([x, y]) => {
+      const box = await page.locator("canvas").boundingBox();
+      await page.mouse.click(box.x + x, box.y + y);
+      await wait(500);
+    };
+    let t = await table();
+    const front = t.owners.map((_, i) => i).filter((i) => t.owners[i] === 0 && t.neighbours[i].some((n) => t.owners[n] !== 0)).sort((a, b) => t.armies[b] - t.armies[a])[0];
+    await tap(t.places[front]);
+    await press("#cq-place");
+    await wait(1200);
+    t = await table();
+    const enemy = t.neighbours[front].filter((n) => t.owners[n] !== 0).sort((a, b) => t.armies[a] - t.armies[b])[0];
+    await tap(t.places[enemy]);
+    await wait(1500);
+    await press("#cq-blitz");
+    await wait(3500);
+    await press("#cq-move");
+    await wait(1200);
+    if ((await page.locator("#board").getAttribute("data-selected")) !== "-1") {
+      t = await table();
+      await tap(t.places[Number(await page.locator("#board").getAttribute("data-selected"))]);
+    }
+  },
+  // Two at one screen, six moves by the keyboard: at the last, gold's laser, bent down column 2 by its turned home
+  // mirror, takes a silver deflector; the table has turned back to silver and the picture keeps the red beam lit.
+  "laser-chess": async () => {
+    await press("#restart");
+    // The window opens with an animation: its start is pressed once it has come to rest.
+    await page.locator("dialog[open]").getByLabel("로컬 2인", { exact: true }).check();
+    await wait(900);
+    await page.locator("dialog[open] .setup-host button.primary").click();
+    await page.locator("dialog[open]").waitFor({ state: "detached" });
+    await wait(1800);
+    // The cursor walks squares as the one to move sees them (gold's view is turned half round); Enter presses it.
+    let at = 65;
+    const go = async (to, gold) => {
+      const s = gold ? -1 : 1,
+        dc = (to % 10) - (at % 10),
+        dr = Math.floor(to / 10) - Math.floor(at / 10),
+        walk = [];
+      for (let i = 0; i < Math.abs(dc); i++) walk.push(dc * s > 0 ? "ArrowRight" : "ArrowLeft");
+      for (let i = 0; i < Math.abs(dr); i++) walk.push(dr * s > 0 ? "ArrowDown" : "ArrowUp");
+      await keys([...walk, "Enter"], 60);
+      at = to;
+    };
+    // The turns are the hidden tools: 0 against the clock, 1 with it.
+    const turn = async (i) => {
+      await page.evaluate((i) => document.getElementById(`pg-tool-${i}`)?.click(), i);
+      await wait(5200);
+    };
+    // The first arrow only puts the cursor on its starting square, (6, 5).
+    await keys(["ArrowUp"]);
+    await go(79, false);
+    await turn(0);
+    await go(12, true);
+    await go(13, true);
+    await wait(5200);
+    await go(79, false);
+    await turn(1);
+    await go(2, true);
+    await turn(0);
+    await go(79, false);
+    await turn(0);
+    await go(0, true);
+    await turn(0);
   },
   // My mallet swept from my goal (at the left) into the puck, and the table paused while the puck is on its way.
   "air-hockey": async () => {

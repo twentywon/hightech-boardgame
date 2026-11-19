@@ -357,6 +357,25 @@ export class Sound {
     this.noise(0.07, 0.03, 0.14, 5200, "bandpass", 4200);
     this.tone("square", 2300, 1700, 0.07, 0.03, 0.025);
   }
+  /**
+   * 레이저 체스, made by the page: the laser firing (a falling zap over a low hum), its beam stopped by a shield's
+   * front or a laser (a short metallic clink), and a piece it takes bursting (a crackle, a thump and glassy glints).
+   */
+  laser(what: "fire" | "block" | "burst") {
+    if (what === "fire") {
+      this.tone("sawtooth", 1500, 380, 0, 0.24, 0.03);
+      this.tone("sine", 2400, 900, 0, 0.18, 0.04);
+      this.tone("sine", 110, 96, 0, 0.42, 0.05);
+      this.noise(0, 0.2, 0.03, 6000, "highpass", 3000);
+    } else if (what === "block") {
+      this.tone("triangle", 2500, 1900, 0, 0.07, 0.05);
+      this.noise(0, 0.05, 0.08, 5200, "bandpass", 4000);
+    } else {
+      this.noise(0, 0.28, 0.2, 3200, "highpass", 700);
+      this.tone("sine", 190, 55, 0, 0.32, 0.14);
+      [3300, 4200, 2900].forEach((f, i) => this.tone("triangle", f, f * 0.92, 0.05 + i * 0.06, 0.12, 0.025));
+    }
+  }
   /** A hound's bark: a recording, the same each time. */
   bark() {
     if (this.piece("bark", 2, 0.32)) return;
@@ -513,6 +532,24 @@ export class Sound {
     if (this.recording("thud-1", 0.6)) return;
     this.tone("sine", 150, 55, 0, 0.18, 0.3);
     this.noise(0, 0.08, 0.12, 700, "lowpass", 300);
+  }
+  /** A bow let go (archery): the string's low thrum and the arrow's hiss as it leaves; made by the page, the same each time. */
+  bow() {
+    this.tone("triangle", 148, 92, 0, 0.24, 0.13);
+    this.tone("sine", 74, 52, 0, 0.2, 0.12);
+    this.noise(0, 0.05, 0.14, 2400, "bandpass", 900);
+    this.noise(0.02, 0.34, 0.05, 5200, "highpass", 3000);
+  }
+  /** A crowd clapping (`strength` 0 to 1, how many and how long), beginning a moment from now; made by the page. */
+  applause(strength = 1, after = 0.3) {
+    if (!this.enabled || !this.context) return;
+    const s = Math.max(0, Math.min(1, strength)),
+      claps = Math.round(16 + 44 * s),
+      length = 1.1 + 1.3 * s;
+    for (let k = 0; k < claps; k++) {
+      const at = Math.random() ** 1.5 * length;
+      this.noise(after + at, 0.03, (0.045 + 0.04 * s) * (1 - at / (length + 0.4)), 1300 + Math.random() * 1800, "bandpass", 900 + Math.random() * 1200);
+    }
   }
   /** A soft bell: a note with two partials over it, struck and left to ring. */
   private bell(frequency: number, at: number, length: number, volume: number) {
