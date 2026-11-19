@@ -129,7 +129,7 @@ export function paintMap(map: WorldMap) {
       const at = (x: number, y: number) => relief[Math.max(0, Math.min(LH - 1, y)) * LW + Math.max(0, Math.min(LW - 1, x))],
         dx = (at(i + 1, j) - at(i - 1, j)) / 2,
         dy = (at(i, j + 1) - at(i, j - 1)) / 2;
-      shine[j * LW + i] = 1 + (-dx - dy) * 2.4 * (0.24 * lattice) + (at(i, j) - 0.45) * 0.22;
+      shine[j * LW + i] = 1 + (-dx - dy) * 1.9 * (0.24 * lattice) + (at(i, j) - 0.45) * 0.16;
     }
   const lerp = (field: Float32Array, x: number, y: number) => {
     const u = Math.max(0, Math.min(LW - 1.001, x * lattice)),
@@ -187,7 +187,7 @@ export function paintMap(map: WorldMap) {
         const d = sample(gap, cols, rows, u, v),
           k = Math.min(1, d / 2.2),
           e = Math.min(1, Math.max(0, (d - 2.2) / 4)),
-          swell = (lerp(sway, px / ppc, py / ppc) - 0.5) * 18;
+          swell = (lerp(sway, px / ppc, py / ppc) - 0.5) * 12;
         r = shallow[0] + (mid[0] - shallow[0]) * k + (deep[0] - mid[0]) * e + swell;
         g = shallow[1] + (mid[1] - shallow[1]) * k + (deep[1] - mid[1]) * e + swell;
         b = shallow[2] + (mid[2] - shallow[2]) * k + (deep[2] - mid[2]) * e + swell;
