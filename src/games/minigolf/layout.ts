@@ -64,7 +64,7 @@ export function golferCamera(camera: PerspectiveCamera, k: number, at: P) {
  * height, is the strength (all of it at `FULL`, nothing for the first `DEAD` pixels), and its direction is taken
  * on the ground, so that the shot goes where the pull points through the ball whatever the eye.
  */
-export const FULL = 0.32,
+export const FULL = 0.27,
   DEAD = 6,
   /** Weaker than this, a pull strikes nothing. */
   LEAST = 0.015,
