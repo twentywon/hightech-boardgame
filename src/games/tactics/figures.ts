@@ -15,6 +15,13 @@ const SIDE_DARK = ["#1b3f86", "#7d1f19"];
 type Own = <R extends { dispose(): void }>(r: R) => R;
 /** A profile turned about the upright axis: points from the foot up. */
 const lathe = (points: [number, number][], segments = 20) => new T.LatheGeometry(points.map(([r, y]) => new T.Vector2(r, y)), segments);
+/** A shell round a head, open at the front so that the face shows (a hood, a veil): `reach` of the way down from the top. */
+const openShell = (radius: number, reach = 0.62) => new T.SphereGeometry(radius, 20, 12, Math.PI * 0.72, Math.PI * 1.56, 0, Math.PI * reach);
+/** A paint seen from inside as well (a shell open at the front). */
+const shell = (m: T.MeshStandardMaterial) => {
+  m.side = T.DoubleSide;
+  return m;
+};
 /** The shapes every figure is made of, made once a view. */
 export class Shapes {
   private made = new Map<string, T.BufferGeometry>();
@@ -157,7 +164,8 @@ export function buildFigure(job: Job, side: Side, shapes: Shapes, own: Own): Fig
       arms(cloth, 0.5);
       face(0.64);
       // A pointed hood of the side's colour.
-      put(shapes.get("hood", () => lathe([[0.001, 0.53], [0.15, 0.55], [0.15, 0.66], [0.1, 0.77], [0.02, 0.86], [0.001, 0.87]], 16)), trim, 0, 0, -0.02);
+      put(shapes.get("hood", () => openShell(0.152)), shell(trim), 0, 0.645, -0.012);
+      put(shapes.get("hoodTip", () => new T.ConeGeometry(0.075, 0.2, 12).translate(0, 0.1, 0)), trim, 0, 0.74, -0.06).rotation.x = -0.45;
       // The bow held out at the left, its string drawn straight; a quiver on the back.
       const bow = new T.Group();
       bow.position.set(0.24, 0.42, 0.12);
@@ -193,7 +201,8 @@ export function buildFigure(job: Job, side: Side, shapes: Shapes, own: Own): Fig
       arms(cloth, 0.45);
       face(0.63);
       // A soft veil over the head.
-      put(shapes.get("veil", () => lathe([[0.001, 0.47], [0.16, 0.5], [0.15, 0.66], [0.11, 0.74], [0.001, 0.77]], 16)), paint("#e8f0ea"), 0, 0, -0.03);
+      put(shapes.get("veil", () => openShell(0.158, 0.72)), shell(paint("#e8f0ea")), 0, 0.635, -0.015);
+      put(shapes.get("veilBack", () => lathe([[0.001, 0.5], [0.15, 0.52], [0.13, 0.62], [0.001, 0.64]], 16)), paint("#e8f0ea"), 0, 0, -0.04);
       staff(shapes.get("crystal", () => new T.OctahedronGeometry(0.065)), glow, 0.62);
       break;
     }
@@ -211,8 +220,13 @@ export function buildFigure(job: Job, side: Side, shapes: Shapes, own: Own): Fig
       tail.rotation.y = 0.3;
       // A dagger in each hand.
       for (const sx of [-1, 1]) {
-        const dagger = put(shapes.get("dagger", () => new T.ConeGeometry(0.022, 0.2, 4).translate(0, 0.1, 0)), steel, sx * 0.22, 0.3, 0.14);
-        dagger.rotation.x = 1.1;
+        const dagger = new T.Group();
+        dagger.position.set(sx * 0.25, 0.31, 0.07);
+        dagger.rotation.set(1.05, 0, -sx * 0.25);
+        body.add(dagger);
+        put(shapes.get("knife", () => block(0.034, 0.24, 0.01, 0.004).translate(0, 0.15, 0)), steel, 0, 0, 0, dagger);
+        put(shapes.get("knifeGuard", () => block(0.08, 0.018, 0.024, 0.006)), dark, 0, 0.025, 0, dagger);
+        put(shapes.get("knifeGrip", () => new T.CylinderGeometry(0.013, 0.013, 0.06, 6)), trim, 0, -0.01, 0, dagger);
       }
       body.position.y = -0.02;
       hand.set(-0.22, 0.32, 0.24);

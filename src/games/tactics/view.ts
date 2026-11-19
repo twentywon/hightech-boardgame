@@ -177,8 +177,8 @@ const RING: { point: number; key: string; word: (healer: boolean) => string }[] 
 type Glow = "move" | "range" | "hit" | "friend" | "heal" | "area";
 const GLOW: Record<Glow, [string, number]> = {
   move: ["#5fb4ff", 0.7],
-  range: ["#ff4a3d", 0.3],
-  area: ["#ff6a3d", 0.42],
+  range: ["#ff4a3d", 0.34],
+  area: ["#ffffff", 0.5],
   hit: ["#ff2a1f", 0.78],
   friend: ["#ff9d1f", 0.82],
   heal: ["#4fe08a", 0.7],
@@ -217,6 +217,8 @@ export class TacticsView extends TableView<State> {
   private ring: HTMLDivElement;
   private card: HTMLDivElement;
   private confirm: HTMLButtonElement;
+  /** 취소, while a tile is being chosen: it stands apart, above the turn buttons, so that it covers no tile. */
+  private cancel!: HTMLButtonElement;
   private turners: HTMLButtonElement[] = [];
   /** The unit whose card is pinned by a tap, and the one a mouse rests on. */
   private pinned: number | null = null;
@@ -297,7 +299,9 @@ export class TacticsView extends TableView<State> {
     cancel.className = "tx-cmd tx-cancel";
     cancel.textContent = "취소";
     cancel.onclick = () => this.onPick(CANCEL);
-    this.ring.append(info, cancel);
+    cancel.hidden = true;
+    this.cancel = cancel;
+    this.ring.append(info);
     this.confirm = document.createElement("button");
     this.confirm.type = "button";
     this.confirm.tabIndex = -1;
@@ -328,7 +332,7 @@ export class TacticsView extends TableView<State> {
       turns.append(button);
       this.turners.push(button);
     }
-    this.layer.append(this.queueBar, this.ring, this.confirm, this.card, turns);
+    this.layer.append(this.queueBar, this.ring, this.confirm, this.cancel, this.card, turns);
     host.append(this.layer);
     // The pointer's place on the screen, for a drag that turns the field and a long press that shows a card.
     const el = this.renderer.domElement;
@@ -505,7 +509,21 @@ export class TacticsView extends TableView<State> {
     const sparkle = keep(new T.OctahedronGeometry(0.045)),
       green = keep(additive("#7dffb0", 1));
     for (let k = 0; k < 10; k++) this.sparkles.push(new T.Mesh(sparkle, green));
-    this.pillar = new T.Mesh(keep(new T.CylinderGeometry(0.32, 0.32, 5, 20, 1, true).translate(0, 2.5, 0)), keep(additive("#ffe9a0", 0.8)));
+    // The light column fades as it rises, so that its top is never seen.
+    const fade = document.createElement("canvas");
+    fade.width = 4;
+    fade.height = 64;
+    const g = fade.getContext("2d")!,
+      ramp = g.createLinearGradient(0, 0, 0, 64);
+    ramp.addColorStop(0, "#000");
+    ramp.addColorStop(0.75, "#fff");
+    ramp.addColorStop(1, "#fff");
+    g.fillStyle = ramp;
+    g.fillRect(0, 0, 4, 64);
+    const column = keep(additive("#ffe9a0", 0.8));
+    column.alphaMap = keep(new T.CanvasTexture(fade));
+    column.side = T.DoubleSide;
+    this.pillar = new T.Mesh(keep(new T.CylinderGeometry(0.32, 0.32, 5, 20, 1, true).translate(0, 2.5, 0)), column);
     this.burst = new T.Mesh(keep(new T.SphereGeometry(0.5, 24, 16)), keep(additive("#ffffff", 0.9)));
     for (const m of [this.arrow, this.orb, ...this.flames, this.beam, ...this.sparkles, this.pillar, this.burst]) {
       m.visible = false;
@@ -557,6 +575,7 @@ export class TacticsView extends TableView<State> {
       clearTimeout(press.timer);
       this.ring.hidden = true;
       this.confirm.hidden = true;
+      this.cancel.hidden = true;
     }
     if (press.turning) {
       this.root.rotation.y = yawOf(this.quarter) + (dx / Math.max(200, this.renderer.domElement.clientWidth)) * Math.PI * 1.3;
@@ -605,6 +624,7 @@ export class TacticsView extends TableView<State> {
     this.quarter = q;
     this.ring.hidden = true;
     this.confirm.hidden = true;
+    this.cancel.hidden = true;
     if (this.reducedMotion || Math.abs(to - from) < 1e-4) {
       this.root.rotation.y = yawOf(q);
       if (this.state) this.place(this.state);
@@ -792,6 +812,7 @@ export class TacticsView extends TableView<State> {
     if (!s || !commands || this.animating || capturing() || s.winner !== null) {
       this.ring.hidden = true;
       this.confirm.hidden = true;
+      this.cancel.hidden = true;
       return;
     }
     const unit = s.units[s.active],
@@ -799,7 +820,7 @@ export class TacticsView extends TableView<State> {
     if (!f) return;
     const at = new T.Vector3();
     f.group.getWorldPosition(at);
-    at.y += 0.42;
+    at.y += 0.6;
     const el = this.renderer.domElement,
       w = el.clientWidth,
       h = el.clientHeight,
@@ -822,12 +843,13 @@ export class TacticsView extends TableView<State> {
       button.hidden = choosing;
     }
     this.ring.querySelector<HTMLElement>('[data-cmd="info"]')!.hidden = choosing;
-    this.ring.querySelector<HTMLElement>('[data-cmd="cancel"]')!.hidden = !choosing;
+    this.ring.hidden = choosing;
+    this.cancel.hidden = !choosing;
     // While a strike is shown, a button over its target makes it.
     this.confirm.hidden = !(s.aim === "attack" && s.preview >= 0);
     if (!this.confirm.hidden) {
       const target = tileLocal(s.preview),
-        v = new T.Vector3(target.x, tileTop(this.field.id, s.preview) + 0.9, target.z);
+        v = new T.Vector3(target.x, tileTop(this.field.id, s.preview) + 1.65, target.z);
       this.root.localToWorld(v);
       const q = this.screen(v);
       this.confirm.textContent = unit.job === "healer" ? "회복!" : "공격!";
@@ -888,6 +910,7 @@ export class TacticsView extends TableView<State> {
     if (last.kind === "wait") return false;
     this.ring.hidden = true;
     this.confirm.hidden = true;
+    this.cancel.hidden = true;
     this.card.hidden = this.pinned === null;
     const f = this.figures[last.unit];
     if (!f) return false;
@@ -1101,7 +1124,7 @@ export class TacticsView extends TableView<State> {
     if (!g || capturing()) return;
     const at = new T.Vector3();
     g.group.getWorldPosition(at);
-    at.y += 0.95;
+    at.y += 1.3;
     const p = this.screen(at),
       label = document.createElement("span");
     label.className = `tx-num ${kind}`;

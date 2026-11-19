@@ -463,6 +463,11 @@ const play = {
       await wait(4500);
     }
   },
+  // A black tile drawn from the pool (held at the end of my row), the computer's tiles still standing.
+  "number-code": async () => {
+    await page.evaluate(() => document.getElementById("pg-tool-0")?.click());
+    await wait(1800);
+  },
   // The first turn's reinforcements all on my strongest front, then its weakest neighbour attacked to the end, so
   // that the dice lie in the tray; the front is let go at the end so that nothing is picked out.
   "continent-conquest": async () => {

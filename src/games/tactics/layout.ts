@@ -45,6 +45,8 @@ export const REACH = ((Math.max(W, D) * TILE) / 2 + RIM) * Math.SQRT2;
  * reach, because its near corners lie closer to the eye than the diamond's side corners.
  */
 export function tacticsSubject(aspect: number) {
+  // A phone held sideways is short and wide: the queue stands at its upper right, so the field may fill the height.
+  if (aspect > 2.1) return { half: REACH * 0.78, halfZ: REACH * 0.9, height: 1.5, lookY: 0.4, tilt: 0.9 };
   const wide = aspect > 1.5;
   return { half: REACH * (wide ? 0.8 : 0.84), halfZ: REACH * 0.9, height: wide ? 2.9 : 2.5, lookY: 0.55, tilt: 0.9 };
 }

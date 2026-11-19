@@ -29,7 +29,8 @@ export const tacticsConfig: PointConfig<State> = {
     { label: "대기", point: WAIT, onBoard: true },
     { label: "취소", point: CANCEL, onBoard: true },
   ],
-  ponder: () => 250,
+  // A unit's first command waits a moment, so that one can see whose turn it is; the rest of its turn follows at once.
+  ponder: (state) => (state.moved || state.acted ? -150 : 200),
   // A healer left alone becomes the angel: it is called across the table once the light has faded.
   cheer: (_before, state) => (state.last?.angels?.length ? "천사 강림!" : null),
   cheerOnRest: true,

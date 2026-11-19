@@ -337,7 +337,17 @@ export class NumberCodeView extends TableView<State> {
       tag.textContent = s.out[seat] ? `${names[seat]} · 탈락` : names[seat];
       tag.classList.toggle("turn", !over && s.seat === seat);
       tag.classList.toggle("out", s.out[seat]);
-      tag.style.left = `${point.left}px`;
+      // The side racks' names stand outward of them; every name is kept inside the table, whatever its shape.
+      const frame = frames(s.seats)[seat],
+        west = frame.out[0] < 0,
+        east = frame.out[0] > 0,
+        width = tag.offsetWidth,
+        room = this.renderer.domElement.clientWidth;
+      tag.classList.toggle("west", west);
+      tag.classList.toggle("east", east);
+      const low = west ? width + 6 : east ? 6 : width / 2 + 6,
+        high = west ? room - 6 : east ? room - width - 6 : room - width / 2 - 6;
+      tag.style.left = `${Math.min(high, Math.max(low, point.left))}px`;
       tag.style.top = `${point.top}px`;
     });
     const quiet = !rest || capturing() || over;
@@ -351,8 +361,12 @@ export class NumberCodeView extends TableView<State> {
       this.said.hidden = false;
       this.said.className = `nc-said ${last.kind}`;
       this.said.textContent = `${last.said === JOKER ? "−" : last.said}${last.kind === "right" ? " ✓" : " ✗"}`;
-      this.said.style.left = `${point.left}px`;
-      this.said.style.top = `${point.top}px`;
+      // Too near the top (under the status line) it sits on the tile itself.
+      const on = point.top - this.said.offsetHeight - 8 < 52,
+        middle = on ? this.screen(pose.p[0], pose.p[1], pose.p[2]) : point;
+      this.said.classList.toggle("on", on);
+      this.said.style.left = `${middle.left}px`;
+      this.said.style.top = `${middle.top}px`;
     } else this.said.hidden = true;
     // Go on or stop, after a right guess of mine.
     const asking = !quiet && s.seat === 0 && s.phase === "again";
@@ -383,23 +397,43 @@ export class NumberCodeView extends TableView<State> {
       this.layer.prepend(tag);
       this.tags.push(tag);
     }
+    // Along the near and far racks a list keeps to its tile's width, wrapping onto more lines; where the tiles stand
+    // close (a phone, a long row) the lists of every other tile go a line lower, so that each may take two widths.
+    const laid: { tag: HTMLDivElement; left: number; top: number; seat: number; odd: boolean }[] = [],
+      deepest = new Map<number, number>();
     this.tags.forEach((tag, k) => {
       const entry = entries[k];
       tag.hidden = !entry;
       if (!entry) return;
       const [code, words] = entry,
         seat = codeSeat(code),
+        i = codeIndex(code),
+        n = s.rows[seat].length,
         frame = frames(s.seats)[seat],
-        pose = standAt(s.seats, seat, codeIndex(code), s.rows[seat].length),
+        pose = standAt(s.seats, seat, i, n),
         toward = RACK.d / 2 + 0.2,
-        point = this.screen(pose.p[0] - frame.out[0] * toward, 0, pose.p[2] - frame.out[1] * toward);
+        point = this.screen(pose.p[0] - frame.out[0] * toward, 0, pose.p[2] - frame.out[1] * toward),
+        side = frame.out[0] !== 0;
       tag.textContent = words;
       tag.dataset.code = String(code);
       tag.classList.toggle("one", !words.includes(" ") && !words.includes("–"));
-      tag.classList.toggle("side", frame.out[0] !== 0);
-      tag.style.left = `${point.left}px`;
-      tag.style.top = `${point.top}px`;
+      tag.classList.toggle("side", side);
+      let odd = false;
+      if (!side) {
+        const a = this.screen(standAt(s.seats, seat, 0, n).p[0], 0, pose.p[2]),
+          b = this.screen(standAt(s.seats, seat, 1, n).p[0], 0, pose.p[2]),
+          pitch = Math.abs(b.left - a.left),
+          close = pitch < 46;
+        odd = close && i % 2 === 1;
+        tag.style.maxWidth = `${Math.max(26, (close ? 2 : 1.06) * pitch - 4)}px`;
+      } else tag.style.maxWidth = "";
+      laid.push({ tag, left: point.left, top: point.top, seat, odd });
+      if (!odd) deepest.set(seat, Math.max(deepest.get(seat) ?? 0, tag.offsetHeight));
     });
+    for (const { tag, left, top, seat, odd } of laid) {
+      tag.style.left = `${left}px`;
+      tag.style.top = `${odd ? top + (deepest.get(seat) ?? 0) + 2 : top}px`;
+    }
   }
   /** Where the point stands that a code names, in `s`, or null. */
   private spotOf(s: State, code: number) {

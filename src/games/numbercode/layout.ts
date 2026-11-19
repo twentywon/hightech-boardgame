@@ -110,12 +110,11 @@ export function poolAt(slot: number, count: number) {
     turn: Math.sin(slot * 5.3) * 0.12,
   };
 }
-/** Where each seat's name stands: on the felt beyond the left end of its rack (the side racks: beyond the far end). */
+/** Where each seat's name stands: on the felt beyond the left end of its rack (the side racks: behind their middle, on the owner's side). */
 export function nameAt(seats: number, seat: number) {
   const frame = frames(seats)[seat],
     side = frame.out[0] !== 0,
-    far = frame.along[1] < 0 ? 1 : -1,
-    p = side ? at(frame, far * (frame.length / 2 + 0.45), -0.35, 0.1) : at(frame, -(frame.length / 2 + 0.6), 0, 0.1);
+    p = side ? at(frame, 0, RACK.d / 2 + 0.4, 0.1) : at(frame, -(frame.length / 2 + 0.6), 0, 0.1);
   return { x: p[0], y: p[1], z: p[2] };
 }
 /** What the camera keeps in view. */

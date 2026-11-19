@@ -3117,6 +3117,9 @@ html[data-game="laser-chess"] .board-area .board-controls #pg-tool-1 { left:-19p
 .nc-said { position:absolute;translate:-50% calc(-100% - 6px);padding:3px 10px;border-radius:10px;font-weight:900;font-size:16px;color:#fff;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.35); }
 .nc-said.right { background:#2f9a5a; }
 .nc-said.wrong { background:#c8432f; }
+.nc-said.on { translate:-50% -50%; }
+.nc-name.west { translate:-100% -50%; }
+.nc-name.east { translate:0 -50%; }
 .nc-pick { position:absolute;display:grid;grid-template-columns:repeat(7, auto);gap:5px;padding:9px;border-radius:14px;background:#fffaf0;box-shadow:0 10px 28px rgba(0,0,0,.42);pointer-events:auto;translate:-50% calc(-100% - 14px);animation:nc-pop .18s ease-out both; }
 .nc-pick.below { translate:-50% 22px; }
 .nc-pick button { min-width:38px;height:38px;padding:0 6px;border-radius:9px;border:1.5px solid #cdbf9f;background:linear-gradient(#fffdf6, #efe5cf);color:#1c1a18;font-weight:800;font-size:17px;font-variant-numeric:tabular-nums;cursor:pointer;transition:transform .1s, border-color .1s; }
@@ -3129,13 +3132,16 @@ html[data-game="laser-chess"] .board-area .board-controls #pg-tool-1 { left:-19p
 .nc-ask button.stop { background:#ece3cf;color:#2b2620; }
 @keyframes nc-pop { from { opacity:0;scale:.9; } to { opacity:1;scale:1; } }
 html[data-capture] .nc-layer > :not(.nc-name) { display:none !important; }
+/* The hidden tools (a tap on the table does their work) keep to a pixel at the cluster's foot, clear of 추리 도우미. */
+html[data-game="number-code"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;bottom:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
 @media (orientation: landscape) and (max-height: 540px) {
   .nc-name { font-size:10.5px;padding:2px 8px; }
   .nc-pick { gap:4px;padding:6px; }
   .nc-pick button { min-width:31px;height:31px;font-size:14px; }
   .nc-ask { padding:7px 10px;gap:7px; }
   .nc-ask button { min-height:32px;padding:0 11px;font-size:12.5px; }
-  .nc-cand { font-size:9px; }
+  .nc-cand { font-size:9px;padding:1px 3px; }
+  .nc-said { font-size:12px;padding:2px 7px; }
   html[data-game="number-code"] .board-controls .pg-tool { white-space:nowrap; }
 }
 
@@ -3240,7 +3246,7 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 .tx-undo { translate:calc(-1 * var(--rx) - 50%) calc(var(--ry) - 50%);border-left:5px solid #9a8f80; }
 .tx-wait { translate:calc(var(--rx) - 50%) calc(var(--ry) - 50%);border-left:5px solid #e0b64a; }
 .tx-info { translate:-50% calc(var(--ry) * 1.95 - 50%);min-width:0;height:28px;font-size:12px;background:#2a2f36;color:#fff6dc; }
-.tx-cancel { translate:-50% calc(-1 * var(--ry) * 2.1 - 50%);min-width:0;background:#2a2f36;color:#fff6dc; }
+.tx-cancel { left:auto;top:auto;right:12px;bottom:94px;min-width:0;background:#2a2f36;color:#fff6dc; }
 .tx-confirm { position:absolute;translate:-50% -100%;height:36px;padding:0 16px;border:0;border-radius:999px;background:#d8433a;color:#fff;font-weight:900;font-size:14px;box-shadow:0 6px 14px #0007;cursor:pointer;pointer-events:auto;animation:tx-bob 1s ease-in-out infinite; }
 .tx-confirm[hidden] { display:none; }
 @keyframes tx-pop { from { opacity:0;scale:.8; } to { opacity:1;scale:1; } }
@@ -3248,10 +3254,11 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 .tx-card { position:absolute;left:12px;top:58px;width:232px;padding:10px 12px 11px;border-radius:14px;background:#fffaf0f2;color:#22201c;font-size:12.5px;line-height:1.4;box-shadow:0 8px 22px #0005;border-top:5px solid #2f6fe0;pointer-events:auto; }
 .tx-card.side-1 { border-top-color:#d8433a; }
 .tx-card[hidden] { display:none; }
-.tx-card header { display:flex;align-items:center;gap:7px;flex-wrap:wrap; }
+.tx-card header { display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center; }
+.tx-card header svg { grid-row:1 / 3; }
 .tx-card header svg { width:22px;height:22px;color:#1b3f86;flex:none; }
 .tx-card.side-1 header svg { color:#7d1f19; }
-.tx-card header b { font-size:14.5px; }
+.tx-card header b { font-size:14.5px;line-height:1.2; }
 .tx-card header small { color:#6b6358;font-size:11.5px; }
 .tx-hp { position:relative;margin:7px 0 6px;height:18px;border-radius:6px;background:#2a2622;overflow:hidden; }
 .tx-hp i { position:absolute;left:0;top:0;bottom:0;width:var(--hp);background:linear-gradient(#5fd77c, #2f9e4e); }
@@ -3272,7 +3279,7 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 @media (prefers-reduced-motion: reduce) { .tx-num, .tx-confirm, .tx-cmd { animation:none; } }
 html[data-capture] .tx-layer { display:none !important; }
 @media (orientation: landscape) and (max-height: 540px) {
-  .tx-queue { top:44px;gap:4px;padding:4px 7px;border-radius:12px; }
+  .tx-queue { top:44px;left:auto;right:8px;translate:none;gap:4px;padding:4px 7px;border-radius:12px; }
   .tx-queue-label { display:none; }
   .tx-chip { width:25px;height:25px;border-radius:7px; }
   .tx-chip svg { width:16px;height:16px; }
@@ -3280,6 +3287,7 @@ html[data-capture] .tx-layer { display:none !important; }
   .tx-chip.now svg { width:19px;height:19px; }
   .tx-cmd { min-width:56px;height:30px;padding:0 9px;font-size:12px; }
   .tx-info { height:25px;font-size:11px; }
+  .tx-cancel { right:8px;bottom:72px; }
   .tx-confirm { height:30px;font-size:12.5px; }
   .tx-card { top:46px;width:196px;padding:7px 9px 8px;font-size:11px;line-height:1.3; }
   .tx-card p { display:none; }
