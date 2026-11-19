@@ -248,7 +248,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "marble-drop-maze": { config: marbleDropConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "laser-reflection": { config: laserConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   nim: { config: nimConfig, options: { mode: "ai", variant: "nim", level: "normal" } },
-  "tactical-battle": { config: tacticsConfig, options: { mode: "ai", variant: "forest", level: "normal" } },
+  "tactical-battle": { config: tacticsConfig, options: { mode: "ai", variant: "dungeon", level: "normal" } },
   "number-code": { config: numberCodeConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "carom-billiards": { config: caromConfig, options: { mode: "ai", variant: "four", level: "normal" } },
   "laser-chess": { config: laserChessConfig, options: { mode: "ai", variant: "classic", level: "normal" } },

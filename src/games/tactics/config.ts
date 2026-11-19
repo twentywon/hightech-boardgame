@@ -1,7 +1,7 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { chooseMove } from "./ai";
-import { ANGEL_RANGE, AIM_ACT, AIM_MOVE, CANCEL, FIELDS, HEAL, JOBS, LIMIT, SIDES, UNDO, WAIT, activeUnit, fieldOf, tactics, type State } from "./rules";
+import { ANGEL_RANGE, AIM_ACT, AIM_MOVE, CANCEL, FIELDS, HEAL, JOBS, LIMIT, SIDES, UNDO, WAIT, activeUnit, fieldOf, standing, tactics, type State } from "./rules";
 import { SIDE_COLORS } from "./figures";
 import { TacticsView } from "./view";
 
@@ -17,6 +17,13 @@ export const tacticsConfig: PointConfig<State> = {
   variants: FIELDS.map((f) => ({ value: f.id, label: f.name })),
   variantLabel: "전장",
   colors: SIDE_COLORS,
+  // The panel tells readers who acts now and how they stand (the cards at the table's lower right are decoration).
+  tallyHtml: (state) => {
+    const unit = activeUnit(state);
+    return ([0, 1] as const).map(
+      (p) => `${standing(state, p).length}명${state.winner === null && unit.side === p ? `<span class="sr-text"> · 지금 차례: ${JOBS[unit.job].name}, 체력 ${unit.hp}/${unit.max}</span>` : ""}`,
+    ) as [string, string];
+  },
   // The field turns a quarter at a time; 시점 전환 brings it back to the first view.
   turnable: true,
   // 되돌리기 takes a move back within a unit's turn; nothing else is taken back.
@@ -44,6 +51,10 @@ export const tacticsConfig: PointConfig<State> = {
     if (last.job === "angel") return sound.space();
     if (last.job === "archer") return sound.wood(3);
     return sound.knock(3);
+  },
+  // The dungeon's fires crackle quietly while the table is shown (the view asks for it with its flicker).
+  knock: (sound, kind: string, strength) => {
+    if (kind === "fire") sound.crackle(strength);
   },
   firstNote: "컴퓨터 대전에서는 내가 청군을 이끕니다. 빠른 병사부터 움직입니다.",
   name: "전술 대전",
@@ -87,12 +98,15 @@ export const tacticsConfig: PointConfig<State> = {
         ["대기", "이동도 공격도 하지 않고 대기하면 충전이 50만 줄어, 다음 차례가 더 빨리 옵니다. 무엇이든 했다면 100이 줄어듭니다."],
         ["높이", "칸의 높이는 0부터 3까지입니다. 한 걸음에 오르내릴 수 있는 높이는 병사마다 다릅니다."],
         ["물·바위·나무", "들어갈 수 없습니다. 상대 병사도 지나갈 수 없지만, 아군은 지나갈 수 있습니다. 화살은 무엇이든 넘어 날아가고, 빛줄기는 바위와 나무에서 멈춥니다."],
-        ["상태", "병사를 누르거나 길게 누르면 체력, 공격, 방어, 속도, 충전과 바라보는 방향이 나옵니다."],
+        ["불구덩이·화로·돌기둥", "지하 감옥에 있습니다. 들어갈 수 없고, 화로와 돌기둥은 빛줄기를 막습니다. 빛줄기와 화살은 불구덩이 위를 지나갑니다."],
+        ["현재 차례", "오른쪽 아래 카드에 지금 차례인 병사의 체력, 공격, 방어, 속도, 이동과 바라보는 방향이 늘 나옵니다."],
+        ["선택한 유닛", "다른 병사를 누르면 그 병사의 카드가 잠깐 나옵니다. 공격할 곳을 고르는 동안에는 맞을 병사의 카드에 예상 피해가 나옵니다. 상태를 누르면 카드가 사라지지 않고 사거리와 특징까지 보입니다."],
       ),
     ) +
     part(
       "전장",
       table(
+        ["지하 감옥", "불빛만 비치는 돌 지하실입니다. 가운데가 움푹 꺼진 넓은 방에 불구덩이가 타고, 양옆으로 높은 통로가 이어집니다. 통로 끝의 화로와 부서진 돌기둥이 길을 막습니다."],
         ["숲 속 공터", "나무 사이의 풀밭입니다. 양옆의 언덕이 높고, 가운데에 작은 연못이 있습니다."],
         ["성벽 앞", "허물어진 성벽이 가운데를 가로지릅니다. 계단으로 성벽 위에 오를 수 있고, 성문은 아래로 지나갑니다."],
         ["강가 다리", "강이 전장을 가릅니다. 건너는 길은 다리 두 개뿐이지만, 화살과 불길은 강을 넘어갑니다."],

@@ -54,10 +54,8 @@ test("tactical battle: my unit walks to a blue tile and waits, the queue moves o
   // Nobody is within its reach yet, and there is nothing to take back.
   await expect(ring.locator("[data-cmd=act]")).toBeDisabled();
   await expect(ring.locator("[data-cmd=undo]")).toBeDisabled();
-  // Its status, from the ring.
-  await ring.locator("[data-cmd=info]").click();
-  await expect(page.locator(".tx-card")).toContainText("그림자 암살자");
-  await ring.locator("[data-cmd=info]").click();
+  // Its card stands at the lower right.
+  await expect(page.locator(".tx-card.now")).toContainText("그림자 암살자");
   // 이동 shows the blue tiles; a tap on one near the middle of the screen walks there.
   await ring.locator("[data-cmd=move]").click();
   await expect(canvas(page)).toHaveAttribute("data-aim", "move");
@@ -133,4 +131,66 @@ test("tactical battle: two at one screen, the keyboard's commands and a choice c
   await page.keyboard.press("w");
   await expect(page.locator("#turn")).toContainText("홍군 (플레이어 2) 차례", { timeout: 20000 });
   expect(await moves(page)).toBe(1);
+});
+
+test("tactical battle: the dungeon is the default, the active unit's card is always shown and a tapped unit's card goes after a moment", async ({ page }, info) => {
+  const mobile = info.project.name === "mobile",
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "전술 대전");
+  await page.locator("dialog.entry").getByLabel("로컬 2인", { exact: true }).check();
+  await page.locator(".game-stage button.primary").click();
+  await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await settled(page);
+  await expect(canvas(page)).toHaveAttribute("data-field", "dungeon");
+  // 현재 차례: the blue assassin, whose turn it is, with its health.
+  const now = page.locator(".tx-card.now"),
+    picked = page.locator(".tx-card.picked"),
+    active = await data(page, "active");
+  await expect(now).toBeVisible();
+  await expect(now).toHaveAttribute("data-unit", active);
+  await expect(now).toContainText("현재 차례");
+  await expect(now).toContainText("그림자 암살자");
+  await expect(now).toContainText("30/30");
+  await expect(picked).toBeHidden();
+  // A tap on a unit of the other side (the one nearest the middle of the view) shows its card beside, for a moment.
+  const units = (await data(page, "units")).split(",").map((u) => u.split(":").map(Number)),
+    box = (await canvas(page).boundingBox())!;
+  let chosen = -1,
+    at = { x: 0, y: 0 },
+    best = Infinity;
+  for (const [id, cell] of units) {
+    if (String(id) === active || id % 2 === 0 || cell < 0) continue;
+    const p = await tileAt(page, cell),
+      d = Math.hypot(p.x - box.x - box.width / 2, p.y - box.y - box.height / 2);
+    if (d < best) {
+      best = d;
+      chosen = id;
+      at = p;
+    }
+  }
+  await tap(page, at, mobile);
+  await expect(picked).toBeVisible();
+  await expect(picked).toHaveAttribute("data-unit", String(chosen));
+  await expect(picked).toContainText("선택한 유닛");
+  await expect(picked).toContainText("홍군");
+  await expect(picked).toBeHidden({ timeout: 6000 });
+  await expect(now).toBeVisible();
+  // 상태 pins it until pressed again.
+  await tap(page, at, mobile);
+  await expect(picked).toBeVisible();
+  await page.locator(".tx-ring [data-cmd=info]").click();
+  await page.waitForTimeout(3600);
+  await expect(picked).toBeVisible();
+  await page.locator(".tx-ring [data-cmd=info]").click();
+  await expect(picked).toBeHidden({ timeout: 6000 });
+  // When the turn passes, the card names the next to act.
+  await canvas(page).focus();
+  await page.keyboard.press("w");
+  await expect(canvas(page)).not.toHaveAttribute("data-active", active, { timeout: 20000 });
+  await settled(page);
+  await expect(now).toHaveAttribute("data-unit", await data(page, "active"));
+  await expect(now).toContainText("홍군");
+  expect(errors).toEqual([]);
 });

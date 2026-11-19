@@ -9,7 +9,9 @@ import { CELLS, D, W, colOf, fieldOf, rowOf } from "./rules";
 export const TILE = 1,
   LEVEL = 0.28,
   BASE = 0.3,
-  WATER = 0.17;
+  WATER = 0.17,
+  /** The floor of a fire pit, sunk below the lowest flagstones. */
+  PIT = 0.1;
 /** How far the plinth reaches beyond the tiles. */
 export const RIM = 0.42;
 /** The field is first seen from the corner at its near left, my side along the lower left edge. */
@@ -17,10 +19,11 @@ export const YAW0 = -Math.PI / 4;
 export const yawOf = (quarter: number) => YAW0 + (((quarter % 4) + 4) % 4) * (Math.PI / 2);
 /** A tile's middle on the field before it is turned. */
 export const tileLocal = (cell: number) => ({ x: (colOf(cell) - (W - 1) / 2) * TILE, z: (rowOf(cell) - (D - 1) / 2) * TILE });
-/** The height of a tile's top: water lies lower and a bridge's deck a little above the banks. */
+/** The height of a tile's top: water and fire pits lie lower and a bridge's deck a little above the banks. */
 export function tileTop(field: string, cell: number) {
   const f = fieldOf(field);
   if (f.ground[cell] === "water") return WATER;
+  if (f.ground[cell] === "pit") return PIT;
   if (f.ground[cell] === "bridge") return BASE + 0.05;
   return BASE + LEVEL * f.height[cell];
 }

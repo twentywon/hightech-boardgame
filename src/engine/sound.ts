@@ -11,6 +11,27 @@ const recordings = import.meta.glob<string>("./sounds/*.{wav,mp3}", {
 /** Decoded recordings by name ("dice-1", "card-2", …), shared by every Sound. */
 const samples = new Map<string, AudioBuffer>();
 let decoding = false;
+/** A few seconds of fire made by the page, to be looped: a soft low rush with snaps of burning wood in it. */
+function crackling(context: BaseAudioContext) {
+  const rate = context.sampleRate,
+    length = Math.ceil(rate * 4.3),
+    buffer = context.createBuffer(1, length, rate),
+    data = buffer.getChannelData(0);
+  let seed = 7,
+    low = 0;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < length; i++) {
+    low += (random() * 2 - 1 - low) * 0.02;
+    data[i] = low * 0.6;
+  }
+  for (let k = 0; k < 80; k++) {
+    const at = Math.floor(random() * (length - rate * 0.03)),
+      size = 0.12 + random() * 0.55,
+      span = Math.floor(rate * (0.002 + random() * 0.012));
+    for (let j = 0; j < span; j++) data[at + j] += (random() * 2 - 1) * size * Math.exp((-6 * j) / span);
+  }
+  return buffer;
+}
 function decode(context: AudioContext) {
   if (decoding) return;
   decoding = true;
@@ -522,6 +543,12 @@ export class Sound {
   /** The claw machine's winch letting the claw down (quicker, higher) or winding it up, as long as it is asked for. */
   winch(level: number, rising = false) {
     this.hum("winch-1", 0.26 * Math.max(0, Math.min(1, level)), rising ? 0.92 : 1.08);
+  }
+  /** Fires burning in 전술 대전's dungeon (`level` 0 to 1, 0 is silence), as long as it is asked for; made by the page. */
+  crackle(level: number) {
+    const c = this.context;
+    if (c && !samples.has("crackle-0")) samples.set("crackle-0", crackling(c));
+    this.hum("crackle-0", 0.14 * Math.max(0, Math.min(1, level)));
   }
   /** The claw's prongs closing on their solenoid (or, softer, opening). */
   clasp(strength = 1) {

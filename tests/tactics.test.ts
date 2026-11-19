@@ -57,6 +57,60 @@ describe("tactical battle: the field and the armies", () => {
   });
 });
 
+describe("tactical battle: the dungeon", () => {
+  test("지하 감옥 is the first map and the default, with fire pits, braziers and pillars that cannot be entered", () => {
+    expect(R.FIELDS[0]).toEqual({ id: "dungeon", name: "지하 감옥" });
+    expect(R.createGame().field).toBe("dungeon");
+    expect(tacticsConfig.variants?.[0].value).toBe("dungeon");
+    const f = R.fieldOf("dungeon");
+    for (const g of ["pit", "brazier", "pillar"] as const) {
+      expect(f.ground.filter((x) => x === g).length).toBeGreaterThanOrEqual(2);
+      expect(R.passable(g)).toBe(false);
+    }
+    expect(R.passable("flag")).toBe(true);
+    // A fire pit lies below the lowest flagstones.
+    const pit = f.ground.indexOf("pit");
+    expect(tileTop("dungeon", pit)).toBeLessThan(Math.min(...f.ground.map((g, c) => (g === "flag" ? tileTop("dungeon", c) : 9))));
+  });
+  test("both armies start on free flagstones and every unit can walk to the other side's start", () => {
+    const s = R.createGame("dungeon"),
+      f = R.fieldOf("dungeon");
+    for (const u of s.units) expect(f.ground[u.cell]).toBe("flag");
+    // Walking as each job climbs (the field alone, nobody in the way), from every start to a tile beside every foe.
+    for (const u of s.units) {
+      const jump = R.JOBS[u.job].jump,
+        seen = new Set([u.cell]);
+      let frontier = [u.cell];
+      while (frontier.length) {
+        const next: number[] = [];
+        for (const c of frontier)
+          for (let d = 0; d < 4; d++) {
+            const n = R.neighbour(c, d);
+            if (n < 0 || seen.has(n) || !R.passable(f.ground[n]) || Math.abs(f.height[n] - f.height[c]) > jump) continue;
+            seen.add(n);
+            next.push(n);
+          }
+        frontier = next;
+      }
+      for (const v of s.units.filter((v) => v.side !== u.side)) expect([0, 1, 2, 3].some((d) => seen.has(R.neighbour(v.cell, d))), `${u.job} to ${v.job}`).toBe(true);
+    }
+  });
+  test("a beam of light stops at a pillar or a brazier and passes over a fire pit", () => {
+    const f = R.fieldOf("dungeon"),
+      light = ID("light", 0),
+      pillar = f.ground.indexOf("pillar"),
+      from = R.neighbour(pillar, 2),
+      s = lay("dungeon", { [light]: { cell: from }, [ID("knight", 1)]: { cell: cellAt(0, 0) } }, light);
+    expect(R.passable(f.ground[from])).toBe(true);
+    expect(R.beams(s, from)[0]).toEqual([]);
+    const pit = f.ground.indexOf("pit"),
+      beside = R.neighbour(pit, 3),
+      t = lay("dungeon", { [light]: { cell: beside }, [ID("knight", 1)]: { cell: cellAt(0, 0) } }, light);
+    expect(R.beams(t, beside)[1]).toContain(pit);
+    expect(R.beams(t, beside)[1].length).toBeGreaterThan(1);
+  });
+});
+
 describe("tactical battle: the queue", () => {
   test("units act by speed, ties going to the lower number, and one that only waits comes back sooner", () => {
     const s = R.createGame("forest");

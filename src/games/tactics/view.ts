@@ -1,5 +1,5 @@
 import * as T from "three";
-import { block, planks } from "../../engine/scene-utils";
+import { block, capable, planks } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -15,20 +15,24 @@ import {
   UNDO,
   WAIT,
   areaOf,
+  canonical,
   colOf,
   fieldOf,
   hitsOf,
   neighbour,
   queue,
   rowOf,
+  targetsFrom,
   toward,
   type Field,
+  type Hit,
   type Job,
   type Last,
   type State,
   type Unit,
 } from "./rules";
-import { BASE, LEVEL, RIM, TILE, WATER, YAW0, tacticsSubject, tileLocal, tileTop, yawOf } from "./layout";
+import { BASE, LEVEL, RIM, TILE, WATER, YAW0, tacticsSubject, tileLocal, tileTop, turned, yawOf } from "./layout";
+import { buildDungeon, type Dungeon } from "./dungeon";
 import { FACE_YAW, SIDE_COLORS, Shapes, buildFigure, type Figure } from "./figures";
 
 /** A small picture of each kind, for the queue and the status card: drawn as strokes, no letters. */
@@ -185,12 +189,16 @@ const GLOW: Record<Glow, [string, number]> = {
 };
 const additive = (color: string, opacity = 0.9) => new T.MeshBasicMaterial({ color, transparent: true, opacity, blending: T.AdditiveBlending, depthWrite: false });
 const ease = (p: number) => p * p * (3 - 2 * p);
+/** How long the card of a tapped unit stays, unless 상태 pins it. */
+export const PICKED_FOR = 3000;
 /**
  * 전술 대전's field: a diorama of tiles of grass, dirt and stone at four heights, with water, rocks and trees that
- * cannot be entered, on a wooden plinth on a table. It is seen from a corner and turned a quarter at a time (↺ ↻, a
- * drag across it, or 시점 전환 back). Over the canvas lie the queue of who acts next, a ring of commands by the unit
- * whose turn it is, its status card, and numbers that rise from what is struck. A tap on a highlighted tile goes to
- * the screen as a pick; a tap elsewhere while choosing cancels; a tap on a unit shows what it is.
+ * cannot be entered, on a wooden plinth on a table; or, in 지하 감옥, a dungeon of dark masonry lit by fire
+ * (`buildDungeon`). It is seen from a corner and turned a quarter at a time (↺ ↻, a drag across it, or 시점 전환
+ * back). Over the canvas lie the queue of who acts next, a ring of commands by the unit whose turn it is, the cards
+ * at the lower right (현재 차례 always; 선택한 유닛 for a unit tapped, for a moment, or aimed at, with what the strike
+ * would do), and numbers that rise from what is struck. A tap on a highlighted tile goes to the screen as a pick; a
+ * tap elsewhere while choosing cancels; a tap on a unit shows its card.
  */
 export class TacticsView extends TableView<State> {
   private field: Field;
@@ -217,14 +225,28 @@ export class TacticsView extends TableView<State> {
   private layer: HTMLDivElement;
   private queueBar: HTMLDivElement;
   private ring: HTMLDivElement;
-  private card: HTMLDivElement;
+  /** The cards at the lower right: the unit whose turn it is, and one tapped or aimed at. */
+  private cards: HTMLDivElement;
+  private nowCard: HTMLDivElement;
+  private pickedCard: HTMLDivElement;
   private confirm: HTMLButtonElement;
   /** 취소, while a tile is being chosen: it stands apart, above the turn buttons, so that it covers no tile. */
   private cancel!: HTMLButtonElement;
   private turners: HTMLButtonElement[] = [];
-  /** The unit whose card is pinned by a tap, and the one a mouse rests on. */
-  private pinned: number | null = null;
+  /** The unit tapped last, shown for `PICKED_FOR` (or for as long as 상태 pins it), and the tile a mouse rests on. */
+  private selected: number | null = null;
+  private pinned = false;
+  private forget: ReturnType<typeof setTimeout> | null = null;
+  /** The turn the cards were last drawn for: when it moves on, the tapped unit is let go. */
+  private seenTurn = -1;
   private hovered = -1;
+  /** The dungeon's walls and fires, and the clock that makes the fires flicker. */
+  private dungeon: Dungeon | null = null;
+  private clock = 0;
+  private flickered = 0;
+  private flickering = false;
+  /** The fires' crackle, as a level the screen's sound keeps going (`PointConfig.knock`). */
+  onKnock: ((kind: string, strength: number) => void) | null = null;
   /** The keyboard's place on the field, shown once an arrow has been pressed. */
   private keyCell: number | null = null;
   private keyShown = false;
@@ -236,15 +258,22 @@ export class TacticsView extends TableView<State> {
     variant: string,
     private mode: "local" | "ai",
   ) {
-    super(host, quality, "#3a3226");
+    super(host, quality, fieldOf(variant).id === "dungeon" ? "#050507" : "#2e281f");
     this.field = fieldOf(variant);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.shapes = new Shapes(keep);
-    const sun = this.daylight("#eef5ff", "#5e4c34", "#fff1d8", 9.5, 2.3);
-    sun.position.set(-5, 12, 6);
     this.scene.add(this.root);
     this.root.rotation.y = YAW0;
-    this.build(keep);
+    if (this.field.id === "dungeon") {
+      this.night();
+      this.dungeon = buildDungeon(this.root, this.field, keep, (o) => this.standard(o));
+      this.tiles.push(this.dungeon.pick);
+    } else {
+      // The open fields at evening: a lower, warmer sun under a duskier sky.
+      const sun = this.daylight("#d9e2f6", "#4e3f2c", "#ffdcae", 9.5, 2.05);
+      sun.position.set(-5, 10, 7);
+      this.build(keep);
+    }
     // The marks on the field: a glow on each tile, a gold ring under the unit whose turn it is, a white one for the cursor.
     for (const kind of Object.keys(GLOW) as Glow[]) this.glows[kind] = keep(new T.MeshBasicMaterial({ color: GLOW[kind][0], transparent: true, opacity: GLOW[kind][1], depthWrite: false }));
     const pad = keep(block(0.9, 0.01, 0.9, 0.08));
@@ -290,10 +319,8 @@ export class TacticsView extends TableView<State> {
     info.dataset.cmd = "info";
     info.className = "tx-cmd tx-info";
     info.textContent = "상태";
-    info.onclick = () => {
-      const s = this.state;
-      if (s) this.pin(this.pinned === s.active ? null : s.active);
-    };
+    // 상태 pins the tapped unit's card (and shows what each card's unit reaches and does) until it is pressed again.
+    info.onclick = () => this.pin(!this.pinned);
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.tabIndex = -1;
@@ -315,9 +342,15 @@ export class TacticsView extends TableView<State> {
       const s = this.state;
       if (s && s.preview >= 0) this.onPick(s.preview);
     };
-    this.card = document.createElement("div");
-    this.card.className = "tx-card";
-    this.card.hidden = true;
+    this.cards = document.createElement("div");
+    this.cards.className = "tx-cards";
+    this.cards.setAttribute("aria-hidden", "true");
+    this.nowCard = document.createElement("div");
+    this.pickedCard = document.createElement("div");
+    this.nowCard.className = "tx-card now";
+    this.pickedCard.className = "tx-card picked";
+    this.pickedCard.hidden = true;
+    this.cards.append(this.nowCard, this.pickedCard);
     const turns = document.createElement("div");
     turns.className = "tx-turns";
     for (const [step, label, sign] of [
@@ -335,7 +368,15 @@ export class TacticsView extends TableView<State> {
       turns.append(button);
       this.turners.push(button);
     }
-    this.layer.append(this.queueBar, this.ring, this.confirm, this.cancel, this.card, turns);
+    this.layer.append(this.queueBar, this.ring, this.confirm, this.cancel, this.cards, turns);
+    if (this.dungeon) {
+      // The dark closes in round the edges of the view.
+      const shade = document.createElement("div");
+      shade.className = "tx-shade";
+      shade.setAttribute("aria-hidden", "true");
+      this.layer.prepend(shade);
+      this.layer.classList.add("dark");
+    }
     host.append(this.layer);
     // The pointer's place on the screen, for a drag that turns the field and a long press that shows a card.
     const el = this.renderer.domElement;
@@ -353,6 +394,45 @@ export class TacticsView extends TableView<State> {
       if (this.keyCell === null && this.state) this.keyCell = this.state.units[this.state.active].cell;
     });
     this.begin();
+    if (this.dungeon) {
+      // Without a graphics card (or under reduced motion) the fires stand still, glowing, and the picture is drawn
+      // only when something changes: every frame of flicker would cost the processor a whole picture.
+      this.flickering = capable() && !this.reducedMotion;
+      this.dungeon.flicker(performance.now(), !this.flickering);
+      this.dungeon.facing(this.root.rotation.y);
+      this.clock = requestAnimationFrame(this.idle);
+    }
+  }
+  /** Night in the dungeon: a low, cool light from above and a faint one from the eye, so that the units still read. */
+  private night() {
+    this.scene.add(new T.HemisphereLight("#6f7fa6", "#1a1410", 1.1));
+    const moon = new T.DirectionalLight("#a8bae6", 0.9);
+    moon.position.set(-4, 11, 5);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(1024, 1024);
+    moon.shadow.camera.left = moon.shadow.camera.bottom = -8;
+    moon.shadow.camera.right = moon.shadow.camera.top = 8;
+    moon.shadow.normalBias = 0.02;
+    this.own(moon.shadow);
+    this.scene.add(moon);
+    const eye = new T.DirectionalLight("#c9c2b4", 0.6);
+    eye.position.set(0, 6, 12);
+    this.scene.add(eye);
+  }
+  /** The view's own loop: the fires crackle, and flicker (at most thirty times a second) where they may. */
+  private idle = (now: number) => {
+    if (this.disposed) return;
+    this.clock = requestAnimationFrame(this.idle);
+    if (now - this.flickered < 33) return;
+    this.flickered = now;
+    this.onKnock?.("fire", 1);
+    if (!this.flickering) return;
+    this.dungeon?.flicker(now, false);
+    this.redraw();
+  };
+  /** The dungeon brings its own light; the reflected room of `realism` would light its dark up. */
+  protected photographic() {
+    return this.field.id !== "dungeon";
   }
   /** The table, the plinth and every tile with what stands on it. */
   private build(keep: <R extends { dispose(): void }>(r: R) => R) {
@@ -558,6 +638,8 @@ export class TacticsView extends TableView<State> {
     const standing = this.figures.filter((f) => f.group.visible).map((f) => f.body),
       hit = this.caster.intersectObjects([...standing, ...this.tiles], true)[0];
     if (!hit || !this.state) return -1;
+    // The dungeon's tiles are one instanced set of boxes, each instance a tile.
+    if (hit.instanceId !== undefined && hit.object.userData.cells) return hit.object.userData.cells[hit.instanceId] as number;
     for (let o: T.Object3D | null = hit.object; o; o = o.parent) {
       if (o.userData.cell !== undefined) return o.userData.cell as number;
       if (o.userData.unit !== undefined) return this.state.units[o.userData.unit as number].cell;
@@ -572,7 +654,7 @@ export class TacticsView extends TableView<State> {
       if (this.press !== press || press.turning) return;
       press.long = true;
       const unit = this.unitAt(point);
-      if (unit) this.pin(unit.id);
+      if (unit) this.select(unit.id);
     }, 480);
     this.press = press;
     return true;
@@ -616,7 +698,8 @@ export class TacticsView extends TableView<State> {
       return;
     }
     const unit = this.unitAt(point);
-    this.pin(unit && this.pinned !== unit.id ? unit.id : null);
+    // Another unit shows its card for a moment (tapped again, it goes); the active unit's card is always shown.
+    this.select(unit && unit.id !== s.active && !(this.selected === unit.id && !this.pinned) ? unit.id : null);
   }
   private unitAt(cell: number) {
     return cell >= 0 ? this.state?.units.find((u) => u.hp > 0 && u.cell === cell) : undefined;
@@ -624,7 +707,7 @@ export class TacticsView extends TableView<State> {
   protected hover(point: number) {
     this.hovered = point;
     this.mark(this.marks);
-    this.showCard();
+    if (this.state?.aim === "attack") this.showCards();
   }
   /** Turns the field to a quarter (counted from the first view), the short way round. */
   private turnTo(quarter: number, from = this.root.rotation.y) {
@@ -662,6 +745,7 @@ export class TacticsView extends TableView<State> {
       q.copy(parent).invert().multiply(this.camera.quaternion);
       f.bar.quaternion.copy(q);
     }
+    this.dungeon?.facing(this.root.rotation.y);
   }
   /** Where a point of the scene falls on the canvas, in its pixels. */
   private screen(v: T.Vector3) {
@@ -716,7 +800,7 @@ export class TacticsView extends TableView<State> {
     }
     this.face();
     this.drawQueue();
-    this.showCard();
+    this.showCards(state);
     this.tell();
   }
   /** What the canvas tells the tests: whose turn it is, where everyone stands, what is offered. */
@@ -755,28 +839,103 @@ export class TacticsView extends TableView<State> {
         })
         .join("");
   }
-  private pin(id: number | null) {
-    this.pinned = id;
-    this.showCard();
+  /** Shows the card of a tapped unit (null lets it go): for `PICKED_FOR`, or for as long as 상태 pins it. */
+  private select(id: number | null) {
+    this.selected = id;
+    this.arm();
+    this.showCards();
+    this.relayRing();
   }
-  /** The status card of the pinned unit, or of the one a mouse rests on. */
-  private showCard() {
-    const s = this.state,
-      hovered = this.unitAt(this.hovered),
-      id = this.pinned ?? hovered?.id ?? null,
-      unit = id !== null && s ? s.units[id] : null;
-    if (!s || !unit || unit.hp <= 0 || capturing()) {
-      this.card.hidden = true;
-      if (unit && unit.hp <= 0) this.pinned = null;
+  /** 상태: the tapped unit's card stays, and each card tells what its unit reaches and does; again, and it goes on. */
+  private pin(on: boolean) {
+    this.pinned = on;
+    this.arm();
+    this.showCards();
+    this.relayRing();
+  }
+  private arm() {
+    if (this.forget) clearTimeout(this.forget);
+    this.forget = null;
+    if (this.selected === null || this.pinned) return;
+    this.forget = setTimeout(() => {
+      this.forget = null;
+      this.selected = null;
+      this.showCards();
+      this.relayRing();
+    }, PICKED_FOR);
+  }
+  /** The ring laid again round the active unit, clear of the cards (which change size). */
+  private relayRing() {
+    if (!this.animating) this.layoutRing(this.marks.targets);
+  }
+  /**
+   * What the strike being aimed would do, and to whom: the unit on the tile shown (or, for a blast or a beam, the
+   * first it catches), or the one a mouse rests on among the targets.
+   */
+  private aimed(s: State): { unit: Unit; hit: Hit } | null {
+    if (s.aim !== "attack" || s.winner !== null) return null;
+    const me = s.units[s.active],
+      offered = targetsFrom(s, me, me.cell),
+      hoverUnit = this.unitAt(this.hovered),
+      tile = hoverUnit && offered.includes(hoverUnit.cell) ? canonical(s, me.cell, me, hoverUnit.cell) : s.preview;
+    if (tile < 0) return null;
+    const hits = hitsOf(s, me, me.cell, tile),
+      at = this.unitAt(hoverUnit && offered.includes(hoverUnit.cell) ? hoverUnit.cell : tile),
+      hit = hits.find((h) => h.id === at?.id) ?? hits.find((h) => h.id !== me.id) ?? hits[0];
+    return hit ? { unit: s.units[hit.id], hit } : null;
+  }
+  /** The cards at the lower right: 현재 차례 always, and 선택한 유닛 for a unit aimed at or tapped. */
+  private showCards(s = this.state) {
+    if (!s || capturing()) {
+      this.cards.hidden = true;
       return;
     }
+    if (s.turns !== this.seenTurn) {
+      // The turn has moved on: the tapped unit goes, and so does the pin.
+      if (this.seenTurn >= 0 && (this.selected !== null || this.pinned)) {
+        this.selected = null;
+        this.pinned = false;
+        this.arm();
+      }
+      this.seenTurn = s.turns;
+    }
+    this.cards.hidden = false;
+    this.ring.querySelector<HTMLElement>('[data-cmd="info"]')?.classList.toggle("on", this.pinned);
+    const active = s.units[s.active];
+    this.nowCard.hidden = s.winner !== null || active.hp <= 0;
+    if (!this.nowCard.hidden) this.fill(this.nowCard, s, active, "현재 차례", null);
+    const aim = this.aimed(s),
+      chosen = this.selected !== null ? s.units[this.selected] : null;
+    if (chosen && chosen.hp <= 0) this.selected = null;
+    const other = aim ? aim.unit : chosen && chosen.hp > 0 && chosen.id !== s.active ? chosen : null;
+    this.pickedCard.hidden = !other || s.winner !== null;
+    if (other && !this.pickedCard.hidden) this.fill(this.pickedCard, s, other, aim ? (aim.hit.heal ? "회복할 대상" : "공격 대상") : "선택한 유닛", aim?.hit ?? null);
+  }
+  /** One card: an emblem of the unit's job in its side's colour, its name, health, numbers and the way it looks. */
+  private fill(card: HTMLDivElement, s: State, unit: Unit, tag: string, hit: Hit | null) {
     const stats = JOBS[unit.job],
       who = this.mode === "ai" ? (unit.side === 0 ? "나" : "컴퓨터") : `플레이어 ${unit.side + 1}`,
       looks = ["홍군 쪽", "동쪽", "청군 쪽", "서쪽"][unit.facing],
-      power = unit.job === "healer" ? ["회복", `${14}`] : unit.job === "angel" ? ["공격", "한 번에 쓰러뜨림"] : ["공격", String(stats.power)];
-    this.card.hidden = false;
-    this.card.className = `tx-card side-${unit.side}`;
-    this.card.innerHTML = `<div class="tx-head">${icon(unit.job)}<b>${SIDES[unit.side]} ${stats.name}</b><small>${who}${unit.id === s.active && s.winner === null ? " · 지금 차례" : ""}</small></div><div class="tx-hp" style="--hp:${(100 * unit.hp) / unit.max}%"><i></i><span>체력 ${unit.hp} / ${unit.max}</span></div><dl><dt>${power[0]}</dt><dd>${power[1]}</dd><dt>방어</dt><dd>${stats.def}</dd><dt>속도</dt><dd>${stats.speed}</dd><dt>이동</dt><dd>${stats.move}칸 · ${unit.job === "angel" ? "날아감" : `높이 ${stats.jump}`}</dd><dt>충전</dt><dd>${Math.min(100, Math.max(0, unit.charge))} / 100</dd><dt>바라봄</dt><dd>${looks}</dd></dl><p class="tx-reach"><b>사거리</b> ${stats.reach}</p><p>${stats.note}</p>`;
+      // The way it looks, as the field is seen now: up the screen is away from the eye.
+      way = turned(DX[unit.facing], DZ[unit.facing], this.quarter),
+      angle = (Math.atan2(way.x, -way.z) * 180) / Math.PI,
+      power = unit.job === "healer" ? ["회복", "14"] : unit.job === "angel" ? ["공격", "즉사"] : ["공격", String(stats.power)],
+      hurt = hit && !hit.heal ? unit.side === s.units[s.active].side ? "friend" : "foe" : "heal",
+      expect = hit
+        ? `<div class="tx-expect ${hurt}">${hit.heal ? `회복 +${hit.amount}` : `${hurt === "friend" ? "아군 피해" : "예상 피해"} −${hit.amount}`}${hit.fell ? " · 쓰러짐" : ""}${!hit.heal && hit.from !== "front" ? ` · ${hit.from === "back" ? "뒤에서" : "옆에서"}` : ""}</div>`
+        : "";
+    card.className = `tx-card ${card === this.nowCard ? "now" : "picked"} side-${unit.side}`;
+    card.dataset.unit = String(unit.id);
+    card.dataset.job = unit.job;
+    card.style.setProperty("--hp", `${(100 * unit.hp) / unit.max}%`);
+    card.innerHTML =
+      `<div class="tx-tag">${tag}</div>` +
+      `<div class="tx-head"><span class="tx-badge">${icon(unit.job)}</span><b>${stats.name}</b><small>${SIDES[unit.side]} · ${who}</small></div>` +
+      `<div class="tx-hp"><i></i><span>${unit.hp}/${unit.max}</span></div>` +
+      `<dl class="tx-stats"><div><dt>${power[0]}</dt><dd>${power[1]}</dd></div><div><dt>방어</dt><dd>${stats.def}</dd></div><div><dt>속도</dt><dd>${stats.speed}</dd></div><div><dt>이동</dt><dd>${stats.move}</dd></div></dl>` +
+      `<div class="tx-look"><svg viewBox="-12 -12 24 24"><g transform="scale(1 .62) rotate(${angle.toFixed(0)})"><circle r="9.5"/><path d="M0-8 5 1H2v6h-4V1h-3z"/></g></svg>바라봄 · ${looks}</div>` +
+      expect +
+      (this.pinned ? `<p class="tx-reach"><b>사거리</b> ${stats.reach}</p><p class="tx-note">${stats.note}</p>` : "");
   }
   protected mark(marks: Marks) {
     const s = this.state;
@@ -839,8 +998,11 @@ export class TacticsView extends TableView<State> {
       rx = small ? 62 : 74,
       ry = small ? 34 : 40,
       p = this.screen(at),
-      x = Math.min(w - rx - 52, Math.max(rx + 52, p.x)),
       y = Math.min(h - ry - (small ? 40 : 50), Math.max(ry + (small ? 70 : 96), p.y));
+    let x = Math.min(w - rx - 52, Math.max(rx + 52, p.x));
+    // The ring keeps clear of the cards at the lower right: it slides left of them when it would cover them.
+    const clear = this.clearOfCards(x, y, rx + 52, ry + (small ? 36 : 44));
+    x = clear;
     this.ring.hidden = false;
     this.ring.classList.toggle("choosing", choosing);
     this.ring.style.left = `${x}px`;
@@ -864,9 +1026,28 @@ export class TacticsView extends TableView<State> {
       this.root.localToWorld(v);
       const q = this.screen(v);
       this.confirm.textContent = unit.job === "healer" ? "회복!" : "공격!";
-      this.confirm.style.left = `${Math.min(w - 50, Math.max(50, q.x))}px`;
-      this.confirm.style.top = `${Math.min(h - 30, Math.max(small ? 64 : 90, q.y))}px`;
+      const cy = Math.min(h - 30, Math.max(small ? 64 : 90, q.y));
+      this.confirm.style.left = `${this.clearOfCards(Math.min(w - 50, Math.max(50, q.x)), cy - 18, 54, 20)}px`;
+      this.confirm.style.top = `${cy}px`;
     }
+  }
+  /** `x`, or further left if a box `halfW` by `halfH` round (x, y) on the canvas would cover the cards. */
+  private clearOfCards(x: number, y: number, halfW: number, halfH: number) {
+    if (this.cards.hidden) return x;
+    const canvas = this.renderer.domElement.getBoundingClientRect();
+    let left = Infinity,
+      top = Infinity,
+      bottom = -Infinity;
+    for (const card of [this.nowCard, this.pickedCard]) {
+      if (card.hidden) continue;
+      const r = card.getBoundingClientRect();
+      if (!r.width) continue;
+      left = Math.min(left, r.left - canvas.left);
+      top = Math.min(top, r.top - canvas.top);
+      bottom = Math.max(bottom, r.bottom - canvas.top);
+    }
+    if (left === Infinity || y + halfH < top - 6 || y - halfH > bottom + 6 || x + halfW < left - 6) return x;
+    return Math.max(halfW, left - 8 - halfW);
   }
   /** The keyboard: arrows walk the tiles as seen, Enter taps, and a key for each command. */
   private key(e: KeyboardEvent) {
@@ -884,18 +1065,23 @@ export class TacticsView extends TableView<State> {
       if (r >= 0 && r < 10 && c >= 0 && c < 10) this.keyCell = r * 10 + c;
       this.mark(this.marks);
       const unit = this.unitAt(this.keyCell!);
-      if (this.pinned !== null || unit) this.pin(unit?.id ?? null);
+      if (unit && unit.id !== s.active) this.select(unit.id);
+      if (s.aim === "attack") this.showCards();
     } else if (e.key === "Enter" || e.key === " ") {
       if (this.keyCell !== null) this.tap(this.keyCell);
     } else if (e.key === "Escape") {
       if (s.aim !== null) this.onPick(CANCEL);
-      else this.pin(null);
+      else {
+        this.pinned = false;
+        this.select(null);
+      }
     } else if (commands[e.key.length === 1 ? e.key.toLowerCase() : e.key] !== undefined) {
       e.preventDefault();
       this.onPick(commands[e.key.length === 1 ? e.key.toLowerCase() : e.key]);
     } else if (e.key === "i" || e.key === "I") {
-      const unit = this.unitAt(this.keyCell ?? -1) ?? s.units[s.active];
-      this.pin(this.pinned === unit.id ? null : unit.id);
+      const unit = this.unitAt(this.keyCell ?? -1);
+      if (unit && unit.id !== s.active) this.selected = unit.id;
+      this.pin(!this.pinned);
     } else if (e.key === "q" || e.key === "Q" || e.key === "e" || e.key === "E") {
       if (!this.animating) this.turnTo(this.quarter + (e.key.toLowerCase() === "e" ? 1 : -1));
     }
@@ -922,7 +1108,6 @@ export class TacticsView extends TableView<State> {
     this.ring.hidden = true;
     this.confirm.hidden = true;
     this.cancel.hidden = true;
-    this.card.hidden = this.pinned === null;
     const f = this.figures[last.unit];
     if (!f) return false;
     if (last.kind === "move" || last.kind === "undo") {
@@ -1068,7 +1253,11 @@ export class TacticsView extends TableView<State> {
         break;
       }
     }
-    this.at(impact, () => this.onContact());
+    this.at(impact, () => {
+      this.onContact();
+      // The cards take the blow as it lands.
+      this.showCards(state);
+    });
     let end = impact;
     for (const hit of last.hits ?? []) {
       const was = before.units[hit.id],
@@ -1154,6 +1343,8 @@ export class TacticsView extends TableView<State> {
   }
   dispose() {
     if (this.press) clearTimeout(this.press.timer);
+    if (this.forget) clearTimeout(this.forget);
+    cancelAnimationFrame(this.clock);
     this.layer.remove();
     super.dispose();
   }

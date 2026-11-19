@@ -31,7 +31,7 @@ export const HEAL = 14;
 /** How far the angel's attack reaches (squares counted along the grid, any direction). */
 export const ANGEL_RANGE = 8;
 
-export type Ground = "grass" | "stone" | "dirt" | "water" | "rock" | "tree" | "bridge";
+export type Ground = "grass" | "stone" | "dirt" | "water" | "rock" | "tree" | "bridge" | "flag" | "pit" | "brazier" | "pillar";
 export type Job = "knight" | "archer" | "fire" | "healer" | "assassin" | "light" | "angel";
 export type Side = 0 | 1;
 /** 0 toward the far edge (−z), 1 right (+x), 2 toward the near edge (+z), 3 left (−x). */
@@ -61,7 +61,7 @@ export const JOBS: Record<Job, Stats> = {
   fire: { name: "불꽃 마법사", hp: 28, power: 13, def: 2, speed: 8, move: 3, jump: 1, reach: "4칸 안, 십자 5칸", note: "떨어진 곳과 그 상하좌우를 태웁니다. 아군도, 자신도 맞습니다." },
   healer: { name: "치유사", hp: 30, power: 0, def: 2, speed: 10, move: 4, jump: 2, reach: "바로 옆 아군이나 자신", note: `다친 아군 하나의 체력을 ${HEAL} 되돌립니다. 공격은 하지 못합니다.` },
   assassin: { name: "그림자 암살자", hp: 30, power: 14, def: 2, speed: 13, move: 6, jump: 3, reach: "바로 옆 1칸", note: "가장 빠르고 멀리 움직입니다. 뒤에서 찌르면 두 배로 아픕니다." },
-  light: { name: "빛의 마법사", hp: 28, power: 12, def: 2, speed: 10, move: 3, jump: 1, reach: "한 방향 일직선 4칸", note: "빛줄기가 닿는 모든 것을 맞힙니다. 아군도 맞습니다. 바위와 나무에서 멈춥니다." },
+  light: { name: "빛의 마법사", hp: 28, power: 12, def: 2, speed: 10, move: 3, jump: 1, reach: "한 방향 일직선 4칸", note: "빛줄기가 닿는 모든 것을 맞힙니다. 아군도 맞습니다. 바위, 나무, 화로, 돌기둥에서 멈춥니다." },
   angel: { name: "천사", hp: 1, power: 0, def: 0, speed: 12, move: 5, jump: 9, reach: `${ANGEL_RANGE}칸 안 어디든`, note: "어떤 적이든 한 번에 쓰러뜨립니다. 대신 한 대만 맞아도 쓰러집니다. 날아서 움직입니다." },
 };
 /** The six of a side, in the order their numbers are given (two sides alternate, so that ties go by this order). */
@@ -83,10 +83,19 @@ export interface Field {
   height: number[];
 }
 /**
- * The maps: the near half (rows 5 to 9) as letters (g grass, s stone, d dirt, w water, r rock, t tree, b bridge) and
- * heights (0 to 3); the far half is the near half turned half round, so that both sides meet the same ground.
+ * The maps: the near half (rows 5 to 9) as letters (g grass, s stone, d dirt, w water, r rock, t tree, b bridge; in
+ * the dungeon f flagstones, p a fire pit, x a brazier, c a broken pillar) and heights (0 to 3); the far half is the
+ * near half turned half round, so that both sides meet the same ground. The dungeon comes first: it is the default.
  */
 const PLANS: { id: string; name: string; ground: string[]; height: string[] }[] = [
+  {
+    // A sunken hall down the middle with a fire pit at its heart, stairs and broken pillars either side of it,
+    // raised walkways along both flanks (each with a brazier) and a platform at each end for the armies.
+    id: "dungeon",
+    name: "지하 감옥",
+    ground: ["ffffpfffff", "ffcffffcff", "fffffffffx", "ffffffffff", "ffffffffff"],
+    height: ["2210000133", "2210000122", "2211001122", "1111111111", "1111111111"],
+  },
   {
     id: "forest",
     name: "숲 속 공터",
@@ -106,7 +115,7 @@ const PLANS: { id: string; name: string; ground: string[]; height: string[] }[] 
     height: ["0000000000", "0000000000", "1111001111", "1121011111", "2221011222"],
   },
 ];
-const LETTERS: Record<string, Ground> = { g: "grass", s: "stone", d: "dirt", w: "water", r: "rock", t: "tree", b: "bridge" };
+const LETTERS: Record<string, Ground> = { g: "grass", s: "stone", d: "dirt", w: "water", r: "rock", t: "tree", b: "bridge", f: "flag", p: "pit", x: "brazier", c: "pillar" };
 export const FIELDS = PLANS.map(({ id, name }) => ({ id, name }));
 const fields = new Map<string, Field>();
 export function fieldOf(id: string): Field {
@@ -187,13 +196,14 @@ export const rowOf = (cell: number) => Math.floor(cell / W),
   colOf = (cell: number) => cell % W,
   cellAt = (row: number, col: number) => (row < 0 || row >= D || col < 0 || col >= W ? -1 : row * W + col);
 export const distance = (a: number, b: number) => Math.abs(rowOf(a) - rowOf(b)) + Math.abs(colOf(a) - colOf(b));
-export const passable = (g: Ground) => g !== "water" && g !== "rock" && g !== "tree";
-/** What stops a beam of light: rocks and trees. */
-const stopsBeam = (g: Ground) => g === "rock" || g === "tree";
+/** Water, rocks, trees, fire pits, braziers and pillars cannot be entered. */
+export const passable = (g: Ground) => g !== "water" && g !== "rock" && g !== "tree" && g !== "pit" && g !== "brazier" && g !== "pillar";
+/** What stops a beam of light: rocks, trees, braziers and pillars (it passes over water and a fire pit). */
+const stopsBeam = (g: Ground) => g === "rock" || g === "tree" || g === "brazier" || g === "pillar";
 export const neighbour = (cell: number, dir: number) => cellAt(rowOf(cell) + DZ[dir], colOf(cell) + DX[dir]);
 const alive = (u: Unit) => u.hp > 0;
 
-export function createGame(variant = "forest"): State {
+export function createGame(variant = "dungeon"): State {
   const field = fieldOf(variant),
     units: Unit[] = [];
   ARMY.forEach((job, k) => {
