@@ -1,0 +1,17 @@
+World map
+
+The map of the real world in 대륙 쟁탈전 (Continent Conquest) is drawn from
+Natural Earth's 1:50m admin-0 countries, as published at
+https://github.com/nvkelso/natural-earth-vector (master branch, version
+5.2.0-pre, file geojson/ne_50m_admin_0_countries.geojson, downloaded
+2026-11-19).
+
+Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.
+Natural Earth data is in the public domain: https://www.naturalearthdata.com/about/terms-of-use/
+
+Changes: the countries are grouped into 48 regions of our own on six
+continents, the largest countries cut along straight lines of our own, the
+outlines projected (Robinson, the north let out a little and the crowded seas
+magnified), simplified and rounded by scripts/build-world.mjs, which writes
+src/games/conquest/world-data.ts. The mountain ranges painted as relief are
+traced by hand from general knowledge of geography.

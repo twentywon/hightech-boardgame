@@ -468,9 +468,13 @@ const play = {
     await page.evaluate(() => document.getElementById("pg-tool-0")?.click());
     await wait(1800);
   },
-  // The first turn's reinforcements all on my strongest front, then its weakest neighbour attacked to the end, so
-  // that the dice lie in the tray; the front is let go at the end so that nothing is picked out.
+  // The world map: the setting up left to the computer (자동 배치), so that every territory has its pieces; then the
+  // first turn's reinforcements all on my strongest front (a cannon among them) and its weakest neighbour attacked
+  // to the end, so that the dice lie in the tray; the front is let go at the end so that nothing is picked out.
   "continent-conquest": async () => {
+    await press("#cq-auto");
+    await page.waitForFunction(() => document.querySelector("#board")?.dataset.phase === "reinforce" && document.querySelector("#board")?.dataset.turn === "0", null, { timeout: 240000 });
+    await wait(1500);
     const table = () =>
       page.evaluate(() => {
         const c = document.querySelector("canvas");

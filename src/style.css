@@ -3174,7 +3174,9 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 .cq-phases li { padding:5px 10px;border-radius:999px;color:#ffffff8c;font-size:13px;font-weight:700;white-space:nowrap; }
 .cq-phases li.now { background:#f2c14e;color:#1b1712; }
 .board-area .board-controls .cq-phases button { min-height:32px !important; }
-.board-area .cq-hand { position:absolute;right:14px;top:12px;z-index:4;display:flex;align-items:center;gap:7px;padding:6px 14px 6px 8px;border:0;border-radius:999px;background:#16181ad9;color:#fff;font:inherit;font-size:13px;font-weight:700;box-shadow:0 6px 16px #0005;cursor:pointer; }
+.board-area .cq-corner { position:absolute;right:14px;top:12px;z-index:4;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none; }
+.board-area .cq-corner > * { pointer-events:auto; }
+.board-area .cq-hand { position:relative;display:flex;align-items:center;gap:7px;padding:6px 14px 6px 8px;border:0;border-radius:999px;background:#16181ad9;color:#fff;font:inherit;font-size:13px;font-weight:700;box-shadow:0 6px 16px #0005;cursor:pointer; }
 .board-area .cq-hand[hidden], html[data-capture] .board-area .cq-hand { display:none !important; }
 .board-area .cq-hand b { min-width:22px;padding:1px 7px;border-radius:999px;background:#ffffff26;font-size:14px;text-align:center; }
 .board-area .cq-hand.ready b { background:#f2c14e;color:#1b1712; }
@@ -3183,6 +3185,11 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 .cq-hand-art i:nth-child(1) { rotate:-18deg; }
 .cq-hand-art i:nth-child(3) { rotate:18deg; }
 .board-area .cq-hand:focus-visible { outline:3px solid #f2c14e;outline-offset:2px; }
+.cq-mission-art { width:20px;height:22px;border-radius:3px;background:#f4ead2;border:1.5px solid #7d6446;box-shadow:inset 0 -6px 0 #c9392b55; }
+.cq-mission-art::before { content:"";display:block;width:8px;height:8px;margin:5px auto 0;border-radius:50%;background:#c9392b; }
+.cq-mission-text { margin:4px 0 12px;font-size:17px;font-weight:700;line-height:1.45; }
+.cq-players li.neutral b { font-weight:600; }
+.cq-players li b { white-space:nowrap; }
 /* The players, over the table's lower left: a dot, a name, and their figures. */
 .cq-players { display:grid;gap:5px;margin:0;padding:0;list-style:none; }
 .cq-players li { display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:0 8px;font-size:14px; }
@@ -3194,7 +3201,7 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 .cq-dot { width:12px;height:12px;border-radius:3px;box-shadow:0 0 0 2px #fff9, 0 1px 3px #0008; }
 /* The hand of cards, in its window. */
 .cq-cards { display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 12px;padding:0;list-style:none; }
-.cq-card { display:grid;justify-items:center;gap:4px;width:76px;padding:10px 6px 8px;border-radius:10px;background:#fbf6ea;border:2px solid #7d6446;box-shadow:0 3px 8px #0002;font-size:13px; }
+.cq-card { display:grid;justify-items:center;align-content:start;gap:4px;width:84px;padding:10px 6px 8px;border-radius:10px;background:#fbf6ea;border:2px solid #7d6446;box-shadow:0 3px 8px #0002;font-size:13px; }
 .cq-card-art { width:40px;height:40px; }
 .cq-card-art svg { width:100%;height:100%; }
 .cq-card.kind-0 { color:#2f5d8c; }
@@ -3202,6 +3209,9 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 .cq-card.kind-2 { color:#3f5a2a; }
 .cq-card.kind-3 { color:#b8861b;border-color:#c9a24e;background:#fff6dc; }
 .cq-card b { color:#2c2318; }
+.cq-card small { color:#4a3d2e;font-size:11.5px;font-weight:700;line-height:1.2;text-align:center;word-break:keep-all; }
+.cq-card em { padding:1px 6px;border-radius:999px;background:#2f8f4e;color:#fff;font-size:10.5px;font-style:normal;font-weight:800; }
+.cq-card.held { box-shadow:0 0 0 2px #2f8f4e66, 0 3px 8px #0002; }
 .cq-hand-note { margin:0 0 10px;font-size:14px; }
 .cq-trades { display:grid;gap:8px; }
 .cq-trades button { min-height:44px;border-radius:12px; }
@@ -3211,7 +3221,8 @@ html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(
 @media (orientation: landscape) and (max-height: 540px) {
   html[data-game="continent-conquest"] .game-layout .board-area .board-controls:not(#_) { bottom:6px;max-width:calc(100% - 200px); }
   html[data-game="continent-conquest"] .game-layout .board-area > .board-hint:not(#_) { right:110px !important; }
-  .board-area .cq-hand { right:8px;top:6px;padding:4px 10px 4px 6px;font-size:12px; }
+  .board-area .cq-corner { right:8px;top:6px;gap:5px; }
+  .board-area .cq-hand { padding:4px 10px 4px 6px;font-size:12px; }
   .cq-phases li { padding:4px 7px;font-size:11.5px; }
   .board-area .board-controls .cq-phases button, .board-area .board-controls .cq-stepper button { min-height:28px !important; }
   .board-area .board-controls .cq-stepper button { width:28px !important;height:28px; }

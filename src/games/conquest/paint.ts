@@ -13,11 +13,11 @@ export const PAINT_W = 2048,
   OVERLAY_H = 640;
 /** Muted land colours, one a continent, that leave the players' colours to stand out. */
 export const TINTS = ["#a8b886", "#d5bf8c", "#c99f7e", "#b3b077", "#93ae8d", "#c7aa9b"];
-const FONT = '"Inter", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+export const FONT = '"Inter", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 /** Points looked at round a point of sea for foam, and round a point of land for its coast and borders: x, y, weight. */
 const FOAM = [1, 0, 1, -1, 0, 1, 0, 1, 1, 0, -1, 1, 3, 0, 0.55, -3, 0, 0.55, 0, 3, 0.55, 0, -3, 0.55, 6, 0, 0.25, -6, 0, 0.25, 0, 6, 0.25, 0, -6, 0.25],
   INK = [1, 0, 1, -1, 0, 1, 0, 1, 1, 0, -1, 1, 2, 0, 0.55, -2, 0, 0.55, 0, 2, 0.55, 0, -2, 0.55, 3, 0, 0.2, -3, 0, 0.2, 0, 3, 0.2, 0, -3, 0.2];
-const rgb = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+export const rgb = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
 export interface Overlay {
   width: number;
   height: number;
@@ -88,7 +88,7 @@ function sample(field: Float32Array, cols: number, rows: number, u: number, v: n
     d = field[(j + 1) * cols + i + 1];
   return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
 }
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -334,7 +334,18 @@ export function paintMap(map: WorldMap) {
     ctx.fillStyle = "#2c2318";
     ctx.fillText(t.name, x, y + 1);
   }
-  // The smaller picture of territories and their edges, for the players' colours.
+  return { canvas, overlay: overlayOf(ids, W, H), plates: [] as Plate[] };
+}
+/** A painted name's place on the map (grid units), so that a tap on it chooses its territory. */
+export interface Plate {
+  territory: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+/** The smaller picture of territories and their edges, for the players' colours: `reach` points of colour inside each edge. */
+export function overlayOf(ids: Int16Array, W: number, H: number, REACH = 9): Overlay {
   const ow = OVERLAY_W,
     oh = OVERLAY_H,
     oids = new Int16Array(ow * oh),
@@ -352,7 +363,6 @@ export function paintMap(map: WorldMap) {
         queue.push(k);
       }
     }
-  const REACH = 9;
   for (let q = 0; q < queue.length; q++) {
     const k = queue[q],
       x = k % ow,
@@ -366,8 +376,7 @@ export function paintMap(map: WorldMap) {
   }
   const band = new Uint8Array(ow * oh);
   for (let k = 0; k < band.length; k++) if (oids[k] >= 0 && depth[k] >= 0) band[k] = Math.round(255 * (1 - depth[k] / REACH) ** 1.6);
-  const overlay: Overlay = { width: ow, height: oh, ids: oids, band };
-  return { canvas, overlay };
+  return { width: ow, height: oh, ids: oids, band };
 }
 /** How far below where its armies stand a territory's name is written, in cells. */
 export const plateDrop = (map: WorldMap) => Math.max(0.75, Math.min(1.05, 26 / map.cols));

@@ -5,12 +5,17 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
 import { hash, territoryAt, type WorldMap } from "./map";
 import { CONQUEST_SUBJECT, MAP_D, MAP_W, MAP_X, MAP_Y, MAX_ZOOM, TRAY, clampView, pieceScale, placeCamera, toGrid, toWorld, type View } from "./layout";
-import { OVERLAY_H, OVERLAY_W, paintMap, type Overlay } from "./paint";
+import { OVERLAY_H, OVERLAY_W, paintMap, type Overlay, type Plate } from "./paint";
+import { paintWorld } from "./paint-world";
+import { KIND_HEIGHT, MOST_GUNS, formation, pieceGeometries } from "./pieces";
 import type { Roll, State } from "./rules";
 
-/** The players' colours: red, blue, green, yellow, purple, black. */
+/** The players' colours: red, blue, green, yellow, purple, black; and the neutral army's grey. */
 export const PLAYER_COLORS = ["#c9392b", "#2a62c4", "#3b9a4c", "#e2a21b", "#8a4ec2", "#2c2c30"];
 export const COLOR_NAMES = ["빨강", "파랑", "초록", "노랑", "보라", "검정"];
+export const NEUTRAL_COLOR = "#9a958b";
+/** The colour of a seat of `state`: a player's, or the neutral army's grey. */
+export const seatColor = (state: Pick<State, "neutral">, seat: number) => (seat === state.neutral && seat >= 0 ? NEUTRAL_COLOR : (PLAYER_COLORS[seat] ?? "#777"));
 /** What the screen has picked out on the map. */
 export interface Selection {
   /** The territory picked up, or -1. */
@@ -26,28 +31,7 @@ export interface Selection {
   arrow: [number, number] | null;
 }
 const NONE: Selection = { selected: -1, targets: [], kind: "attack", open: [], cursor: -1, arrow: null };
-/** At most this many blocks stand on a territory (in up to three columns of four); its plate tells the count. */
-const MOST = 12;
 const rgb = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
-/** Pale wood grain that keeps a painted block's colour its own. */
-function grain() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 128;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#f4f1ec";
-  ctx.fillRect(0, 0, 128, 128);
-  for (let k = 0; k < 26; k++) {
-    const y = (k * 128) / 26 + hash(k, 1, 5) * 3;
-    ctx.strokeStyle = `rgba(120, 100, 80, ${0.08 + hash(k, 2, 5) * 0.12})`;
-    ctx.lineWidth = 1 + hash(k, 3, 5) * 1.5;
-    ctx.beginPath();
-    for (let x = 0; x <= 128; x += 8) ctx.lineTo(x, y + Math.sin(x * 0.05 + k) * 2.5);
-    ctx.stroke();
-  }
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  return t;
-}
 function dieFace(value: number, body: string, pip: string) {
   const c = document.createElement("canvas");
   c.width = c.height = 128;
@@ -119,11 +103,19 @@ function trayFelt() {
   t.anisotropy = 4;
   return t;
 }
+/** The pieces of one kind: what is painted in the holder's colour, its trim, and which territory each instance stands on. */
+interface Troop {
+  paint: T.InstancedMesh;
+  trim: T.InstancedMesh;
+  holder: number[];
+  count: number;
+}
 /**
- * The war room: a large table with the world painted on a framed board, each territory's armies a stack of small
- * wooden blocks in its holder's colour under a plate with their number, each player's colour laid along the borders
- * of what they hold, a dice tray beside the map (red for the attacker, white for the defender), and towers on the
- * capitals. The map can be dragged and pinched (or turned with a wheel) to look closer; `fit` shows it all again.
+ * The war room: a large table with the world painted on a framed board, each territory's armies standing on it as
+ * the fewest pieces (cannons for tens, a rider for five, soldiers for the rest) in its holder's colour under a plate
+ * with their number, each player's colour laid along the borders of what they hold, a dice tray beside the map (red
+ * for the attacker, white for the defender), and towers on the capitals. The map can be dragged and pinched (or
+ * turned with a wheel) to look closer; `fit` shows it all again.
  */
 export class ConquestView extends TableView<State> {
   /** A tap on the map: the territory under it, or -1. */
@@ -131,19 +123,21 @@ export class ConquestView extends TableView<State> {
   private readonly map: WorldMap;
   private readonly scale: number;
   private readonly anchors: { x: number; z: number }[];
+  private readonly names: Plate[];
   private look: View = { zoom: 1, x: 0, z: 0 };
-  private blocks: T.InstancedMesh;
-  private flyers: T.InstancedMesh;
-  private holder: number[] = [];
+  private troops: Troop[] = [];
   private plates: { sprite: T.Sprite; ctx: CanvasRenderingContext2D; texture: T.CanvasTexture; key: string }[] = [];
   private owners: number[] = [];
   private counts: number[] = [];
-  private lift: { territory: number; from: number; height: number } | null = null;
+  private neutral = -1;
+  /** Territories whose pieces are forming anew, and how far along (0 to 1); a placement also drops them in. */
+  private forming = new Map<number, { p: number; drop: boolean }>();
   private flight: { owner: number; count: number; x: number; y: number; z: number } | null = null;
   private overlay: { ctx: CanvasRenderingContext2D; image: ImageData; texture: T.CanvasTexture; data: Overlay };
   private selection: Selection = NONE;
   private hovered = -1;
   private colors: T.Color[];
+  private neutralColor = new T.Color(NEUTRAL_COLOR);
   private dice: T.Mesh[] = [];
   private roll: Roll = { attack: [6, 4, 2], defend: [5, 3], lostA: 0, lostD: 0 };
   private towers: T.Group[] = [];
@@ -168,8 +162,9 @@ export class ConquestView extends TableView<State> {
     const brass = this.standard({ color: "#c9a24e", metalness: 0.75, roughness: 0.32 });
     for (const z of [-MAP_D / 2 - 0.12, MAP_D / 2 + 0.12]) this.add(new T.BoxGeometry(MAP_W + 0.3, 0.015, 0.05), brass, MAP_X, MAP_Y + 0.008, z).castShadow = false;
     for (const x of [-MAP_W / 2 - 0.12, MAP_W / 2 + 0.12]) this.add(new T.BoxGeometry(0.05, 0.015, MAP_D + 0.3), brass, MAP_X + x, MAP_Y + 0.008, 0).castShadow = false;
-    const painted = paintMap(map),
+    const painted = map.shapes ? paintWorld(map) : paintMap(map),
       face = keep(new T.CanvasTexture(painted.canvas));
+    this.names = painted.plates;
     face.colorSpace = T.SRGBColorSpace;
     face.anisotropy = 8;
     const sheet = this.add(new T.PlaneGeometry(MAP_W, MAP_D), this.standard({ map: face, roughness: 0.86 }), MAP_X, MAP_Y + 0.002, 0);
@@ -201,18 +196,27 @@ export class ConquestView extends TableView<State> {
       this.scene.add(die);
       this.dice.push(die);
     }
-    // Army blocks: one instanced mesh for every stack, another for those on their way.
+    // The pieces: for each kind one instanced mesh in the holders' colours and one for its trim, room for every
+    // territory's and for those on their way.
     const s = this.scale,
-      piece = keep(block(0.25 * s, 0.13 * s, 0.25 * s, 0.03 * s)),
-      paint = this.standard({ map: keep(grain()), roughness: 0.55 });
-    this.blocks = new T.InstancedMesh(piece, paint, map.territories.length * MOST);
-    this.flyers = new T.InstancedMesh(piece, paint, MOST);
-    for (const mesh of [this.blocks, this.flyers]) {
-      mesh.castShadow = mesh.receiveShadow = true;
-      mesh.count = 0;
-      mesh.setColorAt(0, this.colors[0]);
-      this.scene.add(mesh);
-    }
+      paint = this.standard({ color: "#ffffff", roughness: 0.48, metalness: 0.05 }),
+      trim = this.standard({ vertexColors: true, roughness: 0.42, metalness: 0.45 }),
+      room = [4, 1, MOST_GUNS];
+    pieceGeometries().forEach((g, kind) => {
+      g.paint.scale(s, s, s);
+      g.trim.scale(s, s, s);
+      const capacity = (map.territories.length + 1) * room[kind],
+        troop: Troop = { paint: new T.InstancedMesh(keep(g.paint), paint, capacity), trim: new T.InstancedMesh(keep(g.trim), trim, capacity), holder: [], count: 0 };
+      for (const mesh of [troop.paint, troop.trim]) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = false;
+        mesh.count = 0;
+        mesh.frustumCulled = false;
+        this.scene.add(mesh);
+      }
+      troop.paint.setColorAt(0, this.colors[0]);
+      this.troops.push(troop);
+    });
     for (let t = 0; t < map.territories.length; t++) {
       const c = document.createElement("canvas");
       c.width = 128;
@@ -220,7 +224,7 @@ export class ConquestView extends TableView<State> {
       const texture = keep(new T.CanvasTexture(c));
       texture.colorSpace = T.SRGBColorSpace;
       const sprite = new T.Sprite(keep(new T.SpriteMaterial({ map: texture, depthTest: false, transparent: true })));
-      sprite.scale.set(0.56 * s, 0.315 * s, 1);
+      sprite.scale.set(0.46 * s, 0.26 * s, 1);
       sprite.renderOrder = 20;
       this.scene.add(sprite);
       this.plates.push({ sprite, ctx: c.getContext("2d")!, texture, key: "" });
@@ -294,15 +298,36 @@ export class ConquestView extends TableView<State> {
     if (before && after) this.look = { ...this.look, x: this.look.x + before.x - after.x, z: this.look.z + before.z - after.z };
     this.aimCamera();
   }
-  /** What a press at a place of the canvas lands on: a block or a plate first, then the map under it. */
+  /** What a press at a place of the canvas lands on: a piece or a number plate first, then a name, then the map under it. */
   private territoryAt(x: number, y: number) {
     const el = this.renderer.domElement,
       rect = el.getBoundingClientRect();
     aim(this.picker, { clientX: rect.left + x, clientY: rect.top + y } as PointerEvent, el, this.camera);
-    const hits = this.picker.intersectObject(this.blocks);
-    if (hits.length && hits[0].instanceId !== undefined) return this.holder[hits[0].instanceId] ?? -1;
-    // A plate is as large on the screen as it is drawn.
+    // Right on the place where a territory's armies stand (as the browser tests tap): that territory, whatever stands over it.
     const v = new T.Vector3();
+    let closest = -1,
+      near = 10;
+    this.anchors.forEach((a, t) => {
+      v.set(a.x, MAP_Y, a.z).project(this.camera);
+      const d = Math.hypot(((v.x + 1) / 2) * el.clientWidth - x, ((1 - v.y) / 2) * el.clientHeight - y);
+      if (d < near) {
+        near = d;
+        closest = t;
+      }
+    });
+    if (closest >= 0) return closest;
+    let nearest = Infinity,
+      found = -1;
+    for (const troop of this.troops) {
+      if (!troop.count) continue;
+      const hits = this.picker.intersectObject(troop.paint);
+      if (hits.length && hits[0].instanceId !== undefined && hits[0].distance < nearest && troop.holder[hits[0].instanceId] >= 0) {
+        nearest = hits[0].distance;
+        found = troop.holder[hits[0].instanceId];
+      }
+    }
+    if (found >= 0) return found;
+    // A plate is as large on the screen as it is drawn.
     for (let t = 0; t < this.plates.length; t++) {
       const sprite = this.plates[t].sprite;
       if (!sprite.visible) continue;
@@ -314,8 +339,12 @@ export class ConquestView extends TableView<State> {
     }
     const ground = this.groundAt(x, y);
     if (!ground) return -1;
-    const { gx, gy } = toGrid(this.map, ground.x, ground.z);
-    return territoryAt(this.map, gx, gy);
+    const { gx, gy } = toGrid(this.map, ground.x, ground.z),
+      under = territoryAt(this.map, gx, gy);
+    if (under >= 0) return under;
+    // A small island's name stands over the sea: it chooses its own region.
+    for (const plate of this.names) if (gx >= plate.x0 && gx <= plate.x1 && gy >= plate.y0 && gy <= plate.y1) return plate.territory;
+    return -1;
   }
   /** How many pixels `size` table units at `at` span on the screen. */
   private screenSize(at: T.Vector3, size: number) {
@@ -459,8 +488,8 @@ export class ConquestView extends TableView<State> {
       };
     for (let t = 0; t < n; t++) {
       const o = this.owners[t] ?? -1,
-        [r, g, b] = rgb(PLAYER_COLORS[o] ?? "#ffffff");
-      base.set(o < 0 ? [255, 255, 255] : [r, g, b], t * 3);
+        [r, g, b] = rgb(o < 0 ? "#ffffff" : seatColor({ neutral: this.neutral }, o));
+      base.set([r, g, b], t * 3);
     }
     for (const t of sel.open) paint(t, "#ffffff", 0.001);
     if (this.hovered >= 0 && sel !== NONE) paint(this.hovered, "#ffffff", 0.2);
@@ -490,7 +519,7 @@ export class ConquestView extends TableView<State> {
     this.overlay.ctx.putImageData(this.overlay.image, 0, 0);
     this.overlay.texture.needsUpdate = true;
   }
-  /** A flat arrow over the map from the territory picked to the one chosen. */
+  /** A flat arrow over the map from the territory picked to the one chosen; across the map's side, to its edge. */
   private pointArrow() {
     const pair = capturing() ? null : this.selection.arrow,
       key = pair ? `${pair[0]}:${pair[1]}:${this.selection.kind}` : "";
@@ -499,13 +528,15 @@ export class ConquestView extends TableView<State> {
     this.arrow.visible = !!pair;
     if (!pair) return;
     const a = this.anchors[pair[0]],
-      b = this.anchors[pair[1]],
+      wrap = this.map.links.some((l) => l.wrap && ((l.a === pair[0] && l.b === pair[1]) || (l.b === pair[0] && l.a === pair[1]))),
+      edge = MAP_X + (a.x < MAP_X ? -MAP_W / 2 : MAP_W / 2),
+      b = wrap ? { x: edge + (a.x < MAP_X ? -0.35 : 0.35), z: a.z } : this.anchors[pair[1]],
       length = Math.hypot(b.x - a.x, b.z - a.z),
       s = this.scale,
       w = 0.09 * s,
       head = 0.26 * s,
       from = 0.24 * s,
-      to = Math.max(from + 0.1, length - 0.3 * s),
+      to = Math.max(from + 0.1, length - (wrap ? 0 : 0.3 * s)),
       shape = new T.Shape();
     shape.moveTo(from, -w);
     shape.lineTo(to - head, -w);
@@ -523,73 +554,74 @@ export class ConquestView extends TableView<State> {
     this.arrow.rotation.set(0, -Math.atan2(b.z - a.z, b.x - a.x), 0);
     (this.arrow.material as T.MeshBasicMaterial).color.set(this.selection.kind === "attack" ? "#ff3b2e" : "#2f8fe0");
   }
-  /** Where the blocks of a stack of `count` stand, from the place of its armies. */
-  private stack(count: number) {
-    const s = this.scale,
-      shown = Math.min(MOST, Math.max(0, count)),
-      columns = shown <= 4 ? 1 : shown <= 8 ? 2 : 3,
-      out: { x: number; y: number; z: number }[] = [];
-    for (let i = 0; i < shown; i++) {
-      const c = Math.floor(i / 4),
-        level = i % 4;
-      out.push({ x: (c - (columns - 1) / 2) * 0.29 * s, y: MAP_Y + 0.008 + 0.065 * s + level * 0.134 * s, z: (c % 2) * 0.05 * s });
-    }
-    return out;
+  private colorOf(owner: number) {
+    return owner === this.neutral && owner >= 0 ? this.neutralColor : (this.colors[owner] ?? this.colors[0]);
+  }
+  /** How large the pieces of a forming territory stand, and how high above the map, at `p` of their forming. */
+  private formed(t: number) {
+    const f = this.forming.get(t);
+    if (!f) return { size: 1, lift: 0 };
+    const p = f.p;
+    return { size: 0.62 + 0.38 * Math.min(1, p * 1.25) + Math.sin(Math.PI * p) * 0.08, lift: f.drop ? fall(p) * 0.6 : 0 };
   }
   private arrange() {
     const m = new T.Matrix4(),
       q = new T.Quaternion(),
       position = new T.Vector3(),
-      size = new T.Vector3(1, 1, 1),
-      up = new T.Vector3(0, 1, 0);
-    let k = 0;
-    this.holder = [];
-    for (let t = 0; t < this.anchors.length; t++) {
-      const a = this.anchors[t],
-        owner = this.owners[t];
-      this.stack(this.counts[t]).forEach((p, i) => {
-        const lifted = this.lift && this.lift.territory === t && i >= this.lift.from ? this.lift.height : 0;
-        q.setFromAxisAngle(up, (hash(t, i, 3) - 0.5) * 0.32);
-        position.set(a.x + p.x, p.y + lifted, a.z + p.z);
-        m.compose(position, q, size);
-        this.blocks.setMatrixAt(k, m);
-        this.blocks.setColorAt(k, this.colors[owner] ?? this.colors[0]);
-        this.holder[k] = t;
-        k++;
-      });
+      size = new T.Vector3(),
+      up = new T.Vector3(0, 1, 0),
+      s = this.scale;
+    for (const troop of this.troops) {
+      troop.count = 0;
+      troop.holder = [];
     }
-    this.blocks.count = k;
-    this.blocks.instanceMatrix.needsUpdate = true;
-    if (this.blocks.instanceColor) this.blocks.instanceColor.needsUpdate = true;
-    this.blocks.computeBoundingSphere();
-    // The blocks on their way from one territory to another.
-    const f = this.flight;
-    let j = 0;
-    if (f)
-      this.stack(f.count).forEach((p, i) => {
-        q.setFromAxisAngle(up, (hash(99, i, 3) - 0.5) * 0.3);
-        position.set(f.x + p.x, f.y + p.y - MAP_Y, f.z + p.z);
+    const lay = (t: number, count: number, owner: number, x: number, y: number, z: number, form: { size: number; lift: number }) => {
+      const colour = this.colorOf(owner);
+      for (const piece of formation(count).pieces) {
+        const troop = this.troops[piece.kind],
+          k = troop.count++;
+        q.setFromAxisAngle(up, (hash(t, k, 3) - 0.5) * (piece.kind === 0 ? 0.5 : 0.22));
+        position.set(x + piece.x * s * form.size, y + form.lift, z + piece.z * s * form.size);
+        size.setScalar(form.size);
         m.compose(position, q, size);
-        this.flyers.setMatrixAt(j, m);
-        this.flyers.setColorAt(j, this.colors[f.owner] ?? this.colors[0]);
-        j++;
-      });
-    this.flyers.count = j;
-    this.flyers.instanceMatrix.needsUpdate = true;
-    if (this.flyers.instanceColor) this.flyers.instanceColor.needsUpdate = true;
+        troop.paint.setMatrixAt(k, m);
+        troop.trim.setMatrixAt(k, m);
+        troop.paint.setColorAt(k, colour);
+        troop.holder[k] = t;
+      }
+    };
+    for (let t = 0; t < this.anchors.length; t++) {
+      if (!(this.counts[t] > 0) || this.owners[t] === undefined || this.owners[t] < 0) continue;
+      const a = this.anchors[t];
+      lay(t, this.counts[t], this.owners[t], a.x, MAP_Y + 0.006, a.z, this.formed(t));
+    }
+    // The pieces on their way from one territory to another.
+    const f = this.flight;
+    if (f) lay(-1, f.count, f.owner, f.x, f.y, f.z, { size: 1, lift: 0 });
+    for (const troop of this.troops) {
+      for (const mesh of [troop.paint, troop.trim]) {
+        mesh.count = troop.count;
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+      if (troop.paint.instanceColor) troop.paint.instanceColor.needsUpdate = true;
+      troop.paint.computeBoundingSphere();
+    }
     this.labels();
     this.redraw();
   }
-  /** Each territory's plate: its armies' number on its holder's colour, over the stack. */
+  /** Each territory's plate: its armies' number on its holder's colour, over its pieces. */
   private labels() {
     const s = this.scale;
     this.plates.forEach((plate, t) => {
       const count = this.counts[t],
         owner = this.owners[t],
-        levels = Math.min(4, Math.max(1, count));
-      plate.sprite.position.set(this.anchors[t].x, MAP_Y + 0.065 * s + levels * 0.134 * s + 0.2 * s, this.anchors[t].z);
-      plate.sprite.visible = count > 0;
-      const key = `${owner}:${count}`;
+        { pieces, depth } = formation(count),
+        tallest = Math.max(0.2, ...pieces.map((p) => KIND_HEIGHT[p.kind])),
+        form = this.formed(t);
+      // Over the back of the pieces: seen from above, it stands just beyond their heads.
+      plate.sprite.position.set(this.anchors[t].x, MAP_Y + (tallest * 0.9 * form.size + 0.1) * s + form.lift, this.anchors[t].z - (depth / 2 + 0.05) * s * form.size);
+      plate.sprite.visible = count > 0 && owner >= 0;
+      const key = `${owner}:${count}:${owner === this.neutral}`;
       if (key === plate.key) return;
       plate.key = key;
       const ctx = plate.ctx;
@@ -598,7 +630,7 @@ export class ConquestView extends TableView<State> {
       ctx.beginPath();
       ctx.roundRect(8, 9, 114, 58, 16);
       ctx.fill();
-      ctx.fillStyle = PLAYER_COLORS[owner] ?? "#777";
+      ctx.fillStyle = owner >= 0 ? seatColor({ neutral: this.neutral }, owner) : "#777";
       ctx.beginPath();
       ctx.roundRect(5, 5, 114, 58, 16);
       ctx.fill();
@@ -629,7 +661,7 @@ export class ConquestView extends TableView<State> {
       const group = new T.Group(),
         a = this.anchors[seat.capital],
         flag = this.standard({ color: PLAYER_COLORS[p], roughness: 0.6, side: T.DoubleSide });
-      // A keep with four turrets' worth of battlements, a gold roof and its player's pennant.
+      // A keep with six merlons, a gold roof and its player's pennant.
       this.add(new T.CylinderGeometry(0.1 * sc, 0.13 * sc, 0.42 * sc, 16), stone, 0, 0.21 * sc, 0, group);
       for (let k = 0; k < 6; k++) {
         const angle = (k / 6) * Math.PI * 2;
@@ -641,7 +673,7 @@ export class ConquestView extends TableView<State> {
       pennant.position.set(0.12 * sc, 0.82 * sc, 0);
       pennant.castShadow = true;
       group.add(pennant);
-      group.position.set(a.x - 0.5 * sc, MAP_Y, a.z - 0.12 * sc);
+      group.position.set(a.x - 0.36 * sc, MAP_Y, a.z - 0.2 * sc);
       this.scene.add(group);
       this.towers.push(group);
     });
@@ -667,9 +699,10 @@ export class ConquestView extends TableView<State> {
     die.position.y = 0.222 + (lost ? 0.152 : 0.19);
   }
   protected place(s: State) {
+    this.neutral = s.neutral;
     this.owners = [...s.owner];
     this.counts = [...s.armies];
-    this.lift = null;
+    this.forming.clear();
     this.flight = null;
     this.raiseTowers(s);
     if (s.last?.kind === "battle") this.showDice(s.last.rolls[s.last.rolls.length - 1]);
@@ -715,13 +748,25 @@ export class ConquestView extends TableView<State> {
       this.redraw();
     });
   }
-  /** Blocks carried in a hop from one territory to another. */
+  /** A territory's pieces form anew (smaller, growing back to their size), dropping in if armies were placed there. */
+  private reform(t: number, delay: number, drop: boolean, duration = 300) {
+    this.tween(delay, duration, (p) => {
+      if (p >= 1) this.forming.delete(t);
+      else this.forming.set(t, { p, drop });
+      if (p >= 1 && drop) this.onContact();
+      this.arrange();
+    });
+  }
+  /** Pieces carried in a hop from one territory to another. */
   private carry(owner: number, count: number, from: number, to: number, delay: number, duration: number, land: () => void) {
     const a = this.anchors[from],
-      b = this.anchors[to];
+      b = this.anchors[to],
+      wrap = Math.abs(b.x - a.x) > MAP_W * 0.6;
     this.tween(delay, duration, (p) => {
-      const e = p * p * (3 - 2 * p);
-      this.flight = p < 1 ? { owner, count, x: a.x + (b.x - a.x) * e, y: MAP_Y + hop(p) * (0.5 + Math.hypot(b.x - a.x, b.z - a.z) * 0.08), z: a.z + (b.z - a.z) * e } : null;
+      const e = p * p * (3 - 2 * p),
+        // Across the map's side the pieces go out at one edge and come in at the other.
+        bx = wrap ? (e < 0.5 ? a.x + (a.x < MAP_X ? -1 : 1) * Math.abs(MAP_X + MAP_W / 2 - Math.abs(a.x - MAP_X)) * e * 2 : b.x) : a.x + (b.x - a.x) * e;
+      this.flight = p < 1 ? { owner, count, x: bx, y: MAP_Y + hop(p) * (0.5 + Math.min(4, Math.hypot(b.x - a.x, b.z - a.z)) * 0.08), z: a.z + (b.z - a.z) * e } : null;
       if (p === 1) {
         land();
         this.onContact();
@@ -732,18 +777,13 @@ export class ConquestView extends TableView<State> {
   protected animate(before: State, s: State) {
     const last = s.last;
     if (!last || s.ply === before.ply) return false;
-    if (last.kind === "place") {
-      const t = last.territory,
-        from = Math.min(MOST, before.armies[t]);
+    if (last.kind === "place" || (last.kind === "trade" && last.bonus >= 0)) {
+      const t = last.kind === "place" ? last.territory : last.bonus;
       this.counts[t] = s.armies[t];
-      this.tween(0, 340, (p) => {
-        this.lift = { territory: t, from, height: fall(p) * 0.9 };
-        if (p === 1) {
-          this.lift = null;
-          this.onContact();
-        }
-        this.arrange();
-      });
+      this.owners[t] = s.owner[t];
+      if (before.owner[t] !== s.owner[t]) this.compose();
+      // Setting up, one army at a time: quickly.
+      this.reform(t, 0, true, before.phase === "claim" || before.phase === "deploy" ? 170 : 340);
       return true;
     }
     if (last.kind === "battle") {
@@ -757,12 +797,16 @@ export class ConquestView extends TableView<State> {
         this.tumble(roll, delay, each * 0.78);
         a -= roll.lostA;
         d -= roll.lostD;
-        const left = { a, d };
+        const left = { a, d },
+          hit = { a: roll.lostA > 0, d: roll.lostD > 0 };
         this.tween(delay + each * 0.78, 1, () => {
           this.counts[from] = left.a;
           this.counts[to] = left.d;
           this.arrange();
         });
+        // The side that lost armies re-forms.
+        if (hit.a) this.reform(from, delay + each * 0.78, false, 220);
+        if (hit.d && left.d > 0) this.reform(to, delay + each * 0.78, false, 220);
       });
       if (last.conquered) {
         this.tween(n * each, 1, () => {
@@ -780,7 +824,10 @@ export class ConquestView extends TableView<State> {
       if (!last.count) return false;
       const { from, to, count, player } = last;
       this.counts[from] = before.armies[from] - count;
-      this.carry(player, count, from, to, 0, 480, () => (this.counts[to] = before.armies[to] + count));
+      this.carry(player, count, from, to, 0, 480, () => {
+        this.counts[to] = before.armies[to] + count;
+        this.reform(to, 0, false, 220);
+      });
       return true;
     }
     return false;

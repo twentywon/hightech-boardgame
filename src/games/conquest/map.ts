@@ -40,9 +40,12 @@ export interface SeaLink {
   /** The two coast points it joins, in grid units. */
   from: { x: number; y: number };
   to: { x: number; y: number };
+  /** Whether it runs off the map's sides (from each coast to its own edge), as across the Bering Strait. */
+  wrap?: boolean;
 }
 export interface WorldMap {
-  size: Size;
+  /** The size of a generated world, or "world" for the map of the real world. */
+  size: Size | "world";
   cols: number;
   rows: number;
   /** The territory of each cell (row by row), or -1 for the sea. */
@@ -52,6 +55,16 @@ export interface WorldMap {
   links: SeaLink[];
   /** Seeds of the drawing's wavy borders and relief: the same map is always drawn the same way. */
   seed: number;
+  /**
+   * The map of the real world only: every territory's outlines (rings of x, y in grid units, read even–odd) and the
+   * box round them (min x, min y, max x, max y); land of no territory; the mountain crests painted as relief; and the
+   * secret missions to hold continents (by continent index; `extra`: and one more of one's choice).
+   */
+  shapes?: Float32Array[][];
+  boxes?: Float32Array;
+  inert?: Float32Array[];
+  ridges?: { height: number; width: number; points: number[] }[];
+  missions?: { continents: number[]; extra: boolean }[];
 }
 /** The three sizes the setup offers. */
 export const SIZES: Record<Size, { label: string; cols: number; rows: number; territories: number; continents: number; extra: number }> = {
@@ -95,8 +108,25 @@ export const fbm = (x: number, y: number, seed: number, scale: number) => 0.65 *
 const WARP = 0.42;
 /** Where a point of the map is looked up in the grid: borders drawn this way wander instead of following the cells. */
 export const warped = (seed: number, x: number, y: number) => ({ u: x + (noise(x, y, seed + 101, 2.6) - 0.5) * 2 * WARP, v: y + (noise(x, y, seed + 202, 2.6) - 0.5) * 2 * WARP });
-/** The territory at a point of the map (grid units), following the wavy borders the map is drawn with; -1 for sea. */
+/** Whether a point is inside rings read even–odd. */
+export function insideRings(rings: Float32Array[], x: number, y: number) {
+  let inside = false;
+  for (const ring of rings)
+    for (let i = 0, n = ring.length, j = n - 2; i < n; j = i, i += 2) {
+      const yi = ring[i + 1],
+        yj = ring[j + 1];
+      if (yi > y !== yj > y && x < ((ring[j] - ring[i]) * (y - yi)) / (yj - yi) + ring[i]) inside = !inside;
+    }
+  return inside;
+}
+/** The territory at a point of the map (grid units), following the borders the map is drawn with; -1 for sea. */
 export function territoryAt(map: WorldMap, x: number, y: number) {
+  if (map.shapes) {
+    const boxes = map.boxes!;
+    for (let t = 0; t < map.shapes.length; t++)
+      if (x >= boxes[t * 4] && y >= boxes[t * 4 + 1] && x <= boxes[t * 4 + 2] && y <= boxes[t * 4 + 3] && insideRings(map.shapes[t], x, y)) return t;
+    return -1;
+  }
   const { u, v } = warped(map.seed, x, y),
     i = Math.floor(u),
     j = Math.floor(v);

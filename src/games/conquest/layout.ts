@@ -13,8 +13,10 @@ export const MAP_W = 16,
   MAP_Y = 0.2;
 /** The dice tray at the right of the map: its middle and its size. */
 export const TRAY = { x: 8.55, z: 0.15, w: 2.1, d: 3.9 };
-/** What the camera keeps in view at its widest: the board and the tray. */
-export const CONQUEST_SUBJECT = { half: 9.75, halfZ: 5.5, height: 0.5, lookY: 0, tilt: 1.28 };
+/** What the camera keeps in view at its widest: the board and the tray, seen a little from the side so that the pieces stand. */
+export const CONQUEST_SUBJECT = { half: 9.75, halfZ: 5.5, height: 0.5, lookY: 0, tilt: 1.14 };
+/** On short wide screens (phones held sideways) the board is seen from higher, so that it fills more of their height. */
+export const subjectFor = (aspect: number) => (aspect > 1.9 ? { ...CONQUEST_SUBJECT, tilt: 1.3 } : CONQUEST_SUBJECT);
 /** How far one may zoom in. */
 export const MAX_ZOOM = 4;
 /** A point of the map grid (cells, from its far left corner) on the table. */
@@ -25,8 +27,10 @@ export function toWorld(map: WorldMap, gx: number, gy: number) {
 export function toGrid(map: WorldMap, x: number, z: number) {
   return { gx: ((x - MAP_X + MAP_W / 2) * map.cols) / MAP_W, gy: ((z + MAP_D / 2) * map.rows) / MAP_D };
 }
-/** How large a piece stands on this map: territories are smaller on a larger world. */
-export const pieceScale = (map: WorldMap) => Math.min(1, Math.sqrt(40 / map.cols));
+/** How large a piece stands on this map: territories are smaller on a larger world, and smallest on the real one. */
+export const pieceScale = (map: WorldMap) => (map.size === "world" ? WORLD_PIECES : Math.min(1, Math.sqrt(40 / map.cols)));
+/** The pieces' scale on the map of the real world. */
+export const WORLD_PIECES = 1;
 /** The zoom and pan the camera is at: `zoom` 1 shows everything; `x`, `z` are where it looks on the table. */
 export interface View {
   zoom: number;
@@ -41,8 +45,9 @@ export function clampView(view: View): View {
 }
 /** Sets `camera` where the view has it, for a canvas of `aspect`. */
 export function placeCamera(camera: PerspectiveCamera, aspect: number, view: View) {
-  const distance = cameraDistance(aspect, false, CONQUEST_SUBJECT) / view.zoom,
-    tilt = CONQUEST_SUBJECT.tilt;
+  const subject = subjectFor(aspect),
+    distance = cameraDistance(aspect, false, subject) / view.zoom,
+    tilt = subject.tilt;
   camera.fov = FOV;
   camera.aspect = aspect;
   camera.position.set(view.x, Math.sin(tilt) * distance, view.z + Math.cos(tilt) * distance);
