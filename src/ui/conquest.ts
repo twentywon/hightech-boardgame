@@ -232,7 +232,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     const s = state!;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout cq-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>대륙 쟁탈전 <small>CONTINENT CONQUEST</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="cq-fit">전체 보기</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WAR ROOM</span><span>${settingsLine(s)}</span></div><div id="board"></div><div class="cq-corner"><button id="cq-hand" class="cq-hand" aria-haspopup="dialog"><span class="cq-hand-art" aria-hidden="true"><i></i><i></i><i></i></span><span>카드</span><b id="cq-hand-count">0</b></button><button id="cq-mission" class="cq-hand cq-mission" aria-haspopup="dialog" hidden><span class="cq-mission-art" aria-hidden="true"></span><span>비밀 임무</span></button></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">준비</span></div></section><aside class="game-sidebar cq-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="cq-players" id="cq-players">${s.seats.map((seat, i) => `<li id="cq-player-${i}"${seat.neutral ? ' class="neutral"' : ""}><i class="cq-dot" style="background:${seatColor(s, i)}"></i><b>${safe[i]}</b><span id="cq-stat-${i}"></span></li>`).join("")}</ul><div class="cq-controls" id="cq-controls"><div class="cq-acts"><button id="cq-auto">자동 배치</button><button id="cq-place" class="primary">배치</button><button id="cq-roll">한 번 굴리기</button><button id="cq-blitz" class="primary">끝까지 공격</button><button id="cq-move" class="primary">옮기기</button></div><div class="cq-stepper" id="cq-stepper"><span id="cq-step-label">병력</span><button id="cq-less" aria-label="하나 줄이기">−</button><output id="cq-count" aria-live="polite">1</output><button id="cq-more" aria-label="하나 늘리기">+</button></div><div class="cq-phases" id="cq-phases"><ol aria-label="단계">${(
+      `<main class="game-layout cq-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>대륙 쟁탈전 <small>CONTINENT CONQUEST</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="cq-fit">전체 보기</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE WAR ROOM</span><span>${settingsLine(s)}</span></div><div id="board"></div><div class="cq-corner"><button id="cq-hand" class="cq-hand" aria-haspopup="dialog"><span class="cq-hand-art" aria-hidden="true"><i></i><i></i><i></i></span><span>카드</span><b id="cq-hand-count">0</b></button><button id="cq-mission" class="cq-hand cq-mission" aria-haspopup="dialog" hidden><span class="cq-mission-art" aria-hidden="true"></span><span>비밀 임무</span></button></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">준비</span></div></section><aside class="game-sidebar cq-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="cq-players" id="cq-players">${s.seats.map((seat, i) => `<li id="cq-player-${i}"${seat.neutral ? ' class="neutral"' : ""}><i class="cq-dot" style="background:${seatColor(s, i)}"></i><b>${safe[i]}</b><span id="cq-stat-${i}"></span></li>`).join("")}</ul><div class="cq-controls" id="cq-controls"><div class="cq-acts"><button id="cq-auto">자동 배치</button><button id="cq-place" class="primary">배치</button><button id="cq-roll">한 번 굴리기</button><button id="cq-blitz" class="primary">끝까지 공격</button><button id="cq-move" class="primary">옮기기</button></div><div class="cq-stepper" id="cq-stepper"><span id="cq-step-label">병력</span><button id="cq-less" aria-label="하나 줄이기">−</button><output id="cq-count" aria-live="polite">1</output><button id="cq-more" aria-label="하나 늘리기">+</button><input id="cq-slider" type="range" min="0" max="1" step="1" value="1" aria-label="병력 수"></div><div class="cq-phases" id="cq-phases"><ol aria-label="단계">${(
         [
           ["setup", "준비"],
           ["reinforce", "증원"],
@@ -253,8 +253,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     $("cq-auto").onclick = () => {
       if (!state || !settingUp(state) || !mine()) return;
       autoSetup = true;
-      update();
-      computer();
+      fastSetup();
     };
     $("cq-place").onclick = () => {
       if (state?.phase === "reinforce" && selected >= 0) act({ type: "place", territory: selected, count });
@@ -265,6 +264,13 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     $("cq-next").onclick = () => act({ type: "next" });
     $("cq-less").onclick = () => stepCount(-1);
     $("cq-more").onclick = () => stepCount(1);
+    // The slider sets the number at once (the user asked for it, above all for the armies moved in after a conquest).
+    $<HTMLInputElement>("cq-slider").oninput = (event) => {
+      const range = bounds();
+      if (!range) return;
+      count = Math.max(range[0], Math.min(range[1], Math.round(Number((event.target as HTMLInputElement).value))));
+      update();
+    };
     try {
       view = new ConquestView($("board"), settings.quality, s.map);
       view.onContact = () => sound.knock(4);
@@ -428,6 +434,33 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
       if (selected < 0 || (target >= 0 && !targets(s, selected).includes(target))) target = -1;
     }
     if (s.phase === "fortify" && selected >= 0 && target >= 0) count = Math.max(1, Math.min(count, s.armies[selected] - 1));
+  }
+  /**
+   * 자동 배치, at once (the user asked for it to be quick): every setup step that needs no person (mine now left to the
+   * computer, and the computers' own) is decided and made in one go, and the table is laid out once at the end with
+   * no animation. It stops at a person who still places by hand, or when the setup is over.
+   */
+  function fastSetup() {
+    let s = state;
+    if (!s) return;
+    for (let guard = 0; guard < 5000 && settingUp(s) && (!human(s.turn) || autoSetup); guard++) {
+      const next = play(s, decide(s, human(s.turn) ? "normal" : level, random), random);
+      if (!next) break;
+      s = next;
+    }
+    if (s === state) return computer();
+    if (!settingUp(s)) autoSetup = false;
+    // A computer's step already waiting on its timer is let go, so that it cannot clear the flag of the next one.
+    generation++;
+    thinking = false;
+    showing = null;
+    const before = state!;
+    state = s;
+    if (view) view.sync(s, false);
+    effects(before, s);
+    shown = s;
+    update();
+    computer();
   }
   /** The computer plays one visible step at a time (quickly while setting up); an attack is shown by its arrow first. */
   function computer() {
@@ -685,6 +718,13 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     $("cq-count").textContent = String(count);
     $<HTMLButtonElement>("cq-less").disabled = !range || count <= range[0];
     $<HTMLButtonElement>("cq-more").disabled = !range || count >= range[1];
+    const slider = $<HTMLInputElement>("cq-slider");
+    if (range) {
+      slider.min = String(range[0]);
+      slider.max = String(range[1]);
+      slider.value = String(count);
+    }
+    slider.disabled = !range || range[0] === range[1];
     const place = $<HTMLButtonElement>("cq-place");
     place.hidden = !(me && s.phase === "reinforce" && selected >= 0);
     place.disabled = waiting || selected < 0 || mustTrade(s);

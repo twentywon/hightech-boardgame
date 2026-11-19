@@ -3355,3 +3355,7 @@ html[data-capture] :is(.mg-card, .mg-power, .mg-view) { display:none !important;
   .mg-card td.sum { min-width:28px; }
   .mg-power { left:12px;width:11px; }
 }
+/* 대륙 쟁탈전: the slider beside the − n + stepper (the user asked to set the armies moved by sliding). */
+.cq-stepper input[type="range"] { width:160px;margin:0 6px 0 4px;accent-color:#ffd24a;cursor:pointer; }
+.cq-stepper input[type="range"]:disabled { opacity:.4;cursor:default; }
+@media (max-height: 500px) and (orientation: landscape) { .cq-stepper input[type="range"] { width:110px; } }
