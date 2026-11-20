@@ -52,6 +52,7 @@ import {
   UP,
   attempt,
   back,
+  faceIn,
   handle,
   heightOf,
   ids,
@@ -261,7 +262,8 @@ type Part = "frame" | "cap" | "boards" | "floors" | "brass" | "burnt" | "skirt" 
 const PARTS: Part[] = ["frame", "cap", "boards", "floors", "brass", "burnt", "skirt", "mark"];
 /**
  * A toymaker's marble run on a workbench: a round maple turntable with a 4 × 4 grid inlaid, and towers of the kit,
- * each a column of open frames of its own wood with a painted cap and an ivory peg on the cap's yaw-0 side. In the
+ * each a column of open frames of its own wood with a painted cap carrying an ivory arrowhead toward the side its
+ * topmost ramp sends the marble (`model`). In the
  * frames: ramps (a walnut board sloping to its exit, a brass lip along its low edge, an arrow burnt into it pointing
  * out, a brass arch over the exit and low walls on its closed sides), straight and turning channels and crossings
  * (a pale floor with low walls and an arch at each opening) and hanging crossings (the same fixed under the cube's
@@ -295,6 +297,7 @@ export class MarbleView extends TableView<State> {
   private ghostStuffs: Record<"gold" | "green", T.Material>;
   private proxyStuff: T.Material;
   private shapes: Record<"proxy" | "plot" | "base" | "funnel" | "hole" | "cupRim" | "felt" | "pin" | "knob" | "pennant" | "lockPin", T.BufferGeometry>;
+  /** By kit tower × 2 (+ 1 for the model of it stood on its head). */
   private models = new Map<number, Record<Part, T.BufferGeometry | null>>();
   private trayShapes = new Map<string, T.BufferGeometry>();
   private scenery: ReturnType<typeof workshop>;
@@ -457,9 +460,15 @@ export class MarbleView extends TableView<State> {
       this.plots.push(plot);
     }
   }
-  /** A kit tower's parts, merged by stuff, in its own frame (units up +y from its foot, north −z). */
-  private model(kind: number) {
-    const known = this.models.get(kind);
+  /**
+   * A kit tower's parts, merged by stuff, in its own frame (units up +y from its foot, north −z). Stood on its head
+   * (`inverted`) its ramps are built as they then work: turned over, a ramp's plate slopes down to what was its high
+   * back, so each is laid as the ramp it becomes (`faceIn`), turned over within its cube, so that once the tower is
+   * turned over its board, arch and burnt arrow face the side the marble leaves by.
+   */
+  private model(kind: number, inverted = false) {
+    const key = kind * 2 + (inverted ? 1 : 0),
+      known = this.models.get(key);
     if (known) return known;
     const parts: Record<Part, T.BufferGeometry[]> = { frame: [], cap: [], boards: [], floors: [], brass: [], burnt: [], skirt: [], mark: [] },
       add = (into: Part, geometry: T.BufferGeometry, matrix: T.Matrix4) => parts[into].push((geometry.index ? geometry.toNonIndexed() : geometry.clone()).applyMatrix4(matrix)),
@@ -472,7 +481,7 @@ export class MarbleView extends TableView<State> {
       post = block(BAR, tall, BAR, 0.015),
       knob = block(0.1, 0.08, 0.1, 0.028);
     // The frame: four posts all the way up, a ring of bars at its foot, between each two cubes and at its top
-    // (painted, with knobs at the corners); an ivory peg on the cap's north bar marks its yaw-0 side.
+    // (painted, with knobs at the corners).
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) add("frame", post, at(sx * EDGE, tall / 2, sz * EDGE));
     for (let k = 0; k <= n; k++) {
       const y = k === 0 ? BAR / 2 : k === n ? tall - BAR / 2 : k * HIGH,
@@ -481,11 +490,48 @@ export class MarbleView extends TableView<State> {
       for (const sx of [-1, 1]) add(into, barZ, at(sx * EDGE, y, 0));
     }
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (const y of [0.04, tall - 0.04]) add("cap", knob, at(sx * EDGE, y, sz * EDGE));
-    const peg = new T.CylinderGeometry(0.045, 0.045, 0.05, 16);
-    add("mark", peg, at(0, tall + 0.02, -EDGE));
-    add("mark", peg, at(0, -0.02, -EDGE));
-    peg.dispose();
-    units.forEach((unit, i) => this.inside(unit, (into, geometry, matrix) => add(into, geometry, new T.Matrix4().makeTranslation(0, i * HIGH, 0).multiply(matrix))));
+    // The end that shows on top (the cap, or the foot of a tower on its head; both ends of a lying one) carries an
+    // ivory arrowhead with a walnut rim pointing out of the side its topmost ramp sends the marble, as the tower now
+    // stands. A tower with no ramp (F, a crossing whichever way it is turned) has four ivory studs there instead,
+    // and so has the other end.
+    // Turned over, a ramp facing d leaves by faceIn(d + 2) (`exitsOf`); and a side d of the tower's own frame faces
+    // faceIn(d) in the world, so an arrow drawn on the foot toward d + 2 points where that ramp sends the marble.
+    const over = { lying: false, inverted: true, roll: 0, yaw: 0 },
+      ramps = units.flatMap((unit, i) => (unit.kind === RAMP ? [i] : [])),
+      ends: { y: number; dir: number }[] = [
+        { y: tall, dir: !inverted && ramps.length ? units[ramps[ramps.length - 1]].face : -1 },
+        { y: 0, dir: inverted && ramps.length ? (units[ramps[0]].face + 2) % 4 : -1 },
+      ];
+    const head = arrowhead(1, 0.016),
+      rim = arrowhead(1.22, 0.012),
+      stud = new T.CylinderGeometry(0.03, 0.03, 0.03, 12);
+    for (const { y, dir } of ends) {
+      const out = y > 0 ? 1 : -1;
+      if (dir < 0) {
+        for (let f = 0; f < 4; f++) add("mark", stud, new T.Matrix4().makeRotationY(spin(f)).multiply(at(0, y + out * 0.012, -EDGE)));
+        continue;
+      }
+      const turn = new T.Matrix4().makeRotationY(spin(dir));
+      add("boards", rim, at(0, y + out * 0.004, 0).multiply(turn));
+      add("mark", head, at(0, y + out * 0.01, 0).multiply(turn));
+    }
+    head.dispose();
+    rim.dispose();
+    stud.dispose();
+    units.forEach((unit, i) => {
+      const lift = new T.Matrix4().makeTranslation(0, i * HIGH, 0);
+      // A ramp on its head: laid as the ramp it works as, turned over within its cube (the tower's own turn over
+      // then sets it upright again).
+      if (inverted && unit.kind === RAMP) {
+        const back = new T.Matrix4()
+            .makeTranslation(0, HIGH / 2, 0)
+            .multiply(new T.Matrix4().makeRotationX(Math.PI))
+            .multiply(new T.Matrix4().makeTranslation(0, -HIGH / 2, 0)),
+          works = faceIn(over, (unit.face + 2) % 4);
+        return this.inside({ kind: RAMP, face: works }, (into, geometry, matrix) => add(into, geometry, lift.clone().multiply(back).multiply(matrix)));
+      }
+      this.inside(unit, (into, geometry, matrix) => add(into, geometry, lift.clone().multiply(matrix)));
+    });
     for (const g of [barX, barZ, post, knob]) g.dispose();
     const merged = {} as Record<Part, T.BufferGeometry | null>;
     for (const name of PARTS) {
@@ -493,7 +539,7 @@ export class MarbleView extends TableView<State> {
       merged[name] = list.length ? this.own(mergeGeometries(list)!) : null;
       for (const g of list) g.dispose();
     }
-    this.models.set(kind, merged);
+    this.models.set(key, merged);
     return merged;
   }
   /**
@@ -578,7 +624,7 @@ export class MarbleView extends TableView<State> {
   /** A tower as meshes: its parts in their stuffs, and a solid box a unit for presses (`userData` on each). */
   private figure(t: Tower, fixed: boolean, tag: { kind: "tray" | "given"; index: number }) {
     const group = new T.Group(),
-      model = this.model(t.kind),
+      model = this.model(t.kind, !t.lying && !!t.inverted),
       wood = this.woods[t.kind],
       stuff: Record<Part, T.Material> = {
         frame: fixed ? wood.fixed : wood.live,
@@ -627,7 +673,8 @@ export class MarbleView extends TableView<State> {
     let ghost = this.ghosts.get(key);
     if (!ghost) {
       ghost = new T.Group();
-      const model = this.model(this.state!.tray[j].kind);
+      const t = this.state!.tray[j],
+        model = this.model(t.kind, !t.lying && !!t.inverted);
       for (const geometry of Object.values(model)) {
         if (!geometry) continue;
         const mesh = new T.Mesh(geometry, this.ghostStuffs[kind]);
@@ -1319,6 +1366,23 @@ const SOUTH_DIR = 2;
 void DOWN;
 void OPEN;
 const at3 = (x: number, y: number, z: number) => new T.Matrix4().makeTranslation(x, y, z);
+/**
+ * The mark of a tower's way out: a flat arrowhead with a notched back lying on the end of the tower, its tip at the
+ * frame's bar on side north (−z) and its back over the open cube, `thick` through and centred on y = 0; `scale`
+ * grows it about its middle (for its dark rim).
+ */
+function arrowhead(scale: number, thick: number) {
+  const mid = 0.32,
+    point = (x: number, y: number): [number, number] => [x * scale, mid + (y - mid) * scale],
+    shape = new T.Shape();
+  shape.moveTo(...point(0, 0.43));
+  shape.lineTo(...point(0.18, 0.2));
+  shape.lineTo(...point(0, 0.27));
+  shape.lineTo(...point(-0.18, 0.2));
+  shape.closePath();
+  // Drawn in x–y with its tip toward +y, extruded along z, then laid down so that +y points north.
+  return new T.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: false }).translate(0, 0, -thick / 2).rotateX(-Math.PI / 2);
+}
 /**
  * An arch standing in the north face of a unit (its foot at y = 0): two jambs and a round head round an opening the
  * marble goes through, extruded thin.

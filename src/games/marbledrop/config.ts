@@ -1,7 +1,7 @@
 import { capturing } from "../../ui/banner";
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { CELLS, GO, KIT, PUT, STAGES, hint, marbleDrop, postureOf, putOf, refusal, stageOf, voxelsOf, type State } from "./rules";
+import { CELLS, DOWN, GO, KIT, PUT, STAGES, UP, hint, marbleDrop, markExit, markedRamp, postureOf, putOf, refusal, stageOf, voxelsOf, type State } from "./rules";
 import { funnelLevel } from "./layout";
 import { MARBLE_COLORS, MarbleView, marbleKeyPoints } from "./view";
 
@@ -115,9 +115,10 @@ const NAMES = ["쉬움", "보통", "어려움", "고수"],
 const esc = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 /**
  * The challenge card, our own: the grid seen from above with the fixed towers (each in its cap's colour, its height
- * in storeys written on it, an ivory notch on the side its peg faces), the start's funnel and the target's flag; and
- * under it the towers to add, by their caps' colours and letters: a square stands, a square with a notch at its foot
- * stands on its head, a long bar lies.
+ * in storeys written on it, and the arrowhead its cap carries: toward the side its topmost ramp sends the marble; on
+ * a lying tower at its cap end, or a ringed dot there when that ramp drops the marble through), the start's funnel
+ * and the target's flag; and under it the towers to add, by their caps' colours and letters (they have no turn yet,
+ * so no arrow): a square stands, a square with a small triangle at its foot stands on its head, a long bar lies.
  */
 export function challengeCard(state: State) {
   const cell = 26,
@@ -127,16 +128,16 @@ export function challengeCard(state: State) {
     rows = Math.ceil(state.tray.length / 4),
     height = y0 + cell * 4 + 30 + rows * 34 + 8,
     at = (c: number) => ({ x: x0 + (c % 4) * cell, y: y0 + Math.floor(c / 4) * cell }),
-    notch = (x: number, y: number, dir: number, size: number) => {
+    /** The cap's arrowhead in a square of `size` at (x, y): its tip at the edge toward `dir`, its notched back inward. */
+    pointer = (x: number, y: number, dir: number, size: number) => {
       const cx = x + size / 2,
-        cy = y + size / 2,
-        d = [
-          [0, -1],
-          [1, 0],
-          [0, 1],
-          [-1, 0],
-        ][dir];
-      return `<circle cx="${cx + (d[0] * size) / 2.6}" cy="${cy + (d[1] * size) / 2.6}" r="2.3" fill="#fbf6e6" stroke="#5a3a24" stroke-width="0.6"/>`;
+        cy = y + size / 2;
+      if (dir === DOWN) return `<circle cx="${cx}" cy="${cy}" r="3.6" fill="#fbf6e6" stroke="#2a1a10" stroke-width="0.9"/><circle cx="${cx}" cy="${cy}" r="1.3" fill="#2a1a10"/>`;
+      if (dir < 0 || dir === UP) return "";
+      const h = size / 2,
+        // Drawn pointing up (north), then turned to its side.
+        path = `M0 ${-h + 0.5} L${h * 0.46} ${-h * 0.45} L0 ${-h * 0.6} L${-h * 0.46} ${-h * 0.45}Z`;
+      return `<path d="${path}" transform="translate(${cx} ${cy}) rotate(${dir * 90})" fill="#fbf6e6" stroke="#2a1a10" stroke-width="0.9" stroke-linejoin="round"/>`;
     };
   let svg = `<rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="10" fill="#fbf3e0" stroke="#a47a52" stroke-width="1.5"/><text x="${width / 2}" y="19" text-anchor="middle" font-size="11" font-weight="700" fill="#5a3a24">도전 카드</text>`;
   for (let c = 0; c < 16; c++) {
@@ -167,16 +168,25 @@ export function challengeCard(state: State) {
         w = Math.max(...xs) - Math.min(...xs) + cell - 8,
         h = Math.max(...ys) - Math.min(...ys) + cell - 14;
       svg += `<rect x="${lx}" y="${ly}" width="${w}" height="${h}" rx="4" fill="${paint}" stroke="#3a2616" stroke-width="1"/>`;
+      // The arrowhead on its cap end, in that cell.
+      const capCell = voxelsOf(t).find((v) => v.unit === KIT[t.kind].units.length - 1)?.cell;
+      if (capCell !== undefined && cells.includes(capCell) && markedRamp(t) >= 0) {
+        const { x, y } = at(capCell);
+        svg += pointer(x + 4, y + 4, markExit(t), cell - 8);
+      }
     } else
       for (const c of cells) {
         const { x, y } = at(c);
-        svg += `<rect x="${x + 4}" y="${y + 4}" width="${cell - 8}" height="${cell - 8}" rx="3" fill="${paint}" stroke="#3a2616" stroke-width="1"/>${notch(x + 4, y + 4, (t.inverted ? (t.yaw + 2) % 4 : t.yaw) % 4, cell - 8)}${t.inverted ? `<path d="M${x + cell / 2 - 3} ${y + cell - 7} h6 l-3 3z" fill="#fbf6e6"/>` : ""}<text x="${x + cell / 2}" y="${y + cell / 2 + 4}" text-anchor="middle" font-size="10" font-weight="800" fill="#fff">${heights.get(c)}</text>`;
+        svg += `<rect x="${x + 4}" y="${y + 4}" width="${cell - 8}" height="${cell - 8}" rx="3" fill="${paint}" stroke="#3a2616" stroke-width="1"/>${pointer(x + 4, y + 4, markExit(t), cell - 8)}${t.inverted ? `<path d="M${x + 5} ${y + cell - 9} h4 l-2 3.4z" fill="#fbf6e6" stroke="#2a1a10" stroke-width="0.5"/>` : ""}<text x="${x + cell / 2}" y="${y + cell / 2 + 4}" text-anchor="middle" font-size="10" font-weight="800" fill="#fff" stroke="#3a2616" stroke-width="0.6" paint-order="stroke">${heights.get(c)}</text>`;
       }
   });
   const s = at(state.start),
     g = at(state.goal),
     funnelTop = funnelLevel(state);
   svg += `<circle cx="${s.x + cell / 2}" cy="${s.y + cell / 2}" r="7" fill="#d9a845" stroke="#8a6420" stroke-width="1.2"/><circle cx="${s.x + cell / 2}" cy="${s.y + cell / 2}" r="2.6" fill="#1a120c"/><text x="${s.x + cell - 3}" y="${s.y + 9}" text-anchor="end" font-size="8" font-weight="800" fill="#5a3a24">${funnelTop}</text>`;
+  // The start's arrow over its funnel: where the marble first rolls.
+  const startTower = state.given.find((t) => voxelsOf(t).some((v) => v.cell === state.start));
+  if (startTower) svg += pointer(s.x + 4, s.y + 4, markExit(startTower), cell - 8);
   svg += `<circle cx="${g.x + cell / 2}" cy="${g.y + cell / 2}" r="8" fill="#d9a845"/><circle cx="${g.x + cell / 2}" cy="${g.y + cell / 2}" r="5.5" fill="#2a6a3b"/><path d="M${g.x + cell - 6} ${g.y + cell / 2 + 2} v-13 h7 v5 h-7" fill="#fbfaf5" stroke="#1d1d22" stroke-width="0.8"/>`;
   // The towers to add.
   const ty = y0 + cell * 4 + 14;
@@ -196,17 +206,22 @@ export function challengeCard(state: State) {
   const words = `도전 카드: 놓을 탑 ${state.tray.map((t) => `${KIT[t.kind].id}(${["세워서", "거꾸로 세워서", "눕혀서"][postureOf(t)]})`).join(", ")}`;
   return `<figure class="md-card" style="margin:0;display:flex;justify-content:center"><svg viewBox="0 0 ${width} ${height}" width="${width * 1.35}" height="${height * 1.35}" role="img" aria-label="${esc(words)}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto">${svg}</svg></figure>`;
 }
-/** A tower's levels in words, bottom to top, with the ways as seen from above with its ivory peg at the top. */
+/**
+ * A tower's levels in words, bottom to top, with the ways as seen from above standing upright with its cap's arrow
+ * pointing up (`markedRamp`: the arrow is its topmost ramp's way out).
+ */
 function towerWords(kind: number) {
-  const side = ["위", "오른쪽", "아래", "왼쪽"];
+  const marked = markedRamp({ kind, lying: false, inverted: false }),
+    turn = marked >= 0 ? KIT[kind].units[marked].face : 0,
+    side = (face: number) => ["위", "오른쪽", "아래", "왼쪽"][(face - turn + 4) % 4];
   return KIT[kind].units
     .map((u) =>
       u.kind === 1
-        ? `경사(${side[u.face]})`
+        ? `경사(${side(u.face)})`
         : u.kind === 2
-          ? `곧은 길(${side[u.face % 2]}–${side[(u.face % 2) + 2]})`
+          ? `곧은 길(${(u.face - turn + 4) % 2 === 0 ? "위–아래" : "오른쪽–왼쪽"})`
           : u.kind === 3
-            ? `굽은 길(${side[u.face]}–${side[(u.face + 1) % 4]})`
+            ? `굽은 길(${side(u.face)}–${side(u.face + 1)})`
             : u.kind === 4
               ? "십자 길"
               : u.kind === 5
@@ -255,7 +270,7 @@ export const marbleDropConfig: PointConfig<State> = {
   name: "구슬 낙하 미로",
   english: "Marble Drop Maze",
   number: "NO. 80 — LET GRAVITY DO THE REST",
-  intro: `<p>장난감 공방의 작업대 위, 돌림판에 새긴 4×4 칸.<br>늘 같은 아홉 개의 탑으로, 도전 카드가 말하는 탑을 세우거나 거꾸로 세우거나 눕혀 놓아서, 깔때기에 넣은 구슬이 중력만으로 도착 컵에 들어가게 하세요. 어느 탑을, 어디에, 어느 쪽으로 돌려 놓느냐가 퍼즐입니다. ThinkFun의 'Gravity Maze'와 같은 규칙의 퍼즐이고, 문제는 매번 새로 만들어지며 답은 하나뿐입니다.</p>`,
+  intro: `<p>장난감 공방의 작업대 위, 돌림판에 새긴 4×4 칸.<br>늘 같은 아홉 개의 탑으로, 도전 카드가 말하는 탑을 세우거나 거꾸로 세우거나 눕혀 놓아서, 깔때기에 넣은 구슬이 중력만으로 판 위의 모든 탑을 지나 도착 컵에 들어가게 하세요. 어느 탑을, 어디에, 어느 쪽으로 돌려 놓느냐가 퍼즐입니다. ThinkFun의 'Gravity Maze'와 같은 규칙의 퍼즐이고, 문제는 매번 새로 만들어지며 답은 하나뿐입니다.</p>`,
   meta: "1인 · 4×4 돌림판 · 탑 아홉 개 · 문제는 무작위",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>LET GRAVITY DO THE REST</span>`,
   artClass: "morris-art",
@@ -268,10 +283,10 @@ export const marbleDropConfig: PointConfig<State> = {
       "기본 규칙",
       steps(
         "판에는 처음부터 <b>출발</b>(놋쇠 깔때기를 얹은 탑)과 <b>도착 컵</b>, 그리고 짙은 색의 <b>고정 탑</b>이 놓여 있습니다. 고정 탑은 움직일 수 없습니다.",
-        "<b>도전 카드</b>에 그려진 <b>놓을 탑을 모두</b> 쟁반에서 판으로 끌어다 놓습니다. 네모는 세워서, 아래에 흰 홈이 있는 네모는 거꾸로 세워서, 긴 막대는 눕혀서 놓는 탑이고, 그 자세는 바뀌지 않습니다.",
+        "<b>도전 카드</b>에 그려진 <b>놓을 탑을 모두</b> 쟁반에서 판으로 끌어다 놓습니다. 네모는 세워서, 아래에 흰 세모가 있는 네모는 거꾸로 세워서, 긴 막대는 눕혀서 놓는 탑이고, 그 자세는 바뀌지 않습니다.",
         "놓은 탑은 누를 때마다 시계 방향으로 한 번씩 돌아갑니다(누운 탑은 놓일 수 있는 방향으로만). 탑마다 경사가 정해진 방향을 향하고 있어서, 탑을 돌리면 모든 층의 출구가 함께 돌아갑니다. <b>어느 탑을, 어디에, 어느 쪽으로</b> 놓느냐가 퍼즐입니다.",
-        "깔때기를 누르면 구슬이 출발 탑 맨 위로 떨어져 굴러갑니다. 구슬이 <b>도착 컵</b>에 들어가면 성공입니다. 놓은 탑을 구슬이 모두 지나가지 않아도 됩니다.",
-        "구슬이 막히거나 너무 깊이 떨어지거나 판 밖으로 나가면 실패입니다. 붉은 표시가 그 자리를 알려 줍니다. 무르기로 되돌려 다시 해 보세요.",
+        "깔때기를 누르면 구슬이 출발 탑 맨 위로 떨어져 굴러갑니다. 구슬이 <b>판 위의 모든 탑</b>(처음부터 놓인 탑과 출발 탑까지)을 지나서 <b>도착 컵</b>에 들어가면 성공입니다.",
+        "구슬이 막히거나 너무 깊이 떨어지거나 판 밖으로 나가면 실패이고, 도착 컵에 들어가도 지나가지 않은 탑이 있으면 실패입니다. 붉은 표시가 그 자리나 그 탑을 알려 줍니다. 무르기로 되돌려 다시 해 보세요.",
       ),
     ) +
     part(
@@ -286,7 +301,10 @@ export const marbleDropConfig: PointConfig<State> = {
         ["십자 길", "네 옆면 모두에 아치가 있는 칸입니다. 어느 쪽으로 들어온 구슬이든 곧장 맞은편으로 나갑니다."],
         ["매달린 십자 길", "십자 길이 칸의 천장에 거꾸로 매달려 있습니다. 바로 선 탑에서는 바닥이 없어 빈 칸과 같고, 탑을 <b>거꾸로 세우면</b> 바닥이 되어 십자 길로 쓰입니다."],
         ["빈 칸", "틀만 있는 칸입니다. 옆에서 들어오거나 위에서 떨어진 구슬은 그대로 아래로 떨어집니다."],
-        ["거꾸로 선 탑", "모든 칸이 뒤집힙니다. 경사는 막힌 칸이 되고, 바닥이 위로 간 길은 빈 칸이 되며, 매달린 십자 길만 십자 길이 됩니다."],
+        [
+          "거꾸로 선 탑",
+          "모든 칸이 뒤집힙니다. 경사는 뒤집혀도 <b>경사</b>여서 위에서 받은 구슬을 내보내는데, 판이 뒤집혀 <b>전에 높던 쪽</b>으로 내려갑니다. 바닥이 위로 간 길은 빈 칸이 되고, 매달린 십자 길은 십자 길이 됩니다.",
+        ],
         ["누운 탑", "모든 칸이 옆으로 눕습니다. 길은 바닥이 옆을 향해 빈 칸이 되고, 경사는 탑의 끝 쪽에서 들어온 구슬을 옆으로 꺾거나 아래로 떨어뜨리거나 막습니다."],
         ["출발", "놋쇠 깔때기를 얹은 고정 탑입니다. 맨 위 칸이 경사이고, 구슬은 여기서 출발합니다."],
         ["도착 컵", "판 바닥에 놓인 펠트 컵입니다. 바닥 층에서 옆으로 굴러오거나, 한 층 위에서 떨어진 구슬을 받습니다."],
@@ -295,7 +313,15 @@ export const marbleDropConfig: PointConfig<State> = {
     part(
       "탑 아홉 개",
       table(
-        ["방향", "탑마다 뚜껑 한쪽에 <b>상아 못</b>이 박혀 있습니다. 아래에 적은 방향은 그 못이 위쪽에 오게 두고 위에서 내려다볼 때입니다. 어느 문제에서나 탑의 칸은 늘 같습니다."],
+        [
+          "화살표",
+          "<b>뚜껑의 화살표 쪽이 맨 위 경사가 나가는 쪽</b>입니다. 거꾸로 세운 탑은 위로 올라온 밑면에, 그때 맨 위가 되는 경사의 출구를 가리키는 화살표가 있고, 누운 탑은 뚜껑 쪽 끝의 화살표가 그 경사의 출구를 가리킵니다. 경사가 없는 F에는 화살표 대신 점 네 개가 있습니다.",
+        ],
+        ["방향", "아래에 적은 방향은 탑을 바로 세워 뚜껑의 화살표가 위쪽을 가리키게 두고 위에서 내려다볼 때입니다. 어느 문제에서나 탑의 칸은 늘 같습니다."],
+        [
+          "도전 카드",
+          "고정 탑의 네모에도 그 탑 뚜껑의 화살표가 그려져 있습니다. 누운 탑은 뚜껑 쪽 끝에 그리고, 그 경사가 구슬을 아래로 떨어뜨리면 화살표 대신 고리 안의 점을 그립니다. 놓을 탑은 아직 방향이 없어 화살표가 없습니다.",
+        ],
         ...KIT.map((k, i): [string, string] => [`${k.id} (${k.units.length}층${k.count > 1 ? ` × ${k.count}` : ""})`, `${COLOURS[i]} 뚜껑. 아래부터 ${towerWords(i)}.`]),
       ),
     ) +
@@ -319,13 +345,18 @@ export const marbleDropConfig: PointConfig<State> = {
         ["경사가 아닌 곳", "구슬은 길 위로 <b>떨어질 수 없습니다</b>. 길에는 옆에서 굴러 들어가야 합니다."],
         ["수평 한 칸", "경사를 내려온 구슬은 길을 <b>한 칸만</b> 지날 수 있습니다. 그다음에는 경사로 떨어지거나 도착 컵에 들어가야 합니다."],
         ["막힌 벽", "경사의 옆면, 길의 막힌 쪽, 위로 향한 출구로는 지나갈 수 없습니다."],
+        [
+          "모든 탑",
+          "구슬은 판 위의 <b>모든 탑</b>을 한 번 이상 지나야 합니다. 경사를 내려가거나 길을 지나거나, 빈 칸에 굴러 들어가 그 아래로 떨어지면 그 탑을 지난 것입니다. 받침이 되는 탑과 출발 탑도 마찬가지입니다.",
+        ],
       ),
     ) +
     part(
       "처음이라면",
       notes(
         "출발의 경사가 향한 쪽부터 구슬이 갈 길을 한 칸씩 따라가 보세요. 구슬은 내려가기만 하고, 경사를 하나 지날 때마다 한 층씩 낮아집니다.",
-        "경사의 화살표와 놋쇠 아치가 출구입니다. 놓은 탑을 눌러 돌리며 맞추세요.",
+        "경사의 화살표와 놋쇠 아치가 출구이고, 뚜껑의 화살표는 맨 위 경사의 출구입니다. 놓은 탑을 눌러 돌리며 맞추세요.",
+        "구슬은 모든 탑을 지나야 하니, 다른 탑을 받치는 탑에도 구슬이 들어갈 길이 있어야 합니다. 위의 탑을 지난 구슬이 아래쪽으로 다시 돌아오는 길을 찾아보세요.",
         "판의 빈 곳을 끌면 돌림판과 쟁반의 탑이 함께 돌아가 탑의 뒤쪽을 볼 수 있습니다. 시점 전환을 누르면 처음 방향으로 돌아옵니다.",
         "힌트는 놓을 탑에 금색 고리를, 놓을 자리에 금색 그림자를 보여 줍니다. 받침이 되는 아래 탑부터 알려 줍니다.",
       ),

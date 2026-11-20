@@ -49,7 +49,20 @@ describe("marble drop maze: the kit", () => {
     // Ramps within a tower face set ways apart, so that turning the tower turns them together.
     for (const k of M.KIT.filter((k) => k.units.filter((u) => u.kind === RAMP).length > 1)) expect(new Set(k.units.filter((u) => u.kind === RAMP).map((u) => u.face)).size).toBeGreaterThan(1);
   });
-  test("a tower of more than one unit never makes the same thing at two yaws (answers are counted by what they make)", () => {
+  test("answers are counted by what towers do to the marble: turns of a tower that work alike are one", () => {
+    // F on its head is one crossing, open all ways: every turn of it works the same.
+    const keys = [0, 1, 2, 3].map((yaw) => M.wayKey(tower(K.F, 5, 0, yaw, "down"), 5, 0, yaw));
+    expect(new Set(keys).size).toBe(1);
+    // Standing, on its head or lying, every turn of a tower of more than one unit works differently.
+    for (let kind = 0; kind < M.KIT.length; kind++) {
+      if (M.KIT[kind].units.length < 2) continue;
+      for (const posture of ["up", "down", 0, 1, 2, 3] as const) {
+        const ways = [0, 1, 2, 3].map((yaw) => M.wayKey(tower(kind, 5, 1, yaw, posture), 5, 1, yaw)).filter(Boolean);
+        expect(new Set(ways).size, `${M.KIT[kind].id} ${posture}`).toBe(ways.length);
+      }
+    }
+  });
+  test("a tower of more than one unit never stands the same way at two yaws (a tap always turns it)", () => {
     for (let kind = 0; kind < M.KIT.length; kind++) {
       if (M.KIT[kind].units.length < 2) continue;
       for (const posture of ["up", "down", 0, 1, 2, 3] as const) {
@@ -84,11 +97,18 @@ describe("marble drop maze: units turned with their towers", () => {
     expect(ways({ kind: HANG, face: 0 }, up(2))).toEqual(none);
     expect(M.airIn({ kind: OPEN, face: 0 }, up(0))).toBe(true);
   });
-  test("on its head: a ramp is blocked from every side and no floor; channels are air; a hanging crossing becomes a crossing", () => {
-    for (let face = 0; face < 4; face++) {
-      expect(ways({ kind: RAMP, face }, down(face)).filter((x, from) => x >= 0 && M.wayKind(from, x) !== "blocked")).toEqual([]);
-      expect(M.airIn({ kind: RAMP, face }, down(face))).toBe(false);
-    }
+  test("on its head: a ramp is still a ramp, sloping down to what was its high back; channels are air; a hanging crossing becomes a crossing", () => {
+    for (let face = 0; face < 4; face++)
+      for (let yaw = 0; yaw < 4; yaw++) {
+        const ex = ways({ kind: RAMP, face }, down(yaw));
+        // Taken from above only, and out of the side its board now slopes down to.
+        expect(ex.flatMap((x, from) => (x >= 0 ? [from] : []))).toEqual([UP]);
+        expect(ex[UP]).toBe(M.faceIn(down(yaw), (face + 2) % 4));
+        expect(M.wayKind(UP, ex[UP])).toBe("descent");
+        expect(M.airIn({ kind: RAMP, face }, down(yaw))).toBe(false);
+      }
+    // North and south ramps leave the same way turned over; east and west ones the other way.
+    expect([NORTH, EAST, SOUTH, WEST].map((face) => ways({ kind: RAMP, face }, down(0))[UP])).toEqual([NORTH, WEST, SOUTH, EAST]);
     for (const kind of [FLAT, CORNER, CROSS] as M.Kind[]) expect(M.airIn({ kind, face: 1 }, down(1))).toBe(true);
     expect(M.airIn({ kind: HANG, face: 0 }, down(3))).toBe(false);
     expect(ways({ kind: HANG, face: 0 }, down(3))).toEqual([SOUTH, WEST, NORTH, EAST, -1, -1]);
@@ -114,6 +134,33 @@ describe("marble drop maze: units turned with their towers", () => {
         }
         for (const kind of [FLAT, CORNER, CROSS, HANG] as M.Kind[]) expect(M.airIn({ kind, face: 2 }, pose)).toBe(true);
       }
+  });
+  test("a tower's mark tells where the ramp that shows on top sends the marble: standing, on its head and lying", () => {
+    // B's topmost ramp faces east: turned a quarter it sends the marble south.
+    expect(M.markedRamp(tower(K.B))).toBe(3);
+    expect(M.markExit(tower(K.B, 5, 0, 1))).toBe(SOUTH);
+    // A's top is an empty cube: its mark tells of the ramp under it.
+    expect(M.markExit(tower(K.A, 5, 0, 0))).toBe(EAST);
+    // On its head the lowest ramp is on top: C's north ramp, turned over, still leaves north; B's corner-side ramp
+    // (west) turned over leaves east.
+    expect(M.markedRamp(tower(K.C, 5, 0, 0, "down"))).toBe(0);
+    expect(M.markExit(tower(K.C, 5, 0, 0, "down"))).toBe(NORTH);
+    expect(M.markExit(tower(K.B, 5, 0, 0, "down"))).toBe(EAST);
+    // Lying: the ramp nearest the cap, as the pose turns it (here across the axis, and through the bottom).
+    expect(M.markExit(tower(K.E, 5, 1, 1, NORTH))).toBe(NORTH);
+    expect(M.markExit(tower(K.E, 5, 1, 0, WEST))).toBe(DOWN);
+    // F has no ramp, and no arrow.
+    expect(M.markExit(tower(K.F, 5, 0))).toBe(-1);
+    // What the mark says is what the marble does: falling onto a standing tower's top ramp, it leaves that way.
+    for (let kind = 0; kind < M.KIT.length; kind++)
+      for (const posture of ["up", "down"] as const)
+        for (let yaw = 0; yaw < 4; yaw++) {
+          const t = tower(kind, 5, 0, yaw, posture),
+            top = M.voxelsOf(t).reduce((a, b) => (b.level > a.level ? b : a)),
+            unit = M.KIT[kind].units[top.unit];
+          if (unit.kind !== RAMP) continue;
+          expect(M.exitsOf(unit, t)[UP], `${M.KIT[kind].id} ${posture} ${yaw}`).toBe(M.markExit(t));
+        }
   });
   test("a tower's units stand up from its foot, on its head from its top, and lie in a row with the middle over its cell", () => {
     expect(M.voxelsOf(tower(K.C, 5, 1)).map((v) => [v.cell, v.level, v.unit])).toEqual([
@@ -175,6 +222,18 @@ describe("marble drop maze: the marble's way", () => {
     const left = go(laid({ goal: 1, tray: [tower(K.F)] }));
     expect([left.winner, left.trouble?.fault, left.trouble?.tray]).toEqual([1, "left", [0]]);
   });
+  test("a ramp on its head takes the marble from above and sends it on into the target", () => {
+    // E on cell 1 turned over: its ramp faced west, and on its head it slopes down to the east, into the cup on cell 2.
+    const won = go(laid({ goal: 2, given: [START, tower(K.E, 1, 0, 0, "down")] }));
+    expect(won.winner).toBe(0);
+    expect(won.run!.legs.map((l) => [l.kind, l.cell, l.level, l.dir])).toEqual([
+      ["start", 0, 2, DOWN],
+      ["ramp", 0, 1, EAST],
+      ["fall", 1, 1, DOWN],
+      ["ramp", 1, 0, EAST],
+      ["goal", 2, 0, -1],
+    ]);
+  });
   test("a lying ramp: in along its axis and turned across it, or dropped through its foot", () => {
     const pose = { lying: true, roll: NORTH, yaw: 1 },
       shape = M.shapeOf(K.E, pose),
@@ -192,11 +251,31 @@ describe("marble drop maze: the marble's way", () => {
     expect(M.hint(after)).toBeNull();
     expect(M.marbleDrop.reason(after)).toMatch(/^실패! /);
   });
-  test("any arrangement that brings the marble home wins: a tower it does not pass is no fault", () => {
-    const state = laid({ goal: 1, tray: [tower(K.F)] }),
-      placed = M.play(state, { from: CELLS, to: 12, extra: -1 })!;
-    expect(placed.tray[0].at).toBe(12);
-    expect(go(placed).winner).toBe(0);
+  test("home is a failure while a tower, fixed or placed, was never entered by the marble; one entered only as air counts", () => {
+    // A fixed E on cell 12, off the way.
+    const fixedOff = go(laid({ goal: 1, given: [START, tower(K.E, 12, 0)] }));
+    expect([fixedOff.winner, fixedOff.trouble?.fault, fixedOff.trouble?.piece, fixedOff.trouble?.at]).toEqual([1, "unused", 1, { cell: 12, level: 0 }]);
+    expect(fixedOff.trouble?.words).toMatch(/^구슬이 E 탑\(고정\)을 지나가지 않았습니다\./);
+    expect(M.marbleDrop.reason(fixedOff)).toMatch(/^실패! /);
+    // A placed F off the way is named before a fixed tower off it.
+    const state = laid({ goal: 1, given: [START, tower(K.E, 12, 0)], tray: [tower(K.F)] }),
+      placed = M.play(state, { from: CELLS, to: 13, extra: -1 })!,
+      after = go(placed);
+    expect([after.trouble?.fault, after.trouble?.piece]).toEqual(["unused", M.ids(placed).tray(0)]);
+    expect(M.unentered(placed, after.run!)).toEqual([2, 1]);
+    // F standing (its one cube air to the marble) on E, whose ramp is turned east: the marble rolls into F, falls
+    // through it onto E's ramp and runs into the target; both towers count as passed.
+    const through = laid({ goal: 2, given: [START, tower(K.E, 1, 0, 2), tower(K.F, 1, 1)] }),
+      won = go(through);
+    expect(won.winner).toBe(0);
+    expect(won.run!.legs.map((l) => [l.kind, l.piece])).toEqual([
+      ["start", -1],
+      ["ramp", 0],
+      ["fall", 2],
+      ["ramp", 1],
+      ["goal", -1],
+    ]);
+    expect([...M.entered(won.run!)].sort()).toEqual([0, 1, 2]);
   });
 });
 
@@ -267,7 +346,10 @@ describe("marble drop maze: building", () => {
   });
 });
 
-/** Every legal arrangement of the tray, built in every order by putting towers where they land, that wins. */
+/**
+ * Every legal arrangement of the tray, built in every order by putting towers where they land, that wins (the marble
+ * home through every tower), counted by what it does to the marble.
+ */
 function bruteForce(state: M.State) {
   const found = new Set<string>();
   const walk = (s: M.State) => {
@@ -276,7 +358,7 @@ function bruteForce(state: M.State) {
       if (!M.judge(s).trouble)
         found.add(
           s.tray
-            .map((t) => M.contentKey(t, t.at, t.level, t.yaw))
+            .map((t) => M.wayKey(t, t.at, t.level, t.yaw))
             .sort()
             .join("|"),
         );
@@ -315,10 +397,10 @@ describe("marble drop maze: puzzles", () => {
         if (stage.stacks) expect(done.tray.some((t) => !t.lying && t.level > 0)).toBe(true);
         else expect(done.tray.some((t) => t.level > 0)).toBe(false);
         expect(() => M.world(state)).not.toThrow();
-        // Every tray tower is one the marble passes in the answer it was built with.
-        const run = M.follow(done, M.world(done)),
-          passed = new Set(run.legs.map((l) => l.piece));
-        done.tray.forEach((_, j) => expect(passed.has(M.ids(done).tray(j))).toBe(true));
+        // The start is one tower, and the marble passes every tower, fixed ones too, in the answer it was built with.
+        expect(state.given.filter((t) => t.at === state.start)).toHaveLength(1);
+        const run = M.follow(done, M.world(done));
+        expect(M.unentered(done, run)).toEqual([]);
         expect(M.solutions(state, state.tray, 3).length).toBeLessThanOrEqual(stage.answers);
         expect(go(done).winner).toBe(0);
       }
@@ -356,7 +438,8 @@ describe("marble drop maze: puzzles", () => {
         solved = M.solutions(state, tray, 100000).length,
         brute = bruteForce(state);
       expect(solved, `seed ${seed}`).toBe(brute);
-      expect(solved).toBeGreaterThanOrEqual(1);
+      // The towers taken off can go back where they were; a spare tower besides must find a place on the way too.
+      if (tray.length === loose.length) expect(solved).toBeGreaterThanOrEqual(1);
       if (solved > 1) several++;
       cases++;
     }
