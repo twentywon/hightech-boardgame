@@ -49,6 +49,15 @@ describe("marble drop maze: the kit", () => {
     // Ramps within a tower face set ways apart, so that turning the tower turns them together.
     for (const k of M.KIT.filter((k) => k.units.filter((u) => u.kind === RAMP).length > 1)) expect(new Set(k.units.filter((u) => u.kind === RAMP).map((u) => u.face)).size).toBeGreaterThan(1);
   });
+  test("A, B and F stand on a foot that is air to the marble: F alone, A and B with a corner over it", () => {
+    const up = { lying: false, roll: 0, yaw: 0 },
+      airFoot = M.KIT.filter((k) => M.airIn(k.units[0], up)).map((k) => k.id);
+    expect(airFoot).toEqual(["A", "B", "F"]);
+    expect(M.KIT[K.F].units).toEqual([{ kind: HANG, face: 0 }]);
+    for (const id of ["A", "B"] as const) expect(M.KIT[K[id]].units[1].kind).toBe(CORNER);
+    // Every other tower stands on a unit that takes the marble: a ramp or a channel.
+    for (const id of ["C", "D", "E"] as const) expect(M.airIn(M.KIT[K[id]].units[0], up)).toBe(false);
+  });
   test("answers are counted by what towers do to the marble: turns of a tower that work alike are one", () => {
     // F on its head is one crossing, open all ways: every turn of it works the same.
     const keys = [0, 1, 2, 3].map((yaw) => M.wayKey(tower(K.F, 5, 0, yaw, "down"), 5, 0, yaw));
@@ -136,16 +145,19 @@ describe("marble drop maze: units turned with their towers", () => {
       }
   });
   test("a tower's mark tells where the ramp that shows on top sends the marble: standing, on its head and lying", () => {
-    // B's topmost ramp faces east: turned a quarter it sends the marble south.
+    // B's one ramp is its top and faces north: turned a quarter it sends the marble east.
     expect(M.markedRamp(tower(K.B))).toBe(3);
-    expect(M.markExit(tower(K.B, 5, 0, 1))).toBe(SOUTH);
-    // A's top is an empty cube: its mark tells of the ramp under it.
+    expect(M.markExit(tower(K.B, 5, 0, 1))).toBe(EAST);
+    // A's topmost ramp faces east (its other one, south, is lower down).
+    expect(M.markedRamp(tower(K.A))).toBe(4);
     expect(M.markExit(tower(K.A, 5, 0, 0))).toBe(EAST);
-    // On its head the lowest ramp is on top: C's north ramp, turned over, still leaves north; B's corner-side ramp
-    // (west) turned over leaves east.
+    // On its head the lowest ramp is on top: C's north ramp, turned over, still leaves north; A's south one too, and
+    // D's south one turned a quarter leaves west.
     expect(M.markedRamp(tower(K.C, 5, 0, 0, "down"))).toBe(0);
     expect(M.markExit(tower(K.C, 5, 0, 0, "down"))).toBe(NORTH);
-    expect(M.markExit(tower(K.B, 5, 0, 0, "down"))).toBe(EAST);
+    expect(M.markedRamp(tower(K.A, 5, 0, 0, "down"))).toBe(2);
+    expect(M.markExit(tower(K.A, 5, 0, 0, "down"))).toBe(SOUTH);
+    expect(M.markExit(tower(K.D, 5, 0, 1, "down"))).toBe(WEST);
     // Lying: the ramp nearest the cap, as the pose turns it (here across the axis, and through the bottom).
     expect(M.markExit(tower(K.E, 5, 1, 1, NORTH))).toBe(NORTH);
     expect(M.markExit(tower(K.E, 5, 1, 0, WEST))).toBe(DOWN);
@@ -197,9 +209,10 @@ describe("marble drop maze: the marble's way", () => {
     expect(won.winner).toBe(0);
     expect(M.marbleDrop.reason(won)).toMatch(/^성공! /);
   });
-  test("a descent at a tower's middle (through its empty cube), a crossing, then the target rolled into at level 0", () => {
+  test("a descent at a tower's middle (through its empty cube), a flat, then the target rolled into at level 0", () => {
     // Cell 1: C turned so that its foot ramp (north at yaw 0) faces east; its hanging crossing over it is air, so the
-    // marble rolling in at level 1 falls onto the ramp and leaves east at level 0 into cell 2: D's crossing, then cell 3.
+    // marble rolling in at level 1 falls onto the ramp and leaves east at level 0 into cell 2: D's flat (east–west at
+    // yaw 0), then cell 3.
     const state = laid({ given: [START, tower(K.C, 1, 0, 1), tower(K.D, 2, 0)], goal: 3 }),
       run = M.follow(state, M.world(state));
     expect(run.fault).toBeNull();
@@ -208,8 +221,8 @@ describe("marble drop maze: the marble's way", () => {
   });
   test("every fault: off the grid, a wall, momentum, onto a channel, more than one level, the grid, a tower left", () => {
     expect(fault(laid({ given: [tower(K.D, 3, 0, 3)], start: 3 }))).toEqual(["off", null]);
-    // A ramp entered from its side: B's ramp at level 1.
-    expect(fault(laid({ given: [START, tower(K.B, 1, 0)] }))).toEqual(["wall", { cell: 1, level: 1 }]);
+    // A ramp entered from its side: D's ramp at level 1.
+    expect(fault(laid({ given: [START, tower(K.D, 1, 0)] }))).toEqual(["wall", { cell: 1, level: 1 }]);
     // Falling onto a crossing (F on its head at cell 1, level 0).
     expect(fault(laid({ given: [START, tower(K.F, 1, 0, 0, "down")] }))).toEqual(["flat", { cell: 1, level: 0 }]);
     // Falling two levels.
@@ -221,6 +234,33 @@ describe("marble drop maze: the marble's way", () => {
     // Home, but with a tower still in the tray.
     const left = go(laid({ goal: 1, tray: [tower(K.F)] }));
     expect([left.winner, left.trouble?.fault, left.trouble?.tray]).toEqual([1, "left", [0]]);
+  });
+  test("a tower stacked on a ramp and passed twice: by its corner, and back from the next cell through its foot", () => {
+    // The start is C on cell 0, its top ramp (level 2) sending the marble east into cell 1 at level 2. There B stands
+    // on E: B turned a quarter, its corner (east–south at yaw 0) takes the marble in from the west and sends it south
+    // into cell 5; it falls onto D's ramp (south, turned to face north) and rolls back north into B's foot, the hanging
+    // crossing, air to it; through the foot it falls onto E's ramp (west, turned to face east) and runs into the cup.
+    const start = tower(K.C, 0, 0, 0),
+      e = tower(K.E, 1, 0, 2),
+      d = tower(K.D, 5, 0, 2),
+      b = tower(K.B, 1, 1, 1),
+      state = laid({ given: [start, e, d, b], goal: 2 }),
+      won = go(state);
+    expect(won.winner).toBe(0);
+    expect(won.run!.legs.map((l) => [l.kind, l.cell, l.level, l.piece])).toEqual([
+      ["start", 0, 3, -1],
+      ["ramp", 0, 2, 0],
+      ["corner", 1, 2, 3],
+      ["fall", 5, 2, -1],
+      ["ramp", 5, 1, 2],
+      ["fall", 1, 1, 3],
+      ["ramp", 1, 0, 1],
+      ["goal", 2, 0, -1],
+    ]);
+    // B is the only answer, and only turned so: its corner tells its turn, as falling through its foot would not.
+    const puzzle = laid({ given: [start, e, d], goal: 2, tray: [tower(K.B)] });
+    expect(M.solutions(puzzle, puzzle.tray, 10)).toEqual([[{ at: 1, level: 1, yaw: 1 }]]);
+    expect(bruteForce(puzzle)).toBe(1);
   });
   test("a ramp on its head takes the marble from above and sends it on into the target", () => {
     // E on cell 1 turned over: its ramp faced west, and on its head it slopes down to the east, into the cup on cell 2.
@@ -409,6 +449,21 @@ describe("marble drop maze: puzzles", () => {
     // About 200 ms in a browser is the budget.
     for (const list of times) expect(mean(list)).toBeLessThan(150);
   }, 120000);
+  test("stacked tray towers vary: none is the stacked one in most puzzles of a stage", () => {
+    M.STAGES.forEach((stage, i) => {
+      if (!stage.stacks) return;
+      const count = new Map<string, number>();
+      const N = 30;
+      for (let seed = 1; seed <= N; seed++) {
+        const state = M.createGame(i + 1, seededRandom(seed * 104729 + i));
+        const ids = new Set(state.tray.flatMap((t, j) => (!t.lying && state.answer[j].level > 0 ? [M.KIT[t.kind].id] : [])));
+        for (const id of ids) count.set(id, (count.get(id) ?? 0) + 1);
+      }
+      expect(count.size, `stage ${i + 1}`).toBeGreaterThanOrEqual(2);
+      for (const [id, n] of count) expect(n, `stage ${i + 1}: ${id}`).toBeLessThanOrEqual(0.75 * N);
+      expect(count.get("F") ?? 0).toBeGreaterThan(0);
+    });
+  }, 60000);
   test("the same random numbers lay the same puzzle", () => {
     expect(M.createGame(3, seededRandom(5))).toEqual(M.createGame(3, seededRandom(5)));
     expect(M.createGame(4, seededRandom(6))).not.toEqual(M.createGame(4, seededRandom(7)));
@@ -452,11 +507,20 @@ describe("marble drop maze: puzzles", () => {
     const state = laid({ goal: 2 });
     expect(M.solutions(state, [tower(K.E)], 50)).toEqual([[{ at: 1, level: 0, yaw: 2 }]]);
     expect(bruteForce({ ...state, tray: [tower(K.E)] })).toBe(1);
-    // A puzzle whose tray holds two of the same tower: the two set the other way round are the same answer.
+    // A puzzle whose tray holds two of the same tower (the rest set where the answer has them, so that two are left):
+    // the two set the other way round are the same answer.
     let checked = 0;
     for (let seed = 1; seed < 400 && checked < 2; seed++) {
-      const puzzle = M.createGame(1, seededRandom(seed));
-      if (puzzle.tray[0].kind !== puzzle.tray[1].kind) continue;
+      const source = M.createGame(2, seededRandom(seed)),
+        twin = source.tray.findIndex((t, j) => source.tray.some((q, k) => k !== j && q.kind === t.kind));
+      if (twin < 0) continue;
+      const pair = source.tray.flatMap((t, j) => (t.kind === source.tray[twin].kind ? [j] : [])),
+        puzzle = {
+          ...source,
+          given: [...source.given, ...source.tray.flatMap((t, j) => (pair.includes(j) ? [] : [{ ...t, ...source.answer[j] }]))],
+          tray: pair.map((j) => source.tray[j]),
+          answer: pair.map((j) => source.answer[j]),
+        };
       expect(M.solutions(puzzle, puzzle.tray, 50).length).toBe(1);
       expect(bruteForce(puzzle)).toBe(1);
       checked++;

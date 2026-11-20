@@ -176,15 +176,17 @@ const counted = async (page: Page, made: number) => {
 };
 const same = (a: rules.Tower, b: rules.Tower) => rules.contentKey(a, a.at, a.level, a.yaw) === rules.contentKey(b, b.at, b.level, b.yaw);
 
-test("marble drop maze: the card's towers are dragged to their places, a lying one among them, turned by taps, and the marble runs home", async ({ page }, info) => {
+test("marble drop maze: the card's towers are dragged to their places, a lying one and a stacked one among them, turned by taps, and the marble runs home", async ({ page }, info) => {
   test.setTimeout(180000);
   const mobile = info.project.name === "mobile",
-    random = await seeded(page, 81),
+    random = await seeded(page, 106),
     errors = await sit(page, 3);
   // A puzzle was laid as the screen was set up; the card pressed in the window lays the third stage's, the one chosen.
   rules.createGame(1, random);
   let state = rules.createGame(3, random);
   expect(state.tray.some((t) => t.lying)).toBe(true);
+  // This one stacks B, which the marble passes twice: by its corner, and back from the next cell through its foot.
+  expect(state.tray.some((t, j) => !t.lying && rules.KIT[t.kind].id === "B" && state.answer[j].level > 0)).toBe(true);
   // The challenge card in the panel names the towers to add and their postures.
   await expect(page.locator(".md-card svg")).toHaveAttribute("aria-label", /놓을 탑 .*눕혀서/);
   const hand = await table(page, mobile);
