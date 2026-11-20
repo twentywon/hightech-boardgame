@@ -73,7 +73,6 @@ import { dartsConfig } from "../games/darts/config";
 import { bowlingConfig } from "../games/bowling/config";
 import { minigolfConfig } from "../games/minigolf/config";
 import { frogConfig } from "../games/frog/config";
-import { marbleDropConfig } from "../games/marbledrop/config";
 import { laserConfig } from "../games/laser/config";
 import { nimConfig } from "../games/nim/config";
 import { tacticsConfig } from "../games/tactics/config";
@@ -245,7 +244,6 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   bowling: { config: bowlingConfig, options: { mode: "ai", variant: "duel", level: "normal" } },
   "mini-golf": { config: minigolfConfig, options: { mode: "ai", variant: "duel", level: "normal" } },
   "frog-hop": { config: frogConfig, options: { mode: "ai", variant: "1", level: "normal" } },
-  "marble-drop-maze": { config: marbleDropConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "laser-reflection": { config: laserConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   nim: { config: nimConfig, options: { mode: "ai", variant: "nim", level: "normal" } },
   "tactical-battle": { config: tacticsConfig, options: { mode: "ai", variant: "dungeon", level: "normal" } },
@@ -427,7 +425,6 @@ type GameSelection =
   | "bowling"
   | "mini-golf"
   | "frog-hop"
-  | "marble-drop-maze"
   | "laser-reflection"
   | "nim"
   | "tactical-battle"

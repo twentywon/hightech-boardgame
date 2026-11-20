@@ -286,18 +286,6 @@ const play = {
   "frog-hop": async () => {
     await stage(2);
   },
-  // A 고수 puzzle (always a lying tower and a stack) built by the hint's moves (H plays them while capturing, so the
-  // flag is set here already): stacked towers and one lying on two others stand on the turntable, the marble waits.
-  "marble-drop-maze": async () => {
-    await stage(3);
-    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
-    await wait(800);
-    for (let k = 0; k < 10; k++) {
-      await keys(["h"], 100);
-      await wait(700);
-    }
-    await wait(900);
-  },
   // The 어려움 answer set out by the hint's moves and the laser fired (H plays them, the firing too, while capturing):
   // the beam split and bent, two targets lit.
   "laser-reflection": async () => {
