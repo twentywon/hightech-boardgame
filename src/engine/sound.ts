@@ -472,6 +472,40 @@ export class Sound {
     this.tone("triangle", 880, 1760, 0.5, 1.3, 0.02);
     this.noise(0.2, 1.4, 0.03, 4000, "bandpass", 900);
   }
+  /**
+   * The angel's coming (전술 대전): a choir-like chord of soft voices swelling for a second, a shimmer rising under it,
+   * then at `flash` seconds a bright struck chord on bells with a glitter running up, the chord held as it dies away.
+   */
+  heavenly(flash = 1.15) {
+    const c = this.context;
+    if (!this.enabled || !c) return;
+    const now = c.currentTime;
+    for (const [f, detune] of [[261.63, -6], [329.63, 5], [392, -4], [523.25, 7], [261.63, 9], [392, 6]] as const) {
+      const o = c.createOscillator(),
+        low = c.createBiquadFilter(),
+        g = c.createGain();
+      o.type = "sawtooth";
+      o.frequency.value = f;
+      o.detune.value = detune;
+      low.type = "lowpass";
+      low.frequency.setValueAtTime(500, now);
+      low.frequency.linearRampToValueAtTime(1600, now + flash);
+      low.frequency.exponentialRampToValueAtTime(700, now + flash + 1.6);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.011, now + flash);
+      g.gain.setValueAtTime(0.011, now + flash + 0.15);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + flash + 1.7);
+      o.connect(low);
+      low.connect(g);
+      g.connect(c.destination);
+      o.start(now);
+      o.stop(now + flash + 1.75);
+    }
+    this.tone("sine", 300, 1400, 0, flash, 0.02);
+    this.noise(0.1, flash, 0.02, 2000, "bandpass", 7000);
+    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => this.bell(f, flash + i * 0.015, 1.5, 0.045));
+    [1568, 2093, 2637, 3136, 4186, 5274].forEach((f, i) => this.tone("sine", f, f, flash + 0.1 + i * 0.06, 0.45, 0.025));
+  }
   /** A bowling ball rolling away down its lane for `length` seconds: a low rumble that swells and fades as it goes. */
   rumble(length = 2.4) {
     if (!this.enabled || !this.context) return;

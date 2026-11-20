@@ -47,6 +47,9 @@ export interface Figure {
   fill: T.Mesh;
   /** Where its weapon or its hands are, in the body's own frame (where arrows and spells start). */
   hand: T.Vector3;
+  /** The angel's wings (turned and scaled about their root as they unfold) and her halo. */
+  wings?: T.Mesh[];
+  halo?: T.Mesh;
 }
 /** How a job is dressed: its robe or tunic, and the colour of the glow of its staff, if any. */
 const DRESS: Record<Job, { cloth: string; glow?: string }> = {
@@ -77,6 +80,8 @@ export function buildFigure(job: Job, side: Side, shapes: Shapes, own: Own): Fig
   const group = new T.Group(),
     body = new T.Group();
   group.add(body);
+  const wings: T.Mesh[] = [];
+  let halo: T.Mesh | undefined;
   const put = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, parent: T.Object3D = body) => {
     const mesh = new T.Mesh(geometry, material);
     mesh.position.set(x, y, z);
@@ -254,8 +259,8 @@ export function buildFigure(job: Job, side: Side, shapes: Shapes, own: Own): Fig
       arms(cloth, 0.4);
       face(0.63);
       put(shapes.get("hair", () => new T.SphereGeometry(0.125, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55)), paint("#f2d27a"), 0, 0.655, -0.01);
-      const halo = paint("#ffe9a0", { emissive: "#ffd45a", emissiveIntensity: 1.4, metalness: 0.4, roughness: 0.3 });
-      put(shapes.get("halo", () => new T.TorusGeometry(0.11, 0.018, 8, 28).rotateX(Math.PI / 2)), halo, 0, 0.85, 0);
+      const haloPaint = paint("#ffe9a0", { emissive: "#ffd45a", emissiveIntensity: 1.4, metalness: 0.4, roughness: 0.3 });
+      halo = put(shapes.get("halo", () => new T.TorusGeometry(0.11, 0.018, 8, 28).rotateX(Math.PI / 2)), haloPaint, 0, 0.85, 0);
       const feather = paint("#ffffff", { emissive: "#fff3d0", emissiveIntensity: 0.25, roughness: 0.6, side: T.DoubleSide });
       const wing = shapes.get("wing", () => {
         const s = new T.Shape();
@@ -270,6 +275,8 @@ export function buildFigure(job: Job, side: Side, shapes: Shapes, own: Own): Fig
         const w = put(wing, feather, sx * 0.05, 0.44, -0.12);
         w.scale.set(sx, 1, 1);
         w.rotation.y = sx * 0.55;
+        w.userData.rest = { yaw: w.rotation.y, sx };
+        wings.push(w);
       }
       const lance = new T.Group();
       lance.position.set(-0.22, 0.12, 0.14);
@@ -291,7 +298,7 @@ export function buildFigure(job: Job, side: Side, shapes: Shapes, own: Own): Fig
   bar.add(back, fill);
   group.add(bar);
   for (const m of paints) m.userData.glow = { color: m.emissive.clone(), intensity: m.emissiveIntensity };
-  return { group, body, job, paints, bar, fill, hand };
+  return { group, body, job, paints, bar, fill, hand, ...(wings.length ? { wings } : {}), ...(halo ? { halo } : {}) };
 }
 /** Facing 0..3 as a turn of a figure that looks along its own +z. */
 export const FACE_YAW = [Math.PI, Math.PI / 2, 0, -Math.PI / 2];

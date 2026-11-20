@@ -189,6 +189,10 @@ const GLOW: Record<Glow, [string, number]> = {
 };
 const additive = (color: string, opacity = 0.9) => new T.MeshBasicMaterial({ color, transparent: true, opacity, blending: T.AdditiveBlending, depthWrite: false });
 const ease = (p: number) => p * p * (3 - 2 * p);
+/** An ease that runs a little past its end and comes back. */
+const backOut = (p: number) => 1 + 2.4 * (p - 1) ** 3 + 1.4 * (p - 1) ** 2;
+/** How long the angel's coming takes (`ascend`). */
+const ASCENT = 2900;
 /** How long the card of a tapped unit stays, unless 상태 pins it. */
 export const PICKED_FOR = 3000;
 /**
@@ -222,6 +226,13 @@ export class TacticsView extends TableView<State> {
   private sparkles: T.Mesh[] = [];
   private pillar!: T.Mesh;
   private burst!: T.Mesh;
+  /** The angel's coming: a ring of runes under the healer, motes drawn into her, a shaft from above, rings of light
+   * running over the floor, and feathers drifting down. */
+  private sigil!: T.Mesh;
+  private motes: T.Mesh[] = [];
+  private shaft!: T.Mesh;
+  private waves: T.Mesh[] = [];
+  private plumes: T.Mesh[] = [];
   private layer: HTMLDivElement;
   private queueBar: HTMLDivElement;
   private ring: HTMLDivElement;
@@ -616,14 +627,118 @@ export class TacticsView extends TableView<State> {
     column.side = T.DoubleSide;
     this.pillar = new T.Mesh(keep(new T.CylinderGeometry(0.32, 0.32, 5, 20, 1, true).translate(0, 2.5, 0)), column);
     this.burst = new T.Mesh(keep(new T.SphereGeometry(0.5, 24, 16)), keep(additive("#ffffff", 0.9)));
-    for (const m of [this.arrow, this.orb, ...this.flames, this.beam, ...this.sparkles, this.pillar, this.burst]) {
+    this.heavenly(keep, column.alphaMap!);
+    for (const m of this.effectMeshes) {
       m.visible = false;
       m.renderOrder = 6;
       this.root.add(m);
     }
   }
+  private get effectMeshes(): T.Object3D[] {
+    return [this.arrow, this.orb, ...this.flames, this.beam, ...this.sparkles, this.pillar, this.burst, this.sigil, ...this.motes, this.shaft, ...this.waves, ...this.plumes];
+  }
   private hideEffects() {
-    for (const m of [this.arrow, this.orb, ...this.flames, this.beam, ...this.sparkles, this.pillar, this.burst]) m.visible = false;
+    for (const m of this.effectMeshes) m.visible = false;
+  }
+  /** The meshes of the angel's coming (see `sigil`). The ring of runes is painted once, in code: no letters of any script. */
+  private heavenly(keep: <R extends { dispose(): void }>(r: R) => R, fade: T.Texture) {
+    const size = 512,
+      canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const g = canvas.getContext("2d")!,
+      c = size / 2;
+    g.translate(c, c);
+    g.strokeStyle = g.fillStyle = "#fff";
+    g.lineCap = "round";
+    const circle = (r: number, w: number) => {
+      g.lineWidth = w;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.stroke();
+    };
+    circle(246, 6);
+    circle(230, 2.5);
+    circle(170, 4);
+    circle(156, 2);
+    circle(62, 3);
+    // A band of marks between the two outer circles: short strokes, dots and little arcs in a fixed order.
+    for (let k = 0; k < 48; k++) {
+      g.save();
+      g.rotate((k / 48) * Math.PI * 2);
+      g.lineWidth = 3;
+      g.beginPath();
+      const kind = k % 4;
+      if (kind === 0) {
+        // A small diamond, filled.
+        g.moveTo(0, -218);
+        g.lineTo(7, -200);
+        g.lineTo(0, -182);
+        g.lineTo(-7, -200);
+        g.closePath();
+        g.fill();
+      } else if (kind === 2) {
+        // A triangle pointing outward, open.
+        g.moveTo(0, -216);
+        g.lineTo(8, -188);
+        g.lineTo(-8, -188);
+        g.closePath();
+      } else {
+        // A short tick between two dots.
+        g.moveTo(0, -210);
+        g.lineTo(0, -190);
+        g.moveTo(-9, -200);
+        g.arc(-9, -200, 1.5, 0, Math.PI * 2);
+        g.moveTo(10.5, -200);
+        g.arc(9, -200, 1.5, 0, Math.PI * 2);
+      }
+      g.stroke();
+      g.beginPath();
+      g.arc(0, -238, 3, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    // Two squares turned against each other make an eight-pointed star, with a small circle at every point.
+    g.lineWidth = 4;
+    for (const turn of [0, Math.PI / 4]) {
+      g.beginPath();
+      for (let k = 0; k <= 4; k++) {
+        const a = turn + (k / 4) * Math.PI * 2;
+        g[k ? "lineTo" : "moveTo"](Math.cos(a) * 156, Math.sin(a) * 156);
+      }
+      g.stroke();
+    }
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.arc(Math.cos(a) * 112, Math.sin(a) * 112, 14, 0, Math.PI * 2);
+      g.stroke();
+    }
+    const glow = g.createRadialGradient(0, 0, 0, 0, 0, 120);
+    glow.addColorStop(0, "#ffffffaa");
+    glow.addColorStop(1, "#ffffff00");
+    g.fillStyle = glow;
+    g.fillRect(-c, -c, size, size);
+    const rune = keep(additive("#ffd86a", 0));
+    rune.map = keep(new T.CanvasTexture(canvas));
+    this.sigil = new T.Mesh(keep(new T.PlaneGeometry(2.7, 2.7).rotateX(-Math.PI / 2)), rune);
+    const mote = keep(new T.OctahedronGeometry(0.05)),
+      warm = keep(additive("#fff1b8", 1)),
+      gold = keep(additive("#ffc94a", 1));
+    for (let k = 0; k < 30; k++) this.motes.push(new T.Mesh(mote, k % 3 ? warm : gold));
+    const core = keep(additive("#ffffff", 0));
+    core.alphaMap = fade;
+    core.side = T.DoubleSide;
+    this.shaft = new T.Mesh(keep(new T.CylinderGeometry(0.16, 0.16, 7, 18, 1, true).translate(0, 3.5, 0)), core);
+    const band = keep(new T.RingGeometry(0.82, 1, 56).rotateX(-Math.PI / 2));
+    for (let k = 0; k < 3; k++) this.waves.push(new T.Mesh(band, keep(additive(k === 1 ? "#ffffff" : "#ffe08a", 0))));
+    const quill = new T.Shape();
+    quill.moveTo(0, -0.09);
+    quill.bezierCurveTo(0.05, -0.04, 0.045, 0.05, 0, 0.1);
+    quill.bezierCurveTo(-0.03, 0.05, -0.035, -0.04, 0, -0.09);
+    const down = keep(new T.MeshBasicMaterial({ color: "#fffdf4", transparent: true, opacity: 1, side: T.DoubleSide, depthWrite: false })),
+      feather = keep(new T.ShapeGeometry(quill, 6));
+    for (let k = 0; k < 16; k++) this.plumes.push(new T.Mesh(feather, down));
   }
   protected subject(aspect: number): TableSubject {
     return tacticsSubject(aspect);
@@ -775,7 +890,19 @@ export class TacticsView extends TableView<State> {
     const at = tileLocal(unit.cell);
     f.group.position.set(at.x, tileTop(this.field.id, unit.cell), at.z);
     f.group.rotation.set(0, FACE_YAW[unit.facing], 0);
+    f.group.scale.setScalar(1);
+    f.bar.visible = true;
     f.body.position.x = f.body.position.z = 0;
+    for (const w of f.wings ?? []) {
+      const rest = w.userData.rest as { yaw: number; sx: number };
+      w.rotation.y = rest.yaw;
+      w.scale.set(rest.sx, 1, 1);
+    }
+    if (f.halo) {
+      f.halo.position.y = 0.85;
+      f.halo.scale.setScalar(1);
+      f.halo.rotation.y = 0;
+    }
     f.fill.scale.x = Math.max(0.001, unit.hp / unit.max);
     for (const m of f.paints) {
       const glow = m.userData.glow as { color: T.Color; intensity: number };
@@ -1296,28 +1423,188 @@ export class TacticsView extends TableView<State> {
         end = Math.max(end, impact + 910);
       } else end = Math.max(end, impact + 320);
     }
-    // A healer left alone turns into the angel in a burst of light.
+    // A healer left alone turns into the angel (`ascend`).
     for (const id of last.angels ?? []) {
-      const healer = state.units[id],
-        centre = this.local(healer.cell, 0.45),
-        begin = end + 150;
-      this.tween(begin, 1000, (p) => {
-        this.burst.visible = p < 1;
-        this.burst.position.copy(centre);
-        this.burst.scale.setScalar(0.3 + ease(p) * 2.6);
-        (this.burst.material as T.MeshBasicMaterial).opacity = 0.95 * (1 - p);
-        this.pillar.visible = p < 1;
-        this.pillar.position.copy(centre).setY(centre.y - 0.45);
-        this.pillar.scale.set(0.6 + p, 1, 0.6 + p);
-        (this.pillar.material as T.MeshBasicMaterial).opacity = 0.7 * (1 - p);
+      this.ascend(state.units[id], end + 150);
+      end += 150 + ASCENT;
+    }
+  }
+  /**
+   * The angel's coming, from `begin` for `ASCENT` milliseconds. A ring of runes opens under the healer and turns, motes
+   * of light are drawn into her as she rises, glowing and turning faster; a shaft of light comes down on her; at the
+   * flash she is the angel, high in the shaft, coming down onto her tile as her wings unfold and her halo settles,
+   * while rings of light run out over the floor and feathers drift down.
+   */
+  private ascend(unit: Unit, begin: number) {
+    const healer = this.figures[unit.id],
+      ground = this.local(unit.cell, 0.03),
+      centre = this.local(unit.cell, 0.45),
+      flash = begin + 1150,
+      white = new T.Color("#fff6d8");
+    this.at(begin, () => this.onKnock?.("angel", 1));
+    // The ring of runes: it opens, turns all along and fades at the end.
+    this.tween(begin, ASCENT, (p) => {
+      const m = this.sigil.material as T.MeshBasicMaterial,
+        t = p * ASCENT;
+      this.sigil.visible = p < 1;
+      this.sigil.position.copy(ground);
+      this.sigil.scale.setScalar(0.2 + 0.8 * ease(Math.min(1, t / 520)) + 0.15 * Math.max(0, (t - 1150) / (ASCENT - 1150)));
+      this.sigil.rotation.y = p * Math.PI * 1.4;
+      const pulse = t > 1150 && t < 1500 ? 0.35 * (1 - (t - 1150) / 350) : 0;
+      m.opacity = Math.min(1, t / 380) * (t > ASCENT - 800 ? (ASCENT - t) / 800 : 1) + pulse;
+    });
+    // Motes of light spiral in from round the tile and up into her.
+    this.tween(begin + 120, 1030, (p) => {
+      const t = p * 1030;
+      this.motes.forEach((mote, k) => {
+        const own = Math.min(1, Math.max(0, (t - (k % 8) * 55) / 620)),
+          q = own * own,
+          a = k * 2.399 + own * 4.5,
+          r = (1.05 + (k % 4) * 0.13) * (1 - q);
+        mote.visible = own > 0 && own < 1 && p < 1;
+        mote.position.set(centre.x + Math.cos(a) * r, ground.y + (0.08 + (k % 5) * 0.2) * (1 - q) + 0.55 * q, centre.z + Math.sin(a) * r);
+        mote.scale.setScalar(0.6 + 0.8 * Math.sin(own * Math.PI));
+        mote.rotation.set(own * 6, own * 9, 0);
       });
-      this.at(begin + 380, () => {
-        const g = this.figureFor(healer);
-        this.stand(healer);
-        g.group.visible = true;
-        this.face();
+    });
+    // The healer rises a little, turns ever faster and glows white before the flash.
+    if (healer) {
+      const y = healer.group.position.y,
+        yaw = healer.group.rotation.y;
+      this.tween(begin, flash - begin, (p) => {
+        const e = ease(p);
+        healer.group.position.y = y + 0.32 * e;
+        healer.group.rotation.y = yaw + p * p * Math.PI * 5;
+        healer.bar.visible = p < 0.2;
+        for (const m of healer.paints) {
+          const glow = m.userData.glow as { color: T.Color; intensity: number };
+          m.emissive.copy(glow.color).lerp(white, e);
+          m.emissiveIntensity = glow.intensity + e * 2.4;
+        }
       });
     }
+    // The shaft of light comes down from above, and widens and fades after the flash.
+    this.tween(begin + 450, ASCENT - 450, (p) => {
+      const t = p * (ASCENT - 450),
+        fall = ease(Math.min(1, t / 650)),
+        after = Math.min(1, Math.max(0, (t - 760) / 620)),
+        outer = this.pillar.material as T.MeshBasicMaterial,
+        core = this.shaft.material as T.MeshBasicMaterial;
+      this.pillar.visible = this.shaft.visible = p < 1;
+      this.pillar.position.set(centre.x, ground.y + (1 - fall) * 5, centre.z);
+      this.shaft.position.copy(this.pillar.position);
+      this.pillar.scale.set(0.7 + after * 1.6, 1, 0.7 + after * 1.6);
+      this.shaft.scale.set(0.6 + after * 2.2, 1, 0.6 + after * 2.2);
+      outer.opacity = 0.85 * fall * (1 - after);
+      core.opacity = fall * (1 - after) * (t < 700 ? 0.7 : 1);
+    });
+    // The flash: a ball of light, the screen white for a moment, the picture shaken.
+    this.tween(flash, 650, (p) => {
+      this.burst.visible = p < 1;
+      this.burst.position.copy(centre);
+      this.burst.scale.setScalar(0.5 + ease(p) * 3.4);
+      (this.burst.material as T.MeshBasicMaterial).opacity = (1 - p) ** 2;
+    });
+    this.at(flash, () => {
+      this.glare(centre);
+      // She is the angel now, high in the shaft, small, with wings folded and her halo above her.
+      const angel = this.figureFor(unit);
+      this.stand(unit);
+      this.face();
+      angel.bar.visible = false;
+    });
+    this.tween(flash, ASCENT - (flash - begin), (p) => {
+      const angel = this.figures[unit.id];
+      if (!angel || angel.job !== "angel") return;
+      const t = p * (ASCENT - (flash - begin)),
+        down = ease(Math.min(1, t / 1150)),
+        grow = Math.min(1, t / 700);
+      angel.group.position.y = this.local(unit.cell).y + 1.05 * (1 - down) + 0.05 * Math.sin(t / 140) * (1 - down);
+      angel.group.scale.setScalar(p < 1 ? backOut(grow) * 0.65 + 0.35 : 1);
+      angel.bar.visible = t > 1250 || p >= 1;
+      const glow = Math.max(0, 1 - t / 1300);
+      for (const m of angel.paints) {
+        const rest = m.userData.glow as { color: T.Color; intensity: number };
+        m.emissive.copy(rest.color).lerp(white, glow);
+        m.emissiveIntensity = rest.intensity + glow * 2.6;
+      }
+      // The wings unfold from folded behind her, past their rest and back, and beat once.
+      const open = Math.min(1, Math.max(0, (t - 180) / 820));
+      for (const w of angel.wings ?? []) {
+        const rest = w.userData.rest as { yaw: number; sx: number },
+          beat = open >= 1 ? 0.18 * Math.sin(Math.min(1, (t - 1000) / 500) * Math.PI) : 0;
+        w.rotation.y = rest.yaw + rest.sx * (1.35 * (1 - backOut(open)) - beat);
+        const k = 0.15 + 0.85 * ease(open);
+        w.scale.set(rest.sx * k, k, 1);
+      }
+      // The halo comes down from high over her, large and spinning, onto her head.
+      if (angel.halo) {
+        const settle = ease(Math.min(1, Math.max(0, (t - 250) / 900)));
+        angel.halo.position.y = 0.85 + 0.55 * (1 - settle);
+        angel.halo.scale.setScalar(1 + 1.6 * (1 - settle));
+        angel.halo.rotation.y = (1 - settle) * Math.PI * 6;
+      }
+    });
+    // Rings of light run out over the floor, one after another.
+    this.waves.forEach((wave, k) => {
+      this.tween(flash + k * 210, 950, (p) => {
+        wave.visible = p < 1;
+        wave.position.copy(ground).setY(ground.y + 0.02 + k * 0.01);
+        wave.scale.setScalar(0.3 + ease(p) * (3.4 + k * 0.6));
+        (wave.material as T.MeshBasicMaterial).opacity = (k === 1 ? 0.75 : 0.95) * (1 - p) * (1 - p);
+      });
+    });
+    // Sparks thrown out by the flash: the motes again, flying up and outward and falling away.
+    this.tween(flash, 900, (p) => {
+      this.motes.forEach((mote, k) => {
+        const a = k * 2.399,
+          speed = 1.2 + (k % 5) * 0.35,
+          q = 1 - (1 - p) * (1 - p);
+        mote.visible = p < 1;
+        mote.position.set(centre.x + Math.cos(a) * speed * q, centre.y + 0.1 + (0.6 + (k % 3) * 0.4) * q - 1.1 * p * p, centre.z + Math.sin(a) * speed * q);
+        mote.scale.setScalar(1.5 * (1 - p));
+      });
+    });
+    // Feathers drift down round her, swaying and turning, and fade as they reach the floor.
+    const fall = ASCENT - (flash - begin) - 150,
+      down = this.plumes[0].material as T.MeshBasicMaterial;
+    this.tween(flash + 150, fall, (p) => {
+      const t = p * fall;
+      down.opacity = p > 0.7 ? (1 - p) / 0.3 : 1;
+      this.plumes.forEach((plume, k) => {
+        const own = Math.min(1, Math.max(0, (t - (k % 6) * 70) / (fall - 420))),
+          a = k * 2.399,
+          r = 0.35 + (k % 4) * 0.28 + own * 0.25,
+          sway = Math.sin(own * Math.PI * 3 + k) * 0.18;
+        plume.visible = own > 0 && p < 1;
+        plume.position.set(centre.x + Math.cos(a) * r + sway, ground.y + 0.06 + (1.7 + (k % 3) * 0.35) * (1 - own), centre.z + Math.sin(a) * r);
+        plume.rotation.set(Math.sin(own * 7 + k) * 0.8, own * 5 + k, Math.cos(own * 5 + k) * 0.9);
+        plume.scale.setScalar(1.7 + (k % 3) * 0.35);
+      });
+    });
+  }
+  /** A white flash over the whole picture, a glow round the angel and a short shake (decoration only). */
+  private glare(at: T.Vector3) {
+    if (capturing()) return;
+    const world = at.clone().applyMatrix4(this.root.matrixWorld),
+      p = this.screen(world),
+      flash = document.createElement("div"),
+      halo = document.createElement("div");
+    flash.className = "tx-flash";
+    halo.className = "tx-holy";
+    halo.style.left = `${p.x}px`;
+    halo.style.top = `${p.y}px`;
+    for (const el of [flash, halo]) el.setAttribute("aria-hidden", "true");
+    this.layer.append(flash, halo);
+    const canvas = this.renderer.domElement;
+    canvas.classList.remove("tx-quake");
+    void canvas.offsetWidth;
+    canvas.classList.add("tx-quake");
+    setTimeout(() => {
+      flash.remove();
+      halo.remove();
+      canvas.classList.remove("tx-quake");
+    }, 1700);
   }
   /** A number rising from a unit that was struck or healed. */
   private number(id: number, text: string, kind: "hurt" | "heal", note: string) {

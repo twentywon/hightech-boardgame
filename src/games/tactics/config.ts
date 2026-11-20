@@ -52,9 +52,11 @@ export const tacticsConfig: PointConfig<State> = {
     if (last.job === "archer") return sound.wood(3);
     return sound.knock(3);
   },
-  // The dungeon's fires crackle quietly while the table is shown (the view asks for it with its flicker).
+  // The dungeon's fires crackle quietly while the table is shown (the view asks for it with its flicker); the angel's
+  // coming has its own chord of voices and bells.
   knock: (sound, kind: string, strength) => {
     if (kind === "fire") sound.crackle(strength);
+    if (kind === "angel") sound.heavenly();
   },
   firstNote: "컴퓨터 대전에서는 내가 청군을 이끕니다. 빠른 병사부터 움직입니다.",
   name: "전술 대전",
