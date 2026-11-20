@@ -33,34 +33,16 @@ export const BLADE = 0.082,
   FACE = 0.012,
   REACH = 0.118,
   REACH_Y = 0.15;
-/**
- * The height both blades are held at, always: the plane my hand moves my paddle over, and the computer's too. A
- * paddle never rises or drops to a ball; a ball that comes in high is met by stepping back (`DEEP`), where it has
- * come down to this height again.
- */
-export const HAND_Y = 0.3,
-  REST_Y = HAND_Y;
+/** The height of the plane my hand moves the paddle over, and the paddle's height when no ball is coming. */
+export const HAND_Y = 0.2,
+  REST_Y = 0.2;
 /** How fast a tossed ball goes up, how low it may fall before it is tossed again, and the computer's wait before it serves. */
-export const TOSS = 1.6,
+export const TOSS = 2.3,
   TOSS_LOW = -0.08,
   SERVE_PAUSE = 0.9;
 /** How far behind my end line my paddle may go, and the computer's. */
 export const BACK = 0.6,
   FAR_BACK = 1.15;
-/**
- * Stepping back for a high ball. A ball coming to a side is high when, after its bounce there, it rises more than
- * `HIGH` over the blades' height (out of a still blade's reach, `REACH_Y`): that side may then go back as far as
- * where the ball comes down to `MEET` over the blades' height again, and `STEP_ROOM` more, up to `DEEP` further
- * than its usual `BACK` (or `FAR_BACK`). The reach goes back at `STEP_OUT` and comes forward again at `STEP_IN`
- * (metres a second of the hall's time) once the ball has been struck back or the point is over, so that a paddle
- * standing back is walked forward, never thrown.
- */
-export const HIGH = 0.15,
-  MEET = 0.05,
-  STEP_ROOM = 0.18,
-  DEEP = 1.7,
-  STEP_OUT = 3,
-  STEP_IN = 0.9;
 /** How long a rally may go without a stroke before it is ended. */
 const IDLE = 6;
 const PATH_N = 800;
@@ -126,7 +108,7 @@ export type Happening =
 export interface World {
   ball: Ball;
   paddles: [Paddle, Paddle];
-  /** Where each side's hand sends its paddle (across and along the table); the height is always `HAND_Y`. */
+  /** Where each side's hand sends its paddle (across and along the table); the height follows the ball by itself. */
   hands: [{ x: number; z: number }, { x: number; z: number }];
   phase: Phase;
   server: 0 | 1;
@@ -146,12 +128,6 @@ export interface World {
   path: Float32Array;
   pathLen: number;
   pathAt: number;
-  /**
-   * How much further back than usual each side may stand for the ball now coming (`deep`, set at each stroke by
-   * `stepBack`), and how far back its reach has gone so far (`stepped`, easing toward `deep`).
-   */
-  deep: [number, number];
-  stepped: [number, number];
   /** The computer's hand: the wait before it serves, its reading of the ball, where it means to meet it and the height it strikes a serve at. */
   ai: { wait: number; delay: number; seen: number; plan: { x: number; z: number } | null; strikeY: number; holdX: number };
   seed: number;
@@ -182,25 +158,20 @@ export function createWorld(seed = 1): World {
     since: 0,
     dead: 0,
     struck: [-9, -9],
-    deep: [0, 0],
-    stepped: [0, 0],
     path: new Float32Array(PATH_N * 4),
     pathLen: 0,
     pathAt: -1,
-    ai: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: HAND_Y, holdX: 0 },
+    ai: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0 },
     seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
   };
   return world;
 }
-/**
- * Where a paddle of `side` may be: beside the table a little, not over the net, and no further back than the hall
- * allows (`stepped` further when it has stepped back for a high ball).
- */
-export function keep(side: 0 | 1, x: number, z: number, limit = side === 0 ? 0.25 : -0.25, stepped = 0) {
+/** Where a paddle of `side` may be: beside the table a little, not over the net, and no further back than the hall allows. */
+export function keep(side: 0 | 1, x: number, z: number, limit = side === 0 ? 0.25 : -0.25) {
   const across = HALF_W + 0.6;
   return {
     x: clamp(x, -across, across),
-    z: side === 0 ? clamp(z, limit, HALF_L + BACK + stepped) : clamp(z, -HALF_L - FAR_BACK - stepped, limit),
+    z: side === 0 ? clamp(z, limit, HALF_L + BACK) : clamp(z, -HALF_L - FAR_BACK, limit),
   };
 }
 /** The nearest a paddle may come to the net: behind its end line while its side holds the ball to serve, a little over it during the toss. */
@@ -215,7 +186,7 @@ function hold(world: World) {
     pad = world.paddles[s],
     b = world.ball;
   b.x = clamp(pad.x, -HALF_W - 0.3, HALF_W + 0.3);
-  b.y = HAND_Y + 0.1;
+  b.y = 0.3;
   b.z = s === 0 ? Math.max(pad.z - 0.1, HALF_L + 0.08) : Math.min(pad.z + 0.1, -HALF_L - 0.08);
   b.vx = b.vy = b.vz = b.wx = b.wy = b.wz = 0;
 }
@@ -230,7 +201,6 @@ export function serve(world: World, server: 0 | 1) {
   world.pathAt = -1;
   world.ai.wait = SERVE_PAUSE;
   world.ai.plan = null;
-  world.deep = [0, 0];
   world.ai.holdX = (rand(world) - 0.5) * 0.7;
   hold(world);
 }
@@ -244,7 +214,7 @@ export function toss(world: World, by: 0 | 1 = world.server) {
 }
 /** A paddle set straight down where a finger has just pressed, without sweeping the way between. */
 export function place(world: World, side: 0 | 1, x: number, z: number) {
-  const at = keep(side, x, z, frontOf(world, side), world.stepped[side]),
+  const at = keep(side, x, z, frontOf(world, side)),
     pad = world.paddles[side];
   pad.x = at.x;
   pad.z = at.z;
@@ -448,52 +418,49 @@ function predict(world: World) {
   world.pathAt = -1;
 }
 const bouncesOn = (world: World, k: number, side: 0 | 1) => (side === 0 ? world.path[k * 4 + 3] % 8 : Math.floor(world.path[k * 4 + 3] / 8));
-/**
- * How much further back than usual `side` may stand for the ball now on its way to it (0 for a ball that is not
- * high). Read off the ball's way from the last stroke: after its bounce on `side`'s half, where it first comes down
- * to `MEET` over the blades' height again, if it rose more than `HIGH` over them on the way; the reach goes there and
- * `STEP_ROOM` beyond, up to `DEEP` more than usual. A ball that does not come down on `side`'s half needs no step.
- */
-export function stepBack(world: World, side: 0 | 1) {
-  const toward = side === 0 ? 1 : -1;
-  let peak = -Infinity,
-    before = Infinity;
+/** The slice of the path at which the ball, having bounced on `side`'s half, comes to a paddle's face at `z`, or -1. */
+function meeting(world: World, side: 0 | 1, z: number) {
+  const f = side === 0 ? -1 : 1,
+    gap = BALL + FACE;
   for (let k = Math.max(0, world.pathAt + 1); k < world.pathLen; k++) {
-    const bounces = bouncesOn(world, k, side),
-      y = world.path[k * 4 + 1];
-    if (bounces >= 2) break;
-    if (bounces === 1) {
-      peak = Math.max(peak, y);
-      // Once it has risen over the blades, the first slice on its way down again to `MEET` over them.
-      if (peak > HAND_Y && y < before && y <= HAND_Y + MEET) {
-        if (peak <= HAND_Y + HIGH) return 0;
-        return clamp(toward * world.path[k * 4 + 2] + STEP_ROOM - HALF_L - (side === 0 ? BACK : FAR_BACK), 0, DEEP);
-      }
-    }
-    before = y;
+    const bounces = bouncesOn(world, k, side);
+    if (bounces >= 2) return -1;
+    if (bounces >= 1 && (world.path[k * 4 + 2] - z) * f <= gap) return k;
   }
-  return 0;
+  return -1;
 }
-const SMOOTH = 1 - Math.exp(-DT / 0.03);
-/** Each paddle goes where its hand sends it, at the blades' height: mine all the way at once, the computer's at its top speed. */
+/** The height a paddle's blade goes to: where the coming ball will meet it, or where it is being tossed, or at rest. */
+function reachHeight(world: World, side: 0 | 1, z: number) {
+  let y = REST_Y;
+  if (world.phase === "toss" && world.server === side) y = world.ball.y;
+  else if (world.phase === "ready" && world.server === side) y = 0.12;
+  else if (world.phase === "rally" && world.hitter !== side) {
+    const k = meeting(world, side, z);
+    if (k >= 0) y = world.path[k * 4 + 1];
+  }
+  return clamp(y, Math.abs(z) < HALF_L + 0.02 ? 0.06 : -0.3, 0.62);
+}
+const EASE = 1 - Math.exp(-DT / 0.035),
+  SMOOTH = 1 - Math.exp(-DT / 0.03);
+/** Each paddle goes where its hand sends it: mine all the way at once, the computer's at its top speed. */
 function movePaddles(world: World, level: Level) {
   world.paddles.forEach((pad, s) => {
     const side = s as 0 | 1,
-      hand = world.hands[side];
-    world.stepped[side] += clamp(world.deep[side] - world.stepped[side], -STEP_IN * DT, STEP_OUT * DT);
-    const at = keep(side, hand.x, hand.z, frontOf(world, side), world.stepped[side]),
+      hand = world.hands[side],
+      at = keep(side, hand.x, hand.z, frontOf(world, side)),
       dx = at.x - pad.x,
       dz = at.z - pad.z,
       far = Math.hypot(dx, dz),
       most = side === 0 ? Infinity : LEVELS[level].speed * DT,
       share = far > most ? most / far : 1,
       x = pad.x + dx * share,
-      z = pad.z + dz * share;
+      z = pad.z + dz * share,
+      y = pad.y + (reachHeight(world, side, z) - pad.y) * EASE;
     pad.vx += ((x - pad.x) / DT - pad.vx) * SMOOTH;
-    pad.vy = 0;
+    pad.vy += ((y - pad.y) / DT - pad.vy) * SMOOTH;
     pad.vz += ((z - pad.z) / DT - pad.vz) * SMOOTH;
     pad.x = x;
-    pad.y = HAND_Y;
+    pad.y = y;
     pad.z = z;
   });
 }
@@ -580,13 +547,10 @@ export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   world.since = 0;
   world.struck[side] = world.time;
   predict(world);
-  world.deep[side] = 0;
-  world.deep[1 - side] = stepBack(world, (1 - side) as 0 | 1);
 }
 function point(world: World, to: 0 | 1, why: number): Happening {
   world.phase = "dead";
   world.dead = 0;
-  world.deep = [0, 0];
   return { kind: "point", to, why };
 }
 /** What a bounce on `side`'s half means for the rally, if it ends the point or makes the serve a let. */
@@ -643,35 +607,22 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
   launch(world, side, shot, serving);
   out.push({ kind: "hit", side, strength: clamp(shot.pace / 9, 0.2, 1) });
 }
-/**
- * The computer's reading of a ball I have struck, for a blade held at `HAND_Y`: after its bounce, where it comes
- * down to that height (stepping back for a high ball, as far as `stepBack` lets it), or the top of its rise if it
- * never comes up so high; a high ball that would come down out of its reach is taken on the rise instead.
- */
+/** The computer's reading of a ball I have struck: where, after its bounce, it comes to the top of its rise (within reach). */
 function intercept(world: World, level: Level) {
-  const L = LEVELS[level],
-    deepest = -HALF_L - FAR_BACK - world.deep[1] + 0.08;
-  let top = -1,
-    rising = -1,
-    falling = -1;
+  const L = LEVELS[level];
+  let chosen = -1;
   for (let k = Math.max(0, world.pathAt + 1); k < world.pathLen; k++) {
     const mine = bouncesOn(world, k, 0),
-      theirs = bouncesOn(world, k, 1),
-      y = world.path[k * 4 + 1];
+      theirs = bouncesOn(world, k, 1);
     // A ball of mine that comes down on my own side first needs no return (a serve must, once).
     if (theirs === 0 && mine > (world.served ? 1 : 0)) return null;
     if (theirs >= 2) break;
-    if (theirs !== 1) continue;
-    if (world.path[k * 4 + 2] < deepest) break;
-    const up = k + 1 < world.pathLen && world.path[(k + 1) * 4 + 1] >= y;
-    if (top < 0 || y > world.path[top * 4 + 1]) top = k;
-    if (up && rising < 0 && y >= HAND_Y) rising = k;
-    if (!up && y <= HAND_Y) {
-      falling = k;
-      break;
+    if (theirs === 1) {
+      if (world.path[k * 4 + 2] < -HALF_L - FAR_BACK + 0.08) break;
+      chosen = k;
+      if (k + 1 < world.pathLen && world.path[(k + 1) * 4 + 1] < world.path[k * 4 + 1]) break;
     }
   }
-  const chosen = falling >= 0 ? falling : world.path[top * 4 + 1] < HAND_Y ? top : rising >= 0 ? rising : top;
   if (chosen < 0) return null;
   return { x: world.path[chosen * 4] + (rand(world) - 0.5) * 2 * L.stray, z: world.path[chosen * 4 + 2] - (BALL + FACE) };
 }
@@ -688,7 +639,7 @@ function think(world: World, level: Level, out: Happening[]) {
   if (world.phase === "ready" && world.server === 1) {
     hand = { x: ai.holdX, z: -HALF_L - 0.3 };
     ai.wait -= DT;
-    if (ai.wait <= 0 && toss(world, 1)) ai.strikeY = HAND_Y - 0.04 + rand(world) * 0.08;
+    if (ai.wait <= 0 && toss(world, 1)) ai.strikeY = 0.18 + rand(world) * 0.12;
   } else if (world.phase === "toss" && world.server === 1) {
     hand = { x: b.x, z: b.z - 0.12 };
     if (b.vy < 0 && b.y <= ai.strikeY) {
