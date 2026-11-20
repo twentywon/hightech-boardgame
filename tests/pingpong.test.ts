@@ -92,9 +92,12 @@ describe("table tennis: serves and points", () => {
     // Only the server tosses.
     expect(s.toss(world, 1)).toBe(false);
     expect(s.toss(world, 0)).toBe(true);
-    // Wait for the ball to come down, then swing the paddle forward through it.
+    // Wait for the ball to come down to the blade, which stays at its one height, then swing the paddle forward through it.
     let k = 0;
-    while (world.ball.vy > -0.4 && k++ < 400) s.step(world, "normal");
+    while ((world.ball.vy > 0 || world.ball.y > s.HAND_Y + 0.08) && k++ < 400) {
+      s.step(world, "normal");
+      expect(world.paddles[0].y).toBe(s.HAND_Y);
+    }
     const seen: s.Happening[] = [];
     for (let j = 0; j < 240; j++) {
       world.hands[0] = { x: world.ball.x, z: world.hands[0].z - 3 * s.DT };
@@ -221,6 +224,113 @@ describe("table tennis: the computer", () => {
     expect(easy).toBeLessThan(0.3);
     expect(hard).toBeGreaterThan(0.6);
     expect(hard - easy).toBeGreaterThan(0.4);
+  });
+});
+
+describe("table tennis: one height for the blades, stepping back for a high ball", () => {
+  /** A high, slow, deep ball from the computer: it bounces on my half and rises far over the blades. */
+  const lob = (seed: number) => {
+    const world = s.createWorld(seed);
+    world.hands[0] = { x: 1.3, z: s.HALF_L + 0.35 };
+    world.paddles[0].x = 1.3;
+    world.ball = ball(0, 0.3, -s.HALF_L - 0.3);
+    s.launch(world, 1, { tx: 0, depth: 0.9, pace: 3, top: 0, side: 0 });
+    return world;
+  };
+  /** Where the lob comes down to the blades' height behind my end: the first slice after its bounce on its way down there. */
+  const comingDown = (world: s.World) => {
+    for (let k = 1; k < world.pathLen; k++) {
+      const y = world.path[k * 4 + 1];
+      if (world.path[k * 4 + 3] % 8 === 1 && y < world.path[(k - 1) * 4 + 1] && y <= s.HAND_Y && world.path[k * 4 + 2] > s.HALF_L) return { x: world.path[k * 4], z: world.path[k * 4 + 2] };
+    }
+    throw new Error("the lob never came down");
+  };
+  test("neither paddle ever rises or drops: through serves, tosses and rallies they stay at the blades' height", () => {
+    const world = s.createWorld(31);
+    s.serve(world, 1);
+    let points = 0;
+    for (let k = 0; k < 240 * 30; k++) {
+      world.hands[0] = { x: world.ball.x + Math.sin(k / 50) * 0.05, z: s.HALF_L + 0.3 + Math.sin(k / 41) * 0.25 };
+      for (const e of s.step(world, "hard")) if (e.kind === "point") points++;
+      for (const pad of world.paddles) {
+        expect(pad.y).toBe(s.HAND_Y);
+        expect(pad.vy).toBe(0);
+      }
+      if (world.phase === "dead" && world.dead > 1) s.serve(world, (1 - world.server) as 0 | 1);
+      if (world.phase === "ready" && world.server === 0) s.toss(world);
+    }
+    expect(points).toBeGreaterThanOrEqual(3);
+  });
+  test("a high ball lets me step back, and stepping back I return it where it has come down to the blade", () => {
+    const world = lob(11);
+    // The lob rises well over the blades, so my reach may go back: as far as where it comes down to them, and a little more.
+    expect(world.deep[0]).toBeGreaterThan(0.2);
+    const down = comingDown(world);
+    expect(down.z).toBeGreaterThan(s.HALF_L + s.BACK + 0.1);
+    expect(s.HALF_L + s.BACK + world.deep[0]).toBeGreaterThan(down.z + s.BALL + s.FACE);
+    // My hand waits there, behind the ball's line; the reach walks back to it and the paddle meets the ball.
+    const seen: s.Happening[] = [];
+    for (let k = 0; k < 4 / s.DT && !seen.some((e) => e.kind === "hit" || e.kind === "point"); k++) {
+      world.hands[0] = { x: down.x, z: down.z + 0.06 };
+      expect(world.stepped[0]).toBeLessThanOrEqual(world.deep[0] + 1e-9);
+      seen.push(...s.step(world, "normal"));
+      expect(world.paddles[0].y).toBe(s.HAND_Y);
+    }
+    expect(seen.find((e) => e.kind === "hit" || e.kind === "point")).toMatchObject({ kind: "hit", side: 0 });
+    expect(world.paddles[0].z).toBeGreaterThan(s.HALF_L + s.BACK + 0.05);
+    // Struck back, the ball needs no more stepping back: my reach walks forward again, never at once.
+    expect(world.deep[0]).toBe(0);
+    const was = world.stepped[0];
+    s.step(world, "normal");
+    expect(world.stepped[0]).toBeLessThan(was);
+    expect(was - world.stepped[0]).toBeLessThanOrEqual(s.STEP_IN * s.DT + 1e-9);
+  });
+  test("without stepping back the same lob passes over a paddle held at the end of the usual reach", () => {
+    const world = lob(11),
+      down = comingDown(world);
+    const seen: s.Happening[] = [];
+    for (let k = 0; k < 4 / s.DT && !seen.some((e) => e.kind === "point"); k++) {
+      world.deep = [0, 0];
+      world.hands[0] = { x: down.x, z: down.z + 0.06 };
+      seen.push(...s.step(world, "normal"));
+      expect(world.paddles[0].z).toBeLessThanOrEqual(s.HALF_L + s.BACK + 1e-9);
+    }
+    expect(seen.some((e) => e.kind === "hit" && e.side === 0)).toBe(false);
+    expect(seen.at(-1)).toMatchObject({ kind: "point", to: 1 });
+  });
+  test("a low ball needs no step, and the reach is back to the usual when a point is served", () => {
+    const low = s.createWorld(3);
+    low.ball = ball(0, 0.25, -s.HALF_L - 0.2);
+    s.launch(low, 1, { tx: 0, depth: 0.7, pace: 7, top: 120, side: 0 });
+    expect(low.deep[0]).toBe(0);
+    const world = lob(11);
+    for (let k = 0; k < 120; k++) s.step(world, "normal");
+    expect(world.stepped[0]).toBeGreaterThan(0);
+    s.serve(world, 0);
+    expect(world.deep).toEqual([0, 0]);
+  });
+  test("the computer steps back for my high balls too, and returns them", () => {
+    let high = 0,
+      back = 0,
+      deep = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const world = s.createWorld(seed * 13 + 1);
+      world.hands[0] = { x: 1.3, z: s.HALF_L + 0.6 };
+      world.paddles[0].x = 1.3;
+      world.ball = ball((s.rand(world) - 0.5) * 0.4, 0.3, s.HALF_L + 0.2);
+      // A topspin lob: it comes down deep and kicks on high.
+      s.launch(world, 0, { tx: (s.rand(world) - 0.5) * 0.5, depth: 0.85 + s.rand(world) * 0.1, pace: 2.6 + s.rand(world) * 0.8, top: 120 + s.rand(world) * 80, side: 0 });
+      if (world.deep[1] <= 0) continue;
+      high++;
+      const seen = run(world, "hard", 6, (e) => e.kind === "point" || (e.kind === "hit" && e.side === 1));
+      if (seen.at(-1)?.kind !== "hit") continue;
+      back++;
+      if (world.paddles[1].z < -s.HALF_L - s.FAR_BACK) deep++;
+      expect(world.paddles[1].y).toBe(s.HAND_Y);
+    }
+    expect(high).toBeGreaterThanOrEqual(10);
+    expect(back / high).toBeGreaterThanOrEqual(0.7);
+    expect(deep).toBeGreaterThan(0);
   });
 });
 

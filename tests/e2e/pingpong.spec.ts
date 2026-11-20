@@ -16,11 +16,12 @@ test("table tennis: my paddle follows the mouse, the computer serves, and a poin
   await page.locator(".game-stage button.primary").click();
   const canvas = page.locator("canvas");
   await expect(canvas).toHaveAttribute("data-ready", "true", { timeout: 20000 });
-  // Where a point of the plane my hand moves over is on the screen, through the same eye as the table's.
+  // Where a point of the plane my hand moves over is on the screen, through the same eye as the table's (which
+  // steps back for a high ball: the canvas tells how far it stands back now).
   const box = (await canvas.boundingBox())!,
     camera = new PerspectiveCamera(50, box.width / box.height, 0.1, 120);
-  rallyCamera(camera, box.width / box.height);
-  const at = (x: number, z: number) => {
+  const at = async (x: number, z: number) => {
+    rallyCamera(camera, box.width / box.height, Number((await canvas.getAttribute("data-step")) ?? 0));
     const p = new Vector3(x, HAND_Y, z).project(camera);
     return { x: box.x + ((p.x + 1) / 2) * box.width, y: box.y + ((1 - p.y) / 2) * box.height };
   };
@@ -30,7 +31,7 @@ test("table tennis: my paddle follows the mouse, the computer serves, and a poin
     [-0.4, HALF_L + 0.3],
     [0.3, HALF_L + 0.25],
   ]) {
-    const p = at(x, z);
+    const p = await at(x, z);
     await page.mouse.move(p.x, p.y, { steps: 4 });
   }
   await expect.poll(async () => Math.abs((await paddle())[0] - 0.3), { timeout: 20000 }).toBeLessThan(0.06);

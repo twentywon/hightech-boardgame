@@ -6,11 +6,16 @@ import { TableView, type Spot, type TableSubject } from "../table/view";
 import { hall, paintFlip, tennisTable, type FlipBoard } from "./hall";
 import { HAND_Y, rallyCamera } from "./layout";
 import { serverOf, type State } from "./rules";
-import { BALL, BLADE, DT, FLOOR, HALF_L, HALF_W, PACE, WHY, createWorld, keep, place as placePaddle, serve, step, toss, type Happening, type Level, type World } from "./sim";
+import { BALL, BLADE, DEEP, DT, FLOOR, HALF_L, HALF_W, PACE, WHY, createWorld, keep, place as placePaddle, serve, step, toss, type Happening, type Level, type World } from "./sim";
 
 export const TABLE_TENNIS_COLORS: [string, string] = ["#e0402c", "#2a72e0"];
 /** How long, in the hall's time, the ball of an ended rally is left to fall before the next serve. */
 const DEAD_WAIT = 1.15;
+/**
+ * How stiffly the eye follows my reach when I step back for a high ball or come forward again: a critically damped
+ * spring of this rate (a second of the wall clock), so that it sets off and arrives gently and never overshoots.
+ */
+const EYE_RATE = 6.5;
 const canvasTexture = (canvas: HTMLCanvasElement) => {
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
@@ -91,6 +96,15 @@ export class TableTennisView extends TableView<State> {
   private heard = 0;
   /** Whether the press under way is a finger's (or a pen's) rather than a mouse's. */
   private finger = false;
+  /**
+   * How far back the eye stands now (metres behind its usual place: it follows my side's reach, `stepped`, as I
+   * step back for a high ball and come forward again) and how fast it is going there.
+   */
+  private eye = 0;
+  private eyeSpeed = 0;
+  /** Where on the screen the mouse is, or a finger held down: aimed again through the eye whenever the eye moves. */
+  private pointer: { clientX: number; clientY: number } | null = null;
+  private still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
@@ -136,19 +150,38 @@ export class TableTennisView extends TableView<State> {
     this.tip.textContent = "화면을 눌러 공을 띄우고, 떨어질 때 위로 휘둘러 치세요";
     this.tip.hidden = true;
     host.append(this.tip);
-    // My paddle is moved over a plane at the height the ball is mostly met at.
+    // My paddle is moved over a plane at the one height both blades are held at.
     this.floor = new T.Plane(new T.Vector3(0, 1, 0), -HAND_Y);
     const el = this.renderer.domElement,
       ray = new T.Raycaster(),
       hit = new T.Vector3();
     el.style.cursor = "none";
     // Heard before the table's own handler, so that a press knows what made it.
-    el.addEventListener("pointerdown", (e) => (this.finger = e.pointerType !== "mouse"), { capture: true });
+    el.addEventListener(
+      "pointerdown",
+      (e) => {
+        this.finger = e.pointerType !== "mouse";
+        this.pointer = { clientX: e.clientX, clientY: e.clientY };
+      },
+      { capture: true },
+    );
     el.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse" || e.buttons) this.pointer = { clientX: e.clientX, clientY: e.clientY };
       if (e.pointerType !== "mouse" || this.disposed || !this.running()) return;
       aim(ray, e, el, this.camera);
       if (ray.ray.intersectPlane(this.floor, hit)) this.reach(hit.x, hit.z);
     });
+    // A finger lifted leaves the paddle where it was; a mouse that leaves the table too.
+    for (const type of ["pointerup", "pointercancel", "pointerleave"] as const)
+      el.addEventListener(type, (e) => {
+        if (e.pointerType !== "mouse" || type === "pointerleave") this.pointer = null;
+      });
+    this.aimAgain = () => {
+      if (!this.pointer) return false;
+      aim(ray, this.pointer as PointerEvent, el, this.camera);
+      if (ray.ray.intersectPlane(this.floor, hit)) this.reach(hit.x, hit.z);
+      return true;
+    };
     // The arrows go as the table is seen: up away from me, toward the net. Space tosses my serve, or strikes.
     const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     el.addEventListener("keydown", (e) => {
@@ -204,6 +237,8 @@ export class TableTennisView extends TableView<State> {
     this.scene.add(g);
     return g;
   }
+  /** Sets the hand again where the pointer now points through the eye (false when no pointer is over the table). */
+  private aimAgain: () => boolean = () => false;
   /** The table never makes the screen wait: a point may be reported at any moment. */
   get animating() {
     return false;
@@ -222,9 +257,38 @@ export class TableTennisView extends TableView<State> {
   private running() {
     return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
   }
-  /** The hand over the table: my paddle goes there, at no speed limit. */
+  /**
+   * The hand over the table: my paddle goes there, at no speed limit. The hand may go as far back as I could ever
+   * step; the table holds the paddle within the reach I have now (further back only while a high ball is coming).
+   */
   private reach(x: number, z: number) {
-    this.hand = keep(0, x, z);
+    this.hand = keep(0, x, z, undefined, DEEP);
+  }
+  /**
+   * The eye follows my reach back and forward like a player stepping back for a high ball: eased by a critically
+   * damped spring, or (under reduced motion) set at once to where the reach is going. The hand moves with the body:
+   * a pointer is aimed again through the moved eye, so that the paddle stays under it; without one (the keyboard,
+   * a lifted finger) the hand is carried along by as much as the eye moved.
+   */
+  private follow(real: number, running: boolean) {
+    const target = this.still ? this.world.deep[0] : this.world.stepped[0],
+      was = this.eye;
+    if (this.still) {
+      this.eye = target;
+      this.eyeSpeed = 0;
+    } else
+      for (let left = real; left > 1e-6; left -= 1 / 120) {
+        const dt = Math.min(1 / 120, left);
+        this.eyeSpeed += (EYE_RATE * EYE_RATE * (target - this.eye) - 2 * EYE_RATE * this.eyeSpeed) * dt;
+        this.eye += this.eyeSpeed * dt;
+      }
+    if (Math.abs(target - this.eye) < 1e-4 && Math.abs(this.eyeSpeed) < 1e-3) {
+      this.eye = target;
+      this.eyeSpeed = 0;
+    }
+    if (this.eye === was) return;
+    rallyCamera(this.camera, this.camera.aspect, this.eye);
+    if (running && !this.aimAgain()) this.reach(this.hand.x, this.hand.z + (this.eye - was));
   }
   /**
    * Every press is the hand's, and tosses my serve. A finger sets the paddle straight down where it presses (without
@@ -278,6 +342,7 @@ export class TableTennisView extends TableView<State> {
       // The ball of an ended rally falls for a moment; then the next point is served by whoever the rules say.
       if (running && this.state && this.state.winner === null && this.world.phase === "dead" && this.world.dead > DEAD_WAIT) serve(this.world, serverOf(this.state));
     }
+    this.follow(real, running);
     this.pose(now, real);
     this.redraw();
   }
@@ -383,6 +448,8 @@ export class TableTennisView extends TableView<State> {
     const data = this.renderer.domElement.dataset;
     data.ball = `${ball.x.toFixed(2)},${ball.y.toFixed(2)},${ball.z.toFixed(2)}`;
     data.paddle = `${paddles[0].x.toFixed(2)},${paddles[0].z.toFixed(2)}`;
+    data.step = this.eye.toFixed(3);
+    data.reach = this.world.stepped[0].toFixed(3);
     data.phase = this.world.phase;
     data.server = String(this.world.server);
   }
@@ -391,7 +458,7 @@ export class TableTennisView extends TableView<State> {
   }
   protected resize() {
     super.resize();
-    rallyCamera(this.camera, this.camera.aspect);
+    rallyCamera(this.camera, this.camera.aspect, this.eye);
     this.redraw();
   }
   protected spots(): Spot[] {
@@ -403,6 +470,8 @@ export class TableTennisView extends TableView<State> {
     if (anew || !this.begun) {
       if (anew) this.world = createWorld(1 + Math.floor(Math.random() * 2e9));
       this.begun = true;
+      this.eye = this.eyeSpeed = 0;
+      rallyCamera(this.camera, this.camera.aspect, 0);
       this.hand = this.sent = { x: 0, z: HALF_L + 0.35 };
       serve(this.world, serverOf(state));
     }
