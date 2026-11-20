@@ -97,6 +97,10 @@ export const glideConfig: PointConfig<State> = {
     return dir === undefined || repeat ? null : { from: -1, to: dir, extra: -1 };
   },
   refusal,
+  // A push given while the cube still slides is played the moment it stops (the user asked).
+  queueMoves: true,
+  // A fall begins the board again by itself (the user asked).
+  restartOnFail: (s) => s.winner === 1,
   puzzle: { hint, hintText: "힌트 — 큐브를 금색 화살표 쪽으로 미세요." },
   stagesFirst: true,
   stages: STAGES.map((_, i) => ({ value: String(i + 1), name: NAMES[i], note: NOTES[i], art: stageArt(i + 1) })),

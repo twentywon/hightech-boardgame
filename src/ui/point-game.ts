@@ -118,6 +118,10 @@ export interface PointConfig<S> {
    */
   /** `hintText` may depend on the move hinted at, for a puzzle whose hints point at different kinds of things. */
   puzzle?: { hint: (state: S) => Move | null; hintText?: string | ((state: S, move: Move) => string) };
+  /** A move given while the table still moves is kept and played the moment it rests (one, the latest), and no pause follows a move (glide cube: the user asked to give pushes ahead). */
+  queueMoves?: boolean;
+  /** A puzzle that begins again by itself, a moment after the failure has been seen, when this says the state is one (the user asked for it in glide cube and the laser puzzle). */
+  restartOnFail?: (state: S) => boolean;
   /** Why a move of mine is refused, said in the status line until the next move (a piece that may not stand there). */
   refusal?: (state: S, move: Move) => string | null;
   /** The player turns the view by dragging the table; a 시점 전환 button over the table brings it back (`resetView`). */
@@ -198,6 +202,8 @@ export interface PointController {
 }
 
 /** Whether a setting is offered for a variant and a mode (`settings` of a `PointConfig`). */
+/** How long a failure stands on the table before a `restartOnFail` puzzle begins again. */
+const RESTART_AFTER = 1600;
 const offered = (setting: PointSetting, variant: string, mode: PointOptions["mode"]) => !setting.fixed?.includes(variant) && (!setting.ai || mode === "ai");
 /** A setting's value as it may be used: a whole number within its bounds, a rule on or off, one of its choices; else its own. */
 function settled(setting: PointSetting, value: unknown): number | boolean | string {
@@ -245,6 +251,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     disposed = false,
     generation = 0,
     lockedUntil = 0,
+    /** A move given ahead (`queueMoves`), played once the table rests. */
+    queued: Move | null = null,
     announced = false,
     thinking = false,
     paused = false,
@@ -453,6 +461,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     notice = "";
     announced = false;
     lockedUntil = 0;
+    queued = null;
     sound.enabled = settings.sound;
     sound.unlock();
     screen();
@@ -492,16 +501,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       };
       $("pz-restart").onclick = () => {
         if (busy() || !past.length) return;
-        // Back to the puzzle as it was laid.
-        generation++;
-        state = shown = past[0];
-        past = [];
-        chosen = {};
-        hinted = null;
-        notice = "";
-        announced = false;
-        if (view) view.sync(state, false);
-        else present();
+        restartPuzzle();
       };
       $("pz-new").onclick = () => start(false);
       $("pz-next").onclick = () => {
@@ -674,6 +674,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (!paused) view?.renderer.domElement.focus({ preventScroll: true });
   }
   function commit(move: Move) {
+    if (config.queueMoves && !paused && !over() && busy() && state !== shown) {
+      // Still moving: kept and played the moment the table rests.
+      queued = move;
+      return;
+    }
     if (paused || (!config.live && busy()) || computerTurn() || over()) return;
     const next = game.play(state, move, cryptoRandom);
     if (!next) {
@@ -692,8 +697,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     // Where undo exists everything is kept for it, moves that leave the count alone included (ships being laid).
     if (!config.noUndo || game.ply(next) !== game.ply(state)) {
       past.push(state);
-      lockedUntil = performance.now() + 200;
-      later(update, 220);
+      if (!config.queueMoves) {
+        lockedUntil = performance.now() + 200;
+        later(update, 220);
+      }
     }
     apply(next);
   }
@@ -751,6 +758,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     commit(made);
   }
   function undo() {
+    queued = null;
     if (busy() || !past.length) return;
     // Against the computer, go back to my own last turn.
     let back = past.pop()!;
@@ -786,6 +794,19 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       apply(next);
     }, 450 + (config.ponder?.(state) ?? 0));
   }
+  /** Back to the puzzle as it was laid (처음부터, or by itself after a failure where `restartOnFail` says so). */
+  function restartPuzzle() {
+    queued = null;
+    generation++;
+    state = shown = past[0];
+    past = [];
+    chosen = {};
+    hinted = null;
+    notice = "";
+    announced = false;
+    if (view) view.sync(state, false);
+    else present();
+  }
   /** Everything has come to rest: describe the current state. */
   function present() {
     if (disposed) return;
@@ -800,6 +821,21 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       waitingSet = null;
     }
     update();
+    if (queued) {
+      const move = queued;
+      queued = null;
+      if (!over() && !busy()) commit(move);
+    }
+    if (config.puzzle && config.restartOnFail?.(state) && past.length) {
+      const failed = state;
+      setTimeout(() => {
+        // Only if nothing has happened since (no undo, no new puzzle, no window over the table).
+        if (disposed || state !== failed || busy() || document.querySelector("dialog[open]")) return;
+        restartPuzzle();
+        notice = "실패해서 처음부터 다시 시작했습니다.";
+        update();
+      }, RESTART_AFTER);
+    }
     if (over() && !announced) {
       announced = true;
       if (config.bankrupt?.(state)) bankrupt();

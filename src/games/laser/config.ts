@@ -72,6 +72,8 @@ export const laserConfig: PointConfig<State> = {
     if (!capturing() || (key !== "h" && key !== "H")) return null;
     return hint(state);
   },
+  // A shot that lights the wrong way begins the bench again by itself (the user asked).
+  restartOnFail: (s) => s.fired && s.winner === null,
   puzzle: {
     hint,
     hintText: (_state, move) =>

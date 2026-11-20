@@ -50,6 +50,8 @@ export abstract class TableView<S> implements PointView<S> {
   get animating() {
     return this.tweens.length > 0;
   }
+  /** A view whose screen queues moves (`PointConfig.queueMoves`) takes presses while it moves, so a move can be given ahead. */
+  protected pressWhileMoving = false;
   protected own<R extends { dispose(): void }>(resource: R) {
     this.owned.push(resource);
     return resource;
@@ -89,7 +91,7 @@ export abstract class TableView<S> implements PointView<S> {
       down = e.pointerType === "mouse" && e.button !== 0 ? null : e.pointerId;
       // A press that begins while the table moves is ignored whole: its release must not become a tap on whatever
       // lies under the pointer by then (a drag begun as a tower settled dropped the marble through the funnel).
-      if (down !== null && (this.disposed || this.animating)) down = null;
+      if (down !== null && (this.disposed || (this.animating && !this.pressWhileMoving))) down = null;
       if (down === null) return;
       const at = ground(e);
       // A view may take the gesture for itself (a flick): the tap is then not a pick.

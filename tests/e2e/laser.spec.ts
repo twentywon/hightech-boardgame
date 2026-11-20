@@ -185,10 +185,9 @@ test("laser reflection: a refused place, a piece back to the tray, a firing that
   await expect(page.locator("#board canvas")).toHaveAttribute("data-fired", "true");
   await expect(page.locator("#turn")).toContainText("쟁반에 아직 부품이 남아 있습니다.");
   await expect(page.locator("#turn")).not.toContainText("실패");
-  await expect(page.locator("#pz-hint")).toBeEnabled();
-  // Undo takes the firing back, and the beam goes.
-  await page.locator("#pg-undo").click();
-  await counted(page, 2);
+  // A shot that does not solve it begins the bench again by itself after a moment, and the beam goes.
+  await expect(moves(page)).toHaveText("0수", { timeout: 20000 });
+  await expect(page.locator("#pg-note")).toContainText("처음부터 다시 시작했습니다");
   await expect(page.locator("#board canvas")).toHaveAttribute("data-fired", "false");
   expect(errors).toEqual([]);
 });

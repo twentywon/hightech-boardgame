@@ -55,7 +55,7 @@ async function swipe(page: Page, state: rules.State, dir: number) {
   await page.mouse.up();
 }
 
-test("glide cube: a seeded puzzle is solved by swipes and a key, then a fall is taken back with undo", async ({ page }, info) => {
+test("glide cube: a seeded puzzle is solved by swipes and a key, then a fall begins the board again by itself", async ({ page }, info) => {
   const mobile = info.project.name === "mobile",
     random = await seeded(page, 92),
     errors: string[] = [];
@@ -102,10 +102,9 @@ test("glide cube: a seeded puzzle is solved by swipes and a key, then a fall is 
   else await page.mouse.click(arrow.x, arrow.y);
   await expect(moves(page)).toHaveText("1수", { timeout: 20000 });
   await expect(page.locator("#turn")).toContainText("실패!");
-  await settled(page);
-  await page.locator("#pg-undo").click();
+  // A fall begins the board again by itself after a moment.
   await expect(moves(page)).toHaveText("0수", { timeout: 20000 });
-  await expect(page.locator("#turn")).not.toContainText("실패!");
+  await expect(page.locator("#pg-note")).toContainText("처음부터 다시 시작했습니다");
   await expect(page.locator("canvas")).toHaveAttribute("data-cube", String(start.cube));
   expect(errors).toEqual([]);
 });

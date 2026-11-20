@@ -295,6 +295,12 @@ export class GlideView extends TableView<State> {
   private shardPaint: T.MeshStandardMaterial;
   private hovered = -1;
   private sliding = false;
+  protected pressWhileMoving = true;
+  /** Busy only while the cube travels (or falls, or sinks into the well); what follows a stop is decoration. */
+  get animating() {
+    return this.sliding || (super.animating && this.fallingOrHome);
+  }
+  private fallingOrHome = false;
   /** A press: where it began on the table and on the screen, and the arrow it began on. */
   private press: { point: number; at: { x: number; z: number }; screen: { x: number; y: number } } | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
@@ -620,7 +626,8 @@ export class GlideView extends TableView<State> {
     const blocked = attempt(state, dir) !== "ok";
     this.onMove({ from: -1, to: dir, extra: -1 });
     // A push that moves nothing: the cube gives a little shake that way.
-    if (blocked && this.state === state) this.shake(dir);
+    // While it still slides a push is only kept for later (the screen queues it), so nothing shakes then.
+    if (blocked && this.state === state && !this.sliding) this.shake(dir);
   }
   private shake(dir: number) {
     const state = this.state!,
@@ -686,7 +693,16 @@ export class GlideView extends TableView<State> {
         return hi * duration;
       };
     this.sliding = true;
+    this.fallingOrHome = fall || slide.end === "goal";
     this.mark(this.marks);
+    // The table counts as at rest once the cube does: the bump against what stopped it and flying ice do not hold the
+    // next push back (the user found the wait after each stop too long; a push given ahead is played at once).
+    if (!fall && slide.end !== "goal")
+      this.tween(duration, 1, () => {
+        if (!this.sliding) return;
+        this.sliding = false;
+        this.onSettled();
+      });
     this.cube.visible = true;
     this.tween(0, duration, (p) => {
       const u = ease(p) * total;
