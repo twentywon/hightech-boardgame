@@ -298,6 +298,14 @@ const play = {
     }
     await wait(1600);
   },
+  // The 6×6 baseboard with part of the railway laid from the tunnel by the hint's moves (H plays them while capturing).
+  "train-tracks": async () => {
+    await stage(1);
+    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
+    await wait(800);
+    await keys(Array(9).fill("h"), 320);
+    await wait(900);
+  },
   // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
   darts: async () => {
     await keys(["Enter"]);

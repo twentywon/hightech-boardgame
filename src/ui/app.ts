@@ -64,6 +64,7 @@ import { starBattleConfig } from "../games/starbattle/config";
 import { pipesConfig } from "../games/pipes/config";
 import { goConfig } from "../games/go/config";
 import { bridgesConfig } from "../games/bridges/config";
+import { tracksConfig } from "../games/tracks/config";
 import { parkingConfig } from "../games/parking/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
@@ -234,6 +235,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   pipes: { config: pipesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   // Titled 하시 (HASHI) at the user's request; its id follows the catalog's English name.
   hashi: { config: bridgesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "train-tracks": { config: tracksConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "parking-escape": { config: parkingConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -415,6 +417,7 @@ type GameSelection =
   | "star-battle"
   | "pipes"
   | "hashi"
+  | "train-tracks"
   | "parking-escape"
   | "minesweeper"
   | "fruit-merge"

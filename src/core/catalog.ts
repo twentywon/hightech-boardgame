@@ -719,4 +719,12 @@ export const games = [
     icon: "⛳",
     available: true,
   },
+  {
+    name: "기차 선로",
+    en: "TRAIN TRACKS",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "🛤",
+    available: true,
+  },
 ];

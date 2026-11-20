@@ -130,7 +130,8 @@ export interface PointConfig<S> {
   newGameLabel?: string;
   /** A key that is a whole move (an arrow that slides the tiles), or null for the usual walk over the points. */
   /** `repeat` is true for the copies a key held down sends. */
-  keyMove?: (key: string, state: S, repeat?: boolean) => Move | null;
+  /** `held` says whether Shift is down and where the keyboard's cursor stands (a key that lays a rail from there). */
+  keyMove?: (key: string, state: S, repeat?: boolean, held?: { shift: boolean; cursor: number | null }) => Move | null;
   /** A key let go that is a move of its own (an arrow that was held to move something along), on a live table. */
   keyUp?: (key: string, state: S) => Move | null;
   /** The names and colours of the two sides, when they depend on the variant. */
@@ -704,7 +705,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       togglePause();
       return;
     }
-    const direct = config.keyMove?.(e.key, state, e.repeat);
+    const direct = config.keyMove?.(e.key, state, e.repeat, { shift: e.shiftKey, cursor });
     if (direct) {
       e.preventDefault();
       e.stopPropagation();
