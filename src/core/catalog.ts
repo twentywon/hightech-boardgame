@@ -735,12 +735,4 @@ export const games = [
     icon: "◧",
     available: true,
   },
-  {
-    name: "네모 러너",
-    en: "SQUARE RUNNER",
-    category: "아케이드게임",
-    players: "1인용",
-    icon: "🏃",
-    available: true,
-  },
 ];

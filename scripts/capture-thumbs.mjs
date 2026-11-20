@@ -601,21 +601,6 @@ const play = {
     }
     await page.keyboard.press("p");
   },
-  // The boss room (레벨 선택, eighth card), played a few seconds: jumps at the walls and strikes all the while, so
-  // that squares fly at the boss; then paused.
-  "square-runner": async () => {
-    await press("#restart");
-    await page.locator("dialog[open] .stage-card").nth(7).click();
-    await page.locator("canvas[data-ready]").waitFor();
-    await page.locator("canvas").focus();
-    for (let i = 0; i < 45; i++) {
-      const at = JSON.parse((await page.locator("canvas").getAttribute("data-runner")) ?? "{}");
-      if ((at.dir > 0 ? 13.7 - at.u : at.u - 0.3) < 2.2) await page.keyboard.press("ArrowUp");
-      await page.keyboard.press("z");
-      await wait(80);
-    }
-    await page.keyboard.press("p");
-  },
 };
 const only = process.argv[3];
 for (const game of games) {

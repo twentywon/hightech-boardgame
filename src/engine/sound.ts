@@ -594,30 +594,6 @@ export class Sound {
     this.tone("sine", 150, 55, 0, 0.18, 0.3);
     this.noise(0, 0.08, 0.12, 700, "lowpass", 300);
   }
-  /**
-   * 네모 러너's chiptune sounds, made by the page, the same each time: a strike's swish, the thwack of a square
-   * knocked away, the jump's spring, a tumble onto a wall, a hurt, a square striking the boss, a portal's warble.
-   */
-  runner(kind: "swish" | "smash" | "jump" | "turn" | "hurt" | "boss" | "portal") {
-    if (kind === "swish") this.noise(0, 0.08, 0.07, 2600, "bandpass", 900);
-    else if (kind === "smash") {
-      this.tone("square", 220, 70, 0, 0.09, 0.07);
-      this.noise(0, 0.06, 0.16, 1500, "lowpass", 400);
-    } else if (kind === "jump") this.tone("square", 260, 820, 0, 0.13, 0.045);
-    else if (kind === "turn") {
-      this.tone("square", 520, 780, 0, 0.05, 0.035);
-      this.tone("square", 780, 1040, 0.05, 0.05, 0.03);
-    } else if (kind === "hurt") {
-      this.tone("square", 440, 110, 0, 0.28, 0.06);
-      this.noise(0, 0.12, 0.12, 900, "lowpass", 200);
-    } else if (kind === "boss") {
-      this.tone("sawtooth", 180, 40, 0, 0.32, 0.08);
-      this.noise(0, 0.2, 0.2, 1200, "lowpass", 150);
-      this.tone("square", 990, 660, 0.02, 0.1, 0.03);
-    } else {
-      [0, 0.07, 0.14].forEach((at, i) => this.tone("triangle", 1300 - i * 300, 500 - i * 100, at, 0.09, 0.04));
-    }
-  }
   /** A bow let go (archery): the string's low thrum and the arrow's hiss as it leaves; made by the page, the same each time. */
   bow() {
     this.tone("triangle", 148, 92, 0, 0.24, 0.13);
