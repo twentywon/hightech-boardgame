@@ -145,7 +145,7 @@ test("laser reflection: the tray's pieces are dragged to their mounts, turned by
   expect(errors).toEqual([]);
 });
 
-test("laser reflection: a refused place, a piece back to the tray, a firing that only shows the beam, and undo", async ({ page }, info) => {
+test("laser reflection: a refused place, a piece back to the tray, a firing that only shows the beam, and the bench laid again by itself", async ({ page }, info) => {
   test.setTimeout(150000);
   const mobile = info.project.name === "mobile",
     random = await seeded(page, 87),
