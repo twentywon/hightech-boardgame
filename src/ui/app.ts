@@ -66,6 +66,7 @@ import { goConfig } from "../games/go/config";
 import { bridgesConfig } from "../games/bridges/config";
 import { tracksConfig } from "../games/tracks/config";
 import { parkingConfig } from "../games/parking/config";
+import { glideConfig } from "../games/glide/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -237,6 +238,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   hashi: { config: bridgesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "train-tracks": { config: tracksConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "parking-escape": { config: parkingConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "glide-cube": { config: glideConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -419,6 +421,7 @@ type GameSelection =
   | "hashi"
   | "train-tracks"
   | "parking-escape"
+  | "glide-cube"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"

@@ -727,4 +727,12 @@ export const games = [
     icon: "🛤",
     available: true,
   },
+  {
+    name: "미끄럼 큐브",
+    en: "GLIDE CUBE",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "◧",
+    available: true,
+  },
 ];

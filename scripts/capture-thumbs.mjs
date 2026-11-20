@@ -306,6 +306,16 @@ const play = {
     await keys(Array(9).fill("h"), 320);
     await wait(900);
   },
+  // A 고수 board (turners, ice and a pair of portals) after two pushes of the hint's way (H plays it while capturing).
+  "glide-cube": async () => {
+    await stage(3);
+    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
+    await wait(800);
+    await keys(["h"], 100);
+    await wait(1400);
+    await keys(["h"], 100);
+    await wait(1600);
+  },
   // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
   darts: async () => {
     await keys(["Enter"]);
