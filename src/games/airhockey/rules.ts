@@ -43,7 +43,7 @@ export const airHockey: PointGame<State> = {
   create: () => createGame(),
   moves,
   play,
-  // Nobody takes turns: the table never waits for the computer.
+  // Nobody takes turns: the table never waits for the computer (and two at one screen both play at once).
   turn: () => 0,
   winner: (s) => s.winner,
   owners: () => [null, null],
@@ -52,8 +52,7 @@ export const airHockey: PointGame<State> = {
   evaluate: (s, player) => (s.sets[player] - s.sets[player ? 0 : 1]) * 10 + s.score[player] - s.score[player ? 0 : 1],
   hint: (s) => `${setNumber(s)}세트 ${s.score[0]} 대 ${s.score[1]} (세트 ${s.sets[0]} 대 ${s.sets[1]}). 말렛을 움직여 퍽을 쳐서 상대 골문에 넣으세요.`,
   tally: (s) => [0, 1].map((p) => `${s.score[p]}점 · 세트 ${s.sets[p]}`) as [string, string],
-  reason: (s) =>
-    s.winner === 0
-      ? `세트 ${s.sets[0]} 대 ${s.sets[1]}로 이겼습니다 (${sets(s)}). ${POINTS}점 내기 ${SETS}세트에서 ${NEED}세트를 먼저 땄습니다.`
-      : `세트 ${s.sets[0]} 대 ${s.sets[1]}로 졌습니다 (${sets(s)}). 컴퓨터가 ${NEED}세트를 먼저 땄습니다.`,
+  // Said the same for either mode (the screen puts who won before it: 이겼습니다, 컴퓨터가 이겼습니다, 왼쪽 승리): the
+  // match's sets, then each set's score.
+  reason: (s) => `세트 ${s.sets[0]} 대 ${s.sets[1]}로 끝났습니다 (${sets(s)}). ${POINTS}점 내기 ${SETS}세트에서 ${NEED}세트를 먼저 땄습니다.`,
 };

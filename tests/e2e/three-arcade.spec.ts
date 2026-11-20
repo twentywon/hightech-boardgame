@@ -62,7 +62,10 @@ test("tic-tac-toe: four down through the layers of the cube wins for two at one 
 });
 
 test("air hockey: my mallet follows the hand, the puck moves, and a pause holds the table", async ({ page }) => {
-  const errors = await sit(page, "에어하키");
+  const errors = await sit(page, "에어하키", async (p) => {
+    await p.getByLabel("컴퓨터 대전", { exact: true }).check();
+  });
+  await expect(page.locator("canvas")).toHaveAttribute("data-players", "1");
   const canvas = page.locator("canvas"),
     box = (await canvas.boundingBox())!;
   const before = await canvas.getAttribute("data-mallet");
@@ -82,6 +85,54 @@ test("air hockey: my mallet follows the hand, the puck moves, and a pause holds 
   await page.waitForTimeout(800);
   expect(await canvas.getAttribute("data-puck")).toBe(held);
   await page.keyboard.press("p");
+  expect(errors).toEqual([]);
+});
+
+test("air hockey for two: two fingers on the table at once drive both mallets, and W A S D and the arrows drive one each", async ({ page, context }) => {
+  const errors = await sit(page, "에어하키", async (p) => {
+    await p.getByLabel("로컬 2인", { exact: true }).check();
+    // The computer's level is offered only against the computer.
+    await expect(p.locator("#pg-level-field")).toBeHidden();
+  });
+  const canvas = page.locator("canvas"),
+    box = (await canvas.boundingBox())!,
+    mallets = async () => ((await canvas.getAttribute("data-mallets")) ?? "").split(";").map((m) => m.split(",").map(Number));
+  await expect(canvas).toHaveAttribute("data-players", "2");
+  await expect(page.locator("#pg-side-0")).toContainText("왼쪽");
+  await expect(page.locator("#pg-side-1")).toContainText("오른쪽");
+  await expect(page.locator("aside.game-sidebar")).not.toContainText("컴퓨터");
+  await expect.poll(async () => (await mallets()).length).toBe(2);
+  const [left, right] = await mallets();
+  // Two touch points, one on each half, go down and move at the same time (as two fingers on a phone or a tablet).
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  const L = { x: box.x + box.width * 0.2, y: box.y + box.height * 0.5 },
+    R = { x: box.x + box.width * 0.8, y: box.y + box.height * 0.5 },
+    points = (k: number) => [
+      { x: L.x + k * box.width * 0.003, y: L.y - k * box.height * 0.012, id: 1 },
+      { x: R.x - k * box.width * 0.003, y: R.y + k * box.height * 0.012, id: 2 },
+    ];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: points(0) });
+  for (let k = 1; k <= 12; k++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(k) });
+    await page.waitForTimeout(60);
+  }
+  // Both mallets have gone where their own finger is: the left one up the screen (-x), the right one down it (+x).
+  await expect.poll(async () => (await mallets())[0][0], { timeout: 10000 }).toBeLessThan(left[0] - 0.3);
+  await expect.poll(async () => (await mallets())[1][0], { timeout: 10000 }).toBeGreaterThan(right[0] + 0.3);
+  const [l, r] = await mallets();
+  // Each stays in its own half.
+  expect(l[1]).toBeGreaterThan(0);
+  expect(r[1]).toBeLessThan(0);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  // The keys, back the other way: S for the left mallet down, ↑ for the right one up, at once.
+  await canvas.focus();
+  await page.keyboard.down("s");
+  await page.keyboard.down("ArrowUp");
+  await expect.poll(async () => (await mallets())[0][0], { timeout: 10000 }).toBeGreaterThan(l[0] + 0.2);
+  await expect.poll(async () => (await mallets())[1][0], { timeout: 10000 }).toBeLessThan(r[0] - 0.2);
+  await page.keyboard.up("s");
+  await page.keyboard.up("ArrowUp");
   expect(errors).toEqual([]);
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { seededRandom } from "../src/core/ai";
 import * as ah from "../src/games/airhockey/rules";
 import * as hs from "../src/games/airhockey/sim";
+import { airHockeyConfig } from "../src/games/airhockey/config";
 import * as br from "../src/games/basketball/rules";
 import * as bs from "../src/games/basketball/sim";
 import { swipe, swipeFor } from "../src/games/basketball/layout";
@@ -135,6 +136,123 @@ describe("air hockey", () => {
       hs.step(w, "hard");
     }
     expect(Math.abs(w.mallets[1].x - w.puck.x)).toBeLessThan(0.8);
+  });
+  /** A rally from a slow puck lying in the computer's half (a third of them in a corner), my mallet on guard. */
+  function rally(level: hs.Level, seed: number, seconds = 20) {
+    const random = seededRandom(seed),
+      w = hs.createWorld(1),
+      wx = hs.HALF_X - hs.PUCK,
+      wz = hs.HALF_Z - hs.PUCK,
+      corner = seed % 3 === 0;
+    Object.assign(w.puck, {
+      x: corner ? (random() < 0.5 ? -1 : 1) * (wx - random() * 0.2) : (random() - 0.5) * 2 * wx,
+      z: corner ? -(wz - random() * 0.3) : -(0.3 + random() * (hs.HALF_Z - 0.6)),
+      vx: random() - 0.5,
+      vz: random() - 0.5,
+    });
+    let slow = 0,
+      longest = 0,
+      outside = false;
+    for (let k = 0; k < seconds / hs.DT; k++) {
+      w.targets[0] = { x: Math.max(-1, Math.min(1, w.puck.x * 0.5)), z: hs.HALF_Z - 0.6 };
+      hs.think(w, level, random);
+      if (hs.step(w, level) !== null) break;
+      // A puck in a goal's mouth may be past the end; anywhere else it stays between the rails.
+      if (Math.abs(w.puck.x) > wx + 1e-6 || (Math.abs(w.puck.z) > wz + 1e-6 && Math.abs(w.puck.x) >= hs.GOAL - hs.PUCK * 0.4)) outside = true;
+      slow = w.puck.z < 0 && Math.hypot(w.puck.vx, w.puck.vz) < 1.5 ? slow + hs.DT : 0;
+      longest = Math.max(longest, slow);
+    }
+    return { longest, outside };
+  }
+  test("the computer strikes a slow puck out of its corners and off its end rail at every level, never pressing it there", () => {
+    // Before, about a quarter of these rallies ended with the puck pressed into a corner for good.
+    for (const level of ["easy", "normal", "hard"] as hs.Level[])
+      for (let seed = 1; seed <= 60; seed++) {
+        const { longest, outside } = rally(level, seed);
+        expect(longest, `${level} seed ${seed}`).toBeLessThan(3);
+        expect(outside, `${level} seed ${seed}`).toBe(false);
+      }
+  });
+  test("a mallet pressed into a corner where the puck lies is stopped by it and never pushes it through the rails", () => {
+    const w = hs.createWorld(0),
+      wx = hs.HALF_X - hs.PUCK,
+      wz = hs.HALF_Z - hs.PUCK;
+    Object.assign(w.puck, { x: wx, z: wz, vx: 0, vz: 0 });
+    w.mallets[1].x = w.targets[1].x = -hs.HALF_X + hs.MALLET;
+    for (let k = 0; k < 240; k++) {
+      // The hand pushes as far into the corner as the mallet may go.
+      w.targets[0] = { x: hs.HALF_X, z: hs.HALF_Z };
+      hs.step(w, "normal");
+      expect(Math.abs(w.puck.x)).toBeLessThanOrEqual(wx + 1e-9);
+      expect(Math.abs(w.puck.z)).toBeLessThanOrEqual(wz + 1e-9);
+      expect(Math.hypot(w.puck.x - w.mallets[0].x, w.puck.z - w.mallets[0].z)).toBeGreaterThan(hs.PUCK + hs.MALLET - 1e-6);
+    }
+  });
+  test("a puck kept in one half for longer than HOLD seconds is laid still in the other half, and crossing starts the count again", () => {
+    const w = hs.createWorld(0);
+    // My mallet stands aside; the puck lies still in my half.
+    w.mallets[0].x = w.targets[0].x = hs.HALF_X - hs.MALLET;
+    w.mallets[1].x = w.targets[1].x = -hs.HALF_X + hs.MALLET;
+    Object.assign(w.puck, { x: 0.5, z: 2, vx: 0, vz: 0 });
+    for (let k = 0; k < (hs.HOLD - 0.5) / hs.DT; k++) hs.step(w, "normal");
+    expect(w.served).toBeNull();
+    expect(w.puck.z).toBeGreaterThan(0);
+    for (let k = 0; k < 1 / hs.DT && w.served === null; k++) hs.step(w, "normal");
+    expect(w.served).toBe(1);
+    expect(w.puck).toMatchObject({ z: -1.5, vx: 0, vz: 0 });
+    // Sent back across before the time is up, the count begins again on the other side.
+    w.served = null;
+    for (let k = 0; k < 3 / hs.DT; k++) hs.step(w, "normal");
+    Object.assign(w.puck, { x: 0.5, z: 0.5, vx: 0, vz: 0 });
+    for (let k = 0; k < (hs.HOLD - 0.5) / hs.DT; k++) hs.step(w, "normal");
+    expect(w.served).toBeNull();
+  });
+  test("a puck at rest on the centre line can be reached by both mallets anywhere along it", () => {
+    for (let x = -(hs.HALF_X - hs.PUCK); x <= hs.HALF_X - hs.PUCK; x += 0.05)
+      for (const side of [0, 1] as const) {
+        const m = hs.keep(side, x, 0);
+        expect(Math.hypot(m.x - x, m.z)).toBeLessThan(hs.PUCK + hs.MALLET);
+      }
+  });
+  test("for two at one screen both mallets go all the way to their hands at once, each kept to its own half", () => {
+    const w = hs.createWorld(0);
+    w.targets[0] = { x: -1.2, z: 0.6 };
+    w.targets[1] = { x: 1.3, z: 1 };
+    hs.step(w, "easy", true);
+    expect(w.mallets[0].x).toBeCloseTo(-1.2, 5);
+    expect(w.mallets[0].z).toBeCloseTo(0.6, 5);
+    // The right hand reached over the centre line: its mallet stops at its own side of it.
+    expect(w.mallets[1].x).toBeCloseTo(1.3, 5);
+    expect(w.mallets[1].z).toBeCloseTo(-hs.MALLET * 0.6, 5);
+    // Against the computer its mallet keeps its top speed.
+    const v = hs.createWorld(0);
+    v.targets[1] = { x: 1.3, z: -0.5 };
+    hs.step(v, "easy");
+    expect(Math.hypot(v.mallets[1].x, v.mallets[1].z + hs.HALF_Z - 0.9)).toBeCloseTo(hs.LEVELS.easy.speed * hs.DT, 5);
+  });
+  test("two at one screen: the sides are 왼쪽 and 오른쪽, a set is told over the table by the side that took it, and no computer plays", () => {
+    expect(airHockeyConfig.computerOnly).toBeFalsy();
+    let s = ah.createGame();
+    // Nobody waits for a turn: the screen never gives one to the computer.
+    expect(airHockeyConfig.game.turn(s)).toBe(0);
+    for (let k = 0; k < ah.POINTS - 1; k++) s = ah.play(s, at(1))!;
+    const before = s;
+    s = ah.play(s, at(1))!;
+    expect(airHockeyConfig.cheer!(before, s, "local")).toBe("GOAL");
+    expect(airHockeyConfig.setResult!(before, s, "local")).toEqual({ outcome: "win", word: "1세트 · 오른쪽", detail: `0 : ${ah.POINTS} · 세트 0 : 1` });
+    expect(airHockeyConfig.setResult!(before, s, "ai")).toEqual({ outcome: "lose", word: "1세트 패배", detail: `0 : ${ah.POINTS} · 세트 0 : 1` });
+    expect(airHockeyConfig.setResult!(s, ah.play(s, at(0))!, "ai")).toBeNull();
+    expect(airHockeyConfig.cheer!(s, ah.play(s, at(0))!, "local")).toBe("GOAL");
+    const board = (mode: "local" | "ai") => airHockeyConfig.tallyHtml!(s, mode)[0];
+    expect(board("local")).toContain("<b>왼쪽</b>");
+    expect(board("local")).toContain("<b>오른쪽</b>");
+    expect(board("local")).not.toContain("컴퓨터");
+    expect(board("ai")).toContain("<b>컴퓨터</b>");
+    // The result says nothing of one person winning or losing: the screen puts the winner before it.
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(1))!;
+    expect(s.winner).toBe(1);
+    expect(ah.airHockey.reason(s)).not.toMatch(/졌습니다|컴퓨터|이겼습니다/);
+    expect(ah.airHockey.reason(s)).toMatch(/^세트 0 대 2로 끝났습니다/);
   });
 });
 describe("basketball", () => {

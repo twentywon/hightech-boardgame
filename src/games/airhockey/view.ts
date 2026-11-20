@@ -4,10 +4,13 @@ import { pub } from "../../engine/scenery";
 import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import type { State } from "./rules";
+import { shout } from "../../ui/banner";
 import { DT, GOAL, HALF_X, HALF_Z, MALLET, MAX_PUCK, PUCK, createWorld, keep, step, think, type World } from "./sim";
 import { DROP, ORBIT, RAIL, airHockeySubject } from "./layout";
 
 export const AIRHOCKEY_COLORS: [string, string] = ["#e0322a", "#2a6fe0"];
+/** Where a side's mallet stands at a face-off, before its goal. */
+const home = (side: 0 | 1) => ({ x: 0, z: side === 0 ? HALF_Z - 0.9 : -HALF_Z + 0.9 });
 /** The playing surface: white with a field of tiny air holes, the red centre line, blue circles and the creases before the goals. */
 function surface() {
   const W = 512,
@@ -68,18 +71,25 @@ function surface() {
  * side so that it lies across the screen: a white surface full of air holes between padded rails, a goal slot at each
  * end, an amber puck, my red mallet at the left and the computer's blue one at the right. The score is on a board of
  * its own over the table (the screen's scoreboard panel). The view plays the table in real time (`sim.ts`) and
- * reports each goal as a move; my mallet goes exactly where the hand is.
+ * reports each goal as a move; my mallet goes exactly where the hand is. With `two` (two at one screen) both mallets
+ * are hands: every pointer that goes down takes the mallet of the half it is on and drives it, by its own id, until it
+ * lifts, so that two fingers play at once (the view follows pointers itself; `TableView` follows only one).
  */
 export class AirHockeyView extends TableView<State> {
   private world: World = createWorld(0, 0);
   private puck: T.Group;
   private mallets: T.Group[] = [];
-  /** Where the hand has my mallet go, and where it was sent at the end of the last frame (the way between is swept). */
-  private hand = { x: 0, z: HALF_Z - 0.9 };
-  private sent = { x: 0, z: HALF_Z - 0.9 };
-  /** Seconds before the puck is let go after a goal; keys held; the last frame; time owed to the table. */
+  /** Where each hand has its mallet go, and where it was sent at the end of the last frame (the way between is swept). */
+  private hands = [home(0), home(1)];
+  private sent = [home(0), home(1)];
+  /** Which mallet each pointer down on the table holds (by pointer id); a mouse not pressed drives the half it is over. */
+  private holds = new Map<number, 0 | 1>();
+  /** Seconds before the computer plays after a goal; keys held for each side; the last frame; time owed to the table. */
   private wait = 0.9;
-  private keys = { x: 0, z: 0 };
+  private keys = [
+    { x: 0, z: 0 },
+    { x: 0, z: 0 },
+  ];
   private last = performance.now();
   private left = 0;
   private paused = false;
@@ -94,6 +104,7 @@ export class AirHockeyView extends TableView<State> {
     host: HTMLElement,
     quality: "high" | "low",
     private level: Level,
+    private two = false,
   ) {
     super(host, quality, "#16110d");
     this.scene.add(new T.HemisphereLight("#d8cdb8", "#221a14", 1.6));
@@ -154,31 +165,70 @@ export class AirHockeyView extends TableView<State> {
       this.scene.add(g);
       this.mallets.push(g);
     });
-    // The hand: a mouse moves my mallet wherever it goes over the table (no button needed); keys move it too.
+    // The hands. Every pointer is followed by its own id: a press takes the mallet of the half it is on (against the
+    // computer, always mine) and drives it until it lifts; a second finger on a half already held takes that mallet
+    // over. A mouse moves a mallet by hovering too (no button needed): mine, or for two, the one whose half it is over.
     const el = this.renderer.domElement,
       ray = new T.Raycaster(),
-      hit = new T.Vector3();
-    el.addEventListener("pointermove", (e) => {
-      if (e.pointerType !== "mouse" || this.disposed || !this.running()) return;
-      aim(ray, e, el, this.camera);
-      if (ray.ray.intersectPlane(this.floor, hit)) this.reach(hit.x, hit.z);
+      hit = new T.Vector3(),
+      ground = (e: PointerEvent) => {
+        aim(ray, e, el, this.camera);
+        return ray.ray.intersectPlane(this.floor, hit) ? { x: hit.x, z: hit.z } : null;
+      },
+      halfOf = (z: number): 0 | 1 => (!this.two || z >= 0 ? 0 : 1),
+      letGo = (e: PointerEvent) => this.holds.delete(e.pointerId);
+    el.addEventListener("pointerdown", (e) => {
+      if ((e.pointerType === "mouse" && e.button !== 0) || this.disposed || !this.running()) return;
+      const at = ground(e);
+      if (!at) return;
+      const side = halfOf(at.z);
+      for (const [id, held] of this.holds) if (held === side) this.holds.delete(id);
+      this.holds.set(e.pointerId, side);
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {
+        // A pointer already gone: nothing to follow.
+      }
+      this.reach(side, at.x, at.z);
     });
-    // The arrows go as the table is seen: right toward the far goal (-z), up away from me (-x).
-    const ARROWS: Record<string, [number, number]> = { ArrowLeft: [0, 1], ArrowRight: [0, -1], ArrowUp: [-1, 0], ArrowDown: [1, 0] };
+    el.addEventListener("pointermove", (e) => {
+      if (this.disposed || !this.running()) return;
+      const held = this.holds.get(e.pointerId);
+      if (held === undefined && e.pointerType !== "mouse") return;
+      const at = ground(e);
+      if (at) this.reach(held ?? halfOf(at.z), at.x, at.z);
+    });
+    el.addEventListener("pointerup", letGo);
+    el.addEventListener("pointercancel", letGo);
+    el.addEventListener("lostpointercapture", letGo);
+    // No page scroll, zoom or long-press menu under the fingers (the canvas is `touch-action: none` as well).
+    const still = (e: Event) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    el.addEventListener("touchstart", still, { passive: false });
+    el.addEventListener("touchmove", still, { passive: false });
+    el.addEventListener("contextmenu", still);
+    el.style.touchAction = "none";
+    // Keys go as the table is seen: right toward the far goal (-z), up away from me (-x). Against the computer the arrows
+    // and W A S D both move my mallet; for two, W A S D move the left mallet and the arrows the right one.
+    const WAYS: Record<string, [number, number]> = { ArrowLeft: [0, 1], ArrowRight: [0, -1], ArrowUp: [-1, 0], ArrowDown: [1, 0], KeyA: [0, 1], KeyD: [0, -1], KeyW: [-1, 0], KeyS: [1, 0] },
+      sideOf = (code: string): 0 | 1 => (this.two && code.startsWith("Arrow") ? 1 : 0);
     el.addEventListener("keydown", (e) => {
-      const way = ARROWS[e.key];
-      if (!way) return;
+      const way = WAYS[e.code];
+      if (!way || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
-      if (way[0]) this.keys.x = way[0];
-      if (way[1]) this.keys.z = way[1];
+      const keys = this.keys[sideOf(e.code)];
+      if (way[0]) keys.x = way[0];
+      if (way[1]) keys.z = way[1];
     });
     el.addEventListener("keyup", (e) => {
-      const way = ARROWS[e.key];
+      const way = WAYS[e.code];
       if (!way) return;
-      if (way[0] && this.keys.x === way[0]) this.keys.x = 0;
-      if (way[1] && this.keys.z === way[1]) this.keys.z = 0;
+      const keys = this.keys[sideOf(e.code)];
+      if (way[0] && keys.x === way[0]) keys.x = 0;
+      if (way[1] && keys.z === way[1]) keys.z = 0;
     });
-    el.addEventListener("blur", () => (this.keys = { x: 0, z: 0 }));
+    el.addEventListener("blur", () => this.stopKeys());
     this.pose();
     this.begin();
     const tick = () => {
@@ -194,57 +244,74 @@ export class AirHockeyView extends TableView<State> {
   }
   setPaused(paused: boolean) {
     this.paused = paused;
-    this.keys = { x: 0, z: 0 };
+    this.stopKeys();
+  }
+  private stopKeys() {
+    this.keys = [
+      { x: 0, z: 0 },
+      { x: 0, z: 0 },
+    ];
   }
   private running() {
     return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
   }
-  /** The hand over the table: my mallet goes there (kept to my half), at no speed limit. */
-  private reach(x: number, z: number) {
-    this.hand = keep(0, x, z);
+  /** A hand over the table: that side's mallet goes there (kept to its half), at no speed limit. */
+  private reach(side: 0 | 1, x: number, z: number) {
+    this.hands[side] = keep(side, x, z);
   }
   protected orbit = ORBIT;
-  /** A press anywhere on the table takes my mallet there, and it follows the finger. */
-  protected dragStart(_point: number, at: { x: number; z: number }) {
-    if (!this.running()) return false;
-    this.reach(at.x, at.z);
-    return true;
-  }
-  protected dragMove(at: { x: number; z: number }) {
-    if (this.running()) this.reach(at.x, at.z);
+  /** Every press on the running table is a hand on a mallet (followed above, pointer by pointer), never a pick. */
+  protected dragStart() {
+    return this.running();
   }
   /** Runs the table for the time that has passed since the last frame. */
   private advance(now: number) {
     const real = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     if (this.running()) {
-      if (this.keys.x || this.keys.z) this.reach(this.hand.x + this.keys.x * 7 * real, this.hand.z + this.keys.z * 7 * real);
+      const hands: (0 | 1)[] = this.two ? [0, 1] : [0];
+      for (const side of hands) {
+        const keys = this.keys[side];
+        if (keys.x || keys.z) this.reach(side, this.hands[side].x + keys.x * 7 * real, this.hands[side].z + keys.z * 7 * real);
+      }
       this.left += real;
-      // The hand's way over this frame is spread over its slices, so that the mallet sweeps it at its true speed.
-      // After a goal (and at the start) only the computer waits: my mallet and the puck are always in play.
+      // Each hand's way over this frame is spread over its slices, so that the mallet sweeps it at its true speed.
+      // After a goal (and at the start) only the computer waits: the hands and the puck are always in play.
       const slices = Math.floor(this.left / DT),
-        from = this.sent;
+        from = this.sent.map((p) => ({ ...p }));
       for (let k = 1; k <= slices; k++) {
         this.left -= DT;
-        this.world.targets[0] = { x: from.x + ((this.hand.x - from.x) * k) / slices, z: from.z + ((this.hand.z - from.z) * k) / slices };
-        if (this.wait > 0) this.wait -= DT;
+        for (const side of hands)
+          this.world.targets[side] = { x: from[side].x + ((this.hands[side].x - from[side].x) * k) / slices, z: from[side].z + ((this.hands[side].z - from[side].z) * k) / slices };
+        if (this.two) this.wait = 0;
+        else if (this.wait > 0) this.wait -= DT;
         else think(this.world, this.level);
-        const scorer = step(this.world, this.level);
+        const scorer = step(this.world, this.level, this.two);
+        if (this.world.served !== null) {
+          // Kept too long in one half: the other side has it, laid still in their half.
+          const to = this.world.served;
+          this.world.served = null;
+          if (!this.two && to === 1) this.wait = 0.6;
+          shout("시간 초과");
+          this.onKnock?.("cushion", 0.4);
+        }
         if (scorer !== null) {
           this.left = 0;
-          this.wait = 1.1;
-          // The side that let it in has the puck; my mallet stays where the hand is.
-          const mine = { ...this.world.mallets[0] };
+          this.wait = this.two ? 0 : 1.1;
+          // The side that let it in has the puck; a hand's mallet stays where the hand is.
+          const kept = this.world.mallets.map((m) => ({ x: m.x, z: m.z }));
           this.world = createWorld(scorer === 0 ? 1 : 0, (Math.random() - 0.5) * 0.8);
-          Object.assign(this.world.mallets[0], { x: mine.x, z: mine.z });
-          this.world.targets[0] = { x: mine.x, z: mine.z };
-          this.sent = { x: mine.x, z: mine.z };
+          for (const side of hands) {
+            Object.assign(this.world.mallets[side], kept[side]);
+            this.world.targets[side] = { ...kept[side] };
+            this.sent[side] = { ...kept[side] };
+          }
           this.onKnock?.("pocket", 1);
           this.onMove({ from: -1, to: scorer, extra: -1 });
           break;
         }
       }
-      if (slices) this.sent = { ...this.world.targets[0] };
+      if (slices) for (const side of hands) this.sent[side] = { ...this.world.targets[side] };
       // A strike or a knock is as loud as the puck is quick after it; a puck merely nudged along is not heard again at once.
       const { puck } = this.world,
         strength = Math.min(1, Math.hypot(puck.vx, puck.vz) / (MAX_PUCK * 0.75));
@@ -271,6 +338,9 @@ export class AirHockeyView extends TableView<State> {
       const data = this.renderer.domElement.dataset;
       data.puck = `${puck.x.toFixed(2)},${puck.z.toFixed(2)}`;
       data.mallet = `${mallets[0].x.toFixed(2)},${mallets[0].z.toFixed(2)}`;
+      // Both mallets (left;right), and whether two hands play, for browser tests.
+      data.mallets = mallets.map((m) => `${m.x.toFixed(2)},${m.z.toFixed(2)}`).join(";");
+      data.players = this.two ? "2" : "1";
     }
   }
   protected subject(aspect: number): TableSubject {
@@ -283,8 +353,10 @@ export class AirHockeyView extends TableView<State> {
     // A new match, known by the count of moves going back to nothing.
     if (state.ply === 0 && this.shown > 0) {
       this.world = createWorld(0, 0);
-      this.hand = this.sent = { x: 0, z: HALF_Z - 0.9 };
-      this.wait = 0.9;
+      this.hands = [home(0), home(1)];
+      this.sent = [home(0), home(1)];
+      this.holds.clear();
+      this.wait = this.two ? 0 : 0.9;
     }
     this.shown = state.ply;
     this.pose();

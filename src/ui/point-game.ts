@@ -81,8 +81,8 @@ export interface PointConfig<S> {
   noPanel?: boolean;
   /** How the panel shows the two tallies: "big" writes them large at the right of each side; "scoreboard" sets the two sides against each other like a stadium board. */
   panel?: "big" | "scoreboard";
-  /** The two tallies as markup, for a game that draws them; it must tell no more than `tally` does. */
-  tallyHtml?: (state: S) => [string, string];
+  /** The two tallies as markup, for a game that draws them; it must tell no more than `tally` does. `mode` names the sides. */
+  tallyHtml?: (state: S, mode: "local" | "ai") => [string, string];
   /** True when the game has ended with side 0 out of money: the 파산 stamp is shown. */
   bankrupt?: (state: S) => boolean;
   /** A line to flash over the table for what a move has just done (a piece taken), or null. */
@@ -862,7 +862,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const tally = game.tally(s);
     for (const p of [0, 1]) {
       // A game may draw its tally (a fleet) instead of writing it.
-      const drawn = config.tallyHtml?.(s);
+      const drawn = config.tallyHtml?.(s, mode);
       if (drawn) $(`pg-count-${p}`).innerHTML = drawn[p];
       else $(`pg-count-${p}`).textContent = tally[p];
       $(`pg-side-${p}`).classList.toggle("active", !done && turn === p);
