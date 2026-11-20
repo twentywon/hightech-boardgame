@@ -47,6 +47,30 @@ export const TOSS = 2.3,
 /** How far behind my end line my paddle may go, and the computer's. */
 export const BACK = 0.6,
   FAR_BACK = 1.15;
+/**
+ * How a stroke of mine is judged from the racket's speed where it meets the ball (its whole speed over the hand's
+ * plane, across and along, in metres a second of the hall's clock): from `SMASH` on it is a smash (far quicker, deep,
+ * with topspin), as fast as it gets at `SMASH_FULL`; past `WILD` it goes long. A swing mostly back toward me cuts.
+ */
+export const SMASH = 5.5,
+  SMASH_FULL = 9.5,
+  WILD = 14;
+/**
+ * The sidespin a sideways swing puts on my stroke (radians a second for each metre a second across), and its most.
+ * The aim allows for the curve, so that the ball bends visibly and still comes down where the swing sent it.
+ */
+export const SIDE_SPIN = 84,
+  SIDE_MAX = 520;
+/** How many slices back the racket's speed at contact is measured over (25 ms of the hall's clock, two frames or so). */
+export const SWING_SLICES = 6;
+/**
+ * Where I stand: as the ball the computer sends me goes out to one side, I step that way (the eye goes with me and my
+ * reach widens to that side), by `LEAN` of how far out it will come to my end, little for a ball near the middle and
+ * at most `LEAN_MAX`, eased as a critically damped spring at `STANCE_RATE`; between points I come back to the middle.
+ */
+export const LEAN = 0.78,
+  LEAN_MAX = 0.75,
+  STANCE_RATE = 8.5;
 /** How long a rally may go without a stroke before it is ended. */
 const IDLE = 6;
 const PATH_N = 800;
@@ -86,7 +110,7 @@ export interface Paddle {
   x: number;
   y: number;
   z: number;
-  /** Its speed, smoothed over a few slices (the swing that meets the ball). */
+  /** Its speed over the last `SWING_SLICES` slices (the swing that meets the ball, not smoothed away). */
   vx: number;
   vy: number;
   vz: number;
@@ -100,10 +124,12 @@ export interface Shot {
   side: number;
   /** For a serve the computer places: how high it may rise off the server's side (a gentler serve rises higher). */
   rise?: number;
+  /** Whether my racket came through quickly enough for a smash. */
+  smash?: boolean;
 }
 export type Phase = "ready" | "toss" | "rally" | "dead";
 export type Happening =
-  | { kind: "hit"; side: 0 | 1; strength: number }
+  | { kind: "hit"; side: 0 | 1; strength: number; smash?: boolean }
   | { kind: "bounce"; side: 0 | 1; strength: number }
   | { kind: "floor"; strength: number }
   | { kind: "net" }
@@ -134,6 +160,15 @@ export interface World {
   pathAt: number;
   /** The computer's hand: the wait before it serves, its reading of the ball, where it means to meet it and the height it strikes a serve at. */
   ai: { wait: number; delay: number; seen: number; plan: { x: number; z: number } | null; strikeY: number; holdX: number };
+  /** Each paddle's last `SWING_SLICES` + 1 places (x, y, z a slice, oldest overwritten first), for its speed at contact. */
+  trace: [Float64Array, Float64Array];
+  ticks: number;
+  /** Where I stand across (0 behind the middle), how fast I am stepping, and where I am stepping to. */
+  stance: number;
+  stanceV: number;
+  stanceGoal: number;
+  /** How much of a step I take: 1, or less where the page asks for less motion (set by the view). */
+  lean: number;
   seed: number;
 }
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -166,15 +201,30 @@ export function createWorld(seed = 1): World {
     pathLen: 0,
     pathAt: -1,
     ai: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0 },
+    trace: [new Float64Array((SWING_SLICES + 1) * 3), new Float64Array((SWING_SLICES + 1) * 3)],
+    ticks: 0,
+    stance: 0,
+    stanceV: 0,
+    stanceGoal: 0,
+    lean: 1,
     seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
   };
+  world.paddles.forEach((pad, side) => retrace(world, side as 0 | 1, pad));
   return world;
 }
-/** Where a paddle of `side` may be: beside the table a little, not over the net, and no further back than the hall allows. */
-export function keep(side: 0 | 1, x: number, z: number, limit = side === 0 ? 0.25 : -0.25) {
+/** A paddle's trace filled with where it stands now, as if it had stood there still. */
+function retrace(world: World, side: 0 | 1, pad: Paddle) {
+  const trace = world.trace[side];
+  for (let k = 0; k < trace.length; k += 3) [trace[k], trace[k + 1], trace[k + 2]] = [pad.x, pad.y, pad.z];
+}
+/**
+ * Where a paddle of `side` may be: beside the table a little, not over the net, and no further back than the hall
+ * allows; my reach widens to the side I have stepped to (`stance`).
+ */
+export function keep(side: 0 | 1, x: number, z: number, limit = side === 0 ? 0.25 : -0.25, stance = 0) {
   const across = HALF_W + 0.6;
   return {
-    x: clamp(x, -across, across),
+    x: clamp(x, -across + Math.min(0, stance), across + Math.max(0, stance)),
     z: side === 0 ? clamp(z, limit, HALF_L + BACK) : clamp(z, -HALF_L - FAR_BACK, limit),
   };
 }
@@ -206,6 +256,7 @@ export function serve(world: World, server: 0 | 1) {
   world.ai.wait = SERVE_PAUSE;
   world.ai.plan = null;
   world.ai.holdX = (rand(world) - 0.5) * 0.7;
+  world.stanceGoal = 0;
   hold(world);
 }
 /** The ball thrown up from the server's open hand (`by` must be the server), to be struck as it falls. */
@@ -218,11 +269,12 @@ export function toss(world: World, by: 0 | 1 = world.server) {
 }
 /** A paddle set straight down where a finger has just pressed, without sweeping the way between. */
 export function place(world: World, side: 0 | 1, x: number, z: number) {
-  const at = keep(side, x, z, frontOf(world, side)),
+  const at = keep(side, x, z, frontOf(world, side), side === 0 ? world.stance : 0),
     pad = world.paddles[side];
   pad.x = at.x;
   pad.z = at.z;
-  pad.vx = pad.vz = 0;
+  pad.vx = pad.vy = pad.vz = 0;
+  retrace(world, side, pad);
   world.hands[side] = { ...at };
   if (world.phase === "ready" && world.server === side) hold(world);
 }
@@ -301,34 +353,55 @@ export function advanceBall(b: Ball): Contact {
   }
   return hit;
 }
-/** The height at which the air alone would carry the ball over the line z = `tz`. */
+/** The height (and the place across) at which the air alone would carry the ball over the line z = `tz`. */
+const crossing = { y: 0, x: 0 };
 function heightAt(start: Ball, tz: number, f: number) {
   const c = { ...start };
+  crossing.x = c.x;
   for (let t = 0; t < 3; t += DT) {
     const pz = c.z,
-      py = c.y;
+      py = c.y,
+      px = c.x;
     fly(c);
-    if ((c.z - tz) * f >= 0) return py + ((c.y - py) * (tz - pz)) / (c.z - pz || 1e-9);
+    if ((c.z - tz) * f >= 0) {
+      const share = (tz - pz) / (c.z - pz || 1e-9);
+      crossing.x = px + (c.x - px) * share;
+      return py + (c.y - py) * share;
+    }
+    crossing.x = c.x;
     if (c.y < FLOOR - 2) return c.y;
   }
   return -Infinity;
 }
-/** The speed and spin that send a ball from `from` to come down at the shot's place in the other half (side `side` striking). */
-export function aimed(from: { x: number; y: number; z: number }, side: 0 | 1, shot: Shot): Ball {
+/**
+ * The speed and spin that send a ball from `from` to come down at the shot's place in the other half (side `side`
+ * striking). With `bend` the aim allows for the sidespin's curve: the ball is sent out to the other side of the place
+ * by as much as the spin will bring it back, so that it bends on its way and still comes down there.
+ */
+export function aimed(from: { x: number; y: number; z: number }, side: 0 | 1, shot: Shot, bend = false): Ball {
   const f = side === 0 ? -1 : 1,
     tz = f * clamp(shot.depth, 0.04, 1.8) * HALF_L,
-    dx = shot.tx - from.x,
     dz = tz - from.z,
-    far = Math.hypot(dx, dz) || 1,
-    ball: Ball = { x: from.x, y: from.y, z: from.z, vx: (dx / far) * shot.pace, vy: 0, vz: (dz / far) * shot.pace, wx: f * shot.top, wy: shot.side, wz: 0 };
-  let lo = -7,
-    hi = 7;
-  for (let k = 0; k < 24; k++) {
+    ball: Ball = { x: from.x, y: from.y, z: from.z, vx: 0, vy: 0, vz: 0, wx: f * shot.top, wy: shot.side, wz: 0 };
+  let toward = shot.tx;
+  const rounds = bend && shot.side ? 5 : 1;
+  for (let round = 0; round < rounds; round++) {
+    const dx = toward - from.x,
+      far = Math.hypot(dx, dz) || 1;
+    ball.vx = (dx / far) * shot.pace;
+    ball.vz = (dz / far) * shot.pace;
+    let lo = -7,
+      hi = 7;
+    for (let k = 0; k < 24; k++) {
+      ball.vy = (lo + hi) / 2;
+      if (heightAt(ball, tz, f) < BALL) lo = ball.vy;
+      else hi = ball.vy;
+    }
     ball.vy = (lo + hi) / 2;
-    if (heightAt(ball, tz, f) < BALL) lo = ball.vy;
-    else hi = ball.vy;
+    if (round === rounds - 1) break;
+    heightAt(ball, tz, f);
+    toward += shot.tx - crossing.x;
   }
-  ball.vy = (lo + hi) / 2;
   return ball;
 }
 /** Where a ball goes with the table alone: the sides of its first two bounces and where the second was, whether it met the net, and how high it rose between them. */
@@ -444,14 +517,20 @@ function reachHeight(world: World, side: 0 | 1, z: number) {
   }
   return clamp(y, Math.abs(z) < HALF_L + 0.02 ? 0.06 : -0.3, 0.62);
 }
-const EASE = 1 - Math.exp(-DT / 0.035),
-  SMOOTH = 1 - Math.exp(-DT / 0.03);
-/** Each paddle goes where its hand sends it: mine all the way at once, the computer's at its top speed. */
+const EASE = 1 - Math.exp(-DT / 0.035);
+/**
+ * Each paddle goes where its hand sends it: mine all the way at once, the computer's at its top speed. Its speed is
+ * what it went over the last `SWING_SLICES` slices: the racket's true speed where it meets the ball.
+ */
 function movePaddles(world: World, level: Level) {
+  world.ticks++;
+  const at_ = (world.ticks % (SWING_SLICES + 1)) * 3,
+    oldest = ((world.ticks + 1) % (SWING_SLICES + 1)) * 3,
+    span = SWING_SLICES * DT;
   world.paddles.forEach((pad, s) => {
     const side = s as 0 | 1,
       hand = world.hands[side],
-      at = keep(side, hand.x, hand.z, frontOf(world, side)),
+      at = keep(side, hand.x, hand.z, frontOf(world, side), side === 0 ? world.stance : 0),
       dx = at.x - pad.x,
       dz = at.z - pad.z,
       far = Math.hypot(dx, dz),
@@ -459,14 +538,38 @@ function movePaddles(world: World, level: Level) {
       share = far > most ? most / far : 1,
       x = pad.x + dx * share,
       z = pad.z + dz * share,
-      y = pad.y + (reachHeight(world, side, z) - pad.y) * EASE;
-    pad.vx += ((x - pad.x) / DT - pad.vx) * SMOOTH;
-    pad.vy += ((y - pad.y) / DT - pad.vy) * SMOOTH;
-    pad.vz += ((z - pad.z) / DT - pad.vz) * SMOOTH;
+      y = pad.y + (reachHeight(world, side, z) - pad.y) * EASE,
+      trace = world.trace[side];
+    [trace[at_], trace[at_ + 1], trace[at_ + 2]] = [x, y, z];
+    pad.vx = (x - trace[oldest]) / span;
+    pad.vy = (y - trace[oldest + 1]) / span;
+    pad.vz = (z - trace[oldest + 2]) / span;
     pad.x = x;
     pad.y = y;
     pad.z = z;
   });
+}
+/** How far I step for a ball that will come to my end `x` across: hardly for one near the middle, more the wider it goes. */
+export function leanFor(x: number) {
+  return clamp((LEAN * x * Math.abs(x)) / (Math.abs(x) + 0.25), -LEAN_MAX, LEAN_MAX);
+}
+/** Where across the ball the computer has struck will come to my end (by the table alone), or 0 if it never gets there. */
+export function arrival(world: World) {
+  let x = 0;
+  for (let k = 0; k < world.pathLen; k++) {
+    if (bouncesOn(world, k, 0) >= 2) break;
+    x = world.path[k * 4];
+    if (world.path[k * 4 + 2] >= HALF_L + 0.15) return x;
+  }
+  return x;
+}
+/** One slice of my step: a critically damped spring toward where I mean to stand (no overshoot from rest, no jump). */
+function stepAside(world: World) {
+  if (world.phase === "dead" && world.dead > 0.4) world.stanceGoal = 0;
+  const w = STANCE_RATE,
+    a = w * w * (world.stanceGoal * world.lean - world.stance) - 2 * w * world.stanceV;
+  world.stanceV += a * DT;
+  world.stance += world.stanceV * DT;
 }
 /** Whether `side` may strike the ball now: the server its tossed ball, the receiver a ball that has bounced once on its side. */
 export function canHit(world: World, side: 0 | 1) {
@@ -474,24 +577,41 @@ export function canHit(world: World, side: 0 | 1) {
   return world.phase === "rally" && world.hitter !== side && world.other >= 1;
 }
 /**
- * The stroke my swing makes, from the swing alone (the user asked; where the ball meets the blade no longer aims it):
- * its speed toward the other end hits harder and deeper (a quick one is a smash), forward gives topspin and back
- * backspin, and a swing to one side sends the ball that way with sidespin that curves it on.
+ * The stroke my swing makes, from the swing alone (where the ball meets the blade does not aim it). The racket's
+ * whole speed where it meets the ball decides it: from `SMASH` on it is a smash (far quicker, deep and with
+ * topspin), slower it is a gentle return that grows with the speed; a swing mostly back toward me cuts (backspin,
+ * slow). A swing to one side sends the ball that way with sidespin that curves it. The step I am taking aside is not
+ * part of the swing.
  */
 export function swingShot(world: World, side: 0 | 1, pad: Paddle, _ox: number, oy: number, serving: boolean): Shot {
   const f = side === 0 ? -1 : 1,
     b = world.ball,
+    vx = pad.vx - (side === 0 ? world.stanceV : 0),
     forward = f * pad.vz,
+    back = Math.max(0, -forward),
+    speed = Math.hypot(vx, pad.vz),
     coming = Math.max(0, -f * b.vz),
     // Where on the blade it met counts for nothing but a touch of height (a ball met low on the blade goes a little shorter).
     w = 0.25 * clamp(oy / REACH_Y, -1, 1),
-    across = clamp(0.16 * pad.vx, -1, 1),
-    pace = serving
-      ? clamp(2.6 + 0.4 * Math.max(0, forward), 2.6, 7.5)
-      : clamp(2.7 + 0.3 * coming + 0.6 * Math.max(0, forward) - 0.3 * Math.max(0, -forward) + 0.1 * Math.abs(pad.vx), 2.3, 11),
-    // A stroke goes deeper as it is quicker, and a wild one (far quicker than a drive) goes long.
-    depth = serving ? 0.42 + 0.07 * (pace - 2.6) + 0.08 * w : 0.36 + 0.06 * (pace - 3) + 0.035 * Math.max(0, pace - 6.5) ** 2 + 0.15 * w;
-  return { tx: clamp(0.2 * b.x + HALF_W * 0.95 * across, -HALF_W * 0.92, HALF_W * 0.92), depth, pace, top: clamp(30 * forward, -200, 230), side: clamp(-f * 24 * pad.vx, -180, 180) };
+    across = clamp(0.16 * vx, -1.25, 1.25),
+    tx = clamp(0.2 * b.x + HALF_W * 0.95 * across, -HALF_W * 1.12, HALF_W * 1.12);
+  if (serving) {
+    const pace = clamp(2.6 + 0.4 * Math.max(0, forward), 2.6, 7.5);
+    // A serve keeps the gentler sidespin it had: it must come down twice, on both sides, and is not aimed round its curve.
+    return { tx: clamp(tx, -HALF_W * 0.92, HALF_W * 0.92), depth: 0.42 + 0.07 * (pace - 2.6) + 0.08 * w, pace, top: clamp(30 * forward, -200, 230), side: clamp(-f * 24 * vx, -180, 180) };
+  }
+  const side_ = clamp(-f * SIDE_SPIN * vx, -SIDE_MAX, SIDE_MAX);
+  if (back > 0.8 && back >= 0.6 * speed) {
+    const pace = clamp(2.7 + 0.3 * coming - 0.3 * back, 2.3, 5);
+    return { tx, depth: 0.4 + 0.06 * (pace - 3) + 0.15 * w, pace, top: -clamp(40 + 30 * back, 40, 220), side: side_ };
+  }
+  if (speed >= SMASH) {
+    const s = clamp((speed - SMASH) / (SMASH_FULL - SMASH), 0, 1),
+      pace = clamp(7.6 + 3.4 * s + 0.15 * coming, 7.6, 12);
+    return { tx, depth: 0.8 + 0.06 * s + 0.05 * Math.max(0, speed - WILD) ** 2 + 0.1 * w, pace, top: 150 + 60 * s, side: side_, smash: true };
+  }
+  const pace = clamp(2.7 + 0.3 * coming + 0.5 * speed, 2.3, 7);
+  return { tx, depth: 0.38 + 0.06 * (pace - 3) + 0.15 * w, pace, top: clamp(30 * Math.max(0, forward), 0, 160), side: side_ };
 }
 /** Whether a stroke from where the ball is would come down first on the other side. */
 function lands(world: World, side: 0 | 1, shot: Shot) {
@@ -546,7 +666,7 @@ export function computerServe(world: World, level: Level): Shot {
 /** The ball struck by `side` with `shot`: the rally goes on from here. */
 export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   const b = world.ball,
-    sent = serving ? served(b, side, shot, side === 1) : aimed(b, side, shot);
+    sent = serving ? served(b, side, shot, side === 1) : aimed(b, side, shot, side === 0);
   Object.assign(b, sent);
   world.phase = "rally";
   world.hitter = side;
@@ -556,6 +676,8 @@ export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   world.since = 0;
   world.struck[side] = world.time;
   predict(world);
+  // A ball sent to me: I step toward where it will come.
+  if (side === 1) world.stanceGoal = leanFor(arrival(world));
 }
 function point(world: World, to: 0 | 1, why: number): Happening {
   world.phase = "dead";
@@ -615,7 +737,7 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
   b.z = before.z + (pad.z - before.z) * t + f * gap;
   const shot = side === 0 ? swingShot(world, side, pad, ox, oy, serving) : computerShot(world, level);
   launch(world, side, shot, serving);
-  out.push({ kind: "hit", side, strength: clamp(shot.pace / 9, 0.2, 1) });
+  out.push(shot.smash ? { kind: "hit", side, strength: 1, smash: true } : { kind: "hit", side, strength: clamp(shot.pace / 9, 0.2, 1) });
 }
 /** The computer's reading of a ball I have struck: where, after its bounce, it comes to the top of its rise (within reach). */
 function intercept(world: World, level: Level) {
@@ -676,6 +798,7 @@ function think(world: World, level: Level, out: Happening[]) {
 export function step(world: World, level: Level): Happening[] {
   const out: Happening[] = [];
   world.time += DT;
+  stepAside(world);
   think(world, level, out);
   const before = world.paddles.map((p) => ({ x: p.x, y: p.y, z: p.z }));
   movePaddles(world, level);

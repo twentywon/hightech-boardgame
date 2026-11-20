@@ -64,7 +64,13 @@ interface Word {
 export class TableTennisView extends TableView<State> {
   /** A knock to be heard: a paddle (`disc`), the table or the floor (`cushion`), the net (`pocket`). */
   onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
-  private world: World = createWorld(1 + Math.floor(Math.random() * 2e9));
+  private world: World = this.newWorld();
+  /** How far across the eye stands now (it follows my step aside: `World.stance`). */
+  private eye = 0;
+  /** Where on the screen the pointer that holds my paddle is (a mouse over the table, or a finger pressed), to be aimed again through the eye as it moves. */
+  private pointer: { clientX: number; clientY: number } | null = null;
+  private aimRay = new T.Raycaster();
+  private aimHit = new T.Vector3();
   private ball: T.Mesh;
   private shadow: T.Mesh;
   /** A faint trail of where the ball was over the last frames, so that its way can be read. */
@@ -143,18 +149,33 @@ export class TableTennisView extends TableView<State> {
       hit = new T.Vector3();
     el.style.cursor = "none";
     // Heard before the table's own handler, so that a press knows what made it.
-    el.addEventListener("pointerdown", (e) => (this.finger = e.pointerType !== "mouse"), { capture: true });
+    el.addEventListener(
+      "pointerdown",
+      (e) => {
+        this.finger = e.pointerType !== "mouse";
+        this.pointer = { clientX: e.clientX, clientY: e.clientY };
+      },
+      { capture: true },
+    );
     el.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse" || e.buttons) this.pointer = { clientX: e.clientX, clientY: e.clientY };
       if (e.pointerType !== "mouse" || this.disposed || !this.running()) return;
       aim(ray, e, el, this.camera);
       if (ray.ray.intersectPlane(this.floor, hit)) this.reach(hit.x, hit.z);
     });
+    const lift = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") this.pointer = null;
+    };
+    el.addEventListener("pointerup", lift);
+    el.addEventListener("pointercancel", lift);
+    el.addEventListener("pointerleave", () => (this.pointer = null));
     // The arrows go as the table is seen: up away from me, toward the net. Space tosses my serve, or strikes.
     const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     el.addEventListener("keydown", (e) => {
       const way = ARROWS[e.key];
       if (way) {
         e.preventDefault();
+        this.pointer = null;
         if (way[0]) this.keys.x = way[0];
         if (way[1]) this.keys.z = way[1];
       } else if ((e.key === " " || e.key === "Spacebar") && !e.repeat && this.running()) {
@@ -222,9 +243,31 @@ export class TableTennisView extends TableView<State> {
   private running() {
     return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
   }
-  /** The hand over the table: my paddle goes there, at no speed limit. */
+  /** A world of its own sequence; where the page asks for less motion I step aside only half as far. */
+  private newWorld() {
+    const world = createWorld(1 + Math.floor(Math.random() * 2e9));
+    world.lean = this.reducedMotion ? 0.5 : 1;
+    return world;
+  }
+  /** The hand over the table: my paddle goes there, at no speed limit (and further to the side I have stepped to). */
   private reach(x: number, z: number) {
-    this.hand = keep(0, x, z);
+    this.hand = keep(0, x, z, undefined, this.world.stance);
+  }
+  /**
+   * The eye goes where I stand. The pointer stays over my paddle as it moves: the point under it is aimed again
+   * through the moved eye; a paddle the keyboard (or a lifted finger) left is carried along by the step.
+   */
+  private follow() {
+    const eye = this.world.stance,
+      moved = eye - this.eye;
+    if (Math.abs(moved) < 1e-5) return;
+    this.eye = eye;
+    rallyCamera(this.camera, this.camera.aspect, eye);
+    if (!this.running()) return;
+    if (this.pointer) {
+      aim(this.aimRay, this.pointer as PointerEvent, this.renderer.domElement, this.camera);
+      if (this.aimRay.ray.intersectPlane(this.floor, this.aimHit)) this.reach(this.aimHit.x, this.aimHit.z);
+    } else this.reach(this.hand.x + moved, this.hand.z);
   }
   /**
    * Every press is the hand's, and tosses my serve. A finger sets the paddle straight down where it presses (without
@@ -259,6 +302,7 @@ export class TableTennisView extends TableView<State> {
       running = this.running();
     this.last = now;
     if (running || (this.state && this.state.winner !== null && !this.paused)) {
+      this.follow();
       if (running && (this.keys.x || this.keys.z)) this.reach(this.hand.x + this.keys.x * 1.8 * real, this.hand.z + this.keys.z * 1.8 * real);
       this.left += real * PACE;
       // The hand's way over this frame is spread over its slices, so that the paddle sweeps it at its true speed.
@@ -284,7 +328,10 @@ export class TableTennisView extends TableView<State> {
   /** What the table has done: its knocks are heard, and a point won is told to the screen with a word over the net. */
   private hear(events: Happening[], now: number, running: boolean) {
     for (const event of events) {
-      if (event.kind === "hit") this.knock("disc", event.strength, now);
+      if (event.kind === "hit") {
+        this.knock("disc", event.strength, now);
+        if (event.smash && event.side === 0) this.say("스매싱!", "#ff8a3a", now, Math.max(-0.5, Math.min(0.5, this.world.ball.x)));
+      }
       else if (event.kind === "bounce") this.knock("cushion", Math.min(1, event.strength / 3), now);
       else if (event.kind === "floor") this.knock("cushion", Math.min(0.6, event.strength / 4), now);
       else if (event.kind === "net") this.knock("pocket", 0.5, now);
@@ -301,7 +348,7 @@ export class TableTennisView extends TableView<State> {
     this.onKnock?.(kind, strength);
   }
   /** A word that rises over the net and fades. */
-  private say(text: string, colour: string, now: number) {
+  private say(text: string, colour: string, now: number, x = 0) {
     if (capturing()) return;
     const canvas = document.createElement("canvas");
     canvas.width = 512;
@@ -320,7 +367,7 @@ export class TableTennisView extends TableView<State> {
     sprite.scale.set(0.9, 0.225, 1);
     sprite.renderOrder = 20;
     this.scene.add(sprite);
-    this.words.push({ sprite, at: now, x: 0, y: 0.42, z: -0.2 });
+    this.words.push({ sprite, at: now, x, y: 0.42, z: -0.2 });
   }
   /** Puts the ball, its shadow and the paddles where the table has them. */
   private pose(now: number, real: number) {
@@ -385,13 +432,15 @@ export class TableTennisView extends TableView<State> {
     data.paddle = `${paddles[0].x.toFixed(2)},${paddles[0].z.toFixed(2)}`;
     data.phase = this.world.phase;
     data.server = String(this.world.server);
+    // How far across the eye stands (browser tests aim through `rallyCamera` with it).
+    data.eye = this.eye.toFixed(4);
   }
   protected subject(aspect: number): TableSubject {
     return { half: HALF_W + 0.6, halfZ: HALF_L + 0.8, height: 0.4, lookY: 0, tilt: aspect > 1 ? 0.3 : 0.4 };
   }
   protected resize() {
     super.resize();
-    rallyCamera(this.camera, this.camera.aspect);
+    rallyCamera(this.camera, this.camera.aspect, this.eye);
     this.redraw();
   }
   protected spots(): Spot[] {
@@ -401,7 +450,7 @@ export class TableTennisView extends TableView<State> {
     // A new match, known by the count of moves going back to nothing; the first point of all is served at once.
     const anew = state.ply === 0 && this.shown > 0;
     if (anew || !this.begun) {
-      if (anew) this.world = createWorld(1 + Math.floor(Math.random() * 2e9));
+      if (anew) this.world = this.newWorld();
       this.begun = true;
       this.hand = this.sent = { x: 0, z: HALF_L + 0.35 };
       serve(this.world, serverOf(state));

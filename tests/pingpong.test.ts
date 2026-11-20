@@ -180,6 +180,82 @@ describe("table tennis: my stroke", () => {
     // A quick swing toward the net is a smash: far quicker than a gentle one.
     expect(s.swingShot(world, 0, paddle(0, -12), 0, 0, false).pace).toBeGreaterThan(s.swingShot(world, 0, paddle(0, -1), 0, 0, false).pace + 4);
   });
+  test("the racket's whole speed at contact decides a smash; slow is gentle, pulling back still cuts", () => {
+    const at = (vx: number, vz: number) => s.swingShot(world, 0, paddle(vx, vz), 0, 0, false);
+    // Just under the threshold, a gentle return; just over it, a smash, far quicker, deep, with topspin.
+    const gentle = at(0, -(s.SMASH - 0.3)),
+      smash = at(0, -(s.SMASH + 0.3));
+    expect(gentle.smash).toBeFalsy();
+    expect(smash.smash).toBe(true);
+    expect(smash.pace).toBeGreaterThan(gentle.pace + 1);
+    expect(smash.depth).toBeGreaterThan(0.78);
+    expect(smash.top).toBeGreaterThanOrEqual(150);
+    // The whole speed counts, not only its part toward the net: a quick swing that is mostly sideways is a smash too.
+    expect(at(6, -1).smash).toBe(true);
+    expect(at(3, -1).smash).toBeFalsy();
+    // A slow racket gives a slow ball; the quicker the racket, the quicker the ball.
+    expect(at(0, -0.5).pace).toBeLessThan(at(0, -4).pace);
+    expect(at(0, -7).pace).toBeLessThan(at(0, -12).pace);
+    // A quick swing back toward me is a cut, never a smash.
+    const cut = at(0, 8);
+    expect(cut.smash).toBeFalsy();
+    expect(cut.top).toBeLessThan(0);
+    expect(cut.pace).toBeLessThan(gentle.pace);
+  });
+  test("the racket's speed is what it went over the last slices, not smoothed away", () => {
+    const w = s.createWorld(3);
+    w.hands[0] = { x: 0, z: s.HALF_L + 0.4 };
+    for (let k = 0; k < 60; k++) s.step(w, "normal");
+    expect(Math.abs(w.paddles[0].vz)).toBeLessThan(1e-9);
+    // A sudden flick toward the net at 9 m/s: after SWING_SLICES slices the speed is all of it.
+    for (let k = 0; k < s.SWING_SLICES; k++) {
+      w.hands[0] = { x: 0, z: w.hands[0].z - 9 * s.DT };
+      s.step(w, "normal");
+    }
+    expect(w.paddles[0].vz).toBeCloseTo(-9, 6);
+    expect(Math.hypot(w.paddles[0].vx, w.paddles[0].vz)).toBeGreaterThan(s.SMASH);
+    // Stopped, it is still again as soon as the window has passed.
+    for (let k = 0; k < s.SWING_SLICES; k++) s.step(w, "normal");
+    expect(Math.abs(w.paddles[0].vz)).toBeLessThan(1e-9);
+  });
+  test("a smash met at any fair height clears the net and comes down deep on the other side", () => {
+    for (const y of [0.15, 0.25, 0.35])
+      for (const vz of [-6, -9, -12]) {
+        const shot = s.swingShot(world, 0, paddle(0, vz), 0, 0, false);
+        expect(shot.smash).toBe(true);
+        const w = rally(9, 0, ball(0.1, y, s.HALF_L + 0.05), shot);
+        const seen = run(w, "normal", 3, (e) => e.kind === "bounce" || e.kind === "point");
+        expect(seen.at(-1), `${y} ${vz}`).toMatchObject({ kind: "bounce", side: 1 });
+        expect(w.ball.z).toBeLessThan(-0.95);
+      }
+  });
+  test("a sideways swing curves the ball far more than before and still lands where it was sent", () => {
+    /** The ball's way to its first bounce: how far it bows out from the straight line, and where it comes down. */
+    const flight = (vx: number) => {
+      const shot = s.swingShot(world, 0, paddle(vx, -2), 0, 0, false),
+        w = rally(9, 0, ball(0.1, 0.25, s.HALF_L + 0.05), shot),
+        b = { ...w.ball },
+        start = { ...b },
+        way: [number, number][] = [];
+      for (let k = 0; k < 2000; k++) {
+        const hit = s.advanceBall(b);
+        way.push([b.x, b.z]);
+        if (hit.table >= 0) return { shot, side: hit.table, land: [b.x, b.z], bow: Math.max(...way.map(([x, z]) => Math.abs(((x - start.x) * (b.z - start.z) - (z - start.z) * (b.x - start.x)) / Math.hypot(b.x - start.x, b.z - start.z)))) };
+        if (hit.floor) break;
+      }
+      return { shot, side: -1, land: [NaN, NaN], bow: 0 };
+    };
+    // Before, a swing across at 4 m/s bowed 0.05 m and came down 0.2 m short of its aim; now it bows 0.18 m.
+    for (const vx of [-4, -2, 2, 3, 4, 5]) {
+      const f = flight(vx);
+      expect(f.side, `${vx}`).toBe(1);
+      expect(Math.abs(f.land[0] - f.shot.tx), `${vx}`).toBeLessThan(0.03);
+      expect(Math.abs(f.land[0])).toBeLessThan(s.HALF_W - 0.05);
+      expect(f.bow, `${vx}`).toBeGreaterThan(0.04 * Math.abs(vx));
+      expect(Math.sign(f.land[0] - 0.1)).toBe(Math.sign(vx));
+    }
+    expect(flight(4).bow).toBeGreaterThan(0.15);
+  });
   test("the judgement is generous: a ball well off the blade's middle is still struck", () => {
     expect(s.REACH).toBeGreaterThan(s.BLADE * 2);
     expect(s.REACH_Y).toBeGreaterThan(s.BLADE * 2.5);
@@ -190,6 +266,76 @@ describe("table tennis: my stroke", () => {
       const seen = run(w, "normal", 3, (e) => e.kind === "bounce" || e.kind === "point");
       expect(seen.at(-1)).toMatchObject({ kind: "bounce", side: 1 });
     }
+  });
+});
+
+describe("table tennis: stepping aside", () => {
+  /** The computer's ball sent to me at `tx` across; I stand still, and the world is followed slice by slice. */
+  const coming = (tx: number) => {
+    const w = s.createWorld(5);
+    w.hands[0] = { x: 0, z: s.HALF_L + 0.6 };
+    w.ball = ball(0, 0.25, -s.HALF_L - 0.2);
+    s.launch(w, 1, { tx, depth: 0.8, pace: 5.5, top: 60, side: 0 });
+    return w;
+  };
+  test("I step the more the wider the ball will come, toward its side, and little for one in the middle", () => {
+    expect(Math.abs(s.leanFor(0.1))).toBeLessThan(0.05);
+    expect(s.leanFor(0.4)).toBeLessThan(s.leanFor(0.8));
+    expect(s.leanFor(-0.8)).toBeCloseTo(-s.leanFor(0.8), 9);
+    expect(s.leanFor(3)).toBe(s.LEAN_MAX);
+    const wide = coming(0.72),
+      middle = coming(0.02);
+    expect(wide.stanceGoal).toBeGreaterThan(0.4);
+    expect(Math.abs(middle.stanceGoal)).toBeLessThan(0.05);
+    expect(coming(-0.72).stanceGoal).toBeLessThan(-0.4);
+  });
+  test("the step is eased: no jump, no overshoot, mostly there when the ball arrives, and back in the middle after the point", () => {
+    const w = coming(0.72),
+      goal = w.stanceGoal;
+    let last = w.stance,
+      most = 0,
+      arrived = NaN;
+    for (let k = 0; k < 240 * 4; k++) {
+      s.step(w, "normal");
+      most = Math.max(most, Math.abs(w.stance - last));
+      last = w.stance;
+      expect(w.stance).toBeLessThanOrEqual(goal + 1e-9);
+      if (Number.isNaN(arrived) && w.ball.z >= s.HALF_L + 0.15) arrived = w.stance;
+    }
+    // Never more than about 1.6 m/s, so the eye glides.
+    expect(most / s.DT).toBeLessThan(1.7);
+    expect(arrived).toBeGreaterThan(goal * 0.85);
+    // The ball went by me: the point is over, and I am back behind the middle.
+    expect(w.phase).toBe("dead");
+    expect(Math.abs(w.stance)).toBeLessThan(0.02);
+  });
+  test("my reach widens toward the side I have stepped to, and only that side", () => {
+    expect(s.keep(0, 3, s.HALF_L).x).toBeCloseTo(s.HALF_W + 0.6, 9);
+    expect(s.keep(0, 3, s.HALF_L, undefined, 0.5).x).toBeCloseTo(s.HALF_W + 1.1, 9);
+    expect(s.keep(0, -3, s.HALF_L, undefined, 0.5).x).toBeCloseTo(-s.HALF_W - 0.6, 9);
+    const w = coming(0.72);
+    for (let k = 0; k < 120; k++) s.step(w, "normal");
+    w.hands[0] = { x: 2.5, z: s.HALF_L + 0.6 };
+    s.step(w, "normal");
+    expect(w.paddles[0].x).toBeGreaterThan(s.HALF_W + 0.6 + 0.2);
+  });
+  test("a lean of a half (less motion) steps half as far", () => {
+    const full = coming(0.72),
+      half = coming(0.72);
+    half.lean = 0.5;
+    for (let k = 0; k < 150; k++) {
+      s.step(full, "normal");
+      s.step(half, "normal");
+    }
+    expect(half.stance).toBeCloseTo(full.stance / 2, 6);
+  });
+  test("the step aside is not taken for a swing: standing still while stepping sends the ball straight on", () => {
+    const w = s.createWorld(1);
+    w.ball = ball(0, 0.25, s.HALF_L, 0, 0, 4);
+    w.stanceV = 1.4;
+    const shot = s.swingShot(w, 0, { x: 0, y: 0.25, z: s.HALF_L + 0.05, vx: 1.4, vy: 0, vz: 0 }, 0, 0, false);
+    expect(shot.side).toBeCloseTo(0, 9);
+    expect(shot.tx).toBeCloseTo(0, 9);
   });
 });
 
