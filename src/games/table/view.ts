@@ -87,7 +87,10 @@ export abstract class TableView<S> implements PointView<S> {
     };
     el.addEventListener("pointerdown", (e) => {
       down = e.pointerType === "mouse" && e.button !== 0 ? null : e.pointerId;
-      if (down === null || this.disposed || this.animating) return;
+      // A press that begins while the table moves is ignored whole: its release must not become a tap on whatever
+      // lies under the pointer by then (a drag begun as a tower settled dropped the marble through the funnel).
+      if (down !== null && (this.disposed || this.animating)) down = null;
+      if (down === null) return;
       const at = ground(e);
       // A view may take the gesture for itself (a flick): the tap is then not a pick.
       dragging = !!at && this.dragStart(this.under(this.ray.ray), at);
