@@ -119,6 +119,8 @@ const TIMED: Record<string, Partial<Record<Outcome, string>>> = {
   "meat-grill": { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
   "whack-a-mole": { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
   basketball: { win: "성공", lose: "시간 종료" },
+  // A stage of 네모 러너 is lasted out (or its boss beaten) or lost with the last heart: no win over anyone.
+  "square-runner": { win: "성공", lose: "실패" },
 };
 export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   const board = document.querySelector<HTMLElement>(".board-area");

@@ -388,6 +388,7 @@ const OWN: Record<string, Piece> = {
   carrom: INDIA,
   "peg-solitaire": INDIA,
   "whack-a-mole": ARCADE,
+  "square-runner": ARCADE,
   "claw-machine": ARCADE,
   basketball: ARCADE,
   bowling: ROCK,

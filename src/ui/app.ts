@@ -46,6 +46,7 @@ import { skylineConfig } from "../games/skyline/config";
 import { balanceConfig } from "../games/scale/config";
 import { snakeConfig } from "../games/snake/config";
 import { whackConfig } from "../games/whack/config";
+import { runnerConfig } from "../games/runner/config";
 import { tictactoeConfig } from "../games/tictactoe/config";
 import { airHockeyConfig } from "../games/airhockey/config";
 import { tableTennisConfig } from "../games/pingpong/config";
@@ -218,6 +219,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "balance-quiz": { config: balanceConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   snake: { config: snakeConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "whack-a-mole": { config: whackConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "square-runner": { config: runnerConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "tic-tac-toe": { config: tictactoeConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   "air-hockey": { config: airHockeyConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "table-tennis": { config: tableTennisConfig, options: { mode: "ai", variant: "3", level: "normal" } },
@@ -402,6 +404,7 @@ type GameSelection =
   | "balance-quiz"
   | "snake"
   | "whack-a-mole"
+  | "square-runner"
   | "tic-tac-toe"
   | "air-hockey"
   | "table-tennis"
