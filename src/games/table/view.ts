@@ -281,12 +281,16 @@ export abstract class TableView<S> implements PointView<S> {
   }
   private step(now: number) {
     if (!this.tweens.length) return false;
-    this.tweens = this.tweens.filter((t) => {
-      const p = Math.min(1, (now - t.start) / t.duration);
-      if (p < 0) return true;
-      t.update(p);
-      return p < 1;
-    });
+    const running = this.tweens,
+      kept = running.filter((t) => {
+        const p = Math.min(1, (now - t.start) / t.duration);
+        if (p < 0) return true;
+        t.update(p);
+        return p < 1;
+      });
+    // A tween may start the next move (a push given ahead in glide cube settles the table and is played at once):
+    // then the list was replaced meanwhile and the new move's tweens must not be overwritten by the old list.
+    if (this.tweens === running) this.tweens = kept;
     if (!this.tweens.length && this.state) {
       this.place(this.state);
       this.onSettled();

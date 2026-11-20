@@ -27,12 +27,16 @@ const DRAG = 0.11,
   FLOOR_E = 0.5;
 /**
  * The blade's radius as drawn, half its thickness, and how far from its middle the ball is still struck: sideways
- * and up or down (a little more than the blade itself, so that a person meets the ball rather than grazes it).
+ * and up or down (well beyond the blade itself, so that a person meets the ball rather than misses it: the user asked
+ * for a generous judgement).
  */
 export const BLADE = 0.082,
   FACE = 0.012,
-  REACH = 0.118,
-  REACH_Y = 0.15;
+  REACH = 0.17,
+  REACH_Y = 0.22,
+  /** The computer's reach, as it was: only mine was made generous. */
+  THEIR_REACH = 0.118,
+  THEIR_REACH_Y = 0.15;
 /** The height of the plane my hand moves the paddle over, and the paddle's height when no ball is coming. */
 export const HAND_Y = 0.2,
   REST_Y = 0.2;
@@ -469,20 +473,25 @@ export function canHit(world: World, side: 0 | 1) {
   if (world.phase === "toss") return world.server === side;
   return world.phase === "rally" && world.hitter !== side && world.other >= 1;
 }
-/** The stroke my swing makes: its speed toward the other end hits harder, up the table gives topspin and back backspin, sideways sidespin; the place on the blade aims it. */
-export function swingShot(world: World, side: 0 | 1, pad: Paddle, ox: number, oy: number, serving: boolean): Shot {
+/**
+ * The stroke my swing makes, from the swing alone (the user asked; where the ball meets the blade no longer aims it):
+ * its speed toward the other end hits harder and deeper (a quick one is a smash), forward gives topspin and back
+ * backspin, and a swing to one side sends the ball that way with sidespin that curves it on.
+ */
+export function swingShot(world: World, side: 0 | 1, pad: Paddle, _ox: number, oy: number, serving: boolean): Shot {
   const f = side === 0 ? -1 : 1,
     b = world.ball,
     forward = f * pad.vz,
     coming = Math.max(0, -f * b.vz),
-    u = clamp(ox / REACH, -1.25, 1.25),
-    w = clamp(oy / REACH_Y, -1, 1),
+    // Where on the blade it met counts for nothing but a touch of height (a ball met low on the blade goes a little shorter).
+    w = 0.25 * clamp(oy / REACH_Y, -1, 1),
+    across = clamp(0.16 * pad.vx, -1, 1),
     pace = serving
       ? clamp(2.6 + 0.4 * Math.max(0, forward), 2.6, 7.5)
       : clamp(2.7 + 0.3 * coming + 0.6 * Math.max(0, forward) - 0.3 * Math.max(0, -forward) + 0.1 * Math.abs(pad.vx), 2.3, 11),
     // A stroke goes deeper as it is quicker, and a wild one (far quicker than a drive) goes long.
     depth = serving ? 0.42 + 0.07 * (pace - 2.6) + 0.08 * w : 0.36 + 0.06 * (pace - 3) + 0.035 * Math.max(0, pace - 6.5) ** 2 + 0.15 * w;
-  return { tx: 0.2 * b.x + HALF_W * 0.95 * u + 0.07 * pad.vx, depth, pace, top: clamp(30 * forward, -200, 230), side: clamp(-f * 24 * pad.vx, -180, 180) };
+  return { tx: clamp(0.2 * b.x + HALF_W * 0.95 * across, -HALF_W * 0.92, HALF_W * 0.92), depth, pace, top: clamp(30 * forward, -200, 230), side: clamp(-f * 24 * pad.vx, -180, 180) };
 }
 /** Whether a stroke from where the ball is would come down first on the other side. */
 function lands(world: World, side: 0 | 1, shot: Shot) {
@@ -598,7 +607,8 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
     by = from.y + (b.y - from.y) * t,
     ox = bx - (before.x + (pad.x - before.x) * t),
     oy = by - (before.y + (pad.y - before.y) * t);
-  if ((ox / REACH) ** 2 + (oy / REACH_Y) ** 2 > 1) return;
+  const [rx, ry] = side === 0 ? [REACH, REACH_Y] : [THEIR_REACH, THEIR_REACH_Y];
+  if ((ox / rx) ** 2 + (oy / ry) ** 2 > 1) return;
   const serving = world.phase === "toss";
   b.x = bx;
   b.y = by;

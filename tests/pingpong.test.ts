@@ -170,10 +170,19 @@ describe("table tennis: my stroke", () => {
     // A wild swing goes long.
     expect(s.swingShot(world, 0, paddle(0, -16), 0, 0, false).depth).toBeGreaterThan(1);
   });
-  test("where the ball meets the blade aims it, and a sideways swing spins it", () => {
-    expect(s.swingShot(world, 0, paddle(0, 0), -0.08, 0, false).tx).toBeLessThan(-0.3);
-    expect(s.swingShot(world, 0, paddle(0, 0), 0.08, 0, false).tx).toBeGreaterThan(0.3);
+  test("the swing aims the stroke, not where the ball meets the blade: sideways curves it, quick forward smashes", () => {
+    // The same swing gives the same stroke wherever on the blade the ball is met.
+    expect(s.swingShot(world, 0, paddle(0, 0), -0.12, 0, false).tx).toBeCloseTo(s.swingShot(world, 0, paddle(0, 0), 0.12, 0, false).tx, 6);
+    // A swing to one side sends it that way, with sidespin.
+    expect(s.swingShot(world, 0, paddle(-4, 0), 0, 0, false).tx).toBeLessThan(-0.3);
+    expect(s.swingShot(world, 0, paddle(4, 0), 0, 0, false).tx).toBeGreaterThan(0.3);
     expect(s.swingShot(world, 0, paddle(2, 0), 0, 0, false).side).not.toBe(0);
+    // A quick swing toward the net is a smash: far quicker than a gentle one.
+    expect(s.swingShot(world, 0, paddle(0, -12), 0, 0, false).pace).toBeGreaterThan(s.swingShot(world, 0, paddle(0, -1), 0, 0, false).pace + 4);
+  });
+  test("the judgement is generous: a ball well off the blade's middle is still struck", () => {
+    expect(s.REACH).toBeGreaterThan(s.BLADE * 2);
+    expect(s.REACH_Y).toBeGreaterThan(s.BLADE * 2.5);
   });
   test("a fair drive lands on the computer's side", () => {
     for (const vz of [0, -3, -6]) {
