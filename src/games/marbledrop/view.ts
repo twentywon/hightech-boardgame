@@ -26,40 +26,50 @@ import {
   boardMiddle,
   cellLocal,
   cellUnder,
+  funnelLevel,
   keyPlaces,
   levelY,
   marbleSubject,
   sideways,
+  tallest,
   toBench,
   trayBox,
+  trayHeight,
   trayPlaces,
 } from "./layout";
 import {
   CELLS,
-  FLAT,
   CORNER,
+  CROSS,
+  DOWN,
+  FLAT,
   GO,
+  HANG,
+  KIT,
   OPEN,
-  PAINTS,
   PUT,
   RAMP,
+  UP,
   attempt,
   back,
   handle,
   heightOf,
   ids,
-  landing,
   middle,
+  postureOf,
+  put,
+  putOf,
   topIn,
-  unitsKey,
+  trayYaw,
   vox,
   voxelsOf,
   world,
-  type Kind,
   type Leg,
-  type Piece,
   type Place,
+  type Pose,
   type State,
+  type Tower,
+  type Unit,
   type World,
 } from "./rules";
 import { workshop } from "./workshop";
@@ -73,16 +83,38 @@ const STEP = [
   [0, 1],
   [-1, 0],
 ];
-/** A piece's yaw (clockwise quarters seen from above) as a turn about the upright. */
+/** A yaw (clockwise quarters seen from above) as a turn about the upright. */
 const spin = (yaw: number) => (-yaw * Math.PI) / 2;
+const qY = (angle: number) => new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), angle);
+const qX = (angle: number) => new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), angle);
+/**
+ * A pose as a turn of the tower's own frame (its units up +y from its foot, north −z): turned by its yaw; on its head
+ * flipped over about east–west first; lying, tipped over toward its side `roll` first (so that side faces down and
+ * its top points that way). The same turns as `faceIn` in the rules.
+ */
+export function poseTurn(pose: Pose) {
+  const yaw = qY(spin(pose.yaw));
+  if (pose.lying)
+    return yaw
+      .multiply(qY(spin(pose.roll)))
+      .multiply(qX(-Math.PI / 2))
+      .multiply(qY(-spin(pose.roll)));
+  if (pose.inverted) return yaw.multiply(qX(Math.PI));
+  return yaw;
+}
 /** The frame's bars: how thick, and how far a corner post stands from a unit's middle. */
 const BAR = 0.05,
-  EDGE = (WIDE - BAR) / 2;
-/** A ramp's board runs from just under the top of its back to the floor at its front. */
-const RAMP_HIGH = HIGH - BAR - 0.012;
-/** A flat's or a corner's channel: half its width, and the height of its walls. */
-const CHANNEL = 0.15,
-  RAIL = 0.085;
+  EDGE = (WIDE - BAR) / 2,
+  INNER = WIDE - 2 * BAR;
+/** A ramp's board runs from this height at its back down to the floor at its front. */
+const RAMP_HIGH = 0.6;
+/** A channel's walls: half its width, and their height. */
+const CHANNEL = 0.17,
+  RAIL = 0.1;
+/** The arch over an opening: its half width, the height of its opening's sides, and its whole height. */
+const ARCH = 0.2,
+  ARCH_SIDE = 0.2,
+  ARCH_TOP = 0.5;
 const canvasOf = (w: number, h = w) => {
   const canvas = document.createElement("canvas");
   canvas.width = w;
@@ -159,14 +191,13 @@ function warningTexture() {
   texture.colorSpace = T.SRGBColorSpace;
   return texture;
 }
-/** The turntable's top: the 4 × 4 grid of pale squares laid in a ring of darker wood, ticks round its edge to grip by. */
+/** The turntable's top: rings of grain, a dark inlaid ring and ticks round its edge, the grid's dark bed. */
 function dialTexture() {
   const { canvas, pen } = canvasOf(1024);
   const scale = 1024 / (2 * TURNTABLE),
     mid = 512;
   pen.fillStyle = "#c58e5a";
   pen.fillRect(0, 0, 1024, 1024);
-  // Rings of grain round the middle.
   for (let r = 40; r < 512; r += 9) {
     pen.strokeStyle = `rgba(90, 50, 20, ${0.05 + 0.05 * Math.sin(r * 0.37)})`;
     pen.lineWidth = 2 + 2 * Math.abs(Math.sin(r * 0.11));
@@ -174,7 +205,6 @@ function dialTexture() {
     pen.arc(mid, mid, r, 0, Math.PI * 2);
     pen.stroke();
   }
-  // A dark inlaid ring near the edge, and the ticks.
   pen.strokeStyle = "#5a3520";
   pen.lineWidth = 10;
   pen.beginPath();
@@ -190,7 +220,6 @@ function dialTexture() {
     pen.lineTo(mid + Math.cos(a) * r1, mid + Math.sin(a) * r1);
     pen.stroke();
   }
-  // The grid's bed, a shade darker than its squares.
   const half = 2 * CELL * scale;
   pen.fillStyle = "#6e4329";
   pen.fillRect(mid - half - 10, mid - half - 10, 2 * half + 20, 2 * half + 20);
@@ -207,14 +236,8 @@ interface Stretch {
   strength?: number;
 }
 const lerp3 = (a: T.Vector3, b: T.Vector3, u: number) => new T.Vector3(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, a.z + (b.z - a.z) * u);
-/** A roll along a straight line, easing in and out a little. */
-const roll = (a: T.Vector3, b: T.Vector3, sound?: Stretch["sound"]): Stretch => ({
-  ms: ROLL_MS * (0.45 + 1.2 * a.distanceTo(b)),
-  at: (u) => lerp3(a, b, u),
-  sound,
-  strength: 0.4,
-});
-/** A fall from `a` to `b`: across at an even pace and down faster and faster, as a thing let go sideways falls. */
+const roll = (a: T.Vector3, b: T.Vector3, sound?: Stretch["sound"]): Stretch => ({ ms: ROLL_MS * (0.45 + 1.2 * a.distanceTo(b)), at: (u) => lerp3(a, b, u), sound, strength: 0.4 });
+/** A fall from `a` to `b`: across at an even pace and down faster and faster. */
 const drop = (a: T.Vector3, b: T.Vector3, sound: Stretch["sound"] = "disc"): Stretch => ({
   ms: FALL_MS * (0.7 + 1.2 * Math.sqrt(Math.max(0.01, a.y - b.y))),
   at: (u) => new T.Vector3(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u * u, a.z + (b.z - a.z) * u),
@@ -225,10 +248,8 @@ const drop = (a: T.Vector3, b: T.Vector3, sound: Stretch["sound"] = "disc"): Str
 const settle = (a: T.Vector3, height = 0.05, ms = 360): Stretch => ({ ms, at: (u) => new T.Vector3(a.x, a.y + height * Math.abs(Math.sin(Math.PI * 2 * u)) * (1 - u), a.z) });
 /** The press the player is making on the table. */
 interface Press {
-  /** What it began on: a piece of the tray (by index), the start, or nothing to take (the view turns instead). */
   kind: "piece" | "start" | "spin";
   piece: number;
-  /** The cell it began on (or -1), and the client point. */
   cell: number;
   x: number;
   y: number;
@@ -236,52 +257,51 @@ interface Press {
   lift: number;
   moving: boolean;
 }
+type Part = "frame" | "cap" | "boards" | "floors" | "brass" | "burnt" | "skirt" | "mark";
+const PARTS: Part[] = ["frame", "cap", "boards", "floors", "brass", "burnt", "skirt", "mark"];
 /**
- * A toymaker's marble run on a workbench: a round maple turntable with a 4 × 4 grid inlaid, and pieces made of open
- * beech frames (one storey a unit) holding walnut ramps with a brass lip, flats with low walls, and corners with
- * curved walls (each ramp with a pale arrow inlaid down its slope); each piece has corner caps painted in its own
- * colour, and pieces fixed from the start have smoked frames, a dark base and brass pegs on their top corners. The
- * start, stained darker, has a brass funnel over it; the target is a felt-lined brass cup with a chequered flag. The
- * pieces to set stand in a walnut tray before the turntable (at its right on a wide canvas), columns upright and
- * beams lying, smaller than on the board. A piece
- * is dragged from the tray onto a cell (it hovers there over the board and a ghost shows where it would land), carried
- * between cells or off the board back to the tray, and turned by a tap; dragging anything else turns the turntable
- * (a little tilt is allowed too). A tap on the funnel drops the glass marble, which rolls its way down or comes to
- * grief, a red mark standing where it did.
+ * A toymaker's marble run on a workbench: a round maple turntable with a 4 × 4 grid inlaid, and towers of the kit,
+ * each a column of open frames of its own wood with a painted cap and an ivory peg on the cap's yaw-0 side. In the
+ * frames: ramps (a walnut board sloping to its exit, a brass lip along its low edge, an arrow burnt into it pointing
+ * out, a brass arch over the exit and low walls on its closed sides), straight and turning channels and crossings
+ * (a pale floor with low walls and an arch at each opening) and hanging crossings (the same fixed under the cube's
+ * ceiling, upside down), and empty cubes. Towers fixed from the start have smoked frames, a dark foot and brass lock
+ * pins. The start has a brass funnel over it; the target is a felt-lined brass cup with a chequered flag. The towers
+ * to set stand in a walnut tray in their postures (standing, on their heads, or lying), turned as the turntable is.
+ * A tower is dragged from the tray onto a cell (a ghost shows where it would land), carried between cells or off the
+ * board back to the tray, and turned by a tap; dragging anything else turns the turntable (a little tilt is allowed
+ * too). A tap on the funnel drops the glass marble, which rolls its way down or comes to grief, a red mark standing
+ * where it did.
  */
 export class MarbleView extends TableView<State> {
-  /** A strike of the marble: on a piece or the board ("disc"), against a wall ("cushion"), into the target cup ("pocket"). */
   onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
-  /** How far the turntable is turned (counter-clockwise seen from above), and the tilt added to the view. */
   private turn = 0;
   private lift = 0;
-  /** The canvas's shape, which decides where the tray lies. */
+  /** How high the puzzle's stacks reach, which the camera frames. */
+  private storeys = 4;
   private aspect = 1;
   private built = "";
-  /** The turntable and what turns with it: the grid, the fixed pieces, the marble, marks on the board. */
   private table = new T.Group();
   private fixed = new T.Group();
-  /** The tray's pieces, by index (children of the scene: on the board they are placed in the turntable's turn). */
+  /** The tray's towers, by index (children of the scene, placed in bench coordinates). */
   private pieces: T.Group[] = [];
   private trayGroup = new T.Group();
   private flag: T.Group | null = null;
+  private funnel = new T.Group();
   private marble = new T.Group();
-  private stuffs: Record<"beech" | "stained" | "smoked" | "walnut" | "brass" | "funnel" | "hole" | "maple" | "felt" | "flag" | "plot" | "dial" | "base" | "tray" | "pad" | "inlay" | "teal", T.Material>;
-  private paints: T.Material[] = [];
+  private stuffs: Record<"walnut" | "floor" | "brass" | "funnel" | "hole" | "maple" | "felt" | "flag" | "plot" | "dial" | "base" | "tray" | "burnt" | "ivory" | "lock", T.Material>;
+  /** By kit tower: its frame's wood (in the tray and placed, and smoked when fixed), its cap's paint. */
+  private woods: { live: T.Material; fixed: T.Material; skirt: T.Material; skirtFixed: T.Material; paint: T.Material }[] = [];
   private ghostStuffs: Record<"gold" | "green", T.Material>;
   private proxyStuff: T.Material;
-  private shapes: { proxy: T.BufferGeometry; base: T.BufferGeometry; plot: T.BufferGeometry; funnel: T.BufferGeometry; hole: T.BufferGeometry; cupRim: T.BufferGeometry; felt: T.BufferGeometry; pin: T.BufferGeometry; knob: T.BufferGeometry; pennant: T.BufferGeometry; pad: T.BufferGeometry };
-  /** Merged geometries of a piece's parts, by its units. */
-  private models = new Map<string, Record<"frame" | "caps" | "boards" | "brass" | "inlay" | "pins", T.BufferGeometry | null>>();
+  private shapes: Record<"proxy" | "plot" | "base" | "funnel" | "hole" | "cupRim" | "felt" | "pin" | "knob" | "pennant" | "lockPin", T.BufferGeometry>;
+  private models = new Map<number, Record<Part, T.BufferGeometry | null>>();
   private trayShapes = new Map<string, T.BufferGeometry>();
   private scenery: ReturnType<typeof workshop>;
   private caster = new T.Raycaster();
-  /** The invisible boxes a press is judged by (each unit a solid box, so that a press is not lost through an open frame). */
   private proxies: T.Object3D[] = [];
   private plots: T.Mesh[] = [];
-  /** What the last ray struck: a tray piece, a given piece, the start, or a cell of the bare grid. */
   private struck: { kind: "tray" | "given" | "start" | "cell" | "none"; index: number; cell: number } = { kind: "none", index: -1, cell: -1 };
-  /** The marks: rings on cells (on the turntable) and on tray places (on the bench), red warnings, the arrow over the funnel. */
   private rings: Record<"cursor" | "chosen" | "from" | "to" | "aim" | "funnel" | "refuse", T.Mesh>;
   private targets: T.Mesh[] = [];
   private alarms: { ring: T.Mesh; sign: T.Sprite }[] = [];
@@ -289,28 +309,24 @@ export class MarbleView extends TableView<State> {
   private arrow: T.Mesh;
   private clock = 0;
   private press: Press | null = null;
-  /** The pointer's last place on the screen (heard before the table hears it, so that a drag is followed in pixels). */
   private pointer = { x: 0, y: 0 };
   private hear = (e: PointerEvent) => {
     this.pointer = { x: e.clientX, y: e.clientY };
   };
-  /** Where a carried piece was let go, so that it goes on from there. */
-  private dropped: { piece: number; at: T.Vector3; rotation: number } | null = null;
+  /** Where a carried tower was let go, so that it goes on from there. */
+  private dropped: { piece: number; at: T.Vector3; quaternion: T.Quaternion } | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#3a2a1e");
     const keep: Own = (r) => this.own(r);
-    this.daylight("#fff3e2", "#4a3524", "#ffe3bd", 9, 2.2);
-    // A warm lamp over the bench from the left, as in a workshop.
-    const lamp = new T.PointLight("#ffd29a", 6, 14, 1.6);
-    lamp.position.set(-4.5, 5, 1.5);
+    this.daylight("#fff3e2", "#4a3524", "#ffe3bd", 10, 2.2);
+    const lamp = new T.PointLight("#ffd29a", 6, 16, 1.6);
+    lamp.position.set(-4.5, 6, 1.5);
     this.scene.add(lamp);
     const pale = keep(wood(false)),
       dark = keep(wood(true));
     this.stuffs = {
-      beech: this.standard({ map: pale, color: "#f7dcb0", roughness: 0.55 }),
-      stained: this.standard({ map: dark, color: "#a5785a", roughness: 0.5 }),
-      smoked: this.standard({ map: dark, color: "#e2b48c", roughness: 0.5 }),
-      walnut: this.standard({ map: pale, color: "#9a5a36", roughness: 0.5 }),
+      walnut: this.standard({ map: pale, color: "#d6a472", roughness: 0.5 }),
+      floor: this.standard({ map: pale, color: "#fbe9c8", roughness: 0.55 }),
       brass: keep(glossy({ color: "#d9a845", metalness: 0.6, roughness: 0.3 })),
       funnel: keep(glossy({ color: "#d9a845", metalness: 0.6, roughness: 0.3, side: T.DoubleSide })),
       hole: this.standard({ color: "#160e09", roughness: 1 }),
@@ -321,44 +337,53 @@ export class MarbleView extends TableView<State> {
       dial: this.standard({ map: keep(dialTexture()), roughness: 0.55 }),
       base: this.standard({ map: dark, color: "#4a2c1c", roughness: 0.6 }),
       tray: this.standard({ map: dark, color: "#9a6a48", roughness: 0.6 }),
-      pad: this.standard({ color: "#2f5a3c", roughness: 1, ...weave(1, 1, keep, 0.6) }),
-      inlay: this.standard({ color: "#fff6dc", emissive: "#4a3a20", roughness: 0.5 }),
-      teal: keep(glossy({ color: "#177e7c", roughness: 0.35 })),
+      burnt: this.standard({ color: "#1c0d05", roughness: 0.95, side: T.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+      ivory: keep(glossy({ color: "#fbf6e6", roughness: 0.3 })),
+      lock: keep(glossy({ color: "#b8862c", metalness: 0.7, roughness: 0.28 })),
     };
-    this.paints = PAINTS.map((color) => keep(glossy({ color, roughness: 0.35 })));
+    this.woods = KIT.map((k) => {
+      const tint = new T.Color(k.wood),
+        smoked = tint.clone().multiplyScalar(0.62);
+      return {
+        live: this.standard({ map: pale, color: tint, roughness: 0.55 }),
+        fixed: this.standard({ map: dark, color: smoked.clone().lerp(new T.Color("#e2b48c"), 0.35), roughness: 0.5 }),
+        skirt: this.standard({ map: pale, color: tint.clone().multiplyScalar(0.92), roughness: 0.6 }),
+        skirtFixed: this.standard({ map: dark, color: smoked, roughness: 0.6 }),
+        paint: keep(glossy({ color: k.paint, roughness: 0.35 })),
+      };
+    });
     this.ghostStuffs = {
       gold: this.standard({ color: "#ffb21f", emissive: "#8a5200", roughness: 0.6, transparent: true, opacity: 0.55, depthWrite: false }),
       green: this.standard({ color: "#7fe0a0", emissive: "#1e6b3a", roughness: 0.6, transparent: true, opacity: 0.5, depthWrite: false }),
     };
     this.proxyStuff = keep(new T.MeshBasicMaterial({ visible: false }));
     const funnelProfile = [
-      [0.07, -0.02],
-      [0.08, 0.02],
-      [0.13, FUNNEL * 0.45],
+      [0.08, -0.02],
+      [0.09, 0.02],
+      [0.15, FUNNEL * 0.45],
       [FUNNEL_MOUTH, FUNNEL],
       [FUNNEL_MOUTH + 0.02, FUNNEL + 0.01],
       [FUNNEL_MOUTH - 0.005, FUNNEL + 0.02],
     ].map(([r, y]) => new T.Vector2(r, y));
     const pennant = new T.Shape();
     pennant.moveTo(0, 0);
-    pennant.lineTo(0.27, -0.02);
-    pennant.lineTo(0.27, -0.18);
-    pennant.lineTo(0, -0.18);
+    pennant.lineTo(0.3, -0.02);
+    pennant.lineTo(0.3, -0.2);
+    pennant.lineTo(0, -0.2);
     pennant.lineTo(0, 0);
     this.shapes = {
       proxy: keep(new T.BoxGeometry(WIDE, HIGH, WIDE).translate(0, HIGH / 2, 0)),
       plot: keep(block(CELL * 0.94, 0.02, CELL * 0.94, 0.008)),
-      base: keep(block(WIDE + 0.07, 0.036, WIDE + 0.07, 0.012)),
+      base: keep(block(WIDE + 0.06, 0.04, WIDE + 0.06, 0.012)),
       funnel: keep(new T.LatheGeometry(funnelProfile, 36)),
-      hole: keep(new T.CircleGeometry(0.12, 28).rotateX(-Math.PI / 2)),
-      cupRim: keep(new T.TorusGeometry(0.26, 0.05, 14, 44).rotateX(Math.PI / 2).scale(1, 0.7, 1)),
-      felt: keep(new T.CircleGeometry(0.22, 36).rotateX(-Math.PI / 2)),
-      pin: keep(new T.CylinderGeometry(0.012, 0.012, 0.62, 10)),
-      knob: keep(new T.SphereGeometry(0.032, 14, 10)),
+      hole: keep(new T.CircleGeometry(0.13, 28).rotateX(-Math.PI / 2)),
+      cupRim: keep(new T.TorusGeometry(0.28, 0.055, 14, 44).rotateX(Math.PI / 2).scale(1, 0.7, 1)),
+      felt: keep(new T.CircleGeometry(0.24, 36).rotateX(-Math.PI / 2)),
+      pin: keep(new T.CylinderGeometry(0.012, 0.012, 0.7, 10)),
+      knob: keep(new T.SphereGeometry(0.034, 14, 10)),
       pennant: keep(new T.ShapeGeometry(pennant)),
-      pad: keep(block(1.0 * TRAY_SCALE + 0.24, 0.01, 1.0, 0.004)),
+      lockPin: keep(new T.CylinderGeometry(0.03, 0.035, 0.1, 12)),
     };
-    // The glass marble: a clear shell round a milky core twisted with colour.
     const swirl = new T.Mesh(keep(new T.SphereGeometry(MARBLE * 0.82, 24, 16)), this.standard({ map: keep(swirlTexture()), roughness: 0.4 }));
     const shell = new T.Mesh(keep(new T.SphereGeometry(MARBLE, 28, 18)), keep(glossy({ color: "#e6f3ff", roughness: 0.04, transparent: true, opacity: 0.38 })));
     swirl.castShadow = shell.castShadow = true;
@@ -369,7 +394,6 @@ export class MarbleView extends TableView<State> {
     this.table.position.set(middleAt.x, 0, middleAt.z);
     this.table.add(this.fixed, this.marble);
     this.scene.add(this.table, this.trayGroup);
-    // The marks.
     const flat = (color: string, opacity: number) => keep(new T.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: T.DoubleSide }));
     const ring = (inner: number, outer: number, material: T.Material) => {
       const mesh = new T.Mesh(keep(new T.RingGeometry(inner, outer, 48).rotateX(-Math.PI / 2)), material);
@@ -380,13 +404,13 @@ export class MarbleView extends TableView<State> {
     };
     const gold = flat("#ffb21f", 0.95);
     this.rings = {
-      cursor: ring(0.44, 0.5, flat("#ffffff", 0.95)),
-      chosen: ring(0.38, 0.45, flat("#62cfff", 0.95)),
-      from: ring(0.38, 0.46, gold),
-      to: ring(0.38, 0.46, gold),
-      aim: ring(0.36, 0.45, flat("#7fe0a0", 0.95)),
-      funnel: ring(FUNNEL_MOUTH + 0.04, FUNNEL_MOUTH + 0.11, gold),
-      refuse: ring(0.36, 0.45, flat("#e0392b", 0.95)),
+      cursor: ring(0.46, 0.52, flat("#ffffff", 0.95)),
+      chosen: ring(0.4, 0.47, flat("#62cfff", 0.95)),
+      from: ring(0.4, 0.48, gold),
+      to: ring(0.4, 0.48, gold),
+      aim: ring(0.38, 0.47, flat("#7fe0a0", 0.95)),
+      funnel: ring(FUNNEL_MOUTH + 0.04, FUNNEL_MOUTH + 0.12, gold),
+      refuse: ring(0.38, 0.47, flat("#e0392b", 0.95)),
     };
     const faint = flat("#ffffff", 0.55);
     for (let k = 0; k < CELLS; k++) this.targets.push(ring(0.2, 0.25, faint));
@@ -394,23 +418,23 @@ export class MarbleView extends TableView<State> {
       warning = keep(new T.SpriteMaterial({ map: keep(warningTexture()), depthTest: false, transparent: true }));
     for (let k = 0; k < 8; k++) {
       const sign = new T.Sprite(warning);
-      sign.scale.setScalar(0.32);
+      sign.scale.setScalar(0.36);
       sign.renderOrder = 12;
       sign.visible = false;
       this.scene.add(sign);
-      this.alarms.push({ ring: ring(0.4, 0.5, red), sign });
+      this.alarms.push({ ring: ring(0.42, 0.52, red), sign });
     }
-    this.arrow = new T.Mesh(keep(new T.ConeGeometry(0.09, 0.22, 16).rotateX(Math.PI)), keep(new T.MeshBasicMaterial({ color: "#ffffff" })));
+    this.arrow = new T.Mesh(keep(new T.ConeGeometry(0.1, 0.25, 16).rotateX(Math.PI)), keep(new T.MeshBasicMaterial({ color: "#ffffff" })));
     this.arrow.visible = false;
     this.arrow.renderOrder = 10;
     this.scene.add(this.arrow);
-    // A carried piece is followed over a plane above the board, so that it is never hidden in a stack.
+    // A carried tower is followed over a plane above the board, so that it is never hidden in a stack.
     this.floor = new T.Plane(new T.Vector3(0, 1, 0), -CARRY);
-    // The pointer is heard on its way to the canvas, so that a drag that turns the table counts pixels.
     host.addEventListener("pointerdown", this.hear, true);
     host.addEventListener("pointermove", this.hear, true);
     this.renderer.domElement.dataset.turn = "0";
     this.renderer.domElement.dataset.lift = "0";
+    this.renderer.domElement.dataset.storeys = String(this.storeys);
     this.begin();
   }
   /** The turntable itself: a round maple top on a dark foot, a brass ring round its edge, its grid of squares. */
@@ -433,184 +457,177 @@ export class MarbleView extends TableView<State> {
       this.plots.push(plot);
     }
   }
-  /** A piece's parts, merged by stuff, in its own frame at yaw 0 (a column up from its foot, a beam along x about its middle). */
-  private model(piece: Pick<Piece, "shape" | "units">, look: "tray" | "fixed" | "start") {
-    const key = `${unitsKey(piece)}:${look}`;
-    const known = this.models.get(key);
+  /** A kit tower's parts, merged by stuff, in its own frame (units up +y from its foot, north −z). */
+  private model(kind: number) {
+    const known = this.models.get(kind);
     if (known) return known;
-    const parts: Record<"frame" | "caps" | "boards" | "brass" | "inlay" | "pins", T.BufferGeometry[]> = { frame: [], caps: [], boards: [], brass: [], inlay: [], pins: [] },
-      add = (into: keyof typeof parts, geometry: T.BufferGeometry, matrix: T.Matrix4) => parts[into].push((geometry.index ? geometry.toNonIndexed() : geometry.clone()).applyMatrix4(matrix)),
-      at = (x: number, y: number, z: number, turn = 0, tilt = 0) => new T.Matrix4().compose(new T.Vector3(x, y, z), new T.Quaternion().setFromEuler(new T.Euler(tilt, turn, 0, "YXZ")), new T.Vector3(1, 1, 1)),
-      n = piece.units.length,
-      column = piece.shape === "column",
-      mid = middle(n),
+    const parts: Record<Part, T.BufferGeometry[]> = { frame: [], cap: [], boards: [], floors: [], brass: [], burnt: [], skirt: [], mark: [] },
+      add = (into: Part, geometry: T.BufferGeometry, matrix: T.Matrix4) => parts[into].push((geometry.index ? geometry.toNonIndexed() : geometry.clone()).applyMatrix4(matrix)),
+      units = KIT[kind].units,
+      n = units.length,
+      tall = n * HIGH,
+      at = (x: number, y: number, z: number) => new T.Matrix4().makeTranslation(x, y, z),
       barX = block(WIDE, BAR, BAR, 0.015),
       barZ = block(BAR, BAR, WIDE, 0.015),
-      post = block(BAR, HIGH, BAR, 0.015),
-      knob = block(0.095, 0.075, 0.095, 0.025);
-    // The frame. A column: four posts all the way up and one ring of bars at its foot, between each two storeys and
-    // at its head (painted). A beam: long bars along both sides at its foot and head, and posts and cross bars at the
-    // ends of every unit (its two end faces painted).
-    if (column) {
-      const tall = n * HIGH,
-        longPost = block(BAR, tall, BAR, 0.015);
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) add("frame", longPost, at(sx * EDGE, tall / 2, sz * EDGE));
-      for (let k = 0; k <= n; k++) {
-        const y = k === 0 ? BAR / 2 : k === n ? tall - BAR / 2 : k * HIGH,
-          into = k === n ? "caps" : "frame";
-        for (const sz of [-1, 1]) add(into, barX, at(0, y, sz * EDGE));
-        for (const sx of [-1, 1]) add(into, barZ, at(sx * EDGE, y, 0));
-      }
-      longPost.dispose();
-    } else {
-      const span = (n - 1) * CELL + WIDE,
-        longBar = block(span, BAR, BAR, 0.015),
-        cx = ((n - 1) / 2 - mid) * CELL;
-      for (const y of [BAR / 2, HIGH - BAR / 2]) for (const sz of [-1, 1]) add("frame", longBar, at(cx, y, sz * EDGE));
-      for (let i = 0; i < n; i++)
-        for (const sx of [-1, 1]) {
-          const x = (i - mid) * CELL + sx * EDGE,
-            into = (i === 0 && sx < 0) || (i === n - 1 && sx > 0) ? "caps" : "frame";
-          for (const sz of [-1, 1]) add(into, post, at(x, HIGH / 2, sz * EDGE));
-          for (const y of [BAR / 2, HIGH - BAR / 2]) add(into, barZ, at(x, y, 0));
-        }
-      longBar.dispose();
+      post = block(BAR, tall, BAR, 0.015),
+      knob = block(0.1, 0.08, 0.1, 0.028);
+    // The frame: four posts all the way up, a ring of bars at its foot, between each two cubes and at its top
+    // (painted, with knobs at the corners); an ivory peg on the cap's north bar marks its yaw-0 side.
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add("frame", post, at(sx * EDGE, tall / 2, sz * EDGE));
+    for (let k = 0; k <= n; k++) {
+      const y = k === 0 ? BAR / 2 : k === n ? tall - BAR / 2 : k * HIGH,
+        into: Part = k === n || k === 0 ? "cap" : "frame";
+      for (const sz of [-1, 1]) add(into, barX, at(0, y, sz * EDGE));
+      for (const sx of [-1, 1]) add(into, barZ, at(sx * EDGE, y, 0));
     }
-    piece.units.forEach((u, i) => {
-      const ox = column ? 0 : (i - mid) * CELL,
-        oy = column ? i * HIGH : 0;
-      // What the unit holds, turned to its face (north at face 0).
-      const turn = spin(u.face);
-      this.inside(u.kind, (into, geometry, x, y, z, tilt = 0) => {
-        const c = Math.cos(turn),
-          s = Math.sin(turn);
-        add(into, geometry, at(ox + x * c + z * s, oy + y, -x * s + z * c, turn, tilt));
-      });
-    });
-    // Corner caps: at the eight outer corners of the piece, painted; fixed pieces have a brass pin through the top ones.
-    const height = column ? n * HIGH : HIGH,
-      ends = column ? [-EDGE, EDGE] : [-mid * CELL - EDGE, (n - 1 - mid) * CELL + EDGE],
-      pin = new T.CylinderGeometry(0.026, 0.03, 0.1, 12);
-    for (const x of ends)
-      for (const sz of [-1, 1])
-        for (const y of [0.0375, height - 0.0375]) {
-          add("caps", knob, at(x, y, sz * EDGE));
-          if (look !== "tray" && y > 0.1) add("pins", pin, at(x, y + 0.08, sz * EDGE));
-        }
-    pin.dispose();
-    barX.dispose();
-    barZ.dispose();
-    post.dispose();
-    knob.dispose();
-    const merged = {} as Record<keyof typeof parts, T.BufferGeometry | null>;
-    for (const name of Object.keys(parts) as (keyof typeof parts)[]) {
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (const y of [0.04, tall - 0.04]) add("cap", knob, at(sx * EDGE, y, sz * EDGE));
+    const peg = new T.CylinderGeometry(0.045, 0.045, 0.05, 16);
+    add("mark", peg, at(0, tall + 0.02, -EDGE));
+    add("mark", peg, at(0, -0.02, -EDGE));
+    peg.dispose();
+    units.forEach((unit, i) => this.inside(unit, (into, geometry, matrix) => add(into, geometry, new T.Matrix4().makeTranslation(0, i * HIGH, 0).multiply(matrix))));
+    for (const g of [barX, barZ, post, knob]) g.dispose();
+    const merged = {} as Record<Part, T.BufferGeometry | null>;
+    for (const name of PARTS) {
       const list = parts[name];
       merged[name] = list.length ? this.own(mergeGeometries(list)!) : null;
       for (const g of list) g.dispose();
     }
-    this.models.set(key, merged);
+    this.models.set(kind, merged);
     return merged;
   }
-  /** What a unit holds, at face 0 (north): a sloping board, a floor with walls, a floor with curved walls, or nothing. */
-  private inside(kind: Kind, put: (into: "boards" | "brass" | "inlay", geometry: T.BufferGeometry, x: number, y: number, z: number, tilt?: number) => void) {
-    const inner = WIDE - 2 * BAR;
-    if (kind === RAMP) {
-      const rise = RAMP_HIGH - FLOOR,
+  /**
+   * What a unit holds, in the unit's own frame (its foot at y = 0, north −z): a ramp's board, a channel's floor and
+   * walls, arches over its openings and low walls on its closed sides; a hanging crossing is the crossing turned
+   * over under the ceiling.
+   */
+  private inside(unit: Unit, put: (into: Part, geometry: T.BufferGeometry, matrix: T.Matrix4) => void) {
+    const turned = (face: number, x: number, y: number, z: number, extra = new T.Matrix4()) =>
+      new T.Matrix4()
+        .makeRotationY(spin(face))
+        .multiply(new T.Matrix4().makeTranslation(x, y, z))
+        .multiply(extra);
+    const arch = archShape(),
+      skirt = block(INNER, 0.2, 0.026, 0.008);
+    /** An arch standing in the side face `face` (its opening the way through). */
+    const archAt = (face: number, matrix = new T.Matrix4()) => put("brass", arch, matrix.clone().multiply(turned(face, 0, BAR, -EDGE)));
+    const skirtAt = (face: number, matrix = new T.Matrix4()) => put("skirt", skirt, matrix.clone().multiply(turned(face, 0, BAR + 0.1, -EDGE + 0.005)));
+    if (unit.kind === RAMP) {
+      const face = unit.face,
+        rise = RAMP_HIGH - FLOOR,
         length = Math.hypot(2 * EDGE, rise),
-        tilt = -Math.atan2(rise, 2 * EDGE),
-        board = block(inner, 0.035, length, 0.01);
-      put("boards", board, 0, (RAMP_HIGH + FLOOR) / 2 - 0.0175, 0, tilt);
-      // Low cheeks along both sides of the slope, so that it reads as a chute from the side.
-      const cheek = block(0.03, 0.07, length, 0.01);
-      for (const sx of [-1, 1]) put("boards", cheek, sx * (inner / 2 - 0.015), (RAMP_HIGH + FLOOR) / 2 + 0.02, 0, tilt);
-      // The brass lip at its low end.
-      const lip = block(inner, 0.035, 0.05, 0.012);
-      put("brass", lip, 0, FLOOR + 0.0175, -EDGE + 0.03);
-      // A pale arrow inlaid down the slope.
+        tilt = Math.atan2(rise, 2 * EDGE),
+        board = block(INNER, 0.035, length, 0.01),
+        mid = (RAMP_HIGH + FLOOR) / 2;
+      // The board slopes down toward −z (the exit), about the x axis.
+      const slope = new T.Matrix4().makeRotationX(-tilt);
+      put("boards", board, turned(face, 0, mid - 0.018, 0, slope));
+      const lip = block(INNER, 0.04, 0.05, 0.012);
+      put("brass", lip, turned(face, 0, FLOOR + 0.02, -EDGE + 0.035));
+      // The arrow burnt into the board, pointing out of the exit.
       const arrow = new T.Shape();
-      arrow.moveTo(-0.17, -0.05);
-      arrow.lineTo(0, 0.12);
-      arrow.lineTo(0.17, -0.05);
-      arrow.lineTo(0.17, -0.14);
-      arrow.lineTo(0, 0.03);
-      arrow.lineTo(-0.17, -0.14);
+      arrow.moveTo(0, -0.26);
+      arrow.lineTo(0.07, -0.26);
+      arrow.lineTo(0.07, 0.02);
+      arrow.lineTo(0.19, 0.02);
+      arrow.lineTo(0, 0.28);
+      arrow.lineTo(-0.19, 0.02);
+      arrow.lineTo(-0.07, 0.02);
+      arrow.lineTo(-0.07, -0.26);
       arrow.closePath();
-      for (const along of [-0.14, 0.12]) {
-        const g = new T.ShapeGeometry(arrow).rotateX(-Math.PI / 2);
-        // On the board's face: up by half its thickness, at `along` down the slope (toward the front, −z).
-        const y = (RAMP_HIGH + FLOOR) / 2 + 0.014 - along * Math.tan(-tilt);
-        put("inlay", g, 0, y, -along, tilt);
-        g.dispose();
-      }
+      const mark = new T.ShapeGeometry(arrow).rotateX(-Math.PI / 2);
+      put("burnt", mark, turned(face, 0, mid + 0.003, 0, slope));
+      mark.dispose();
+      archAt(face);
+      for (const side of [1, 2, 3]) skirtAt((face + side) % 4);
       board.dispose();
-      cheek.dispose();
       lip.dispose();
-      return;
-    }
-    if (kind === FLAT || kind === CORNER) {
-      const floor = block(inner, 0.03, WIDE, 0.01);
-      put("boards", floor, 0, FLOOR - 0.015, 0);
+    } else if (unit.kind === FLAT || unit.kind === CORNER || unit.kind === CROSS || unit.kind === HANG) {
+      // A hanging crossing is a crossing turned over about east–west inside its cube.
+      const over = unit.kind === HANG ? new T.Matrix4().makeTranslation(0, HIGH, 0).multiply(new T.Matrix4().makeRotationX(Math.PI)) : new T.Matrix4();
+      const floor = block(INNER, 0.03, INNER, 0.01);
+      put("floors", floor, over.clone().multiply(at3(0, FLOOR - 0.015, 0)));
       floor.dispose();
-      const strip = block(2 * CHANNEL, 0.012, 0.035, 0.005);
-      if (kind === FLAT) {
-        const rail = block(0.035, RAIL, WIDE, 0.012);
-        for (const sx of [-1, 1]) put("boards", rail, sx * CHANNEL, FLOOR + RAIL / 2, 0);
+      if (unit.kind === FLAT) {
+        const rail = block(0.035, RAIL, WIDE - 0.06, 0.012);
+        for (const sx of [-1, 1]) put("boards", rail, turned(unit.face, sx * CHANNEL, FLOOR + RAIL / 2, 0));
         rail.dispose();
-        for (const sz of [-1, 1]) put("brass", strip, 0, FLOOR + 0.006, sz * (EDGE - 0.01));
-      } else {
-        // Openings north and east: two walls bent round the north-east corner.
+        archAt(unit.face);
+        archAt((unit.face + 2) % 4);
+      } else if (unit.kind === CORNER) {
         for (const radius of [WIDE / 2 - CHANNEL, WIDE / 2 + CHANNEL]) {
           const wall = arcWall(radius, 0.035, RAIL);
-          put("boards", wall, 0, FLOOR, 0);
+          put("boards", wall, turned(unit.face, 0, FLOOR, 0));
           wall.dispose();
         }
-        put("brass", strip, 0, FLOOR + 0.006, -(EDGE - 0.01));
-        const side = strip.clone().rotateY(Math.PI / 2);
-        put("brass", side, EDGE - 0.01, FLOOR + 0.006, 0);
-        side.dispose();
+        archAt(unit.face);
+        archAt((unit.face + 1) % 4);
+        skirtAt((unit.face + 2) % 4);
+        skirtAt((unit.face + 3) % 4);
+      } else {
+        // Four low corner walls, and an arch on every side.
+        const stub = block(0.14, RAIL, 0.14, 0.02);
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) put("boards", stub, over.clone().multiply(at3(sx * (INNER / 2 - 0.07), FLOOR + RAIL / 2, sz * (INNER / 2 - 0.07))));
+        stub.dispose();
+        for (let f = 0; f < 4; f++) archAt(f, over);
       }
-      strip.dispose();
     }
+    arch.dispose();
+    skirt.dispose();
   }
-  /** A piece as meshes: its parts in their stuffs, and a solid box a unit for presses (`point` data on each). */
-  private figure(piece: Piece, look: "tray" | "fixed" | "start", tag: { kind: "tray" | "given" | "start"; index: number }) {
+  /** A tower as meshes: its parts in their stuffs, and a solid box a unit for presses (`userData` on each). */
+  private figure(t: Tower, fixed: boolean, tag: { kind: "tray" | "given"; index: number }) {
     const group = new T.Group(),
-      model = this.model(piece, look),
-      frame = look === "start" ? this.stuffs.stained : look === "fixed" ? this.stuffs.smoked : this.stuffs.beech,
-      caps = look === "start" ? this.stuffs.teal : this.paints[((piece.paint % this.paints.length) + this.paints.length) % this.paints.length],
-      stuff = { frame, caps, boards: this.stuffs.walnut, brass: this.stuffs.brass, inlay: this.stuffs.inlay, pins: this.stuffs.brass };
-    for (const name of Object.keys(stuff) as (keyof typeof stuff)[]) {
+      model = this.model(t.kind),
+      wood = this.woods[t.kind],
+      stuff: Record<Part, T.Material> = {
+        frame: fixed ? wood.fixed : wood.live,
+        cap: wood.paint,
+        boards: this.stuffs.walnut,
+        floors: this.stuffs.floor,
+        brass: this.stuffs.brass,
+        burnt: this.stuffs.burnt,
+        skirt: fixed ? wood.skirtFixed : wood.skirt,
+        mark: this.stuffs.ivory,
+      };
+    for (const name of PARTS) {
       const geometry = model[name];
       if (!geometry) continue;
       const mesh = new T.Mesh(geometry, stuff[name]);
       mesh.castShadow = mesh.receiveShadow = true;
       group.add(mesh);
     }
-    // A piece fixed from the start stands on a dark base (and carries brass pins at its top corners).
-    if (look !== "tray" && piece.shape === "column" && piece.level === 0) {
+    const n = KIT[t.kind].units.length;
+    if (fixed) {
+      // A dark foot, and brass lock pins through the cap's corners.
       const base = new T.Mesh(this.shapes.base, this.stuffs.base);
-      base.position.y = 0.018;
-      base.receiveShadow = true;
+      base.position.y = 0.02;
       group.add(base);
+      for (const [sx, sz] of [
+        [-1, -1],
+        [1, 1],
+      ]) {
+        const pin = new T.Mesh(this.shapes.lockPin, this.stuffs.lock);
+        pin.position.set(sx * EDGE, n * HIGH + 0.08, sz * EDGE);
+        group.add(pin);
+      }
     }
-    const n = piece.units.length,
-      mid = middle(n);
     for (let i = 0; i < n; i++) {
       const box = new T.Mesh(this.shapes.proxy, this.proxyStuff);
-      box.position.set(piece.shape === "column" ? 0 : (i - mid) * CELL, piece.shape === "column" ? i * HIGH : 0, 0);
+      box.position.set(0, i * HIGH, 0);
       box.userData = { ...tag, unit: i };
       group.add(box);
       this.proxies.push(box);
     }
     return group;
   }
-  /** A gold or green see-through copy of a tray piece, for the hint and for where a carried piece would land. */
+  /** A gold or green see-through copy of a tray tower, for the hint and for where a carried tower would land. */
   private ghost(j: number, kind: "gold" | "green") {
     const key = `${j}:${kind}`;
     let ghost = this.ghosts.get(key);
     if (!ghost) {
       ghost = new T.Group();
-      const model = this.model(this.state!.tray[j], "tray");
+      const model = this.model(this.state!.tray[j].kind);
       for (const geometry of Object.values(model)) {
         if (!geometry) continue;
         const mesh = new T.Mesh(geometry, this.ghostStuffs[kind]);
@@ -636,13 +653,12 @@ export class MarbleView extends TableView<State> {
       pin = new T.Mesh(this.shapes.pin, this.stuffs.brass),
       knob = new T.Mesh(this.shapes.knob, this.stuffs.brass),
       cloth = new T.Mesh(this.shapes.pennant, this.stuffs.flag);
-    pin.position.y = 0.31;
-    knob.position.y = 0.63;
-    cloth.position.set(0.01, 0.6, 0);
+    pin.position.y = 0.35;
+    knob.position.y = 0.71;
+    cloth.position.set(0.01, 0.68, 0);
     pin.castShadow = cloth.castShadow = true;
     flag.add(pin, knob, cloth);
-    // Stuck in beside the cup, as a flag marks a hole on a green.
-    flag.position.set(0.31, 0, -0.06);
+    flag.position.set(0.33, 0, -0.06);
     group.add(flag);
     this.flag = flag;
     return group;
@@ -656,44 +672,49 @@ export class MarbleView extends TableView<State> {
     }
     return geometry;
   }
-  /** Builds the fixed pieces, the target and the tray's pieces when the puzzle changes. */
+  /** Builds the fixed towers, the funnel, the target and the tray's towers when the puzzle changes. */
   private lay(state: State) {
-    const key = JSON.stringify([sideways(this.aspect), state.start, state.goal, state.given, state.tray.map((p) => [unitsKey(p), p.paint])]);
+    const key = JSON.stringify([sideways(this.aspect), state.start, state.goal, state.given, state.tray.map((t) => [t.kind, postureOf(t), t.roll])]);
     if (key === this.built) return;
     this.built = key;
+    const storeys = tallest(state);
+    this.renderer.domElement.dataset.storeys = String(storeys);
+    if (storeys !== this.storeys) {
+      this.storeys = storeys;
+      this.resize();
+    }
     for (const ghost of this.ghosts.values()) ghost.removeFromParent();
     this.ghosts.clear();
     this.fixed.clear();
     this.trayGroup.clear();
     for (const piece of this.pieces) piece.removeFromParent();
     this.proxies = [];
-    const place = (group: T.Group, piece: Piece) => {
-      const at = cellLocal(piece.at);
-      group.position.set(at.x, levelY(piece.level), at.z);
-      group.rotation.y = spin(piece.yaw);
+    state.given.forEach((t, g) => {
+      const group = this.figure(t, true, { kind: "given", index: g }),
+        local = this.localPose(t, t);
+      group.position.copy(local.position);
+      group.quaternion.copy(local.quaternion);
       this.fixed.add(group);
-    };
-    const start = this.figure(state.start, "start", { kind: "start", index: 0 });
-    // The funnel over the start, and a solid box over it for the tap that drops the marble.
+    });
+    // The funnel over the start's stack, and a solid box over it for the tap that drops the marble.
+    this.funnel = new T.Group();
     const funnel = new T.Mesh(this.shapes.funnel, this.stuffs.funnel),
       throat = new T.Mesh(this.shapes.hole, this.stuffs.hole),
-      top = state.start.units.length * HIGH;
-    funnel.position.y = top;
-    throat.position.y = top + 0.012;
+      mouth = new T.Mesh(this.shapes.proxy, this.proxyStuff);
+    throat.position.y = 0.012;
     funnel.castShadow = true;
-    const mouth = new T.Mesh(this.shapes.proxy, this.proxyStuff);
-    mouth.scale.set(1, (FUNNEL + 0.1) / HIGH, 1);
-    mouth.position.y = top;
-    mouth.userData = { kind: "start", index: 0, unit: state.start.units.length - 1 };
+    mouth.scale.set(1, (FUNNEL + 0.12) / HIGH, 1);
+    mouth.userData = { kind: "start", index: 0, unit: 0 };
     this.proxies.push(mouth);
-    start.add(funnel, throat, mouth);
-    place(start, state.start);
-    state.given.forEach((p, g) => place(this.figure(p, "fixed", { kind: "given", index: g }), p));
+    // Three brass legs hold it over the stack.
+    this.funnel.add(funnel, throat, mouth);
+    const s = cellLocal(state.start);
+    this.funnel.position.set(s.x, levelY(funnelLevel(state)) + 0.01, s.z);
+    this.fixed.add(this.funnel);
     const cup = this.cup(),
       goal = cellLocal(state.goal);
     cup.position.set(goal.x, BOARD_TOP, goal.z);
     this.fixed.add(cup);
-    // The tray: a walnut box before the turntable or at its right.
     const box = trayBox(state.tray, this.aspect),
       floor = new T.Mesh(this.trayShape(box.wide, box.deep, "floor"), this.stuffs.tray);
     floor.position.set(box.x, 0.025, box.z);
@@ -708,12 +729,11 @@ export class MarbleView extends TableView<State> {
     this.trayGroup.traverse((m) => {
       if (m instanceof T.Mesh) m.castShadow = m.receiveShadow = true;
     });
-    this.pieces = state.tray.map((p, j) => {
-      const group = this.figure(p, "tray", { kind: "tray", index: j });
+    this.pieces = state.tray.map((t, j) => {
+      const group = this.figure(t, false, { kind: "tray", index: j });
       this.scene.add(group);
       return group;
     });
-    // The props lie round the turntable and the tray together.
     const middleAt = boardMiddle(this.aspect);
     this.table.position.set(middleAt.x, 0, middleAt.z);
     this.scenery.place({
@@ -723,10 +743,44 @@ export class MarbleView extends TableView<State> {
       front: Math.max(middleAt.z + TURNTABLE, box.z + box.deep / 2),
     });
   }
-  protected subject(aspect: number): TableSubject {
-    return marbleSubject(aspect, this.lift);
+  /** Where a tower stands at a place in the turntable's frame: the position of its foot's middle and its turn. */
+  private localPose(t: Pick<Tower, "kind" | "lying" | "roll" | "inverted">, place: Place) {
+    const pose: Pose = { lying: t.lying, inverted: t.inverted, roll: t.roll, yaw: place.yaw },
+      quaternion = poseTurn(pose),
+      n = KIT[t.kind].units.length,
+      at = cellLocal(place.at),
+      position = new T.Vector3(at.x, levelY(place.level), at.z);
+    if (t.lying) {
+      const target = new T.Vector3(at.x, levelY(place.level) + WIDE / 2, at.z),
+        mid = new T.Vector3(0, (middle(n) + 0.5) * HIGH, 0).applyQuaternion(quaternion);
+      position.copy(target.sub(mid));
+    } else if (t.inverted) position.y += n * HIGH;
+    return { position, quaternion };
   }
-  /** A canvas that turns wide (or narrow) moves the tray beside the turntable (or before it): the bench is laid again. */
+  /** The same on the bench, the turntable turned as it is now. */
+  private benchPose(t: Tower, place: Place) {
+    const local = this.localPose(t, place),
+      bench = toBench(local.position.x, local.position.z, this.turn, this.aspect);
+    return { position: new T.Vector3(bench.x, local.position.y, bench.z), quaternion: qY(this.turn).multiply(local.quaternion), scale: 1 };
+  }
+  /** Where tray tower j stands: on the board, or in the tray (smaller, in its posture, turned as the turntable is). */
+  private home(state: State, j: number) {
+    const t = state.tray[j];
+    if (t.at >= 0) return this.benchPose(t, t);
+    const at = trayPlaces(state.tray, this.aspect)[j],
+      quaternion = qY(this.turn).multiply(poseTurn({ ...t, yaw: trayYaw(t) })),
+      n = KIT[t.kind].units.length,
+      s = TRAY_SCALE,
+      position = new T.Vector3(at.x, TRAY_TOP, at.z);
+    if (t.lying) {
+      const mid = new T.Vector3(0, (n * HIGH * s) / 2, 0).applyQuaternion(quaternion);
+      position.set(at.x, TRAY_TOP + (WIDE * s) / 2, at.z).sub(mid);
+    } else if (t.inverted) position.y += n * HIGH * s;
+    return { position, quaternion, scale: s };
+  }
+  protected subject(aspect: number): TableSubject {
+    return marbleSubject(aspect, this.lift, this.storeys);
+  }
   protected layout(aspect: number) {
     const turned = sideways(aspect) !== sideways(this.aspect);
     this.aspect = aspect;
@@ -736,7 +790,6 @@ export class MarbleView extends TableView<State> {
     }
     this.table.position.set(boardMiddle(aspect).x, 0, boardMiddle(aspect).z);
   }
-  /** Sets the camera for the present tilt, without laying the table out again. */
   private aim() {
     const subject = this.subject(this.camera.aspect),
       distance = cameraDistance(this.camera.aspect, false, subject);
@@ -751,7 +804,6 @@ export class MarbleView extends TableView<State> {
   /** Turns the turntable back square and the view to its first tilt (the 시점 전환 over the table). */
   resetView() {
     const from = { turn: this.turn, lift: this.lift },
-      // The short way round.
       target = Math.round(from.turn / (Math.PI * 2)) * Math.PI * 2;
     if (Math.abs(from.turn - target) < 1e-4 && Math.abs(from.lift) < 1e-4) return;
     this.tween(0, 520, (p) => {
@@ -763,36 +815,19 @@ export class MarbleView extends TableView<State> {
       if (this.state) this.arrange(this.state);
     });
   }
-  /** Where a place on the turntable is on the bench, with the yaw a piece there shows. */
-  private onBench(place: Place) {
-    const at = cellLocal(place.at),
-      bench = toBench(at.x, at.z, this.turn, this.aspect);
-    return { position: new T.Vector3(bench.x, levelY(place.level), bench.z), rotation: this.turn + spin(place.yaw) };
-  }
-  /** Where tray piece j stands: on the board, or in the tray (smaller, as it would lie at yaw 0). */
-  private home(state: State, j: number) {
-    const p = state.tray[j];
-    if (p.at >= 0) return { ...this.onBench(p), scale: 1 };
-    const at = trayPlaces(state.tray, this.aspect)[j];
-    return { position: new T.Vector3(at.x, TRAY_TOP, at.z), rotation: 0, scale: TRAY_SCALE };
-  }
-  /** Every cell and every tray place, and the funnel (for the hover of a mouse; presses are judged by `pick`). */
   protected spots(): Spot[] {
     const state = this.state;
     if (!state) return [];
-    const top = state.start.units.length,
-      funnel = cellLocal(state.start.at),
-      f = toBench(funnel.x, funnel.z, this.turn, this.aspect);
-    return [{ x: f.x, y: levelY(top) + FUNNEL * 0.6, z: f.z, r: 0.3, point: GO }];
+    const f = this.funnelBench(state);
+    return [{ x: f.x, y: f.y - FUNNEL * 0.4, z: f.z, r: 0.32, point: GO }];
   }
-  /** What a press strikes first: a piece's solid box, the start, or a cell of the grid. */
+  /** What a press strikes first: a tower's solid box, the funnel, or a cell of the grid. */
   protected pick(ray: T.Ray) {
     const state = this.state;
     if (!state) return null;
     this.scene.updateMatrixWorld(true);
     this.caster.ray.copy(ray);
     const hit = this.caster.intersectObjects(this.proxies, false)[0];
-    // The cell under the ray on the grid, whatever lies over it.
     const plane = new T.Plane(new T.Vector3(0, 1, 0), -BOARD_TOP),
       on = new T.Vector3(),
       cell = ray.intersectPlane(plane, on) ? cellUnder(on.x, on.z, this.turn, this.aspect) : -1;
@@ -802,15 +837,15 @@ export class MarbleView extends TableView<State> {
     }
     const data = hit.object.userData as { kind: "tray" | "given" | "start"; index: number; unit: number };
     if (data.kind === "start") {
-      this.struck = { kind: "start", index: 0, cell: state.start.at };
+      this.struck = { kind: "start", index: 0, cell: state.start };
       return GO;
     }
     if (data.kind === "tray" && state.tray[data.index].at < 0) {
       this.struck = { kind: "tray", index: data.index, cell: -1 };
       return CELLS + data.index;
     }
-    const piece = data.kind === "tray" ? state.tray[data.index] : state.given[data.index],
-      unitCell = voxelsOf(piece)[data.unit]?.cell ?? -1;
+    const t = data.kind === "tray" ? state.tray[data.index] : state.given[data.index],
+      unitCell = voxelsOf(t).find((v) => v.unit === data.unit)?.cell ?? -1;
     this.struck = { kind: data.kind, index: data.index, cell: unitCell };
     return unitCell;
   }
@@ -821,7 +856,7 @@ export class MarbleView extends TableView<State> {
       live = state.winner === null && (s.kind === "start" || (s.kind === "tray" && (state.tray[s.index].at < 0 || handle(state, world(state), s.index) >= 0)));
     this.renderer.domElement.style.cursor = live || (point >= 0 && this.marks.targets.includes(point)) ? "pointer" : "grab";
   }
-  /** Every press is taken here: a piece pressed and moved is carried, anything else pressed and moved turns the table. */
+  /** Every press is taken here: a tower pressed and moved is carried, anything else pressed and moved turns the table. */
   protected dragStart(_point: number, _at: { x: number; y: number; z: number }) {
     const state = this.state;
     if (!state) return false;
@@ -836,14 +871,14 @@ export class MarbleView extends TableView<State> {
     this.press = { kind, piece, cell: s.cell, x: this.pointer.x, y: this.pointer.y, turn: this.turn, lift: this.lift, moving: false };
     return true;
   }
-  /** The move a carried piece makes if it is let go over `cell` (-1 off the grid), or null when it would go nowhere. */
+  /** The move a carried tower makes if it is let go over `cell` (-1 off the grid), or null when it would go nowhere. */
   private carryMove(state: State, j: number, cell: number): Move | null {
-    const p = state.tray[j];
-    if (p.at < 0) return cell >= 0 ? { from: CELLS + j, to: cell, extra: -1 } : null;
+    const t = state.tray[j];
+    if (t.at < 0) return cell >= 0 ? { from: CELLS + j, to: cell, extra: -1 } : null;
     const from = handle(state, world(state), j);
     if (cell < 0) return { from, to: CELLS + j, extra: -1 };
-    if (cell === p.at) return null;
-    return voxelsOf(p).some((v) => v.cell === cell) ? { from, to: PUT + cell * 4 + p.yaw, extra: -1 } : { from, to: cell, extra: -1 };
+    if (cell === t.at) return null;
+    return voxelsOf(t).some((v) => v.cell === cell) ? { from, to: put(cell, t.yaw, postureOf(t)), extra: -1 } : { from, to: cell, extra: -1 };
   }
   protected dragMove(at: { x: number; y: number; z: number }) {
     const press = this.press,
@@ -853,24 +888,26 @@ export class MarbleView extends TableView<State> {
       dy = this.pointer.y - press.y;
     if (!press.moving && Math.hypot(dx, dy) < 7) return;
     press.moving = true;
+    this.renderer.domElement.style.cursor = "grabbing";
     if (press.kind !== "piece") {
-      // Round the board: across turns it, up and down tips the view a little.
-      this.renderer.domElement.style.cursor = "grabbing";
       this.turn = press.turn + dx * 0.0085;
       this.lift = Math.max(LIFT_DOWN, Math.min(LIFT_UP, press.lift + dy * 0.0035));
       this.aim();
       this.arrange(state);
       return;
     }
-    this.renderer.domElement.style.cursor = "grabbing";
     const j = press.piece,
-      p = state.tray[j],
+      t = state.tray[j],
       group = this.pieces[j],
-      cell = cellUnder(at.x, at.z, this.turn, this.aspect);
+      cell = cellUnder(at.x, at.z, this.turn, this.aspect),
+      // Carried at full size over the board, turned as it would be set down, its foot (a lying one's middle) under the pointer.
+      local = this.localPose(t, { at: 0, level: 0, yaw: t.at >= 0 ? t.yaw : trayYaw(t) }),
+      zero = cellLocal(0),
+      quaternion = qY(this.turn).multiply(local.quaternion),
+      offset = new T.Vector3(local.position.x - zero.x, local.position.y - levelY(0), local.position.z - zero.z).applyQuaternion(qY(this.turn));
     group.scale.setScalar(1);
-    group.position.set(at.x, CARRY, at.z);
-    group.rotation.y = this.turn + spin(p.at >= 0 ? p.yaw : 0);
-    // Where it would land: a green ghost there, or a red ring where it may not go.
+    group.quaternion.copy(quaternion);
+    group.position.set(at.x + offset.x, CARRY + offset.y, at.z + offset.z);
     for (const ghost of this.ghosts.values()) ghost.visible = false;
     this.rings.refuse.visible = this.rings.aim.visible = false;
     const move = cell >= 0 ? this.carryMove(state, j, cell) : null,
@@ -878,10 +915,10 @@ export class MarbleView extends TableView<State> {
     if (next && typeof next !== "string") {
       const lands = next.tray[j],
         ghost = this.ghost(j, "green"),
-        local = cellLocal(lands.at);
+        pose = this.localPose(lands, lands);
       ghost.visible = true;
-      ghost.position.set(local.x, levelY(lands.level), local.z);
-      ghost.rotation.y = spin(lands.yaw);
+      ghost.position.copy(pose.position);
+      ghost.quaternion.copy(pose.quaternion);
     } else if (cell >= 0) this.ringOnCell(this.rings.refuse, state, cell);
     this.redraw();
   }
@@ -895,7 +932,7 @@ export class MarbleView extends TableView<State> {
     if (!press || !state) return;
     if (!press.moving) {
       if (!at) return;
-      // A tap: a piece on the board turns a quarter, the funnel drops the marble, a tray piece or a cell is chosen.
+      // A tap: a tower on the board turns a quarter, the funnel drops the marble, a tray tower or a cell is chosen.
       if (press.kind === "start") return this.onMove({ from: -1, to: GO, extra: -1 });
       if (press.kind === "piece" && state.tray[press.piece].at >= 0) {
         const from = handle(state, world(state), press.piece);
@@ -911,31 +948,28 @@ export class MarbleView extends TableView<State> {
       cell = at ? cellUnder(at.x, at.z, this.turn, this.aspect) : -1,
       move = at ? this.carryMove(state, j, cell) : null;
     if (move) {
-      this.dropped = { piece: j, at: group.position.clone(), rotation: group.rotation.y };
+      this.dropped = { piece: j, at: group.position.clone(), quaternion: group.quaternion.clone() };
       this.onMove(move);
       if (this.state !== state) return;
       this.dropped = null;
     }
-    // Back where it was.
-    const from = group.position.clone(),
-      fromScale = group.scale.x,
-      fromTurn = group.rotation.y,
+    const from = { position: group.position.clone(), quaternion: group.quaternion.clone(), scale: group.scale.x },
       to = this.home(state, j);
     this.tween(0, 220, (p) => {
       const e = 1 - (1 - p) ** 3;
-      group.position.copy(lerp3(from, to.position, e));
-      group.scale.setScalar(fromScale + (to.scale - fromScale) * e);
-      group.rotation.y = fromTurn + (to.rotation - fromTurn) * e;
+      group.position.copy(lerp3(from.position, to.position, e));
+      group.quaternion.slerpQuaternions(from.quaternion, to.quaternion, e);
+      group.scale.setScalar(from.scale + (to.scale - from.scale) * e);
     });
   }
-  /** Lays every tray piece where it stands, in the turntable's present turn. */
+  /** Lays every tray tower where it stands, in the turntable's present turn. */
   private arrange(state: State) {
     state.tray.forEach((_, j) => {
       const group = this.pieces[j];
       if (!group || (this.press?.moving && this.press.piece === j)) return;
       const home = this.home(state, j);
       group.position.copy(home.position);
-      group.rotation.set(0, home.rotation, 0);
+      group.quaternion.copy(home.quaternion);
       group.scale.setScalar(home.scale);
     });
     this.mark(this.marks);
@@ -962,14 +996,14 @@ export class MarbleView extends TableView<State> {
   }
   /** Where the marble waits before it is dropped: in the funnel's mouth. */
   private waiting(state: State) {
-    return this.centre(state.start.at, levelY(state.start.units.length) + FUNNEL * 0.65);
+    return this.centre(state.start, levelY(funnelLevel(state)) + FUNNEL * 0.65);
   }
-  /** The height at which a marble falling down a cell from `level` first meets something, and what. */
+  /** The height at which a marble falling down a cell from `level` first meets something solid, and what. */
   private landingBelow(w: World, cell: number, level: number) {
     for (let l = level; l >= 0; l--) {
       const i = vox(cell, l);
-      if (w.owner[i] < 0 || w.kind[i] === OPEN) continue;
-      return { level: l, kind: w.kind[i] as Kind, face: w.face[i] };
+      if (w.owner[i] < 0 || w.open[i]) continue;
+      return { level: l, ramp: w.exits[i * 6 + UP] >= 0 && w.exits[i * 6 + UP] < 4, face: w.exits[i * 6 + UP] };
     }
     return null;
   }
@@ -980,29 +1014,34 @@ export class MarbleView extends TableView<State> {
     const run = state.run!,
       w = world(state),
       out: Stretch[] = [],
-      legs = run.legs,
-      start = legs[0];
+      legs = run.legs;
     let at = this.waiting(state);
     const go = (stretch: Stretch) => {
       out.push(stretch);
       at = stretch.at(1);
     };
-    // Into the funnel, down onto the start's ramp, down the ramp and out.
-    go(drop(at, this.onRamp(start.cell, start.level, start.dir, -0.3), "disc"));
-    go(roll(at, this.onRamp(start.cell, start.level, start.dir, 1)));
-    go(roll(at, this.edge(start.cell, start.level, start.dir)));
-    let lastDir = start.dir;
+    let lastDir = SOUTH_DIR,
+      falling = true;
     for (let k = 1; k < legs.length; k++) {
       const leg = legs[k],
         next = legs[k + 1] as Leg | undefined;
-      if (leg.kind === "flat") {
+      if (leg.kind === "ramp") {
+        // Down onto the board where it falls in, down the slope and out.
+        const c = cellLocal(leg.cell),
+          s = Math.max(-0.8, Math.min(0.4, ((at.x - c.x) * STEP[leg.dir][0] + (at.z - c.z) * STEP[leg.dir][1]) / EDGE));
+        if (falling) go(drop(at, this.onRamp(leg.cell, leg.level, leg.dir, k === 1 ? -0.3 : s)));
+        go(roll(at, this.onRamp(leg.cell, leg.level, leg.dir, 1)));
+        go(roll(at, this.edge(leg.cell, leg.level, leg.dir)));
+        lastDir = leg.dir;
+        falling = false;
+      } else if (leg.kind === "flat") {
         go(roll(at, this.edge(leg.cell, leg.level, leg.dir)));
         lastDir = leg.dir;
       } else if (leg.kind === "corner") {
         const entry = at.clone(),
           exit = this.edge(leg.cell, leg.level, leg.dir),
           c = cellLocal(leg.cell),
-          inSide = back(leg.from),
+          inSide = leg.from,
           pivot = new T.Vector3(c.x + ((STEP[inSide][0] + STEP[leg.dir][0]) * CELL) / 2, entry.y, c.z + ((STEP[inSide][1] + STEP[leg.dir][1]) * CELL) / 2),
           a = new T.Vector3().subVectors(entry, pivot),
           b = new T.Vector3().subVectors(exit, pivot),
@@ -1010,49 +1049,44 @@ export class MarbleView extends TableView<State> {
           axis = new T.Vector3().crossVectors(a, b).normalize();
         go({ ms: ROLL_MS * 1.4, at: (u) => pivot.clone().add(a.clone().applyAxisAngle(axis, angle * u)) });
         lastDir = leg.dir;
-      } else if (leg.kind === "fall") {
+      } else if (leg.kind === "fall" || leg.kind === "chute") {
+        // In toward the middle of the cell, then down.
         const c = cellLocal(leg.cell),
-          // In toward the middle of the cell as it falls.
-          toward = new T.Vector3(c.x - STEP[leg.from][0] * CELL * 0.08, 0, c.z - STEP[leg.from][1] * CELL * 0.08);
-        if (next?.kind === "ramp") {
-          const s = Math.max(-0.85, Math.min(0.6, ((toward.x - c.x) * STEP[next.dir][0] + (toward.z - c.z) * STEP[next.dir][1]) / EDGE)),
-            land = this.onRamp(leg.cell, leg.level - 1, next.dir, s);
-          go(drop(at, land));
-        } else if (next?.kind === "goal") {
-          go(drop(at, this.centre(leg.cell, BOARD_TOP + MARBLE * 0.45), "pocket"));
-        } else if (!next) {
-          // The fall goes wrong: onto a flat, deeper than one level, or down onto the grid.
+          inward = back(leg.from) < 4 ? back(leg.from) : lastDir,
+          toward = new T.Vector3(c.x - STEP[inward][0] * CELL * 0.12, at.y, c.z - STEP[inward][1] * CELL * 0.12);
+        go({ ...roll(at, toward), ms: 160 });
+        falling = true;
+        if (!next) {
           const below = this.landingBelow(w, leg.cell, leg.level - 1),
-            y = !below ? BOARD_TOP + MARBLE : below.kind === RAMP ? this.onRamp(leg.cell, below.level, below.face, 0).y : below.kind === OPEN ? levelY(below.level + 1) + MARBLE : levelY(below.level) + FLOOR + MARBLE,
-            land = new T.Vector3(toward.x, y, toward.z);
+            y = !below ? BOARD_TOP + MARBLE : below.ramp ? this.onRamp(leg.cell, below.level, below.face, 0).y : levelY(below.level + 1) + MARBLE,
+            land = new T.Vector3(toward.x, Math.min(at.y, y), toward.z);
           go(drop(at, land));
-          if (!below || run.fault === "floor") {
-            // On the grid it rolls away a little and stops.
-            const away = new T.Vector3(land.x + STEP[leg.from][0] * 0.32, land.y, land.z + STEP[leg.from][1] * 0.32);
+          if (!below) {
+            const away = new T.Vector3(land.x + STEP[inward][0] * 0.34, land.y, land.z + STEP[inward][1] * 0.34);
             go({ ...roll(land, away), ms: 520, at: (u) => lerp3(land, away, travel(u)) });
           } else go(settle(at));
         }
-        lastDir = leg.from;
-      } else if (leg.kind === "ramp") {
-        go(roll(at, this.onRamp(leg.cell, leg.level, leg.dir, 1)));
-        go(roll(at, this.edge(leg.cell, leg.level, leg.dir)));
-        lastDir = leg.dir;
       } else if (leg.kind === "goal") {
-        if (leg.from >= 0) {
+        if (leg.from < 4) {
           go(roll(at, this.centre(leg.cell, BOARD_TOP + MARBLE * 0.9)));
           go({ ...drop(at, this.centre(leg.cell, BOARD_TOP + MARBLE * 0.45), "pocket"), ms: 140 });
-        }
+        } else go(drop(at, this.centre(leg.cell, BOARD_TOP + MARBLE * 0.45), "pocket"));
         go(settle(at, 0.05, 420));
       }
     }
+    if (legs.length === 1) {
+      // Dropped onto nothing that takes it: down into the start's stack.
+      const below = this.landingBelow(w, state.start, legs[0].level - 1),
+        y = below ? levelY(below.level + 1) + MARBLE : BOARD_TOP + MARBLE;
+      go(drop(at, this.centre(state.start, y)));
+      go(settle(at));
+    }
     const [dx, dz] = STEP[lastDir];
     if (run.fault === "off") {
-      // Over the grid's edge: down onto the turntable, across it, and off its edge onto the bench.
       const level = Math.max(0, Math.round((at.y - BOARD_TOP - FLOOR - MARBLE) / HIGH)),
         land = new T.Vector3(at.x + dx * (0.3 + 0.08 * level), BOARD_TOP + MARBLE, at.z + dz * (0.3 + 0.08 * level));
       if (level > 0 || at.y > BOARD_TOP + MARBLE + 0.02) go(drop(at, land));
       else go(roll(at, land));
-      // Out to the turntable's edge, then down.
       const reach = (p: T.Vector3) => Math.hypot(p.x, p.z);
       let t = 0;
       while (t < 3 && reach(new T.Vector3(land.x + dx * t, 0, land.z + dz * t)) < TURNTABLE) t += 0.02;
@@ -1063,14 +1097,12 @@ export class MarbleView extends TableView<State> {
       go(drop(at, bench));
       go({ ...roll(bench, away), ms: 520, at: (u) => new T.Vector3(bench.x + (away.x - bench.x) * travel(u), MARBLE + 0.04 * hop(u), bench.z + (away.z - bench.z) * travel(u)) });
     } else if (run.fault === "wall") {
-      // Against the wall and back a little.
-      const hit = new T.Vector3(at.x + dx * 0.03, at.y, at.z + dz * 0.03),
-        recoil = new T.Vector3(at.x - dx * 0.12, at.y, at.z - dz * 0.12);
+      const hit = new T.Vector3(at.x + dx * 0.04, at.y, at.z + dz * 0.04),
+        recoil = new T.Vector3(at.x - dx * 0.14, at.y, at.z - dz * 0.14);
       go({ ...roll(at, hit), sound: "cushion", strength: 0.8 });
       go({ ms: 360, at: (u) => lerp3(hit, recoil, 1 - (1 - u) ** 2) });
     } else if (run.fault === "momentum") {
-      // Into the second flat or corner, slowing to a stop.
-      const stop = new T.Vector3(at.x + dx * 0.3, at.y, at.z + dz * 0.3),
+      const stop = new T.Vector3(at.x + dx * 0.32, at.y, at.z + dz * 0.32),
         from = at.clone();
       go({ ms: 700, at: (u) => lerp3(from, stop, 1 - (1 - u) ** 3) });
     }
@@ -1078,7 +1110,6 @@ export class MarbleView extends TableView<State> {
     this.courses.set(state, made);
     return made;
   }
-  /** Turns the marble as it rolls from one place to the next. */
   private rollMarble(from: T.Vector3, to: T.Vector3) {
     const d = new T.Vector3(to.x - from.x, 0, to.z - from.z),
       far = d.length();
@@ -1113,7 +1144,6 @@ export class MarbleView extends TableView<State> {
         const stretch = stretches[k],
           u = Math.min(1, t / stretch.ms),
           at = stretch.at(u);
-        // What is heard as each stretch ends.
         for (; heard < (u >= 1 ? k + 1 : k); heard++) {
           const done = stretches[heard];
           if (done.sound) this.onKnock?.(done.sound, done.strength ?? 0.6);
@@ -1121,7 +1151,6 @@ export class MarbleView extends TableView<State> {
         this.rollMarble(was, at);
         this.marble.position.copy(at);
         was = at;
-        // Home: the flag spins round its pin.
         if (cheer && this.flag && p > 1 - cheer / total) this.flag.rotation.y = Math.sin(((p - (1 - cheer / total)) / (cheer / total)) * Math.PI * 2) * 0.9;
       });
       return true;
@@ -1131,22 +1160,18 @@ export class MarbleView extends TableView<State> {
     if (j < 0 || !group) return false;
     const to = this.home(state, j),
       dropped = this.dropped?.piece === j ? this.dropped : null,
-      from = dropped ? { position: dropped.at, rotation: dropped.rotation, scale: 1 } : this.home(before, j),
+      from = dropped ? { position: dropped.at, quaternion: dropped.quaternion, scale: 1 } : this.home(before, j),
       turning = last.kind === "turn" && !dropped;
     this.dropped = null;
     let landed = false;
-    // The short way round for a turn.
-    let rotationTo = to.rotation;
-    while (rotationTo - from.rotation > Math.PI) rotationTo -= Math.PI * 2;
-    while (rotationTo - from.rotation < -Math.PI) rotationTo += Math.PI * 2;
     this.tween(0, turning ? 260 : 360, (p) => {
       const q = turning ? p * p * (3 - 2 * p) : travel(p);
       group.position.set(
         from.position.x + (to.position.x - from.position.x) * q,
-        from.position.y + (to.position.y - from.position.y) * q + hop(p) * (turning ? 0.1 : dropped ? 0.12 : 0.4),
+        from.position.y + (to.position.y - from.position.y) * q + hop(p) * (turning ? 0.12 : dropped ? 0.12 : 0.45),
         from.position.z + (to.position.z - from.position.z) * q,
       );
-      group.rotation.y = from.rotation + (rotationTo - from.rotation) * q;
+      group.quaternion.slerpQuaternions(from.quaternion, to.quaternion, q);
       group.scale.setScalar(from.scale + (to.scale - from.scale) * q);
       if (!landed && p >= 0.84) {
         landed = true;
@@ -1162,7 +1187,6 @@ export class MarbleView extends TableView<State> {
   private hideAlarms() {
     for (const alarm of this.alarms) alarm.ring.visible = alarm.sign.visible = false;
   }
-  /** Puts a ring round a cell on top of what stands there (or round a voxel of it), in the turntable's turn. */
   private ringOnCell(ring: T.Mesh, state: State, cell: number, level?: number) {
     const w = world(state),
       y = level === undefined ? levelY(heightOf(w, cell)) + 0.02 : levelY(level) + 0.02,
@@ -1172,16 +1196,15 @@ export class MarbleView extends TableView<State> {
     ring.position.set(bench.x, y, bench.z);
     return y;
   }
-  /** A ring on a tray piece where it stands (in the tray or on the board). */
   private ringOnPiece(ring: T.Mesh, state: State, j: number) {
-    const p = state.tray[j];
-    if (p.at >= 0) return this.ringOnCell(ring, state, p.at, p.level);
+    const t = state.tray[j];
+    // On the board, round the tower's top, where nothing of it hides the ring.
+    if (t.at >= 0) return this.ringOnCell(ring, state, t.at, t.lying ? t.level + 1 : t.level + KIT[t.kind].units.length);
     const at = trayPlaces(state.tray, this.aspect)[j];
     ring.visible = true;
     ring.position.set(at.x, TRAY_TOP + 0.03, at.z);
     return TRAY_TOP;
   }
-  /** The red marks of a failed drop: on the voxel it went wrong at, or on the pieces it is about. */
   private alarm(state: State) {
     this.hideAlarms();
     const trouble = state.trouble;
@@ -1193,22 +1216,13 @@ export class MarbleView extends TableView<State> {
           bench = toBench(at.x, at.z, this.turn, this.aspect);
         return { x: bench.x, y: levelY(level), z: bench.z, top: levelY(Math.max(level + 1, heightOf(w, cell))) };
       };
-    if (trouble.fault === "left" || trouble.fault === "unused") {
+    if (trouble.fault === "left")
       for (const j of trouble.tray) {
-        const p = state.tray[j];
-        if (p.at >= 0) {
-          const cell = voxelsOf(p)[0].cell;
-          spots.push(onCell(cell, p.level));
-        } else {
-          const at = trayPlaces(state.tray, this.aspect)[j];
-          spots.push({ x: at.x, y: TRAY_TOP, z: at.z, top: TRAY_TOP + p.units.length * HIGH * TRAY_SCALE * (p.shape === "column" ? 1 : 1 / p.units.length) });
-        }
+        const t = state.tray[j],
+          at = trayPlaces(state.tray, this.aspect)[j];
+        spots.push({ x: at.x, y: TRAY_TOP, z: at.z, top: TRAY_TOP + trayHeight(t) });
       }
-      for (const g of trouble.given) {
-        const p = state.given[g];
-        spots.push(onCell(voxelsOf(p)[0].cell, p.level));
-      }
-    } else if (trouble.at) spots.push(onCell(trouble.at.cell, trouble.at.level));
+    else if (trouble.at) spots.push(onCell(trouble.at.cell, trouble.at.level));
     else {
       const rest = this.course(state).rest,
         bench = toBench(rest.x, rest.z, this.turn, this.aspect);
@@ -1218,10 +1232,9 @@ export class MarbleView extends TableView<State> {
       const { ring, sign } = this.alarms[k];
       ring.visible = sign.visible = true;
       ring.position.set(spot.x, spot.y + 0.025, spot.z);
-      sign.position.set(spot.x, spot.top + 0.34, spot.z);
+      sign.position.set(spot.x, spot.top + 0.38, spot.z);
     });
   }
-  /** The arrow over the funnel bobs while every piece is set and the marble waits. */
   private kick() {
     if (!this.clock && !this.disposed) this.clock = requestAnimationFrame(this.frame);
   }
@@ -1229,14 +1242,14 @@ export class MarbleView extends TableView<State> {
     this.clock = 0;
     if (this.disposed || !this.arrow.visible || !this.state) return;
     const f = this.funnelBench(this.state);
-    this.arrow.position.set(f.x, f.y + 0.45 + 0.06 * Math.sin(now / 220), f.z);
+    this.arrow.position.set(f.x, f.y + 0.5 + 0.06 * Math.sin(now / 220), f.z);
     this.redraw();
     if (!this.reducedMotion) this.kick();
   };
   private funnelBench(state: State) {
-    const at = cellLocal(state.start.at),
+    const at = cellLocal(state.start),
       bench = toBench(at.x, at.z, this.turn, this.aspect);
-    return { x: bench.x, y: levelY(state.start.units.length) + FUNNEL, z: bench.z };
+    return { x: bench.x, y: levelY(funnelLevel(state)) + FUNNEL, z: bench.z };
   }
   protected mark(marks: Marks) {
     const state = this.state;
@@ -1251,8 +1264,8 @@ export class MarbleView extends TableView<State> {
     const hint = marks.hint ?? null;
     onPoint(this.rings.chosen, hint ? null : marks.selected);
     this.targets.forEach((ring, k) => onPoint(ring, hint || marks.selected === null ? null : marks.targets[k]));
-    // A hint: gold rings on the piece and where it goes, and a gold ghost of it there, turned as it should be; a lift
-    // back to the tray rings the piece and its place in the tray; for the drop, a gold ring round the funnel.
+    // A hint: a gold ring on the tower and a gold ghost of it where it goes, turned and posed as it should be; a lift
+    // back to the tray rings the tower and its place in the tray; for the drop, a gold ring round the funnel.
     if (!this.press?.moving) for (const ghost of this.ghosts.values()) ghost.visible = false;
     this.rings.from.visible = this.rings.to.visible = this.rings.funnel.visible = false;
     if (hint && hint.to === GO) {
@@ -1261,20 +1274,19 @@ export class MarbleView extends TableView<State> {
       this.rings.funnel.position.set(f.x, f.y + 0.03, f.z);
     } else if (hint) {
       const w = world(state),
-        j = hint.from >= CELLS ? hint.from - CELLS : topIn(w, hint.from) - ids(state).tray(0);
+        j = hint.from >= CELLS ? hint.from - CELLS : topIn(w, hint.from) - ids(state).first;
       if (j >= 0 && j < state.tray.length) {
         this.ringOnPiece(this.rings.from, state, j);
         if (hint.to >= PUT) {
-          const cell = Math.floor((hint.to - PUT) / 4),
-            yaw = (hint.to - PUT) % 4,
-            next = attempt(state, { ...hint, extra: -1 });
-          const lands = next && typeof next !== "string" ? next.tray[j] : landing(w, state.tray[j], cell, yaw);
+          const next = attempt(state, { ...hint, extra: -1 }),
+            lands = next && typeof next !== "string" ? next.tray[j] : null,
+            cell = putOf(hint.to).cell;
           if (lands) {
             const ghost = this.ghost(j, "gold"),
-              local = cellLocal(lands.at);
+              pose = this.localPose(lands, lands);
             ghost.visible = true;
-            ghost.position.set(local.x, levelY(lands.level) + 0.004, local.z);
-            ghost.rotation.y = spin(lands.yaw);
+            ghost.position.copy(pose.position).add(new T.Vector3(0, 0.004, 0));
+            ghost.quaternion.copy(pose.quaternion);
             this.ringOnCell(this.rings.to, state, cell, lands.level);
           }
         } else if (hint.to >= CELLS) {
@@ -1284,12 +1296,11 @@ export class MarbleView extends TableView<State> {
         }
       }
     }
-    // While every piece is set and the marble waits, an arrow points at the funnel.
-    const ready = state.winner === null && !state.run && state.tray.every((p) => p.at >= 0) && !capturing() && !hint;
+    const ready = state.winner === null && !state.run && state.tray.every((t) => t.at >= 0) && !capturing() && !hint;
     this.arrow.visible = ready;
     if (ready) {
       const f = this.funnelBench(state);
-      this.arrow.position.set(f.x, f.y + 0.45, f.z);
+      this.arrow.position.set(f.x, f.y + 0.5, f.z);
       this.kick();
     }
     this.alarm(state);
@@ -1302,6 +1313,32 @@ export class MarbleView extends TableView<State> {
     this.host.removeEventListener("pointermove", this.hear, true);
     super.dispose();
   }
+}
+const SOUTH_DIR = 2;
+
+void DOWN;
+void OPEN;
+const at3 = (x: number, y: number, z: number) => new T.Matrix4().makeTranslation(x, y, z);
+/**
+ * An arch standing in the north face of a unit (its foot at y = 0): two jambs and a round head round an opening the
+ * marble goes through, extruded thin.
+ */
+function archShape() {
+  const shape = new T.Shape(),
+    outer = ARCH + 0.06;
+  shape.moveTo(-outer, 0);
+  shape.lineTo(-outer, ARCH_SIDE);
+  shape.absarc(0, ARCH_SIDE, outer, Math.PI, 0, true);
+  shape.lineTo(outer, 0);
+  shape.lineTo(ARCH, 0);
+  shape.lineTo(ARCH, ARCH_SIDE);
+  shape.absarc(0, ARCH_SIDE, ARCH, 0, Math.PI, false);
+  shape.lineTo(-ARCH, 0);
+  shape.closePath();
+  const g = new T.ExtrudeGeometry(shape, { depth: 0.03, bevelEnabled: false, curveSegments: 14 });
+  g.translate(0, 0, -0.015);
+  void ARCH_TOP;
+  return g;
 }
 /**
  * A wall bent round the north-east corner of a unit (`radius` from that corner), standing on y = 0: an annular

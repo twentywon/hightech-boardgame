@@ -286,15 +286,15 @@ const play = {
   "frog-hop": async () => {
     await stage(2);
   },
-  // The answer built by the hint's moves (H plays them while capturing, so the flag is set here already): stacks and a
-  // beam stand on the turntable, the marble waits in the funnel.
+  // A 고수 puzzle (always a lying tower and a stack) built by the hint's moves (H plays them while capturing, so the
+  // flag is set here already): stacked towers and one lying on two others stand on the turntable, the marble waits.
   "marble-drop-maze": async () => {
-    await stage(2);
+    await stage(3);
     await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
     await wait(800);
-    for (let k = 0; k < 16; k++) {
+    for (let k = 0; k < 10; k++) {
       await keys(["h"], 100);
-      await wait(650);
+      await wait(700);
     }
     await wait(900);
   },

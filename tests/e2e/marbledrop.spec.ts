@@ -3,7 +3,7 @@ import { Box3, PerspectiveCamera, Ray, Vector3 } from "three";
 import { selectGame } from "./library";
 import { FOV, cameraDistance } from "../../src/engine/camera";
 import * as rules from "../../src/games/marbledrop/rules";
-import { BOARD_TOP, CARRY, CELL, FUNNEL, HIGH, TRAY_SCALE, TRAY_TOP, TURNTABLE, WIDE, boardMiddle, cellAt, funnelAt, levelY, marbleSubject, trayHeight, trayPlaces } from "../../src/games/marbledrop/layout";
+import { BOARD_TOP, CARRY, FUNNEL, HIGH, TRAY_TOP, TURNTABLE, WIDE, boardMiddle, cellAt, funnelAt, funnelLevel, levelY, marbleSubject, trayHeight, trayPlaces, traySlot, trayTop } from "../../src/games/marbledrop/layout";
 
 const settled = (page: Page) => expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 30000 });
 const moves = (page: Page) => page.locator("#move-count");
@@ -44,10 +44,11 @@ async function sit(page: Page, stage: number) {
   return errors;
 }
 /**
- * The table as its camera shows it. The camera follows the view's tilt and the turntable its turn, both read from
- * the canvas each time (`data-lift`, `data-turn`), so that every aim follows a view the player has turned. A press is
- * judged by a solid box for every unit (the frames are open), so an aim is taken only where the box of what is aimed
- * at is the first the line of sight meets; otherwise the turntable is turned a little by a drag on its rim.
+ * The table as its camera shows it. The camera follows the view's tilt, the turntable its turn and the height the
+ * puzzle's stacks reach, all read from the canvas each time (`data-lift`, `data-turn`, `data-storeys`), so that
+ * every aim follows a view the player has turned. A press is judged by a solid box for every unit (the frames are
+ * open), so an aim is taken only where the box of what is aimed at is the first the line of sight meets; otherwise
+ * the turntable is turned a little by a drag on its rim.
  */
 async function table(page: Page, mobile: boolean) {
   const canvas = page.locator("#board canvas"),
@@ -56,7 +57,8 @@ async function table(page: Page, mobile: boolean) {
   const view = async () => {
     const turn = Number(await canvas.getAttribute("data-turn")),
       lift = Number(await canvas.getAttribute("data-lift")),
-      subject = marbleSubject(aspect, lift),
+      storeys = Number(await canvas.getAttribute("data-storeys")),
+      subject = marbleSubject(aspect, lift, storeys),
       distance = cameraDistance(aspect, false, subject),
       camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
     camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
@@ -68,13 +70,12 @@ async function table(page: Page, mobile: boolean) {
     };
     return { turn, camera, screen };
   };
-  /** The tag of what the line of sight to `point` meets first: a unit of the board ("start", "g0", "t1"), or "". */
+  /** The tag of what the line of sight to `point` meets first: a unit on the board ("g0", "t1"), the funnel ("start"), a tray tower ("tray2"), or "". */
   const firstHit = (state: rules.State, turn: number, camera: PerspectiveCamera, point: Vector3) => {
     let best = Infinity,
       tag = "";
     const up = new Vector3(0, 1, 0),
-      test = (owner: string, cell: number, bottom: number, top: number, middle = cellAt(cell, turn, aspect), angle = turn, half = WIDE / 2) => {
-        // Into the unit's own frame: about its middle, the turntable's turn undone.
+      test = (owner: string, middle: { x: number; z: number }, bottom: number, top: number, half: number, angle: number) => {
         const from = camera.position.clone().sub(new Vector3(middle.x, 0, middle.z)).applyAxisAngle(up, -angle),
           way = point.clone().sub(camera.position).normalize().applyAxisAngle(up, -angle),
           hit = new Ray(from, way).intersectBox(new Box3(new Vector3(-half, bottom, -half), new Vector3(half, top, half)), new Vector3());
@@ -83,24 +84,16 @@ async function table(page: Page, mobile: boolean) {
           tag = owner;
         }
       },
-      add = (piece: rules.Piece, owner: string) => {
-        for (const v of rules.voxelsOf(piece)) test(owner, v.cell, levelY(v.level), levelY(v.level) + HIGH);
+      add = (t: rules.Tower, owner: string) => {
+        for (const v of rules.voxelsOf(t)) test(owner, cellAt(v.cell, turn, aspect), levelY(v.level), levelY(v.level) + (t.lying ? WIDE : HIGH), WIDE / 2, turn);
       };
-    add(state.start, "start");
-    const s = state.start;
-    test("start", s.at, levelY(s.level + s.units.length), levelY(s.level + s.units.length) + FUNNEL + 0.1);
-    state.given.forEach((p, g) => add(p, `g${g}`));
-    // The tray's pieces where they stand in the tray (smaller, a beam lying along x), which the turntable does not turn.
+    state.given.forEach((t, g) => add(t, `g${g}`));
+    const top = levelY(funnelLevel(state));
+    test("start", cellAt(state.start, turn, aspect), top, top + FUNNEL + 0.12, WIDE / 2, turn);
     const places = trayPlaces(state.tray, aspect);
-    state.tray.forEach((p, j) => {
-      if (p.at >= 0) return add(p, `t${j}`);
-      const mid = rules.middle(p.units.length);
-      p.units.forEach((_, i) => {
-        const column = p.shape === "column",
-          bottom = TRAY_TOP + (column ? i : 0) * HIGH * TRAY_SCALE,
-          middle = { x: places[j].x + (column ? 0 : (i - mid) * CELL * TRAY_SCALE), z: places[j].z };
-        test(`tray${j}`, -1, bottom, bottom + HIGH * TRAY_SCALE, middle, 0, (WIDE / 2) * TRAY_SCALE);
-      });
+    state.tray.forEach((t, j) => {
+      if (t.at >= 0) return add(t, `t${j}`);
+      test(`tray${j}`, places[j], TRAY_TOP, TRAY_TOP + trayHeight(t), traySlot(t) / 2, 0);
     });
     return tag;
   };
@@ -123,7 +116,7 @@ async function table(page: Page, mobile: boolean) {
     await drag(rim, { x: rim.x + pixels, y: rim.y });
     await settled(page);
   };
-  /** A point on a placed piece (or the funnel) that nothing hides, turning the table until there is one. */
+  /** A point on something that nothing hides, turning the table until there is one. */
   const visible = async (state: rules.State, owner: string, points: (turn: number) => Vector3[]) => {
     for (let tries = 0; tries < 8; tries++) {
       const v = await view(),
@@ -133,48 +126,46 @@ async function table(page: Page, mobile: boolean) {
     }
     throw new Error(`${owner} stays hidden`);
   };
+  /** Points on the upper faces of a placed tray tower's units, highest first. */
+  const tops = (t: rules.Tower) => (turn: number) =>
+    rules
+      .voxelsOf(t)
+      .sort((a, b) => b.level - a.level)
+      .map((v) => {
+        const c = cellAt(v.cell, turn, aspect);
+        return new Vector3(c.x, levelY(v.level) + (t.lying ? WIDE : HIGH) - 0.04, c.z);
+      });
   return {
     view,
     spin,
     tap,
-    /** Drags tray piece j by the top of it in the tray, over the cell `cell` (at the height a carried piece hovers). */
+    /** Drags tray tower j by its top in the tray over the cell `cell` (at the height a carried tower hovers). */
     put: async (state: rules.State, j: number, cell: number) => {
-      const { turn, screen } = await view(),
-        at = trayPlaces(state.tray, aspect)[j],
-        to = cellAt(cell, turn, aspect);
-      await drag(screen(at.x, TRAY_TOP + trayHeight(state.tray[j]) - 0.03, at.z), screen(to.x, CARRY, to.z));
-    },
-    /** Drags placed tray piece j off the board onto the bench (it goes back to the tray). */
-    away: async (state: rules.State, j: number) => {
-      const top = rules.voxelsOf(state.tray[j]).sort((a, b) => b.level - a.level)[0],
-        from = await visible(state, `t${j}`, (turn) => {
-          const c = cellAt(top.cell, turn, aspect);
-          return [new Vector3(c.x, levelY(top.level) + HIGH - 0.03, c.z)];
+      const from = await visible(state, `tray${j}`, () => {
+          const p = trayTop(state.tray, j, aspect);
+          return [new Vector3(p.x, p.y, p.z)];
         }),
+        { turn, screen } = await view(),
+        to = cellAt(cell, turn, aspect);
+      await drag(from, screen(to.x, CARRY, to.z));
+    },
+    /** Drags placed tray tower j off the board onto the bench (it goes back to the tray). */
+    away: async (state: rules.State, j: number) => {
+      const from = await visible(state, `t${j}`, tops(state.tray[j])),
         { screen } = await view(),
         m = boardMiddle(aspect);
       await drag(from, screen(m.x - TURNTABLE - 0.6, CARRY, m.z));
     },
-    /** Taps placed tray piece j (it turns a quarter, on to the next way that fits). */
-    turn: async (state: rules.State, j: number) => {
-      const units = rules.voxelsOf(state.tray[j]).sort((a, b) => b.level - a.level),
-        at = await visible(state, `t${j}`, (turn) =>
-          units.map((u) => {
-            const c = cellAt(u.cell, turn, aspect);
-            return new Vector3(c.x, levelY(u.level) + HIGH - 0.03, c.z);
-          }),
-        );
-      await tap(at);
-    },
+    /** Taps placed tray tower j (it turns a quarter, a lying one on to the next way that fits). */
+    turn: async (state: rules.State, j: number) => tap(await visible(state, `t${j}`, tops(state.tray[j]))),
     /** Taps the funnel over the start. */
     funnel: async (state: rules.State) => {
       const at = await visible(state, "start", (turn) => {
-        const f = funnelAt(state.start, turn, aspect);
+        const f = funnelAt(state, turn, aspect);
         return [new Vector3(f.x, f.y, f.z)];
       });
       await tap(at);
     },
-    /** Drags on the rim to turn the table, and reads back the turn. */
     turned: async () => Number(await canvas.getAttribute("data-turn")),
   };
 }
@@ -183,35 +174,39 @@ const counted = async (page: Page, made: number) => {
   await expect(moves(page)).toHaveText(`${made}수`, { timeout: 30000 });
   await settled(page);
 };
+const same = (a: rules.Tower, b: rules.Tower) => rules.contentKey(a, a.at, a.level, a.yaw) === rules.contentKey(b, b.at, b.level, b.yaw);
 
-test("marble drop maze: the tray's pieces are dragged to their places, turned by taps, and the marble runs home", async ({ page }, info) => {
+test("marble drop maze: the card's towers are dragged to their places, a lying one among them, turned by taps, and the marble runs home", async ({ page }, info) => {
   test.setTimeout(180000);
   const mobile = info.project.name === "mobile",
-    random = await seeded(page, 80),
+    random = await seeded(page, 81),
     errors = await sit(page, 3);
   // A puzzle was laid as the screen was set up; the card pressed in the window lays the third stage's, the one chosen.
   rules.createGame(1, random);
   let state = rules.createGame(3, random);
-  expect(state.tray.some((p) => p.shape === "beam")).toBe(true);
+  expect(state.tray.some((t) => t.lying)).toBe(true);
+  // The challenge card in the panel names the towers to add and their postures.
+  await expect(page.locator(".md-card svg")).toHaveAttribute("aria-label", /놓을 탑 .*눕혀서/);
   const hand = await table(page, mobile);
   let made = 0;
-  // The pieces go in the hint's order: from the bottom up, so that every support is there before what it carries.
+  // The towers go in the hint's order: from the bottom up, so that every support is there before what rests on it.
   for (let guard = 0; guard < 4 * CELLS; guard++) {
     const move = rules.hint(state)!;
     if (move.to === GO) break;
     expect(move.from).toBeGreaterThanOrEqual(CELLS);
     const j = move.from - CELLS,
-      cell = Math.floor((move.to - rules.PUT) / 4);
-    await hand.put(state, j, cell);
-    state = rules.play(state, { from: CELLS + j, to: cell, extra: -1 })!;
+      want = rules.play(state, move)!.tray[j];
+    await hand.put(state, j, rules.putOf(move.to).cell);
+    state = rules.play(state, { from: CELLS + j, to: rules.putOf(move.to).cell, extra: -1 })!;
     await counted(page, ++made);
-    // A bare tap on a piece set down turns it, until it stands as the answer has it.
-    while (rules.matched(state).slotOf[j] < 0) {
+    // A bare tap on a tower set down turns it, until it stands as the hint showed.
+    for (let k = 0; k < 4 && !same(state.tray[j], want); k++) {
       await hand.turn(state, j);
       const from = rules.handle(state, rules.world(state), j);
       state = rules.play(state, { from, to: from, extra: -1 })!;
       await counted(page, ++made);
     }
+    expect(same(state.tray[j], want)).toBe(true);
   }
   expect(rules.hint(state)).toEqual({ from: -1, to: GO, extra: -1 });
   // A tap on the funnel drops the marble.
@@ -222,21 +217,22 @@ test("marble drop maze: the tray's pieces are dragged to their places, turned by
   expect(errors).toEqual([]);
 });
 
-test("marble drop maze: a refused place, a piece back to the tray, a failing drop taken back, and the view turned and set back", async ({ page }, info) => {
+test("marble drop maze: a refused place, a tower back to the tray, a failing drop taken back, and the view turned and set back", async ({ page }, info) => {
   test.setTimeout(150000);
   const mobile = info.project.name === "mobile",
-    random = await seeded(page, 81),
+    random = await seeded(page, 82),
     errors = await sit(page, 1);
   rules.createGame(1, random);
   let state = rules.createGame(1, random);
   const hand = await table(page, mobile);
-  // Onto the start's cell: refused, the reason in the status line, and nothing made.
-  await hand.put(state, 0, state.start.at);
+  // Onto the target's cell: refused, the reason in the status line, and nothing made.
+  await hand.put(state, 0, state.goal);
   await settled(page);
   await expect(page.locator("#turn")).toContainText("출발점과 도착점 위에는 아무것도 놓을 수 없습니다.");
   expect(await count(page)).toBe(0);
   // Set down on a free cell of the near row, then dragged off the board: back in the tray.
-  const free = [15, 14, 13, 12, 11, 10, 9, 8].find((c) => c !== state.goal && c !== state.start.at && !state.given.some((p) => rules.voxelsOf(p).some((v) => v.cell === c)))!;
+  const w = rules.world(state),
+    free = [15, 14, 13, 12, 11, 10, 9, 8].find((c) => c !== state.goal && c !== state.start && rules.heightOf(w, c) === 0)!;
   await hand.put(state, 0, free);
   state = rules.play(state, { from: CELLS, to: free, extra: -1 })!;
   await counted(page, 1);

@@ -3,47 +3,73 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 
 /**
  * The marble drop maze, a puzzle of the kind ThinkFun sells as Gravity Maze (its rules of play are followed; its
- * look, cards and towers are not): pieces made of unit frames are set on a 4 × 4 grid, standing as columns or lying
- * as beams, so that a marble dropped into the start rolls by gravity alone through every piece into the target.
+ * look, cards and towers are not): towers from one fixed kit (`KIT`, our own) are set on a 4 × 4 grid, standing or
+ * lying as the challenge says, turned so that a marble dropped into the start rolls by gravity alone into the target.
  *
  * The world is the 4 × 4 grid of cells (`row × 4 + column`, row 0 the far side, north) and its levels, 0 sitting on
- * the grid. A voxel is a cell at a level. Directions are 0 north, 1 east, 2 south (toward the player), 3 west.
+ * the grid. A voxel is a cell at a level. Faces are 0 north, 1 east, 2 south (toward the player), 3 west, 4 up,
+ * 5 down.
  *
- * Units (one voxel each), each with a face turned by its piece's yaw:
- * - RAMP: a board sloping down to its face; the marble enters only from above (from the air or an OPEN unit over
- *   it, or dropped in at the start) and leaves level through its face into the next voxel;
- * - FLAT: a floor open on its face and the side opposite; the marble rolls through, level;
- * - CORNER: a floor open on its face and the side clockwise from it (its right); the marble turns through it;
- * - OPEN: a bare frame that only carries what is above it; to the marble it is air.
+ * A tower is a column of unit cubes moulded together. Its units are written from its foot to its top in the tower's
+ * own frame (`Unit`: sides 0–3 as at yaw 0, UP toward its top, DOWN toward its foot), each one of
+ * - RAMP (face d): taken from the top face, left by its low side d. Rolling down a ramp resets momentum;
+ * - FLAT (face d): a straight channel on the cube's floor between sides d and d + 2, crossed either way;
+ * - CORNER (face d): a turning channel on the floor between sides d and d + 1 (its right), crossed either way;
+ * - CROSS: a crossing on the floor open on all four sides: the marble goes straight through along the way it came;
+ * - HANG: the same crossing mounted upside down under the cube's ceiling (its floor is the cube's top face);
+ * - OPEN: an empty cube, air to the marble: whatever enters it falls out through the bottom.
+ * A channel (flat, corner, crossing, hanging crossing) is a floor with walls: it carries the marble only while its
+ * floor faces down; turned any other way it is air. So a hanging crossing in a tower standing upright is an empty
+ * cube to the marble, and a working crossing in a tower stood on its head.
  *
- * Pieces are columns (1–5 units bottom to top, standing on a cell or on another column) and beams (2–3 units side
- * by side, lying at the level where two columns under them end). A piece's yaw turns its units clockwise seen from
- * above; a beam's units lie along `axisOf(yaw)` (east at yaw 0), its middle unit (`middle`) over its anchor cell.
- * A piece's place is its anchor cell, its level (a column's lowest unit, a beam's only one) and its yaw.
+ * A placed tower has a pose (`faceIn`), which the challenge card sets but for its turn:
+ * - standing, turned by its yaw (a quarter clockwise seen from above per step);
+ * - standing on its head (`inverted`): flipped over about its east–west axis (top and foot, north and south swap)
+ *   and then turned by its yaw; its top unit is then lowest;
+ * - lying, tipped over onto its side `roll` (that local side then faces down, the opposite one up, its top toward
+ *   world side `roll`) and then turned by its yaw, so that it lies along `axisOf` = (roll + yaw) mod 4 (N–S when
+ *   that is even, E–W when odd), its units in a row from its foot toward its top, its middle unit (`middle`) over
+ *   its anchor cell.
+ * Every unit's faces are turned with the pose, and the marble then judges each unit by its world faces:
+ * - side to side: one horizontal unit (at most one before a descent or the target: `momentum`);
+ * - top to side: a descent, which resets the count;
+ * - out through the bottom: a fall (a chute), judged as a fall below;
+ * - out through the top, or in by a face with no way through: blocked (`wall`).
+ * So by where its rotated faces point (the unit tests hold this table):
+ * - RAMP lying: entered from the side its top now faces (along the axis); out to a side across the axis it turns the
+ *   marble like a corner that runs one way only; out through the bottom (exit side = roll) it is a chute; out
+ *   through the top (exit opposite the roll) it is blocked. On its head it would be entered from below: blocked
+ *   from every side, and a marble falling onto it lands on its back (`flat`);
+ * - FLAT, CORNER, CROSS lying or on their heads: air (their floors face sideways or up);
+ * - HANG: air standing or lying; a crossing on its head;
+ * - OPEN: air, as always.
  *
- * Building rules (`survey`): pieces never overlap or leave the grid; nothing is on or over the start's cell or the
- * target's; a column stands on the grid or exactly on another column's top, never on a beam; a beam rests exactly
- * on at least two column tops (the rest of it may hang over air), never on a beam; a cell holds at most three
- * pieces. A column goes onto the top of its cell; a beam goes where its supports are. Only the top piece of a cell,
- * or a beam, can be lifted.
+ * The marble (`follow`) is dropped into the top of the start's stack (one or more fixed towers on the start cell,
+ * a brass funnel over it) and falls into the top unit. Falling from a voxel, the voxel under it must take it from
+ * the top and send it out of a side (a descent), or be the target (from level 1); air or an empty cube is `drop`
+ * (more than one level), a unit with no way in from above is `flat`, the grid itself is `floor`. Rolling level into
+ * a voxel: off the grid is `off`; the target at level 0 ends the run; air or an empty cube makes it fall; a unit is
+ * judged by its faces as above. The run is won when it ends in the target with every tower of the tray placed
+ * (else `left`). Towers the marble does not pass are allowed: any arrangement that brings it home wins.
  *
- * The marble (`follow`): leaving a unit level into voxel v, it is lost off the grid (`off`); it rolls through a FLAT
- * or CORNER open toward it (a second one since the last ramp is `momentum`); a RAMP side or a closed side is a
- * `wall`; the target at level 0 ends the run; air or OPEN makes it fall. Falling through v, the voxel under v must
- * be a RAMP (it rolls on) or the target; a FLAT or CORNER there is `flat`, air or OPEN is `drop` (more than one
- * level), and the grid itself is `floor`. The run is won when it ends in the target with every tray piece placed
- * (else `left`) and every piece on the board passed (else `unused`).
+ * Building rules (`survey`): towers never overlap or leave the grid; nothing is on or over the start's cell (but
+ * its own fixed stack) or the target's; a standing tower stands on the grid or exactly on a standing tower's top,
+ * never on a lying one; a lying tower lies at level 1 or above on at least two standing towers' tops that end where
+ * it lies (the rest may hang over air), never on a lying tower; a cell holds at most three towers.
  *
- * Moves (`Move`), where a cell is a point 0–15 and tray piece j is the point `CELLS + j`:
- * - `{from: CELLS + j, to: cell}`: tray piece j is put with its yaw onto `cell` (a beam with its middle over it);
- *   when it does not fit so, the next quarter turns are tried, so that a beam lies the way its supports run;
- * - `{from: cell, to: other}`: the top piece of `cell` is carried to `other` (`other` not one of its own cells),
- *   turned the same way;
- * - `{from: cell, to: cell}`: the top piece of `cell` is turned a quarter clockwise where it is (a beam about its
- *   middle, keeping its anchor); a turn that does not fit goes on to the next quarter that does;
- * - `{from: cell, to: CELLS + j}`: that piece, tray piece j, goes back to the tray (and its yaw to 0);
- * - `{from: CELLS + j or cell, to: PUT + other × 4 + yaw}`: put or carried to `other` turned to `yaw` (the hint's
- *   move; `other` may be its own anchor, to turn it there);
+ * Moves (`Move`), where a cell is a point 0–15 and tray tower j is the point `CELLS + j`:
+ * - `{from: CELLS + j, to: cell}`: tray tower j is put onto `cell` in its posture (a standing one on top of the
+ *   cell's stack, a lying one with its middle unit over the cell, at the level its supports end); a lying one is
+ *   tried first the way the tray shows it (`trayYaw`, across the view) and then the next quarter turns, so that it
+ *   lies the way its supports run;
+ * - `{from: cell, to: other}`: the tower on top of `cell` (a lying tower from any of its cells) is carried to
+ *   `other`, turned the same way (a lying one on to the next quarter that fits);
+ * - `{from: cell, to: cell}`: that tower is turned a quarter clockwise where it is (a lying one about its middle
+ *   unit, on to the next quarter that fits; refused when no other way fits);
+ * - `{from: cell, to: CELLS + j}`: that tower, tray tower j, goes back to the tray (its yaw to 0);
+ * - `{from: CELLS + j or cell, to: put(cell, yaw, posture)}`: put or carried to `cell` turned to `yaw` (the
+ *   hint's move; `posture`, 0 standing, 1 on its head, 2 lying, must be the tower's own, which the card sets and
+ *   nothing changes);
  * - `{from: -1, to: GO}` (or `to` the start's cell): the marble is dropped. A run that fails is not refused but
  *   made, with `winner` 1 and a `trouble` saying where and why, to be taken back with undo.
  * `extra` is always -1. A placement that breaks a building rule is refused (`play` gives null; `attempt` says why).
@@ -52,37 +78,74 @@ export const SIZE = 4,
   CELLS = SIZE * SIZE,
   /** Levels of the world, 0 sitting on the grid. */
   LEVELS = 8,
-  /** The most pieces a cell holds. */
-  STACK = 3,
-  /** The longest column and beam. */
-  LONGEST = 5,
-  BEAM_LONGEST = 3;
+  /** The most towers a cell holds. */
+  STACK = 3;
 export const NORTH = 0,
   EAST = 1,
   SOUTH = 2,
-  WEST = 3;
+  WEST = 3,
+  UP = 4,
+  DOWN = 5;
 export const OPEN = 0,
   RAMP = 1,
   FLAT = 2,
-  CORNER = 3;
-export type Kind = 0 | 1 | 2 | 3;
-export interface Cube {
+  CORNER = 3,
+  CROSS = 4,
+  HANG = 5;
+export type Kind = 0 | 1 | 2 | 3 | 4 | 5;
+export interface Unit {
   kind: Kind;
-  /** Its face before the piece's yaw. */
+  /** A ramp's exit side, a flat's one end, a corner's first opening (its second is the next side clockwise); 0 for the rest. */
   face: number;
 }
-export type Shape = "column" | "beam";
-export interface Piece {
-  shape: Shape;
-  /** A column's from the bottom up; a beam's along its axis. */
-  units: Cube[];
-  /** The anchor cell (a beam's middle unit), or -1 in the tray. */
-  at: number;
-  /** A column's lowest level, a beam's level; -1 in the tray. */
-  level: number;
+export interface KitTower {
+  /** Its letter, as the guide and the card name it. */
+  id: string;
+  /** Its units from its foot to its top, at yaw 0. */
+  units: Unit[];
+  /** How many of it the kit holds. */
+  count: number;
+  /** The colour of its painted cap, and the shade of its wood (neither is red, which is kept for trouble). */
+  paint: string;
+  wood: string;
+}
+const u = (kind: Kind, face = 0): Unit => ({ kind, face });
+/**
+ * The kit, the same in every puzzle: nine towers (heights 5, 4, 4, 3, 3, 2, 2, 1, 1); the target is the felt cup.
+ * Our own design; each tower's ramps face set ways relative to each other.
+ */
+export const KIT: KitTower[] = [
+  // A: a ramp south at its foot under a hanging crossing, a flat east–west, a ramp east, an empty cube on top (its
+  // ramps a quarter apart; on its head the hanging crossing is the one channel that works).
+  { id: "A", units: [u(RAMP, SOUTH), u(HANG), u(FLAT, EAST), u(RAMP, EAST), u(OPEN)], count: 1, paint: "#169a94", wood: "#f3dcb6" },
+  // B: a corner south–west at its foot, a ramp west, an empty cube, a ramp east on top (its ramps opposite).
+  { id: "B", units: [u(CORNER, SOUTH), u(RAMP, WEST), u(OPEN), u(RAMP, EAST)], count: 2, paint: "#d65a9a", wood: "#e6b98e" },
+  // C: a ramp north at its foot under a hanging crossing, a ramp east on top (a quarter apart).
+  { id: "C", units: [u(RAMP, NORTH), u(HANG), u(RAMP, EAST)], count: 2, paint: "#86b324", wood: "#f6e2bf" },
+  // D: a crossing under a ramp south.
+  { id: "D", units: [u(CROSS), u(RAMP, SOUTH)], count: 2, paint: "#3a68c9", wood: "#edc89a" },
+  // E: one ramp west.
+  { id: "E", units: [u(RAMP, WEST)], count: 1, paint: "#e9a521", wood: "#f0d2a4" },
+  // F: one hanging crossing: an empty cube standing, a crossing on its head.
+  { id: "F", units: [u(HANG)], count: 1, paint: "#7a4fae", wood: "#dcb48a" },
+];
+export const kitOf = (kind: number) => KIT[kind];
+export const heightOfKind = (kind: number) => KIT[kind].units.length;
+export interface Pose {
+  lying: boolean;
+  /** Standing on its head (never with `lying`). */
+  inverted?: boolean;
+  /** The local side a lying tower rests on (0 standing). */
+  roll: number;
   yaw: number;
-  /** The colour of its end caps, its own in the puzzle. */
-  paint: number;
+}
+export interface Tower extends Pose {
+  /** Its kit tower. */
+  kind: number;
+  /** Its anchor cell (a lying tower's middle unit), or -1 in the tray. */
+  at: number;
+  /** A standing tower's lowest level, a lying tower's level; -1 in the tray. */
+  level: number;
 }
 export interface Place {
   at: number;
@@ -92,80 +155,162 @@ export interface Place {
 /** Moves that are not points of the board. */
 export const GO = 900,
   PUT = 1000;
-export const put = (cell: number, yaw: number) => PUT + cell * 4 + (((yaw % 4) + 4) % 4);
+/**
+ * The way a tray tower is shown turned in the tray, and first tried when it is put: as at yaw 0, but a lying one
+ * across the view (east–west), so that seen from above it reads as lying. A lying one put goes on to the next way
+ * that fits from there.
+ */
+export const trayYaw = (t: Pick<Pose, "lying" | "roll">) => (t.lying ? (5 - t.roll) % 4 : 0);
+/** A tower's posture as the card shows it: 0 standing, 1 standing on its head, 2 lying. */
+export const postureOf = (t: Pick<Pose, "lying" | "inverted">) => (t.lying ? 2 : t.inverted ? 1 : 0);
+/** The hint's put: a cell, a yaw and the posture (which must be the tower's own). */
+export const put = (cell: number, yaw: number, posture = 0) => PUT + (cell * 4 + (((yaw % 4) + 4) % 4)) * 3 + posture;
+export const putOf = (to: number) => {
+  const k = to - PUT,
+    place = Math.floor(k / 3);
+  return { cell: place >> 2, yaw: place & 3, posture: k % 3 };
+};
 export const slot = (j: number) => CELLS + j;
 export const vox = (cell: number, level: number) => level * CELLS + cell;
 const DR = [-1, 0, 1, 0],
   DC = [0, 1, 0, -1];
 /** The cell `steps` away from `cell` toward `dir` (backward when negative), or -1 off the grid. */
 export function neighbour(cell: number, dir: number, steps = 1) {
-  if (cell < 0) return -1;
+  if (cell < 0 || dir > 3) return -1;
   const r = Math.floor(cell / SIZE) + DR[dir] * steps,
     c = (cell % SIZE) + DC[dir] * steps;
   return r < 0 || c < 0 || r >= SIZE || c >= SIZE ? -1 : r * SIZE + c;
 }
-export const back = (dir: number) => (dir + 2) % 4;
-/** The way a beam's units run at a yaw: east at 0, south at 1, west at 2, north at 3. */
-export const axisOf = (yaw: number) => (yaw + 1) % 4;
-/** The index of a beam's middle unit (the first of the two of a beam of two). */
+/** The face opposite. */
+export const back = (face: number) => (face === UP ? DOWN : face === DOWN ? UP : (face + 2) % 4);
+/** The index of a lying tower's middle unit (the first of the two of a tower of two). */
 export const middle = (count: number) => (count - 1) >> 1;
-/** A face as it acts: an open frame has none, a flat is the same turned half round. */
-export const normalFace = (kind: Kind, face: number) => (kind === OPEN ? 0 : kind === FLAT ? face % 2 : face % 4);
-/** The sides a flat or a corner opens to, in world directions. */
-export const sides = (kind: Kind, face: number): number[] => (kind === FLAT ? [face % 4, (face + 2) % 4] : kind === CORNER ? [face % 4, (face + 1) % 4] : []);
+/** The way a lying tower's units run, from its foot toward its top. */
+export const axisOf = (pose: Pose) => (pose.roll + pose.yaw) % 4;
+/** A unit's local face as it faces in the world for a pose. */
+export function faceIn(pose: Pose, local: number): number {
+  if (pose.inverted && !pose.lying) {
+    if (local === UP) return DOWN;
+    if (local === DOWN) return UP;
+    return ((local % 2 === 0 ? local + 2 : local) + pose.yaw) % 4;
+  }
+  if (!pose.lying) return local >= UP ? local : (local + pose.yaw) % 4;
+  const b = pose.roll;
+  if (local === UP) return (b + pose.yaw) % 4;
+  if (local === DOWN) return (b + 2 + pose.yaw) % 4;
+  if (local === b) return DOWN;
+  if (local === (b + 2) % 4) return UP;
+  return (local + pose.yaw) % 4;
+}
+/** A unit's ways through it in its own frame, as [in, out] faces. */
+export function localWays(unit: Unit): [number, number][] {
+  const d = unit.face % 4;
+  if (unit.kind === RAMP) return [[UP, d]];
+  if (unit.kind === FLAT)
+    return [
+      [d, (d + 2) % 4],
+      [(d + 2) % 4, d],
+    ];
+  if (unit.kind === CORNER)
+    return [
+      [d, (d + 1) % 4],
+      [(d + 1) % 4, d],
+    ];
+  if (unit.kind === CROSS || unit.kind === HANG) return [0, 1, 2, 3].map((side) => [side, (side + 2) % 4] as [number, number]);
+  return [];
+}
+/** A channel's floor in its own frame (a hanging crossing's is the cube's top), or -1 for a ramp or an empty cube. */
+export const floorOf = (unit: Unit) => (unit.kind === HANG ? UP : unit.kind === FLAT || unit.kind === CORNER || unit.kind === CROSS ? DOWN : -1);
+/** Whether a unit is air to the marble in a pose: an empty cube, or a channel whose floor does not face down. */
+export function airIn(unit: Unit, pose: Pose) {
+  if (unit.kind === OPEN) return true;
+  const floor = floorOf(unit);
+  return floor >= 0 && faceIn(pose, floor) !== DOWN;
+}
+/** A unit's ways in the world for a pose: the face it leaves by for each face it may be entered by (-1 none). */
+export function exitsOf(unit: Unit, pose: Pose): number[] {
+  const out = [-1, -1, -1, -1, -1, -1];
+  if (airIn(unit, pose)) return out;
+  for (const [from, to] of localWays(unit)) out[faceIn(pose, from)] = faceIn(pose, to);
+  return out;
+}
+/** What a world way is: one horizontal unit, a descent, a fall out through the bottom, or blocked. */
+export function wayKind(from: number, to: number): "level" | "descent" | "fall" | "blocked" {
+  if (to < 0 || to === UP || from === DOWN) return "blocked";
+  if (to === DOWN) return "fall";
+  return from === UP ? "descent" : "level";
+}
+interface Shape {
+  n: number;
+  /** By unit: its cell's offset is found from the anchor along `axis` (lying) or its level above the foot (standing). */
+  exits: number[][];
+  open: boolean[];
+  /** A code per unit of what it does in the world (for telling placements apart). */
+  codes: number[];
+}
+const shapes: Shape[] = [];
+/** A kit tower's units in a pose, cached. */
+export function shapeOf(kind: number, pose: Pose): Shape {
+  const key = kind * 24 + (pose.lying ? 8 + (pose.roll % 4) * 4 : pose.inverted ? 4 : 0) + (pose.yaw % 4);
+  let known = shapes[key];
+  if (!known) {
+    const units = KIT[kind].units,
+      exits = units.map((unit) => exitsOf(unit, pose));
+    known = { n: units.length, exits, open: units.map((unit) => airIn(unit, pose)), codes: exits.map((e) => e.reduce((sum, x, k) => sum + (x + 1) * 7 ** k, 0)) };
+    shapes[key] = known;
+  }
+  return known;
+}
 export interface Voxel {
   cell: number;
   level: number;
-  kind: Kind;
-  /** Its face in the world. */
-  face: number;
-  /** Which unit of the piece it is. */
+  /** Which unit of the tower it is. */
   unit: number;
 }
-/** The voxels a piece fills at a place, or null when some of it is off the grid. */
-export function voxelsAt(piece: Pick<Piece, "shape" | "units">, at: number, level: number, yaw: number): Voxel[] | null {
-  const out: Voxel[] = [],
-    n = piece.units.length,
-    axis = axisOf(yaw),
+/** The voxels a tower fills at a place, or null when some of it is off the grid. */
+export function voxelsAt(tower: Pick<Tower, "kind" | "lying" | "roll" | "inverted">, at: number, level: number, yaw: number): Voxel[] | null {
+  const n = KIT[tower.kind].units.length,
+    out: Voxel[] = [];
+  if (at < 0) return null;
+  const axis = (tower.roll + yaw) % 4,
     mid = middle(n);
   for (let i = 0; i < n; i++) {
-    const u = piece.units[i],
-      cell = piece.shape === "column" ? at : neighbour(at, axis, i - mid),
-      lv = piece.shape === "column" ? level + i : level;
+    const cell = tower.lying ? neighbour(at, axis, i - mid) : at;
     if (cell < 0) return null;
-    out.push({ cell, level: lv, kind: u.kind, face: (u.face + yaw) % 4, unit: i });
+    out.push({ cell, level: tower.lying ? level : level + (tower.inverted ? n - 1 - i : i), unit: i });
   }
   return out;
 }
-export const voxelsOf = (piece: Piece) => (piece.at < 0 ? [] : (voxelsAt(piece, piece.at, piece.level, piece.yaw) ?? []));
-/** What a piece makes of the world at a place, as text: two placements with the same key are the same. */
-export function contentKey(piece: Pick<Piece, "shape" | "units">, at: number, level: number, yaw: number) {
-  const voxels = voxelsAt(piece, at, level, yaw);
+export const voxelsOf = (t: Tower) => (t.at < 0 ? [] : (voxelsAt(t, t.at, t.level, t.yaw) ?? []));
+/** What a tower makes of the world at a place, as text: two placements with the same key are the same. */
+export function contentKey(tower: Pick<Tower, "kind" | "lying" | "roll" | "inverted">, at: number, level: number, yaw: number) {
+  const voxels = voxelsAt(tower, at, level, yaw);
   if (!voxels) return "";
+  const shape = shapeOf(tower.kind, { lying: tower.lying, inverted: tower.inverted, roll: tower.roll, yaw });
   return voxels
-    .map((v) => vox(v.cell, v.level) * 16 + v.kind * 4 + normalFace(v.kind, v.face))
-    .sort((a, b) => a - b)
+    .map((v) => `${vox(v.cell, v.level)}:${shape.codes[v.unit]}`)
+    .sort()
     .join(",");
 }
-/** A piece's units as text, for telling identical pieces (pieces with the same units are the same piece). */
-export const unitsKey = (piece: Pick<Piece, "shape" | "units">) => `${piece.shape[0]}${piece.units.map((u) => `${u.kind}${normalFace(u.kind, u.face)}`).join("")}`;
-/** The yaw of a placement turned to the smallest that makes the same thing (a column of open frames looks alike every way). */
-export function normalYaw(piece: Pick<Piece, "shape" | "units">, at: number, level: number, yaw: number) {
-  const key = contentKey(piece, at, level, yaw);
-  for (let y = 0; y < 4; y++) if (contentKey(piece, at, level, y) === key) return y;
+/** A tower's kind and posture as text: towers with the same key are interchangeable. */
+export const sortKey = (t: Pick<Tower, "kind" | "lying" | "roll" | "inverted">) => `${t.kind}${t.lying ? `L${t.roll}` : t.inverted ? "I" : "S"}`;
+/** The yaw of a placement turned to the smallest that makes the same thing. */
+export function normalYaw(t: Pick<Tower, "kind" | "lying" | "roll" | "inverted">, at: number, level: number, yaw: number) {
+  const key = contentKey(t, at, level, yaw);
+  for (let y = 0; y < 4; y++) if (contentKey(t, at, level, y) === key) return y;
   return yaw;
 }
 
 export interface State {
-  /** The start: a fixed column whose top unit is a ramp. */
-  start: Piece;
+  /** The start's cell: the marble is dropped into the top of the fixed stack there. */
+  start: number;
   /** The target's cell; its cup sits at level 0. */
   goal: number;
-  /** Pieces fixed in place from the start. */
-  given: Piece[];
-  /** The pieces to place: in the tray (`at` -1) or on the board. */
-  tray: Piece[];
-  /** Where each tray piece belongs (identical pieces may be swapped). */
+  /** Towers fixed in place from the start (the start's stack among them). */
+  given: Tower[];
+  /** The towers to place: in the tray (`at` -1) or on the board. */
+  tray: Tower[];
+  /** Where each tray tower stands in the answer the puzzle was built with (identical towers may be swapped). */
   answer: Place[];
   /** What the last move did, for the table to show it. */
   last: Last | null;
@@ -178,109 +323,113 @@ export interface State {
 }
 export interface Last {
   kind: "put" | "carry" | "back" | "turn" | "go";
-  /** The tray piece moved (-1 for the drop). */
+  /** The tray tower moved (-1 for the drop). */
   piece: number;
   from: Place | null;
   to: Place | null;
 }
-export type Fault = "off" | "momentum" | "wall" | "flat" | "drop" | "floor" | "left" | "unused" | "loop";
-/** One voxel the marble passed: what it was, the way it came and the way it left (-1 falling, or at the goal). */
+export type Fault = "off" | "momentum" | "wall" | "flat" | "drop" | "floor" | "left" | "loop";
+/** One voxel the marble passed: what it did there, the face it came in by and the one it left by (-1 at the goal). */
 export interface Leg {
   cell: number;
   level: number;
-  kind: "start" | "ramp" | "flat" | "corner" | "fall" | "goal";
+  kind: "start" | "ramp" | "flat" | "corner" | "chute" | "fall" | "goal";
   from: number;
   dir: number;
-  /** The piece there by its board id (`ids`), or -1 for air. */
+  /** The tower there by its board id (`ids`), or -1 for air. */
   piece: number;
 }
 export interface Run {
   legs: Leg[];
   fault: Fault | null;
-  /** The voxel it went wrong at (null off the grid, or when it was not the way). */
+  /** The voxel it went wrong at (null off the grid). */
   at: { cell: number; level: number } | null;
 }
 export interface Trouble {
   fault: Fault;
   at: { cell: number; level: number } | null;
-  /** Tray pieces the trouble is about (left in the tray, or not passed), and given ones not passed. */
+  /** Tray towers the trouble is about (left in the tray). */
   tray: number[];
-  given: number[];
   words: string;
 }
-/** Board ids: 0 the start, 1 + g the given pieces, 1 + given + j the tray's. */
-export const ids = (state: Pick<State, "given">) => ({ start: 0, given: (g: number) => 1 + g, tray: (j: number) => 1 + state.given.length + j });
-/** Every piece by its board id (null for a tray piece in the tray). */
-export function pieces(state: Pick<State, "start" | "given" | "tray">): (Piece | null)[] {
-  return [state.start, ...state.given, ...state.tray.map((p) => (p.at >= 0 ? p : null))];
+/** Board ids: g for given tower g, given.length + j for tray tower j. */
+export const ids = (state: Pick<State, "given">) => ({ given: (g: number) => g, tray: (j: number) => state.given.length + j, first: state.given.length });
+/** Every tower by its board id (null for a tray tower in the tray). */
+export function pieces(state: Pick<State, "given" | "tray">): (Tower | null)[] {
+  return [...state.given, ...state.tray.map((t) => (t.at >= 0 ? t : null))];
 }
 export interface World {
   /** The board id filling each voxel, or -1. */
   owner: Int16Array;
-  kind: Int8Array;
-  face: Int8Array;
+  /** By voxel × 6: the face it leaves by for each face it is entered by (-1 none). */
+  exits: Int8Array;
+  /** An empty cube (air to the marble). */
+  open: Uint8Array;
+  /** Whether the tower of a board id lies. */
+  lying: boolean[];
 }
-export type Refusal = "edge" | "high" | "overlap" | "reserved" | "crowded" | "floating" | "onBeam" | "beamOnBeam" | "beamSupport" | "under" | "fixed" | "same";
+const VOXELS = CELLS * LEVELS;
+export type Refusal = "edge" | "high" | "overlap" | "reserved" | "crowded" | "floating" | "onLying" | "lyingOnLying" | "support" | "under" | "fixed" | "same" | "posture";
 const REFUSALS: Record<Refusal, string> = {
-  edge: "다리는 판 밖으로 나갈 수 없습니다.",
+  edge: "누운 탑은 판 밖으로 나갈 수 없습니다.",
   high: "그렇게 높이는 쌓을 수 없습니다.",
-  overlap: "다른 부품과 겹칩니다.",
+  overlap: "다른 탑과 겹칩니다.",
   reserved: "출발점과 도착점 위에는 아무것도 놓을 수 없습니다.",
-  crowded: "한 칸에는 세 개까지만 쌓을 수 있습니다.",
-  floating: "기둥은 판 위나 다른 기둥 위에만 섭니다.",
-  onBeam: "다리 위에는 아무것도 놓을 수 없습니다.",
-  beamOnBeam: "다리는 다른 다리 위에 놓을 수 없습니다.",
-  beamSupport: "다리는 높이가 같은 기둥 두 개 위에 걸쳐야 합니다.",
-  under: "위에 다른 부품이 있어 들 수 없습니다.",
-  fixed: "처음부터 놓인 부품은 움직일 수 없습니다.",
+  crowded: "한 칸에는 탑을 세 개까지만 쌓을 수 있습니다.",
+  floating: "선 탑은 판 위나 다른 선 탑 위에만 섭니다.",
+  onLying: "누운 탑 위에는 아무것도 놓을 수 없습니다.",
+  lyingOnLying: "누운 탑은 다른 누운 탑 위에 놓을 수 없습니다.",
+  support: "누운 탑은 높이가 같게 끝나는 선 탑 두 개 이상에 걸쳐야 합니다.",
+  under: "위에 다른 탑이 있어 들 수 없습니다.",
+  fixed: "처음부터 놓인 탑은 움직일 수 없습니다.",
   same: "",
+  posture: "탑의 자세(서기·거꾸로 서기·눕기)는 카드대로입니다.",
 };
 /** Why a placement was refused, in a sentence. */
 export const refusalWords = (refusal: Refusal) => REFUSALS[refusal];
 /**
- * Lays every piece into the world and checks the building rules; the refusal when one is broken. `goal` is the
- * target's cell and the start is the piece with id 0.
+ * Lays every tower into the world and checks the building rules; the refusal when one is broken. Towers with ids
+ * below `fixedCount` are the given ones (only they may stand on the start's cell).
  */
-export function survey(list: (Piece | null)[], goal: number): World | Refusal {
-  const n = CELLS * LEVELS,
-    owner = new Int16Array(n).fill(-1),
-    kind = new Int8Array(n),
-    face = new Int8Array(n),
-    start = list[0]!.at;
+export function survey(list: (Tower | null)[], start: number, goal: number, fixedCount: number): World | Refusal {
+  const owner = new Int16Array(VOXELS).fill(-1),
+    exits = new Int8Array(VOXELS * 6).fill(-1),
+    open = new Uint8Array(VOXELS),
+    lying = list.map((t) => !!t?.lying);
   for (let id = 0; id < list.length; id++) {
-    const p = list[id];
-    if (!p) continue;
-    const voxels = voxelsAt(p, p.at, p.level, p.yaw);
+    const t = list[id];
+    if (!t) continue;
+    const voxels = voxelsAt(t, t.at, t.level, t.yaw);
     if (!voxels) return "edge";
+    const shape = shapeOf(t.kind, t);
     for (const v of voxels) {
       if (v.level < 0 || v.level >= LEVELS) return "high";
-      if (v.cell === goal || (id !== 0 && v.cell === start)) return "reserved";
+      if (v.cell === goal || (id >= fixedCount && v.cell === start)) return "reserved";
       const i = vox(v.cell, v.level);
       if (owner[i] >= 0) return "overlap";
       owner[i] = id;
-      kind[i] = v.kind;
-      face[i] = v.face;
+      open[i] = shape.open[v.unit] ? 1 : 0;
+      for (let f = 0; f < 6; f++) exits[i * 6 + f] = shape.exits[v.unit][f];
     }
   }
-  const shapeOf = (id: number) => list[id]!.shape;
   for (let id = 0; id < list.length; id++) {
-    const p = list[id];
-    if (!p) continue;
-    if (p.shape === "column") {
-      if (p.level === 0) continue;
-      const below = owner[vox(p.at, p.level - 1)];
+    const t = list[id];
+    if (!t) continue;
+    if (!t.lying) {
+      if (t.level === 0) continue;
+      const below = owner[vox(t.at, t.level - 1)];
       if (below < 0) return "floating";
-      if (shapeOf(below) === "beam") return "onBeam";
+      if (lying[below]) return "onLying";
     } else {
-      if (p.level < 1) return "beamSupport";
+      if (t.level < 1) return "support";
       let held = 0;
-      for (const v of voxelsAt(p, p.at, p.level, p.yaw)!) {
+      for (const v of voxelsAt(t, t.at, t.level, t.yaw)!) {
         const below = owner[vox(v.cell, v.level - 1)];
         if (below < 0) continue;
-        if (shapeOf(below) === "beam") return "beamOnBeam";
+        if (lying[below]) return "lyingOnLying";
         held++;
       }
-      if (held < 2) return "beamSupport";
+      if (held < 2) return "support";
     }
   }
   for (let cell = 0; cell < CELLS; cell++) {
@@ -291,16 +440,16 @@ export function survey(list: (Piece | null)[], goal: number): World | Refusal {
     }
     if (seen.size > STACK) return "crowded";
   }
-  return { owner, kind, face };
+  return { owner, exits, open, lying };
 }
-/** The world of a state (whose pieces always keep the rules). */
-export function world(state: Pick<State, "start" | "given" | "tray" | "goal">): World {
-  const made = survey(pieces(state), state.goal);
+/** The world of a state (whose towers always keep the rules). */
+export function world(state: Pick<State, "given" | "tray" | "start" | "goal">): World {
+  const made = survey(pieces(state), state.start, state.goal, state.given.length);
   if (typeof made === "string") throw new Error(`marble drop: a state breaks a rule (${made})`);
   return made;
 }
-/** The board id of the piece highest in a cell, or -1. */
-export function topIn(w: World, cell: number) {
+/** The board id of the tower highest in a cell, or -1. */
+export function topIn(w: Pick<World, "owner">, cell: number) {
   for (let level = LEVELS - 1; level >= 0; level--) {
     const o = w.owner[vox(cell, level)];
     if (o >= 0) return o;
@@ -308,84 +457,87 @@ export function topIn(w: World, cell: number) {
   return -1;
 }
 /** The first free level of a cell: one over the highest thing in it. */
-export function heightOf(w: World, cell: number) {
+export function heightOf(w: Pick<World, "owner">, cell: number) {
   for (let level = LEVELS - 1; level >= 0; level--) if (w.owner[vox(cell, level)] >= 0) return level + 1;
   return 0;
 }
 /**
- * Where a piece lands when it is set down at `cell` turned to `yaw` (the piece itself lifted first): a column on top
- * of the cell; a beam with its middle over the cell, at the level of the highest of the columns under it. Null when
- * a beam would leave the grid.
+ * Where a tower lands when it is set down at `cell` turned to `yaw` (the tower itself lifted first): a standing one
+ * on top of the cell; a lying one with its middle over the cell, at the level of the highest of the stacks under it.
+ * Null when a lying one would leave the grid.
  */
-export function landing(w: World, piece: Pick<Piece, "shape" | "units">, cell: number, yaw: number): Place | null {
-  if (piece.shape === "column") return { at: cell, level: heightOf(w, cell), yaw };
-  const voxels = voxelsAt(piece, cell, 0, yaw);
+export function landing(w: Pick<World, "owner">, t: Pick<Tower, "kind" | "lying" | "roll" | "inverted">, cell: number, yaw: number): Place | null {
+  if (!t.lying) return { at: cell, level: heightOf(w, cell), yaw };
+  const voxels = voxelsAt(t, cell, 0, yaw);
   if (!voxels) return null;
   let level = 0;
   for (const v of voxels) level = Math.max(level, heightOf(w, v.cell));
   return { at: cell, level, yaw };
 }
 
-/** How the marble goes through a world, from the start's ramp, as far as it gets. */
-export function follow(state: Pick<State, "start" | "goal">, w: World): Run & { passed: Set<number> } {
+/** The exit of voxel i for an entry face. */
+const exitAt = (w: Pick<World, "exits">, i: number, face: number) => w.exits[i * 6 + face];
+/** How the marble goes through a world from the start, as far as it gets. */
+export function follow(state: Pick<State, "start" | "goal">, w: World): Run {
   const { start, goal } = state,
-    top = start.level + start.units.length - 1,
-    startFace = (start.units[start.units.length - 1].face + start.yaw) % 4,
-    legs: Leg[] = [{ cell: start.at, level: top, kind: "start", from: -1, dir: startFace, piece: 0 }],
-    passed = new Set<number>([0]),
-    end = (fault: Fault | null, at: Run["at"]) => ({ legs, fault, at, passed });
-  let cell = neighbour(start.at, startFace),
+    top = heightOf(w, start),
+    legs: Leg[] = [{ cell: start, level: top, kind: "start", from: UP, dir: DOWN, piece: -1 }],
+    end = (fault: Fault | null, at: Run["at"]): Run => ({ legs, fault, at });
+  let cell = start,
     level = top,
-    dir = startFace,
+    dir = DOWN,
     flats = 0,
-    falling = false;
-  for (let guard = 0; guard < 4 * CELLS * LEVELS; guard++) {
-    if (!falling) {
-      if (cell < 0) return end("off", null);
-      if (cell === goal && level === 0) {
-        legs.push({ cell, level: 0, kind: "goal", from: dir, dir: -1, piece: -1 });
+    falling = true;
+  for (let guard = 0; guard < 6 * VOXELS; guard++) {
+    if (falling) {
+      // In voxel (cell, level), going down into the one under it.
+      if (level === 0) return end("floor", { cell, level: 0 });
+      if (cell === goal && level === 1) {
+        legs.push({ cell, level: 0, kind: "goal", from: UP, dir: -1, piece: -1 });
         return end(null, { cell, level: 0 });
       }
-      const i = vox(cell, level),
-        o = w.owner[i],
-        k = w.kind[i] as Kind;
-      if (o < 0 || k === OPEN) {
-        legs.push({ cell, level, kind: "fall", from: dir, dir: -1, piece: o });
-        if (o >= 0) passed.add(o);
-        falling = true;
-        continue;
-      }
-      if (k === RAMP) return end("wall", { cell, level });
-      const ways = sides(k, w.face[i]),
-        came = back(dir);
-      if (!ways.includes(came)) return end("wall", { cell, level });
-      if (flats >= 1) return end("momentum", { cell, level });
-      const out = ways[0] === came ? ways[1] : ways[0];
-      legs.push({ cell, level, kind: k === FLAT ? "flat" : "corner", from: dir, dir: out, piece: o });
-      passed.add(o);
-      flats++;
-      cell = neighbour(cell, out);
+      const i = vox(cell, level - 1),
+        o = w.owner[i];
+      if (o < 0 || w.open[i]) return end("drop", { cell, level: level - 1 });
+      const out = exitAt(w, i, UP),
+        kind = wayKind(UP, out);
+      if (kind === "fall") return end("drop", { cell, level: level - 1 });
+      if (kind !== "descent") return end("flat", { cell, level: level - 1 });
+      legs.push({ cell, level: level - 1, kind: "ramp", from: UP, dir: out, piece: o });
+      level--;
       dir = out;
+      cell = neighbour(cell, out);
+      flats = 0;
+      falling = false;
       continue;
     }
-    if (level === 0) return end("floor", { cell, level: 0 });
-    if (cell === goal && level === 1) {
-      legs.push({ cell, level: 0, kind: "goal", from: -1, dir: -1, piece: -1 });
+    // Rolling level into (cell, level), going `dir`.
+    if (cell < 0) return end("off", null);
+    if (cell === goal && level === 0) {
+      legs.push({ cell, level: 0, kind: "goal", from: back(dir), dir: -1, piece: -1 });
       return end(null, { cell, level: 0 });
     }
-    const i = vox(cell, level - 1),
+    const i = vox(cell, level),
       o = w.owner[i],
-      k = w.kind[i] as Kind;
-    if (o < 0 || k === OPEN) return end("drop", { cell, level: level - 1 });
-    if (k !== RAMP) return end("flat", { cell, level: level - 1 });
-    const face = w.face[i];
-    legs.push({ cell, level: level - 1, kind: "ramp", from: dir, dir: face, piece: o });
-    passed.add(o);
-    level--;
-    dir = face;
-    cell = neighbour(cell, face);
-    flats = 0;
-    falling = false;
+      came = back(dir);
+    if (o < 0 || w.open[i]) {
+      legs.push({ cell, level, kind: "fall", from: came, dir: DOWN, piece: o });
+      falling = true;
+      continue;
+    }
+    const out = exitAt(w, i, came),
+      kind = wayKind(came, out);
+    if (kind === "blocked") return end("wall", { cell, level });
+    if (kind === "fall") {
+      legs.push({ cell, level, kind: "chute", from: came, dir: DOWN, piece: o });
+      falling = true;
+      continue;
+    }
+    if (flats >= 1) return end("momentum", { cell, level });
+    legs.push({ cell, level, kind: out === dir ? "flat" : "corner", from: came, dir: out, piece: o });
+    flats++;
+    dir = out;
+    cell = neighbour(cell, out);
   }
   return end("loop", null);
 }
@@ -393,53 +545,48 @@ const WHY: Record<Fault, string> = {
   off: "구슬이 판 밖으로 굴러 나갔습니다.",
   momentum: "구슬이 경사를 내려온 뒤 수평으로 두 칸을 굴러 힘을 잃었습니다.",
   wall: "구슬이 막힌 벽에 부딪혔습니다.",
-  flat: "구슬이 곧은 길이나 굽은 길 위로 떨어졌습니다.",
+  flat: "구슬이 경사가 아닌 칸 위로 떨어졌습니다.",
   drop: "구슬이 한 층보다 더 깊이 떨어졌습니다.",
   floor: "구슬이 판 위로 떨어졌습니다.",
-  left: "구슬은 도착 컵에 들어갔지만 아직 놓지 않은 부품이 있습니다.",
-  unused: "구슬은 도착 컵에 들어갔지만 구슬이 지나가지 않은 부품이 있습니다.",
+  left: "구슬은 도착 컵에 들어갔지만 아직 놓지 않은 탑이 있습니다.",
   loop: "구슬이 같은 곳을 맴돌았습니다.",
 };
 /** Why a drop failed, in a sentence. */
 export const why = (fault: Fault) => WHY[fault];
 /** What a drop of the marble comes to: its way, and the trouble (null when it is a win). */
 export function judge(state: State): { run: Run; trouble: Trouble | null } {
-  const { passed, ...run } = follow(state, world(state));
-  if (run.fault) return { run, trouble: { fault: run.fault, at: run.at, tray: [], given: [], words: why(run.fault) } };
-  const left = state.tray.flatMap((p, j) => (p.at < 0 ? [j] : []));
-  if (left.length) return { run, trouble: { fault: "left", at: run.at, tray: left, given: [], words: why("left") } };
-  const id = ids(state),
-    tray = state.tray.flatMap((_, j) => (passed.has(id.tray(j)) ? [] : [j])),
-    given = state.given.flatMap((_, g) => (passed.has(id.given(g)) ? [] : [g]));
-  if (tray.length || given.length) return { run, trouble: { fault: "unused", at: run.at, tray, given, words: why("unused") } };
+  const run = follow(state, world(state));
+  if (run.fault) return { run, trouble: { fault: run.fault, at: run.at, tray: [], words: why(run.fault) } };
+  const left = state.tray.flatMap((t, j) => (t.at < 0 ? [j] : []));
+  if (left.length) return { run, trouble: { fault: "left", at: run.at, tray: left, words: why("left") } };
   return { run, trouble: null };
 }
 
-/** A cell where tray piece j is the highest thing (a press there takes it up), or -1 while something lies over it. */
-export function handle(state: Pick<State, "given" | "tray">, w: World, j: number) {
+/** A cell where tray tower j is the highest thing (a press there takes it up), or -1 while something lies over it. */
+export function handle(state: Pick<State, "given" | "tray">, w: Pick<World, "owner">, j: number) {
   const id = ids(state).tray(j);
   for (const v of voxelsOf(state.tray[j])) if (topIn(w, v.cell) === id) return v.cell;
   return -1;
 }
-/** The tray piece a point names to be lifted: a tray place, or the top piece of a cell. */
-function lifted(state: State, w: World, from: number): { j: number; cell: number } | Refusal | null {
+/** The tray tower a point names to be lifted: a tray place, or the top tower of a cell. */
+function lifted(state: State, w: World, from: number): { j: number } | Refusal | null {
   if (from >= CELLS) {
     const j = from - CELLS;
-    return j < state.tray.length && state.tray[j].at < 0 ? { j, cell: -1 } : null;
+    return j < state.tray.length && state.tray[j].at < 0 ? { j } : null;
   }
-  if (from < 0 || from >= CELLS) return null;
+  if (from < 0) return null;
   const top = topIn(w, from);
   if (top < 0) return null;
-  const first = 1 + state.given.length;
+  const first = ids(state).first;
   if (top < first) return "fixed";
-  return { j: top - first, cell: from };
+  return { j: top - first };
 }
 /** The state a move would make, the refusal of a placement that breaks a rule, or null for a move that is not one. */
 export function attempt(state: State, move: Move): State | Refusal | null {
   const { from, to } = move;
   if (state.winner !== null || move.extra !== -1 || !Number.isInteger(from) || !Number.isInteger(to)) return null;
   if (from === -1) {
-    if (to !== GO && to !== state.start.at) return null;
+    if (to !== GO && to !== state.start) return null;
     const { run, trouble } = judge(state);
     return { ...state, last: { kind: "go", piece: -1, from: null, to: null }, run, trouble, winner: trouble ? 1 : 0, ply: state.ply + 1 };
   }
@@ -447,59 +594,61 @@ export function attempt(state: State, move: Move): State | Refusal | null {
     taken = lifted(state, w, from);
   if (taken === null || typeof taken === "string") return taken;
   const { j } = taken,
-    piece = state.tray[j],
-    onBoard = piece.at >= 0,
-    own = new Set(voxelsOf(piece).map((v) => v.cell)),
-    was: Place | null = onBoard ? { at: piece.at, level: piece.level, yaw: piece.yaw } : null;
-  // Only a beam, or the highest piece of its cell, comes off.
-  if (onBoard && piece.shape === "column" && topIn(w, piece.at) !== ids(state).tray(j)) return "under";
-  const tray = state.tray.map((p) => ({ ...p })),
-    without = { ...state, tray: tray.map((p, k) => (k === j ? { ...p, at: -1, level: -1 } : p)) },
-    bare = world(without);
-  const done = (next: Piece, kind: Last["kind"]): State | Refusal => {
+    tower = state.tray[j],
+    onBoard = tower.at >= 0,
+    own = new Set(voxelsOf(tower).map((v) => v.cell)),
+    was: Place | null = onBoard ? { at: tower.at, level: tower.level, yaw: tower.yaw } : null;
+  if (onBoard && handle(state, w, j) < 0) return "under";
+  const tray = state.tray.map((t) => ({ ...t })),
+    bare = world({ ...state, tray: tray.map((t, k) => (k === j ? { ...t, at: -1, level: -1 } : t)) });
+  const done = (next: Tower, kind: Last["kind"]): State | Refusal => {
     tray[j] = next;
-    const made = survey(pieces({ ...state, tray }), state.goal);
+    const made = survey(pieces({ ...state, tray }), state.start, state.goal, state.given.length);
     if (typeof made === "string") return made;
     return { ...state, tray, last: { kind, piece: j, from: was, to: next.at >= 0 ? { at: next.at, level: next.level, yaw: next.yaw } : null }, run: null, trouble: null, ply: state.ply + 1 };
   };
   /**
-   * Sets the piece down at `cell` turned to `yaw`; with `tries` above 1 the next quarter turns are tried in order
-   * when that one does not fit (a beam lies the way its supports run), and the first refusal is told if none does.
+   * Sets the tower down at `cell` turned to `yaw`; with `tries` above 1 the next quarter turns are tried in order
+   * when that one does not fit, and the first refusal is told if none does.
    */
   const setAt = (cell: number, yaw: number, kind: Last["kind"], tries = 1): State | Refusal | null => {
     if (cell < 0 || cell >= CELLS) return null;
     let first: Refusal | null = null;
     for (let k = 0; k < tries; k++) {
-      const place = landing(bare, piece, cell, (yaw + k) % 4);
+      const place = landing(bare, tower, cell, (yaw + k) % 4);
       if (!place) {
         first ??= "edge";
         continue;
       }
-      if (was && contentKey(piece, was.at, was.level, was.yaw) === contentKey(piece, place.at, place.level, place.yaw)) {
+      if (was && contentKey(tower, was.at, was.level, was.yaw) === contentKey(tower, place.at, place.level, place.yaw)) {
         first ??= "same";
         continue;
       }
-      const made = done({ ...piece, ...place }, kind);
+      const made = done({ ...tower, ...place }, kind);
       if (typeof made !== "string") return made;
       first ??= made;
     }
     return first;
   };
   if (to >= PUT) {
-    const cell = Math.floor((to - PUT) / 4),
-      yaw = (to - PUT) % 4;
-    return setAt(cell, yaw, !onBoard ? "put" : cell === piece.at ? "turn" : "carry");
+    const p = putOf(to);
+    if (p.posture !== postureOf(tower)) return "posture";
+    return setAt(p.cell, p.yaw, !onBoard ? "put" : p.cell === tower.at ? "turn" : "carry");
   }
-  if (to === CELLS + j) return onBoard ? done({ ...piece, at: -1, level: -1, yaw: 0 }, "back") : null;
+  if (to === CELLS + j) return onBoard ? done({ ...tower, at: -1, level: -1, yaw: 0 }, "back") : null;
   if (to < 0 || to >= CELLS) return null;
-  if (!onBoard) return setAt(to, piece.yaw, "put", 4);
-  // A tap on a piece's own cell turns it about its anchor (on to the next quarter that fits); a carry goes to a
-  // cell it is not on, turned as it is if it fits there.
-  if (to === from) return setAt(piece.at, (piece.yaw + 1) % 4, "turn", 3);
+  const tries = tower.lying ? 4 : 1;
+  if (!onBoard) return setAt(to, trayYaw(tower), "put", tries);
+  // A tap on a tower's own cell turns it a quarter where it is (a lying one about its middle, on to the next way
+  // that fits); a carry goes to a cell it is not on, turned as it is (a lying one on to the next way that fits).
+  if (to === from) {
+    const turned = setAt(tower.at, (tower.yaw + 1) % 4, "turn", tower.lying ? 3 : 1);
+    return turned;
+  }
   if (own.has(to)) return null;
-  return setAt(to, piece.yaw, "carry", 4);
+  return setAt(to, tower.yaw, "carry", tries);
 }
-/** A move of a piece or the drop of the marble; null (and the state left alone) when it may not be made. */
+/** A move of a tower or the drop of the marble; null (and the state left alone) when it may not be made. */
 export function play(state: State, move: Move): State | null {
   const next = attempt(state, move);
   return next && typeof next !== "string" ? next : null;
@@ -512,19 +661,21 @@ export function refusal(state: State, move: Move): string | null {
 /** Every move there is (the turned puts of the hint are made by `play` too, but not listed). */
 export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
-  const out: Move[] = [{ from: -1, to: GO, extra: -1 }, { from: -1, to: state.start.at, extra: -1 }],
+  const out: Move[] = [
+      { from: -1, to: GO, extra: -1 },
+      { from: -1, to: state.start, extra: -1 },
+    ],
     w = world(state),
     id = ids(state),
     ok = (move: Move) => {
       if (play(state, move)) out.push(move);
     };
-  state.tray.forEach((p, j) => {
-    if (p.at < 0) {
+  state.tray.forEach((t, j) => {
+    if (t.at < 0) {
       for (let cell = 0; cell < CELLS; cell++) ok({ from: CELLS + j, to: cell, extra: -1 });
       return;
     }
-    // From every cell where it is the highest thing, each cell once (a column's units all stand in one).
-    for (const from of new Set(voxelsOf(p).map((v) => v.cell))) {
+    for (const from of new Set(voxelsOf(t).map((v) => v.cell))) {
       if (topIn(w, from) !== id.tray(j)) continue;
       for (let cell = 0; cell < CELLS; cell++) ok({ from, to: cell, extra: -1 });
       ok({ from, to: CELLS + j, extra: -1 });
@@ -534,214 +685,344 @@ export function moves(state: State): Move[] {
 }
 
 /*
- * The solver: every way to set the tray's pieces so that the marble wins, found by following the marble and
+ * The solver: every way to set the tray's towers so that the marble wins, found by following the marble and
  * deciding what fills each voxel it comes to only when it comes there.
  */
 export interface Layout {
-  start: Piece;
+  start: number;
   goal: number;
-  given: Piece[];
+  given: Tower[];
 }
 const RESERVED = -2;
+/** The work a count of answers may take (voxels followed and towers set), after which it gives up (`info.cut`). */
+const BUDGET = 250000;
 /**
- * The ways of placing `tray` (pieces with their units; places ignored) on a layout so that the marble dropped at
- * the start passes every piece into the target, up to `cap` of them, each as a place per tray piece. Identical
- * pieces swapped are one way. The marble is followed from the start; at a voxel nothing has decided yet it is
- * tried as air and as each unit of each piece left that could take the marble there (the piece is then set so that
- * that unit fills the voxel), the voxels it passed as air being kept clear. Supports and stacks are checked at the
- * end, by the building rules themselves, so a support may well be passed after the piece it carries.
+ * The ways of placing `tray` (towers with their kinds and postures; places ignored) on a layout so that the marble
+ * dropped at the start runs into the target, up to `cap` of them, each as a place per tray tower. Identical towers
+ * swapped are one way. The marble is followed from the start; at a voxel nothing has decided yet it is tried as air
+ * (rolling in level) and as each unit of each tower left that could take the marble there (the tower is then set so
+ * that that unit fills the voxel), the voxels it passed as air being kept clear. When it is home, the towers it did
+ * not meet are set wherever they may stand (the supports a tower it met is missing first), and every building rule
+ * is checked over the whole board.
  */
-export function solutions(layout: Layout, tray: Pick<Piece, "shape" | "units">[], cap = 2): Place[][] {
-  const fixed: Piece[] = [layout.start, ...layout.given],
-    n = CELLS * LEVELS,
-    owner = new Int16Array(n).fill(-1),
-    kind = new Int8Array(n),
-    face = new Int8Array(n),
-    goal = layout.goal,
-    startCell = layout.start.at;
-  for (let id = 0; id < fixed.length; id++)
-    for (const v of voxelsOf(fixed[id])) {
+export function solutions(layout: Layout, tray: Pick<Tower, "kind" | "lying" | "roll" | "inverted">[], cap = 2, info?: { cut: boolean }): Place[][] {
+  const fixed = layout.given,
+    owner = new Int16Array(VOXELS).fill(-1),
+    exits = new Int8Array(VOXELS * 6).fill(-1),
+    open = new Uint8Array(VOXELS),
+    { goal, start } = layout,
+    F = fixed.length;
+  for (let id = 0; id < F; id++) {
+    const t = fixed[id],
+      shape = shapeOf(t.kind, t);
+    for (const v of voxelsOf(t)) {
       const i = vox(v.cell, v.level);
       owner[i] = id;
-      kind[i] = v.kind;
-      face[i] = v.face;
+      open[i] = shape.open[v.unit] ? 1 : 0;
+      for (let f = 0; f < 6; f++) exits[i * 6 + f] = shape.exits[v.unit][f];
     }
-  // Identical pieces form one group: a group's pieces are placed in turn, so that swapping them counts once.
-  const groups: { piece: Pick<Piece, "shape" | "units">; members: number[]; places: Place[] }[] = [];
-  tray.forEach((p, j) => {
-    const key = unitsKey(p),
-      group = groups.find((g) => unitsKey(g.piece) === key);
+  }
+  // Identical towers form one group: a group's towers are placed in turn, so that swapping them counts once.
+  const groups: { tower: Pick<Tower, "kind" | "lying" | "roll" | "inverted">; members: number[]; places: Place[] }[] = [];
+  tray.forEach((t, j) => {
+    const key = sortKey(t),
+      group = groups.find((g) => sortKey(g.tower) === key);
     if (group) group.members.push(j);
-    else groups.push({ piece: p, members: [j], places: [] });
+    else groups.push({ tower: { kind: t.kind, lying: t.lying, inverted: !t.lying && !!t.inverted, roll: t.lying ? t.roll : 0 }, members: [j], places: [] });
   });
-  const firstTray = fixed.length,
-    groupOf: number[] = [],
-    passedFixed = new Uint8Array(fixed.length),
-    found: Place[][] = [];
+  const placed: (Tower | null)[] = [],
+    found: Place[][] = [],
+    seenAnswers = new Set<string>();
   let unplaced = tray.length,
-    nextId = firstTray;
-  passedFixed[0] = 1;
-  const placedPieces: Piece[] = [];
-  /** Sets a group's next piece at a place, if its voxels are free and nothing already decided rules it out. */
+    nextId = F,
+    steps = 0,
+    rests = 0;
+  const towerOf = (id: number): Tower => (id < F ? fixed[id] : placed[id - F]!);
+  /** Whether the work allowed has run out (counted, so that the same puzzle is always laid the same way). */
+  const cut = () => {
+    if (steps + rests > BUDGET) {
+      if (info) info.cut = true;
+      return true;
+    }
+    return false;
+  };
+  const lyingAt = (i: number) => owner[i] >= 0 && towerOf(owner[i]).lying;
+  /** Sets a group's next tower at a place, if its voxels are free and nothing already decided rules it out. */
   const place = (g: number, at: number, level: number, yaw: number): boolean => {
     const group = groups[g],
-      voxels = voxelsAt(group.piece, at, level, yaw);
+      t = group.tower,
+      voxels = voxelsAt(t, at, level, yaw);
     if (!voxels) return false;
     for (const v of voxels) {
-      if (v.level < 0 || v.level >= LEVELS || v.cell === goal || v.cell === startCell) return false;
+      if (v.level < 0 || v.level >= LEVELS || v.cell === goal || v.cell === start) return false;
       if (owner[vox(v.cell, v.level)] !== -1) return false;
     }
-    if (group.piece.shape === "column") {
-      // On the grid or on a column (not a beam, not a voxel kept clear).
+    if (!t.lying) {
       if (level > 0) {
-        const below = owner[vox(at, level - 1)];
-        if (below === RESERVED) return false;
-        if (below >= 0 && shapeAt(below) === "beam") return false;
+        const below = vox(at, level - 1);
+        if (owner[below] === RESERVED || lyingAt(below)) return false;
       }
     } else {
       if (level < 1) return false;
       for (const v of voxels) {
-        const below = owner[vox(v.cell, level - 1)];
-        if (below >= 0 && shapeAt(below) === "beam") return false;
+        if (lyingAt(vox(v.cell, level - 1))) return false;
         if (level + 1 < LEVELS) {
-          const over = owner[vox(v.cell, level + 1)];
-          if (over >= 0 && shapeAt(over) === "column" && baseOf(over) === level + 1) return false;
-          if (over >= 0 && shapeAt(over) === "beam") return false;
+          const over = vox(v.cell, level + 1);
+          if (owner[over] >= 0) return false;
         }
       }
     }
-    const id = nextId++;
+    const shape = shapeOf(t.kind, { ...t, yaw }),
+      id = nextId++;
     for (const v of voxels) {
       const i = vox(v.cell, v.level);
       owner[i] = id;
-      kind[i] = v.kind;
-      face[i] = v.face;
+      open[i] = shape.open[v.unit] ? 1 : 0;
+      for (let f = 0; f < 6; f++) exits[i * 6 + f] = shape.exits[v.unit][f];
     }
-    groupOf[id - firstTray] = g;
-    placedPieces[id - firstTray] = { ...group.piece, at, level, yaw, paint: 0 } as Piece;
+    placed[id - F] = { ...t, at, level, yaw };
     group.places.push({ at, level, yaw });
     unplaced--;
     return true;
   };
   const unplace = (g: number) => {
     const id = --nextId,
-      p = placedPieces[id - firstTray];
-    for (const v of voxelsOf(p)) owner[vox(v.cell, v.level)] = -1;
+      t = placed[id - F]!;
+    for (const v of voxelsOf(t)) owner[vox(v.cell, v.level)] = -1;
+    placed[id - F] = null;
     groups[g].places.pop();
     unplaced++;
   };
-  const shapeAt = (id: number): Shape => (id < firstTray ? fixed[id].shape : placedPieces[id - firstTray].shape);
-  const baseOf = (id: number) => (id < firstTray ? fixed[id].level : placedPieces[id - firstTray].level);
-  const passed = (id: number) => {
-    if (id < firstTray) passedFixed[id]++;
-  };
-  const unpass = (id: number) => {
-    if (id < firstTray) passedFixed[id]--;
-  };
-  const finish = () => {
-    if (unplaced) return;
-    for (let id = 0; id < fixed.length; id++) if (!passedFixed[id]) return;
-    // Every building rule over the whole board, now that every piece has a place.
-    const list: (Piece | null)[] = [...fixed, ...placedPieces.slice(0, nextId - firstTray)];
-    if (typeof survey(list, goal) === "string") return;
+  const record = () => {
+    const list: (Tower | null)[] = [...fixed, ...placed.slice(0, nextId - F)];
+    if (typeof survey(list, start, goal, F) === "string") return;
     const answer: Place[] = new Array(tray.length);
     for (const group of groups) group.members.forEach((j, k) => (answer[j] = group.places[k]));
+    const key = answer
+      .map((a, j) => contentKey(tray[j], a.at, a.level, a.yaw))
+      .sort()
+      .join("|");
+    if (seenAnswers.has(key)) return;
+    seenAnswers.add(key);
     found.push(answer);
   };
-  /** What units of what groups could fill a voxel: each tried in turn (deduplicated by what it makes). */
-  const tryUnits = (cell: number, level: number, wanted: (k: Kind, f: number) => boolean, then: () => void) => {
+  /** The first free level of a cell counted up from the grid (a gap under a tower set floating stops it). */
+  const groundOf = (cell: number) => {
+    let level = 0;
+    while (level < LEVELS && owner[vox(cell, level)] >= 0) level++;
+    return level;
+  };
+  /** A cell that a tower met by the marble is missing a support in: a standing one floating, a lying one held by fewer than two. */
+  const need = (): number[] | null => {
+    for (let id = F; id < nextId; id++) {
+      const t = placed[id - F]!;
+      if (!t.lying) {
+        if (t.level > 0 && owner[vox(t.at, t.level - 1)] < 0) return [t.at];
+      } else {
+        const cells = voxelsOf(t).map((v) => v.cell);
+        let held = 0;
+        for (const c of cells) if (owner[vox(c, t.level - 1)] >= 0) held++;
+        if (held < 2) return cells.filter((c) => owner[vox(c, t.level - 1)] === -1);
+      }
+    }
+    return null;
+  };
+  /**
+   * Whether the towers left can give every tower met the supports it lacks: each gap under a floating standing
+   * tower, and under enough cells of a lying one, filled exactly by standing towers left (a sum of their heights).
+   */
+  const feasible = (): boolean => {
+    const heights: number[] = [];
+    for (const group of groups) if (!group.tower.lying) for (let k = group.places.length; k < group.members.length; k++) heights.push(KIT[group.tower.kind].units.length);
+    const gapAt = (cell: number, top: number) => {
+      const g = groundOf(cell);
+      for (let l = g; l < top; l++) if (owner[vox(cell, l)] !== -1) return -1;
+      return top - g;
+    };
+    const wants: { gaps: number[]; need: number }[] = [];
+    for (let id = F; id < nextId; id++) {
+      const t = placed[id - F]!;
+      if (!t.lying) {
+        if (t.level > 0 && owner[vox(t.at, t.level - 1)] < 0) {
+          const g = gapAt(t.at, t.level);
+          if (g <= 0) return false;
+          wants.push({ gaps: [g], need: 1 });
+        }
+      } else {
+        const cells = voxelsOf(t).map((v) => v.cell);
+        let held = 0;
+        const gaps: number[] = [];
+        for (const c of cells)
+          if (owner[vox(c, t.level - 1)] >= 0) held++;
+          else {
+            const g = gapAt(c, t.level);
+            if (g > 0) gaps.push(g);
+          }
+        if (held < 2) wants.push({ gaps, need: 2 - held });
+      }
+    }
+    if (!wants.length) return true;
+    const used = heights.map(() => false);
+    /** Fills `left` gaps of want w from gap index `from` on, then the wants after it. */
+    const fill = (w: number, from: number, left: number): boolean => {
+      if (w === wants.length) return true;
+      if (left === 0) return fill(w + 1, 0, w + 1 < wants.length ? wants[w + 1].need : 0);
+      const { gaps } = wants[w];
+      for (let k = from; k < gaps.length; k++) if (sum(gaps[k], 0, () => fill(w, k + 1, left - 1))) return true;
+      return false;
+    };
+    /** Some unused heights adding up to `gap` exactly. */
+    const sum = (gap: number, from: number, then: () => boolean): boolean => {
+      if (gap === 0) return then();
+      for (let i = from; i < heights.length; i++) {
+        if (used[i] || heights[i] > gap) continue;
+        used[i] = true;
+        const ok = sum(gap - heights[i], i + 1, then);
+        used[i] = false;
+        if (ok) return true;
+      }
+      return false;
+    };
+    return fill(0, 0, wants[0].need);
+  };
+  /** Home: the towers it did not meet are set, if they can give what is missing. */
+  const home = (): void => {
+    if (unplaced && !feasible()) return;
+    rest();
+  };
+  /** The towers the marble did not meet, set wherever they may stand: missing supports first, then anywhere. */
+  const rest = (): void => {
+    rests++;
+    if (found.length >= cap || cut()) return;
+    if (!unplaced) return record();
+    const missing = need();
+    if (missing) {
+      // A gap under a tower met: only a standing tower set on the grid or the stack there fills it.
+      for (let g = 0; g < groups.length && found.length < cap; g++) {
+        const group = groups[g];
+        if (group.places.length >= group.members.length || group.tower.lying) continue;
+        for (const cell of missing)
+          for (let yaw = 0; yaw < 4 && found.length < cap; yaw++) {
+            if (!place(g, cell, groundOf(cell), yaw)) continue;
+            if (feasible()) rest();
+            unplace(g);
+          }
+      }
+      return;
+    }
+    // A lying tower left goes first, at any level (the towers under it then fill its supports), as it is the one
+    // that can stand in the fewest places.
+    const lyingLeft = groups.findIndex((group) => group.tower.lying && group.places.length < group.members.length);
+    if (lyingLeft >= 0) {
+      for (let cell = 0; cell < CELLS && found.length < cap; cell++)
+        for (let yaw = 0; yaw < 4 && found.length < cap; yaw++)
+          for (let level = 1; level < LEVELS && found.length < cap; level++) {
+            if (!place(lyingLeft, cell, level, yaw)) continue;
+            if (feasible()) rest();
+            unplace(lyingLeft);
+          }
+      return;
+    }
     for (let g = 0; g < groups.length && found.length < cap; g++) {
       const group = groups[g];
       if (group.places.length >= group.members.length) continue;
-      const seen = new Set<string>(),
-        units = group.piece.units;
-      for (let u = 0; u < units.length && found.length < cap; u++)
+      for (let cell = 0; cell < CELLS; cell++)
         for (let yaw = 0; yaw < 4 && found.length < cap; yaw++) {
-          const f = (units[u].face + yaw) % 4;
-          if (!wanted(units[u].kind, f)) continue;
-          let at: number, level0: number;
-          if (group.piece.shape === "column") {
-            at = cell;
-            level0 = level - u;
-            if (level0 < 0) continue;
-          } else {
-            at = neighbour(cell, axisOf(yaw), middle(units.length) - u);
-            level0 = level;
-            if (at < 0) continue;
-          }
-          const key = contentKey(group.piece, at, level0, yaw);
-          if (!key || seen.has(key)) continue;
-          seen.add(key);
-          if (!place(g, at, level0, yaw)) continue;
-          then();
+          if (!place(g, cell, groundOf(cell), yaw)) continue;
+          if (feasible()) rest();
           unplace(g);
         }
     }
   };
-  /** The marble rolls level into (cell, level) going `dir`, `flats` flats or corners since the last ramp. */
-  const enter = (cell: number, level: number, dir: number, flats: number, depth: number): void => {
-    if (found.length >= cap || depth > 200 || cell < 0) return;
-    if (cell === goal && level === 0) return finish();
-    const i = vox(cell, level),
-      o = owner[i];
-    if (o >= 0) {
-      const k = kind[i] as Kind;
-      if (k === OPEN) {
-        passed(o);
-        fall(cell, level, depth + 1);
-        unpass(o);
-        return;
+  /** Units of the groups left that could fill a voxel and take the marble so: each tried in turn. */
+  const tryUnits = (cell: number, level: number, wanted: (exits: number[], open: boolean) => boolean, then: () => void) => {
+    for (let g = 0; g < groups.length && found.length < cap; g++) {
+      const group = groups[g];
+      if (group.places.length >= group.members.length) continue;
+      const t = group.tower,
+        n = KIT[t.kind].units.length;
+      for (let yaw = 0; yaw < 4 && found.length < cap; yaw++) {
+        const shape = shapeOf(t.kind, { ...t, yaw });
+        for (let k = 0; k < n && found.length < cap; k++) {
+          if (!wanted(shape.exits[k], shape.open[k])) continue;
+          let at: number, level0: number;
+          if (!t.lying) {
+            at = cell;
+            level0 = level - (t.inverted ? n - 1 - k : k);
+            if (level0 < 0) continue;
+          } else {
+            at = neighbour(cell, (t.roll + yaw) % 4, middle(n) - k);
+            level0 = level;
+            if (at < 0) continue;
+          }
+          if (!place(g, at, level0, yaw)) continue;
+          then();
+          unplace(g);
+        }
       }
-      if (k === RAMP || flats >= 1) return;
-      const ways = sides(k, face[i]),
-        came = back(dir);
-      if (!ways.includes(came)) return;
-      const out = ways[0] === came ? ways[1] : ways[0];
-      passed(o);
-      enter(neighbour(cell, out), level, out, flats + 1, depth + 1);
-      unpass(o);
-      return;
+    }
+  };
+  /** The marble rolls level into (cell, level) going `dir`, `flats` horizontal units since the last descent. */
+  const enter = (cell: number, level: number, dir: number, flats: number, depth: number): void => {
+    if (found.length >= cap || depth > 160 || cell < 0 || ++steps > BUDGET || cut()) return;
+    if (cell === goal && level === 0) return home();
+    const i = vox(cell, level),
+      o = owner[i],
+      came = back(dir);
+    if (o >= 0) {
+      if (open[i]) return fall(cell, level, depth + 1);
+      const out = exits[i * 6 + came],
+        kind = wayKind(came, out);
+      if (kind === "fall") return fall(cell, level, depth + 1);
+      if (kind !== "level" || flats >= 1) return;
+      return enter(neighbour(cell, out), level, out, flats + 1, depth + 1);
     }
     if (o === RESERVED) return fall(cell, level, depth + 1);
-    // Nothing decided here yet: air, or a unit that lets the marble on (an open frame, or a flat or corner open toward it).
+    if (cell === start) return;
+    // Nothing decided here yet: air, or a unit that lets the marble on.
     if (level >= 1) {
-      // Air over a column that would then float is no way.
+      // Air under a standing tower that would then float is no way.
       const over = level + 1 < LEVELS ? owner[vox(cell, level + 1)] : -1;
-      if (!(over >= 0 && shapeAt(over) === "column" && baseOf(over) === level + 1)) {
+      if (!(over >= 0 && !towerOf(over).lying && towerOf(over).level === level + 1)) {
         owner[i] = RESERVED;
         fall(cell, level, depth + 1);
         owner[i] = -1;
       }
     }
-    const came = back(dir);
     tryUnits(
       cell,
       level,
-      (k, f) => k === OPEN || (flats === 0 && (k === FLAT || k === CORNER) && sides(k, f).includes(came)),
+      (ex, isOpen) => {
+        if (isOpen) return level >= 1;
+        const kind = wayKind(came, ex[came]);
+        return kind === "fall" ? level >= 1 : kind === "level" && flats === 0;
+      },
       () => enter(cell, level, dir, flats, depth + 1),
     );
   };
   /** The marble falls from (cell, level) toward the voxel under it. */
   const fall = (cell: number, level: number, depth: number): void => {
     if (found.length >= cap || level === 0) return;
-    if (cell === goal && level === 1) return finish();
+    if (cell === goal && level === 1) return home();
     const i = vox(cell, level - 1),
       o = owner[i];
     if (o >= 0) {
-      if (kind[i] !== RAMP) return;
-      const f = face[i];
-      passed(o);
-      enter(neighbour(cell, f), level - 1, f, 0, depth + 1);
-      unpass(o);
-      return;
+      if (open[i]) return;
+      const out = exits[i * 6 + UP];
+      if (wayKind(UP, out) !== "descent") return;
+      return enter(neighbour(cell, out), level - 1, out, 0, depth + 1);
     }
-    if (o === RESERVED) return;
-    tryUnits(cell, level - 1, (k) => k === RAMP, () => fall(cell, level, depth + 1));
+    if (o === RESERVED || cell === start) return;
+    tryUnits(
+      cell,
+      level - 1,
+      (ex, isOpen) => !isOpen && wayKind(UP, ex[UP]) === "descent",
+      () => fall(cell, level, depth + 1),
+    );
   };
-  const s = layout.start,
-    top = s.level + s.units.length - 1,
-    f = (s.units[s.units.length - 1].face + s.yaw) % 4;
-  enter(neighbour(s.at, f), top, f, 0, 0);
+  let top = 0;
+  while (top < LEVELS && owner[vox(start, top)] >= 0) top++;
+  fall(start, top, 0);
   return found;
 }
 
@@ -749,26 +1030,30 @@ export function solutions(layout: Layout, tray: Pick<Piece, "shape" | "units">[]
  * Laying a puzzle.
  */
 export interface Stage {
-  /** The start's top level (its ramp), from and to. */
+  /** The start's stack height, from and to. */
   top: [number, number];
-  /** Pieces in all, the start and the target counted, from and to. */
-  pieces: [number, number];
-  /** Pieces in the tray, from and to. */
+  /** Towers in the tray, from and to. */
   tray: [number, number];
+  /** Towers the built way must pass (the start's aside), so that the tray can be chosen among them. */
+  passed: number;
+  /** Whether a tray tower stands on another tower. */
   stacks: boolean;
-  beams: boolean;
+  /** Whether lying towers are laid: never, now and then (one), or always (in the tray). */
+  lying: "none" | "maybe" | "always";
+  /** Whether towers stood on their heads are laid: never, now and then, or always (in the tray). */
+  inverted: "none" | "maybe" | "always";
+  /** Answers allowed at most (one, or a few on the hardest stage when one costs too long). */
+  answers: number;
 }
-/** The four stages: more pieces, more of them to place, stacks from the second, beams from the third. */
+/** The four stages. */
 export const STAGES: Stage[] = [
-  { top: [2, 3], pieces: [4, 5], tray: [2, 2], stacks: false, beams: false },
-  { top: [3, 3], pieces: [5, 6], tray: [3, 3], stacks: true, beams: false },
-  { top: [3, 4], pieces: [6, 7], tray: [3, 4], stacks: true, beams: true },
-  { top: [4, 4], pieces: [7, 9], tray: [4, 5], stacks: true, beams: true },
+  { top: [2, 3], tray: [2, 2], passed: 2, stacks: false, lying: "none", inverted: "none", answers: 1 },
+  { top: [3, 4], tray: [3, 3], passed: 4, stacks: true, lying: "none", inverted: "none", answers: 1 },
+  { top: [3, 4], tray: [3, 4], passed: 4, stacks: true, lying: "maybe", inverted: "maybe", answers: 1 },
+  { top: [4, 5], tray: [4, 4], passed: 4, stacks: true, lying: "always", inverted: "maybe", answers: 1 },
 ];
 /** The stage a variant names (1 to 4). */
 export const stageOf = (stage: number) => Math.max(1, Math.min(STAGES.length, Math.round(stage) || 1));
-const pick = <X>(items: X[], random: Random) => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
-const between = ([lo, hi]: [number, number], random: Random) => lo + Math.min(hi - lo, Math.floor(random() * (hi - lo + 1)));
 const shuffled = <X>(items: X[], random: Random) => {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i--) {
@@ -777,464 +1062,585 @@ const shuffled = <X>(items: X[], random: Random) => {
   }
   return out;
 };
-/** What the marble's way decides of a voxel: a unit it rolls through, or air it falls through (`AIR`). */
-const AIR = -1;
-interface Trail {
-  start: number;
-  face: number;
-  top: number;
-  goal: number;
-  /** By voxel: the unit kind (or AIR) and its world face. */
-  path: Map<number, { kind: Kind | typeof AIR; face: number }>;
-}
-/**
- * The marble's way, built forward from the start: after each ramp it rolls level into the next voxel, which is
- * chosen to be a flat or a corner (at most one), air over a ramp one level down (facing anywhere it can go on), or,
- * at the bottom, the target. Null at a dead end.
- */
-function trail(stage: Stage, random: Random): Trail | null {
-  const top = between(stage.top, random),
-    start = Math.floor(random() * CELLS),
-    face = pick(
-      [0, 1, 2, 3].filter((d) => neighbour(start, d) >= 0),
-      random,
-    ),
-    path: Trail["path"] = new Map(),
-    used = new Set<number>([start]);
-  let cell = neighbour(start, face),
-    level = top,
-    dir = face,
-    flats = 0;
-  const onward = (c: number, d: number) => {
-    const next = neighbour(c, d);
-    return next >= 0 && next !== start;
-  };
-  for (let guard = 0; guard < 40; guard++) {
-    if (cell < 0 || cell === start) return null;
-    const free = !path.has(vox(cell, level)),
-      options: { weight: number; go: () => boolean }[] = [];
-    // The target: on a cell nothing else uses, at level 0, or one under the marble falling in.
-    if (!used.has(cell) && level <= 1) {
-      const here = cell,
-        at = level;
-      options.push({
-        weight: 3,
-        go: () => {
-          if (at === 1) path.set(vox(here, 1), { kind: AIR, face: 0 });
-          return true;
-        },
-      });
-    }
-    if (free && flats === 0)
-      for (const out of [dir, (dir + 1) % 4, (dir + 3) % 4]) {
-        if (!onward(cell, out)) continue;
-        const here = cell,
-          came = back(dir);
-        options.push({
-          weight: out === dir ? 0.7 : 0.5,
-          go: () => {
-            // A corner opens to its face and to the right of it.
-            const corner = out !== dir,
-              f = !corner ? dir % 2 : (came + 1) % 4 === out ? came : out;
-            path.set(vox(here, level), { kind: corner ? CORNER : FLAT, face: f });
-            used.add(here);
-            cell = neighbour(here, out);
-            dir = out;
-            flats = 1;
-            return false;
-          },
-        });
-      }
-    if (free && level >= 1 && !path.has(vox(cell, level - 1)))
-      for (let e = 0; e < 4; e++) {
-        if (!onward(cell, e)) continue;
-        const here = cell;
-        // Back toward where it came from is a fine turn of the stair (it makes towers stand side by side, and stacks),
-        // but fresh cells are liked better, so that the way spreads over the grid.
-        options.push({
-          weight: e === back(dir) ? (stage.stacks ? 0.5 : 0.2) : used.has(neighbour(here, e)) ? 0.5 : 1,
-          go: () => {
-            path.set(vox(here, level), { kind: AIR, face: 0 });
-            path.set(vox(here, level - 1), { kind: RAMP, face: e });
-            used.add(here);
-            level--;
-            cell = neighbour(here, e);
-            dir = e;
-            flats = 0;
-            return false;
-          },
-        });
-      }
-    if (!options.length) return null;
-    let roll = random() * options.reduce((sum, o) => sum + o.weight, 0),
-      chosen = options[options.length - 1];
-    for (const option of options) {
-      roll -= option.weight;
+const between = ([lo, hi]: [number, number], random: Random) => lo + Math.min(hi - lo, Math.floor(random() * (hi - lo + 1)));
+/** A weighted random order of options. */
+function ordered<X extends { weight: number }>(options: X[], random: Random): X[] {
+  const pool = [...options],
+    out: X[] = [];
+  while (pool.length) {
+    let roll = random() * pool.reduce((s, o) => s + o.weight, 0),
+      k = pool.length - 1;
+    for (let i = 0; i < pool.length; i++) {
+      roll -= pool[i].weight;
       if (roll <= 0) {
-        chosen = option;
+        k = i;
         break;
       }
     }
-    const goalCell = cell;
-    if (chosen.go()) return { start, face, top, goal: goalCell, path };
+    out.push(pool.splice(k, 1)[0]);
   }
-  return null;
-}
-/** A piece being made: its units by world face, where they lie, and whether the marble passes each. */
-interface Draft {
-  shape: Shape;
-  cells: number[];
-  level: number;
-  /** A beam's axis (east or south); a column's units go up. */
-  axis: number;
-  units: { kind: Kind; face: number; visited: boolean }[];
-}
-/** A unit to fill a voxel the marble does not pass: mostly an open frame, now and then something else. */
-function padding(random: Random): { kind: Kind; face: number } {
-  const roll = random();
-  if (roll < 0.8) return { kind: OPEN, face: 0 };
-  return { kind: roll < 0.88 ? FLAT : roll < 0.94 ? CORNER : RAMP, face: Math.floor(random() * 4) };
+  return out;
 }
 /**
- * The pieces of a way: beams where the stage has them and a row of voxels at one level can lie on two columns that
- * the marble passes too, and columns up from the grid to the highest unit of every other cell (open frames where it
- * falls through, padding where it does not pass), cut into pieces that each hold something the marble passes.
+ * Builds a way forward from the start with the kit: the marble is followed, and at each voxel nothing has decided
+ * it is let through as air or met by a kit tower set (standing on the cell's stack, or lying on two supports raised
+ * for it) so that one of its units takes it on; a tower may be stood under the voxel first, to raise the stack. The
+ * way ends in the target, laid where the marble comes down. Null when the search runs out.
  */
-function assemble(t: Trail, stage: Stage, random: Random): Draft[] | null {
-  const at = (cell: number, level: number) => t.path.get(vox(cell, level)),
-    unitAt = (cell: number, level: number) => {
-      const p = at(cell, level);
-      return p !== undefined && p.kind !== AIR;
-    },
-    highestUnit = (cell: number, below = LEVELS) => {
-      for (let level = below - 1; level >= 0; level--) if (unitAt(cell, level)) return level;
-      return -1;
-    },
-    visitedBelow = (cell: number, level: number) => {
-      for (let l = 0; l < level; l++) if (at(cell, l) !== undefined) return true;
-      return false;
-    },
-    beams: { cells: number[]; level: number; axis: number; supports: Set<number> }[] = [],
-    inBeam = new Map<number, { level: number; supports: Set<number> }>();
-  const banned = (cell: number) => cell === t.start || cell === t.goal;
-  if (stage.beams) {
-    const candidates: { cells: number[]; level: number; axis: number; supports: Set<number>; weight: number }[] = [];
-    for (let level = 1; level <= t.top; level++)
-      for (const axis of [EAST, SOUTH])
-        for (let first = 0; first < CELLS; first++)
-          for (const length of [2, 3]) {
-            const cells: number[] = [];
-            for (let k = 0; k < length; k++) cells.push(neighbour(first, axis, k));
-            if (cells.some((c) => c < 0 || banned(c))) continue;
-            // Nothing the marble needs stands on the beam.
-            if (cells.some((c) => highestUnit(c) > level)) continue;
-            const visited = cells.filter((c) => at(c, level) !== undefined).length;
-            if (!visited) continue;
-            const must = cells.filter((c) => unitAt(c, level - 1)),
-              may = cells.filter((c) => !must.includes(c) && visitedBelow(c, level));
-            if (must.some((c) => !visitedBelow(c, level))) continue;
-            if (must.length + may.length < 2) continue;
-            const supports = new Set(must);
-            for (const c of shuffled(may, random)) if (supports.size < 2 || random() < 0.5) supports.add(c);
-            if (supports.size < 2) continue;
-            candidates.push({ cells, level, axis, supports, weight: visited + (length === 3 ? 0.5 : 0) + (supports.size < length ? 1 : 0) });
-          }
-    const wanted = stage.pieces[1] >= 8 && random() < 0.4 ? 2 : 1;
-    for (const c of shuffled(candidates, random)) {
-      if (beams.length >= wanted) break;
-      if (c.cells.some((cell) => inBeam.has(cell))) continue;
-      beams.push(c);
-      for (const cell of c.cells) inBeam.set(cell, { level: c.level, supports: c.supports });
+function build(spec: Stage, random: Random): { towers: Tower[]; start: number; goal: number; passed: Set<number> } | null {
+  const owner = new Int16Array(VOXELS).fill(-1),
+    exits = new Int8Array(VOXELS * 6).fill(-1),
+    open = new Uint8Array(VOXELS),
+    towers: Tower[] = [],
+    left = KIT.map((k) => k.count),
+    passed: number[] = [],
+    allowLying = spec.lying !== "none",
+    wantLying = spec.lying === "always" || (spec.lying === "maybe" && random() < 0.5),
+    allowInverted = spec.inverted !== "none",
+    // A liking for each kit tower of this build's own, so that the puzzles do not all use the same few.
+    prefer = KIT.map(() => 0.15 + 1.7 * random() ** 1.5),
+    wantInverted = spec.inverted === "always" || (spec.inverted === "maybe" && random() < 0.4);
+  let goal = -1,
+    nodes = 0,
+    lyingUsed = 0,
+    laying = true;
+  const start = Math.floor(random() * CELLS);
+  /** The first free level over a cell's stack, or -1 when the marble's air is the highest thing there (`ignore` aside). */
+  const heightAt = (cell: number, ignore = -1) => {
+    for (let level = LEVELS - 1; level >= 0; level--) {
+      const i = vox(cell, level);
+      if (owner[i] !== -1 && i !== ignore) return owner[i] === RESERVED ? -1 : level + 1;
     }
-    if (!beams.length) return null;
-  }
-  const drafts: Draft[] = [];
-  for (const b of beams)
-    drafts.push({
-      shape: "beam",
-      cells: b.cells,
-      level: b.level,
-      axis: b.axis,
-      units: b.cells.map((cell) => {
-        const p = at(cell, b.level);
-        if (p === undefined) return { ...padding(random), visited: false };
-        return p.kind === AIR ? { kind: OPEN, face: 0, visited: true } : { kind: p.kind, face: p.face, visited: true };
-      }),
-    });
-  for (let cell = 0; cell < CELLS; cell++) {
-    if (banned(cell)) continue;
-    const beam = inBeam.get(cell);
-    let height: number;
-    if (beam && beam.supports.has(cell)) height = beam.level;
-    else if (beam) height = highestUnit(cell, beam.level - 1) + 1;
-    else {
-      height = highestUnit(cell) + 1;
-      // An open frame on top where the marble falls in over the highest ramp, now and then.
-      if (height > 0 && at(cell, height)?.kind === AIR && random() < 0.4) height++;
+    return 0;
+  };
+  const countIn = (cell: number) => {
+    const seen = new Set<number>();
+    for (let level = 0; level < LEVELS; level++) if (owner[vox(cell, level)] >= 0) seen.add(owner[vox(cell, level)]);
+    return seen.size;
+  };
+  const columnFree = (cell: number) => {
+    for (let level = 0; level < LEVELS; level++) if (owner[vox(cell, level)] >= 0) return false;
+    return true;
+  };
+  /** Lays a tower if its voxels are free (or are the marble's air, `replace`, which only an empty cube may fill). */
+  const lay = (t: Tower, replace = -1): boolean => {
+    const voxels = voxelsAt(t, t.at, t.level, t.yaw);
+    if (!voxels || left[t.kind] <= 0) return false;
+    const shape = shapeOf(t.kind, t);
+    for (const v of voxels) {
+      if (v.level >= 6 || v.cell === goal || (v.cell === start && !laying)) return false;
+      const i = vox(v.cell, v.level);
+      if (owner[i] === RESERVED && i === replace && shape.open[v.unit]) continue;
+      if (owner[i] !== -1) return false;
     }
-    if (height <= 0) continue;
-    const column = Array.from({ length: height }, (_, level) => {
-      const p = at(cell, level);
-      if (p === undefined) return { ...padding(random), visited: false };
-      return p.kind === AIR ? { kind: OPEN as Kind, face: 0, visited: true } : { kind: p.kind, face: p.face, visited: true };
-    });
-    const room = STACK - (beam ? 1 : 0),
-      cuts = split(column, stage.stacks ? room : 1, random);
-    if (!cuts) return null;
-    for (const [lo, hi] of cuts) drafts.push({ shape: "column", cells: [cell], level: lo, axis: 0, units: column.slice(lo, hi) });
-  }
-  return drafts;
-}
-/** Cuts a cell's column into at most `count` pieces of at most five units, each holding a unit the marble passes. */
-function split(column: { visited: boolean }[], count: number, random: Random): [number, number][] | null {
-  const visited = column.flatMap((u, level) => (u.visited ? [level] : []));
-  if (!visited.length) return null;
-  for (let tries = 0; tries < 12; tries++) {
-    const most = Math.min(count, visited.length),
-      pieces = most <= 1 ? 1 : random() < 0.65 ? most : 1 + Math.floor(random() * most),
-      // A cut between two passed units, somewhere above the lower one.
-      gaps = shuffled(
-        visited.slice(1).map((v, k) => [visited[k] + 1, v] as [number, number]),
-        random,
-      ).slice(0, pieces - 1),
-      cuts = gaps.map(([lo, hi]) => lo + Math.floor(random() * (hi - lo + 1))).sort((a, b) => a - b),
-      edges = [0, ...cuts, column.length],
-      out: [number, number][] = [];
-    for (let k = 0; k + 1 < edges.length; k++) out.push([edges[k], edges[k + 1]]);
-    if (out.every(([lo, hi]) => hi - lo >= 1 && hi - lo <= LONGEST)) return out;
-  }
-  return null;
-}
-/**
- * A piece's units written the one way identical pieces share (a column turned so, a beam read from one end), and its
- * place in that writing; so that identical pieces have the same units and any of them fits any of their places.
- */
-function canonical(piece: Piece): Piece {
-  const variants: Pick<Piece, "shape" | "units">[] = [];
-  const norm = (units: Cube[]) => units.map((u) => ({ kind: u.kind, face: normalFace(u.kind, u.face) }));
-  if (piece.shape === "column") for (let r = 0; r < 4; r++) variants.push({ shape: "column", units: norm(piece.units.map((u) => ({ kind: u.kind, face: (u.face + r) % 4 }))) });
-  else
-    variants.push(
-      { shape: "beam", units: norm(piece.units) },
-      {
-        shape: "beam",
-        units: norm([...piece.units].reverse().map((u) => ({ kind: u.kind, face: (u.face + 2) % 4 }))),
-      },
+    const id = towers.length;
+    for (const v of voxels) {
+      const i = vox(v.cell, v.level);
+      owner[i] = id;
+      open[i] = shape.open[v.unit] ? 1 : 0;
+      for (let f = 0; f < 6; f++) exits[i * 6 + f] = shape.exits[v.unit][f];
+    }
+    towers.push(t);
+    left[t.kind]--;
+    return true;
+  };
+  const unlay = (replaced = -1) => {
+    const t = towers.pop()!;
+    for (const v of voxelsOf(t)) {
+      const i = vox(v.cell, v.level);
+      owner[i] = i === replaced ? RESERVED : -1;
+    }
+    left[t.kind]++;
+  };
+  /** Kit kinds left, at random. */
+  const kinds = () =>
+    shuffled(
+      KIT.map((_, k) => k).filter((k) => left[k] > 0),
+      random,
     );
-  variants.sort((a, b) => (unitsKey(a) < unitsKey(b) ? -1 : unitsKey(a) > unitsKey(b) ? 1 : 0));
-  const best = variants[0],
-    want = contentKey(piece, piece.at, piece.level, piece.yaw);
-  for (let yaw = 0; yaw < 4; yaw++)
-    for (let at = 0; at < CELLS; at++)
-      if (contentKey(best, at, piece.level, yaw) === want) return { ...piece, units: best.units, at, yaw: normalYaw(best, at, piece.level, yaw) };
-  return piece;
-}
-/** The colours of the pieces' end caps (none is red, which is kept for trouble). */
-export const PAINTS = ["#f2c230", "#3b86d8", "#4caf5a", "#8a5ccc", "#18a5a5", "#ee8a2a", "#e05fa0", "#7fb800", "#5b6bd8", "#9a6a48"];
-/** Turns drafts into pieces at their answer places, each turned at random and then written canonically. */
-function realise(drafts: Draft[], random: Random): Piece[] {
-  const paints = shuffled(
-    PAINTS.map((_, k) => k),
-    random,
-  );
-  return drafts.map((d, k) => {
-    let yaw: number, units: Cube[], at: number;
-    if (d.shape === "column") {
-      yaw = Math.floor(random() * 4);
-      at = d.cells[0];
-      units = d.units.map((u) => ({ kind: u.kind, face: (u.face - yaw + 8) % 4 }));
-    } else {
-      // A beam along the east runs so at yaw 0, read from its other end at yaw 2 (and south at 1 or 3).
-      const flip = random() < 0.5;
-      yaw = (d.axis === EAST ? 0 : 1) + (flip ? 2 : 0);
-      const ordered = flip ? [...d.units].reverse() : d.units,
-        cells = flip ? [...d.cells].reverse() : d.cells;
-      at = cells[middle(cells.length)];
-      units = ordered.map((u) => ({ kind: u.kind, face: (u.face - yaw + 8) % 4 }));
+  /** Whether a standing tower may go on top of a cell now (its stack ends in a standing tower or the grid). */
+  const standable = (cell: number, ignore = -1) => {
+    if (cell === start || cell === goal) return false;
+    const h = heightAt(cell, ignore);
+    if (h < 0 || countIn(cell) >= STACK) return false;
+    return h === 0 || !towers[owner[vox(cell, h - 1)]].lying;
+  };
+  /**
+   * Raises a cell's stack to end exactly at `to` with one or two standing towers from the kit (their ids pushed onto
+   * `laid`); false when it cannot.
+   */
+  const raise = (cell: number, to: number, laid: number[], room: number): boolean => {
+    const h = heightAt(cell);
+    if (h === to) return true;
+    if (h < 0 || h > to || !standable(cell) || room <= 0) return false;
+    for (const k of kinds()) {
+      const n = KIT[k].units.length;
+      if (h + n > to) continue;
+      if (!lay({ kind: k, lying: false, roll: 0, at: cell, level: h, yaw: Math.floor(random() * 4) })) continue;
+      laid.push(towers.length - 1);
+      if (raise(cell, to, laid, room - 1)) return true;
+      laid.pop();
+      unlay();
     }
-    return canonical({ shape: d.shape, units, at, level: d.level, yaw, paint: paints[k % paints.length] });
-  });
+    return false;
+  };
+  /** Every lying placement of a kit tower in which unit k fills (cell, level). */
+  const lyingAround = (cell: number, level: number) => {
+    const out: { t: Tower; unit: number }[] = [];
+    if (!allowLying || lyingUsed >= 1 || level < 1) return out;
+    for (const kind of kinds()) {
+      const n = KIT[kind].units.length;
+      if (n < 2) continue;
+      for (let roll = 0; roll < 4; roll++)
+        for (let yaw = 0; yaw < 4; yaw++)
+          for (let k = 0; k < n; k++) {
+            const at = neighbour(cell, (roll + yaw) % 4, middle(n) - k);
+            if (at < 0) continue;
+            out.push({ t: { kind, lying: true, roll, at, level, yaw }, unit: k });
+          }
+    }
+    return shuffled(out, random);
+  };
+  /** Lays a lying tower with two supports raised under it; the ids it laid, or null. */
+  const layLying = (t: Tower): number[] | null => {
+    const voxels = voxelsAt(t, t.at, t.level, t.yaw);
+    if (!voxels || voxels.some((v) => v.cell === start || v.cell === goal || heightAt(v.cell) < 0 || heightAt(v.cell) > t.level)) return null;
+    for (const v of voxels) {
+      const below = owner[vox(v.cell, t.level - 1)];
+      if (below >= 0 && towers[below].lying) return null;
+      if (t.level + 1 < LEVELS && owner[vox(v.cell, t.level + 1)] >= 0) return null;
+    }
+    const laid: number[] = [],
+      have = voxels.filter((v) => heightAt(v.cell) === t.level && owner[vox(v.cell, t.level - 1)] >= 0).length;
+    let held = have;
+    for (const v of shuffled(voxels, random)) {
+      if (held >= 2) break;
+      if (heightAt(v.cell) === t.level) continue;
+      const before = laid.length;
+      if (raise(v.cell, t.level, laid, 2)) held++;
+      else while (laid.length > before) laid.pop();
+    }
+    if (held < 2 || voxels.some((v) => countIn(v.cell) >= STACK)) {
+      for (let k = laid.length; k > 0; k--) unlay();
+      return null;
+    }
+    if (!lay(t)) {
+      for (let k = laid.length; k > 0; k--) unlay();
+      return null;
+    }
+    lyingUsed++;
+    return [...laid, towers.length - 1];
+  };
+  const undo = (count: number, wasLying: boolean) => {
+    for (let k = 0; k < count; k++) unlay();
+    if (wasLying) lyingUsed--;
+  };
+  /** Enough has been passed for the stage: the tray's count, and what the stage wants among them. */
+  const enough = () => {
+    const ids = new Set(passed);
+    const loose = towers.map((_, i) => i).filter((i) => ids.has(i) && towers[i].at !== start);
+    if (loose.length < spec.passed) return false;
+    if (spec.stacks && !loose.some((i) => !towers[i].lying && towers[i].level > 0)) return false;
+    if (wantLying && !loose.some((i) => towers[i].lying)) return false;
+    if (wantInverted && !loose.some((i) => towers[i].inverted)) return false;
+    if (!spec.stacks && towers.some((t) => !t.lying && t.level > 0 && t.at !== start)) return false;
+    return true;
+  };
+  const meet = (id: number) => passed.push(id);
+  /** The marble rolls level into (cell, level) going `dir`. */
+  const roll = (cell: number, level: number, dir: number, flats: number, depth: number): boolean => {
+    if (++nodes > 800 || depth > 60 || cell < 0) return false;
+    const i = vox(cell, level),
+      o = owner[i],
+      came = back(dir);
+    if (o >= 0) {
+      meet(o);
+      let ok = false;
+      if (open[i]) ok = fall(cell, level, depth + 1);
+      else {
+        const out = exits[i * 6 + came],
+          kind = wayKind(came, out);
+        if (kind === "fall") ok = fall(cell, level, depth + 1);
+        else if (kind === "level" && flats === 0) ok = roll(neighbour(cell, out), level, out, 1, depth + 1);
+      }
+      if (!ok) passed.pop();
+      return ok;
+    }
+    if (o === RESERVED) return fall(cell, level, depth + 1);
+    if (cell === start) return false;
+    type Option = { weight: number; go: () => boolean };
+    const options: Option[] = [];
+    // Home: at level 0 on a cell nothing stands on.
+    if (level === 0 && goal < 0 && columnFree(cell) && enough())
+      options.push({
+        weight: 6,
+        go: () => {
+          goal = cell;
+          return true;
+        },
+      });
+    if (level >= 1 && heightAt(cell) >= 0 && heightAt(cell) <= level)
+      options.push({
+        weight: 1.2,
+        go: () => {
+          owner[i] = RESERVED;
+          if (fall(cell, level, depth + 1)) return true;
+          owner[i] = -1;
+          return false;
+        },
+      });
+    const h = heightAt(cell);
+    if (standable(cell) && h <= level)
+      for (const kind of kinds())
+        for (const inverted of allowInverted ? [false, true] : [false]) {
+          const n = KIT[kind].units.length;
+          for (let yaw = 0; yaw < 4; yaw++) {
+            const shape = shapeOf(kind, { lying: false, inverted, roll: 0, yaw }),
+              k0 = level - h,
+              k = inverted ? n - 1 - k0 : k0;
+            if (k0 >= n) {
+              if (inverted) continue;
+              // A tower to raise the stack under the voxel, the marble then met by what goes on it.
+              if (spec.stacks && yaw === 0)
+                options.push({
+                  weight: 0.35,
+                  go: () => {
+                    if (!lay({ kind, lying: false, roll: 0, at: cell, level: h, yaw: Math.floor(random() * 4) })) return false;
+                    if (roll(cell, level, dir, flats, depth + 1)) return true;
+                    unlay();
+                    return false;
+                  },
+                });
+              continue;
+            }
+            const ex = shape.exits[k],
+              way = shape.open[k] ? "air" : wayKind(came, ex[came]);
+            if (way === "air" ? level < 1 : way === "fall" ? level < 1 : way !== "level" || flats > 0) continue;
+            // Stacks only where the stage has them; a tower on its head only where the marble crosses it.
+            if (!spec.stacks && h > 0) continue;
+            if (inverted && way !== "level") continue;
+            // A tower all air so posed (F standing) does nothing the marble needs: it is only ever a filler.
+            if (shape.open.every(Boolean)) continue;
+            options.push({
+              weight: (way === "level" ? 1.6 : way === "fall" ? 1.2 : 0.9) * (inverted ? (wantInverted ? 4 : 0.6) : 1) * prefer[kind],
+              go: () => {
+                if (!lay({ kind, lying: false, inverted, roll: 0, at: cell, level: h, yaw })) return false;
+                meet(towers.length - 1);
+                const ok = way === "level" ? roll(neighbour(cell, ex[came]), level, ex[came], 1, depth + 1) : fall(cell, level, depth + 1);
+                if (ok) return true;
+                passed.pop();
+                unlay();
+                return false;
+              },
+            });
+          }
+        }
+    for (const { t, unit } of lyingAround(cell, level)) {
+      const shape = shapeOf(t.kind, t),
+        ex = shape.exits[unit],
+        way = shape.open[unit] ? "air" : wayKind(came, ex[came]);
+      if (way !== "level" && way !== "fall") continue;
+      if (way === "level" && flats > 0) continue;
+      options.push({
+        weight: (wantLying ? 3 : 0.5) * prefer[t.kind],
+        go: () => {
+          const laid = layLying(t);
+          if (!laid) return false;
+          meet(towers.length - 1);
+          const ok = way === "level" ? roll(neighbour(cell, ex[came]), level, ex[came], 1, depth + 1) : fall(cell, level, depth + 1);
+          if (ok) return true;
+          passed.pop();
+          undo(laid.length, true);
+          return false;
+        },
+      });
+      if (options.length > 60) break;
+    }
+    for (const option of ordered(options, random)) if (option.go()) return true;
+    return false;
+  };
+  /** The marble falls from (cell, level) into the voxel under it. */
+  const fall = (cell: number, level: number, depth: number): boolean => {
+    if (++nodes > 800 || level === 0) return false;
+    const i = vox(cell, level - 1),
+      o = owner[i];
+    if (cell === goal && level === 1) return true;
+    if (o >= 0) {
+      if (open[i]) return false;
+      const out = exits[i * 6 + UP];
+      if (wayKind(UP, out) !== "descent") return false;
+      meet(o);
+      if (roll(neighbour(cell, out), level - 1, out, 0, depth + 1)) return true;
+      passed.pop();
+      return false;
+    }
+    if (o === RESERVED || cell === start) return false;
+    type Option = { weight: number; go: () => boolean };
+    const options: Option[] = [],
+      here = vox(cell, level),
+      overAir = owner[here] === RESERVED;
+    if (level === 1 && goal < 0 && cell !== start && enough() && (overAir || owner[here] === -1) && columnFree(cell))
+      options.push({
+        weight: 6,
+        go: () => {
+          goal = cell;
+          return true;
+        },
+      });
+    const h = heightAt(cell, here);
+    if (standable(cell, here) && h <= level - 1)
+      for (const kind of kinds()) {
+        const n = KIT[kind].units.length,
+          k = level - 1 - h;
+        for (let yaw = 0; yaw < 4; yaw++) {
+          if (k >= n) {
+            if (spec.stacks && yaw === 0)
+              options.push({
+                weight: 0.35,
+                go: () => {
+                  if (!lay({ kind, lying: false, roll: 0, at: cell, level: h, yaw: Math.floor(random() * 4) })) return false;
+                  if (fall(cell, level, depth + 1)) return true;
+                  unlay();
+                  return false;
+                },
+              });
+            continue;
+          }
+          const shape = shapeOf(kind, { lying: false, roll: 0, yaw }),
+            out = shape.exits[k][UP];
+          if (shape.open[k] || wayKind(UP, out) !== "descent") continue;
+          if (!spec.stacks && h > 0) continue;
+          // Where it rolls on should be on the grid and not straight back into the start.
+          const next = neighbour(cell, out);
+          if (next < 0) continue;
+          options.push({
+            weight: (KIT[kind].units.length > k + 1 ? 1.4 : 1) * prefer[kind],
+            go: () => {
+              if (!lay({ kind, lying: false, roll: 0, at: cell, level: h, yaw }, overAir ? here : -1)) return false;
+              meet(towers.length - 1);
+              if (roll(next, level - 1, out, 0, depth + 1)) return true;
+              passed.pop();
+              unlay(overAir ? here : -1);
+              return false;
+            },
+          });
+        }
+      }
+    for (const { t, unit } of lyingAround(cell, level - 1)) {
+      const shape = shapeOf(t.kind, t),
+        out = shape.exits[unit][UP];
+      if (shape.open[unit] || wayKind(UP, out) !== "descent") continue;
+      options.push({
+        weight: (wantLying ? 3 : 0.5) * prefer[t.kind],
+        go: () => {
+          const laid = layLying(t);
+          if (!laid) return false;
+          meet(towers.length - 1);
+          if (roll(neighbour(cell, out), level - 1, out, 0, depth + 1)) return true;
+          passed.pop();
+          undo(laid.length, true);
+          return false;
+        },
+      });
+      if (options.length > 60) break;
+    }
+    for (const option of ordered(options, random)) if (option.go()) return true;
+    return false;
+  };
+  // The start: a stack of one tower, or two on the harder stages, whose top unit is a ramp out onto the grid.
+  const top = between(spec.top, random);
+  const stacks: number[][] = [];
+  for (let a = 0; a < KIT.length; a++) {
+    if (KIT[a].units.length === top) stacks.push([a]);
+    for (let b = 0; b < KIT.length; b++) if (spec.stacks && top > 3 && KIT[a].units.length + KIT[b].units.length === top && (a !== b || KIT[a].count > 1)) stacks.push([a, b]);
+  }
+  for (const chosen of shuffled(stacks, random)) {
+    const topKind = chosen[chosen.length - 1],
+      topUnit = KIT[topKind].units[KIT[topKind].units.length - 1];
+    if (topUnit.kind !== RAMP) continue;
+    for (const yaw of shuffled([0, 1, 2, 3], random)) {
+      const exit = (topUnit.face + yaw) % 4;
+      if (neighbour(start, exit) < 0) continue;
+      let level = 0;
+      for (let k = 0; k < chosen.length; k++) {
+        lay({ kind: chosen[k], lying: false, roll: 0, at: start, level, yaw: k === chosen.length - 1 ? yaw : Math.floor(random() * 4) });
+        level += KIT[chosen[k]].units.length;
+      }
+      laying = false;
+      if (fall(start, level, 0) && goal >= 0) return { towers, start, goal, passed: new Set(passed) };
+      for (let k = 0; k < chosen.length; k++) unlay();
+      return null;
+    }
+  }
+  return null;
 }
-/** Tray pieces in a fixed order that tells nothing of the way: columns by height, then beams by length. */
-const trayOrder = (a: Piece, b: Piece) => (a.shape === b.shape ? a.units.length - b.units.length || (unitsKey(a) < unitsKey(b) ? -1 : 1) : a.shape === "column" ? -1 : 1);
 /**
- * A puzzle of a stage with exactly one answer: a way is laid and made into pieces; the stage's count of them go
- * into the tray (a beam and a stacked column among them where the stage has those) and the rest stay fixed; while
- * the solver finds more than one way to set the tray, the piece the other way sets differently is fixed too, and
- * when the tray grows too small another choice is tried, then another way laid.
+ * A puzzle of a stage: a way is built with the kit; the towers it passes go into the tray as the stage counts them
+ * (a stacked one, and a lying one where the stage has it) and the rest stay fixed; while the solver finds more ways
+ * to set the tray than the stage allows, a tower the other way sets differently is fixed too, and when the tray grows
+ * too small another choice is tried, then another way built. So that a puzzle always comes (some runs of random
+ * numbers lay one ambiguous way after another), the search gives way by its count of tries: after `EASE[0]` it
+ * allows a second answer, after `EASE[1]` a third, after `EASE[2]` a tray one tower smaller. A weak source of
+ * random numbers (a test's simple generator) can also keep failing the same way, so after `MIX` tries the numbers
+ * are stirred through a generator of its own, seeded from the source (the same source still lays the same puzzle).
  */
-export function createGame(stage = 1, random: Random = cryptoRandom): State {
+export const EASE = [60, 200, 600],
+  MIX = 100;
+/** A small generator of good quality from one number (mulberry32). */
+function stirred(seed: number): Random {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+export function createGame(stage = 1, source: Random = cryptoRandom): State {
   const k = stageOf(stage),
     spec = STAGES[k - 1];
+  let random = source;
   for (let tries = 0; ; tries++) {
-    const t = trail(spec, random);
-    if (!t) continue;
-    const drafts = assemble(t, spec, random);
-    if (!drafts) continue;
-    const count = drafts.length + 2;
-    if (count < spec.pieces[0] || count > spec.pieces[1]) continue;
-    // A stage with stacks has a column standing on another.
-    if (spec.stacks && !drafts.some((d) => d.shape === "column" && d.level > 0)) continue;
-    const all = realise(drafts, random),
-      top = t.top,
-      start: Piece = canonicalStart(t.start, t.face, top),
-      size = Math.min(all.length, spec.tray[1]);
-    if (size < spec.tray[0]) continue;
-    // What rests on what: a fixed piece may never stand on one of the tray's.
-    const over = all.map(() => [] as number[]);
-    all.forEach((p, i) => {
-      for (const v of voxelsOf(p)) {
-        if (v.level === 0 || (p.shape === "column" && v.level !== p.level)) continue;
-        const below = all.findIndex((q) => q.shape === "column" && q.at === v.cell && q.level + q.units.length === v.level);
-        if (below >= 0 && !over[below].includes(i)) over[below].push(i);
+    if (tries === MIX) random = stirred(Math.floor(source() * 4294967296) ^ 0x9e3779b9);
+    const answers = spec.answers + (tries >= EASE[0] ? 1 : 0) + (tries >= EASE[1] ? 1 : 0),
+      least = Math.max(1, spec.tray[0] - (tries >= EASE[2] ? 1 : 0));
+    const built = build(spec, random);
+    if (!built) continue;
+    const { towers, start, goal, passed } = built;
+    // What rests on what: a fixed tower may never rest on one of the tray's.
+    const over = towers.map(() => [] as number[]),
+      under = towers.map(() => [] as number[]);
+    towers.forEach((t, i) => {
+      for (const v of voxelsOf(t)) {
+        if (v.level === 0 || (!t.lying && v.level !== t.level)) continue;
+        const below = towers.findIndex((q) => !q.lying && q.at === v.cell && q.level + KIT[q.kind].units.length === v.level);
+        if (below >= 0 && !over[below].includes(i)) {
+          over[below].push(i);
+          under[i].push(below);
+        }
       }
     });
-    /** A piece with everything resting on it, all the way up. */
-    const upward = (i: number, into = new Set<number>()) => {
-      if (!into.has(i)) {
-        into.add(i);
-        for (const j of over[i]) upward(j, into);
-      }
-      return into;
-    };
-    for (let choice = 0; choice < 3; choice++) {
-      // A beam and a stacked column in the tray where there are any, the rest at random, each with what rests on it.
-      const order = shuffled(
-          all.map((_, i) => i),
-          random,
+    const loose = towers.map((_, i) => i).filter((i) => passed.has(i) && towers[i].at !== start);
+    for (let choice = 0; choice < 4; choice++) {
+      const size = between(spec.tray, random),
+        order = shuffled(loose, random),
+        first = [order.find((i) => towers[i].lying), order.find((i) => towers[i].inverted), order.find((i) => spec.stacks && !towers[i].lying && towers[i].level > 0)].filter(
+          (i): i is number => i !== undefined,
         ),
-        first = [order.find((i) => spec.beams && all[i].shape === "beam"), order.find((i) => spec.stacks && all[i].shape === "column" && all[i].level > 0)].filter((i): i is number => i !== undefined),
         chosen = new Set<number>();
+      /** A tower with everything resting on it, all the way up (all must be loose to go into the tray). */
+      const upward = (i: number, into = new Set<number>()): Set<number> | null => {
+        if (into.has(i)) return into;
+        if (!passed.has(i) || towers[i].at === start) return null;
+        into.add(i);
+        for (const j of over[i]) if (!upward(j, into)) return null;
+        return into;
+      };
       for (const i of [...first, ...order]) {
         const group = upward(i);
+        if (!group) continue;
         if (chosen.size + [...group].filter((g) => !chosen.has(g)).length <= size) for (const g of group) chosen.add(g);
       }
       for (;;) {
-        if (chosen.size < spec.tray[0]) break;
-        const loose = [...chosen].map((i) => all[i]).sort(trayOrder),
-          given = all.filter((_, i) => !chosen.has(i)),
-          layout = { start, goal: t.goal, given },
-          found = solutions(layout, loose, 2);
-        if (found.length === 1) {
-          const answer = found[0];
-          return {
-            start,
-            goal: t.goal,
-            given,
-            tray: loose.map((p) => ({ ...p, at: -1, level: -1, yaw: 0 })),
-            answer: answer.map((a, j) => ({ ...a, yaw: normalYaw(loose[j], a.at, a.level, a.yaw) })),
-            last: null,
-            run: null,
-            trouble: null,
-            winner: null,
-            ply: 0,
-            stage: k,
-          };
+        if (chosen.size < least) break;
+        if (spec.lying === "always" && ![...chosen].some((i) => towers[i].lying)) break;
+        if (spec.stacks && ![...chosen].some((i) => !towers[i].lying && towers[i].level > 0)) break;
+        const trayIds = [...chosen].sort((a, b) => trayOrder(towers[a], towers[b]) || a - b),
+          tray = trayIds.map((i) => towers[i]),
+          given = towers.filter((_, i) => !chosen.has(i)),
+          info = { cut: false },
+          found = solutions({ start, goal, given }, tray, answers + 1, info);
+        // A count that ran out of work proves nothing: another choice.
+        if (info.cut) break;
+        if (found.length >= 1 && found.length <= answers) {
+          const answer = trayIds.map((i) => ({ at: towers[i].at, level: towers[i].level, yaw: towers[i].yaw }));
+          return { start, goal, given, tray: tray.map((t) => ({ ...t, at: -1, level: -1, yaw: 0 })), answer, last: null, run: null, trouble: null, winner: null, ply: 0, stage: k };
         }
         if (!found.length) break;
-        // Another way exists: fix a piece it sets elsewhere (and what it rests on, which must be fixed too).
-        const keys = new Set(loose.map((p) => contentKey(p, p.at, p.level, p.yaw))),
-          other = found.find((f) => f.some((a, j) => !keys.has(contentKey(loose[j], a.at, a.level, a.yaw)))) ?? found[1],
-          moved = loose.findIndex((p, j) => !keys.has(contentKey(p, other[j].at, other[j].level, other[j].yaw))),
-          fixedNow = all.indexOf(moved >= 0 ? loose[moved] : loose[0]);
+        // Another way exists: fix a tower it sets elsewhere (and what it rests on, which must be fixed too).
+        const keys = new Set(tray.map((t) => contentKey(t, t.at, t.level, t.yaw))),
+          other = found.find((f) => f.some((a, j) => !keys.has(contentKey(tray[j], a.at, a.level, a.yaw)))) ?? found[1],
+          moved = tray.findIndex((t, j) => !keys.has(contentKey(t, other[j].at, other[j].level, other[j].yaw))),
+          fixedNow = trayIds[moved >= 0 ? moved : 0];
         const down = (i: number) => {
           chosen.delete(i);
-          all.forEach((_, j) => {
-            if (chosen.has(j) && over[j].includes(i)) down(j);
-          });
+          for (const j of under[i]) if (chosen.has(j)) down(j);
         };
         down(fixedNow);
       }
     }
   }
 }
-/** The start: open frames up to its ramp, which faces where the marble leaves. */
-function canonicalStart(cell: number, face: number, top: number): Piece {
-  return {
-    shape: "column",
-    units: [...Array.from({ length: top }, () => ({ kind: OPEN as Kind, face: 0 })), { kind: RAMP, face }],
-    at: cell,
-    level: 0,
-    yaw: 0,
-    paint: -1,
-  };
-}
+/** Tray towers in an order that tells nothing of the way: standing before lying, tall before short, by kit. */
+const trayOrder = (a: Tower, b: Tower) => postureOf(a) - postureOf(b) || KIT[b.kind].units.length - KIT[a.kind].units.length || a.kind - b.kind;
 
 /*
  * The hint.
  */
-/** The tray pieces that stand where the answer has a piece like them (each answer place used once), by place. */
-export function matched(state: State): { slotOf: number[]; filled: number[] } {
-  const n = state.tray.length,
-    slotOf = new Array<number>(n).fill(-1),
-    filled = new Array<number>(n).fill(-1),
-    want = state.answer.map((a, i) => contentKey(state.tray[i], a.at, a.level, a.yaw));
-  state.tray.forEach((p, j) => {
-    if (p.at < 0) return;
-    const key = contentKey(p, p.at, p.level, p.yaw);
-    for (let i = 0; i < n; i++)
-      if (filled[i] < 0 && want[i] === key && unitsKey(state.tray[i]) === unitsKey(p)) {
-        filled[i] = j;
-        slotOf[j] = i;
-        return;
-      }
-  });
-  return { slotOf, filled };
+/** The layout with the tray towers already on the board fixed, and those still to set (by tray index). */
+function split(state: State, without = -1) {
+  const onBoard = state.tray.flatMap((t, j) => (t.at >= 0 && j !== without ? [j] : [])),
+    rest = state.tray.flatMap((t, j) => (t.at < 0 || j === without ? [j] : []));
+  return { layout: { start: state.start, goal: state.goal, given: [...state.given, ...onBoard.map((j) => state.tray[j])] }, rest };
 }
 /**
- * The next step toward the answer: answer places are taken from the bottom up (supports first); the first not yet
- * filled gets a piece like it (from the tray, or one set wrongly), unless something stands in its cells that should
- * not (then the highest piece there is lifted back to the tray first). A piece of its kind standing on its own place
- * turned wrongly is turned there. Once every place is filled, the marble is dropped. Null when the puzzle is over.
+ * The next step toward an answer that keeps what is on the board: a tower still in the tray set where such an answer
+ * has it (one that can be set down there now: supports first). When none keeps the board, a placed tower that an
+ * answer keeping the rest sets elsewhere is carried there (or turned, or lifted back to the tray when it cannot go
+ * straight there); failing that, the highest tower is lifted. Once everything is right, the marble is dropped. Null
+ * when the puzzle is over.
  */
 export function hint(state: State): Move | null {
   if (state.winner !== null) return null;
-  const w = world(state),
-    id = ids(state),
-    { slotOf, filled } = matched(state),
-    first = id.tray(0),
-    order = state.answer.map((_, i) => i).sort((a, b) => state.answer[a].level - state.answer[b].level || (state.tray[a].shape === "column" ? 0 : 1) - (state.tray[b].shape === "column" ? 0 : 1) || a - b),
-    /** Lifting the highest piece in a cell back to the tray. */
-    lift = (cell: number): Move => {
-      const top = topIn(w, cell);
-      return { from: cell, to: CELLS + (top - first), extra: -1 };
-    },
-    /** Null when a placed piece can come up; else the lift of what lies over it. */
-    takeUp = (j: number): Move | null => (handle(state, w, j) >= 0 ? null : lift(voxelsOf(state.tray[j])[0].cell));
-  for (const i of order) {
-    if (filled[i] >= 0) continue;
-    const want = state.answer[i],
-      kind = unitsKey(state.tray[i]),
-      cells = new Set(voxelsAt(state.tray[i], want.at, want.level, want.yaw)!.map((v) => v.cell));
-    // What stands in the place's cells and should not: pieces set wrongly, or anything at its level or above.
-    const blockers = new Set<number>();
-    for (const cell of cells)
-      for (let level = 0; level < LEVELS; level++) {
-        const o = w.owner[vox(cell, level)];
-        if (o < first) continue;
-        const j = o - first;
-        if (slotOf[j] < 0 || level >= want.level) blockers.add(j);
-      }
-    // One piece like it in the way, which can come up: set it right from where it is.
-    if (blockers.size === 1) {
-      const [j] = blockers,
-        p = state.tray[j];
-      const from = handle(state, w, j),
-        move = { from, to: put(want.at, want.yaw), extra: -1 };
-      if (unitsKey(p) === kind && slotOf[j] < 0 && from >= 0 && play(state, move)) return move;
+  const w = world(state);
+  const { layout, rest } = split(state);
+  if (!rest.length && !judge(state).trouble) return { from: -1, to: GO, extra: -1 };
+  const found = rest.length
+    ? solutions(
+        layout,
+        rest.map((j) => state.tray[j]),
+        1,
+      )
+    : [];
+  if (found.length) {
+    const answer = found[0],
+      order = rest.map((j, k) => ({ j, place: answer[k] })).sort((a, b) => a.place.level - b.place.level);
+    for (const { j, place } of order) {
+      const t = state.tray[j],
+        lands = landing(w, t, place.at, place.yaw),
+        move = { from: CELLS + j, to: put(place.at, place.yaw, postureOf(t)), extra: -1 };
+      if (lands && lands.level === place.level && play(state, move)) return move;
     }
-    for (const cell of cells) {
-      const o = topIn(w, cell);
-      if (o >= first && blockers.size && [...blockers].some((j) => voxelsOf(state.tray[j]).some((v) => v.cell === cell))) return lift(cell);
-    }
-    // Nothing in the way: a piece like it, from the tray first.
-    const like = state.tray.flatMap((p, j) => (unitsKey(p) === kind && slotOf[j] < 0 ? [j] : [])),
-      source = like.find((j) => state.tray[j].at < 0) ?? like[0];
-    if (source === undefined) continue;
-    const p = state.tray[source];
-    if (p.at < 0) return { from: CELLS + source, to: put(want.at, want.yaw), extra: -1 };
-    return takeUp(source) ?? { from: handle(state, w, source), to: put(want.at, want.yaw), extra: -1 };
+    const { j, place } = order[0];
+    return { from: CELLS + j, to: put(place.at, place.yaw, postureOf(state.tray[j])), extra: -1 };
   }
+  // A placed tower set wrongly: the highest first.
+  const placed = state.tray
+    .map((t, j) => ({ t, j }))
+    .filter(({ t, j }) => t.at >= 0 && handle(state, w, j) >= 0)
+    .sort((a, b) => b.t.level - a.t.level);
+  for (const { t, j } of placed) {
+    const { layout: others, rest: loose } = split(state, j),
+      again = solutions(
+        others,
+        loose.map((k) => state.tray[k]),
+        1,
+      );
+    if (!again.length) continue;
+    const place = again[0][loose.indexOf(j)],
+      from = handle(state, w, j);
+    // An answer that keeps it where it is says nothing about it: the trouble is another's.
+    if (contentKey(t, place.at, place.level, place.yaw) === contentKey(t, t.at, t.level, t.yaw)) continue;
+    const lifted = world({ ...state, tray: state.tray.map((q, k) => (k === j ? { ...q, at: -1, level: -1 } : q)) }),
+      lands = landing(lifted, t, place.at, place.yaw);
+    if (lands && lands.level === place.level) {
+      const move = { from, to: put(place.at, place.yaw, postureOf(t)), extra: -1 };
+      if (play(state, move)) return move;
+    }
+    return { from, to: CELLS + j, extra: -1 };
+  }
+  const top = placed[0];
+  if (top) return { from: handle(state, w, top.j), to: CELLS + top.j, extra: -1 };
   return { from: -1, to: GO, extra: -1 };
 }
 /** The answer as moves from a state (for tests): the hints followed to the drop. */
@@ -1261,7 +1667,7 @@ export const marbleDrop: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => -s.ply,
-  hint: () => "쟁반의 부품을 판에 끌어다 놓고 눌러 돌린 뒤, 깔때기를 눌러 구슬을 넣으세요",
+  hint: () => "쟁반의 탑을 판에 끌어다 놓고 눌러 돌린 뒤, 깔때기를 눌러 구슬을 넣으세요",
   tally: () => ["", ""],
-  reason: (s) => (s.winner === 0 ? "성공! 구슬이 모든 부품을 지나 도착 컵에 들어갔습니다." : `실패! ${s.trouble?.words ?? ""}`),
+  reason: (s) => (s.winner === 0 ? "성공! 구슬이 도착 컵에 들어갔습니다." : `실패! ${s.trouble?.words ?? ""}`),
 };
