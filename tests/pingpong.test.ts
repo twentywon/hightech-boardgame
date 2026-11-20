@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+import { PerspectiveCamera, Plane, Raycaster, Vector2, Vector3 } from "three";
+import { EYE, HAND_Y, alongSight, handFor, liftFor, rallyCamera } from "../src/games/pingpong/layout";
 import * as r from "../src/games/pingpong/rules";
 import * as s from "../src/games/pingpong/sim";
 
@@ -464,5 +466,187 @@ describe("table tennis: the match", () => {
     expect(r.play(r.createGame(3), { from: -1, to: 0, extra: 99 })).toBeNull();
     expect(r.tableTennis.create("5").best).toBe(5);
     expect(r.tableTennis.create("3").best).toBe(3);
+  });
+});
+
+describe("table tennis: the contact marker, the paddle under the finger and the high reach", () => {
+  const GAP = s.BALL + s.FACE;
+  /** The computer's ball sent to me with `shot` from its end; my hand at `hand`. */
+  const sent = (shot: s.Shot, hand = { x: 0.3, z: s.HALF_L + 0.35 }) => {
+    const w = s.createWorld(5);
+    w.hands[0] = { ...hand };
+    w.ball = ball(0, 0.25, -s.HALF_L - 0.2);
+    s.launch(w, 1, shot);
+    return w;
+  };
+  /** A hand on the line of sight from `eye` that has the blade meet the coming ball in the middle of its face (found by a few rounds, as the meeting moves with the hand). */
+  const aimedHand = (w: s.World, eye: s.Sight, z: number) => {
+    w.sight = eye;
+    w.hands[0] = s.handFor(eye, { x: 0, z }, 0.3);
+    for (let round = 0; round < 6; round++) {
+      const c = s.contact(w)!,
+        blade = s.alongSight(eye, w.hands[0], c.y);
+      w.hands[0] = s.handFor(eye, { x: c.x, z: blade.z }, c.y);
+    }
+    return w.hands[0];
+  };
+  /** Steps until my stroke, keeping the hand as it is; returns the marker's first and last predictions and where the ball was met. */
+  const meet = (w: s.World, follow = false) => {
+    const first = s.contact(w)!;
+    let last = first,
+      most = 0,
+      met: s.Ball | null = null,
+      landed: number | null = null,
+      speed = NaN,
+      face = NaN;
+    for (let k = 0; k < 240 * 4 && landed === null; k++) {
+      const c = s.contact(w);
+      if (c) {
+        most = Math.max(most, Math.hypot(c.x - first.x, c.y - first.y, c.z - first.z));
+        last = c;
+        if (follow) w.hands[0] = { ...w.hands[0], x: c.x };
+      }
+      for (const e of s.step(w, "normal")) {
+        if (e.kind === "hit" && e.side === 0 && !met) [met, speed, face] = [{ ...w.ball }, Math.hypot(w.paddles[0].vx, w.paddles[0].vz), w.paddles[0].z - GAP];
+        else if (e.kind === "bounce" && met && landed === null) landed = e.side;
+        else if (e.kind === "point" && landed === null) landed = -1 - e.to;
+      }
+    }
+    return { first, last, most, met, landed, speed, face };
+  };
+  test("the marker's predicted point is where the ball is met", () => {
+    // The hand following the marker across, the blade at the hand: met exactly where the marker said, a slice's way at most.
+    for (const shot of [
+      { tx: 0.15, depth: 0.8, pace: 5, top: 60, side: 0 },
+      { tx: -0.4, depth: 0.7, pace: 6, top: 120, side: 40 },
+      { tx: 0.3, depth: 0.95, pace: 3.4, top: -60, side: 0 },
+    ]) {
+      const r = meet(sent(shot), true);
+      expect(r.met, JSON.stringify(shot)).not.toBeNull();
+      expect(Math.hypot(r.met!.x - r.last.x, r.met!.y - r.last.y, r.met!.z - r.last.z)).toBeLessThan(0.002);
+    }
+    // On the line of sight, the hand held still: the marker never moves while the ball comes, and the ball is met on it.
+    const eye = { x: 0, y: 0.9, z: s.HALF_L + 1.35 },
+      w = sent({ tx: 0.2, depth: 0.85, pace: 4.5, top: 40, side: 0 });
+    aimedHand(w, eye, s.HALF_L + 0.3);
+    const r = meet(w);
+    expect(r.most).toBeLessThan(1e-9);
+    expect(r.met).not.toBeNull();
+    expect(Math.hypot(r.met!.x - r.first.x, r.met!.y - r.first.y, r.met!.z - r.first.z)).toBeLessThan(0.002);
+    // The marker is at the face of the blade: the ball's middle one ball and the face's half-thickness before it.
+    expect(r.met!.z).toBeCloseTo(r.face, 6);
+  });
+  test("a lob coming up to 1.1 m is returned by a paddle held where the marker shows", () => {
+    const lob = { tx: 0.2, depth: 1, pace: 3, top: 0, side: 0 };
+    const plain = sent(lob, { x: 0.2, z: s.HALF_L + 0.48 });
+    expect(s.highest(plain)).toBeGreaterThan(1.05);
+    const c = s.contact(plain)!;
+    // Too high for the blade's old top (0.62): it would have passed over it.
+    expect(c.y).toBeGreaterThan(s.THEIR_TOP + s.REACH_Y);
+    expect(c.y).toBeLessThanOrEqual(s.REACH_TOP);
+    const r = meet(plain, true);
+    expect(r.met!.y).toBeGreaterThan(1);
+    expect(r.landed).toBe(1);
+    // The same with the eye raised for it, as the view does, the hand on the line of sight through the marker.
+    const camera = new PerspectiveCamera(50, 1.5, 0.05, 100),
+      w = sent(lob);
+    rallyCamera(camera, 1.5, 0, liftFor(s.highest(w)));
+    const eye = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    expect(eye.y).toBeGreaterThan(s.highest(w) + s.SIGHT_GAP);
+    aimedHand(w, eye, s.HALF_L + 0.45);
+    const high = meet(w);
+    expect(high.met!.y).toBeGreaterThan(1);
+    expect(high.landed).toBe(1);
+    // Held still, the blade only rose along the line of sight: no swing, so a gentle block, neither a smash nor a cut.
+    expect(high.speed).toBeLessThan(0.05);
+    // A player who points at the ball's way where it will be high (seen from the eye, it rises to the pointer after
+    // its bounce, or comes down past it): wherever the marker then shows, the ball is met there, high up.
+    let highest = 0;
+    for (const depth of [s.HALF_L + 0.2, s.HALF_L + 0.3, s.HALF_L + 0.4, s.HALF_L + 0.5]) {
+      const v = sent(lob);
+      v.sight = eye;
+      let k = Math.max(0, v.pathAt + 1);
+      while (!(v.path[k * 4 + 3] % 8 >= 1 && v.path[k * 4 + 2] >= depth - GAP)) k++;
+      v.hands[0] = s.handFor(eye, { x: v.path[k * 4], z: depth }, v.path[k * 4 + 1]);
+      const c = s.contact(v);
+      expect(c, `${depth}`).not.toBeNull();
+      const r = meet(v);
+      expect(Math.hypot(r.met!.x - c!.x, r.met!.y - c!.y, r.met!.z - c!.z), `${depth}`).toBeLessThan(0.01);
+      expect(r.landed, `${depth}`).toBe(1);
+      highest = Math.max(highest, r.met!.y);
+    }
+    expect(highest).toBeGreaterThan(0.95);
+  });
+  test("the blade stays under the same point of the screen whatever height it is raised to", () => {
+    const camera = new PerspectiveCamera(50, 1.5, 0.05, 100),
+      ray = new Raycaster(),
+      plane = new Plane(new Vector3(0, 1, 0), -HAND_Y),
+      hand = new Vector3();
+    for (const lift of [0, 0.3, liftFor(s.REACH_TOP)]) {
+      rallyCamera(camera, 1.5, 0.2, lift);
+      const eye = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+      for (const [nx, ny] of [
+        [0, -0.6],
+        [0.5, -0.3],
+        [-0.7, -0.8],
+        [0.2, -0.05],
+      ]) {
+        ray.setFromCamera(new Vector2(nx, ny), camera);
+        if (!ray.ray.intersectPlane(plane, hand)) continue;
+        for (const y of [0.06, 0.2, 0.5, 0.9, 1.2]) {
+          if (y > eye.y - s.SIGHT_GAP) continue;
+          const blade = alongSight(eye, { x: hand.x, z: hand.z }, y),
+            seen = new Vector3(blade.x, y, blade.z).project(camera);
+          expect(seen.x, `${lift} ${nx},${ny} ${y}`).toBeCloseTo(nx, 9);
+          expect(seen.y, `${lift} ${nx},${ny} ${y}`).toBeCloseTo(ny, 9);
+          // `handFor` undoes it.
+          const back = handFor(eye, blade, y);
+          expect(back.x).toBeCloseTo(hand.x, 9);
+          expect(back.z).toBeCloseTo(hand.z, 9);
+        }
+      }
+    }
+    // Raised for the highest ball, the eye still sees it where it will be met, in the middle of the view (below the
+    // scoreboard at the top), and the far end of the table; unraised, it is the eye it was.
+    for (const aspect of [1.0, 1.5, 2.2]) {
+      rallyCamera(camera, aspect, 0, liftFor(s.REACH_TOP));
+      const high = new Vector3(0.3, s.REACH_TOP, s.HALF_L + 0.45).project(camera),
+        far = new Vector3(0, 0, -s.HALF_L).project(camera);
+      expect(high.y, `${aspect}`).toBeLessThan(0.55);
+      expect(high.y, `${aspect}`).toBeGreaterThan(-0.3);
+      expect(Math.abs(far.y), `${aspect}`).toBeLessThan(0.9);
+    }
+    rallyCamera(camera, 1.5, 0, 0);
+    expect(camera.position.y).toBeCloseTo(EYE.y, 9);
+    // Raised for the highest ball, the eye stays above the blade by more than the line of sight needs.
+    expect(EYE.y + liftFor(s.REACH_TOP)).toBeGreaterThan(s.REACH_TOP + s.SIGHT_GAP);
+    expect(liftFor(0.2)).toBe(0);
+  });
+  test("a quick sideways swing seen to pass through the ball strikes it, a little before or after it comes to the face", () => {
+    const V = 14,
+      z = s.HALF_L + 0.35,
+      /** A sweep across at V m/s whose blade passes the ball's place `shift` slices after the ball comes to the face. */
+      sweep = (shift: number) => {
+        const w = sent({ tx: 0.1, depth: 0.8, pace: 5, top: 60, side: 0 }, { x: -1, z }),
+          c = s.contact(w)!,
+          cross = c.k;
+        const xAt = (j: number) => c.x + V * s.DT * (j - cross - shift);
+        let hit: { j: number; off: number } | null = null;
+        for (let j = 0; j < 240 * 2 && !hit; j++) {
+          w.hands[0] = { x: xAt(j), z };
+          for (const e of s.step(w, "normal")) if (e.kind === "hit" && e.side === 0) hit = { j, off: Math.abs(xAt(cross) - c.x) };
+        }
+        return { hit, off: Math.abs(xAt(cross) - c.x), w };
+      };
+    for (const shift of [-4, -2, 2, 4]) {
+      const r = sweep(shift);
+      expect(r.hit, `${shift}`).not.toBeNull();
+      // Where the ball came to the face the blade was wider of it than the reach.
+      if (Math.abs(shift) === 4) expect(r.off).toBeGreaterThan(s.REACH);
+      // Struck while sweeping across at that speed: a smash, sent across the way of the swing.
+      expect(r.w.ball.vx).toBeGreaterThan(0);
+    }
+    // A sweep well before the ball came, or well after it had gone, does not.
+    for (const shift of [-14, 14]) expect(sweep(shift).hit, `${shift}`).toBeNull();
   });
 });

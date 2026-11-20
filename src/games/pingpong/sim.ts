@@ -40,6 +40,23 @@ export const BLADE = 0.082,
 /** The height of the plane my hand moves the paddle over, and the paddle's height when no ball is coming. */
 export const HAND_Y = 0.2,
   REST_Y = 0.2;
+/**
+ * The highest my blade rises to meet a ball (a high lob can be met: the user asked), and the computer's, as it was.
+ * The ring of my contact marker stands at the height my blade will be raised to, so within this too.
+ */
+export const REACH_TOP = 1.2,
+  THEIR_TOP = 0.62;
+/**
+ * While a pointer holds my paddle the blade stays on the line of sight through it (`World.sight`, the eye): the hand
+ * is the point of that line on the plane y = `HAND_Y`, and the blade is where the line comes to the blade's height,
+ * so that on the screen it stands under the finger at any height. The line is followed no nearer the eye's height
+ * than `SIGHT_GAP` (the view raises the eye for a high ball, so that it hardly ever comes to that).
+ */
+export const SIGHT_GAP = 0.15;
+/** The height on the tossed ball's column at which my contact marker stands during my serve. */
+export const TOSS_MARK = 0.2;
+/** A ball that has just gone past my blade's face unstruck may still be caught by a sideways sweep that reaches it this many metres behind the face. */
+export const LATE_DEPTH = 0.1;
 /** How fast a tossed ball goes up, how low it may fall before it is tossed again, and the computer's wait before it serves. */
 export const TOSS = 2.3,
   TOSS_LOW = -0.08,
@@ -128,6 +145,19 @@ export interface Shot {
   smash?: boolean;
 }
 export type Phase = "ready" | "toss" | "rally" | "dead";
+/** Where the eye stands (the view's camera), for the line of sight my blade keeps to. */
+export interface Sight {
+  x: number;
+  y: number;
+  z: number;
+}
+/** Where my blade will meet the coming ball (the contact marker): the ball's place there, at the height the blade will be raised to, and the path slice (-1 on a toss). */
+export interface Meeting {
+  x: number;
+  y: number;
+  z: number;
+  k: number;
+}
 export type Happening =
   | { kind: "hit"; side: 0 | 1; strength: number; smash?: boolean }
   | { kind: "bounce"; side: 0 | 1; strength: number }
@@ -160,8 +190,17 @@ export interface World {
   pathAt: number;
   /** The computer's hand: the wait before it serves, its reading of the ball, where it means to meet it and the height it strikes a serve at. */
   ai: { wait: number; delay: number; seen: number; plan: { x: number; z: number } | null; strikeY: number; holdX: number };
-  /** Each paddle's last `SWING_SLICES` + 1 places (x, y, z a slice, oldest overwritten first), for its speed at contact. */
+  /**
+   * Each paddle's last `SWING_SLICES` + 1 places, for its speed at contact (oldest overwritten first): x, y, z and,
+   * while my blade keeps to the line of sight, the hand on its plane in x and z and the eye in the last three (NaN otherwise).
+   */
   trace: [Float64Array, Float64Array];
+  /** My blade's last `SWING_SLICES` + 1 places across and up (x, y a slice), the way a sideways sweep went. */
+  swept: Float64Array;
+  /** The eye my blade keeps in line with the hand, or null (the keyboard, or no pointer): then the blade goes where the hand is. */
+  sight: Sight | null;
+  /** The slice count at which the coming ball went past my blade's face unstruck (-1 if it has not). */
+  passed: number;
   ticks: number;
   /** Where I stand across (0 behind the middle), how fast I am stepping, and where I am stepping to. */
   stance: number;
@@ -201,7 +240,10 @@ export function createWorld(seed = 1): World {
     pathLen: 0,
     pathAt: -1,
     ai: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0 },
-    trace: [new Float64Array((SWING_SLICES + 1) * 3), new Float64Array((SWING_SLICES + 1) * 3)],
+    trace: [new Float64Array((SWING_SLICES + 1) * TRACE), new Float64Array((SWING_SLICES + 1) * TRACE)],
+    swept: new Float64Array((SWING_SLICES + 1) * 2),
+    sight: null,
+    passed: -1,
     ticks: 0,
     stance: 0,
     stanceV: 0,
@@ -212,10 +254,32 @@ export function createWorld(seed = 1): World {
   world.paddles.forEach((pad, side) => retrace(world, side as 0 | 1, pad));
   return world;
 }
+/** The numbers a trace keeps a slice. */
+const TRACE = 6;
 /** A paddle's trace filled with where it stands now, as if it had stood there still. */
 function retrace(world: World, side: 0 | 1, pad: Paddle) {
-  const trace = world.trace[side];
-  for (let k = 0; k < trace.length; k += 3) [trace[k], trace[k + 1], trace[k + 2]] = [pad.x, pad.y, pad.z];
+  const trace = world.trace[side],
+    sight = side === 0 ? world.sight : null,
+    hand = world.hands[side];
+  for (let k = 0; k < trace.length; k += TRACE) {
+    if (sight) [trace[k], trace[k + 1], trace[k + 2], trace[k + 3], trace[k + 4], trace[k + 5]] = [hand.x, pad.y, hand.z, sight.x, sight.y, sight.z];
+    else [trace[k], trace[k + 1], trace[k + 2], trace[k + 3], trace[k + 4], trace[k + 5]] = [pad.x, pad.y, pad.z, NaN, NaN, NaN];
+  }
+  if (side === 0) for (let k = 0; k < world.swept.length; k += 2) [world.swept[k], world.swept[k + 1]] = [pad.x, pad.y];
+}
+/**
+ * Where on the line of sight from `eye` through `hand` (a point of the plane y = `HAND_Y`) the blade stands at height
+ * `y`, across and along: seen from the eye it is exactly over the hand, so under the finger that points there. The
+ * line is followed no nearer the eye's own height than `SIGHT_GAP`.
+ */
+export function alongSight(eye: Sight, hand: { x: number; z: number }, y: number) {
+  const t = (eye.y - Math.min(y, eye.y - SIGHT_GAP)) / Math.max(1e-6, eye.y - HAND_Y);
+  return { x: eye.x + (hand.x - eye.x) * t, z: eye.z + (hand.z - eye.z) * t };
+}
+/** The hand (on the plane y = `HAND_Y`) whose line of sight from `eye` puts the blade at `blade` at height `y`: `alongSight` undone. */
+export function handFor(eye: Sight, blade: { x: number; z: number }, y: number) {
+  const t = (eye.y - Math.min(y, eye.y - SIGHT_GAP)) / Math.max(1e-6, eye.y - HAND_Y);
+  return { x: eye.x + (blade.x - eye.x) / t, z: eye.z + (blade.z - eye.z) / t };
 }
 /**
  * Where a paddle of `side` may be: beside the table a little, not over the net, and no further back than the hall
@@ -257,6 +321,7 @@ export function serve(world: World, server: 0 | 1) {
   world.ai.plan = null;
   world.ai.holdX = (rand(world) - 0.5) * 0.7;
   world.stanceGoal = 0;
+  world.passed = -1;
   hold(world);
 }
 /** The ball thrown up from the server's open hand (`by` must be the server), to be struck as it falls. */
@@ -267,15 +332,19 @@ export function toss(world: World, by: 0 | 1 = world.server) {
   world.ball.vy = TOSS;
   return true;
 }
-/** A paddle set straight down where a finger has just pressed, without sweeping the way between. */
+/**
+ * A paddle set straight down where a finger has just pressed, without sweeping the way between (a hand, on the line
+ * of sight while my blade keeps to it).
+ */
 export function place(world: World, side: 0 | 1, x: number, z: number) {
-  const at = keep(side, x, z, frontOf(world, side), side === 0 ? world.stance : 0),
-    pad = world.paddles[side];
+  const pad = world.paddles[side],
+    sighted = side === 0 && !!world.sight;
+  world.hands[side] = sighted ? { x, z } : keep(side, x, z, frontOf(world, side), side === 0 ? world.stance : 0);
+  const at = bladeAt(world, side, sighted ? sightHeight(world) : pad.y);
   pad.x = at.x;
   pad.z = at.z;
   pad.vx = pad.vy = pad.vz = 0;
   retrace(world, side, pad);
-  world.hands[side] = { ...at };
   if (world.phase === "ready" && world.server === side) hold(world);
 }
 /** The air alone over one slice: gravity, drag and the Magnus force of the spin. */
@@ -495,27 +564,111 @@ function predict(world: World) {
   world.pathAt = -1;
 }
 const bouncesOn = (world: World, k: number, side: 0 | 1) => (side === 0 ? world.path[k * 4 + 3] % 8 : Math.floor(world.path[k * 4 + 3] / 8));
-/** The slice of the path at which the ball, having bounced on `side`'s half, comes to a paddle's face at `z`, or -1. */
-function meeting(world: World, side: 0 | 1, z: number) {
+/**
+ * The slice of the path at which the ball, having bounced on `side`'s half, comes to a paddle's face, or -1. The
+ * face stands at `zAt(height)`. A blade where the hand is waits at one depth, and the ball comes to it from the
+ * net. My blade on the line of sight (`sighted`) stands nearer me the higher it is raised, so the ball comes to its
+ * face where, seen from the eye, it passes the pointer: going down past it, or rising to it (a lob that bounced
+ * below it); either way counts, and before its bounce it passes by. If it never quite does (it rises to the pointer
+ * and turns back), the slice where it comes nearest: a blade set at that height meets it a moment later.
+ */
+function meeting(world: World, side: 0 | 1, zAt: (y: number) => number, sighted = false) {
   const f = side === 0 ? -1 : 1,
-    gap = BALL + FACE;
+    gap = BALL + FACE,
+    past = (y: number, z: number) => (z - zAt(y)) * f <= gap;
+  let was = sighted && past(world.ball.y, world.ball.z),
+    nearest = -1,
+    least = Infinity;
   for (let k = Math.max(0, world.pathAt + 1); k < world.pathLen; k++) {
-    const bounces = bouncesOn(world, k, side);
-    if (bounces >= 2) return -1;
-    if (bounces >= 1 && (world.path[k * 4 + 2] - z) * f <= gap) return k;
+    const bounces = bouncesOn(world, k, side),
+      y = world.path[k * 4 + 1],
+      z = world.path[k * 4 + 2];
+    if (bounces >= 2 || (sighted && z > HALF_L + BACK + BALL)) break;
+    const now = past(y, z);
+    if (bounces >= 1 && now !== was && (now || sighted)) return k;
+    if (!sighted) continue;
+    was = now;
+    // Where the ball only comes up to the pointer and turns away (or never quite reaches it), the nearest it comes.
+    const off = Math.abs((z - zAt(y)) * f - gap);
+    if (bounces >= 1 && off < least) [nearest, least] = [k, off];
   }
-  return -1;
+  return nearest;
 }
+/** A blade's height kept within its reach: not into the table over it, and no higher than its side's top. */
+function heightWithin(side: 0 | 1, y: number, z: number) {
+  return clamp(y, Math.abs(z) < HALF_L + 0.02 ? 0.06 : -0.3, side === 0 ? REACH_TOP : THEIR_TOP);
+}
+/** Where `side`'s blade stands across and along with its height at `y`: where the hand is, or on the line of sight through it (mine, while a pointer holds it). */
+function bladeAt(world: World, side: 0 | 1, y: number) {
+  const hand = world.hands[side],
+    sight = side === 0 ? world.sight : null,
+    p = sight ? alongSight(sight, hand, y) : hand;
+  return keep(side, p.x, p.z, frontOf(world, side), side === 0 ? world.stance : 0);
+}
+/** Where my blade's face will stand for a ball met at height `y` (raised as far as it may go). */
+const myFace = (world: World) => (y: number) => {
+  const z = bladeAt(world, 0, heightWithin(0, y, world.hands[0].z)).z;
+  return bladeAt(world, 0, heightWithin(0, y, z)).z;
+};
 /** The height a paddle's blade goes to: where the coming ball will meet it, or where it is being tossed, or at rest. */
-function reachHeight(world: World, side: 0 | 1, z: number) {
+function reachHeight(world: World, side: 0 | 1, zAt: (y: number) => number) {
   let y = REST_Y;
   if (world.phase === "toss" && world.server === side) y = world.ball.y;
   else if (world.phase === "ready" && world.server === side) y = 0.12;
   else if (world.phase === "rally" && world.hitter !== side) {
-    const k = meeting(world, side, z);
+    const k = meeting(world, side, zAt, side === 0 && !!world.sight);
     if (k >= 0) y = world.path[k * 4 + 1];
   }
-  return clamp(y, Math.abs(z) < HALF_L + 0.02 ? 0.06 : -0.3, 0.62);
+  return heightWithin(side, y, zAt(y));
+}
+/**
+ * Where my blade will meet the ball now coming to me (the view's contact marker), by the same reading of the path
+ * that raises the blade: the ball's place as it comes to the face, at the height the blade will be raised to; on my
+ * serve's toss, the tossed ball's column at `TOSS_MARK`. Null when no ball is coming that I may strike.
+ */
+export function contact(world: World): Meeting | null {
+  const b = world.ball;
+  if (world.phase === "toss" && world.server === 0) return { x: b.x, y: TOSS_MARK, z: b.z, k: -1 };
+  if (world.phase !== "rally" || world.hitter === 0) return null;
+  const zAt = myFace(world),
+    k = meeting(world, 0, zAt, !!world.sight);
+  if (k < 0) return null;
+  // Between the slice before and this one, where the ball comes to the face itself.
+  const path = world.path,
+    prev = k - 1 > world.pathAt && k > 0 ? { x: path[k * 4 - 4], y: path[k * 4 - 3], z: path[k * 4 - 2] } : { x: b.x, y: b.y, z: b.z },
+    before = prev.z - (zAt(prev.y) - (BALL + FACE)),
+    after = path[k * 4 + 2] - (zAt(path[k * 4 + 1]) - (BALL + FACE)),
+    t = clamp(before / (before - after || 1e-9), 0, 1),
+    x = prev.x + (path[k * 4] - prev.x) * t,
+    y = prev.y + (path[k * 4 + 1] - prev.y) * t,
+    z = prev.z + (path[k * 4 + 2] - prev.z) * t;
+  return { x, y: heightWithin(0, y, z), z, k };
+}
+/**
+ * The height at which my blade is set on the line of sight: where it will meet the coming ball (`contact`), on my
+ * serve's toss the marker's height on the ball's column, or where it is. Set there at once, so that the ball
+ * comes to its face where the marker says even while the blade is still rising to it (and a blade only rising or
+ * sinking does not move across or along).
+ */
+function sightHeight(world: World, met = contact(world)) {
+  if (world.phase === "toss" && world.server === 0) return TOSS_MARK;
+  if (world.phase === "ready" && world.server === 0) return 0.12;
+  // With no ball to meet, at the blade's own height as it sinks back to rest, so that it glides back along the line.
+  return met?.y ?? world.paddles[0].y;
+}
+/**
+ * How high the ball now coming to me will rise over my end while I may strike it (after its bounce on my side, up to
+ * where my blade can still go), at most my blade's top; 0 when none is coming. The view raises the eye by it.
+ */
+export function highest(world: World) {
+  if (world.phase !== "rally" || world.hitter === 0) return 0;
+  let top = 0;
+  for (let k = Math.max(0, world.pathAt + 1); k < world.pathLen; k++) {
+    const bounces = bouncesOn(world, k, 0);
+    if (bounces >= 2 || world.path[k * 4 + 2] > HALF_L + BACK + 0.1) break;
+    if (bounces >= 1) top = Math.max(top, world.path[k * 4 + 1]);
+  }
+  return Math.min(top, REACH_TOP);
 }
 const EASE = 1 - Math.exp(-DT / 0.035);
 /**
@@ -524,29 +677,53 @@ const EASE = 1 - Math.exp(-DT / 0.035);
  */
 function movePaddles(world: World, level: Level) {
   world.ticks++;
-  const at_ = (world.ticks % (SWING_SLICES + 1)) * 3,
-    oldest = ((world.ticks + 1) % (SWING_SLICES + 1)) * 3,
+  const slot = world.ticks % (SWING_SLICES + 1),
+    at_ = slot * TRACE,
+    oldest = ((world.ticks + 1) % (SWING_SLICES + 1)) * TRACE,
     span = SWING_SLICES * DT;
   world.paddles.forEach((pad, s) => {
     const side = s as 0 | 1,
       hand = world.hands[side],
-      at = keep(side, hand.x, hand.z, frontOf(world, side), side === 0 ? world.stance : 0),
-      dx = at.x - pad.x,
-      dz = at.z - pad.z,
-      far = Math.hypot(dx, dz),
-      most = side === 0 ? Infinity : LEVELS[level].speed * DT,
-      share = far > most ? most / far : 1,
-      x = pad.x + dx * share,
-      z = pad.z + dz * share,
-      y = pad.y + (reachHeight(world, side, z) - pad.y) * EASE,
+      sight = side === 0 ? world.sight : null,
       trace = world.trace[side];
-    [trace[at_], trace[at_ + 1], trace[at_ + 2]] = [x, y, z];
-    pad.vx = (x - trace[oldest]) / span;
+    let x: number, y: number, z: number;
+    // On the line of sight: placed for the height where it will meet the ball, and rising (or sinking) to it.
+    const met = sight ? contact(world) : null,
+      placed = sight ? sightHeight(world, met) : 0;
+    if (sight) {
+      ({ x, z } = bladeAt(world, 0, placed));
+      // It rises to the ball it will meet, follows a tossed ball, and otherwise goes back to rest.
+      const goal = world.phase === "toss" && world.server === 0 ? world.ball.y : world.phase === "ready" && world.server === 0 ? 0.12 : met?.y ?? REST_Y;
+      y = pad.y + (heightWithin(0, goal, z) - pad.y) * EASE;
+    } else {
+      const at = bladeAt(world, side, pad.y),
+        dx = at.x - pad.x,
+        dz = at.z - pad.z,
+        far = Math.hypot(dx, dz),
+        most = side === 0 ? Infinity : LEVELS[level].speed * DT,
+        share = far > most ? most / far : 1;
+      x = pad.x + dx * share;
+      z = pad.z + dz * share;
+      y = pad.y + (reachHeight(world, side, () => z) - pad.y) * EASE;
+    }
+    if (sight) [trace[at_], trace[at_ + 1], trace[at_ + 2], trace[at_ + 3], trace[at_ + 4], trace[at_ + 5]] = [hand.x, y, hand.z, sight.x, sight.y, sight.z];
+    else [trace[at_], trace[at_ + 1], trace[at_ + 2], trace[at_ + 3], trace[at_ + 4], trace[at_ + 5]] = [x, y, z, NaN, NaN, NaN];
+    // The swing is what the hand went over the window, each place of it seen at the height the blade is set for now:
+    // a blade only set for another height along the line of sight (the finger still) is not swinging.
+    let ox = trace[oldest],
+      oz = trace[oldest + 2];
+    if (!Number.isNaN(trace[oldest + 3])) {
+      const then = alongSight({ x: trace[oldest + 3], y: trace[oldest + 4], z: trace[oldest + 5] }, { x: ox, z: oz }, placed),
+        kept = keep(0, then.x, then.z, frontOf(world, 0), world.stance);
+      [ox, oz] = [kept.x, kept.z];
+    }
+    pad.vx = (x - ox) / span;
     pad.vy = (y - trace[oldest + 1]) / span;
-    pad.vz = (z - trace[oldest + 2]) / span;
+    pad.vz = (z - oz) / span;
     pad.x = x;
     pad.y = y;
     pad.z = z;
+    if (side === 0) [world.swept[slot * 2], world.swept[slot * 2 + 1]] = [x, y];
   });
 }
 /** How far I step for a ball that will come to my end `x` across: hardly for one near the middle, more the wider it goes. */
@@ -675,6 +852,7 @@ export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   world.served = serving;
   world.since = 0;
   world.struck[side] = world.time;
+  world.passed = -1;
   predict(world);
   // A ball sent to me: I step toward where it will come.
   if (side === 1) world.stanceGoal = leanFor(arrival(world));
@@ -715,7 +893,44 @@ function grounded(world: World): Happening {
   if (world.other === 0) return point(world, r, world.netted ? NET : world.served && world.own === 0 ? FAULT : OUT);
   return point(world, h, MISSED);
 }
-/** A stroke by `side` if its paddle's face, going from `before` to where it is, meets the ball on its way from `from`. */
+/**
+ * How far the ball at (`x`, `y`) is from the way my blade swept over the last slices (across and up, each measured
+ * in its reach, so that 1 is the edge of the judgement), and the blade's offset where it came nearest.
+ */
+export function sweptFrom(world: World, x: number, y: number, slices = SWING_SLICES) {
+  const n = SWING_SLICES + 1,
+    ring = world.swept,
+    best = { d: Infinity, ox: 0, oy: 0 };
+  const at = (j: number) => {
+    const k = (((world.ticks - j) % n) + n) % n;
+    return { x: ring[k * 2], y: ring[k * 2 + 1] };
+  };
+  let b = at(0);
+  for (let j = 0; j <= Math.min(slices, SWING_SLICES); j++) {
+    const a = j === 0 ? b : at(j),
+      // The nearest point of the stretch from a to b, in reach units.
+      ax = a.x / REACH,
+      ay = a.y / REACH_Y,
+      ex = b.x / REACH - ax,
+      ey = b.y / REACH_Y - ay,
+      px = x / REACH - ax,
+      py = y / REACH_Y - ay,
+      s = ex || ey ? clamp((px * ex + py * ey) / (ex * ex + ey * ey), 0, 1) : 0,
+      dx = px - s * ex,
+      dy = py - s * ey,
+      d = Math.hypot(dx, dy);
+    if (d < best.d) [best.d, best.ox, best.oy] = [d, dx * REACH, dy * REACH_Y];
+    b = a;
+  }
+  return best;
+}
+/**
+ * A stroke by `side` if its paddle's face, going from `before` to where it is, meets the ball on its way from `from`.
+ * Mine is judged along the swing: as the ball comes to the face, by the nearest the blade came to it over the last
+ * `SWING_SLICES` slices, and for that many slices after it has gone past the face unstruck (up to `LATE_DEPTH`
+ * behind it), by whether the blade sweeps across it now; so a quick sideways swing that is seen to pass through the
+ * ball strikes it, whenever in the frame it passed.
+ */
 function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z: number }, from: { x: number; y: number; z: number }, level: Level, out: Happening[]) {
   const pad = world.paddles[side],
     b = world.ball,
@@ -723,19 +938,36 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
     gap = BALL + FACE,
     r0 = (from.z - before.z) * f,
     r1 = (b.z - pad.z) * f;
-  if (!(r0 > gap && r1 <= gap)) return;
-  const t = (r0 - gap) / (r0 - r1),
-    bx = from.x + (b.x - from.x) * t,
-    by = from.y + (b.y - from.y) * t,
-    ox = bx - (before.x + (pad.x - before.x) * t),
+  let bx: number, by: number, bz: number, oy: number;
+  if (r0 > gap && r1 <= gap) {
+    const t = (r0 - gap) / (r0 - r1);
+    bx = from.x + (b.x - from.x) * t;
+    by = from.y + (b.y - from.y) * t;
+    bz = before.z + (pad.z - before.z) * t + f * gap;
+    const ox = bx - (before.x + (pad.x - before.x) * t);
     oy = by - (before.y + (pad.y - before.y) * t);
-  const [rx, ry] = side === 0 ? [REACH, REACH_Y] : [THEIR_REACH, THEIR_REACH_Y];
-  if ((ox / rx) ** 2 + (oy / ry) ** 2 > 1) return;
+    if (side === 1) {
+      if ((ox / THEIR_REACH) ** 2 + (oy / THEIR_REACH_Y) ** 2 > 1) return;
+    } else if ((ox / REACH) ** 2 + (oy / REACH_Y) ** 2 > 1) {
+      const near = sweptFrom(world, bx, by);
+      if (near.d > 1) {
+        world.passed = world.ticks;
+        return;
+      }
+      oy = near.oy;
+    }
+  } else {
+    // Gone past my face unstruck a moment ago, and not far: a sweep across it now still strikes it, set back on the face.
+    if (side !== 0 || world.passed < 0 || world.ticks - world.passed > SWING_SLICES || r1 > gap || r1 < gap - LATE_DEPTH) return;
+    const near = sweptFrom(world, b.x, b.y, 1);
+    if (near.d > 1) return;
+    [bx, by, bz, oy] = [b.x, b.y, pad.z + f * gap, near.oy];
+  }
   const serving = world.phase === "toss";
   b.x = bx;
   b.y = by;
-  b.z = before.z + (pad.z - before.z) * t + f * gap;
-  const shot = side === 0 ? swingShot(world, side, pad, ox, oy, serving) : computerShot(world, level);
+  b.z = bz;
+  const shot = side === 0 ? swingShot(world, side, pad, 0, oy, serving) : computerShot(world, level);
   launch(world, side, shot, serving);
   out.push(shot.smash ? { kind: "hit", side, strength: 1, smash: true } : { kind: "hit", side, strength: clamp(shot.pace / 9, 0.2, 1) });
 }

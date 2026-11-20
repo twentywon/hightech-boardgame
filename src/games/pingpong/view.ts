@@ -4,9 +4,9 @@ import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { hall, paintFlip, tennisTable, type FlipBoard } from "./hall";
-import { HAND_Y, rallyCamera } from "./layout";
+import { HAND_Y, liftFor, rallyCamera } from "./layout";
 import { serverOf, type State } from "./rules";
-import { BALL, BLADE, DT, FLOOR, HALF_L, HALF_W, PACE, WHY, createWorld, keep, place as placePaddle, serve, step, toss, type Happening, type Level, type World } from "./sim";
+import { BALL, BLADE, DT, FLOOR, HALF_L, HALF_W, PACE, WHY, contact, createWorld, highest, keep, place as placePaddle, serve, step, toss, type Meeting, type Happening, type Level, type World } from "./sim";
 
 export const TABLE_TENNIS_COLORS: [string, string] = ["#e0402c", "#2a72e0"];
 /** How long, in the hall's time, the ball of an ended rally is left to fall before the next serve. */
@@ -33,6 +33,41 @@ function ballSkin() {
   ctx.textBaseline = "middle";
   ctx.fillText("★★★", 64, 40);
   ctx.fillText("WTG", 192, 88);
+  return canvasTexture(c);
+}
+/** How quickly the eye rises for a high ball and comes down again (a critically damped spring, in the hall's time). */
+const LIFT_RATE = 7;
+/** The contact marker's colour (a soft lime that stands out on the blue table and against the orange ball), its ring's size and the dots leading to it. */
+const MARK = "#c8ff5c",
+  MARK_SIZE = 0.17,
+  MARK_DOTS = 14;
+/** The contact marker's ring: a soft glow round an empty middle, so that the ball shows through it. */
+function markRing() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const ctx = c.getContext("2d")!,
+    g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, "rgba(200,255,92,0)");
+  g.addColorStop(0.5, "rgba(200,255,92,0)");
+  g.addColorStop(0.62, "rgba(200,255,92,0.35)");
+  g.addColorStop(0.72, "rgba(246,255,214,1)");
+  g.addColorStop(0.8, "rgba(200,255,92,0.75)");
+  g.addColorStop(1, "rgba(200,255,92,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return canvasTexture(c);
+}
+/** A soft round dot, for the way to the contact marker. */
+function markDot() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 32;
+  const ctx = c.getContext("2d")!,
+    g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, "rgba(246,255,214,1)");
+  g.addColorStop(0.45, "rgba(200,255,92,0.8)");
+  g.addColorStop(1, "rgba(200,255,92,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 32, 32);
   return canvasTexture(c);
 }
 /** A soft round shadow, for the ball's on the table or the floor. */
@@ -67,6 +102,17 @@ export class TableTennisView extends TableView<State> {
   private world: World = this.newWorld();
   /** How far across the eye stands now (it follows my step aside: `World.stance`). */
   private eye = 0;
+  /** How far the eye has risen for a high ball (`liftFor`), and how fast it is rising. */
+  private lift = 0;
+  private liftV = 0;
+  /**
+   * The contact marker: a glowing ring where my blade will meet the coming ball (`contact` in the sim) and dots along
+   * the ball's way to it, faded in while a ball is coming and out once it is struck or the point is over.
+   */
+  private ring: T.Sprite;
+  private dots: T.Points;
+  private markShown = 0;
+  private marked: Meeting | null = null;
   /** Where on the screen the pointer that holds my paddle is (a mouse over the table, or a finger pressed), to be aimed again through the eye as it moves. */
   private pointer: { clientX: number; clientY: number } | null = null;
   private aimRay = new T.Raycaster();
@@ -129,6 +175,17 @@ export class TableTennisView extends TableView<State> {
     this.shadow.renderOrder = 2;
     this.scene.add(this.shadow);
     const dot = keep_(new T.SphereGeometry(BALL * 0.7, 12, 8));
+    this.ring = new T.Sprite(keep_(new T.SpriteMaterial({ map: keep_(markRing()), transparent: true, depthTest: false, depthWrite: false, blending: T.AdditiveBlending })));
+    this.ring.scale.setScalar(MARK_SIZE);
+    this.ring.renderOrder = 18;
+    this.ring.visible = false;
+    const way = keep_(new T.BufferGeometry());
+    way.setAttribute("position", new T.BufferAttribute(new Float32Array(MARK_DOTS * 3), 3));
+    this.dots = new T.Points(way, keep_(new T.PointsMaterial({ map: keep_(markDot()), color: MARK, size: 0.034, transparent: true, depthWrite: false, blending: T.AdditiveBlending })));
+    this.dots.frustumCulled = false;
+    this.dots.renderOrder = 17;
+    this.dots.visible = false;
+    this.scene.add(this.ring, this.dots);
     for (let k = 0; k < 7; k++) {
       const ghost = new T.Mesh(dot, keep_(new T.MeshBasicMaterial({ color: "#ff9a2e", transparent: true, opacity: 0.55 * (1 - k / 7), depthWrite: false })));
       ghost.visible = false;
@@ -249,26 +306,63 @@ export class TableTennisView extends TableView<State> {
     world.lean = this.reducedMotion ? 0.5 : 1;
     return world;
   }
-  /** The hand over the table: my paddle goes there, at no speed limit (and further to the side I have stepped to). */
+  /**
+   * The hand over the table: my paddle goes there, at no speed limit (and further to the side I have stepped to).
+   * Held by a pointer, the hand is the point under it on the plane y = `HAND_Y`, and the blade keeps to the line of
+   * sight through it (`World.sight`), wherever that line takes it.
+   */
   private reach(x: number, z: number) {
-    this.hand = keep(0, x, z, undefined, this.world.stance);
+    this.hand = this.pointer ? { x: Math.max(-8, Math.min(8, x)), z: Math.max(-12, Math.min(12, z)) } : keep(0, x, z, undefined, this.world.stance);
   }
   /**
-   * The eye goes where I stand. The pointer stays over my paddle as it moves: the point under it is aimed again
-   * through the moved eye; a paddle the keyboard (or a lifted finger) left is carried along by the step.
+   * The blade keeps to the line of sight through the pointer while one holds it; when it lets go (the keyboard, a
+   * lifted finger, the mouse gone) the hand is set where the blade stands, so that nothing jumps.
    */
-  private follow() {
+  private sighting() {
+    const held = !!this.pointer && this.running(),
+      pad = this.world.paddles[0];
+    if (held) {
+      const p = this.camera.position,
+        fresh = !this.world.sight;
+      this.world.sight = { x: p.x, y: p.y, z: p.z };
+      // Taken up again (after a pause or a window): the hand is where the pointer is now.
+      if (fresh) {
+        aim(this.aimRay, this.pointer as PointerEvent, this.renderer.domElement, this.camera);
+        if (this.aimRay.ray.intersectPlane(this.floor, this.aimHit)) {
+          this.reach(this.aimHit.x, this.aimHit.z);
+          this.sent = { ...this.hand };
+        }
+      }
+    } else if (this.world.sight) {
+      this.world.sight = null;
+      this.hand = this.sent = keep(0, pad.x, pad.z, undefined, this.world.stance);
+    }
+  }
+  /**
+   * The eye goes where I stand, and rises for a high ball. The pointer stays over my paddle as it moves: the point
+   * under it is aimed again through the moved eye; a paddle the keyboard (or a lifted finger) left is carried along
+   * by the step.
+   */
+  private follow(real: number) {
+    const goal = this.running() ? liftFor(highest(this.world)) : 0,
+      dt = Math.min(0.05, real * PACE),
+      a = LIFT_RATE * LIFT_RATE * (goal - this.lift) - 2 * LIFT_RATE * this.liftV;
+    this.liftV += a * dt;
+    this.lift = Math.max(0, this.lift + this.liftV * dt);
     const eye = this.world.stance,
       moved = eye - this.eye;
-    if (Math.abs(moved) < 1e-5) return;
+    if (Math.abs(moved) < 1e-5 && Math.abs(this.lift - this.lifted) < 1e-5) return;
     this.eye = eye;
-    rallyCamera(this.camera, this.camera.aspect, eye);
+    this.lifted = this.lift;
+    rallyCamera(this.camera, this.camera.aspect, eye, this.lift);
     if (!this.running()) return;
     if (this.pointer) {
       aim(this.aimRay, this.pointer as PointerEvent, this.renderer.domElement, this.camera);
       if (this.aimRay.ray.intersectPlane(this.floor, this.aimHit)) this.reach(this.aimHit.x, this.aimHit.z);
     } else this.reach(this.hand.x + moved, this.hand.z);
   }
+  /** The lift the camera was last set with. */
+  private lifted = 0;
   /**
    * Every press is the hand's, and tosses my serve. A finger sets the paddle straight down where it presses (without
    * sweeping the way there); a mouse has it there already, and keeps its swing.
@@ -276,6 +370,7 @@ export class TableTennisView extends TableView<State> {
   protected dragStart(_point: number, at: { x: number; z: number }) {
     if (!this.running()) return false;
     this.reach(at.x, at.z);
+    this.sighting();
     if (this.finger) {
       placePaddle(this.world, 0, this.hand.x, this.hand.z);
       this.sent = { ...this.hand };
@@ -302,7 +397,8 @@ export class TableTennisView extends TableView<State> {
       running = this.running();
     this.last = now;
     if (running || (this.state && this.state.winner !== null && !this.paused)) {
-      this.follow();
+      this.follow(real);
+      this.sighting();
       if (running && (this.keys.x || this.keys.z)) this.reach(this.hand.x + this.keys.x * 1.8 * real, this.hand.z + this.keys.z * 1.8 * real);
       this.left += real * PACE;
       // The hand's way over this frame is spread over its slices, so that the paddle sweeps it at its true speed.
@@ -425,22 +521,80 @@ export class TableTennisView extends TableView<State> {
       (word.sprite.material as T.SpriteMaterial).opacity = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
       return true;
     });
+    this.markWay(real);
     this.tip.hidden = !(this.running() && this.world.phase === "ready" && this.world.server === 0) || capturing();
     // For the browser tests: where the ball and my paddle are, and how the point stands.
     const data = this.renderer.domElement.dataset;
     data.ball = `${ball.x.toFixed(2)},${ball.y.toFixed(2)},${ball.z.toFixed(2)}`;
     data.paddle = `${paddles[0].x.toFixed(2)},${paddles[0].z.toFixed(2)}`;
+    // My blade's height too: on the screen it stands under the pointer at that height (`alongSight`).
+    data.blade = `${paddles[0].x.toFixed(3)},${paddles[0].y.toFixed(3)},${paddles[0].z.toFixed(3)}`;
+    data.lift = this.lifted.toFixed(4);
+    data.contact = this.marked && this.markShown > 0.5 ? `${this.marked.x.toFixed(3)},${this.marked.y.toFixed(3)},${this.marked.z.toFixed(3)}` : "";
     data.phase = this.world.phase;
     data.server = String(this.world.server);
     // How far across the eye stands (browser tests aim through `rallyCamera` with it).
     data.eye = this.eye.toFixed(4);
+  }
+  /**
+   * The contact marker, moved to where my blade will now meet the ball (it follows the prediction as my hand moves),
+   * with dots along the ball's way to it; faded in while a ball is coming, out when it is struck or the point is over.
+   * It is decoration: left out while a picture is captured.
+   */
+  private markWay(real: number) {
+    const found = this.running() && !capturing() ? contact(this.world) : null,
+      fade = 1 - Math.exp(-(real || 0) / 0.09);
+    if (found) this.marked = found;
+    this.markShown += ((found ? 1 : 0) - this.markShown) * (real > 0 ? fade : 0);
+    if (capturing() || !this.running()) this.markShown = found ? this.markShown : 0;
+    const on = this.markShown > 0.02 && !!this.marked;
+    this.ring.visible = this.dots.visible = on;
+    if (!on || !this.marked) return;
+    const mark = this.marked,
+      breathe = this.reducedMotion ? 1 : 1 + 0.07 * Math.sin(performance.now() / 160);
+    this.ring.position.set(mark.x, mark.y, mark.z);
+    // A ring far off is drawn a little larger, like the ball, so that it does not shrink to a speck.
+    const far = this.camera.position.distanceTo(this.ring.position);
+    this.ring.scale.setScalar(MARK_SIZE * breathe * Math.min(1.6, Math.max(1, far / 2.1)));
+    (this.ring.material as T.SpriteMaterial).opacity = this.markShown;
+    (this.dots.material as T.PointsMaterial).opacity = 0.85 * this.markShown;
+    // The dots: along the ball's way from a little ahead of it to the meeting (or, on a toss, down its column), the
+    // last of them on the ring; none so close to the ball that it is hidden.
+    // Fading out, the dots stay where they were last laid.
+    if (!found) return;
+    const at = this.dots.geometry.getAttribute("position") as T.BufferAttribute,
+      { path, pathAt, ball } = this.world,
+      points: T.Vector3[] = [];
+    if (found.k >= 0) {
+      const first = Math.max(0, pathAt + 1),
+        span = found.k - first;
+      for (let n = 1; n <= MARK_DOTS; n++) {
+        const k = Math.round(first + (span * n) / MARK_DOTS);
+        points.push(new T.Vector3(path[k * 4], path[k * 4 + 1], path[k * 4 + 2]));
+      }
+      // Where the ball will pass above the highest the blade goes, the last dots come down to the ring.
+      const top = points[points.length - 1];
+      if (top && top.y - mark.y > 0.04) for (let n = 1; n <= 3; n++) points.splice(points.length - n, 1, new T.Vector3(mark.x, mark.y + ((top.y - mark.y) * n) / 4, mark.z));
+    } else {
+      const drop = ball.y - mark.y;
+      for (let n = 1; n <= MARK_DOTS && drop > 0.06; n++) points.push(new T.Vector3(mark.x, ball.y - (drop * n) / (MARK_DOTS + 1), mark.z));
+    }
+    const ballAt = this.ball.position,
+      clear = BALL * this.ball.scale.x * 2.6;
+    for (let n = 0; n < MARK_DOTS; n++) {
+      const p = points[n];
+      // A dot that would sit on the ball (or is not needed) is laid out of sight under the floor.
+      if (!p || p.distanceTo(ballAt) < clear || p.distanceTo(this.ring.position) < MARK_SIZE * 0.3) at.setXYZ(n, 0, -50, 0);
+      else at.setXYZ(n, p.x, p.y, p.z);
+    }
+    at.needsUpdate = true;
   }
   protected subject(aspect: number): TableSubject {
     return { half: HALF_W + 0.6, halfZ: HALF_L + 0.8, height: 0.4, lookY: 0, tilt: aspect > 1 ? 0.3 : 0.4 };
   }
   protected resize() {
     super.resize();
-    rallyCamera(this.camera, this.camera.aspect, this.eye);
+    rallyCamera(this.camera, this.camera.aspect, this.eye, this.lifted);
     this.redraw();
   }
   protected spots(): Spot[] {
