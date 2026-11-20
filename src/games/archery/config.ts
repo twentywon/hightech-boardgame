@@ -2,6 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { DISTANCE, FORMATS, LEVELS, SET_ARROWS, WIN, archery, formatOf, type State } from "./rules";
 import { ARCHERY_COLORS, ArcheryView } from "./view";
+import { setResult } from "./result";
 
 export const archeryConfig: PointConfig<State> = {
   game: archery,
@@ -23,6 +24,8 @@ export const archeryConfig: PointConfig<State> = {
     if (!arrow || state.ply !== before.ply + 1) return null;
     return arrow.label === "M" ? "미스" : arrow.label === "X" || arrow.value >= 9 ? `${arrow.label}!` : arrow.label;
   },
+  // A set of the match is told over the table once its last arrow has struck (after that arrow's value).
+  setResult: (before, state, mode) => setResult(before, state, mode, ["빨강", "파랑"]),
   // The string's thrum as the bow is let go; a dull thud in the straw, the crowd clapping a 10; the grass for a miss past the boss.
   knock: (sound, kind, strength) => {
     if (kind === "cushion") return sound.bow();

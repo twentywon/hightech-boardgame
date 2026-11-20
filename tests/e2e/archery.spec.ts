@@ -93,10 +93,24 @@ test("archery: three arrows by press, hold and release, the computer answering e
     if (k < 3) await expect.poll(() => moves(page), { timeout: 40000 }).toBe(2 * k);
   }
   await expect.poll(() => moves(page), { timeout: 40000 }).toBe(6);
+  // Once the last arrow has struck, the set's result stands over the table for a moment (decoration, no buttons):
+  // its word for me, then the two totals and the set points.
+  const interlude = page.locator(".board-area .board-interlude");
+  await expect(interlude.locator(".interlude-word")).toHaveText(/^1세트 (승리|패배|무승부)$/, { timeout: 40000 });
+  const word = (await interlude.locator(".interlude-word").textContent()) ?? "",
+    detail = (await interlude.locator(".interlude-detail").textContent()) ?? "";
+  expect(detail).toMatch(/^\d+ : \d+ · 세트점 \d : \d$/);
+  await expect(interlude).toHaveAttribute("aria-hidden", "true");
+  await expect(interlude.locator("button")).toHaveCount(0);
+  await expect(page.locator(".board-finale")).toHaveCount(0);
+  // It fades by itself.
+  await expect(interlude).toHaveCount(0, { timeout: 10000 });
   // The set is shot: its set points are given (2 to the higher total, 1 each for a tie), and the next set begins.
   await resting(page);
   const sets = aimOf(await canvas.getAttribute("data-sets"));
   expect(sets[0] + sets[1]).toBe(2);
+  expect(detail).toContain(`세트점 ${sets[0]} : ${sets[1]}`);
+  expect(word).toBe(`1세트 ${sets[0] > sets[1] ? "승리" : sets[0] < sets[1] ? "패배" : "무승부"}`);
   await expect(page.locator("#pg-count-0")).toHaveText(`세트 ${sets[0]}점`);
   await expect(page.locator("#pg-count-1")).toHaveText(`세트 ${sets[1]}점`);
   // The wind changed between my arrows.

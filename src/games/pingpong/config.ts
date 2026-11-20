@@ -2,6 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { POINTS, deuce, gameNumber, need, serverOf, tableTennis, type State } from "./rules";
 import { TABLE_TENNIS_COLORS, TableTennisView } from "./view";
+import { gameResult } from "./result";
 
 /** The game scores: a column for each game (finished ones with their score, the one being played with its points so far). */
 function gameTable(state: State) {
@@ -23,15 +24,10 @@ export const tableTennisConfig: PointConfig<State> = {
   pausable: true,
   noUndo: true,
   computerOnly: true,
-  // A game won or lost is told across the table (the match's end has its own word), and the first 10 all.
-  cheer: (before, state) =>
-    state.ply <= before.ply || state.winner !== null
-      ? null
-      : state.done.length > before.done.length
-        ? `${state.done.length}게임 ${state.last === 0 ? "승리" : "패배"}`
-        : deuce(state) && !deuce(before)
-          ? "듀스"
-          : null,
+  // The first 10 all is called across the table.
+  cheer: (before, state) => (state.ply <= before.ply || state.winner !== null ? null : deuce(state) && !deuce(before) ? "듀스" : null),
+  // A game won or lost is told over the table with its score (the match's end has its own word).
+  setResult: (before, state) => gameResult(before, state),
   // The board: the game being played over the middle, each side's points in it with a ball by the server's, and
   // beside it every game's score in its column with the games won at the end.
   tallyHtml: (state) =>

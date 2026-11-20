@@ -41,5 +41,7 @@ test("table tennis: my paddle follows the mouse, the computer serves, and a poin
   await expect.poll(() => moves(page), { timeout: 45000 }).toBeGreaterThan(0);
   const points = await page.locator(".tt-points").allInnerTexts();
   expect(points.map(Number).reduce((a, b) => a + b, 0)).toBeGreaterThan(0);
+  // A point in the middle of a game tells no game's result over the table (that comes only when a game is won).
+  await expect(page.locator(".board-area .board-interlude")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

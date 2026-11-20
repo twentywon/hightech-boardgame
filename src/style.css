@@ -2783,6 +2783,18 @@ main.game-layout, main.game-layout :not(svg, svg *) { font-family:Inter, "Noto S
 @keyframes finale-ways { from { opacity:0;transform:translateY(10px); } to { opacity:1;transform:none; } }
 @media (orientation: landscape) and (max-height: 540px) { .board-finale .finale-ways button { min-width:110px;min-height:42px;font-size:15px; } .board-area .board-finale { gap:16px; } }
 @media (prefers-reduced-motion: reduce) { .board-finale .finale-word, .board-finale .finale-ways { animation:none; } }
+/* A set of a match won or lost (the user asked): its word, coloured as the finale's, and the scores under it, for
+   about two seconds; no buttons, no input taken. */
+@keyframes interlude-in { 0% { opacity:0;transform:scale(.6); } 14% { opacity:1;transform:scale(1.06); } 24% { transform:none; } 80% { opacity:1; } 100% { opacity:0;transform:scale(1.03); } }
+.board-area .board-interlude { position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;animation:interlude-in 2.4s ease-out both; }
+.board-interlude .interlude-word, .board-interlude .interlude-detail { color:#fff;font-weight:900;font-synthesis:weight;line-height:1;white-space:nowrap;-webkit-text-stroke:.07em #1b1f24;paint-order:stroke fill;text-shadow:0 .05em 0 rgba(0,0,0,.45), 0 0 .3em rgba(0,0,0,.55); }
+.board-interlude .interlude-word { font-size:clamp(44px, 10.5vmin, 120px);letter-spacing:.03em; }
+.board-interlude .interlude-detail { font-size:clamp(19px, 4vmin, 38px);font-weight:800;letter-spacing:.02em;-webkit-text-stroke-width:.09em; }
+.board-interlude .interlude-detail[hidden] { display:none; }
+.board-interlude.win .interlude-word { color:#ffe07a; }
+.board-interlude.lose .interlude-word { color:#dfe6ef; }
+@media (orientation: landscape) and (max-height: 540px) { .board-area .board-interlude { gap:8px; } }
+@media (prefers-reduced-motion: reduce) { .board-area .board-interlude { animation:none; } }
 /* With the finale in the middle of the table, the panel's own result block is kept only for readers and the keyboard. */
 .game-layout.hud aside.game-sidebar .yd-result { position:absolute !important;width:1px !important;height:1px !important;overflow:hidden !important;opacity:0;margin:0 !important;padding:0 !important; }
 .game-layout.hud aside.game-sidebar .yd-result button { pointer-events:auto; }

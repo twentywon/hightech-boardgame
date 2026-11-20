@@ -124,6 +124,8 @@ export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   const board = document.querySelector<HTMLElement>(".board-area");
   if (!board || capturing()) return;
   board.querySelector(".board-finale")?.remove();
+  // The match's own end is told alone: a set's word still standing goes.
+  board.querySelectorAll(".board-interlude").forEach((el) => el.remove());
   const box = document.createElement("div"),
     word = document.createElement("b"),
     ways = document.createElement("div"),
@@ -165,6 +167,60 @@ export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
     });
     watch.observe(count, { childList: true, characterData: true, subtree: true });
   }
+}
+
+/**
+ * How a set (a game, an end) of a match ended, for the person at the screen: `word` large (`2세트 승리`), coloured as
+ * the finale colours `outcome`, and `detail` small under it (`28 : 27 · 세트점 4 : 0`).
+ */
+export interface SetResult {
+  outcome: Outcome;
+  word: string;
+  detail?: string;
+}
+/** How long a set's word stands, fade included (ms). */
+export const INTERLUDE_MS = 2400;
+/**
+ * A set of a match is over (the user asked): its word stands in the middle of the table for about two seconds and
+ * fades, with no buttons and taking no input. It is decoration (aria-hidden: the panel says the same in words), off
+ * while `capturing()`, and never stands over the match's own `finale`. A word called out a moment before (an arrow's
+ * value) is let finish first; one called out while it stands takes its place.
+ */
+export function interlude(outcome: Outcome, word: string, detail = "") {
+  const at = () => {
+    const board = document.querySelector<HTMLElement>(".board-area");
+    return board?.isConnected && !capturing() && !board.querySelector(".board-finale") ? board : null;
+  };
+  const show = () => {
+    const board = at();
+    if (!board) return;
+    // The word before it is fading by now.
+    board.querySelectorAll(".board-interlude, .board-shout").forEach((el) => el.remove());
+    const box = document.createElement("div"),
+      big = document.createElement("b"),
+      small = document.createElement("span");
+    box.className = `board-interlude ${outcome}`;
+    box.dataset.outcome = outcome;
+    box.setAttribute("aria-hidden", "true");
+    big.className = "interlude-word";
+    big.textContent = word;
+    small.className = "interlude-detail";
+    small.textContent = detail;
+    small.hidden = !detail;
+    box.append(big, small);
+    board.append(box);
+    const watch = new MutationObserver((records) => {
+      if (records.some((r) => [...r.addedNodes].some((n) => n instanceof HTMLElement && n.classList.contains("board-shout")))) box.remove();
+    });
+    watch.observe(board, { childList: true });
+    setTimeout(() => {
+      watch.disconnect();
+      box.remove();
+    }, INTERLUDE_MS);
+  };
+  if (!at()) return;
+  if (at()!.querySelector(".board-shout")) setTimeout(show, 1150);
+  else show();
 }
 
 export type Outcome = "win" | "lose" | "draw";

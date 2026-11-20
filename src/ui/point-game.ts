@@ -1,4 +1,4 @@
-import { dress } from "./chrome";
+import { dress, interlude, type SetResult } from "./chrome";
 import { bankrupt, capturing, cheer, mirrorStatus } from "./banner";
 import { modal, setupDialog } from "./dialog";
 import { LEVELS, choose, type Level } from "../games/points/ai";
@@ -89,6 +89,13 @@ export interface PointConfig<S> {
   cheer?: (before: S, state: S, mode: "local" | "ai") => string | null;
   /** The cheer waits until the table has come to rest (curling's score is called only once the stones have stopped). */
   cheerOnRest?: boolean;
+  /**
+   * A set (a game, an end) of a match has just ended with the match going on: its word for the person at the screen
+   * (`n세트 승리`, or the side that took it when two play at one screen) and its scores, shown over the table by
+   * `interlude`; null otherwise. It is not asked for when the move ends the match (`finale` tells that alone), and
+   * it waits for the table to rest like the cheer when `cheerOnRest` is set.
+   */
+  setResult?: (before: S, state: S, mode: "local" | "ai") => SetResult | null;
   /** No table for two: one side's pieces are hidden from the other. */
   computerOnly?: boolean;
   /** A game for one: no other side, no computer, no level. `winner` 0 is a game won and 1 a game lost; the result is told by `reason` alone. */
@@ -586,6 +593,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   /** A cheer held until the table rests (`cheerOnRest`). */
   let waitingCheer: string | null = null;
+  /** A set's result held the same way. */
+  let waitingSet: SetResult | null = null;
   const busy = () =>
     !!view?.animating ||
     state !== shown ||
@@ -599,6 +608,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const shout = config.cheer?.(state, next, mode);
     if (shout && config.cheerOnRest && view) waitingCheer = shout;
     else if (shout) cheer(shout);
+    const set = game.winner(next) === null ? config.setResult?.(state, next, mode) : null;
+    if (set && config.cheerOnRest && view) waitingSet = set;
+    else if (set) interlude(set.outcome, set.word, set.detail);
     if (cursor !== null && config.rehome?.(state, next)) cursor = config.keyStart?.(next) ?? cursor;
     state = next;
     chosen = {};
@@ -780,6 +792,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (waitingCheer) {
       cheer(waitingCheer);
       waitingCheer = null;
+    }
+    if (waitingSet) {
+      // Only while the set it tells of still stands (not taken back, the match not over or begun again).
+      if (game.winner(state) === null && game.ply(state) > 0) interlude(waitingSet.outcome, waitingSet.word, waitingSet.detail);
+      waitingSet = null;
     }
     update();
     if (over() && !announced) {
