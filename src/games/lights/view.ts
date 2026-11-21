@@ -1,154 +1,173 @@
-import { FlatView, rounded } from "../flat/view";
-import type { State } from "./rules";
+import * as T from "three";
+import { capable } from "../../engine/scene-utils";
+import { capturing } from "../../ui/banner";
+import { bench, benchProps, bulbKit, flickerOff, flickerOn, framedBoard, makeBulb, placesOf, shine, spanOf, workshop, type Bulb, type Kit } from "../bulblink/kit";
+import type { Marks } from "../points/view";
+import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
+import { BOARD_TOP, BULB_Y, NEIGHBOUR_DELAY, REACH, SWITCH_MS, cellAt, cellUnder, lightsSubject } from "./layout";
+import { reach, type State } from "./rules";
 
-export const LIGHT_COLORS: [string, string] = ["#ffc94a", "#b9b3a4"];
+export const LIGHT_COLORS: [string, string] = ["#ffc35a", "#6c7178"];
 /**
- * The lamp panel drawn flat: a dark board of rounded squares, amber and
- * glowing where a lamp is lit. A press makes the lamp shrink for a moment.
+ * The lamp board of lights on, made like bulb link's bench (the user asked for the same look): a pegboard on a framed
+ * board lying on the plank bench, a glass bulb with its filament and brass base in a black socket at every place,
+ * dark when off and glowing warm when lit. A press makes the bulb pressed sink a little in its socket while it and its
+ * four neighbours switch with a short flicker; when every bulb is lit they flare one after another outward from the
+ * last one pressed. Marks: the hint's gold ring and the keyboard's (or the mouse's) white one, left out of a picture
+ * taken for the collection.
  */
-export class LightsView extends FlatView<State> {
-  /** Where the board is on the canvas: left, top and the side of a square. */
-  private box = { x: 0, y: 0, cell: 1 };
-  private dip: { cell: number; until: number } | null = null;
+export class LightsView extends TableView<State> {
+  private kit: Kit;
+  private size = 0;
+  private bulbs = new Map<number, Bulb>();
+  private layer = new T.Group();
+  /** What belongs to the board laid now (made again for a board of another size). */
+  private boardOwned: { dispose(): void }[] = [];
+  private hintRing: T.Mesh;
+  private hintGlow: T.Mesh;
+  private cursorRing: T.Mesh;
+  private hovered = -1;
+  private hinted = -1;
+  private caster = new T.Raycaster();
+  private live: boolean;
+  private clock = 0;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality);
+    super(host, quality, "#2a221c");
+    const soft = !capable(),
+      keep = <R extends { dispose(): void }>(r: R) => this.own(r);
+    this.live = !soft && !this.reducedMotion;
+    workshop(this.scene, keep);
+    this.kit = bulbKit(keep, soft);
+    bench(this.scene, this.kit, keep);
+    this.scene.add(this.layer);
+    this.hintRing = ringMesh(keep, 0.33, 0.44, "#ffc21f");
+    this.cursorRing = ringMesh(keep, 0.4, 0.45, "#ffffff");
+    this.hintGlow = new T.Mesh(keep(new T.CircleGeometry(0.44, 32)), keep(new T.MeshBasicMaterial({ color: "#ffd56a", transparent: true, opacity: 0.35, depthWrite: false })));
+    this.hintGlow.rotation.x = -Math.PI / 2;
+    this.hintGlow.renderOrder = 4;
+    this.hintGlow.visible = false;
+    this.scene.add(this.hintRing, this.cursorRing, this.hintGlow);
     this.begin();
+    this.kick();
   }
-  protected frame(now: number) {
-    if (!this.dip) return false;
-    if (now >= this.dip.until) this.dip = null;
+  /** The frame, the pegboard and a bulb at every place for a board of `n`, made anew. */
+  private build(n: number) {
+    for (const r of this.boardOwned) r.dispose();
+    this.boardOwned = [];
+    this.layer.clear();
+    this.bulbs.clear();
+    const keep = <R extends { dispose(): void }>(r: R) => (this.boardOwned.push(r), r);
+    this.size = n;
+    framedBoard(this.layer, n, this.kit, keep);
+    for (let cell = 0; cell < n * n; cell++) this.bulbs.set(cell, makeBulb(this.layer, this.kit, n, cell, keep));
+    benchProps(this.layer, this.kit, spanOf(n), keep);
+  }
+  protected subject(aspect: number): TableSubject {
+    return lightsSubject(this.size || 3, aspect);
+  }
+  protected spots(): Spot[] {
+    const state = this.state;
+    if (!state || state.winner !== null) return [];
+    return state.on.map((_, i) => ({ ...cellAt(state.size, i), y: BULB_Y, r: REACH, point: i }));
+  }
+  /** What a ray points at: the bulb it strikes first, else the socket under it on the board. */
+  protected pick(ray: T.Ray): number | null {
+    const state = this.state;
+    if (!state || state.winner !== null) return -1;
+    this.caster.ray.copy(ray);
+    for (const hit of this.caster.intersectObjects(this.layer.children.filter((o) => o.userData.cell !== undefined), true))
+      for (let o: T.Object3D | null = hit.object; o; o = o.parent) if (o.userData.cell !== undefined) return o.userData.cell as number;
+    const at = new T.Vector3();
+    return ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), -BOARD_TOP), at) ? cellUnder(state.size, at.x, at.z) : -1;
+  }
+  protected hover(point: number) {
+    if (point === this.hovered) return;
+    this.hovered = point;
+    this.mark(this.marks);
+  }
+  protected place(state: State) {
+    if (state.size !== this.size) {
+      this.build(state.size);
+      // The camera is set for the board's size, which lays it out again.
+      this.resize();
+    }
+    const won = state.winner === 0;
+    for (const bulb of this.bulbs.values()) {
+      shine(this.kit, bulb, state.on[bulb.cell] ? (won ? 1.08 : 1) : 0);
+      bulb.root.position.y = 0;
+    }
+    this.mark(this.marks);
+  }
+  protected animate(before: State, state: State) {
+    const pressed = state.last;
+    if (pressed === null || state.ply !== before.ply + 1 || state.size !== before.size || !this.bulbs.has(pressed)) return false;
+    // The bulb pressed sinks a little in its socket and comes back.
+    const root = this.bulbs.get(pressed)!.root;
+    this.onContact();
+    this.tween(0, 220, (p) => (root.position.y = -0.035 * Math.sin(p * Math.PI)));
+    // It and its neighbours switch, each with a flicker; the neighbours a moment after it.
+    for (const cell of reach(state.size, pressed)) {
+      const bulb = this.bulbs.get(cell)!,
+        on = state.on[cell];
+      this.tween(cell === pressed ? 0 : NEIGHBOUR_DELAY, SWITCH_MS, (p) => shine(this.kit, bulb, on ? flickerOn(p) : flickerOff(p)));
+    }
+    if (state.winner === 0) {
+      // Every bulb lit: a wave of light outward from the last one pressed.
+      const n = state.size,
+        start = NEIGHBOUR_DELAY + SWITCH_MS + 120;
+      for (const bulb of this.bulbs.values()) {
+        const ring = Math.abs(Math.floor(bulb.cell / n) - Math.floor(pressed / n)) + Math.abs((bulb.cell % n) - (pressed % n));
+        this.tween(start + ring * 90, 520, (p) => shine(this.kit, bulb, 1 + Math.sin(p * Math.PI) * 0.9 + p * 0.08));
+      }
+    }
     return true;
   }
-  protected changed(before: State | null, state: State) {
-    if (before && state.last !== null && state.ply === before.ply + 1) {
-      this.dip = { cell: state.last, until: performance.now() + 160 };
-      this.onContact();
+  protected mark(marks: Marks) {
+    const state = this.state;
+    if (!state || state.size !== this.size) return;
+    const n = this.size,
+      live = state.winner === null && !capturing(),
+      hint = live && marks.hint ? marks.hint.to : -1,
+      cursor = live ? (marks.cursor ?? this.hovered) : -1,
+      ringAt = (ring: T.Mesh, cell: number, lift = 0) => {
+        const at = cellAt(n, cell);
+        ring.position.set(at.x, BOARD_TOP + 0.067 + lift, at.z);
+      };
+    this.hinted = hint;
+    this.hintRing.visible = this.hintGlow.visible = hint >= 0;
+    if (hint >= 0) {
+      ringAt(this.hintRing, hint, 0.002);
+      ringAt(this.hintGlow, hint, -0.001);
     }
+    this.cursorRing.visible = cursor >= 0 && cursor < n * n;
+    if (this.cursorRing.visible) ringAt(this.cursorRing, cursor, 0.003);
+    // For browser tests: the board's size, the bulbs lit, the hint, the cursor, and where every bulb lies on the canvas.
+    const el = this.renderer.domElement;
+    el.dataset.size = String(n);
+    el.dataset.lit = state.on.flatMap((on, i) => (on ? [i] : [])).join(" ");
+    el.dataset.hint = String(hint);
+    el.dataset.cursor = String(this.cursorRing.visible ? cursor : -1);
+    el.dataset.places = placesOf(this.camera, el, n, () => true);
+    this.redraw();
   }
-  protected released(x: number, y: number) {
-    const s = this.state;
-    if (!s) return;
-    const c = Math.floor((x - this.box.x) / this.box.cell),
-      r = Math.floor((y - this.box.y) / this.box.cell);
-    if (c >= 0 && c < s.size && r >= 0 && r < s.size) this.onPick(r * s.size + c);
+  /** The bench's own frame loop: the hint's glow breathes. */
+  private kick() {
+    if (!this.clock && !this.disposed && this.live) this.clock = requestAnimationFrame(this.frame);
   }
-  protected paint(pen: CanvasRenderingContext2D, w: number, h: number, now: number) {
-    const s = this.state;
-    pen.fillStyle = "#14171c";
-    pen.fillRect(0, 0, w, h);
-    if (!s) return;
-    // The status line stands over the top of the table: the board keeps clear of it.
-    const top = 56 * this.ratio,
-      foot = 30 * this.ratio,
-      side = Math.min(w * 0.94, h - top - foot) * 0.96,
-      cell = side / s.size,
-      x0 = (w - side) / 2,
-      y0 = top + (h - top - foot - side) / 2;
-    this.box = { x: x0, y: y0, cell };
-    rounded(pen, x0 - cell * 0.12, y0 - cell * 0.12, side + cell * 0.24, side + cell * 0.24, cell * 0.2);
-    pen.fillStyle = "#22262e";
-    pen.fill();
-    pen.strokeStyle = "#3a4250";
-    pen.lineWidth = 2 * this.ratio;
-    pen.stroke();
-    const at = (i: number) => ({ x: x0 + (i % s.size) * cell, y: y0 + Math.floor(i / s.size) * cell });
-    // The light thrown round each lit lamp, under the lamps themselves.
-    s.on.forEach((lit, i) => {
-      if (!lit) return;
-      const { x, y } = at(i),
-        glow = pen.createRadialGradient(x + cell / 2, y + cell / 2, cell * 0.2, x + cell / 2, y + cell / 2, cell * 0.78);
-      glow.addColorStop(0, "rgba(255,190,70,0.42)");
-      glow.addColorStop(1, "rgba(255,190,70,0)");
-      pen.fillStyle = glow;
-      pen.fillRect(x - cell * 0.3, y - cell * 0.3, cell * 1.6, cell * 1.6);
-    });
-    s.on.forEach((lit, i) => {
-      const { x, y } = at(i),
-        press = this.dip?.cell === i ? 1 - 0.1 * Math.sin((1 - (this.dip.until - now) / 160) * Math.PI) : 1;
-      // The socket each bulb sits in: a shallow square of the panel.
-      rounded(pen, x + cell * 0.06, y + cell * 0.06, cell * 0.88, cell * 0.88, cell * 0.16);
-      pen.fillStyle = lit ? "#3a3626" : "#1b1f26";
-      pen.fill();
-      pen.strokeStyle = "rgba(255,255,255,0.07)";
-      pen.lineWidth = 1.5 * this.ratio;
-      pen.stroke();
-      this.bulb(pen, x + cell / 2, y + cell / 2, cell * 0.8 * press, lit);
-    });
-    const ring = (cell_: number | null | undefined, color: string, width: number) => {
-      if (cell_ === null || cell_ === undefined || cell_ < 0 || cell_ >= s.on.length) return;
-      const { x, y } = at(cell_);
-      rounded(pen, x + cell * 0.04, y + cell * 0.04, cell * 0.92, cell * 0.92, cell * 0.2);
-      pen.strokeStyle = color;
-      pen.lineWidth = width * this.ratio;
-      pen.stroke();
-    };
-    ring(this.marks.hint?.to, "#ff4f38", 5);
-    ring(this.marks.cursor, "#6fb0ff", 3.5);
-  }
-  /** A light bulb standing on its cap, `size` tall, lit or dark. */
-  private bulb(pen: CanvasRenderingContext2D, cx: number, cy: number, size: number, lit: boolean) {
-    const r = size * 0.33,
-      gy = cy - size * 0.13,
-      neck = size * 0.15,
-      capTop = gy + r * 0.86,
-      capTall = size * 0.2,
-      glass = pen.createRadialGradient(cx - r * 0.3, gy - r * 0.35, r * 0.05, cx, gy, r * 1.05);
-    if (lit) {
-      glass.addColorStop(0, "#fffbe6");
-      glass.addColorStop(0.45, "#ffe27a");
-      glass.addColorStop(1, "#ffa726");
-    } else {
-      glass.addColorStop(0, "#8a94a6");
-      glass.addColorStop(0.5, "#596274");
-      glass.addColorStop(1, "#3a4252");
+  private frame = (now: number) => {
+    this.clock = 0;
+    if (this.disposed) return;
+    if (this.hinted >= 0) {
+      (this.hintGlow.material as T.MeshBasicMaterial).opacity = 0.25 + 0.18 * Math.sin((now / 1000) * 4);
+      this.redraw();
     }
-    // The glass: a ball drawn down into a neck.
-    pen.beginPath();
-    pen.arc(cx, gy, r, Math.PI * 0.72, Math.PI * 0.28, false);
-    pen.quadraticCurveTo(cx + neck * 1.25, capTop - size * 0.02, cx + neck, capTop + size * 0.02);
-    pen.lineTo(cx - neck, capTop + size * 0.02);
-    pen.quadraticCurveTo(cx - neck * 1.25, capTop - size * 0.02, cx + Math.cos(Math.PI * 0.72) * r, gy + Math.sin(Math.PI * 0.72) * r);
-    pen.closePath();
-    pen.fillStyle = glass;
-    pen.fill();
-    pen.strokeStyle = lit ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.16)";
-    pen.lineWidth = 1.5 * this.ratio;
-    pen.stroke();
-    // The filament: two posts and a coil between them.
-    pen.strokeStyle = lit ? "#fffef2" : "#252b36";
-    pen.lineWidth = Math.max(1, size * 0.022);
-    pen.lineCap = "round";
-    pen.beginPath();
-    pen.moveTo(cx - neck * 0.55, capTop);
-    pen.lineTo(cx - r * 0.34, gy + r * 0.05);
-    for (let k = 1; k <= 6; k++) pen.lineTo(cx - r * 0.34 + (r * 0.68 * k) / 6, gy + r * 0.05 + (k % 2 ? -r * 0.16 : 0));
-    pen.lineTo(cx + neck * 0.55, capTop);
-    pen.stroke();
-    // A glint on the glass.
-    pen.beginPath();
-    pen.ellipse(cx - r * 0.42, gy - r * 0.42, r * 0.2, r * 0.1, -0.8, 0, Math.PI * 2);
-    pen.fillStyle = lit ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)";
-    pen.fill();
-    // The screw cap and its contact.
-    const metal = pen.createLinearGradient(cx - neck, 0, cx + neck, 0);
-    metal.addColorStop(0, "#6f7682");
-    metal.addColorStop(0.45, "#d9dee6");
-    metal.addColorStop(1, "#5d6470");
-    rounded(pen, cx - neck, capTop + size * 0.015, neck * 2, capTall, size * 0.03);
-    pen.fillStyle = metal;
-    pen.fill();
-    pen.strokeStyle = "rgba(20,24,30,0.55)";
-    pen.lineWidth = Math.max(1, size * 0.016);
-    for (let k = 1; k <= 3; k++) {
-      const y = capTop + size * 0.015 + (capTall * k) / 4;
-      pen.beginPath();
-      pen.moveTo(cx - neck, y + size * 0.012);
-      pen.lineTo(cx + neck, y - size * 0.012);
-      pen.stroke();
-    }
-    pen.beginPath();
-    pen.ellipse(cx, capTop + size * 0.015 + capTall + size * 0.012, neck * 0.42, size * 0.028, 0, 0, Math.PI * 2);
-    pen.fillStyle = "#2a2f38";
-    pen.fill();
+    this.kick();
+  };
+  dispose() {
+    if (this.clock) cancelAnimationFrame(this.clock);
+    this.clock = 0;
+    for (const r of this.boardOwned) r.dispose();
+    this.boardOwned = [];
+    super.dispose();
   }
 }

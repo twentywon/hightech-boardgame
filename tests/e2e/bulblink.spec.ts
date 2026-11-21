@@ -105,3 +105,42 @@ test("bulb link: entered through its stage window, a seeded board is lit by foll
   await expect(canvas).toHaveAttribute("data-lit", state.path.join(" "));
   expect(errors).toEqual([]);
 });
+
+test("bulb link: quick taps given while a wire is laid are kept and played in order; a refused one drops the rest", async ({ page }, info) => {
+  const mobile = info.project.name === "mobile",
+    random = await seeded(page, 307),
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "전구 잇기");
+  await page.getByRole("dialog").locator(".stage-card").nth(1).click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  const canvas = page.locator("#board canvas");
+  await expect(canvas).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await settled(page);
+  rules.createGame(1, random);
+  const start = rules.createGame(2, random);
+  await expect(canvas).toHaveAttribute("data-bulbs", rules.bulbsOf(start).join(" "));
+  const way = rules.solve(start)!;
+  // Five taps in a row, none waiting for the wire before it: every one is played, in the order given.
+  for (const cell of way.slice(0, 5)) await tapCell(page, start, cell, mobile);
+  await expect(moves(page)).toHaveText("5수", { timeout: 20000 });
+  await rest(page);
+  await expect(canvas).toHaveAttribute("data-lit", way.slice(0, 5).join(" "));
+  // A tap that is not legal when its turn comes is refused with its words, and what was tapped after it is dropped.
+  let state = start;
+  for (const cell of way.slice(0, 5)) state = rules.play(state, { from: -1, to: cell, extra: -1 })!;
+  const n = state.size,
+    empty = state.cells.findIndex((kind, i) => kind === rules.EMPTY && (i + n >= n * n || state.cells[i + n] === rules.EMPTY));
+  await tapCell(page, state, way[5], mobile);
+  await tapCell(page, state, empty, mobile);
+  await tapCell(page, state, way[6], mobile);
+  await expect(page.locator("#turn")).toContainText("빈 소켓입니다.", { timeout: 20000 });
+  await rest(page);
+  await expect(moves(page)).toHaveText("6수");
+  await expect(canvas).toHaveAttribute("data-lit", way.slice(0, 6).join(" "));
+  // Undo takes the last back as before.
+  await page.locator("#pg-undo").click();
+  await expect(moves(page)).toHaveText("5수", { timeout: 20000 });
+  expect(errors).toEqual([]);
+});

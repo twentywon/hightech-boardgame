@@ -49,6 +49,8 @@ export interface PointView<S> {
   setPaused?: (paused: boolean) => void;
   /** Brings a view the player has turned back to where it started (the 시점 전환 of a `turnable` table). */
   resetView?: () => void;
+  /** A move of mine the screen refused (at once, or when its turn in a `queueMoves` queue came), for a view that shows it (a shake). */
+  refused?: (move: Move) => void;
   sync(state: S, animate?: boolean): void;
   setMarks(marks: Marks): void;
   setQuality(quality: "high" | "low"): void;
@@ -120,8 +122,13 @@ export interface PointConfig<S> {
    */
   /** `hintText` may depend on the move hinted at, for a puzzle whose hints point at different kinds of things. */
   puzzle?: { hint: (state: S) => Move | null; hintText?: string | ((state: S, move: Move) => string) };
-  /** A move given while the table still moves is kept and played the moment it rests (one, the latest), and no pause follows a move (glide cube: the user asked to give pushes ahead). */
-  queueMoves?: boolean;
+  /**
+   * A move given while the table still moves is kept and played the moment it rests, and no pause follows a move.
+   * `true` keeps one, the latest (glide cube: the user asked to give pushes ahead); `"all"` keeps every one, played in
+   * the order given, one each time the table rests (bulb link: quick taps in a row); a kept move found illegal when
+   * its turn comes is refused (with `refusal`'s words) and the rest are dropped. Undo, a restart or the end drops them.
+   */
+  queueMoves?: boolean | "all";
   /** A puzzle that begins again by itself, a moment after the failure has been seen, when this says the state is one (the user asked for it in glide cube and the laser puzzle). */
   restartOnFail?: (state: S) => boolean;
   /** Why a move of mine is refused, said in the status line until the next move (a piece that may not stand there). */
@@ -204,6 +211,8 @@ export interface PointController {
 }
 
 /** Whether a setting is offered for a variant and a mode (`settings` of a `PointConfig`). */
+/** How many moves a `queueMoves: "all"` screen keeps at most while the table moves. */
+const QUEUE_LIMIT = 24;
 /** How long a failure stands on the table before a `restartOnFail` puzzle begins again. */
 const RESTART_AFTER = 1600;
 const offered = (setting: PointSetting, variant: string, mode: PointOptions["mode"]) => !setting.fixed?.includes(variant) && (!setting.ai || mode === "ai");
@@ -253,8 +262,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     disposed = false,
     generation = 0,
     lockedUntil = 0,
-    /** A move given ahead (`queueMoves`), played once the table rests. */
-    queued: Move | null = null,
+    /** Moves given ahead (`queueMoves`: one with `true`, any number with "all"), played once the table rests. */
+    queued: Move[] = [],
     announced = false,
     thinking = false,
     paused = false,
@@ -463,7 +472,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     notice = "";
     announced = false;
     lockedUntil = 0;
-    queued = null;
+    queued = [];
     sound.enabled = settings.sound;
     sound.unlock();
     screen();
@@ -577,7 +586,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       if (config.knock) view.onKnock = (kind, strength) => config.knock!(sound, kind, strength);
       view.onSettled = present;
       view.onPick = pick;
-      view.onMove = commit;
+      view.onMove = (move) => commit(move);
       const canvas = view.renderer.domElement;
       canvas.tabIndex = 0;
       canvas.setAttribute("aria-label", `${config.name} 판`);
@@ -675,13 +684,16 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     // The keys go on being heard by the table.
     if (!paused) view?.renderer.domElement.focus({ preventScroll: true });
   }
-  function commit(move: Move) {
-    if (config.queueMoves && !paused && !over() && busy() && state !== shown) {
-      // Still moving: kept and played the moment the table rests.
-      queued = move;
-      return;
+  /** Plays a move of mine; false when it was refused (or could not be played now). `ahead` is a move kept in the queue whose turn has come. */
+  function commit(move: Move, ahead = false): boolean {
+    if (config.queueMoves && !paused && !over() && ((busy() && state !== shown) || (!ahead && config.queueMoves === "all" && queued.length))) {
+      // Still moving: kept and played the moment the table rests (after those given before it, with "all").
+      if (config.queueMoves === "all") {
+        if (queued.length < QUEUE_LIMIT) queued.push(move);
+      } else queued = [move];
+      return true;
     }
-    if (paused || (!config.live && busy()) || computerTurn() || over()) return;
+    if (paused || (!config.live && busy()) || computerTurn() || over()) return false;
     const next = game.play(state, move, cryptoRandom);
     if (!next) {
       // A game that says why a move is refused has it said in the status line.
@@ -691,10 +703,14 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         hinted = null;
         update();
       }
-      return;
+      view?.refused?.(move);
+      return false;
     }
     sound.unlock();
-    if (config.live) return apply(next);
+    if (config.live) {
+      apply(next);
+      return true;
+    }
     // In a game without undo, a choice that is not yet a move (a bet being set, a ball put down by hand) is followed by no pause.
     // Where undo exists everything is kept for it, moves that leave the count alone included (ships being laid).
     if (!config.noUndo || game.ply(next) !== game.ply(state)) {
@@ -705,6 +721,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       }
     }
     apply(next);
+    return true;
   }
   /** Arrow keys walk the points of the board; Enter taps the one under the cursor. */
   function key(e: KeyboardEvent) {
@@ -760,7 +777,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     commit(made);
   }
   function undo() {
-    queued = null;
+    queued = [];
     if (busy() || !past.length) return;
     // Against the computer, go back to my own last turn.
     let back = past.pop()!;
@@ -798,7 +815,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   /** Back to the puzzle as it was laid (처음부터, or by itself after a failure where `restartOnFail` says so). */
   function restartPuzzle() {
-    queued = null;
+    queued = [];
     generation++;
     state = shown = past[0];
     past = [];
@@ -823,10 +840,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       waitingSet = null;
     }
     update();
-    if (queued) {
-      const move = queued;
-      queued = null;
-      if (!over() && !busy()) commit(move);
+    if (queued.length) {
+      // The next move given ahead; with "all", a refused one drops those after it, and none is played after the end.
+      const move = queued.shift()!;
+      if (over() || busy() || !commit(move, true)) queued = [];
     }
     if (config.puzzle && config.restartOnFail?.(state) && past.length) {
       const failed = state;

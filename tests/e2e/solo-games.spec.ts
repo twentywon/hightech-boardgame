@@ -7,6 +7,7 @@ import { createGame as layJugs, solve as solveJugs } from "../../src/games/pour/
 import { createGame as gather, solve as ferry } from "../../src/games/river/rules";
 import * as tower from "../../src/games/hanoi/rules";
 import * as lamps from "../../src/games/lights/rules";
+import { BULB_Y as LAMP_Y, cellAt as lampAt, lightsSubject } from "../../src/games/lights/layout";
 import * as queenRules from "../../src/games/queens/rules";
 import * as tourRules from "../../src/games/knight/rules";
 import * as mazeRules from "../../src/games/tilt/rules";
@@ -540,7 +541,24 @@ test("tower of Hanoi: discs are chosen, a move is taken back, and the tower is m
   await expect(panel.locator("#pz-next")).toBeVisible();
   expect(errors).toEqual([]);
 });
-test("lights on: a board laid at random is lit in the fewest presses", async ({ page }) => {
+/** A tap (a touch on the phone) on a bulb of the lights-on board, at its glass where the table's camera shows it. */
+async function tapLamp(page: Page, size: number, cell: number, mobile: boolean) {
+  const box = (await page.locator("#board canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    subject = lightsSubject(size, aspect),
+    distance = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+  camera.position.set(0, Math.sin(subject.tilt) * distance, Math.cos(subject.tilt) * distance);
+  camera.lookAt(0, subject.lookY, 0);
+  camera.updateMatrixWorld();
+  const at = lampAt(size, cell),
+    v = new Vector3(at.x, LAMP_Y, at.z).project(camera),
+    x = box.x + ((v.x + 1) * box.width) / 2,
+    y = box.y + ((1 - v.y) * box.height) / 2;
+  if (mobile) await page.touchscreen.tap(x, y);
+  else await page.mouse.click(x, y);
+}
+test("lights on: a board laid at random is lit in the fewest presses", async ({ page }, info) => {
   const random = await seeded(page, 31),
     errors = await sit(page, "불 켜기");
   await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
@@ -554,12 +572,21 @@ test("lights on: a board laid at random is lit in the fewest presses", async ({ 
     board = walker(page, 4, 4);
   await expect(page.locator("#turn")).not.toContainText("최소");
   await expect(page.locator("#turn")).toContainText(`꺼진 불 ${state.on.filter((lit) => !lit).length}개`);
+  const canvas = page.locator("#board canvas");
+  await expect(canvas).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(canvas).toHaveAttribute("data-lit", state.on.flatMap((on, i) => (on ? [i] : [])).join(" "));
+  // The hint's gold ring stands on a bulb of a way through.
+  await page.locator("#pz-hint").click();
+  await expect(canvas).toHaveAttribute("data-hint", String(lamps.hint(state)!.to));
   await board.home();
   for (const [n, cell] of way.entries()) {
-    await board.go(cell);
+    // The first press is a tap on the bulb where the camera shows it, the rest go by the keyboard.
+    if (n === 0) await tapLamp(page, state.size, cell, info.project.name === "mobile");
+    else await board.go(cell);
     await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
     await rest(page);
     state = lamps.play(state, { from: -1, to: cell, extra: -1 })!;
+    await expect(canvas).toHaveAttribute("data-lit", state.on.flatMap((on, i) => (on ? [i] : [])).join(" "));
     if (state.winner === null) await expect(page.locator("#turn")).toContainText(`꺼진 불 ${state.on.filter((lit) => !lit).length}개`);
   }
   await expect(page.locator("#turn")).toContainText("성공!");

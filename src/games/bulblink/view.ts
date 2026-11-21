@@ -1,97 +1,20 @@
 import * as T from "three";
-import { block, capable, glossy, hop, planks, travel, wood } from "../../engine/scene-utils";
+import { block, capable, glossy, hop, travel } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { BOARD_TOP, BULB_Y, CELL, GLOW_MS, REACH, RUN_MS, bulbSubject, cellAt, cellUnder } from "./layout";
-import { BOX, BULB, DC, DR, directionOf, refusal, type State } from "./rules";
+import type { Move } from "../points/types";
+import { benchProps, bench, spanOf, bulbKit, canvasOf, emptySockets, flickerOn, framedBoard, makeBulb, placesOf, sequence, shine, textureOf, workshop, type Bulb, type Kit } from "./kit";
+import { BOX, BULB, type State } from "./rules";
 
 export const BULB_COLORS: [string, string] = ["#ffc35a", "#6c7178"];
-/** A sequence for scenery and the small differences between wires, the same every time. */
-const sequence = (seed: number) => () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
-const canvasOf = (w: number, h = w) => {
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  return { c, ctx: c.getContext("2d")! };
-};
-const textureOf = (c: HTMLCanvasElement) => {
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-};
-/** How much larger than its model a bulb (with its socket) stands. */
-const BULB_SCALE = 1.45;
 /** Where a wire leaves a socket, how high its ends sit and how thick it is. */
 const WIRE_OUT = 0.3,
   WIRE_Y = 0.055,
   WIRE_R = 0.022,
   WIRE_SEGMENTS = 48,
   WIRE_SIDES = 7;
-/**
- * The pegboard's face for a board of `n`: tan hardboard with rows of small round holes between the sockets, a pencilled
- * cross under every socket's place and a little wear.
- */
-function pegboard(n: number, span: number) {
-  const size = 1024,
-    { c, ctx } = canvasOf(size),
-    rand = sequence(4100 + n),
-    px = size / span;
-  const g = ctx.createLinearGradient(0, 0, size, size);
-  g.addColorStop(0, "#b9926a");
-  g.addColorStop(1, "#a9825b");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
-  // Fibres of the hardboard.
-  for (let k = 0; k < 2600; k++) {
-    ctx.fillStyle = `rgba(${rand() < 0.5 ? "90, 60, 35" : "235, 210, 170"}, ${0.04 + rand() * 0.06})`;
-    ctx.fillRect(rand() * size, rand() * size, 1 + rand() * 6, 1);
-  }
-  const at = (u: number) => size / 2 + u * px;
-  // Holes on a grid of quarter cells, left out where a socket stands.
-  const quarter = CELL / 4,
-    reach = span / 2 - 0.12;
-  for (let x = -reach; x <= reach; x += quarter)
-    for (let z = -reach; z <= reach; z += quarter) {
-      const fx = x / CELL + (n - 1) / 2,
-        fz = z / CELL + (n - 1) / 2,
-        nearSocket = Math.abs(fx - Math.round(fx)) < 0.3 && Math.abs(fz - Math.round(fz)) < 0.3 && Math.round(fx) >= 0 && Math.round(fz) >= 0 && Math.round(fx) < n && Math.round(fz) < n;
-      if (nearSocket) continue;
-      const cx = at(x),
-        cy = at(z);
-      ctx.fillStyle = "rgba(255, 236, 206, 0.35)";
-      ctx.beginPath();
-      ctx.arc(cx + 0.8, cy + 0.9, px * 0.034, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#3a2716";
-      ctx.beginPath();
-      ctx.arc(cx, cy, px * 0.03, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  // A pencilled cross at each socket's place, as a maker marks a board out before drilling.
-  ctx.strokeStyle = "rgba(60, 44, 32, 0.28)";
-  ctx.lineWidth = 1.4;
-  for (let r = 0; r < n; r++)
-    for (let col = 0; col < n; col++) {
-      const cx = at((col - (n - 1) / 2) * CELL),
-        cy = at((r - (n - 1) / 2) * CELL),
-        a = px * 0.34;
-      ctx.beginPath();
-      ctx.moveTo(cx - a, cy);
-      ctx.lineTo(cx + a, cy);
-      ctx.moveTo(cx, cy - a);
-      ctx.lineTo(cx, cy + a);
-      ctx.stroke();
-    }
-  // A darker band of wear round the rim.
-  const edge = ctx.createRadialGradient(size / 2, size / 2, size * 0.3, size / 2, size / 2, size * 0.72);
-  edge.addColorStop(0, "rgba(60, 36, 18, 0)");
-  edge.addColorStop(1, "rgba(60, 36, 18, 0.22)");
-  ctx.fillStyle = edge;
-  ctx.fillRect(0, 0, size, size);
-  return textureOf(c);
-}
 /** A cloth-covered cable's braid: two tones of red woven on the slant, repeated along the wire. */
 function braid() {
   const { c, ctx } = canvasOf(64, 32);
@@ -112,18 +35,6 @@ function braid() {
   t.wrapS = t.wrapT = T.RepeatWrapping;
   return t;
 }
-/** A soft round glow for halos, pulses and the light a bulb throws on the board. */
-function glowTexture() {
-  const { c, ctx } = canvasOf(128),
-    g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0, "rgba(255, 246, 214, 1)");
-  g.addColorStop(0.22, "rgba(255, 214, 140, 0.6)");
-  g.addColorStop(0.55, "rgba(255, 170, 70, 0.16)");
-  g.addColorStop(1, "rgba(255, 150, 50, 0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  return textureOf(c);
-}
 /** The label round the battery: black, with a copper band and a plus sign. */
 function batteryLabel() {
   const { c, ctx } = canvasOf(256, 64);
@@ -141,18 +52,6 @@ function batteryLabel() {
   ctx.fillText("1.5V", 92, 33);
   return textureOf(c);
 }
-/** One bulb, piece by piece: what lights and what stays. */
-interface Bulb {
-  cell: number;
-  root: T.Group;
-  glass: T.Mesh;
-  glassPaint: T.MeshStandardMaterial;
-  coilPaint: T.MeshStandardMaterial;
-  halo: T.Sprite;
-  pool: T.Mesh;
-  /** How bright it is now (0 off, 1 lit), and its share of the celebration. */
-  glow: number;
-}
 /** A wire laid from one bulb to the next. */
 interface Wire {
   from: number;
@@ -165,7 +64,7 @@ interface Wire {
  * at every place of the grid. Some sockets hold a glass bulb (clear glass, a coiled filament on two supports, a brass
  * screw base); grey junction boxes with four screws stand on others. A bulb is dark until the wire reaches it, then it
  * flickers on and glows warm, with a halo and a pool of light on the board. Each wire is a red cloth-covered cable
- * drawn from socket to socket in an arch, high enough to clear the bulbs it passes over; it runs out from the head with
+ * drawn from socket to socket in a low arch over the empty sockets between (no wire passes over a bulb); it runs out from the head with
  * a spark at its tip. The first bulb lit is joined to a battery that hops over to it. When everything is lit the bulbs
  * flare one after another along the wire. Marks: the head's blue ring, faint rings round the bulbs the wire can reach,
  * the hint's gold ring and the keyboard's white one (all left out of a picture taken for the collection).
@@ -178,6 +77,7 @@ export class BulbLinkView extends TableView<State> {
   private wires: Wire[] = [];
   private layer = new T.Group();
   private wireLayer = new T.Group();
+  private kit: Kit;
   private paint: Record<string, T.Material> = {};
   private shapes: Record<string, T.BufferGeometry> = {};
   private textures: Record<string, T.Texture> = {};
@@ -202,101 +102,41 @@ export class BulbLinkView extends TableView<State> {
   private clock = 0;
   /** The celebration's start (performance time), or 0. */
   private flareAt = 0;
+  /**
+   * Taps are taken while a wire is laid, so that the screen can keep them and play them in order (`queueMoves: "all"`).
+   * The table counts as moving only while the wire runs out (`running`) and during the celebration (`finale`): the
+   * bulb's flicker as it comes on runs on its own frames (`flickering`), so the next wire can start under it.
+   */
+  protected pressWhileMoving = true;
+  private running = false;
+  private finale = false;
+  private flickering = new Set<number>();
+  get animating() {
+    return this.running || (super.animating && this.finale);
+  }
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#2a221c");
     this.soft = !capable();
     this.live = !this.soft && !this.reducedMotion;
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
-    this.scene.background = new T.Color("#2a221c");
-    // A workshop lamp above and to the left, a cool sky from the window and warm bounce from the bench.
-    this.scene.add(new T.HemisphereLight("#dfe6f2", "#6a4a30", 1.5));
-    const lamp = new T.DirectionalLight("#fff1dc", 2.3);
-    lamp.position.set(-5, 10, 4);
-    lamp.castShadow = true;
-    lamp.shadow.mapSize.set(2048, 2048);
-    lamp.shadow.camera.left = lamp.shadow.camera.bottom = -9;
-    lamp.shadow.camera.right = lamp.shadow.camera.top = 9;
-    lamp.shadow.camera.far = 40;
-    lamp.shadow.normalBias = 0.02;
-    this.own(lamp.shadow);
-    const fill = new T.DirectionalLight("#ffe9cc", 0.45);
-    fill.position.set(4, 7, 8);
-    this.scene.add(lamp, fill);
-
+    // The workshop's light, the bench, the board's frame and the bulbs are shared with lights on (`kit.ts`).
+    workshop(this.scene, keep);
+    this.kit = bulbKit(keep, this.soft);
+    this.textures.glow = this.kit.glow;
     const p = <M extends T.Material>(name: string, material: M) => (this.paint[name] = keep(material));
     const g = (name: string, geometry: T.BufferGeometry) => (this.shapes[name] = keep(geometry));
-    this.textures.glow = keep(glowTexture());
     this.textures.braid = keep(braid());
-    p("bench", new T.MeshStandardMaterial({ ...planks(3, keep), color: "#c8a888" }));
-    p("frame", new T.MeshStandardMaterial({ map: keep(wood(false, 0.7)), color: "#d9b48a", roughness: 0.6 }));
-    p("porcelain", glossy({ color: "#f3f0ea", roughness: 0.3 }, 0.8));
-    p("hole", new T.MeshStandardMaterial({ color: "#1b1a19", roughness: 0.9 }));
-    p("bakelite", glossy({ color: "#2a2623", roughness: 0.35 }, 0.6));
-    p("brass", glossy({ color: "#c99a4a", roughness: 0.32, metalness: 0.85 }, 0.4));
-    p("tip", new T.MeshStandardMaterial({ color: "#151515", roughness: 0.4 }));
-    p("support", new T.MeshStandardMaterial({ color: "#9a9a96", roughness: 0.4, metalness: 0.8 }));
     p("steel", glossy({ color: "#8d949b", roughness: 0.42, metalness: 0.75 }, 0.3));
     p("lid", glossy({ color: "#a4abb2", roughness: 0.38, metalness: 0.7 }, 0.3));
-    p("screw", new T.MeshStandardMaterial({ color: "#d6d8d8", roughness: 0.3, metalness: 0.9 }));
+    this.paint.screw = this.kit.paint.screw;
     p("slot", new T.MeshStandardMaterial({ color: "#3b3e42", roughness: 0.6 }));
     p("cable", new T.MeshStandardMaterial({ map: this.textures.braid, roughness: 0.85 }));
     p("lead", new T.MeshStandardMaterial({ color: "#c7322a", roughness: 0.5 }));
     p("label", new T.MeshStandardMaterial({ map: keep(batteryLabel()), roughness: 0.45, metalness: 0.2 }));
     p("cap", glossy({ color: "#c9cbcd", roughness: 0.25, metalness: 0.9 }));
-    p("copper", glossy({ color: "#c57a43", roughness: 0.3, metalness: 0.85 }, 0.3));
-    p("handle", glossy({ color: "#e0b12c", roughness: 0.35 }));
     p("rubber", new T.MeshStandardMaterial({ color: "#2b2d31", roughness: 0.8 }));
 
-    // The bench under everything.
-    const bench = new T.Mesh(keep(new T.PlaneGeometry(40, 40).rotateX(-Math.PI / 2)), this.paint.bench);
-    bench.position.y = -0.16;
-    bench.receiveShadow = true;
-    this.scene.add(bench);
-
-    // A socket: a porcelain cup with a dark hole; a bulb's screw base, glass, filament and tip.
-    g("socket", new T.CylinderGeometry(0.2, 0.215, 0.06, 32).translate(0, BOARD_TOP + 0.03, 0));
-    g("hole", new T.CircleGeometry(0.085, 24).rotateX(-Math.PI / 2).translate(0, BOARD_TOP + 0.0605, 0));
-    // An empty socket is smaller than a bulb's, so that the bulbs stand out.
-    this.shapes.emptySocket = keep(this.shapes.socket.clone().scale(0.72, 0.8, 0.72));
-    this.shapes.emptyHole = keep(this.shapes.hole.clone().scale(0.72, 0.8, 0.72));
-    const screw: T.Vector2[] = [new T.Vector2(0.0, 0.055), new T.Vector2(0.072, 0.055)];
-    for (let k = 0; k < 4; k++) {
-      const y = 0.065 + k * 0.018;
-      screw.push(new T.Vector2(0.074, y), new T.Vector2(0.083, y + 0.007), new T.Vector2(0.074, y + 0.014));
-    }
-    screw.push(new T.Vector2(0.08, 0.14), new T.Vector2(0.0, 0.14));
-    g("screw", new T.LatheGeometry(screw.map((v) => new T.Vector2(v.x, v.y)), 28));
-    g("tip", new T.CylinderGeometry(0.045, 0.05, 0.02, 20).translate(0, 0.055, 0));
-    const glass = [
-      [0.0, 0.135],
-      [0.074, 0.135],
-      [0.08, 0.17],
-      [0.105, 0.215],
-      [0.148, 0.268],
-      [0.172, 0.33],
-      [0.168, 0.39],
-      [0.146, 0.445],
-      [0.108, 0.49],
-      [0.058, 0.513],
-      [0.0, 0.52],
-    ].map(([x, y]) => new T.Vector2(x, y));
-    g("glass", new T.LatheGeometry(glass, 36));
-    const coil: T.Vector3[] = [];
-    for (let k = 0; k <= 60; k++) {
-      const t = k / 60,
-        a = t * Math.PI * 2 * 7;
-      coil.push(new T.Vector3(-0.055 + 0.11 * t, 0.335 + Math.cos(a) * 0.011, Math.sin(a) * 0.011));
-    }
-    g("coil", new T.TubeGeometry(new T.CatmullRomCurve3(coil), 120, 0.0035, 4, false));
-    const supports = [
-      new T.CylinderGeometry(0.004, 0.004, 0.19, 5).translate(-0.055, 0.24, 0),
-      new T.CylinderGeometry(0.004, 0.004, 0.19, 5).translate(0.055, 0.24, 0),
-      new T.CylinderGeometry(0.016, 0.03, 0.08, 10).translate(0, 0.175, 0),
-    ];
-    g("support0", supports[0]);
-    g("support1", supports[1]);
-    g("stem", supports[2]);
-    g("pool", new T.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
+    bench(this.scene, this.kit, keep);
     // A junction box: a grey steel box with a lid, four screws and a cable gland.
     g("box", block(0.74, 0.32, 0.74, 0.05));
     g("lid", block(0.66, 0.03, 0.66, 0.012));
@@ -353,8 +193,7 @@ export class BulbLinkView extends TableView<State> {
     this.boxes.clear();
     this.clearWires();
     const keep = <R extends { dispose(): void }>(r: R) => (this.boardOwned.push(r), r);
-    const n = (this.size = state.size),
-      span = n * CELL + 0.7;
+    const n = (this.size = state.size);
     this.cells = state.cells;
     const add = (geometry: T.BufferGeometry, material: T.Material | T.Material[], parent: T.Object3D, shadow = true) => {
       const mesh = new T.Mesh(geometry, material);
@@ -363,59 +202,13 @@ export class BulbLinkView extends TableView<State> {
       parent.add(mesh);
       return mesh;
     };
-    // The frame of pale wood, and the pegboard set into it.
-    add(keep(block(span + 0.5, 0.1, span + 0.5, 0.06).translate(0, -0.11, 0)), this.paint.frame, this.layer);
-    const face = keep(new T.MeshStandardMaterial({ map: keep(pegboard(n, span)), roughness: 0.85 })),
-      edge = keep(new T.MeshStandardMaterial({ color: "#8f6a46", roughness: 0.9 }));
-    add(keep(block(span, 0.08, span, 0.02).translate(0, BOARD_TOP - 0.04, 0)), [edge, edge, face, edge, edge, edge], this.layer).castShadow = false;
-    // A socket at every place; the hole shows where it is empty.
-    const sockets = new T.InstancedMesh(this.shapes.emptySocket, this.paint.porcelain, n * n),
-      holes = new T.InstancedMesh(this.shapes.emptyHole, this.paint.hole, n * n),
-      m = new T.Matrix4();
-    let open = 0;
+    framedBoard(this.layer, n, this.kit, keep);
+    // An empty socket where there is no bulb (a box stands on one too); a bulb in its black socket where there is.
+    emptySockets(this.layer, this.kit, n, state.cells.flatMap((kind, i) => (kind === BULB ? [] : [i])));
     for (let cell = 0; cell < n * n; cell++) {
       const at = cellAt(n, cell);
-      m.makeTranslation(at.x, 0, at.z);
-      if (state.cells[cell] !== BULB) {
-        sockets.setMatrixAt(open, m);
-        holes.setMatrixAt(open++, m);
-      }
-    }
-    sockets.count = holes.count = open;
-    sockets.castShadow = true;
-    sockets.receiveShadow = holes.receiveShadow = true;
-    this.layer.add(sockets, holes);
-    for (let cell = 0; cell < n * n; cell++) {
-      const at = cellAt(n, cell);
-      if (state.cells[cell] === BULB) {
-        const root = new T.Group(),
-          glassPaint = keep(new T.MeshStandardMaterial({ color: "#d4e2e8", transparent: true, opacity: 0.45, roughness: 0.04, metalness: 0.1, depthWrite: false, emissive: "#ffcf86", emissiveIntensity: 0 })),
-          coilPaint = keep(new T.MeshStandardMaterial({ color: "#5d4c3b", roughness: 0.5, emissive: "#ffae40", emissiveIntensity: 0 }));
-        add(this.shapes.socket, this.paint.bakelite, root);
-        add(this.shapes.screw, this.paint.brass, root);
-        add(this.shapes.tip, this.paint.tip, root);
-        add(this.shapes.support0, this.paint.support, root, false);
-        add(this.shapes.support1, this.paint.support, root, false);
-        add(this.shapes.stem, glassPaint, root, false);
-        add(this.shapes.coil, coilPaint, root, false);
-        const glass = add(this.shapes.glass, glassPaint, root, false);
-        glass.renderOrder = 2;
-        glass.userData.cell = cell;
-        // A slight turn each, so that the filaments do not all lie one way.
-        root.rotation.y = sequence(cell * 7919 + 3)() * Math.PI;
-        root.position.set(at.x, 0, at.z);
-        root.scale.setScalar(BULB_SCALE);
-        root.userData.cell = cell;
-        const halo = new T.Sprite(keep(new T.SpriteMaterial({ map: this.textures.glow, color: "#ffd690", transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending })));
-        halo.position.set(at.x, BULB_Y + 0.02, at.z);
-        halo.renderOrder = 6;
-        const pool = new T.Mesh(this.shapes.pool, keep(new T.MeshBasicMaterial({ map: this.textures.glow, color: "#ffb860", transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending })));
-        pool.position.set(at.x, BOARD_TOP + 0.064, at.z);
-        pool.scale.setScalar(2);
-        pool.renderOrder = 3;
-        this.layer.add(root, halo, pool);
-        this.bulbs.set(cell, { cell, root, glass, glassPaint, coilPaint, halo, pool, glow: 0 });
-      } else if (state.cells[cell] === BOX) {
+      if (state.cells[cell] === BULB) this.bulbs.set(cell, makeBulb(this.layer, this.kit, n, cell, keep));
+      else if (state.cells[cell] === BOX) {
         const box = new T.Group(),
           rand = sequence(cell * 104729 + 5);
         add(this.shapes.box, this.paint.steel, box).position.y = 0.16 + 0.002;
@@ -440,39 +233,10 @@ export class BulbLinkView extends TableView<State> {
         this.boxes.set(cell, box);
       }
     }
-    this.props(n, span);
+    // A spool of wire and a screwdriver on the bench beside the board.
+    benchProps(this.layer, this.kit, spanOf(n), keep);
   }
-  /** A spool of wire, a screwdriver and a few loose screws on the bench beside the board. */
-  private props(n: number, span: number) {
-    const keep = <R extends { dispose(): void }>(r: R) => (this.boardOwned.push(r), r),
-      half = span / 2 + 0.25,
-      group = new T.Group();
-    const add = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number) => {
-      const mesh = new T.Mesh(keep(geometry), material);
-      mesh.position.set(x, y, z);
-      mesh.castShadow = mesh.receiveShadow = true;
-      group.add(mesh);
-      return mesh;
-    };
-    // The spool, standing on its end, beyond the far left corner (the far side shows more of the bench).
-    const sx = -half - 0.55,
-      sz = -half - 0.1;
-    add(new T.CylinderGeometry(0.42, 0.42, 0.06, 32), this.paint.frame, sx, -0.13, sz);
-    add(new T.CylinderGeometry(0.3, 0.3, 0.34, 32), this.paint.copper, sx, 0.07, sz);
-    add(new T.CylinderGeometry(0.42, 0.42, 0.06, 32), this.paint.frame, sx, 0.27, sz);
-    add(new T.CylinderGeometry(0.08, 0.08, 0.07, 16), this.paint.hole, sx, 0.3, sz);
-    // A screwdriver lying at the near left.
-    const driver = new T.Group();
-    const handle = new T.Mesh(keep(new T.CylinderGeometry(0.07, 0.06, 0.42, 16).rotateZ(Math.PI / 2)), this.paint.handle),
-      shaft = new T.Mesh(keep(new T.CylinderGeometry(0.018, 0.018, 0.5, 10).rotateZ(Math.PI / 2).translate(0.46, 0, 0)), this.paint.screw);
-    handle.castShadow = shaft.castShadow = true;
-    driver.add(handle, shaft);
-    driver.position.set(-half - 0.6, -0.09, half - 0.3);
-    driver.rotation.y = 0.9;
-    group.add(driver);
-    this.layer.add(group);
-  }
-  /** Where a wire from `a` to `b` runs: an arch that clears any bulb it passes over. */
+  /** Where a wire from `a` to `b` runs: a low arch over the empty sockets between (no wire passes over a bulb). */
   private curveOf(a: number, b: number, index: number) {
     const n = this.size,
       A = cellAt(n, a),
@@ -481,14 +245,8 @@ export class BulbLinkView extends TableView<State> {
       dz = B.z - A.z,
       length = Math.hypot(dx, dz),
       ux = dx / length,
-      uz = dz / length,
-      d = directionOf(n, a, b);
-    let over = false;
-    if (d >= 0 && this.cells) {
-      const step = DR[d] * n + DC[d];
-      for (let cell = a + step; cell !== b; cell += step) if (this.cells[cell] === BULB) over = true;
-    }
-    const lift = over ? 0.98 : Math.min(0.42, 0.12 + 0.05 * length),
+      uz = dz / length;
+    const lift = Math.min(0.42, 0.12 + 0.05 * length),
       side = (sequence(index * 31 + a * 7 + b)() - 0.5) * 0.1,
       px = -uz * side,
       pz = ux * side;
@@ -534,18 +292,7 @@ export class BulbLinkView extends TableView<State> {
   }
   /** Sets a bulb's brightness: 0 dark, 1 lit; above 1 while it flares. */
   private shine(bulb: Bulb, glow: number) {
-    bulb.glow = glow;
-    const g = Math.min(1, glow),
-      extra = Math.max(0, glow - 1),
-      paint = bulb.glassPaint;
-    paint.opacity = 0.45 + 0.43 * g;
-    paint.emissiveIntensity = g * (this.soft ? 0.95 : 1.25) + extra * 1.2;
-    paint.color.setRGB(0.83 + 0.17 * g, 0.885 + 0.08 * g, 0.91 - 0.2 * g);
-    bulb.coilPaint.emissiveIntensity = g * 3 + extra * 2;
-    const halo = bulb.halo.material as T.SpriteMaterial;
-    halo.opacity = g * (this.soft ? 0.55 : 0.8) + extra * 0.4;
-    bulb.halo.scale.setScalar((this.soft ? 1.0 : 1.4) * (0.6 + 0.4 * g) + extra * 1.2);
-    (bulb.pool.material as T.MeshBasicMaterial).opacity = g * (this.soft ? 0.35 : 0.5) + extra * 0.3;
+    shine(this.kit, bulb, glow);
   }
   /** The battery: beside the first bulb lit, or at rest on the near edge of the frame. */
   private batteryAt(state: State) {
@@ -634,9 +381,34 @@ export class BulbLinkView extends TableView<State> {
     if (!press || !at || !state || state.winner !== null || press.cell < 0) return;
     // A tap: let go near where it was pressed (a finger that slides far away has changed its mind).
     if (Math.hypot(at.x - press.x, at.z - press.z) > CELL * 0.9) return;
-    const move = { from: -1, to: press.cell, extra: -1 };
-    this.onMove(move);
-    if (this.state === state && refusal(state, move)) this.shake(press.cell);
+    // The screen plays it, keeps it until the wire running now has arrived, or refuses it (then `refused` shakes it).
+    this.onMove({ from: -1, to: press.cell, extra: -1 });
+  }
+  /** The screen refused a tap of mine (now or when its turn in the queue came): the bulb or box tapped shakes. */
+  refused(move: Move) {
+    this.shake(move.to);
+  }
+  sync(state: State, animate = true) {
+    this.running = this.finale = false;
+    super.sync(state, animate);
+  }
+  /** A bulb coming on: a flicker before it holds steady, on its own frames (taken back, it stops). */
+  private flicker(bulb: Bulb) {
+    const start = performance.now(),
+      cell = bulb.cell;
+    this.flickering.add(cell);
+    const step = (now: number) => {
+      if (this.disposed || this.bulbs.get(cell) !== bulb || !this.state?.lit[cell]) {
+        this.flickering.delete(cell);
+        return;
+      }
+      const p = Math.min(1, (now - start) / GLOW_MS);
+      this.shine(bulb, flickerOn(p));
+      this.redraw();
+      if (p < 1) requestAnimationFrame(step);
+      else this.flickering.delete(cell);
+    };
+    step(start);
   }
   /**
    * A bulb or box that may not be chosen shakes a little in its socket. It runs on its own frames, not as a tween, so
@@ -664,7 +436,8 @@ export class BulbLinkView extends TableView<State> {
     this.layWires(state.path);
     const won = state.winner === 0;
     for (const bulb of this.bulbs.values()) {
-      this.shine(bulb, state.lit[bulb.cell] ? (won ? 1.08 : 1) : 0);
+      // A bulb still flickering on is left to its flicker.
+      if (!state.lit[bulb.cell] || !this.flickering.has(bulb.cell)) this.shine(bulb, state.lit[bulb.cell] ? (won ? 1.08 : 1) : 0);
       bulb.root.position.y = 0;
     }
     const b = this.batteryAt(state);
@@ -710,15 +483,19 @@ export class BulbLinkView extends TableView<State> {
       });
       lightAt = ms - 20;
     }
-    // On: a click and a flicker before it holds steady.
-    this.tween(lightAt, 10, (p) => {
-      if (p === 1) this.onContact();
-    });
-    this.tween(lightAt, GLOW_MS, (p) => {
-      const flicker = p < 0.55 ? (Math.sin(p * 46) > 0 ? 0.85 : 0.25) : 1;
-      this.shine(bulb, Math.min(1, p * 1.6) * flicker);
+    // On: a click and a flicker before it holds steady. As the wire arrives the table counts as at rest, so that a tap
+    // given ahead starts the next wire while this bulb still flickers on.
+    this.running = true;
+    this.shine(bulb, 0);
+    this.tween(lightAt, 1, (p) => {
+      if (p < 1 || !this.running) return;
+      this.onContact();
+      this.flicker(bulb);
+      this.running = false;
+      this.onSettled();
     });
     if (state.winner === 0) {
+      this.finale = true;
       // Everything lit: a wave of light along the wire, from the battery to the last bulb.
       const start = lightAt + GLOW_MS + 120;
       state.path.forEach((cell, k) => {
@@ -772,16 +549,7 @@ export class BulbLinkView extends TableView<State> {
   }
   /** Where every cell is on the canvas (a bulb at its glass, anything else at the board), in CSS pixels, "x,y" joined by spaces. */
   private places(state: State) {
-    const el = this.renderer.domElement,
-      v = new T.Vector3(),
-      out: string[] = [];
-    this.camera.updateMatrixWorld();
-    for (let i = 0; i < state.cells.length; i++) {
-      const at = cellAt(state.size, i);
-      v.set(at.x, state.cells[i] === BULB ? BULB_Y : BOARD_TOP, at.z).project(this.camera);
-      out.push(`${Math.round(((v.x + 1) / 2) * el.clientWidth)},${Math.round(((1 - v.y) / 2) * el.clientHeight)}`);
-    }
-    return out.join(" ");
+    return placesOf(this.camera, this.renderer.domElement, state.size, (cell) => state.cells[cell] === BULB);
   }
   /** The bench's own frame loop: the head's ring breathes, the hint glows, and a pulse of current runs along the wire. */
   private kick() {
@@ -819,7 +587,7 @@ export class BulbLinkView extends TableView<State> {
     // The lit bulbs hum: a faint, slow breathing of their glow (stronger for a moment after the celebration).
     const after = this.flareAt ? Math.max(0, 1 - (performance.now() - this.flareAt) / 6000) : 0;
     for (const bulb of this.bulbs.values())
-      if (state.lit[bulb.cell]) this.shine(bulb, (state.winner === 0 ? 1.08 : 1) + 0.03 * Math.sin(t * 2.1 + bulb.cell) + after * 0.05 * Math.sin(t * 5 + bulb.cell));
+      if (state.lit[bulb.cell] && !this.flickering.has(bulb.cell)) this.shine(bulb, (state.winner === 0 ? 1.08 : 1) + 0.03 * Math.sin(t * 2.1 + bulb.cell) + after * 0.05 * Math.sin(t * 5 + bulb.cell));
   }
   dispose() {
     if (this.clock) cancelAnimationFrame(this.clock);

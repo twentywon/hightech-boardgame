@@ -13,21 +13,23 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  * One move, `{from: -1, to: cell, extra: -1}` through `play`, lights one bulb:
  * - The first move chooses the bulb to start from: any bulb. It lights, and the battery is joined to it.
  * - Every move after that lays a wire from the last bulb lit (the head) to `to`, which must be a link of the head.
- * - The links of a bulb: in each of the eight directions (row, column, diagonal) the line runs from cell to cell and
- *   stops at the first bulb that is still unlit: that bulb is the link in that direction. The line passes over empty
- *   sockets and over bulbs already lit (they are on the wire already), never over an unlit bulb. A box stops the
- *   line: there is no link beyond it in that direction. The edge of the board stops it too. So a bulb has at most
- *   eight links.
+ * - The links of a bulb: in each of the eight directions (row, column, diagonal) the line runs from cell to cell over
+ *   empty sockets and stops at the first bulb it meets: when that bulb is still unlit it is the link in that
+ *   direction; when it is lit already there is no link that way. A wire never passes over a bulb, lit or not (the
+ *   user asked: no bulb may be skipped). A box stops the line: there is no link beyond it in that direction. The edge
+ *   of the board stops it too. So a bulb has at most eight links, and the bulbs it can ever be joined to are fixed by
+ *   the board: the first bulb in each direction.
  * - Wires may cross each other: a wire runs in the air from socket to socket.
- * - Anything else (an empty socket, a box, a bulb already lit, an unlit bulb no line reaches) is refused, and
- *   `refusal` says why.
+ * - Anything else (an empty socket, a box, a bulb already lit, an unlit bulb no line reaches, one behind another bulb)
+ *   is refused, and `refusal` says why.
  * - When every bulb is lit the puzzle is won (`winner` 0). There is no failure: a head with no link left while bulbs
  *   are still unlit is a dead end, told by the status line, and taken back with undo (the hint is then none).
  * `path` is the bulbs lit, in order; `last` the wire just laid (`from` -1 for the start), for the view.
  *
  * A puzzle is laid at random (`createGame`): a path of bulbs is walked by these very rules (from the bulb laid last,
- * a random direction and a random distance to an empty cell, cells in line with few other bulbs preferred), so that
- * each step, replayed, links to the first unlit bulb: a new bulb is never laid on a cell an earlier wire passed over.
+ * a random direction and a random distance to an empty cell with nothing but empty cells between, cells that would
+ * be joined to few other bulbs preferred), so that each step, replayed, links to the first bulb in its direction: a
+ * new bulb is never laid on a cell an earlier wire passed over, and no wire is planned over a bulb already laid.
  * Boxes are then set on cells no wire of that path passes over, where they cut some other line. A board is judged by
  * `luck` (how often lighting at random, from a random bulb along random links, gets through) and by how many bulbs a
  * way through can start from (`countSolutions`, a depth-first search over the lit set and the head with memory and
@@ -74,11 +76,11 @@ export interface Stage {
   starts: number;
 }
 export const STAGES: Stage[] = [
-  { size: 5, bulbs: [5, 6], boxes: 0, luck: 0.6, starts: 1 },
-  { size: 6, bulbs: [8, 9], boxes: 0, luck: 0.25, starts: 0.7 },
-  { size: 7, bulbs: [11, 13], boxes: 2, luck: 0.1, starts: 0.5 },
-  { size: 8, bulbs: [15, 18], boxes: 3, luck: 0.04, starts: 0.5 },
-  { size: 9, bulbs: [20, 24], boxes: 4, luck: 0.02, starts: 0.5 },
+  { size: 5, bulbs: [5, 6], boxes: 0, luck: 0.45, starts: 0.8 },
+  { size: 6, bulbs: [8, 9], boxes: 0, luck: 0.15, starts: 0.5 },
+  { size: 7, bulbs: [11, 13], boxes: 2, luck: 0.05, starts: 0.4 },
+  { size: 8, bulbs: [15, 18], boxes: 3, luck: 0.015, starts: 0.35 },
+  { size: 9, bulbs: [20, 24], boxes: 4, luck: 0.006, starts: 0.35 },
 ];
 export const stageOf = (stage: number) => Math.max(1, Math.min(STAGES.length, Math.round(stage) || 1));
 
@@ -88,7 +90,7 @@ const head = (s: State) => (s.path.length ? s.path[s.path.length - 1] : -1);
 const inside = (n: number, r: number, c: number) => r >= 0 && c >= 0 && r < n && c < n;
 
 /** Where the line from `from` in direction `d` stops, by the rules above: the bulb it links to, or why there is none. */
-export function lineFrom(state: Board, from: number, d: number): { to: number; stop: "bulb" | "box" | "edge"; at: number } {
+export function lineFrom(state: Board, from: number, d: number): { to: number; stop: "bulb" | "lit" | "box" | "edge"; at: number } {
   const n = state.size;
   let r = Math.floor(from / n) + DR[d],
     c = (from % n) + DC[d];
@@ -96,7 +98,7 @@ export function lineFrom(state: Board, from: number, d: number): { to: number; s
     const cell = r * n + c,
       kind = state.cells[cell];
     if (kind === BOX) return { to: -1, stop: "box", at: cell };
-    if (kind === BULB && !state.lit[cell]) return { to: cell, stop: "bulb", at: cell };
+    if (kind === BULB) return state.lit[cell] ? { to: -1, stop: "lit", at: cell } : { to: cell, stop: "bulb", at: cell };
   }
   return { to: -1, stop: "edge", at: -1 };
 }
@@ -146,7 +148,8 @@ export function refusal(state: State, move: Move) {
   const line = lineFrom(state, from, d);
   if (line.to === cell) return null;
   if (line.stop === "box") return "상자에 막혔습니다.";
-  return "그 전구에는 줄이 닿지 않습니다. 줄은 처음 만나는 꺼진 전구에서 멈춥니다.";
+  if (line.stop === "lit") return "켜진 전구를 건너뛸 수 없습니다. 줄은 처음 만나는 전구에서 멈춥니다.";
+  return "전구를 건너뛸 수 없습니다. 줄은 처음 만나는 전구에서 멈춥니다.";
 }
 export function moves(state: State): Move[] {
   return reachable(state).map((to) => ({ from: -1, to, extra: -1 }));
@@ -173,9 +176,9 @@ export function undo(state: State): State {
 
 /*
  * The search over ways through. Bulbs are numbered 0..B-1 (B ≤ 30) in the order of the cells; a position is the set
- * of lit bulbs (a bit mask) and the head. For each bulb and direction, `rays` lists the bulbs along that line up to a
- * box or the edge; the link in that direction is the first of them not yet lit. `near` is every bulb on any of a
- * bulb's rays: whatever is lit later, a bulb can only ever be joined to those. A position is given up when an unlit
+ * of lit bulbs (a bit mask) and the head. For each bulb and direction, `rays` holds the first bulb along that line
+ * before a box or the edge (or nothing); it is the link in that direction while it is unlit. `near` is those bulbs:
+ * a bulb can only ever be joined to them, so a way through is a path through this fixed graph visiting every bulb. A position is given up when an unlit
  * bulb has no unlit or head bulb near it, when two unlit bulbs have only one each (only the last bulb of a way may),
  * or when the unlit bulbs and the head do not hang together through `near`. Positions are remembered.
  */
@@ -200,8 +203,10 @@ function graphOf(state: Pick<State, "size" | "cells">): Graph {
         const at = r * n + c;
         if (state.cells[at] === BOX) break;
         if (state.cells[at] === BULB) {
+          // No wire passes over a bulb: the first one met is the only one this way.
           ray.push(index.get(at)!);
           around |= 1 << index.get(at)!;
+          break;
         }
       }
       mine.push(ray);
@@ -360,13 +365,20 @@ export function hint(state: State): Move | null {
   return way && way.length ? move(way[0]) : null;
 }
 
-/** How much less likely each further bulb in line with a cell makes the walk to choose it. */
+/** How much less likely each further bulb a cell would be joined to makes the walk to choose it. */
 const ALIGNED = 0.3;
-/** How many bulbs lie in line with `cell` (on any of its eight lines, whatever lies between). */
+/** How the walk weighs a step to the next cell against a longer one. */
+const LEAN_NEAR = 0.7,
+  LEAN_FAR = 1.2;
+/** How many bulbs `cell` would be joined to: the first bulb met on each of its eight lines. */
 function aligned(kinds: ArrayLike<number>, n: number, cell: number) {
   let count = 0;
   for (let d = 0; d < 8; d++)
-    for (let r = Math.floor(cell / n) + DR[d], c = (cell % n) + DC[d]; inside(n, r, c); r += DR[d], c += DC[d]) if (kinds[r * n + c] === BULB) count++;
+    for (let r = Math.floor(cell / n) + DR[d], c = (cell % n) + DC[d]; inside(n, r, c); r += DR[d], c += DC[d])
+      if (kinds[r * n + c] === BULB) {
+        count++;
+        break;
+      }
   return count;
 }
 /** A path of `count` bulbs walked by the rules on an empty board of `n`, or null when the walk got stuck. */
@@ -380,18 +392,14 @@ export function walk(n: number, count: number, random: Random): number[] | null 
   while (path.length < count) {
     const options: { cell: number; weight: number; d: number; k: number }[] = [];
     for (let d = 0; d < 8; d++) {
-      let over = false;
       for (let k = 1, r = Math.floor(at / n) + DR[d], c = (at % n) + DC[d]; inside(n, r, c); k++, r += DR[d], c += DC[d]) {
         const cell = r * n + c;
-        if (kinds[cell]) {
-          // A lit bulb: the line goes on over it.
-          over = true;
-          continue;
-        }
+        // A bulb already laid: no wire may pass over it, so the line ends here.
+        if (kinds[cell]) break;
         if (crossed[cell]) continue;
-        // Lines that pass over lit bulbs and long lines are what make a board worth thinking about; a cell in line
-        // with few other bulbs leaves few ways through, so that the order matters.
-        options.push({ cell, weight: (over ? 3 : 1) * (k === 1 ? 0.7 : 1.2) * ALIGNED ** (aligned(kinds, n, cell) - 1), d, k });
+        // Long lines are what make a board worth thinking about; a cell joined to few other bulbs leaves few ways
+        // through, so that the order matters.
+        options.push({ cell, weight: (k === 1 ? LEAN_NEAR : LEAN_FAR) * ALIGNED ** (aligned(kinds, n, cell) - 1), d, k });
       }
     }
     if (!options.length) return null;
@@ -546,7 +554,7 @@ export function quick(seed: number): Random {
   };
 }
 /** How many boards that are hard enough by `luck` are looked at for the one with the fewest bulbs to start from. */
-const PICK = 6;
+const PICK = 10;
 /** How many boards are tried at most before the best one met so far is kept. */
 const TRIES = 400;
 /**
@@ -594,7 +602,7 @@ export const bulbLink: PointGame<State> = {
       ? "처음 켤 전구를 누르세요"
       : deadEnd(s)
         ? "막다른 곳입니다 · 무르기로 되돌리세요"
-        : "다음 전구를 누르세요 · 줄은 처음 닿는 꺼진 전구까지",
+        : "다음 전구를 누르세요 · 줄은 처음 만나는 전구까지",
   tally: () => ["", ""],
   reason: (s) => (s.winner === 0 ? "성공! 전구를 모두 켰습니다." : ""),
 };

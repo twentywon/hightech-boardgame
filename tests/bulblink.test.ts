@@ -36,7 +36,7 @@ describe("the link rule", () => {
     // A corner sees only three ways.
     expect(sorted(R.links(s, 0))).toEqual([2, 10, 12]);
   });
-  it("stops at the first unlit bulb and passes over lit ones", () => {
+  it("stops at the first bulb met, passing only over empty sockets: a lit bulb between blocks the way", () => {
     const s = board([
       "o.o.o", //
       ".....",
@@ -45,12 +45,35 @@ describe("the link rule", () => {
       ".....",
     ]);
     expect(R.links(s, 0)).toEqual([2]);
+    // Empty sockets are passed over: 0 reaches 2 across the socket at 1.
+    expect(R.lineFrom(s, 0, 2)).toEqual({ to: 2, stop: "bulb", at: 2 });
     const after = light(s, [2, 0]);
-    // From 0, the line east passes over the lit bulb at 2 to reach 4.
-    expect(R.links(after, 0)).toEqual([4]);
-    expect(R.play(after, tap(4))).not.toBeNull();
-    // From the middle bulb before anything is lit, 4 is not reached past 2.
+    // From 0, the line east meets the lit bulb at 2 and stops there: no wire skips a bulb, lit or not.
+    expect(R.links(after, 0)).toEqual([]);
+    expect(R.lineFrom(after, 0, 2)).toEqual({ to: -1, stop: "lit", at: 2 });
+    expect(R.play(after, tap(4))).toBeNull();
+    expect(R.refusal(after, tap(4))).toBe("켜진 전구를 건너뛸 수 없습니다. 줄은 처음 만나는 전구에서 멈춥니다.");
+    expect(R.deadEnd(after)).toBe(true);
+    // An unlit bulb between blocks it too.
     expect(R.play(R.play(s, tap(0))!, tap(4))).toBeNull();
+    expect(R.refusal(R.play(s, tap(0))!, tap(4))).toBe("전구를 건너뛸 수 없습니다. 줄은 처음 만나는 전구에서 멈춥니다.");
+    // Along the row the only ways through run end to end.
+    expect(light(s, [0, 2, 4]).winner).toBe(0);
+    expect(light(s, [4, 2, 0]).winner).toBe(0);
+  });
+  it("never links over a bulb on a diagonal either", () => {
+    const s = board([
+      "o....", //
+      ".....",
+      "..o..",
+      ".....",
+      "o...o",
+    ]);
+    // 0 sees 12 down the diagonal (24 lies behind it) and 20 down the column.
+    expect(sorted(R.links(s, 0))).toEqual([12, 20]);
+    const lit = light(s, [12, 20, 24]);
+    expect(R.links(lit, 24)).toEqual([]);
+    expect(R.refusal(lit, tap(0))).toContain("켜진 전구를 건너뛸 수 없습니다");
   });
   it("is stopped by a box", () => {
     const s = board([
@@ -106,7 +129,9 @@ describe("moves, refusals, the end and undo", () => {
     // Not in line with the head.
     expect(R.refusal(started, tap(24))).toContain("줄이 닿지 않습니다");
     // In line, but an unlit bulb stands between.
-    expect(R.refusal(started, tap(14))).toContain("처음 만나는 꺼진 전구");
+    expect(R.refusal(started, tap(14))).toBe("전구를 건너뛸 수 없습니다. 줄은 처음 만나는 전구에서 멈춥니다.");
+    // In line, but a lit bulb stands between.
+    expect(R.refusal(light(s, [12, 10]), tap(14))).toBe("켜진 전구를 건너뛸 수 없습니다. 줄은 처음 만나는 전구에서 멈춥니다.");
     // In line, but a box stands between.
     expect(R.refusal(light(s, [0]), tap(2))).toBe("상자에 막혔습니다.");
     // A legal tap is not refused.
@@ -151,7 +176,7 @@ describe("moves, refusals, the end and undo", () => {
 
 describe("the search", () => {
   it("counts the ways through a small board and the bulbs they start from", () => {
-    // Three bulbs in a row: from either end along the row, or from the middle to one end then over it to the other.
+    // Three bulbs in a row: only from either end along the row (from the middle, one end is cut off behind it).
     const s = board([
       "o.o.o", //
       ".....",
@@ -159,9 +184,10 @@ describe("the search", () => {
       ".....",
       ".....",
     ]);
-    expect(R.countSolutions(s)).toEqual({ ways: 4, starts: 3 });
-    expect(R.countSolutions(light(s, [2]))).toEqual({ ways: 2, starts: 1 });
-    expect(R.countSolutions(light(s, [2, 0, 4]))).toEqual({ ways: 1, starts: 1 });
+    expect(R.countSolutions(s)).toEqual({ ways: 2, starts: 2 });
+    expect(R.countSolutions(light(s, [2]))).toEqual({ ways: 0, starts: 1 });
+    expect(R.solve(light(s, [2]))).toBeNull();
+    expect(R.countSolutions(light(s, [0, 2, 4]))).toEqual({ ways: 1, starts: 1 });
   });
   it("finds a way exactly when the count has one", () => {
     const random = seeded(11);
@@ -202,8 +228,10 @@ describe("the generator", () => {
         expect(light(s, s.plan).winner).toBe(0);
         const counted = R.countSolutions(s, 1)!;
         expect(counted.starts).toBeGreaterThan(0);
-        // No wire of the plan passes over a box.
-        for (const cell of R.crossedBy(s.size, s.plan)) expect(s.cells[cell]).not.toBe(R.BOX);
+        // No wire of the plan passes over a box or a bulb: only empty sockets lie under it.
+        for (const cell of R.crossedBy(s.size, s.plan)) expect(s.cells[cell]).toBe(R.EMPTY);
+        // The hint follows a way through from the start.
+        expect(R.hint(s)!.to).toBe(s.plan[0]);
       }
       const mean = times.reduce((a, b) => a + b, 0) / times.length;
       expect(mean, `stage ${stage}`).toBeLessThan(600);
@@ -220,10 +248,10 @@ describe("the generator", () => {
       hard = luck(4),
       master = luck(5);
     expect(easy).toBeGreaterThan(hard);
-    expect(hard).toBeLessThan(0.1);
-    expect(master).toBeLessThan(0.06);
+    expect(hard).toBeLessThan(0.05);
+    expect(master).toBeLessThan(0.03);
   }, 120000);
-  it("walks paths whose every link, replayed, goes to the first unlit bulb", () => {
+  it("walks paths whose every link, replayed, goes to the first bulb in its direction, over empty sockets only", () => {
     const random = seeded(5);
     for (let k = 0; k < 50; k++) {
       const n = 5 + (k % 5),
@@ -233,6 +261,8 @@ describe("the generator", () => {
       for (const cell of path) cells[cell] = R.BULB;
       const s: R.State = { size: n, cells, path: [], lit: cells.map(() => 0), stage: 1, plan: path, last: null, winner: null, ply: 0 };
       expect(light(s, path).winner).toBe(0);
+      // No planned wire passes over a bulb.
+      for (const cell of R.crossedBy(n, path)) expect(cells[cell]).toBe(R.EMPTY);
     }
   });
   it("lays the same board from the same random numbers", () => {
