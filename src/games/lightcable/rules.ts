@@ -2,733 +2,625 @@ import { cryptoRandom, type Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 
 /**
- * 빛 케이블 (LIGHT CABLE), a cable-wrapping puzzle of the kind of the game 'Filament': a cable is drawn from a socket
- * round brass posts standing on a board, and every post it goes round lights up. Only the kind of puzzle was taken;
- * the name, the boards, the rules in detail and the look are our own.
+ * 빛 케이블 (LIGHT CABLE), a taut-cable puzzle of the kind of the game 'Filament': a cable is pulled from a socket
+ * round brass posts standing on a dark board, as a string is pulled round nails, and every post it wraps lights up.
+ * Only the kind of puzzle was taken; the name, the boards, the rules in detail and the look are our own.
  *
- * The board is `size` × `size` cells, numbered row by row from the top left (`r * size + c`); row 0 is the far side.
- * A cell is free or holds a post. Outside the board's edge stands the start socket, joined to one edge cell (`start`,
- * a cell and the side it faces out by: N 1, E 2, S 4, W 8); from the second stage an exit socket stands at another
- * edge cell (`exit`).
+ * Geometry (pure 2D, x to the right and z toward the player, in board units; nothing here knows Three.js or the DOM):
+ * - The board is `2 * width` by `2 * depth`, its middle at (0, 0). On it stand round posts (`posts`, a centre and the
+ *   radius the cable's middle line keeps from it), the hazards (`hazards`, high-voltage coils, a centre and a radius
+ *   the cable's middle line must stay outside), the start socket `start` (the cable's fixed end) and the exit socket
+ *   `exit`, both points.
+ * - Posts are of four kinds: `plain` (white, must be lit), `coloured` (red, blue or green, must be lit, and only by a
+ *   cable of its colour), `ring` (a small peg that turns the cable its colour from where it is wrapped on; it needs no
+ *   lighting) and `counted` (white, must be wrapped `need` separate times, its number shown).
+ * - The cable is the taut string: start → a list of wraps (`wraps`: a post and a side, `CW` clockwise or `CCW`
+ *   anticlockwise as seen from above) → its free end (which only the view knows: where the hand left it). Between
+ *   two wraps it runs along the common tangent of the two circles that fits their sides (`tangent`: an outer tangent
+ *   for the same side, an inner one for opposite sides; the start, the exit and the free end are points), and round
+ *   each wrapped post it follows the circle from where it arrives to where it leaves, the way its side says (`Arc`).
+ *   The runs up to the last wrap are fixed; the run from the last wrap to the free end is free.
  *
- * The cable (`path`) is a line of free cells, each beside the one before it (four directions), beginning at the start
- * cell (it is plugged in from the start, so `path` is never empty). It never uses a cell twice, so it can neither
- * cross nor overlap itself, and it never enters a post's cell.
+ * Lighting: a post is lit when the cable wraps it (bends round it); a straight run that only passes near it does not
+ * light it. The cable starts white. Wrapping a ring turns the cable the ring's colour from that wrap on. A plain or
+ * counted post counts every wrap; a coloured post counts a wrap only when the cable arriving at it is already of its
+ * colour (it is not refused otherwise: it simply stays dark). A plain or coloured post is lit by one wrap that counts,
+ * a counted post by `need` of them (`counts`). Taking a wrap back (an unwrap or undo) puts its light out again.
  *
- * The lighting rule (judged on the grid, exactly): the cable passes a post on one of its sides when it enters the cell
- * beside the post on that side (north, east, south or west; diagonal cells do not count). A post lights when the
- * cable has passed it on at least `need` different sides: two for most posts, three or four for a counted post (its
- * number is shown). So a post is lit by going round its corner (north then east) or by passing it on both sides.
- * This rule was chosen over "any cell beside it" because it makes the cable wrap the posts as in the kind of game, so
- * that the order of the wraps matters: a run of cable that goes round one post walls off a side of the next.
+ * Moves (every one goes through `play`; `from` is always -1):
+ * - WRAP `{from: -1, to: post * 2 + (side === CW ? 0 : 1), extra: -1}`: the cable has caught `post` on `side`. The new
+ *   fixed run is the tangent from the last wrap (or the start) to that post. Refused when it is the post wrapped last
+ *   (the same post twice in a row), when the run passes through another post (`THROUGH`: deeper than a hair inside it;
+ *   that post would have caught the cable first), and, on a stage where the cable may not cross itself (`crossing`
+ *   false: 어려움 and above), when the run crosses an earlier fixed run (the run coming into the last post included,
+ *   which it crosses when the cable goes more than half round that post).
+ * - UNWRAP `{from: -1, to: UNWRAP (-2), extra: -1}`: the last wrap comes free. Refused with nothing wrapped.
+ * - PLUG `{from: -1, to: PLUG (-3), extra: -1}`: the free end goes into the exit. Refused, with words naming what is left,
+ *   while a post that must be lit is not; then refused when the run from the last wrap to the exit passes through a
+ *   post or touches a hazard, or (where crossing is forbidden) crosses an earlier run. Otherwise it wins (`winner` 0).
+ * A wrap whose new fixed run (or the arc it fixes round the post before it) touches a hazard is a short circuit: the
+ * move is made and the puzzle is failed (`winner` 1, `trouble` "케이블이 고압 코일에 닿았습니다"), to be taken back
+ * with undo. The free run may lie across a coil while it is being dragged: it is not fixed yet.
  *
- * Colours (from the third stage): the cable starts white. A coloured post (red, blue, green) counts a side only when
- * the cable reaching that side is already of its colour; white posts count any colour. When the cable enters a cell
- * beside a coloured post, it takes that post's colour from there on (after the side is judged); beside posts of two
- * colours at once it keeps the colour it had. So a red post is lit by a cable that turns red at its first side and
- * goes on round two more, or by one that comes already red from another red post.
+ * The view turns the hand's continuous motion into these moves: as the free end moves, the free run sweeps; a post
+ * it comes to touch is caught on the side it was approached from (the first one the sweep meets when several are met
+ * at once, by angle from the pivot), and the last wrap comes free when the bend round it turns back past straight
+ * (its arc shrinks through zero). `undo` replays the moves made (`history`) but the last.
  *
- * Moves (every one goes through `play`), each one step, `{from: -1, to: cell, extra: -1}`:
- * - `to` beside the cable's end (the head), free and not on the cable: the cable is drawn on into it.
- * - `to` the cell before the head: the last step is taken back (the cable is wound in by one cell). A drag back over
- *   the cable, the Backspace key and a hint to go back are this move; undo takes back whatever was done last.
- * - Anything else is refused, and `refusal` says why (a post, a cell the cable already passes, a cell not beside the
- *   head, `OFF` for a step off the board).
- * A drag is played as one move a cell, so that undo unwinds it step by step.
- *
- * Won (`winner` 0) when every post is lit and, from the second stage on, the cable's end is in the exit cell (the
- * cable then plugs into the exit socket). There is no failure: a cable that can no longer light everything is wound
- * back.
- *
- * A puzzle is laid at random (`createGame`): a self-avoiding walk is drawn from the start socket (to an edge cell where
- * the exit is set), curling as it goes; posts are then set on cells beside it that the walk passes on enough sides
- * (`choosePosts`), some coloured where the walk still lights them in colour, some counted, and the walk is replayed
- * through `play` to confirm that it solves the board (it is kept as `plan`, which the hint follows while I do). A
- * board is judged by `luck`: how often a walker that steps at random among the steps that leave every post still
- * reachable gets through; it is kept when that is at most the stage's figure, or else the least lucky of the boards
- * tried. The hint off the plan is a depth-first search (`solve`) with the same pruning and a budget.
+ * A puzzle is laid at random (`createGame`): posts are scattered apart, a route through them all (an order and a side
+ * for each, a counted post visited `need` times, then the exit) is drawn that keeps clear of every other post and
+ * never crosses itself, plain posts it reaches on a cable a ring has coloured may be given that colour, coils are set close beside the route but clear of
+ * it where they block the most other runs, and the board is kept when the search (`solve`) finds a way through on its own
+ * and a random wrapper (wrapping, in a random order on random sides, posts that still need it) seldom gets through
+ * (`luck`); the route, replayed through `play`, solves it and is kept as `plan`. The hint follows the plan while the
+ * cable does, else a bounded depth-first search over (next post, side) (`solve`, its way kept to while it is followed,
+ * so that the hints agree); it frees the last wrap when the cable cannot be finished, and plugs in when only the exit
+ * is left.
  */
-export const N = 1,
-  E = 2,
-  S = 4,
-  W = 8;
-export const DIRS = [N, E, S, W];
-export const opposite = (bit: number) => (bit === N ? S : bit === E ? W : bit === S ? N : E);
-/** How many sides a mask holds. */
-export const bitCount = (mask: number) => (mask & 1) + ((mask >> 1) & 1) + ((mask >> 2) & 1) + ((mask >> 3) & 1);
-/** A step off the board (the keyboard's arrow at the edge), refused with words. */
-export const OFF = -2;
 export const WHITE = 0,
   RED = 1,
   BLUE = 2,
   GREEN = 3;
 /** The colours' names, for the words. */
 export const COLOUR_NAMES = ["흰", "빨간", "파란", "초록"];
+export const CW = 1,
+  CCW = -1;
+export type Side = 1 | -1;
+export type Kind = "plain" | "coloured" | "ring" | "counted";
+/** The moves that name no post. */
+export const UNWRAP = -2,
+  PLUG = -3;
+/** How far a run may dip into a post it passes before it counts as passing through it (the hand is not exact). */
+export const THROUGH = 0.04;
+/** The radius the cable's middle keeps from a post, a ring, and the radius of a hazard it must keep outside. */
+export const POST_R = 0.24,
+  RING_R = 0.17,
+  HAZARD_R = 0.3;
 
-/** The cell beside `cell` through side `bit`, or -1 off the board. */
-export function neighbour(size: number, cell: number, bit: number) {
-  const r = Math.floor(cell / size),
-    c = cell % size;
-  if (bit === N) return r > 0 ? cell - size : -1;
-  if (bit === S) return r < size - 1 ? cell + size : -1;
-  if (bit === E) return c < size - 1 ? cell + 1 : -1;
-  return c > 0 ? cell - 1 : -1;
+export interface Pt {
+  x: number;
+  z: number;
 }
-/** The side of `a` that faces `b`, or 0 when they are not side by side. */
-export function sideTo(size: number, a: number, b: number) {
-  for (const bit of DIRS) if (b >= 0 && neighbour(size, a, bit) === b) return bit;
-  return 0;
-}
-/** The sides of an edge cell that face out of the board. */
-export function outward(size: number, cell: number) {
-  return DIRS.filter((bit) => neighbour(size, cell, bit) < 0);
-}
-
-export interface Post {
-  cell: number;
+export interface Post extends Pt {
+  r: number;
+  kind: Kind;
   colour: number;
-  /** How many different sides the cable must pass: 2, or 3 or 4 for a counted post. */
+  /** Wraps that count, to be lit: 1, or 2 or 3 for a counted post; 0 for a ring. */
   need: number;
 }
-/** A socket: the edge cell it is joined to and the side of that cell it stands by. */
-export interface Port {
-  cell: number;
-  bit: number;
+export interface Hazard extends Pt {
+  r: number;
+}
+export interface Wrap {
+  post: number;
+  side: Side;
 }
 export interface Last {
-  /** The cell the step went into, or (`back`) the cell the cable was wound in from. */
-  cell: number;
-  back: boolean;
-  /** Posts (indices) this move lit, and those it put out. */
+  kind: "wrap" | "unwrap" | "plug";
+  /** The post wrapped or freed (-1 for a plug). */
+  post: number;
+  /** Posts this move lit, and those it put out. */
   lit: number[];
   dimmed: number[];
+  /** A short circuit. */
+  short: boolean;
 }
-export interface State {
-  size: number;
+export interface Board {
   stage: number;
+  /** Half the board's width (x) and depth (z). */
+  width: number;
+  depth: number;
   posts: Post[];
-  /** The post standing on each cell (its index), or -1. */
-  postAt: number[];
-  start: Port;
-  exit: Port | null;
-  /** The cable's cells from the start socket; the last is the head. */
-  path: number[];
-  /** The cable's colour as it leaves each cell of the path. */
-  tints: number[];
-  /** For each post, the sides (a mask) the cable has passed in a colour that counts. */
-  sides: number[];
-  /** A way through found as the board was laid; the hint follows it while I do. */
-  plan: number[];
+  hazards: Hazard[];
+  start: Pt;
+  exit: Pt;
+  /** Whether the cable may cross itself on this board. */
+  crossing: boolean;
+  /** A way through found as the board was laid; the hint follows it while the cable does. */
+  plan: Move[];
+}
+export interface State extends Board {
+  wraps: Wrap[];
+  /** The moves made, for undo by replay. */
+  history: Move[];
+  /** For each post, the wraps that count toward lighting it. */
+  counts: number[];
+  /** The cable's colour after its last wrap. */
+  tint: number;
+  trouble: string;
   last: Last | null;
   winner: Winner;
   ply: number;
 }
 
-/** What the lighting needs to know about a board. */
-type Board = Pick<State, "size" | "posts" | "postAt">;
-/**
- * The cable entering `cell` in colour `arrive`: the sides it passes are added to `sides`, and the colour it leaves
- * the cell in is returned (the rule above).
- */
-export function visit(board: Board, cell: number, arrive: number, sides: number[]) {
-  let dye = -1;
-  for (const bit of DIRS) {
-    const at = neighbour(board.size, cell, bit);
-    if (at < 0) continue;
-    const p = board.postAt[at];
-    if (p < 0) continue;
-    const post = board.posts[p];
-    // The cell lies on the post's side facing back toward it.
-    if (post.colour === WHITE || post.colour === arrive) sides[p] |= opposite(bit);
-    if (post.colour !== WHITE) dye = dye === -1 || dye === post.colour ? post.colour : -2;
-  }
-  return dye >= 0 ? dye : arrive;
+// --- Geometry ------------------------------------------------------------------------------------------------------
+
+const TAU = Math.PI * 2;
+/** An angle brought into [0, 2π). */
+export const turnOf = (a: number) => ((a % TAU) + TAU) % TAU;
+/** An angle brought into (−π, π]. */
+export const wrapPi = (a: number) => {
+  const t = turnOf(a);
+  return t > Math.PI ? t - TAU : t;
+};
+/** A circle the cable bends round on a side (`s`: +1 clockwise, −1 anticlockwise, seen from above), or a point (`r` 0). */
+export interface Anchor extends Pt {
+  r: number;
+  s: number;
 }
-/** The colours and the sides passed of a whole cable. */
-export function trace(board: Board, path: number[]) {
-  const sides = board.posts.map(() => 0),
+/** A straight stretch of cable, from `a` to `b`. */
+export interface Run {
+  a: Pt;
+  b: Pt;
+}
+/** The cable round a wrapped post: from the angle `from` (where it arrives) for `sweep` radians the way `s` says. */
+export interface Arc {
+  post: number;
+  x: number;
+  z: number;
+  r: number;
+  s: number;
+  from: number;
+  sweep: number;
+}
+/**
+ * The stretch of cable from anchor `a` to anchor `b` that leaves `a` and reaches `b` on their sides: the common
+ * tangent with `a`'s centre on side `a.s` of it and `b`'s on side `b.s` (a positive side is the right of the way the
+ * cable runs, so that it turns clockwise round that circle). Null when there is none (one circle inside the other).
+ */
+export function tangent(a: Anchor, b: Anchor): Run | null {
+  const dx = b.x - a.x,
+    dz = b.z - a.z,
+    length = Math.hypot(dx, dz),
+    k = b.s * b.r - a.s * a.r;
+  if (length < 1e-9 || Math.abs(k) >= length) return null;
+  const phi = Math.asin(-k / length),
+    ux = dx / length,
+    uz = dz / length,
+    c = Math.cos(phi),
+    s = Math.sin(phi),
+    // The way the cable runs: the line between the centres turned by phi (positive turns clockwise, seen from above).
+    wx = ux * c - uz * s,
+    wz = ux * s + uz * c,
+    // The right of that way.
+    nx = -wz,
+    nz = wx;
+  return { a: { x: a.x - a.s * a.r * nx, z: a.z - a.s * a.r * nz }, b: { x: b.x - b.s * b.r * nx, z: b.z - b.s * b.r * nz } };
+}
+/** How far a point is from a stretch of cable. */
+export function segmentDistance(p: Pt, a: Pt, b: Pt) {
+  const dx = b.x - a.x,
+    dz = b.z - a.z,
+    span = dx * dx + dz * dz,
+    t = span > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / span)) : 0;
+  return Math.hypot(a.x + dx * t - p.x, a.z + dz * t - p.z);
+}
+/** Whether two stretches cross each other (touching at an end does not count). */
+export function crosses(a: Pt, b: Pt, c: Pt, d: Pt) {
+  const rx = b.x - a.x,
+    rz = b.z - a.z,
+    sx = d.x - c.x,
+    sz = d.z - c.z,
+    den = rx * sz - rz * sx;
+  if (Math.abs(den) < 1e-12) return false;
+  const qx = c.x - a.x,
+    qz = c.z - a.z,
+    t = (qx * sz - qz * sx) / den,
+    u = (qx * rz - qz * rx) / den,
+    eps = 1e-4;
+  return t > eps && t < 1 - eps && u > eps && u < 1 - eps;
+}
+/** The angle of a point round a centre. */
+export const angleAt = (c: Pt, p: Pt) => Math.atan2(p.z - c.z, p.x - c.x);
+/** The arc round a post between where the cable arrives and where it leaves. */
+export function arcOf(post: number, centre: Post, s: number, arrive: Pt, leave: Pt): Arc {
+  const from = angleAt(centre, arrive);
+  return { post, x: centre.x, z: centre.z, r: centre.r, s, from, sweep: turnOf(s * (angleAt(centre, leave) - from)) };
+}
+/** How far a point is from an arc of cable. */
+export function arcDistance(p: Pt, arc: Arc) {
+  const rel = turnOf(arc.s * (angleAt(arc, p) - arc.from));
+  if (rel <= arc.sweep) return Math.abs(Math.hypot(p.x - arc.x, p.z - arc.z) - arc.r);
+  const end = arc.from + arc.s * arc.sweep;
+  return Math.min(
+    Math.hypot(p.x - (arc.x + Math.cos(arc.from) * arc.r), p.z - (arc.z + Math.sin(arc.from) * arc.r)),
+    Math.hypot(p.x - (arc.x + Math.cos(end) * arc.r), p.z - (arc.z + Math.sin(end) * arc.r)),
+  );
+}
+/** A point on an arc, `t` of the way along it. */
+export const arcPoint = (arc: Arc, t: number): Pt => {
+  const a = arc.from + arc.s * arc.sweep * t;
+  return { x: arc.x + Math.cos(a) * arc.r, z: arc.z + Math.sin(a) * arc.r };
+};
+/** The anchor of a wrap, or of a point. */
+export const anchorOf = (board: Pick<Board, "posts">, wrap: Wrap): Anchor => {
+  const p = board.posts[wrap.post];
+  return { x: p.x, z: p.z, r: p.r, s: wrap.side };
+};
+export const pointAnchor = (p: Pt): Anchor => ({ x: p.x, z: p.z, r: 0, s: 0 });
+/** The anchor the free run leaves from: the last wrap, or the start. */
+export const pivotOf = (state: Pick<State, "posts" | "wraps" | "start">): Anchor =>
+  state.wraps.length ? anchorOf(state, state.wraps[state.wraps.length - 1]) : pointAnchor(state.start);
+/**
+ * The cable of `state` as runs and arcs: the fixed runs (run i from anchor i to anchor i + 1, the start being anchor
+ * 0), then, when `end` is given, the free run to it (null runs are left out: an end inside the last post); an arc
+ * for every wrap that has a run on both sides. `tints[i]` is the colour of run i (and of the arc after it).
+ */
+export function cableOf(state: Pick<State, "posts" | "wraps" | "start">, end: Pt | null = null) {
+  const anchors = [pointAnchor(state.start), ...state.wraps.map((w) => anchorOf(state, w))];
+  if (end) anchors.push(pointAnchor(end));
+  const runs: Run[] = [],
+    arcs: Arc[] = [],
     tints: number[] = [];
   let tint = WHITE;
-  for (const cell of path) tints.push((tint = visit(board, cell, tint, sides)));
-  return { tints, sides };
-}
-export const isLit = (state: Pick<State, "posts" | "sides">, post: number) => bitCount(state.sides[post]) >= state.posts[post].need;
-export const litCount = (state: Pick<State, "posts" | "sides">) => state.posts.reduce((sum, _, i) => sum + (isLit(state, i) ? 1 : 0), 0);
-const head = (s: Pick<State, "path">) => s.path[s.path.length - 1];
-/** The cell before the head, or -1. */
-export const behind = (s: Pick<State, "path">) => (s.path.length > 1 ? s.path[s.path.length - 2] : -1);
-/** The tint the cable has at its end. */
-export const tintOf = (s: Pick<State, "tints">) => s.tints[s.tints.length - 1] ?? WHITE;
-const done = (s: Pick<State, "posts" | "sides" | "exit" | "path">) => litCount(s) === s.posts.length && (!s.exit || head(s) === s.exit.cell);
-
-/** The free cells beside the head the cable may be drawn into. */
-export function steps(state: State) {
-  if (state.winner !== null) return [];
-  const at = head(state),
-    out: number[] = [];
-  for (const bit of DIRS) {
-    const cell = neighbour(state.size, at, bit);
-    if (cell >= 0 && state.postAt[cell] < 0 && !state.path.includes(cell)) out.push(cell);
+  for (let i = 0; i + 1 < anchors.length; i++) {
+    const run = tangent(anchors[i], anchors[i + 1]);
+    if (!run) break;
+    tints.push(tint);
+    if (i > 0) {
+      const wrap = state.wraps[i - 1];
+      arcs.push(arcOf(wrap.post, state.posts[wrap.post], wrap.side, runs[i - 1].b, run.a));
+    }
+    runs.push(run);
+    const wrap = state.wraps[i];
+    if (wrap && state.posts[wrap.post].kind === "ring") tint = state.posts[wrap.post].colour;
   }
+  // The arc colours follow the run after them; the colour after the last wrap is the free run's.
+  return { runs, arcs, tints };
+}
+/** The posts (indices) a stretch passes through, apart from those in `skip`. */
+function through(posts: Post[], run: Run, skip: number[], margin = -THROUGH) {
+  const out: number[] = [];
+  posts.forEach((p, i) => {
+    if (!skip.includes(i) && segmentDistance(p, run.a, run.b) < p.r + margin) out.push(i);
+  });
   return out;
 }
-const step = (to: number): Move => ({ from: -1, to, extra: -1 });
-export function moves(state: State): Move[] {
-  if (state.winner !== null) return [];
-  const out = steps(state).map(step);
-  if (state.path.length > 1) out.push(step(behind(state)));
-  return out;
+/** Whether a stretch, or an arc, comes within `margin` of a hazard (0: touches it). */
+const touchesRun = (hazards: Hazard[], run: Run, margin = 0) => hazards.some((h) => segmentDistance(h, run.a, run.b) < h.r + margin);
+const touchesArc = (hazards: Hazard[], arc: Arc, margin = 0) => hazards.some((h) => arcDistance(h, arc) < h.r + margin);
+
+// --- Lighting and moves --------------------------------------------------------------------------------------------
+
+/** The wraps that count for each post, and the cable's colour after the last. */
+export function trace(board: Pick<Board, "posts">, wraps: Wrap[]) {
+  const counts = board.posts.map(() => 0);
+  let tint = WHITE;
+  for (const w of wraps) {
+    const p = board.posts[w.post];
+    if (p.kind === "ring") tint = p.colour;
+    else if (p.kind !== "coloured" || p.colour === tint) counts[w.post]++;
+  }
+  return { counts, tint };
 }
-/** Why a step to `move.to` is refused, or null. */
-export function refusal(state: State, move: Move) {
-  if (state.winner !== null || move.from !== -1) return null;
-  const to = move.to,
-    n = state.size;
-  if (to === OFF) return "판 밖으로는 케이블을 끌 수 없습니다.";
-  if (to < 0 || to >= n * n) return null;
-  if (to === head(state)) return "케이블 끝이 있는 칸입니다. 끝을 옆 칸으로 끌어 늘이세요.";
-  if (state.postAt[to] >= 0) return "기둥이 선 칸입니다. 케이블은 기둥 옆의 빈칸으로 지나가며 기둥을 감습니다.";
-  if (to === behind(state)) return null;
-  if (state.path.includes(to)) return "케이블이 이미 지나간 칸입니다. 케이블은 자기 자신과 겹치거나 엇갈릴 수 없습니다.";
-  if (!sideTo(n, head(state), to)) return "케이블 끝 바로 옆 칸(가로·세로)으로만 늘일 수 있습니다.";
+/** Whether a post must be lit (rings need not). */
+export const mustLight = (post: Post) => post.kind !== "ring";
+export const isLit = (state: Pick<State, "posts" | "counts">, i: number) => mustLight(state.posts[i]) && state.counts[i] >= state.posts[i].need;
+export const unlitCount = (state: Pick<State, "posts" | "counts">) => state.posts.reduce((sum, p, i) => sum + (mustLight(p) && !isLit(state, i) ? 1 : 0), 0);
+
+export const wrapMove = (post: number, side: Side): Move => ({ from: -1, to: post * 2 + (side === CW ? 0 : 1), extra: -1 });
+export const unwrapMove = (): Move => ({ from: -1, to: UNWRAP, extra: -1 });
+export const plugMove = (): Move => ({ from: -1, to: PLUG, extra: -1 });
+export type Decoded = { kind: "wrap"; post: number; side: Side } | { kind: "unwrap" } | { kind: "plug" };
+/** What a move is, or null when it is no move of this game. */
+export function decode(move: Move, posts = Infinity): Decoded | null {
+  if (move.from !== -1 || move.extra !== -1 || !Number.isInteger(move.to)) return null;
+  if (move.to === UNWRAP) return { kind: "unwrap" };
+  if (move.to === PLUG) return { kind: "plug" };
+  if (move.to < 0 || move.to >= posts * 2) return null;
+  return { kind: "wrap", post: move.to >> 1, side: move.to & 1 ? CCW : CW };
+}
+/**
+ * What is wrong with a wrap of `post` on `side` from the cable of `state`: "same", "through" or "cross" when it is
+ * refused; "short" when it is made but touches a coil; "" when it is fine. `margin` (for the search and the
+ * generator) keeps runs that far clear of posts and coils besides.
+ */
+export function judgeWrap(state: State, post: number, side: Side, margin = 0): "" | "same" | "through" | "cross" | "short" | "none" {
+  const wraps = state.wraps,
+    last = wraps.length ? wraps[wraps.length - 1] : null;
+  if (last && last.post === post) return "same";
+  const pivot = pivotOf(state),
+    run = tangent(pivot, anchorOf(state, { post, side }));
+  if (!run) return "none";
+  const skip = last ? [post, last.post] : [post];
+  if (through(state.posts, run, skip, margin > 0 ? margin : -THROUGH).length) return "through";
+  if (!state.crossing && crossesCable(state, run)) return "cross";
+  if (touchesRun(state.hazards, run, margin)) return "short";
+  if (last) {
+    const { runs } = cableOf(state),
+      arrive = runs[runs.length - 1].b;
+    if (touchesArc(state.hazards, arcOf(last.post, state.posts[last.post], last.side, arrive, run.a), margin)) return "short";
+  }
+  return "";
+}
+/** Whether a new run crosses one of the fixed runs of the cable. */
+function crossesCable(state: State, run: Run) {
+  const { runs } = cableOf(state);
+  return runs.some((r) => crosses(r.a, r.b, run.a, run.b));
+}
+/** What is wrong with plugging in: "unlit", "through", "hazard" or "cross"; "" when it may be done. */
+export function judgePlug(state: State, margin = 0): "" | "unlit" | "through" | "hazard" | "cross" | "none" {
+  if (unlitCount(state)) return "unlit";
+  const pivot = pivotOf(state),
+    run = tangent(pivot, pointAnchor(state.exit));
+  if (!run) return "none";
+  const last = state.wraps[state.wraps.length - 1];
+  if (through(state.posts, run, last ? [last.post] : [], margin > 0 ? margin : -THROUGH).length) return "through";
+  if (touchesRun(state.hazards, run, margin)) return "hazard";
+  if (last) {
+    const { runs } = cableOf(state);
+    if (touchesArc(state.hazards, arcOf(last.post, state.posts[last.post], last.side, runs[runs.length - 1].b, run.a), margin)) return "hazard";
+  }
+  if (!state.crossing && crossesCable(state, run)) return "cross";
+  return "";
+}
+/** Why a move is refused, in words, or null. */
+export function refusal(state: State, move: Move): string | null {
+  if (state.winner !== null) return null;
+  const m = decode(move, state.posts.length);
+  if (!m) return null;
+  if (m.kind === "unwrap") return state.wraps.length ? null : "감긴 기둥이 없습니다.";
+  if (m.kind === "plug") {
+    const why = judgePlug(state);
+    if (why === "unlit") {
+      const left = unlitCount(state);
+      return `아직 불이 들어오지 않은 기둥이 ${left}개 있습니다. 모두 밝힌 다음 출구에 꽂으세요.`;
+    }
+    if (why === "through" || why === "none") return "출구까지 가는 케이블이 기둥에 걸립니다. 기둥을 피해 출구로 끄세요.";
+    if (why === "hazard") return "출구까지 가는 케이블이 고압 코일에 닿습니다. 코일을 피해 출구로 끄세요.";
+    if (why === "cross") return "케이블이 서로 겹칠 수 없습니다. 이 단계에서는 케이블이 자기 자신을 가로지르면 안 됩니다.";
+    return null;
+  }
+  const why = judgeWrap(state, m.post, m.side);
+  if (why === "same") return "방금 감은 기둥입니다. 같은 기둥을 연달아 감을 수는 없습니다.";
+  if (why === "through" || why === "none") return "케이블이 다른 기둥을 뚫고 지나갈 수 없습니다.";
+  if (why === "cross") return "케이블이 서로 겹칠 수 없습니다. 이 단계에서는 케이블이 자기 자신을 가로지르면 안 됩니다.";
   return null;
 }
-/** The state after one step (on, or back), or null when it may not be made. */
+const changed = (before: number[], after: Pick<State, "posts" | "counts">, beforeState: Pick<State, "posts" | "counts">) => ({
+  lit: before.flatMap((_, i) => (!isLit(beforeState, i) && isLit(after, i) ? [i] : [])),
+  dimmed: before.flatMap((_, i) => (isLit(beforeState, i) && !isLit(after, i) ? [i] : [])),
+});
+export const SHORT = "케이블이 고압 코일에 닿았습니다";
+/** The state after a move, or null when it may not be made. */
 export function play(state: State, move: Move): State | null {
-  if (state.winner !== null || move.from !== -1 || move.extra !== -1 || !Number.isInteger(move.to)) return null;
-  const to = move.to,
-    n = state.size,
-    path = state.path,
-    at = head(state);
-  if (to === behind(state)) {
-    const shorter = path.slice(0, -1),
-      { tints, sides } = trace(state, shorter),
-      dimmed = state.posts.flatMap((post, i) => (bitCount(state.sides[i]) >= post.need && bitCount(sides[i]) < post.need ? [i] : []));
-    return { ...state, path: shorter, tints, sides, last: { cell: at, back: true, lit: [], dimmed }, winner: null, ply: state.ply + 1 };
+  if (state.winner !== null) return null;
+  const m = decode(move, state.posts.length);
+  if (!m) return null;
+  const ply = state.ply + 1,
+    history = [...state.history, move];
+  if (m.kind === "plug") {
+    if (judgePlug(state)) return null;
+    return { ...state, history, winner: 0, trouble: "", last: { kind: "plug", post: -1, lit: [], dimmed: [], short: false }, ply };
   }
-  if (to < 0 || to >= n * n || !sideTo(n, at, to) || state.postAt[to] >= 0 || path.includes(to)) return null;
-  const sides = [...state.sides],
-    tint = visit(state, to, tintOf(state), sides),
-    lit = state.posts.flatMap((post, i) => (bitCount(sides[i]) >= post.need && bitCount(state.sides[i]) < post.need ? [i] : [])),
-    next: State = { ...state, path: [...path, to], tints: [...state.tints, tint], sides, last: { cell: to, back: false, lit, dimmed: [] }, winner: null, ply: state.ply + 1 };
-  if (done(next)) next.winner = 0;
-  return next;
+  if (m.kind === "unwrap") {
+    if (!state.wraps.length) return null;
+    const wraps = state.wraps.slice(0, -1),
+      { counts, tint } = trace(state, wraps),
+      next = { ...state, wraps, counts, tint },
+      { lit, dimmed } = changed(state.counts, next, state);
+    return { ...next, history, trouble: "", last: { kind: "unwrap", post: state.wraps[state.wraps.length - 1].post, lit, dimmed, short: false }, ply };
+  }
+  const why = judgeWrap(state, m.post, m.side);
+  if (why && why !== "short") return null;
+  const wraps = [...state.wraps, { post: m.post, side: m.side }],
+    { counts, tint } = trace(state, wraps),
+    next = { ...state, wraps, counts, tint },
+    { lit, dimmed } = changed(state.counts, next, state),
+    short = why === "short";
+  return { ...next, history, trouble: short ? SHORT : "", winner: short ? 1 : null, last: { kind: "wrap", post: m.post, lit, dimmed, short }, ply };
 }
-/** The state with the cable's last step taken back, replayed from the start. */
+/** The legal moves: every wrap `play` makes (a short circuit included), the unwrap, and the plug when it may be made. */
+export function moves(state: State): Move[] {
+  if (state.winner !== null) return [];
+  const out: Move[] = [];
+  state.posts.forEach((_, post) => {
+    for (const side of [CW, CCW] as Side[]) {
+      const why = judgeWrap(state, post, side);
+      if (!why || why === "short") out.push(wrapMove(post, side));
+    }
+  });
+  if (state.wraps.length) out.push(unwrapMove());
+  if (!judgePlug(state)) out.push(plugMove());
+  return out;
+}
+/** A board as laid, nothing wrapped. */
+export function fresh(board: Board): State {
+  return { ...board, wraps: [], history: [], counts: board.posts.map(() => 0), tint: WHITE, trouble: "", last: null, winner: null, ply: 0 };
+}
+/** The state with the last move taken back, replayed from the board as laid. */
 export function undo(state: State): State {
-  let s = fresh(state, state.plan);
-  for (const cell of state.path.slice(1, -1)) s = play(s, step(cell))!;
+  let s = fresh(state);
+  for (const move of state.history.slice(0, -1)) s = play(s, move) ?? s;
   return s;
 }
-/** A board as laid, its cable plugged into the start socket. */
-function fresh(board: Pick<State, "size" | "stage" | "posts" | "postAt" | "start" | "exit">, plan: number[]): State {
-  const path = [board.start.cell],
-    { tints, sides } = trace(board, path);
-  return { size: board.size, stage: board.stage, posts: board.posts, postAt: board.postAt, start: board.start, exit: board.exit, path, tints, sides, plan, last: null, winner: null, ply: 0 };
-}
-/** A board from its posts and sockets (tests and the generator). */
-export function boardOf(size: number, stage: number, posts: Post[], start: Port, exit: Port | null, plan: number[] = []): State {
-  const postAt = new Array(size * size).fill(-1);
-  posts.forEach((post, i) => (postAt[post.cell] = i));
-  return fresh({ size, stage, posts, postAt, start, exit }, plan);
-}
 
-/*
- * The search. A `Probe` holds a board and a cable in typed arrays and steps the cable on and back without copying,
- * so that the walker that judges a board and the hint's depth-first search are quick. A position is given up
- * (`hopeful` false) when some unlit post can no longer find enough sides among the free cells the head can still
- * reach (colours left out: they only make it harder), or when the exit can no longer be reached.
- */
-class Probe {
-  readonly n: number;
-  readonly cells: number;
-  readonly count: number;
-  readonly postAt: Int16Array;
-  readonly colour: Uint8Array;
-  readonly need: Uint8Array;
-  /** The cell on each side of each post (post * 4 + side index), or -1. */
-  readonly side: Int16Array;
-  readonly used: Uint8Array;
-  readonly sides: Uint8Array;
-  readonly exit: number;
-  readonly path: Int16Array;
-  len = 0;
-  tint = WHITE;
-  lit = 0;
-  private log: number[] = [];
-  private seen: Int32Array;
-  private stamp = 0;
-  private queue: Int16Array;
-  constructor(state: State) {
-    const n = (this.n = state.size);
-    this.cells = n * n;
-    this.count = state.posts.length;
-    this.postAt = Int16Array.from(state.postAt);
-    this.colour = Uint8Array.from(state.posts.map((p) => p.colour));
-    this.need = Uint8Array.from(state.posts.map((p) => p.need));
-    this.side = new Int16Array(this.count * 4);
-    state.posts.forEach((post, i) => DIRS.forEach((bit, k) => (this.side[i * 4 + k] = neighbour(n, post.cell, bit))));
-    this.used = new Uint8Array(this.cells);
-    this.sides = new Uint8Array(this.count);
-    this.exit = state.exit ? state.exit.cell : -1;
-    this.path = new Int16Array(this.cells);
-    this.seen = new Int32Array(this.cells);
-    this.queue = new Int16Array(this.cells);
-    for (const cell of state.path) this.step(cell);
-  }
-  get head() {
-    return this.path[this.len - 1];
-  }
-  free(cell: number) {
-    return cell >= 0 && !this.used[cell] && this.postAt[cell] < 0;
-  }
-  /** Draws the cable into `cell` (assumed free and beside the head), keeping what to restore. */
-  step(cell: number) {
-    const n = this.n,
-      log = this.log,
-      arrive = this.tint;
-    log.push(this.tint, this.lit);
-    let changed = 0,
-      dye = -1;
-    for (let k = 0; k < 4; k++) {
-      const at = neighbour(n, cell, DIRS[k]);
-      if (at < 0) continue;
-      const p = this.postAt[at];
-      if (p < 0) continue;
-      const colour = this.colour[p];
-      if (colour === WHITE || colour === arrive) {
-        const bit = opposite(DIRS[k]),
-          before = this.sides[p];
-        if (!(before & bit)) {
-          log.push(p, before);
-          changed++;
-          const after = before | bit;
-          this.sides[p] = after;
-          if (bitCount(before) < this.need[p] && bitCount(after) >= this.need[p]) this.lit++;
-        }
-      }
-      if (colour !== WHITE) dye = dye === -1 || dye === colour ? colour : -2;
-    }
-    log.push(changed);
-    if (dye >= 0) this.tint = dye;
-    this.used[cell] = 1;
-    this.path[this.len++] = cell;
-  }
-  unstep() {
-    const log = this.log,
-      cell = this.path[--this.len];
-    this.used[cell] = 0;
-    let changed = log.pop()!;
-    while (changed--) {
-      const before = log.pop()!,
-        p = log.pop()!;
-      this.sides[p] = before;
-    }
-    this.lit = log.pop()!;
-    this.tint = log.pop()!;
-  }
-  won() {
-    return this.lit === this.count && (this.exit < 0 || this.head === this.exit);
-  }
-  /** The free cells beside the head. */
-  open(out: number[]) {
-    out.length = 0;
-    const at = this.head;
-    for (const bit of DIRS) {
-      const cell = neighbour(this.n, at, bit);
-      if (this.free(cell)) out.push(cell);
-    }
-    return out;
-  }
-  /** Marks the free cells the head can still reach (`seen` equal to the stamp returned). */
-  private flood() {
-    const stamp = ++this.stamp,
-      seen = this.seen,
-      queue = this.queue,
-      n = this.n;
-    let top = 0,
-      end = 0;
-    queue[end++] = this.head;
-    seen[this.head] = stamp;
-    while (top < end) {
-      const at = queue[top++];
-      for (const bit of DIRS) {
-        const cell = neighbour(n, at, bit);
-        if (cell >= 0 && seen[cell] !== stamp && this.free(cell)) {
-          seen[cell] = stamp;
-          queue[end++] = cell;
-        }
-      }
-    }
-    return stamp;
-  }
-  hopeful() {
-    if (this.won()) return true;
-    const stamp = this.flood(),
-      seen = this.seen;
-    if (this.exit >= 0 && this.head !== this.exit && seen[this.exit] !== stamp) return false;
-    // Once everything is lit only the exit is wanted, and the flood has found it.
-    if (this.lit === this.count) return this.exit >= 0;
-    for (let p = 0; p < this.count; p++) {
-      const have = this.sides[p],
-        need = this.need[p];
-      let count = bitCount(have);
-      if (count >= need) continue;
-      for (let k = 0; k < 4 && count < need; k++) {
-        const cell = this.side[p * 4 + k];
-        if (cell >= 0 && !(have & DIRS[k]) && seen[cell] === stamp && cell !== this.head) count++;
-      }
-      if (count < need) return false;
-    }
-    return true;
-  }
-  /** Sides of unlit posts that a step into `cell` would count. */
-  gain(cell: number) {
-    let gained = 0;
-    for (let k = 0; k < 4; k++) {
-      const at = neighbour(this.n, cell, DIRS[k]);
-      if (at < 0) continue;
-      const p = this.postAt[at];
-      if (p < 0 || bitCount(this.sides[p]) >= this.need[p]) continue;
-      const colour = this.colour[p];
-      if ((colour === WHITE || colour === this.tint) && !(this.sides[p] & opposite(DIRS[k]))) gained++;
-    }
-    return gained;
-  }
-  /** Free cells beside `cell`, the head's cell left out. */
-  onward(cell: number) {
-    let count = 0;
-    for (const bit of DIRS) if (this.free(neighbour(this.n, cell, bit))) count++;
-    return count;
-  }
-}
+// --- Search --------------------------------------------------------------------------------------------------------
 
+/** How far the search and the plan keep their runs clear of posts and coils, so that a hand can follow them. */
+export const SAFE = 0.08,
+  PLAN_SAFE = 0.16;
+/** Whether a wrap of `post` would still be of use: it lights something, or turns the cable a colour still wanted. */
+function useful(state: State, post: number) {
+  const p = state.posts[post];
+  if (p.kind === "ring") return p.colour !== state.tint && state.posts.some((q, i) => q.kind === "coloured" && q.colour === p.colour && !isLit(state, i));
+  if (isLit(state, post)) return false;
+  return p.kind !== "coloured" || p.colour === state.tint;
+}
+/** How many positions the hint's search may visit. */
+const BUDGET = 25000;
 /**
- * How often a walker gets through: from the start, at each step a step chosen at random among those that leave the
- * position hopeful, `tries` times. A board where that seldom works is one where the order of the wraps must be thought
- * out.
+ * A way to finish from `state`: the moves to make (wraps, then the plug); [] when it is won, null when the search
+ * finds none within its budget. It wraps only posts that are of use (and, once everything is lit, up to two others on
+ * the way to the exit), keeps its runs `SAFE` clear of posts and coils, and tries the nearer posts first.
+ */
+export function solve(state: State, budget = BUDGET, preferPlan = true): Move[] | null {
+  if (state.winner === 0) return [];
+  if (state.winner !== null) return null;
+  const left = { n: budget },
+    way: Move[] = [],
+    failed = new Set<string>(),
+    open = new Set<string>(),
+    deepest = state.history.length + state.posts.reduce((sum, p) => sum + Math.max(1, p.need), 0) + 4;
+  // Where the cable may cross itself, what is left to do depends only on the last wrap, the colour and what is lit;
+  // where it may not, the runs laid matter too, so the whole cable is the key.
+  const key = (s: State) => {
+    if (!s.crossing) return s.wraps.map((w) => w.post * 2 + (w.side === CW ? 0 : 1)).join(",");
+    const w = s.wraps[s.wraps.length - 1];
+    return `${w ? w.post * 2 + (w.side === CW ? 0 : 1) : -1}|${s.tint}|${s.counts.join("")}`;
+  };
+  const search = (s: State, detours: number): boolean => {
+    if (--left.n < 0) return false;
+    if (!unlitCount(s) && !judgePlug(s, SAFE)) {
+      way.push(plugMove());
+      return true;
+    }
+    const k = key(s);
+    // A position seen before (or on the way here: a ring and back) is not searched again.
+    if (failed.has(k) || open.has(k) || s.history.length > deepest) return false;
+    const pivot = pivotOf(s),
+      done = !unlitCount(s);
+    if (done && detours >= 2) return false;
+    const options: { post: number; side: Side; far: number }[] = [];
+    s.posts.forEach((p, post) => {
+      if (!done && !useful(s, post)) return;
+      for (const side of [CW, CCW] as Side[]) {
+        if (judgeWrap(s, post, side, SAFE)) continue;
+        options.push({ post, side, far: Math.hypot(p.x - pivot.x, p.z - pivot.z) });
+      }
+    });
+    options.sort((a, b) => a.far - b.far || a.post - b.post || b.side - a.side);
+    if (preferPlan) {
+      const next = s.plan[s.history.length];
+      if (next && s.history.every((m, i) => s.plan[i] && m.to === s.plan[i].to)) {
+        const at = options.findIndex((o) => wrapMove(o.post, o.side).to === next.to);
+        if (at > 0) options.unshift(...options.splice(at, 1));
+      }
+    }
+    open.add(k);
+    for (const o of options) {
+      const move = wrapMove(o.post, o.side),
+        next = play(s, move);
+      if (!next || next.winner !== null) continue;
+      way.push(move);
+      if (search(next, done ? detours + 1 : detours)) return true;
+      way.pop();
+      if (left.n < 0) break;
+    }
+    open.delete(k);
+    if (left.n >= 0) failed.add(k);
+    return false;
+  };
+  return search(state, 0) ? way : null;
+}
+/** Whether the moves made so far are the first moves of the plan. */
+const onPlan = (state: State) => state.history.length < state.plan.length && state.history.every((m, i) => m.to === state.plan[i].to);
+/**
+ * The hint: the next move of a way through. While the cable follows the plan, the plan's next move; else the first of a
+ * way the search finds; when it finds none, the unwrap (which in the end brings the cable back onto a way that can be
+ * finished). Null when it is over.
+ */
+export function hint(state: State): Move | null {
+  if (state.winner !== null) return null;
+  if (onPlan(state)) {
+    const next = state.plan[state.history.length];
+    if (play(state, next)) return next;
+  }
+  // A way found before for this cable (the hint's own way, followed so far) is kept to, so that the hints agree.
+  let ways = found.get(state.posts);
+  if (!ways) found.set(state.posts, (ways = new Map()));
+  const here = historyKey(state.history),
+    known = ways.get(here);
+  if (known && known.length && play(state, known[0])) return known[0];
+  const way = solve(state);
+  if (way && way.length) {
+    if (ways.size > 400) ways.clear();
+    let key = here;
+    way.forEach((move, i) => {
+      ways.set(key, way.slice(i));
+      key = historyKey([move], key);
+    });
+    return way[0];
+  }
+  return state.wraps.length ? unwrapMove() : null;
+}
+/** Ways the hint has found, by board and by the moves made. */
+const found = new WeakMap<Post[], Map<string, Move[]>>();
+const historyKey = (moves: Move[], before = "") => moves.reduce((key, m) => `${key},${m.to}`, before);
+/**
+ * How often a random wrapper gets through: from the start, at each wrap a post that is still of use on a random side,
+ * among the wraps `play` would make; a short circuit ends the try. A board where that seldom works is one where the
+ * order and the sides must be thought out.
  */
 export function luck(state: State, tries: number, random: Random) {
-  const probe = new Probe(state),
-    base = probe.len,
-    open: number[] = [],
-    good: number[] = [];
   let won = 0;
   for (let t = 0; t < tries; t++) {
-    while (probe.len > base) probe.unstep();
-    for (;;) {
-      if (probe.won()) {
-        won++;
+    let s = state;
+    for (let guard = 0; guard < 40; guard++) {
+      if (!unlitCount(s)) {
+        if (!judgePlug(s)) won++;
         break;
       }
-      probe.open(open);
-      good.length = 0;
-      for (const cell of open) {
-        probe.step(cell);
-        if (probe.hopeful()) good.push(cell);
-        probe.unstep();
-      }
-      if (!good.length) break;
-      probe.step(good[Math.floor(random() * good.length)]);
+      const options: Move[] = [];
+      s.posts.forEach((_, post) => {
+        if (!useful(s, post)) return;
+        for (const side of [CW, CCW] as Side[]) {
+          const why = judgeWrap(s, post, side);
+          if (!why || why === "short") options.push(wrapMove(post, side));
+        }
+      });
+      if (!options.length) break;
+      const next = play(s, options[Math.floor(random() * options.length)])!;
+      if (next.winner === 1) break;
+      s = next;
     }
   }
   return won / tries;
 }
-/** How many positions the hint's search may visit. */
-const BUDGET = 60000;
-/**
- * A way to finish from the state shown: the cells to draw the cable into, in order; [] when it is won, null when the
- * search finds none (none at all, or none within its budget).
- */
-export function solve(state: State, budget = BUDGET): number[] | null {
-  if (state.winner !== null) return [];
-  const probe = new Probe(state),
-    base = probe.len,
-    left = { n: budget };
-  const order = (cells: number[]) => {
-    // Steps that pass unlit posts first; then, as Warnsdorff's rule has it, the cell with fewer ways on (so that the
-    // cable hugs what it has laid and leaves no pockets); once everything is lit, the nearest way to the exit.
-    if (probe.lit === probe.count && probe.exit >= 0) {
-      const far = distances(probe);
-      return cells.sort((a, b) => far[a] - far[b]);
-    }
-    return cells.map((cell) => ({ cell, score: probe.gain(cell) * 10 - probe.onward(cell) })).sort((a, b) => b.score - a.score || a.cell - b.cell).map((o) => o.cell);
-  };
-  const search = (): boolean => {
-    if (probe.won()) return true;
-    if (--left.n < 0 || !probe.hopeful()) return false;
-    for (const cell of order(probe.open([]))) {
-      probe.step(cell);
-      if (search()) return true;
-      probe.unstep();
-    }
-    return false;
-  };
-  if (!search()) return null;
-  return Array.from(probe.path.slice(base, probe.len));
-}
-/** How far each free cell is from the exit, through free cells (unreached: a large number). */
-function distances(probe: Probe) {
-  const far = new Int32Array(probe.cells).fill(1 << 20),
-    queue = [probe.exit];
-  far[probe.exit] = 0;
-  for (let top = 0; top < queue.length; top++) {
-    const at = queue[top];
-    for (const bit of DIRS) {
-      const cell = neighbour(probe.n, at, bit);
-      if (cell >= 0 && probe.free(cell) && far[cell] > far[at] + 1) {
-        far[cell] = far[at] + 1;
-        queue.push(cell);
-      }
-    }
-  }
-  return far;
-}
-/**
- * The hint: the next cell of a way through. While the cable follows the plan the board was laid with, the plan's next
- * cell; else the next cell of a way the search finds; when it finds none, a step back (the cell before the head),
- * which in the end brings the cable back onto a way that can be finished. Null when it is won.
- */
-export function hint(state: State): Move | null {
-  if (state.winner !== null) return null;
-  const { plan, path } = state;
-  if (path.length < plan.length && path.every((cell, i) => plan[i] === cell)) return step(plan[path.length]);
-  const way = solve(state);
-  if (way && way.length) return step(way[0]);
-  return path.length > 1 ? step(behind(state)) : null;
-}
-/** Whether the hint is to wind the cable back. */
-export const hintsBack = (state: State, move: Move) => move.to === behind(state);
-/** Unlit posts that the cable can no longer light, or an exit it can no longer reach: a dead end. */
-export function stuck(state: State) {
-  if (state.winner !== null) return false;
-  const probe = new Probe(state);
-  return !probe.hopeful() || (!probe.won() && probe.open([]).length === 0);
-}
 
-/** A stage: the board's size, how many posts, how much of the board the walk covers, the rules in play and how lucky a walker may be. */
+// --- Stages and laying a board -------------------------------------------------------------------------------------
+
 export interface Stage {
-  size: number;
+  /** Posts that must be lit, how many of them are coloured and how many counted, rings, and coils. */
   posts: [number, number];
-  share: [number, number];
-  exit: boolean;
-  /** How many colours the coloured posts are drawn from (0: none), and how many posts are coloured. */
-  colours: number;
   coloured: [number, number];
-  /** How many posts are counted (need three or four sides). */
   counted: [number, number];
+  rings: number;
+  hazards: [number, number];
+  /** Whether the cable may cross itself. */
+  crossing: boolean;
+  /** How lucky a random wrapper may be on a board kept at once. */
   luck: number;
 }
+/**
+ * The stages. Crossing is allowed on the first two (as in the kind of game, so that a beginner learns the wrapping and
+ * the coils first) and forbidden from 어려움 on, where the order of the wraps must then be planned so that no run
+ * cuts across another.
+ */
 export const STAGES: Stage[] = [
-  { size: 5, posts: [3, 4], share: [0.56, 0.72], exit: false, colours: 0, coloured: [0, 0], counted: [0, 0], luck: 0.35 },
-  { size: 6, posts: [5, 6], share: [0.58, 0.74], exit: true, colours: 0, coloured: [0, 0], counted: [0, 0], luck: 0.12 },
-  { size: 7, posts: [6, 8], share: [0.58, 0.74], exit: true, colours: 2, coloured: [2, 3], counted: [0, 0], luck: 0.06 },
-  { size: 8, posts: [9, 11], share: [0.6, 0.72], exit: true, colours: 2, coloured: [3, 5], counted: [0, 0], luck: 0.03 },
-  { size: 9, posts: [11, 13], share: [0.6, 0.72], exit: true, colours: 3, coloured: [4, 6], counted: [1, 3], luck: 0.02 },
+  { posts: [4, 5], coloured: [0, 0], counted: [0, 0], rings: 0, hazards: [1, 2], crossing: true, luck: 0.2 },
+  { posts: [6, 6], coloured: [0, 0], counted: [0, 0], rings: 0, hazards: [3, 3], crossing: true, luck: 0.08 },
+  { posts: [7, 8], coloured: [0, 0], counted: [0, 0], rings: 0, hazards: [3, 4], crossing: false, luck: 0.04 },
+  { posts: [6, 7], coloured: [2, 3], counted: [0, 0], rings: 2, hazards: [3, 4], crossing: false, luck: 0.03 },
+  { posts: [6, 7], coloured: [2, 2], counted: [1, 2], rings: 2, hazards: [4, 5], crossing: false, luck: 0.02 },
 ];
 export const stageOf = (stage: number) => Math.max(1, Math.min(STAGES.length, Math.round(stage) || 1));
+/** The board's half width and depth, and how far in from its edges posts stand. */
+export const WIDTH = 4.2,
+  DEPTH = 2.7,
+  INSET_X = 0.9,
+  INSET_Z = 0.6;
+/** The least distance between the middles of two posts, of a post and a ring, and between coils. */
+const POST_GAP = 1.15,
+  RING_GAP = 1.0;
 
-/** The list shuffled in place (Fisher–Yates). */
+const between = (range: [number, number], random: Random) => range[0] + Math.floor(random() * (range[1] - range[0] + 1));
 function shuffle<T>(list: T[], random: Random) {
   for (let i = list.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     [list[i], list[j]] = [list[j], list[i]];
   }
   return list;
-}
-const between = (range: [number, number], random: Random) => range[0] + Math.floor(random() * (range[1] - range[0] + 1));
-const onEdge = (n: number, cell: number) => outward(n, cell).length > 0;
-/**
- * How the walk weighs going straight on against turning, how much it prefers cells with few ways on (`hug`), how
- * much a step that passes a cell on its second side is worth (`wrap`), and how likely such a cell is to be kept for a
- * post (`keep`).
- */
-const WALK = { straight: 1, turn: 2, hug: 1.2, wrap: 3, keep: 0.9 };
-/** How many steps a walk may try, going back where it got stuck, before it gives up. */
-const WALK_BUDGET = 500;
-/**
- * A self-avoiding walk from a start socket on an edge, `length` cells or a little more, ending (when `exit`) on
- * another edge cell where the exit socket is set; null when it could not be finished. As it goes it curls round cells
- * it has passed on one side, and a cell it has passed on two sides is often kept free of it from then on (`kept`,
- * until `posts` are kept), so that posts can stand there. Where it is hemmed in it goes back and tries another way.
- */
-export function walk(n: number, length: number, exit: boolean, random: Random, posts = 0): { path: number[]; start: Port; exit: Port | null } | null {
-  const edges = [...Array(n * n).keys()].filter((cell) => onEdge(n, cell)),
-    first = edges[Math.floor(random() * edges.length)],
-    sides = outward(n, first),
-    start = { cell: first, bit: sides[Math.floor(random() * sides.length)] },
-    path: number[] = [];
-  // 0 free, 1 on the walk, 2 kept for a post.
-  let used = new Uint8Array(n * n),
-    passed = new Uint8Array(n * n),
-    kept = 0,
-    budget = WALK_BUDGET,
-    end: Port | null = null;
-  const free = (cell: number) => cell >= 0 && !used[cell];
-  const enter = (cell: number) => {
-    if (used[cell] === 2) kept--;
-    used[cell] = 1;
-    path.push(cell);
-    for (const bit of DIRS) {
-      const at = neighbour(n, cell, bit);
-      if (!free(at)) continue;
-      passed[at] |= opposite(bit);
-      if (kept < posts && bitCount(passed[at]) === 2 && random() < WALK.keep) {
-        used[at] = 2;
-        kept++;
-      }
-    }
-  };
-  const extend = (dir: number): boolean => {
-    if (--budget < 0) return false;
-    const at = path[path.length - 1];
-    if (path.length >= length) {
-      if (!exit) return true;
-      if (at !== first && onEdge(n, at)) {
-        const out = outward(n, at);
-        end = { cell: at, bit: out[Math.floor(random() * out.length)] };
-        return true;
-      }
-      if (path.length > length * 1.5) return false;
-    }
-    const options: { cell: number; bit: number; weight: number }[] = [];
-    for (const bit of DIRS) {
-      const cell = neighbour(n, at, bit);
-      if (cell < 0 || used[cell] === 1) continue;
-      let onward = 0,
-        wrapped = 0;
-      for (const b of DIRS) {
-        const next = neighbour(n, cell, b);
-        if (!free(next)) continue;
-        if (next !== at) onward++;
-        if (bitCount(passed[next]) === 1 && !(passed[next] & opposite(b))) wrapped++;
-      }
-      let weight = (bit === dir ? WALK.straight : WALK.turn) * (onward === 0 ? 0.03 : 1 / onward ** WALK.hug) * (1 + WALK.wrap * wrapped);
-      // A cell kept for a post is given up only where nothing else is left.
-      if (used[cell] === 2) weight *= 0.002;
-      // Past its length the walk makes for the edge, where the exit can stand.
-      if (exit && path.length >= length && onEdge(n, cell)) weight *= 6;
-      options.push({ cell, bit, weight });
-    }
-    // The ways on, tried in a random order drawn by their weights.
-    while (options.length) {
-      let pick = random() * options.reduce((sum, o) => sum + o.weight, 0),
-        index = options.length - 1;
-      for (let i = 0; i < options.length; i++)
-        if ((pick -= options[i].weight) < 0) {
-          index = i;
-          break;
-        }
-      const [chosen] = options.splice(index, 1),
-        saved = { used: used.slice(), passed: passed.slice(), kept };
-      enter(chosen.cell);
-      if (extend(chosen.bit)) return true;
-      path.pop();
-      ({ used, passed, kept } = saved);
-      if (budget < 0) return false;
-    }
-    return false;
-  };
-  enter(first);
-  if (!extend(opposite(start.bit))) return null;
-  return { path, start, exit: end };
-}
-/** Whether a mask of sides holds two that meet at a corner (a wrap, rather than two runs on either side). */
-const wraps = (mask: number) => !!(mask & (((mask << 1) | (mask >> 3)) & 15));
-/**
- * Posts for a walk: `count` cells off the walk that it passes on at least two sides, chosen at random (posts it goes
- * round preferred to posts it only runs past on both sides, posts in the open to posts beside another).
- */
-function choosePosts(n: number, path: number[], count: number, wantMore: boolean, random: Random): number[] | null {
-  const on = new Uint8Array(n * n);
-  for (const cell of path) on[cell] = 1;
-  const masks = new Array(n * n).fill(0);
-  for (const cell of path)
-    for (const bit of DIRS) {
-      const at = neighbour(n, cell, bit);
-      if (at >= 0 && !on[at]) masks[at] |= opposite(bit);
-    }
-  const chosen: number[] = [],
-    taken = new Uint8Array(n * n);
-  for (let k = 0; k < count; k++) {
-    const options: { cell: number; weight: number }[] = [];
-    for (let cell = 0; cell < n * n; cell++) {
-      if (on[cell] || taken[cell] || bitCount(masks[cell]) < 2) continue;
-      let weight = (wraps(masks[cell]) ? 2.2 : 1) * (wantMore && bitCount(masks[cell]) >= 3 ? 2.5 : 1);
-      for (const bit of DIRS) if (taken[neighbour(n, cell, bit)] && neighbour(n, cell, bit) >= 0) weight *= 0.35;
-      options.push({ cell, weight });
-    }
-    if (!options.length) return null;
-    let pick = random() * options.reduce((sum, o) => sum + o.weight, 0),
-      cell = options[options.length - 1].cell;
-    for (const o of options)
-      if ((pick -= o.weight) < 0) {
-        cell = o.cell;
-        break;
-      }
-    taken[cell] = 1;
-    chosen.push(cell);
-  }
-  return chosen;
-}
-/** The walk replayed on a board: whether every post is lit by its end (and the cable stands in the exit). */
-function lights(board: State, path: number[]) {
-  const { sides } = trace(board, path);
-  return board.posts.every((post, i) => bitCount(sides[i]) >= post.need);
-}
-/** A board laid at random for a stage, before it is judged; null when the walk or the posts did not come out. */
-export function lay(stage: number, random: Random): State | null {
-  const spec = STAGES[stage - 1],
-    n = spec.size,
-    length = Math.round(n * n * (spec.share[0] + random() * (spec.share[1] - spec.share[0]))),
-    walked = walk(n, length, spec.exit, random, spec.posts[1] + 2);
-  if (!walked) return null;
-  const cells = choosePosts(n, walked.path, between(spec.posts, random), spec.colours > 0 || spec.counted[1] > 0, random);
-  if (!cells) return null;
-  const posts: Post[] = cells.map((cell) => ({ cell, colour: WHITE, need: 2 }));
-  let board = boardOf(n, stage, posts, walked.start, walked.exit);
-  // Colours: posts in a random order, each given a colour where the walk still lights every post.
-  if (spec.colours) {
-    const want = between(spec.coloured, random),
-      order = shuffle([...posts.keys()], random);
-    let made = 0;
-    for (const i of order) {
-      if (made >= want) break;
-      // The colour used least so far first (the others after it), so that the colours are mixed.
-      const used = (c: number) => posts.filter((p) => p.colour === c).length,
-        tries = shuffle([...Array(spec.colours).keys()].map((k) => k + 1), random).sort((a, b) => used(a) - used(b));
-      for (const colour of tries) {
-        posts[i].colour = colour;
-        if (lights(board, walked.path)) break;
-        posts[i].colour = WHITE;
-      }
-      if (posts[i].colour !== WHITE) made++;
-    }
-    if (made < spec.coloured[0]) return null;
-    // Two colours at least, so that the colours mean something.
-    if (new Set(posts.map((p) => p.colour).filter(Boolean)).size < Math.min(2, made)) return null;
-  }
-  // Counted posts: some of those the walk passes on three or four sides need that many.
-  if (spec.counted[1]) {
-    const want = between(spec.counted, random),
-      { sides } = trace(board, walked.path),
-      able = shuffle([...posts.keys()].filter((i) => bitCount(sides[i]) >= 3), random);
-    if (able.length < spec.counted[0]) return null;
-    for (const i of able.slice(0, want)) posts[i].need = bitCount(sides[i]);
-  }
-  board = boardOf(n, stage, posts, walked.start, walked.exit);
-  // The plan: the walk, as far as it takes to win (without an exit the puzzle is won as the last post lights).
-  let s = board;
-  const plan = [walked.path[0]];
-  for (const cell of walked.path.slice(1)) {
-    if (s.winner !== null) break;
-    const next = play(s, step(cell));
-    if (!next) return null;
-    s = next;
-    plan.push(cell);
-  }
-  if (s.winner !== 0) return null;
-  return { ...board, plan };
 }
 /** A quick generator of numbers in [0, 1) from a 32-bit seed (mulberry32). */
 export function quick(seed: number): Random {
@@ -740,53 +632,238 @@ export function quick(seed: number): Random {
     return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
   };
 }
-/** Walkers a board is judged by, how many boards are tried at most, and how many that pass are compared. */
-const TRIES = 120,
-  BOARDS = 40,
-  PICK = 4;
-/** Free cells a board leaves that its plan does not use: the fewer, the less room to go wrong in without noticing. */
-const spareOf = (s: State) => s.size * s.size - s.posts.length - s.plan.length;
+/** A board from its pieces (tests and the generator). */
+export function boardOf(stage: number, posts: Post[], hazards: Hazard[], start: Pt, exit: Pt, plan: Move[] = [], crossing = STAGES[stageOf(stage) - 1].crossing): State {
+  return fresh({ stage, width: WIDTH, depth: DEPTH, posts, hazards, start, exit, crossing, plan });
+}
+/** Posts scattered apart within the board, `count` of them and `rings` rings after; null when they did not fit. */
+function scatter(count: number, rings: number, start: Pt, exit: Pt, random: Random): Post[] | null {
+  const out: Post[] = [];
+  for (let k = 0; k < count + rings; k++) {
+    const ring = k >= count;
+    let placed = false;
+    for (let tries = 0; tries < 300 && !placed; tries++) {
+      const x = (random() * 2 - 1) * (WIDTH - INSET_X),
+        z = (random() * 2 - 1) * (DEPTH - INSET_Z);
+      if (Math.hypot(x - start.x, z - start.z) < 1.0 || Math.hypot(x - exit.x, z - exit.z) < 1.0) continue;
+      if (out.some((p) => Math.hypot(p.x - x, p.z - z) < (ring || p.kind === "ring" ? RING_GAP : POST_GAP))) continue;
+      out.push({ x, z, r: ring ? RING_R : POST_R, kind: ring ? "ring" : "plain", colour: WHITE, need: ring ? 0 : 1 });
+      placed = true;
+    }
+    if (!placed) return null;
+  }
+  return out;
+}
+/** How far round a post the plan's cable may bend at least and at most, so that every wrap is plain to see. */
+const BEND = [0.45, 5.0];
 /**
- * A new puzzle of `stage` (1–5): of the first few boards laid on which the random walker gets through no more often
- * than the stage allows, the one with the least spare room; failing those, the least lucky of the boards tried. Its
- * walk, replayed through `play`, solves it and is kept as `plan`.
+ * A route through every post (a counted post `visits[i]` times, never twice in a row), drawn by a depth-first walk
+ * that tries nearer posts first, at random, keeping every run `PLAN_SAFE` clear of other posts, never crossing
+ * itself, with every bend plain; then on to the exit. Null when none was found within its budget.
+ */
+function route(board: State, visits: number[], random: Random): Wrap[] | null {
+  const left = visits.slice(),
+    wraps: Wrap[] = [],
+    budget = { n: 1500 };
+  const fits = (s: State, post: number, side: Side) => {
+    const why = judgeWrap(s, post, side, PLAN_SAFE);
+    if (why) return false;
+    if (!s.wraps.length) return true;
+    // The bend round the post before it.
+    const { runs } = cableOf(s),
+      last = s.wraps[s.wraps.length - 1],
+      run = tangent(pivotOf(s), anchorOf(s, { post, side }))!,
+      arc = arcOf(last.post, s.posts[last.post], last.side, runs[runs.length - 1].b, run.a);
+    return arc.sweep >= BEND[0] && arc.sweep <= BEND[1];
+  };
+  const walk = (s: State): boolean => {
+    if (--budget.n < 0) return false;
+    if (left.every((n) => n === 0)) {
+      if (judgePlug({ ...s, counts: s.posts.map((p) => p.need) }, PLAN_SAFE)) return false;
+      const last = s.wraps[s.wraps.length - 1];
+      if (last) {
+        const { runs } = cableOf(s),
+          run = tangent(pivotOf(s), pointAnchor(s.exit))!,
+          arc = arcOf(last.post, s.posts[last.post], last.side, runs[runs.length - 1].b, run.a);
+        if (arc.sweep < BEND[0] || arc.sweep > BEND[1]) return false;
+      }
+      return true;
+    }
+    const pivot = pivotOf(s),
+      options: { post: number; side: Side; weight: number }[] = [];
+    left.forEach((n, post) => {
+      if (!n) return;
+      const p = s.posts[post],
+        far = Math.hypot(p.x - pivot.x, p.z - pivot.z);
+      for (const side of [CW, CCW] as Side[]) options.push({ post, side, weight: random() / (far * far) });
+    });
+    options.sort((a, b) => b.weight - a.weight);
+    for (const o of options) {
+      if (!fits(s, o.post, o.side)) continue;
+      const next: State = { ...s, wraps: [...s.wraps, { post: o.post, side: o.side }] };
+      left[o.post]--;
+      wraps.push({ post: o.post, side: o.side });
+      if (walk(next)) return true;
+      wraps.pop();
+      left[o.post]++;
+      if (budget.n < 0) return false;
+    }
+    return false;
+  };
+  return walk({ ...board, crossing: false }) ? wraps : null;
+}
+/** Every run between two anchors (the start, each post on each side, the exit) that no post stands in, weighted. */
+function alternatives(board: State, plan: Wrap[]) {
+  const anchors: { anchor: Anchor; post: number }[] = [{ anchor: pointAnchor(board.start), post: -1 }];
+  board.posts.forEach((p, post) => {
+    for (const s of [CW, CCW]) anchors.push({ anchor: { x: p.x, z: p.z, r: p.r, s }, post });
+  });
+  anchors.push({ anchor: pointAnchor(board.exit), post: -2 });
+  const planned = new Set<string>(),
+    seq = [{ post: -1, s: 0 }, ...plan.map((w) => ({ post: w.post, s: w.side })), { post: -2, s: 0 }];
+  for (let i = 0; i + 1 < seq.length; i++) planned.add(`${seq[i].post}:${seq[i].s}>${seq[i + 1].post}:${seq[i + 1].s}`);
+  const out: { run: Run; weight: number }[] = [];
+  for (let i = 0; i < anchors.length; i++)
+    for (let j = 1; j < anchors.length; j++) {
+      const a = anchors[i],
+        b = anchors[j];
+      if (i === j || a.post === b.post || b.post === -1 || a.post === -2) continue;
+      if (planned.has(`${a.post}:${a.anchor.s}>${b.post}:${b.anchor.s}`)) continue;
+      const run = tangent(a.anchor, b.anchor);
+      if (!run) continue;
+      const skip = [a.post, b.post].filter((p) => p >= 0);
+      if (through(board.posts, run, skip).length) continue;
+      const length = Math.hypot(run.b.x - run.a.x, run.b.z - run.a.z);
+      out.push({ run, weight: 1 / (0.6 + length) });
+    }
+  return out;
+}
+/**
+ * Coils for a board with a planned cable: points kept clear of the posts, the sockets, the plan's runs and arcs (by
+ * `PLAN_SAFE`) and each other, chosen one by one among the few that cut the most runs the plan does not use.
+ */
+function placeHazards(board: State, plan: Wrap[], count: number, random: Random): Hazard[] {
+  const planned = cableOf({ ...board, wraps: plan }, board.exit),
+    pool = alternatives(board, plan),
+    out: Hazard[] = [];
+  const candidates: Hazard[] = [];
+  for (let k = 0; k < 160; k++) {
+    const h = { x: (random() * 2 - 1) * (WIDTH - 0.6), z: (random() * 2 - 1) * (DEPTH - 0.45), r: HAZARD_R };
+    if (board.posts.some((p) => Math.hypot(p.x - h.x, p.z - h.z) < p.r + h.r + 0.18)) continue;
+    if (Math.hypot(h.x - board.start.x, h.z - board.start.z) < 0.75 || Math.hypot(h.x - board.exit.x, h.z - board.exit.z) < 0.75) continue;
+    if (planned.runs.some((r) => segmentDistance(h, r.a, r.b) < h.r + PLAN_SAFE)) continue;
+    if (planned.arcs.some((a) => arcDistance(h, a) < h.r + PLAN_SAFE)) continue;
+    candidates.push(h);
+  }
+  let weights = pool.map((p) => p.weight);
+  for (let k = 0; k < count; k++) {
+    const scored = candidates
+      .filter((h) => !out.some((o) => Math.hypot(o.x - h.x, o.z - h.z) < h.r + o.r + 0.4))
+      .map((h) => ({ h, score: pool.reduce((sum, p, i) => sum + (segmentDistance(h, p.run.a, p.run.b) < h.r ? weights[i] : 0), 0) }))
+      .sort((a, b) => b.score - a.score);
+    if (!scored.length || scored[0].score <= 0) break;
+    const pick = scored[Math.floor(random() * Math.min(3, scored.length))].h;
+    out.push(pick);
+    // Runs already cut count far less for the next coil.
+    weights = weights.map((w, i) => (segmentDistance(pick, pool[i].run.a, pool[i].run.b) < pick.r ? w * 0.15 : w));
+  }
+  return out;
+}
+/** A board laid at random for a stage, before it is judged; null when the posts or the route did not come out. */
+export function lay(stage: number, random: Random): State | null {
+  const spec = STAGES[stage - 1],
+    start = { x: -WIDTH + 0.4, z: (random() * 2 - 1) * (DEPTH - 1.0) },
+    exit = { x: WIDTH - 0.4, z: (random() * 2 - 1) * (DEPTH - 1.0) },
+    count = between(spec.posts, random),
+    posts = scatter(count, spec.rings, start, exit, random);
+  if (!posts) return null;
+  // Counted posts and their visits.
+  const counted = shuffle([...Array(count).keys()], random).slice(0, between(spec.counted, random));
+  for (const i of counted) {
+    posts[i].kind = "counted";
+    posts[i].need = random() < 0.3 ? 3 : 2;
+    posts[i].r = POST_R + 0.02;
+  }
+  // Rings get different colours.
+  const colours = shuffle([RED, BLUE, GREEN], random);
+  posts.forEach((p, i) => {
+    if (p.kind === "ring") p.colour = colours[(i - count) % 3];
+  });
+  const board = boardOf(stage, posts, [], start, exit),
+    visits = posts.map((p) => (p.kind === "ring" ? 1 : p.need)),
+    wraps = route(board, visits, random);
+  if (!wraps) return null;
+  // Coloured posts: plain posts the route reaches with a coloured cable, in the colour it then has.
+  if (spec.coloured[1]) {
+    let tint = WHITE;
+    const able: { post: number; colour: number }[] = [];
+    for (const w of wraps) {
+      const p = posts[w.post];
+      if (p.kind === "ring") tint = p.colour;
+      else if (p.kind === "plain" && tint !== WHITE) able.push({ post: w.post, colour: tint });
+    }
+    const want = between(spec.coloured, random),
+      chosen = shuffle(able, random).slice(0, want);
+    if (chosen.length < spec.coloured[0]) return null;
+    for (const c of chosen) {
+      posts[c.post].kind = "coloured";
+      posts[c.post].colour = c.colour;
+    }
+    // Every ring must turn some post's cable, or it would be there for nothing.
+    if (posts.some((p) => p.kind === "ring" && !posts.some((q) => q.kind === "coloured" && q.colour === p.colour))) return null;
+  }
+  const hazards = placeHazards(board, wraps, between(spec.hazards, random), random);
+  if (hazards.length < spec.hazards[0]) return null;
+  const plan = [...wraps.map((w) => wrapMove(w.post, w.side)), plugMove()];
+  let s: State = boardOf(stage, posts, hazards, start, exit, plan);
+  const laid = s;
+  for (const move of plan) {
+    const next = play(s, move);
+    if (!next || next.winner === 1) return null;
+    s = next;
+  }
+  return s.winner === 0 ? laid : null;
+}
+/** Random wrappers a board is judged by, and how many boards are tried at most. */
+const TRIES = 160,
+  BOARDS = 24;
+/**
+ * A new puzzle of `stage` (1–5): the first board laid on which the random wrapper gets through no more often than the
+ * stage allows; failing that, the least lucky of the boards tried. Its plan, replayed through `play`, solves it.
  */
 export function createGame(stage = 1, random: Random = cryptoRandom): State {
   const at = stageOf(stage),
     spec = STAGES[at - 1];
   // One number is drawn from `random`; the many the laying and judging need come from a quick generator seeded with it.
   random = quick(Math.floor(random() * 4294967296));
-  let kept: { state: State; luck: number } | null = null,
-    best: State | null = null,
-    passed = 0;
-  for (let k = 0; (k < BOARDS || !kept) && k < BOARDS * 20 && passed < PICK; k++) {
+  let kept: { state: State; luck: number } | null = null;
+  for (let k = 0; (k < BOARDS || !kept) && k < BOARDS * 30; k++) {
     const state = lay(at, random);
-    if (!state) continue;
+    // Kept only when the search finds a way on its own too (so that the hint can lead from anywhere).
+    if (!state || !solve(state, BUDGET, false)) continue;
     const chance = luck(state, TRIES, random);
-    if (chance <= spec.luck) {
-      passed++;
-      if (!best || spareOf(state) < spareOf(best)) best = state;
-    } else if (!kept || chance < kept.luck) kept = { state, luck: chance };
+    if (chance <= spec.luck) return state;
+    if (!kept || chance < kept.luck) kept = { state, luck: chance };
   }
-  return best ?? kept!.state;
+  return kept!.state;
 }
 
-const effect = (s: State): Effect | null => (s.last ? { kind: "place", from: -1, to: s.last.cell, converted: [], removed: [] } : null);
+const effect = (s: State): Effect | null => (s.last ? { kind: "place", from: -1, to: s.last.post, converted: [], removed: [] } : null);
 export const lightCable: PointGame<State> = {
   create: (variant) => createGame(Number(variant) || 1),
   moves,
   play: (state, move) => play(state, move),
   turn: () => 0,
   winner: (s) => s.winner,
-  owners: (s) => s.postAt.map(() => null),
+  owners: (s) => s.posts.map(() => null),
   effect,
   ply: (s) => s.ply,
-  evaluate: (s) => litCount(s),
+  evaluate: (s) => -unlitCount(s),
   hint: (s) => {
-    const left = s.posts.length - litCount(s);
-    if (!left && s.exit) return "기둥이 모두 켜졌습니다 · 케이블을 출구 소켓까지 끄세요";
-    return s.path.length === 1 ? "릴 옆 케이블 끝을 끌어 기둥을 감으세요" : `케이블 끝을 끌어 기둥을 감으세요 · 남은 기둥 ${left}개`;
+    const left = unlitCount(s);
+    if (!left) return "기둥이 모두 켜졌습니다 · 케이블 끝을 출구 소켓에 꽂으세요";
+    return s.wraps.length ? `케이블 끝을 끌어 기둥을 감으세요 · 남은 기둥 ${left}개` : "릴 옆 케이블 끝을 끌어 기둥을 감으세요";
   },
   tally: () => ["", ""],
-  reason: (s) => (s.winner === 0 ? (s.exit ? "성공! 기둥을 모두 밝히고 출구에 꽂았습니다." : "성공! 기둥을 모두 밝혔습니다.") : ""),
+  reason: (s) => (s.winner === 0 ? "성공! 기둥을 모두 밝히고 출구에 꽂았습니다." : s.winner === 1 ? `실패! ${s.trouble}.` : ""),
 };

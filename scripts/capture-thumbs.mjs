@@ -337,15 +337,15 @@ const play = {
     }
     await wait(800);
   },
-  // A 어려움 board (7×7 with coloured posts) with part of the cable laid along the hint's way (H plays it while
-  // capturing), a post or two lit and the cable coloured.
+  // A 고수 board (colour rings and coloured posts) with the cable wrapped round the first few posts of the hint's way
+  // (H plays it while capturing), a post or two lit and the cable turned a colour by a ring.
   "light-cable": async () => {
-    await stage(2);
+    await stage(3);
     await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
     await wait(800);
-    for (let k = 0; k < 16; k++) {
+    for (let k = 0; k < 4; k++) {
       await keys(["h"], 60);
-      await wait(120);
+      await wait(500);
     }
     await wait(1200);
   },

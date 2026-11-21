@@ -1,367 +1,408 @@
 import { describe, expect, it } from "vitest";
 import * as R from "../src/games/lightcable/rules";
-import { CELL, cableLine, cellAt, cellUnder, outside, sideAt } from "../src/games/lightcable/layout";
+import { bendAt, cableLines, reachFor, restEnd } from "../src/games/lightcable/layout";
 
 const seeded = (s: number) => () => ((s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff) / 2147483648);
-const step = (to: number) => ({ from: -1, to, extra: -1 });
-/**
- * A board from rows of glyphs: . a free cell, o a white post, r b g a red, blue or green post, 3 4 a white post that
- * needs that many sides; the start socket on the west of `start`, the exit (if given) on the east of `exit`.
- */
-function board(rows: string[], start: number, exit: number | null = null, stage = 1): R.State {
-  const n = rows.length,
-    posts: R.Post[] = [];
-  rows.forEach((row, r) => {
-    expect(row.length).toBe(n);
-    [...row].forEach((ch, c) => {
-      const colour = "orbg".indexOf(ch);
-      if (colour >= 0) posts.push({ cell: r * n + c, colour, need: 2 });
-      else if (ch === "3" || ch === "4") posts.push({ cell: r * n + c, colour: R.WHITE, need: Number(ch) });
-    });
-  });
-  return R.boardOf(n, stage, posts, { cell: start, bit: R.W }, exit === null ? null : { cell: exit, bit: R.E });
-}
-/** Draws the cable through the cells in order, each step legal. */
-function draw(state: R.State, cells: number[]) {
+const post = (x: number, z: number, kind: R.Kind = "plain", colour = R.WHITE, need = kind === "ring" ? 0 : kind === "counted" ? 2 : 1): R.Post => ({
+  x,
+  z,
+  r: kind === "ring" ? R.RING_R : R.POST_R,
+  kind,
+  colour,
+  need,
+});
+const hazard = (x: number, z: number): R.Hazard => ({ x, z, r: R.HAZARD_R });
+const start = { x: -3.8, z: 0 },
+  exit = { x: 3.8, z: 0 };
+const wrap = (p: number, side: R.Side) => R.wrapMove(p, side);
+/** Plays the moves in order, each legal. */
+function make(state: R.State, moves: ReturnType<typeof wrap>[]) {
   let s = state;
-  for (const cell of cells) {
-    const next = R.play(s, step(cell));
-    expect(next, `cell ${cell}`).not.toBeNull();
+  for (const m of moves) {
+    const next = R.play(s, m);
+    expect(next, `move ${m.to}`).not.toBeNull();
     s = next!;
   }
   return s;
 }
-const litCells = (s: R.State) => s.posts.flatMap((p, i) => (R.isLit(s, i) ? [p.cell] : []));
+const close = (a: R.Pt, b: R.Pt, digits = 6) => {
+  expect(a.x).toBeCloseTo(b.x, digits);
+  expect(a.z).toBeCloseTo(b.z, digits);
+};
 
-describe("steps and refusals", () => {
-  // The corner post (24) is never lit here, so that nothing is won.
-  const s = board(
-    [
-      ".....", //
-      ".o...",
-      ".....",
-      ".....",
-      "....o",
-    ],
-    5,
-  );
-  it("starts plugged into the start cell and steps into free cells beside the head", () => {
-    expect(s.path).toEqual([5]);
-    expect(R.steps(s).sort((a, b) => a - b)).toEqual([0, 10]);
-    expect(R.moves(s).map((m) => m.to).sort((a, b) => a - b)).toEqual([0, 10]);
-    const t = draw(s, [10, 11]);
-    expect(t.path).toEqual([5, 10, 11]);
-    expect(t.ply).toBe(2);
-    // The cell before the head is a move too: the cable wound back.
-    expect(R.moves(t).map((m) => m.to)).toContain(10);
+describe("tangent geometry", () => {
+  it("runs along the outer tangent for the same side and the inner one for opposite sides", () => {
+    // Clockwise round both (seen from above, z toward the player): the cable runs along their far edges (z = −1).
+    const same = R.tangent({ x: 0, z: 0, r: 1, s: R.CW }, { x: 10, z: 0, r: 1, s: R.CW })!;
+    close(same.a, { x: 0, z: -1 });
+    close(same.b, { x: 10, z: -1 });
+    const other = R.tangent({ x: 0, z: 0, r: 1, s: R.CCW }, { x: 10, z: 0, r: 1, s: R.CCW })!;
+    close(other.a, { x: 0, z: 1 });
+    // Opposite sides: the run crosses between the circles, through their midpoint.
+    const inner = R.tangent({ x: 0, z: 0, r: 1, s: R.CW }, { x: 10, z: 0, r: 1, s: R.CCW })!;
+    expect(R.segmentDistance({ x: 5, z: 0 }, inner.a, inner.b)).toBeLessThan(1e-9);
+    expect(inner.a.z).toBeLessThan(0);
+    expect(inner.b.z).toBeGreaterThan(0);
   });
-  it("refuses a post, the head, a cell not beside the head, a cell the cable passes and a step off the board, with words", () => {
-    const t = draw(s, [10, 11, 12, 7, 2, 1, 0]);
-    expect(R.play(t, step(6))).toBeNull();
-    expect(R.refusal(t, step(6))).toBe("기둥이 선 칸입니다. 케이블은 기둥 옆의 빈칸으로 지나가며 기둥을 감습니다.");
-    expect(R.refusal(t, step(0))).toBe("케이블 끝이 있는 칸입니다. 끝을 옆 칸으로 끌어 늘이세요.");
-    expect(R.play(t, step(20))).toBeNull();
-    expect(R.refusal(t, step(20))).toBe("케이블 끝 바로 옆 칸(가로·세로)으로만 늘일 수 있습니다.");
-    // 5 is the start, on the cable: the cable never crosses or overlaps itself.
-    expect(R.play(t, step(5))).toBeNull();
-    expect(R.refusal(t, step(5))).toBe("케이블이 이미 지나간 칸입니다. 케이블은 자기 자신과 겹치거나 엇갈릴 수 없습니다.");
-    expect(R.play(t, step(R.OFF))).toBeNull();
-    expect(R.refusal(t, step(R.OFF))).toBe("판 밖으로는 케이블을 끌 수 없습니다.");
-    // A diagonal step is no step.
-    expect(R.play(draw(s, [10]), step(16))).toBeNull();
-    // The cell before the head is never refused: it winds back.
-    expect(R.refusal(t, step(1))).toBeNull();
-    expect(R.steps(t)).toEqual([]);
-    expect(R.stuck(t)).toBe(true);
+  it("touches each circle at a right angle to its radius, from a point too", () => {
+    for (const [a, b] of [
+      [{ x: -2, z: 1, r: 0, s: 0 }, { x: 1.5, z: -0.7, r: 0.4, s: R.CW }],
+      [{ x: -2, z: 1, r: 0.3, s: R.CCW }, { x: 1.5, z: -0.7, r: 0.5, s: R.CW }],
+      [{ x: 0.2, z: 2, r: 0.24, s: R.CW }, { x: -1, z: -1, r: 0, s: 0 }],
+    ] as R.Anchor[][]) {
+      const run = R.tangent(a, b)!,
+        dx = run.b.x - run.a.x,
+        dz = run.b.z - run.a.z;
+      for (const [c, p] of [
+        [a, run.a],
+        [b, run.b],
+      ] as const) {
+        expect(Math.hypot(p.x - c.x, p.z - c.z)).toBeCloseTo(c.r, 9);
+        if (c.r) expect((p.x - c.x) * dx + (p.z - c.z) * dz).toBeCloseTo(0, 9);
+        // The centre lies on the side the anchor says (right of the way run for clockwise).
+        if (c.r) expect(Math.sign(dx * (c.z - p.z) - dz * (c.x - p.x))).toBe(c.s);
+      }
+    }
+    expect(R.tangent({ x: 0, z: 0, r: 1, s: R.CW }, { x: 0.5, z: 0, r: 0, s: 0 })).toBeNull();
   });
-  it("winds back one cell by a step to the cell before the head, and undo takes the last step back", () => {
-    const t = draw(s, [10, 11, 12]),
-      back = R.play(t, step(11))!;
-    expect(back.path).toEqual([5, 10, 11]);
-    expect(back.last).toMatchObject({ cell: 12, back: true });
-    expect(back.ply).toBe(4);
-    const undone = R.undo(t);
-    expect(undone.path).toEqual([5, 10, 11]);
-    expect(undone.ply).toBe(2);
-    // At the start the cable cannot be pulled out of its socket.
-    expect(R.moves(s).some((m) => m.to === 5)).toBe(false);
-    expect(R.play(s, step(5))).toBeNull();
+  it("lays the cable as runs and arcs, the arcs bending the way of their wraps", () => {
+    const s = make(R.boardOf(1, [post(0, -1)], [], start, exit), [wrap(0, R.CW)]),
+      { runs, arcs } = R.cableOf(s, exit);
+    expect(runs).toHaveLength(2);
+    expect(arcs).toHaveLength(1);
+    // Over the top of the post clockwise: arrive on its left side, leave on its right.
+    expect(arcs[0].sweep).toBeGreaterThan(0);
+    expect(arcs[0].sweep).toBeLessThan(Math.PI);
+    close(R.arcPoint(arcs[0], 0), runs[0].b);
+    close(R.arcPoint(arcs[0], 1), runs[1].a);
+    // The drawn line is joined from the start to the end without gaps.
+    const { fixed, free } = cableLines(s, exit);
+    close(fixed[0], start);
+    close(free[0], fixed[fixed.length - 1]);
+    close(free[free.length - 1], exit);
+    for (const line of [fixed, free]) for (let i = 1; i < line.length; i++) expect(Math.hypot(line[i].x - line[i - 1].x, line[i].z - line[i - 1].z)).toBeLessThan(0.06);
   });
 });
 
-describe("the lighting rule", () => {
-  it("lights a post the cable goes round the corner of: two different sides", () => {
-    const s = board([".....", ".o...", ".....", ".....", "....."], 0);
-    // 0 → 1 passes the post (6) on its north side (1): one side, not lit yet.
-    let t = draw(s, [1]);
-    expect(t.sides[0]).toBe(R.N);
-    expect(litCells(t)).toEqual([]);
-    // 2 is diagonal to the post: nothing. 7 is its east side: two sides, lit.
-    t = draw(t, [2]);
-    expect(t.sides[0]).toBe(R.N);
-    t = draw(t, [7]);
-    expect(t.sides[0]).toBe(R.N | R.E);
-    expect(litCells(t)).toEqual([6]);
-    expect(t.last!.lit).toEqual([0]);
+describe("wraps, unwraps and refusals", () => {
+  // Three posts in a row with one standing in the way of a straight run from the start to the far one.
+  const board = R.boardOf(1, [post(-1, 0), post(1, 0), post(0, -1.5)], [], start, exit);
+  it("lights a post it wraps, never a post it only passes, and frees it again", () => {
+    const s = make(board, [wrap(2, R.CW)]);
+    expect(R.isLit(s, 2)).toBe(true);
+    expect(s.last).toMatchObject({ kind: "wrap", post: 2, lit: [2] });
+    expect(R.isLit(s, 0)).toBe(false);
+    const back = R.play(s, R.unwrapMove())!;
+    expect(back.wraps).toEqual([]);
+    expect(R.isLit(back, 2)).toBe(false);
+    expect(back.last).toMatchObject({ kind: "unwrap", dimmed: [2] });
+    expect(R.play(back, R.unwrapMove())).toBeNull();
+    expect(R.refusal(back, R.unwrapMove())).toBe("감긴 기둥이 없습니다.");
   });
-  it("lights a post passed on both sides, and counts a side once however often it is passed", () => {
-    const s = board([".....", ".....", "..o..", ".....", "....."], 5);
-    // Along row 1 over the post (north side 7), then back along row 3 under it (south side 17).
-    let t = draw(s, [6, 7, 8]);
-    expect(t.sides[0]).toBe(R.N);
-    expect(litCells(t)).toEqual([]);
-    t = draw(t, [9, 14, 19, 18, 17]);
-    expect(t.sides[0]).toBe(R.N | R.S);
-    expect(litCells(t)).toEqual([12]);
+  it("refuses a run through another post, and the same post twice in a row", () => {
+    // From the start straight to the post at (1, 0) the post at (−1, 0) stands in the way.
+    expect(R.play(board, wrap(1, R.CW))).toBeNull();
+    expect(R.refusal(board, wrap(1, R.CW))).toBe("케이블이 다른 기둥을 뚫고 지나갈 수 없습니다.");
+    const s = make(board, [wrap(0, R.CCW)]);
+    expect(R.play(s, wrap(0, R.CW))).toBeNull();
+    expect(R.refusal(s, wrap(0, R.CW))).toContain("같은 기둥을 연달아");
+    // After another post the first may be wrapped again.
+    const t = make(s, [wrap(1, R.CCW), wrap(2, R.CCW)]);
+    expect(R.play(t, wrap(0, R.CCW))).not.toBeNull();
   });
-  it("puts a post out again when the step that lit it is wound back", () => {
-    const s = board([".....", ".o...", ".....", ".....", "....o"], 0),
-      t = draw(s, [1, 2, 7]),
-      back = R.play(t, step(2))!;
-    expect(litCells(back)).toEqual([]);
-    expect(back.last!.dimmed).toEqual([0]);
+  it("undo replays every move but the last, unwraps included", () => {
+    const s = make(board, [wrap(2, R.CW), wrap(1, R.CW), R.unwrapMove(), wrap(0, R.CCW)]);
+    expect(s.ply).toBe(4);
+    const u = R.undo(s);
+    expect(u.ply).toBe(3);
+    expect(u.wraps).toEqual([{ post: 2, side: R.CW }]);
+    expect(R.undo(u).wraps).toEqual([
+      { post: 2, side: R.CW },
+      { post: 1, side: R.CW },
+    ]);
   });
-  it("needs three or four different sides for a counted post", () => {
-    const s = board([".....", ".3...", ".....", ".....", "....."], 0);
-    let t = draw(s, [1, 2, 7]);
-    expect(R.bitCount(t.sides[0])).toBe(2);
-    expect(litCells(t)).toEqual([]);
-    t = draw(t, [12, 11]);
-    expect(R.bitCount(t.sides[0])).toBe(3);
-    expect(litCells(t)).toEqual([6]);
-    const four = board([".....", ".4...", ".....", ".....", "....."], 0),
-      round = draw(four, [1, 2, 7, 12, 11, 10]);
-    expect(litCells(round)).toEqual([]);
-    expect(litCells(draw(round, [5]))).toEqual([6]);
-  });
-});
-
-describe("colours", () => {
-  it("turns the cable the colour of a coloured post it comes beside, after that side is judged", () => {
-    const s = board([".....", ".r...", ".....", ".....", "....."], 0);
-    // The cable reaches the red post's north side white: the side does not count, and the cable turns red there.
-    let t = draw(s, [1]);
-    expect(t.sides[0]).toBe(0);
-    expect(t.tints).toEqual([R.WHITE, R.RED]);
-    // On round the corner, red: the east side counts (one), the south side too (two): lit.
-    t = draw(t, [2, 7]);
-    expect(t.sides[0]).toBe(R.E);
-    expect(litCells(t)).toEqual([]);
-    t = draw(t, [12, 11]);
-    expect(t.sides[0]).toBe(R.E | R.S);
-    expect(litCells(t)).toEqual([6]);
-  });
-  it("lights a coloured post only for a cable of its colour, and white posts for any", () => {
-    const s = board(["......", ".r..b.", "......", "......", "....o.", "......"], 0);
-    // Red at 7 makes the cable red; it then meets the blue post (10) red: the west side does not count, the cable turns blue.
-    let t = draw(s, [1, 2, 3]);
-    expect(R.tintOf(t)).toBe(R.RED);
-    t = draw(t, [9]);
-    expect(t.sides[1]).toBe(0);
-    expect(R.tintOf(t)).toBe(R.BLUE);
-    // On round the blue post in blue: its south and east sides count.
-    const round = draw(t, [15, 16, 17, 11]);
-    expect(round.sides[1]).toBe(R.S | R.E);
-    expect(litCells(round)).toEqual([10]);
-    // A white post counts a blue cable: round the corner of 28 (north 22, west 27).
-    const white = draw(t, [15, 16, 17, 23, 22, 21, 27]);
-    expect(white.sides[2]).toBe(R.N | R.W);
-    expect(litCells(white)).toEqual([28]);
-    // The red post was passed only on its north side, white, which did not count.
-    expect(white.sides[0]).toBe(0);
-  });
-  it("keeps its colour in a cell beside posts of two colours", () => {
-    const s = board([".....", ".....", "r.b..", ".....", "....."], 0);
-    // 11 lies between the red post (10) and the blue one (12): the white cable stays white there, and counts neither.
-    let t = draw(s, [1, 6, 11]);
-    expect(R.tintOf(t)).toBe(R.WHITE);
-    expect(t.sides).toEqual([0, 0]);
-    t = draw(t, [16]);
-    expect(R.tintOf(t)).toBe(R.WHITE);
-    // 15 is beside the red post alone: red from there.
-    t = draw(t, [15]);
-    expect(R.tintOf(t)).toBe(R.RED);
+  it("lists the moves play makes", () => {
+    const s = make(board, [wrap(2, R.CW)]),
+      list = R.moves(s);
+    expect(list).toContainEqual(R.unwrapMove());
+    expect(list).not.toContainEqual(wrap(2, R.CCW));
+    for (const m of list) expect(R.play(s, m)).not.toBeNull();
   });
 });
 
-describe("winning", () => {
-  it("is won as the last post lights on a board without an exit", () => {
-    const s = board([".....", ".o...", ".....", "...o.", "....."], 0),
-      t = draw(s, [1, 2, 7, 12, 13, 14]);
-    expect(litCells(t)).toEqual([6]);
-    expect(t.winner).toBeNull();
-    const u = draw(t, [19]);
-    expect(u.sides[1]).toBe(R.N | R.E);
-    expect(u.winner).toBe(0);
-    expect(R.moves(u)).toEqual([]);
-    expect(R.play(u, step(19))).toBeNull();
-    expect(R.lightCable.reason(u)).toBe("성공! 기둥을 모두 밝혔습니다.");
+describe("coils", () => {
+  // A coil right on the way from the start to the post below it.
+  const board = R.boardOf(1, [post(0, 1.5), post(0, -1.5)], [hazard(-1.9, 0.9)], start, exit);
+  it("shorts when a fixed run touches a coil: made, a failure, taken back with undo", () => {
+    expect(R.judgeWrap(board, 0, R.CCW)).toBe("short");
+    const s = R.play(board, wrap(0, R.CCW))!;
+    expect(s.winner).toBe(1);
+    expect(s.trouble).toBe("케이블이 고압 코일에 닿았습니다");
+    expect(R.lightCable.reason(s)).toBe("실패! 케이블이 고압 코일에 닿았습니다.");
+    expect(R.moves(s)).toEqual([]);
+    expect(R.play(s, R.unwrapMove())).toBeNull();
+    const u = R.undo(s);
+    expect(u.winner).toBeNull();
+    expect(u.wraps).toEqual([]);
+    // The other way round is clear of it.
+    expect(R.judgeWrap(board, 1, R.CW)).toBe("");
   });
-  it("needs the cable's end in the exit cell once every post is lit, where there is an exit", () => {
-    const s = board([".....", ".o...", ".....", ".....", "....."], 0, 4, 2);
-    let t = draw(s, [1, 2, 7]);
-    expect(litCells(t)).toEqual([6]);
-    expect(t.winner).toBeNull();
-    t = draw(t, [8, 3]);
-    expect(t.winner).toBeNull();
-    t = draw(t, [4]);
-    expect(t.winner).toBe(0);
-    expect(R.lightCable.reason(t)).toBe("성공! 기둥을 모두 밝히고 출구에 꽂았습니다.");
-    // The exit cell passed through before everything is lit is only a cell.
-    const early = board(["....o", ".....", ".....", ".....", "....o"], 0, 9, 2),
-      through = draw(early, [1, 2, 3, 8, 9]);
-    expect(litCells(through)).toEqual([4]);
-    expect(through.winner).toBeNull();
-    expect(draw(through, [14]).winner).toBeNull();
+  it("shorts when the bend round the post before touches a coil, though no run does", () => {
+    const b = R.boardOf(1, [post(0, 0), post(-2.5, -1)], [hazard(0.5, 0)], start, exit),
+      s = make(b, [wrap(0, R.CCW)]);
+    // Wrapped anticlockwise from below, the cable goes on round the post's right side (where the coil stands) to reach
+    // the post up at the left.
+    const run = R.tangent(R.pivotOf(s), { ...b.posts[1], s: R.CCW })!;
+    expect(R.segmentDistance(b.hazards[0], run.a, run.b)).toBeGreaterThan(R.HAZARD_R);
+    expect(R.segmentDistance(b.hazards[0], R.cableOf(s).runs[0].a, R.cableOf(s).runs[0].b)).toBeGreaterThan(R.HAZARD_R);
+    expect(R.judgeWrap(s, 1, R.CCW)).toBe("short");
+    expect(R.play(s, wrap(1, R.CCW))!.winner).toBe(1);
   });
 });
 
-describe("the generator, the solver and the hint", () => {
-  it("lays boards that its plan solves, by the rules of each stage, quickly", () => {
+describe("colours and counted posts", () => {
+  it("lights a coloured post only with a cable of its colour, which a ring gives", () => {
+    const b = R.boardOf(4, [post(-2, -1, "ring", R.RED), post(0, 1, "coloured", R.RED), post(2, -1, "coloured", R.BLUE)], [], start, exit);
+    const dark = make(b, [wrap(1, R.CCW)]);
+    expect(R.isLit(dark, 1)).toBe(false);
+    expect(dark.tint).toBe(R.WHITE);
+    const red = make(b, [wrap(0, R.CW), wrap(1, R.CCW)]);
+    expect(red.tint).toBe(R.RED);
+    expect(R.isLit(red, 1)).toBe(true);
+    // Rings need no lighting; a blue post stays dark on a red cable.
+    expect(R.mustLight(b.posts[0])).toBe(false);
+    const blue = make(red, [wrap(2, R.CW)]);
+    expect(R.isLit(blue, 2)).toBe(false);
+    expect(R.unlitCount(blue)).toBe(1);
+    // The cable's colour runs from the ring on.
+    expect(R.cableOf(blue).tints).toEqual([R.WHITE, R.RED, R.RED]);
+  });
+  it("lights a counted post after that many separate wraps", () => {
+    const b = R.boardOf(1, [post(0, 0, "counted", R.WHITE, 2), post(-1.5, 1.5), post(1.5, -1.5)], [], start, exit),
+      once = make(b, [wrap(0, R.CW)]);
+    expect(once.counts[0]).toBe(1);
+    expect(R.isLit(once, 0)).toBe(false);
+    const twice = make(once, [wrap(2, R.CW), wrap(0, R.CW)]);
+    expect(twice.counts[0]).toBe(2);
+    expect(R.isLit(twice, 0)).toBe(true);
+    expect(twice.last!.lit).toEqual([0]);
+  });
+});
+
+describe("crossing", () => {
+  // Four posts at the corners of a square: round the top left, over to the top right and back down to the bottom
+  // right, which cuts across the first run.
+  const posts = () => [post(-1, -1), post(1, -1), post(1, 1), post(-1, 1)];
+  const moves = [wrap(0, R.CW), wrap(1, R.CCW), wrap(2, R.CW)];
+  it("lets the cable cross itself on the first stages and refuses it from 어려움", () => {
+    const loose = R.boardOf(2, posts(), [], { x: -3.8, z: -1.6 }, exit);
+    expect(loose.crossing).toBe(true);
+    const crossed = make(loose, moves);
+    expect(crossed.wraps).toHaveLength(3);
+    const { runs } = R.cableOf(crossed);
+    expect(R.crosses(runs[0].a, runs[0].b, runs[2].a, runs[2].b) || R.crosses(runs[1].a, runs[1].b, runs[2].a, runs[2].b)).toBe(true);
+    const strict = R.boardOf(3, posts(), [], { x: -3.8, z: -1.6 }, exit);
+    expect(strict.crossing).toBe(false);
+    const s = make(strict, moves.slice(0, 2));
+    expect(R.play(s, moves[2])).toBeNull();
+    expect(R.refusal(s, moves[2])).toContain("케이블이 서로 겹칠 수 없습니다.");
+  });
+});
+
+describe("plugging in", () => {
+  const board = R.boardOf(1, [post(0, -1), post(1.5, 1)], [], start, exit);
+  it("refuses while a post is dark, naming how many are left, and wins once all are lit", () => {
+    const s = make(board, [wrap(0, R.CW)]);
+    expect(R.play(s, R.plugMove())).toBeNull();
+    expect(R.refusal(s, R.plugMove())).toBe("아직 불이 들어오지 않은 기둥이 1개 있습니다. 모두 밝힌 다음 출구에 꽂으세요.");
+    const t = make(s, [wrap(1, R.CCW)]),
+      won = R.play(t, R.plugMove())!;
+    expect(won.winner).toBe(0);
+    expect(R.lightCable.reason(won)).toMatch(/^성공!/);
+    expect(R.hint(won)).toBeNull();
+  });
+  it("refuses a run to the exit that a post or a coil stands in", () => {
+    // Post 1 stands on the way from post 0 to the exit (counted as lit, so that only the way is judged).
+    const posted = make(R.boardOf(1, [post(0, -1), post(2, -0.45)], [], start, exit), [wrap(0, R.CW)]);
+    expect(R.judgePlug({ ...posted, counts: [1, 1] })).toBe("through");
+    const coiled = make(R.boardOf(1, [post(0, -1)], [hazard(2, -0.55)], start, exit), [wrap(0, R.CW)]);
+    expect(R.play(coiled, R.plugMove())).toBeNull();
+    expect(R.refusal(coiled, R.plugMove())).toContain("고압 코일");
+  });
+});
+
+describe("the free end", () => {
+  it("rests a little round the last post, bent the way of the wrap", () => {
+    const s = make(R.boardOf(1, [post(0, -1), post(1.5, 1)], [], start, exit), [wrap(0, R.CW)]),
+      end = restEnd(s),
+      bend = bendAt(s, end);
+    expect(bend).toBeGreaterThan(0.5);
+    expect(bend).toBeLessThan(Math.PI);
+    expect(restEnd(R.boardOf(1, [post(0, 0)], [], start, exit))).toEqual({ x: start.x + 0.45, z: start.z });
+  });
+});
+
+/** Plays the hints from `state` until it is over. */
+function byHints(state: R.State, guard = 60) {
+  let s = state;
+  for (let k = 0; k < guard && s.winner === null; k++) {
+    const m = R.hint(s);
+    expect(m).not.toBeNull();
+    s = R.play(s, m!)!;
+    expect(s).not.toBeNull();
+  }
+  return s;
+}
+
+describe("laying a puzzle, the search and the hint", () => {
+  it("lays boards of every stage that its plan and the search both solve, quickly", () => {
     for (let stage = 1; stage <= R.STAGES.length; stage++) {
-      const spec = R.STAGES[stage - 1],
-        random = seeded(stage * 1931);
-      let total = 0,
-        coloured = 0,
-        counted = 0;
-      for (let k = 0; k < 12; k++) {
+      const random = seeded(stage * 131),
+        spec = R.STAGES[stage - 1];
+      let total = 0;
+      const count = 20;
+      for (let k = 0; k < count; k++) {
         const t0 = performance.now(),
           s = R.createGame(stage, random);
         total += performance.now() - t0;
-        const n = s.size;
-        expect(n).toBe(spec.size);
-        expect(s.posts.length).toBeGreaterThanOrEqual(spec.posts[0]);
-        expect(s.posts.length).toBeLessThanOrEqual(spec.posts[1]);
-        expect(!!s.exit).toBe(spec.exit);
-        // The sockets stand on edge cells, by an outward side, apart.
-        expect(R.outward(n, s.start.cell)).toContain(s.start.bit);
-        if (s.exit) {
-          expect(R.outward(n, s.exit.cell)).toContain(s.exit.bit);
-          expect(s.exit.cell).not.toBe(s.start.cell);
+        expect(s.stage).toBe(stage);
+        expect(s.crossing).toBe(spec.crossing);
+        const must = s.posts.filter(R.mustLight);
+        expect(must.length).toBeGreaterThanOrEqual(spec.posts[0]);
+        expect(must.length).toBeLessThanOrEqual(spec.posts[1]);
+        expect(s.posts.filter((p) => p.kind === "ring")).toHaveLength(spec.rings);
+        expect(s.posts.filter((p) => p.kind === "coloured").length).toBeGreaterThanOrEqual(spec.coloured[0]);
+        expect(s.posts.filter((p) => p.kind === "counted").length).toBeGreaterThanOrEqual(spec.counted[0]);
+        expect(s.hazards.length).toBeGreaterThanOrEqual(spec.hazards[0]);
+        // Posts and coils stand apart and on the board.
+        for (const p of s.posts) {
+          expect(Math.abs(p.x)).toBeLessThan(R.WIDTH);
+          expect(Math.abs(p.z)).toBeLessThan(R.DEPTH);
+          for (const h of s.hazards) expect(Math.hypot(p.x - h.x, p.z - h.z)).toBeGreaterThan(p.r + h.r);
         }
-        for (const post of s.posts) expect(s.plan).not.toContain(post.cell);
-        // Every post must be passable on enough sides: the plan, replayed through play, wins.
-        let state = s;
-        for (const cell of s.plan.slice(1)) state = R.play(state, step(cell))!;
-        expect(state.winner).toBe(0);
-        if (spec.exit) expect(state.path[state.path.length - 1]).toBe(s.exit!.cell);
-        coloured += s.posts.filter((p) => p.colour !== R.WHITE).length;
-        counted += s.posts.filter((p) => p.need > 2).length;
-        if (!spec.colours) expect(s.posts.every((p) => p.colour === R.WHITE)).toBe(true);
-        if (!spec.counted[1]) expect(s.posts.every((p) => p.need === 2)).toBe(true);
-      }
-      if (spec.colours) expect(coloured / 12).toBeGreaterThanOrEqual(spec.coloured[0]);
-      if (spec.counted[1]) expect(counted).toBeGreaterThan(0);
-      // Well under the 300 ms a board may take in a browser.
-      expect(total / 12).toBeLessThan(150);
-    }
-  }, 60000);
-  it("lays the same board from the same numbers", () => {
-    const a = R.createGame(3, seeded(77)),
-      b = R.createGame(3, seeded(77));
-    expect(a.posts).toEqual(b.posts);
-    expect(a.plan).toEqual(b.plan);
-  });
-  it("keeps boards on which stepping at random seldom gets through, harder as the stages rise", () => {
-    const mean = (stage: number) => {
-      let sum = 0;
-      for (let k = 0; k < 6; k++) sum += R.luck(R.createGame(stage, seeded(stage * 100 + k)), 150, seeded(9));
-      return sum / 6;
-    };
-    const first = mean(1),
-      third = mean(3);
-    expect(first).toBeLessThanOrEqual(R.STAGES[0].luck + 0.15);
-    expect(third).toBeLessThan(first);
-    expect(third).toBeLessThanOrEqual(R.STAGES[2].luck + 0.05);
-  }, 30000);
-  it("finds a way through from the start, and the hint reaches a win from the start", () => {
-    for (let stage = 1; stage <= R.STAGES.length; stage++) {
-      const random = seeded(stage * 53);
-      for (let k = 0; k < 4; k++) {
-        const s = R.createGame(stage, random);
-        // The search finds a way within its budget on the smaller boards (on the larger the hint follows the plan).
-        if (stage <= 3) {
-          const way = R.solve(s)!;
-          expect(way, `stage ${stage}`).not.toBeNull();
-          let t = s;
-          for (const cell of way) t = R.play(t, step(cell))!;
-          expect(t.winner).toBe(0);
-        }
+        // The plan wins through play.
         let t = s;
-        for (let guard = 0; guard < 200 && t.winner === null; guard++) t = R.play(t, R.hint(t)!)!;
+        for (const m of s.plan) t = R.play(t, m)!;
         expect(t.winner).toBe(0);
-        expect(R.hint(t)).toBeNull();
+        // So does the search on its own.
+        const way = R.solve(s, 25000, false);
+        expect(way, `stage ${stage} board ${k}`).not.toBeNull();
+        let u = s;
+        for (const m of way!) u = R.play(u, m)!;
+        expect(u.winner).toBe(0);
+        // And the hints.
+        expect(byHints(s).winner).toBe(0);
       }
+      // Well under 300 ms a board on average (a browser runs about as fast).
+      expect(total / count, `stage ${stage}`).toBeLessThan(300);
     }
+  }, 120000);
+  it("is laid the same from the same numbers, from one draw", () => {
+    let draws = 0;
+    const counted = () => (draws++, 0.37);
+    const a = R.createGame(3, counted);
+    expect(draws).toBe(1);
+    const b = R.createGame(3, () => 0.37);
+    expect(b.posts).toEqual(a.posts);
+    expect(b.hazards).toEqual(a.hazards);
+  });
+  it("seldom lets a random wrapper through, and less often on the harder stages", () => {
+    const mean = (stage: number) => {
+      const random = seeded(stage * 977);
+      let sum = 0;
+      for (let k = 0; k < 8; k++) sum += R.luck(R.createGame(stage, random), 200, random);
+      return sum / 8;
+    };
+    const easy = mean(1),
+      hard = mean(3);
+    expect(easy).toBeLessThan(0.35);
+    expect(hard).toBeLessThan(easy);
   }, 60000);
-  it("brings a cable that has gone astray back onto a way through, by hints alone", () => {
-    for (let stage = 1; stage <= 4; stage++) {
+  it("brings a cable gone astray back to a win by hints alone, freeing wraps where it must", () => {
+    for (let stage = 1; stage <= R.STAGES.length; stage++) {
       const random = seeded(stage * 71);
       for (let k = 0; k < 4; k++) {
-        const s = R.createGame(stage, random);
-        // A few random steps of my own first.
-        let t = s;
-        for (let i = 0; i < 6; i++) {
-          const open = R.steps(t);
-          if (!open.length || t.winner !== null) break;
-          t = R.play(t, step(open[Math.floor(random() * open.length)]))!;
+        let s = R.createGame(stage, random);
+        // A few random wraps of my own first (no short circuits).
+        for (let i = 0; i < 3; i++) {
+          const options = R.moves(s).filter((m) => m.to >= 0 && R.play(s, m)!.winner === null);
+          if (!options.length) break;
+          s = R.play(s, options[Math.floor(random() * options.length)])!;
         }
-        let backs = 0;
-        for (let guard = 0; guard < 400 && t.winner === null; guard++) {
-          const m = R.hint(t)!;
-          expect(m).not.toBeNull();
-          if (R.hintsBack(t, m)) backs++;
-          t = R.play(t, m)!;
-        }
-        expect(t.winner, `stage ${stage}`).toBe(0);
-        expect(backs).toBeLessThanOrEqual(8);
+        expect(byHints(s, 80).winner, `stage ${stage}`).toBe(0);
       }
     }
   }, 60000);
-  it("hints a step back where the cable can no longer light everything", () => {
-    // The post at 3 is passed on its west side (2); the cable then walls itself in at 6, the post still dark.
-    const s = board(["...o.", ".....", ".....", ".....", "....."], 10),
-      t = draw(s, [11, 12, 7, 2, 1, 0, 5, 6]);
-    expect(t.sides[0]).toBe(R.W);
-    expect(R.steps(t)).toEqual([]);
-    expect(R.stuck(t)).toBe(true);
-    expect(R.solve(t)).toBeNull();
-    expect(R.hint(t)).toEqual(step(5));
-    expect(R.hintsBack(t, R.hint(t)!)).toBe(true);
-    // Followed, the hints wind back until a way through opens, and then take it.
-    let u = t;
-    for (let guard = 0; guard < 60 && u.winner === null; guard++) u = R.play(u, R.hint(u)!)!;
-    expect(u.winner).toBe(0);
+  it("hints the unwrap where the cable cannot be finished", () => {
+    // A wall of coils across the board: nothing beyond it can be reached.
+    const wall = [-2.5, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 2.5].map((z) => hazard(0, z)),
+      b = R.boardOf(1, [post(-2, 0), post(2, 0)], wall, start, exit),
+      s = make(b, [wrap(0, R.CW)]);
+    expect(R.solve(s)).toBeNull();
+    expect(R.hint(s)).toEqual(R.unwrapMove());
   });
 });
 
-describe("layout", () => {
-  it("finds the cell under each cell's middle, and none in the margin", () => {
-    for (const n of [5, 9])
-      for (let cell = 0; cell < n * n; cell++) {
-        const at = cellAt(n, cell);
-        expect(cellUnder(n, at.x, at.z)).toBe(cell);
-        expect(cellUnder(n, at.x + CELL * 0.45, at.z - CELL * 0.45)).toBe(cell);
+describe("the way a hand draws the end for a move", () => {
+  it("sweeps the free run onto the post on the side the hint names, without catching any other", () => {
+    // A small simulation of the view's sweep: catches by touch, side by the run's old direction, unwraps by bend.
+    function drawAlong(state: R.State, from: R.Pt, points: R.Pt[]) {
+      let s = state,
+        end = from;
+      const bends = s.wraps.map(() => 0.5);
+      if (bends.length) bends[bends.length - 1] = bendAt(s, end);
+      for (const target of points) {
+        const steps = Math.max(1, Math.ceil(Math.hypot(target.x - end.x, target.z - end.z) / 0.025));
+        const a = end;
+        for (let i = 1; i <= steps; i++) {
+          const p = { x: a.x + ((target.x - a.x) * i) / steps, z: a.z + ((target.z - a.z) * i) / steps };
+          while (s.wraps.length) {
+            const before = bends[bends.length - 1],
+              bend = before + R.wrapPi(bendAt(s, p) - R.turnOf(before));
+            if (bend >= 0) {
+              bends[bends.length - 1] = bend;
+              break;
+            }
+            s = R.play(s, R.unwrapMove())!;
+            bends.pop();
+          }
+          const run = R.tangent(R.pivotOf(s), R.pointAnchor(p))!,
+            old = R.tangent(R.pivotOf(s), R.pointAnchor(end))!,
+            last = s.wraps.length ? s.wraps[s.wraps.length - 1].post : -1;
+          const hit = s.posts.findIndex((q, k) => k !== last && R.segmentDistance(q, run.a, run.b) < q.r);
+          if (hit >= 0) {
+            const q = s.posts[hit],
+              ox = old.b.x - old.a.x,
+              oz = old.b.z - old.a.z,
+              side: R.Side = ox * (q.z - old.a.z) - oz * (q.x - old.a.x) >= 0 ? R.CW : R.CCW;
+            s = R.play(s, R.wrapMove(hit, side))!;
+            const bend = bendAt(s, p);
+            bends.push(bend > Math.PI ? 1e-3 : bend);
+          }
+          end = p;
+        }
       }
-    const away = outside(5, { cell: 10, bit: R.W });
-    expect(cellUnder(5, away.x, away.z)).toBe(-1);
-  });
-  it("draws the cable from the reel to the middle of the head, colours changing at the middle of a cell", () => {
-    const s = board([".....", ".r...", ".....", ".....", "....."], 0),
-      t = draw(s, [1, 2]),
-      line = cableLine(5, t.start, t.path, t.tints),
-      reel = outside(5, t.start, 0.38),
-      head = cellAt(5, 2);
-    expect(line[0].x).toBeCloseTo(reel.x);
-    expect(line[line.length - 1].x).toBeCloseTo(head.x);
-    expect(line[line.length - 1].z).toBeCloseTo(head.z);
-    // White up to the middle of cell 1 (beside the red post), red from there.
-    const middle = cellAt(5, 1),
-      red = line.findIndex((p) => p.tint === R.RED);
-    expect(line[red - 1].x).toBeCloseTo(middle.x, 1);
-    expect(line.slice(red).every((p) => p.tint === R.RED)).toBe(true);
-    // It passes through the middle of the side between two cells.
-    const side = sideAt(5, 0, R.E);
-    expect(line.some((p) => Math.abs(p.x - side.x) < 1e-9 && Math.abs(p.z - side.z) < 1e-9)).toBe(true);
-  });
+      return { state: s, end };
+    }
+    for (let stage = 1; stage <= 5; stage++) {
+      const random = seeded(stage * 53);
+      for (let k = 0; k < 3; k++) {
+        let s = R.createGame(stage, random),
+          end = restEnd(s);
+        for (let guard = 0; guard < 30 && s.winner === null; guard++) {
+          const m = R.hint(s)!;
+          if (m.to === R.PLUG) {
+            s = R.play(s, m)!;
+            break;
+          }
+          const drawn = drawAlong(s, end, reachFor(s, end, m)),
+            want = R.play(s, m)!;
+          expect(drawn.state.wraps, `stage ${stage} board ${k} move ${guard}`).toEqual(want.wraps);
+          s = want;
+          end = drawn.end;
+        }
+        expect(s.winner).toBe(0);
+      }
+    }
+  }, 60000);
 });
