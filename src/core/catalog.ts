@@ -759,4 +759,12 @@ export const games = [
     icon: "💡",
     available: true,
   },
+  {
+    name: "망원경 퍼즐",
+    en: "TELESCOPE PUSH",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "🔭",
+    available: true,
+  },
 ];

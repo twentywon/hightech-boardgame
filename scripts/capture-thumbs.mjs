@@ -337,6 +337,16 @@ const play = {
     }
     await wait(800);
   },
+  // A 어려움 board (10×10) after three presses of the hint's way (H plays it while capturing): tubes drawn out, the ball moved.
+  "telescope-push": async () => {
+    await stage(2);
+    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
+    await wait(800);
+    for (let k = 0; k < 3; k++) {
+      await keys(["h"], 100);
+      await wait(1100);
+    }
+  },
   // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
   darts: async () => {
     await keys(["Enter"]);
