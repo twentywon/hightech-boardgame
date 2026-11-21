@@ -91,7 +91,7 @@ test("hex conquest: another map and an empire chosen before the start, an army m
   const first = await moveOne(page, mobile);
   await myTurn(page);
   const second = await table(page);
-  expect(second.armies.some((a) => a.n === 0 && a.h === first.to)).toBe(true);
+  expect(second.armies.some((a) => a.n === 1 && a.h === first.to)).toBe(true);
   expect(second.ply).toBeGreaterThanOrEqual(2);
   // The capital raised a new army: two armies, two moves.
   await expect(page.locator("#turn")).toContainText("남은 이동 2/2");
