@@ -5,21 +5,30 @@ import type { Marks } from "../points/view";
 import type { Move } from "../points/types";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { AXIS_Y, BALL_R, BOARD_TOP, CELL, DROP_MS, HOLE_R, REACH_TAP, STEP_MS, WAY, cellAt, spanOf, telescopeSubject } from "./layout";
-import { stepFrom, type State } from "./rules";
+import { REACHES, stepFrom, type Reach, type State } from "./rules";
 
 export const TELESCOPE_COLORS: [string, string] = ["#c9a14a", "#6c7178"];
-/** The lacquer rings at the tips, for variety only (colours mean nothing in the rules). */
-const LACQUER = ["#b8322c", "#2f6db5", "#2f8f5b", "#d9a21f", "#7d3fa3", "#d8692a", "#1f8a8f"];
 /**
- * The nested tubes of a telescope: the base (widest, with a leather grip and the eyepiece behind it) and four draw
- * tubes, each a little narrower, that slide out one from inside the other. Along the telescope's own x, from the
- * base's middle: the base spans `BASE_BACK`..`BASE_FRONT`, a draw tube at offset o spans o − `DRAW_BACK`..o +
- * `DRAW_FRONT`, and the last carries the dew cap to o + `TIP`, where a ball one cell on rests against it.
+ * The lacquer of each kind, by reach: the dew cap and ring at the tip tell how far the
+ * telescope draws out (green 2 cells beyond its base, yellow 3, purple 4). Clear, saturated colours that stand apart
+ * from the brass, the yellow a lemon one so that it does not pass for brass.
+ */
+export const COLOUR_OF: Record<Reach, string> = { 2: "#1fb04a", 3: "#fff02a", 4: "#8a3ee0" };
+/**
+ * The nested tubes of a telescope: the base (widest, with a leather grip and the eyepiece behind it) and as many draw
+ * tubes as cells it can reach (2, 3 or 4), each a little narrower, that slide out one from inside the other. Along the
+ * telescope's own x, from the base's middle: the base spans `BASE_BACK`..`BASE_FRONT`, a draw tube at offset o spans
+ * o − `DRAW_BACK`..o + `DRAW_FRONT`, and the last carries the dew cap to o + `TIP`, where a ball one cell on rests
+ * against it. Fully drawn out, the last tube is at its reach, so the telescope stands on exactly its cells.
  */
 const BASE_R = 0.19,
   BASE_BACK = -0.42,
   BASE_FRONT = 0.42,
-  DRAW_R = [0.168, 0.146, 0.124, 0.103],
+  /** The widest and the narrowest draw tube; those between are spaced evenly. */
+  DRAW_WIDEST = 0.168,
+  DRAW_NARROWEST = 0.103,
+  /** The radii of the draw tubes of a telescope of `reach`, widest first. */
+  drawRadii = (reach: number) => Array.from({ length: reach }, (_, k) => DRAW_WIDEST - ((DRAW_WIDEST - DRAW_NARROWEST) * k) / (reach - 1)),
   DRAW_BACK = 0.55,
   DRAW_FRONT = 0.47,
   TIP = 0.72,
@@ -171,7 +180,8 @@ export class TelescopeView extends TableView<State> {
     p("leather", new T.MeshStandardMaterial({ color: "#3d2417", roughness: 0.78 }));
     p("rubber", new T.MeshStandardMaterial({ color: "#1b1715", roughness: 0.7 }));
     p("lens", glossy({ color: "#1a2a3a", roughness: 0.08, metalness: 0.3 }, 1));
-    LACQUER.forEach((color, i) => p(`lacquer${i}`, glossy({ color, roughness: 0.32, metalness: 0.15 }, 1)));
+    for (const reach of REACHES) p(`lacquer${reach}`, glossy({ color: COLOUR_OF[reach], roughness: 0.3, metalness: 0.05, emissive: COLOUR_OF[reach], emissiveIntensity: 0.12 }, 1));
+    p("enamel", new T.MeshStandardMaterial({ color: "#1a120c", roughness: 0.5 }));
     p("ball", glossy({ map: keep(marbleSkin()), roughness: 0.16, metalness: 0 }, 1));
     p("well", new T.MeshBasicMaterial({ map: keep(well()) }));
     p("wall", new T.MeshStandardMaterial({ color: "#2b190d", roughness: 0.95, side: T.BackSide }));
@@ -186,13 +196,17 @@ export class TelescopeView extends TableView<State> {
     g("lip", along(new T.CylinderGeometry(BASE_R + 0.016, BASE_R + 0.016, 0.05, 30)));
     g("eyepiece", along(new T.CylinderGeometry(0.075, 0.095, 0.14, 22)).translate(BASE_BACK - 0.07, 0, 0));
     g("eyecup", along(new T.CylinderGeometry(0.085, 0.08, 0.05, 22)).translate(BASE_BACK - 0.165, 0, 0));
-    DRAW_R.forEach((r, k) => {
-      g(`draw${k}`, along(new T.CylinderGeometry(r, r, DRAW_BACK + DRAW_FRONT, 28, 1, false)).translate((DRAW_FRONT - DRAW_BACK) / 2, 0, 0));
-      g(`drawLip${k}`, along(new T.CylinderGeometry(r + 0.012, r + 0.012, 0.045, 28)).translate(DRAW_FRONT - 0.022, 0, 0));
-    });
-    const last = DRAW_R[DRAW_R.length - 1];
+    for (const reach of REACHES)
+      drawRadii(reach).forEach((r, k) => {
+        g(`draw${reach}-${k}`, along(new T.CylinderGeometry(r, r, DRAW_BACK + DRAW_FRONT, 28, 1, false)).translate((DRAW_FRONT - DRAW_BACK) / 2, 0, 0));
+        g(`drawLip${reach}-${k}`, along(new T.CylinderGeometry(r + 0.012, r + 0.012, 0.045, 28)).translate(DRAW_FRONT - 0.022, 0, 0));
+      });
+    const last = DRAW_NARROWEST;
     g("cap", along(new T.CylinderGeometry(last + 0.03, last + 0.024, TIP - DRAW_FRONT, 28)).translate((TIP + DRAW_FRONT) / 2, 0, 0));
-    g("band", along(new T.CylinderGeometry(last + 0.036, last + 0.036, 0.075, 28)).translate(TIP - 0.07, 0, 0));
+    // The dew cap is lacquered in the kind's colour, with a wider ring round it edged in black, so that the colour
+    // reads from afar and on a phone.
+    g("band", along(new T.CylinderGeometry(last + 0.055, last + 0.055, 0.15, 28)).translate(TIP - 0.11, 0, 0));
+    g("bandEdge", along(new T.CylinderGeometry(last + 0.05, last + 0.05, 0.185, 28)).translate(TIP - 0.11, 0, 0));
     g("glass", new T.CircleGeometry(last + 0.016, 24).rotateY(Math.PI / 2).translate(TIP - 0.012, 0, 0));
     g("ring", new T.RingGeometry(HOLE_R, HOLE_R + 0.06, 40).rotateX(-Math.PI / 2));
     g("rim", new T.TorusGeometry(HOLE_R + 0.02, 0.028, 10, 40).rotateX(Math.PI / 2));
@@ -297,19 +311,21 @@ export class TelescopeView extends TableView<State> {
       add(this.shapes.lip, this.paint.darkBrass, body).position.x = BASE_FRONT;
       add(this.shapes.eyepiece, this.paint.brass, body);
       add(this.shapes.eyecup, this.paint.rubber, body);
+      const lacquer = this.paint[`lacquer${s.reach}`];
       const draws: T.Object3D[] = [];
-      DRAW_R.forEach((_, k) => {
+      for (let k = 0; k < s.reach; k++) {
         const tube = new T.Group();
-        add(this.shapes[`draw${k}`], k % 2 ? this.paint.darkBrass : this.paint.brass, tube);
-        add(this.shapes[`drawLip${k}`], this.paint.darkBrass, tube);
-        if (k === DRAW_R.length - 1) {
-          add(this.shapes.cap, this.paint.brass, tube);
-          add(this.shapes.band, this.paint[`lacquer${(t * 3 + Math.floor(sequence(t + 11)() * 7)) % LACQUER.length}`], tube);
+        add(this.shapes[`draw${s.reach}-${k}`], k % 2 ? this.paint.darkBrass : this.paint.brass, tube);
+        add(this.shapes[`drawLip${s.reach}-${k}`], this.paint.darkBrass, tube);
+        if (k === s.reach - 1) {
+          add(this.shapes.cap, lacquer, tube);
+          add(this.shapes.bandEdge, this.paint.enamel, tube);
+          add(this.shapes.band, lacquer, tube);
           add(this.shapes.glass, this.paint.lens, tube, false);
         }
         body.add(tube);
         draws.push(tube);
-      });
+      }
       this.layer.add(root);
       this.scopes.push({ root, draws, shown: 0 });
     });
@@ -501,6 +517,7 @@ export class TelescopeView extends TableView<State> {
     const el = this.renderer.domElement;
     el.dataset.size = String(n);
     el.dataset.scopes = state.scopes.map((s) => `${s.cell}/${s.dir}`).join(" ");
+    el.dataset.reach = state.scopes.map((s) => s.reach).join(" ");
     el.dataset.lens = state.lens.join(" ");
     el.dataset.ball = String(state.ball);
     el.dataset.hole = String(state.hole);

@@ -4,9 +4,10 @@ import { cellAt, cellUnder, scopePoint, telescopeSubject } from "../src/games/te
 
 /**
  * A board from rows of glyphs: . an empty cell, ^ > v < a telescope's base pointing N E S W (numbered in reading
- * order), o the ball, @ the hole. Rows must make a square.
+ * order), o the ball, @ the hole. Rows must make a square. Telescopes are purple (reach 4) unless `reaches` gives
+ * each its own, in the same order.
  */
-function board(rows: string[]): R.State {
+function board(rows: string[], reaches: R.Reach[] = []): R.State {
   const n = rows.length,
     scopes: R.Telescope[] = [];
   let ball = -1,
@@ -17,7 +18,7 @@ function board(rows: string[]): R.State {
       const ch = row[c],
         cell = r * n + c,
         dir = "^>v<".indexOf(ch);
-      if (dir >= 0) scopes.push({ cell, dir });
+      if (dir >= 0) scopes.push({ cell, dir, reach: reaches[scopes.length] ?? 4 });
       if (ch === "o") ball = cell;
       if (ch === "@") hole = cell;
     }
@@ -89,6 +90,64 @@ describe("telescope push: drawing out", () => {
     expect(press(crossed, 1)).toBeNull();
     expect(R.refusal(crossed, { from: -1, to: 1, extra: -1 })).toContain("늘어난 망원경");
     expect(R.moves(crossed).map((m) => m.to)).toEqual([0]);
+  });
+});
+
+describe("telescope push: the three kinds", () => {
+  test("green, yellow and purple draw out 2, 3 and 4 cells beyond the base: 3, 4 and 5 cells with it", () => {
+    const row = [">......", ">......", ">......", ".......", ".......", ".......", "o.....@"];
+    const s = board(row, [R.REACH_OF.green, R.REACH_OF.yellow, R.REACH_OF.purple]);
+    expect(s.scopes.map((x) => x.reach)).toEqual([2, 3, 4]);
+    let t = s;
+    for (let k = 0; k < 3; k++) t = press(t, k)!;
+    expect(t.lens).toEqual([2, 3, 4]);
+    expect([0, 1, 2].map((k) => 1 + R.bodyOf(t, k).length)).toEqual([3, 4, 5]);
+    expect(R.KIND_NAME[2]).toBe("초록");
+    expect(R.KIND_NAME[3]).toBe("노랑");
+    expect(R.KIND_NAME[4]).toBe("보라");
+    // Closed again, each closes fully.
+    for (let k = 0; k < 3; k++) t = press(t, k)!;
+    expect(t.lens).toEqual([0, 0, 0]);
+    expect(R.maxima(s.size, s.scopes)).toEqual([2, 3, 4]);
+  });
+  test("a kind pushes the ball only as far as its own reach", () => {
+    const rows = [".......", ">o.....", ".......", ".......", ".......", ".......", "......@"];
+    const green = press(board(rows, [2]), 0)!,
+      yellow = press(board(rows, [3]), 0)!,
+      purple = press(board(rows, [4]), 0)!;
+    expect([green.ball, yellow.ball, purple.ball]).toEqual([at(green, 1, 3), at(green, 1, 4), at(green, 1, 5)]);
+    expect([green.lens[0], yellow.lens[0], purple.lens[0]]).toEqual([2, 3, 4]);
+    // A green telescope can reach a ball two cells off and push it one; three cells off it does not reach it.
+    const twoOff = press(board([".......", ">.o....", ".......", ".......", ".......", ".......", "......@"], [2]), 0)!;
+    expect(twoOff.ball).toBe(at(twoOff, 1, 3));
+    const threeOff = press(board([".......", ">..o...", ".......", ".......", ".......", ".......", "......@"], [2]), 0)!;
+    expect(threeOff.lens[0]).toBe(2);
+    expect(threeOff.ball).toBe(at(threeOff, 1, 3));
+    // Pulled back by its own length.
+    const back = press(green, 0)!;
+    expect(back.ball).toBe(at(green, 1, 1));
+  });
+  test("a kind is still stopped earlier by the edge, a base, a body or a ball that cannot move", () => {
+    expect(press(board(["....", "..>.", "....", "o..@"], [3]), 0)!.lens[0]).toBe(1);
+    expect(press(board([".......", ">.v....", ".......", ".......", ".......", ".......", "o.....@"], [4, 2]), 0)!.lens[0]).toBe(1);
+    const ballStuck = press(board([".......", ">.o^...", ".......", ".......", ".......", ".......", "......@"], [3, 2]), 0)!;
+    expect(ballStuck.lens[0]).toBe(1);
+    expect(ballStuck.ball).toBe(at(ballStuck, 1, 2));
+    // A yellow body drawn down column 2 stops a purple one after a cell.
+    const body = board(["..v....", ".......", ">......", ".......", ".......", ".......", "o.....@"], [3, 4]);
+    const crossed = press(body, 0)!;
+    expect(crossed.lens[0]).toBe(3);
+    expect(press(crossed, 1)!.lens[1]).toBe(1);
+  });
+  test("the search counts each kind's reach", () => {
+    // Green pushes the ball onto the hole two cells on; purple would push it past.
+    const green = board([".......", ">o@....", ".......", ".......", ".......", ".......", "......."], [2]);
+    expect(R.solve(green)).toEqual([0]);
+    // A ball three cells beyond a green tip at its longest is out of its reach: no way in.
+    const far = board([".......", ">..o@..", ".......", ".......", ".......", ".......", "......."], [2]);
+    expect(R.solve(far)).toBeNull();
+    const purple = board([".......", ">..o@..", ".......", ".......", ".......", ".......", "......."], [4]);
+    expect(R.solve(purple)).toEqual([0]);
   });
 });
 
@@ -202,6 +261,7 @@ describe("telescope push: generated puzzles", () => {
     for (let stage = 1; stage <= R.STAGES.length; stage++) {
       const spec = R.STAGES[stage - 1],
         times: number[] = [];
+      let mattering = 0;
       for (let k = 0; k < 12; k++) {
         const t0 = performance.now(),
           s = R.createGame(stage, R.quick(stage * 1000 + k));
@@ -212,6 +272,10 @@ describe("telescope push: generated puzzles", () => {
         expect(s.best).toBeGreaterThanOrEqual(spec.band[0]);
         expect(s.best).toBeLessThanOrEqual(spec.band[1]);
         expect(s.plan.length).toBe(s.best);
+        // Only the three kinds, all three on every board.
+        expect(s.scopes.every((x) => (R.REACHES as readonly number[]).includes(x.reach))).toBe(true);
+        expect(new Set(s.scopes.map((x) => x.reach)).size).toBe(3);
+        if (R.colourMatters(s)) mattering++;
         // Nothing stands on the ball or the hole, and every base is a different cell.
         const bases = new Set(s.scopes.map((x) => x.cell));
         expect(bases.size).toBe(s.scopes.length);
@@ -228,6 +292,8 @@ describe("telescope push: generated puzzles", () => {
       }
       const mean = times.reduce((a, b) => a + b) / times.length;
       expect(mean).toBeLessThan(stage < 5 ? 150 : 600);
+      // The colours matter on nearly every board: were all the telescopes purple, it would be another puzzle.
+      expect(mattering).toBeGreaterThanOrEqual(10);
     }
   }, 60000);
   test("the plan is a shortest way: the search from the start finds no shorter", () => {
@@ -254,6 +320,7 @@ describe("telescope push: generated puzzles", () => {
     const a = R.createGame(3, R.quick(9)),
       b = R.createGame(3, R.quick(9));
     expect(b.scopes).toEqual(a.scopes);
+    expect(b.scopes.map((x) => x.reach)).toEqual(a.scopes.map((x) => x.reach));
     expect([b.ball, b.hole, b.plan]).toEqual([a.ball, a.hole, a.plan]);
   });
 });

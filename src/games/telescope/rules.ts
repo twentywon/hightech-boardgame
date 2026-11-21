@@ -11,17 +11,19 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  * is nothing else on the board (no blocks).
  *
  * A telescope stands on its base cell (the eyepiece end) and points one way, `dir`. Its length `lens[t]` is how many
- * cells its tip reaches beyond the base, 0 to `REACH` (4). It occupies its base and, when drawn out, its body: the
- * `len` cells beyond the base. Its tip is the last of them; the cell just beyond the tip (the base's next cell when
- * it is closed) is the one it touches. Every telescope starts closed. Colours of the telescopes mean nothing.
+ * cells its tip reaches beyond the base, 0 to its own `reach`. The colour of the ring at its tip tells its kind, and
+ * the kind is its reach (the user asked; counted with the base, as the user counts): green spans at most 3 cells
+ * (reach 2), yellow 4 (reach 3), purple 5 (reach 4, `MAX_REACH`). It occupies its base and, when drawn out, its body:
+ * the `len` cells beyond the base. Its tip is the last of them; the cell just beyond the tip (the base's next cell
+ * when it is closed) is the one it touches. Every telescope starts closed. Only these three kinds exist.
  *
  * One move, `{from: -1, to: t, extra: -1}` through `play`, presses telescope `t`:
- * - Closed (length 0): it is drawn out, all at once, cell by cell, up to `REACH` cells. The tip goes into the next
+ * - Closed (length 0): it is drawn out, all at once, cell by cell, up to its `reach`. The tip goes into the next
  *   cell unless that cell is off the board or taken by a telescope (another's base or drawn-out body). When the next
  *   cell holds the ball, the ball is pushed one cell ahead of the tip, unless the cell beyond the ball is off the
  *   board or taken by a telescope: then the ball cannot go and the tip stops where it is. A press that cannot draw
  *   the telescope out even one cell is refused, and `refusal` says what is in the way.
- * - Drawn out (length 1 to 4): it closes fully, cell by cell. If the ball lies on the cell its tip touches (just
+ * - Drawn out (length 1 to its reach): it closes fully, cell by cell. If the ball lies on the cell its tip touches (just
  *   beyond the tip, in its direction), the ball is held and comes back with the tip, a cell a step, and ends on the
  *   cell just beyond the base. The cells it comes through are the telescope's own body as it shortens, so nothing can
  *   ever be in its way and a pull is never stopped short. A ball beside the tip, or further off, stays where it is.
@@ -35,11 +37,15 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  *
  * A puzzle is laid at random (`createGame`): first the ball's journey (`journey`): from the ball alone on the board,
  * telescopes are set down behind it and pressed, or ones already there pressed again, so that it keeps coming onto
- * new cells, pushed and pulled; the hole goes on the last cell it came onto. Then the rest of the stage's telescopes
- * are crowded round, close to the others, side by side or facing each other (`crowd`), any that would spoil the
- * journey left out. The shortest way into the hole is then searched for (`search`, an exact A* over arrangements:
- * every telescope's length and the ball's cell), and the board is kept when its fewest presses lie within the
- * stage's band. That shortest way is kept as `plan` (`best` presses); the hint follows it while I do, and otherwise
+ * new cells, pushed and pulled; the hole goes on the last cell it came onto. A telescope set down behind the ball is
+ * mostly of a kind whose own reach is what stops the ball (a longer kind would push it further), and the kinds fewest
+ * on the board are preferred. Then the rest of the stage's telescopes are crowded round, close to the others, side by
+ * side or facing each other, of the kinds fewest so far (`crowd`), any that would spoil the journey left out. The
+ * shortest way into the hole is then searched for (`search`, an exact A* over arrangements: every telescope's length
+ * and the ball's cell), and the board is kept when its fewest presses lie within the stage's band, all three kinds
+ * stand on it and their colours matter (`colourMatters`: were every telescope purple, the way laid would fail or the
+ * fewest presses change); a board in the band without the last two is kept only when no better one is found within
+ * `TRIES`. That shortest way is kept as `plan` (`best` presses); the hint follows it while I do, and otherwise
  * searches afresh from the arrangement shown (`solve`).
  */
 export const N = 0,
@@ -48,14 +54,26 @@ export const N = 0,
   W = 3;
 export const DR = [-1, 0, 1, 0],
   DC = [0, 1, 0, -1];
-/** How far a telescope can be drawn out beyond its base. */
-export const REACH = 4;
+/**
+ * The three kinds of telescope, told by the colour of the ring at the tip: how far each can be drawn out beyond its
+ * base. Counted with the base, a green one spans at most 3 cells, a yellow one 4 and a purple one 5.
+ */
+export const REACHES = [2, 3, 4] as const;
+export type Reach = (typeof REACHES)[number];
+/** The furthest any telescope can be drawn out. */
+export const MAX_REACH = 4;
+/** The reach of each kind, by its colour. */
+export const REACH_OF = { green: 2, yellow: 3, purple: 4 } as const satisfies Record<string, Reach>;
+/** The kind's colour in words, by reach. */
+export const KIND_NAME: Record<Reach, string> = { 2: "초록", 3: "노랑", 4: "보라" };
 
 export interface Telescope {
   /** The base cell (the eyepiece end). */
   cell: number;
   /** Which way it points: N 0, E 1, S 2, W 3. */
   dir: number;
+  /** How far it can be drawn out beyond its base (2 green, 3 yellow, 4 purple). */
+  reach: Reach;
 }
 export interface Last {
   /** The telescope pressed. */
@@ -155,8 +173,9 @@ function pressOn(n: number, scopes: Telescope[], lens: ArrayLike<number>, occ: I
     }
     return 0;
   }
+  const reach = scopes[t].reach;
   let k = 0;
-  while (k < REACH) {
+  while (k < reach) {
     const next = stepFrom(n, cell, dir, k + 1);
     if (next < 0 || occ[next] >= 0) break;
     if (next === b) {
@@ -233,7 +252,7 @@ export function undo(state: State): State {
  * text when that number would not be exact.
  *
  * A looser board helps: one where only the bases and the edge stand in the ball's way (no drawn-out body, and any
- * telescope may be at any length). Every press that moves the ball on the real board moves it along one of the looser
+ * telescope may be at any length up to its own reach). Every press that moves the ball on the real board moves it along one of the looser
  * board's lines (`lines`), so
  * - the cells the looser board can bring the ball onto from the start hold every cell it can ever be on; a telescope
  *   that can never reach one of them, nor reach into the way of a telescope that can (and so on), never matters, and
@@ -246,13 +265,13 @@ export function undo(state: State): State {
  */
 /** How many arrangements a search may take up before it gives up. */
 export const CAP = 60000;
-/** The longest each telescope can ever be, from the bases and the edge alone. */
+/** The longest each telescope can ever be, from its own reach, the bases and the edge alone. */
 export function maxima(n: number, scopes: Telescope[]) {
   const bases = new Uint8Array(n * n);
   for (const s of scopes) bases[s.cell] = 1;
   return scopes.map((s) => {
     let k = 0;
-    while (k < REACH) {
+    while (k < s.reach) {
       const next = stepFrom(n, s.cell, s.dir, k + 1);
       if (next < 0 || bases[next]) break;
       k++;
@@ -580,6 +599,14 @@ function pressDraft(d: Draft, t: number) {
   d.ball = trail[trail.length - 1];
   return true;
 }
+/** How many telescopes of each kind there are, by reach. */
+function kindsOf(scopes: Telescope[]) {
+  const have: Record<Reach, number> = { 2: 0, 3: 0, 4: 0 };
+  for (const s of scopes) have[s.reach]++;
+  return have;
+}
+/** How much more a kind is chosen for a new telescope behind the ball when its own reach is what stops the ball. */
+const TELLING = 3;
 /** The draft's cells held by a base, a body or the ball. */
 function heldCells(d: Draft) {
   const occ = occupancy(d.n, d.scopes, d.lens);
@@ -633,45 +660,56 @@ function journey(n: number, steps: number, most: number, random: Random): Draft 
     // Presses that leave the ball where it is weigh as much as one fresh press all together, so that they come now and then.
     // (Never more than two in a row: a ball that cannot go on ends the journey.)
     if (idle.length && still < 2) options.push({ weight: 1, run: () => idle[Math.floor(random() * idle.length)] });
-    // A new telescope behind the ball.
+    // A new telescope behind the ball, of a kind chosen on purpose: mostly one whose own reach is what stops the ball
+    // (a longer kind would push it further), so that the colour matters on the way laid.
     if (d.scopes.length < most) {
-      const held = heldCells(d);
+      const held = heldCells(d),
+        have = kindsOf(d.scopes);
       for (let dir = 0; dir < 4; dir++) {
-        const back = (dir + 2) % 4;
-        for (let j = 1; j <= REACH; j++) {
+        const back = (dir + 2) % 4,
+          ahead = stepFrom(n, d.ball, dir);
+        // Where the ball would go: a fresh cell beyond it.
+        if (ahead < 0 || held[ahead] >= 0) continue;
+        for (let j = 1; j <= MAX_REACH; j++) {
           const base = stepFrom(n, d.ball, back, j);
           if (base < 0 || held[base] >= 0) break;
-          // Where the ball would go: a fresh cell beyond it.
-          const ahead = stepFrom(n, d.ball, dir);
-          if (ahead < 0 || held[ahead] >= 0) break;
-          const room = REACH - j + 1;
-          // Where an unhindered push would leave it: at the rim, a stopper is set down more often.
-          let end = d.ball;
-          for (let k = 1; k <= room; k++) {
+          // How far the ball could go ahead before something stops it, whatever the kind.
+          let open = 0;
+          for (let k = 1; k <= MAX_REACH - j + 1; k++) {
             const x = stepFrom(n, d.ball, dir, k);
             if (x < 0 || held[x] >= 0) break;
-            end = x;
+            open = k;
           }
-          options.push({
-            weight: 1.2 * farther(end),
-            run: () => {
-              const copy: Draft = { ...d, scopes: [...d.scopes, { cell: base, dir }], lens: [...d.lens, 0], plan: [...d.plan], visited: new Map(d.visited) };
-              // Sometimes a base is set down where the ball is to stop, short of the furthest it could go.
-              if (copy.scopes.length < most && random() < (rim(end) < 1 ? 0.85 : 0.4)) {
-                const stop = 1 + Math.floor(random() * room),
-                  beyond = stepFrom(n, d.ball, dir, stop + 1);
-                if (beyond >= 0 && held[beyond] < 0 && beyond !== base) {
-                  // The stopper points across the ball's way, a way with room, so that it is a telescope too.
-                  const across = [0, 1, 2, 3].filter((w) => w !== dir && w !== back && stepFrom(n, beyond, w) >= 0);
-                  const w = across.length ? across[Math.floor(random() * across.length)] : dir;
-                  copy.scopes.push({ cell: beyond, dir: w });
-                  copy.lens.push(0);
+          const kinds = REACHES.filter((reach) => reach >= j),
+            prefer = (reach: Reach) => (reach - j + 1 < open ? TELLING : 1) / (1 + have[reach]),
+            total = kinds.reduce((sum, reach) => sum + prefer(reach), 0);
+          for (const reach of kinds) {
+            const room = reach - j + 1,
+              telling = room < open,
+              // Where an unhindered push would leave it: at the rim, a stopper is set down more often.
+              end = stepFrom(n, d.ball, dir, Math.min(room, open));
+            options.push({
+              weight: (1.2 * farther(end) * prefer(reach)) / total,
+              run: () => {
+                const copy: Draft = { ...d, scopes: [...d.scopes, { cell: base, dir, reach }], lens: [...d.lens, 0], plan: [...d.plan], visited: new Map(d.visited) };
+                // Sometimes a base is set down where the ball is to stop, short of the furthest it could go (less
+                // often when the kind's own reach stops it already).
+                if (copy.scopes.length < most && random() < (telling ? 0.25 : rim(end) < 1 ? 0.85 : 0.4)) {
+                  const stop = 1 + Math.floor(random() * room),
+                    beyond = stepFrom(n, d.ball, dir, stop + 1);
+                  if (beyond >= 0 && held[beyond] < 0 && beyond !== base) {
+                    // The stopper points across the ball's way, a way with room, so that it is a telescope too.
+                    const across = [0, 1, 2, 3].filter((w) => w !== dir && w !== back && stepFrom(n, beyond, w) >= 0);
+                    const w = across.length ? across[Math.floor(random() * across.length)] : dir;
+                    copy.scopes.push({ cell: beyond, dir: w, reach: pickBy(random, [...REACHES], (r) => 1 / (1 + have[r])) });
+                    copy.lens.push(0);
+                  }
                 }
-              }
-              if (!pressDraft(copy, copy.scopes.length - (copy.scopes[copy.scopes.length - 1].cell === base ? 1 : 2))) return null;
-              return copy.ball !== d.ball && !d.visited.has(copy.ball) ? copy : null;
-            },
-          });
+                if (!pressDraft(copy, copy.scopes.length - (copy.scopes[copy.scopes.length - 1].cell === base ? 1 : 2))) return null;
+                return copy.ball !== d.ball && !d.visited.has(copy.ball) ? copy : null;
+              },
+            });
+          }
         }
       }
     }
@@ -734,16 +772,20 @@ function crowd(n: number, scopes: Telescope[], ball: number, hole: number, plan:
         return x >= 0 && !(taken[x] && x !== ball && x !== hole);
       });
     if (!ways.length) continue;
-    // A way that meets another telescope (or the ball) within reach is preferred: the two then face or cross each other.
-    const meets = (dir: number) => {
-      for (let k = 2; k <= REACH + 1; k++) {
+    // A way that meets another telescope (or the ball) within the kind's reach is preferred: the two then face or
+    // cross each other. The kinds fewest on the board so far are preferred, so that the three are mixed.
+    const meets = (dir: number, reach: number) => {
+      for (let k = 2; k <= reach + 1; k++) {
         const x = stepFrom(n, cell, dir, k);
         if (x < 0) return false;
         if (taken[x]) return true;
       }
       return false;
     };
-    const trial = [...out, { cell, dir: pickBy(random, ways, (dir) => (meets(dir) ? 3 : 1)) }];
+    const have = kindsOf(out),
+      choices = ways.flatMap((dir) => REACHES.map((reach) => ({ dir, reach }))),
+      { dir, reach } = pickBy(random, choices, (o) => (meets(o.dir, o.reach) ? 3 : 1) / (1 + have[o.reach]) ** 2),
+      trial = [...out, { cell, dir, reach }];
     if (lands(n, trial, ball, hole, plan)) out.splice(0, out.length, ...trial);
   }
   return out;
@@ -765,6 +807,16 @@ const blank = (n: number, scopes: Telescope[], ball: number, hole: number, stage
   winner: null,
   ply: 0,
 });
+/**
+ * Whether the colours matter on a board: telescopes all of the longest kind would make another puzzle of it (the way
+ * laid no longer brings the ball in, or the fewest presses change).
+ */
+export function colourMatters(state: State, cap = JUDGE_CAP) {
+  const longest = state.scopes.map((s) => ({ ...s, reach: MAX_REACH as Reach }));
+  if (!lands(state.size, longest, state.start, state.hole, state.plan)) return true;
+  const found = search(state.size, longest, longest.map(() => 0), state.start, state.hole, cap);
+  return found.capped || !found.way || found.way.length !== state.best;
+}
 /** How many boards are tried at most before the one nearest the band is kept. */
 const TRIES = 40;
 /** How many cells of a journey are tried for the hole. */
@@ -825,8 +877,11 @@ export function createGame(stage = 1, random: Random = cryptoRandom): State {
     const scopes = crowd(laid.n, laid.journey.scopes, laid.journey.start, deepest.hole, deepest.way, laid.count, random),
       found = search(laid.n, scopes, scopes.map(() => 0), laid.journey.start, deepest.hole, JUDGE_CAP);
     if (!found.way) continue;
-    const state = blank(laid.n, scopes, laid.journey.start, deepest.hole, at, found.way),
-      off = Math.max(0, spec.band[0] - found.way.length, found.way.length - spec.band[1]);
+    const state = blank(laid.n, scopes, laid.journey.start, deepest.hole, at, found.way);
+    // Within the band, a board is kept at once when it holds all three kinds and their colours matter; otherwise it
+    // waits, behind any board without those flaws.
+    let off = Math.max(0, spec.band[0] - found.way.length, found.way.length - spec.band[1]);
+    if (!off) off = (new Set(scopes.map((x) => x.reach)).size < REACHES.length ? 0.4 : 0) + (colourMatters(state) ? 0 : 0.2);
     if (!off) return state;
     if (!kept || off < kept.off) kept = { state, off };
   }

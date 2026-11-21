@@ -70,6 +70,9 @@ test("telescope push: entered through its stage window, a seeded board is solved
   rules.createGame(1, random);
   const start = rules.createGame(2, random);
   await expect(canvas).toHaveAttribute("data-scopes", start.scopes.map((s) => `${s.cell}/${s.dir}`).join(" "));
+  // Each telescope's kind (its reach: 2 green, 3 yellow, 4 purple); the board holds all three.
+  await expect(canvas).toHaveAttribute("data-reach", start.scopes.map((s) => s.reach).join(" "));
+  expect(new Set(start.scopes.map((s) => s.reach)).size).toBe(3);
   await expect(canvas).toHaveAttribute("data-ball", String(start.ball));
   await expect(canvas).toHaveAttribute("data-hole", String(start.hole));
   // The hints, each tapped on the telescope under the gold ring, bring the ball into the hole. On the way: the first

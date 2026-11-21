@@ -3,11 +3,12 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { cellAt } from "./layout";
 import { STAGES, hint, refusal, stageOf, telescope, type State } from "./rules";
-import { TELESCOPE_COLORS, TelescopeView } from "./view";
+import { COLOUR_OF, TELESCOPE_COLORS, TelescopeView } from "./view";
 
 /**
- * A small picture of a stage: a wooden board of the stage's size with its grid, brass telescopes (one drawn out
- * against the ball), the white ball and the dark hole. More telescopes, and closer, as the stages rise.
+ * A small picture of a stage: a wooden board of the stage's size with its grid, brass telescopes with their kinds'
+ * rings (one drawn out against the ball), the white ball and the dark hole. More telescopes, and closer, as the
+ * stages rise.
  */
 function stageArt(stage: number) {
   const n = STAGES[stage - 1].size,
@@ -36,8 +37,11 @@ function stageArt(stage: number) {
   }
   const [hx, hy] = mid(...picture.hole);
   out += `<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${(cell * 0.36).toFixed(1)}" fill="#160d07" stroke="#c9a14a" stroke-width="${(cell * 0.08).toFixed(1)}"/>`;
-  const lacquer = ["#b8322c", "#2f6db5", "#2f8f5b", "#d9a21f", "#7d3fa3", "#d8692a"];
+  // The kinds (by reach): the one drawn out is of a kind that reaches the ball; the rest are mixed.
+  const first = ([2, 4, 3, 3, 4] as const)[stage - 1],
+    kinds = [2, 3, 4] as const;
   picture.scopes.forEach(([r, c, d, len], i) => {
+    const reach = i ? kinds[(i + stage) % 3] : first;
     const [x, y] = mid(r, c),
       [dx, dy] = way[d],
       w = cell * 0.34,
@@ -50,7 +54,7 @@ function stageArt(stage: number) {
       y2 = y + dy * tip;
     out += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}" stroke="#a37c31" stroke-width="${(w + 1).toFixed(1)}" stroke-linecap="butt"/>`;
     out += `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}" stroke="#d6b05a" stroke-width="${(w * 0.6).toFixed(1)}" stroke-linecap="butt"/>`;
-    out += `<circle cx="${(x2 - dx * w * 0.25).toFixed(1)}" cy="${(y2 - dy * w * 0.25).toFixed(1)}" r="${(w * 0.5).toFixed(1)}" fill="${lacquer[i % lacquer.length]}"/>`;
+    out += `<circle cx="${(x2 - dx * w * 0.25).toFixed(1)}" cy="${(y2 - dy * w * 0.25).toFixed(1)}" r="${(w * 0.62).toFixed(1)}" fill="${COLOUR_OF[reach]}" stroke="#1a120c" stroke-width="0.7"/>`;
     out += `<circle cx="${(x1 - dx * w * 0.2).toFixed(1)}" cy="${(y1 - dy * w * 0.2).toFixed(1)}" r="${(w * 0.3).toFixed(1)}" fill="#2a1d14"/>`;
   });
   const [bx, by] = mid(...picture.ball);
@@ -88,7 +92,7 @@ export const telescopeConfig: PointConfig<State> = {
   name: "망원경 퍼즐",
   english: "Telescope Push",
   number: "NO. 96 — PUSH AND PULL",
-  intro: `<p>나무 판 위에 놋쇠 망원경들이 빼곡히 서 있고, 하얀 공 하나와 검은 구멍 하나.<br>망원경을 누르면 쭉 늘어나며 앞의 공을 밀고, 다시 누르면 줄어들며 끝에 닿은 공을 끌고 옵니다. 밀고 당겨서 공을 구멍에 넣으세요. 웹 게임 'Telescope Puzzle'(Mathsisfun)로 알려진 종류의 퍼즐이고, 문제는 매번 새로 만들어집니다.</p>`,
+  intro: `<p>나무 판 위에 놋쇠 망원경들이 빼곡히 서 있고, 하얀 공 하나와 검은 구멍 하나.<br>망원경을 누르면 쭉 늘어나며 앞의 공을 밀고, 다시 누르면 줄어들며 끝에 닿은 공을 끌고 옵니다. 끝 고리의 색이 늘어나는 길이를 알려 줍니다(본체 포함 초록 3칸, 노랑 4칸, 보라 5칸). 밀고 당겨서 공을 구멍에 넣으세요. 웹 게임 'Telescope Puzzle'(Mathsisfun)로 알려진 종류의 퍼즐이고, 문제는 매번 새로 만들어집니다.</p>`,
   meta: "1인 · 다섯 단계 · 문제는 무작위 · 언제나 풀림",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>PUSH AND PULL</span>`,
   artClass: "morris-art",
@@ -101,7 +105,8 @@ export const telescopeConfig: PointConfig<State> = {
       "기본 규칙",
       steps(
         "판 위에 <b>망원경</b> 여러 개와 하얀 <b>공</b> 하나, 검은 <b>구멍</b> 하나가 있습니다. 공을 구멍에 넣으면 <b>성공</b>입니다.",
-        "망원경은 제자리(접안부가 있는 칸)에 고정되어 한쪽을 바라봅니다. 줄어든 망원경을 누르면 바라보는 쪽으로 <b>한 번에 쭉</b>, 최대 <b>네 칸</b>까지 늘어납니다.",
+        "망원경은 제자리(접안부가 있는 칸)에 고정되어 한쪽을 바라봅니다. 줄어든 망원경을 누르면 바라보는 쪽으로 <b>한 번에 쭉</b> 늘어납니다.",
+        "얼마나 늘어나는지는 끝에 두른 <b>고리의 색</b>이 정합니다. 본체 칸을 포함해 <b>초록</b>은 최대 3칸, <b>노랑</b>은 4칸, <b>보라</b>는 5칸입니다.",
         "늘어나다가 앞 칸에 <b>공</b>이 있으면 공을 앞으로 밀며 함께 나아갑니다.",
         "판 가장자리, 다른 망원경(접안부나 늘어난 몸통)에 닿으면 거기서 멈춥니다. 밀던 공 너머가 막혀 있어도 공과 함께 멈춥니다. 조금도 늘어날 수 없는 망원경은 누를 수 없습니다.",
         "늘어난 망원경을 누르면 끝까지 <b>줄어듭니다</b>. 이때 공이 망원경 끝 바로 앞 칸에 닿아 있으면 <b>함께 끌려와</b> 접안부 바로 앞 칸에 섭니다. 옆에 있거나 떨어져 있는 공은 그대로입니다.",
@@ -111,9 +116,17 @@ export const telescopeConfig: PointConfig<State> = {
       ),
     ) +
     part(
+      "망원경의 색",
+      table(
+        ["초록", "본체 포함 최대 <b>3칸</b>. 경통 두 마디가 빠져나와 앞으로 두 칸까지 늘어납니다."],
+        ["노랑", "본체 포함 최대 <b>4칸</b>. 경통 세 마디, 앞으로 세 칸까지 늘어납니다."],
+        ["보라", "본체 포함 최대 <b>5칸</b>. 경통 네 마디, 앞으로 네 칸까지 늘어납니다."],
+      ),
+    ) +
+    part(
       "판 위의 것들",
       table(
-        ["망원경", "놋쇠로 된 접이식 망원경입니다. 접안부가 놓인 칸이 제자리이고, 경통 네 마디가 하나씩 빠져나와 최대 네 칸까지 늘어납니다. 끝의 색 고리는 구별을 돕는 장식일 뿐, 색에 따른 규칙은 없습니다."],
+        ["망원경", "놋쇠로 된 접이식 망원경입니다. 접안부가 놓인 칸이 제자리이고, 경통 마디가 하나씩 빠져나와 늘어납니다. 마디 수와 끝의 색 고리가 얼마나 늘어나는지 알려 줍니다."],
         ["공", "하얀 대리석 공입니다. 망원경 끝에 밀려 굴러가고, 끝에 닿아 있으면 줄어드는 망원경에 끌려옵니다."],
         ["구멍", "놋쇠 테를 두른 검은 구멍입니다. 공이 이 칸에 들어서면 빠집니다."],
         ["단계", "<b>쉬움</b>은 7×7 판에 망원경 몇 개, 단계가 오를수록 판이 넓어지고 망원경이 빽빽해져 <b>달인</b>은 13×13 판입니다. 위 단계일수록 공을 넣기까지 여러 번 밀고 당겨야 합니다. 어느 판이든 풀 수 있는 판만 나옵니다."],
@@ -123,7 +136,7 @@ export const telescopeConfig: PointConfig<State> = {
       "처음이라면",
       notes(
         "구멍에서 거꾸로 생각해 보세요. 어느 망원경이 공을 구멍으로 밀거나 끌어올 수 있는지, 그러려면 공이 어디에 있어야 하는지 따라가면 길이 보입니다.",
-        "공을 멀리 보내고 싶지 않을 때는 먼저 다른 망원경을 늘여 길을 막아 두세요. 늘어난 몸통이 공을 세워 줍니다.",
+        "공을 멀리 보내고 싶지 않을 때는 짧은 망원경(초록)으로 밀거나, 먼저 다른 망원경을 늘여 길을 막아 두세요. 늘어난 몸통이 공을 세워 줍니다.",
         "공이 망원경 끝에 닿은 채로 멈췄다면, 그 망원경을 다시 눌러 공을 되끌어 올 수 있습니다.",
       ),
     ),
