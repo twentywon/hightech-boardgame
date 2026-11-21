@@ -15,10 +15,14 @@ import {
   START,
   allied,
   canSpeak,
+  create,
   createGame,
+  createLocal,
   destinations,
   dominates,
   hexConquest,
+  human,
+  localSeats,
   moves,
   offerable,
   play,
@@ -74,6 +78,9 @@ function lay(spec: Spec): State {
     phase: "play",
     me: spec.me ?? 0,
     computers: present.length - 1,
+    people: 0,
+    humans: [],
+    picked: 0,
     owner,
     armies,
     nations,
@@ -702,5 +709,140 @@ describe("hex conquest speeches", () => {
       after = play(after, move)!;
     }
     expect(struck).toBe(true);
+  });
+});
+
+/** A board laid by hand for people at one screen: every nation present a player's, in this order. */
+const local = (spec: Spec, humans: number[]): State => ({ ...lay(spec), people: humans.length, humans, picked: humans.length, computers: 0, me: humans[0] });
+describe("hex conquest at one screen", () => {
+  test("the setup window tells the modes apart: 사람 수 gives people, 컴퓨터 수 alone gives computers", () => {
+    const people = create("", { computers: "3", people: "3" });
+    expect(people.people).toBe(3);
+    expect(people.computers).toBe(0);
+    expect(people.phase).toBe("setup");
+    const computers = create("", { computers: "2" });
+    expect(computers.people).toBe(0);
+    expect(computers.computers).toBe(2);
+    expect(computers.humans).toEqual([]);
+    expect(hexConquestConfig.tableNote("", { people: "3" })).toBe("로컬 3인 · 무작위 지도");
+    expect(hexConquestConfig.tableNote("", { computers: "2" })).toBe("3개국 · 무작위 지도");
+  });
+  test("players still to choose sit where seatsFor puts them, in the order of play", () => {
+    expect(localSeats([], 2)).toEqual([0, 2]);
+    expect(localSeats([], 3)).toEqual([0, 2, 3]);
+    expect(localSeats([], 4)).toEqual([1, 0, 2, 3]);
+    expect(localSeats([3], 2)).toEqual([3, 1]);
+    expect(localSeats([0, 1], 3)).toEqual([0, 1, 2]);
+    expect(localSeats([2, 0, 1], 4)).toEqual([2, 0, 1, 3]);
+  });
+  test("each player in turn takes a capital; a taken one opens the choice again; 시작 begins with 청국", () => {
+    let s = createLocal(2, () => 0.33);
+    expect(s.picked).toBe(0);
+    expect(hexConquest.hint(s)).toBe("1번 플레이어: 수도를 눌러 제국을 고르세요.");
+    expect(hexConquestConfig.whoOf!(s, 0, "local")).toBe("");
+    expect(hexConquest.turn(s)).toBe(0);
+    // Player 1 takes 청국 (upper left) by a tap on its capital, player 2 흑국 by its tool.
+    s = play(s, tool(s.world.corners[1]))!;
+    expect(s.humans[0]).toBe(1);
+    expect(s.picked).toBe(1);
+    expect(hexConquest.hint(s)).toBe("2번 플레이어: 수도를 눌러 제국을 고르세요.");
+    // Until player 2 chooses, the diagonal is seated for them, and the other corners are plain land.
+    expect(s.humans).toEqual([1, 3]);
+    expect(s.nations.map((n) => n.present)).toEqual([false, true, false, true]);
+    // A tap on 청국 again lets player 1 choose afresh.
+    const again = play(s, tool(s.world.corners[1]))!;
+    expect(again.picked).toBe(0);
+    expect(hexConquest.hint(again)).toBe("1번 플레이어: 수도를 눌러 제국을 고르세요.");
+    s = play(s, tool(NATION + 3))!;
+    expect(s.humans).toEqual([1, 3]);
+    expect(s.picked).toBe(2);
+    expect(hexConquest.hint(s)).toBe("모두 골랐습니다. 다른 맵이나 시작을 누르세요.");
+    // Everyone has chosen: a free capital is no longer offered, a taken one still is.
+    expect(play(s, tool(s.world.corners[0]))).toBeNull();
+    expect(moves(s)).not.toContainEqual(tool(NATION + 0));
+    expect(moves(s)).toContainEqual(tool(NATION + 3));
+    // Another map keeps the choices.
+    const other = play(s, tool(NEW_MAP), () => 0.71)!;
+    expect(other.world.land).not.toEqual(s.world.land);
+    expect(other.humans).toEqual([1, 3]);
+    expect(other.picked).toBe(2);
+    expect(hexConquestConfig.tallyHtml!(s, "local")[0]).toContain("청국 (1번)");
+    expect(hexConquestConfig.tallyHtml!(s, "local")[0]).toContain("흑국 (2번)");
+    expect(hexConquestConfig.tallyHtml!(s, "local")[0]).not.toContain("(나)");
+    const started = play(s, tool(START))!;
+    expect(started.phase).toBe("play");
+    expect(started.seat).toBe(1);
+    expect(hexConquest.turn(started)).toBe(0);
+    expect(hexConquestConfig.whoOf!(started, 0, "local")).toBe("청국");
+    expect(started.armies.filter(Boolean).map((a) => a!.nation).sort()).toEqual([1, 3]);
+  });
+  test("시작 pressed early seats the players still to choose apart", () => {
+    let s = createLocal(3, () => 0.52);
+    s = play(s, tool(NATION + 2))!;
+    const started = play(s, tool(START))!;
+    expect(started.humans).toEqual([2, 1, 0]);
+    expect(started.nations.map((n) => n.present)).toEqual([true, true, true, false]);
+    // 청국 moves first, whoever chose it.
+    expect(started.seat).toBe(1);
+  });
+  test("people take turns in the order of play, each turn 0, each moving only their own armies", () => {
+    let s = play(play(play(createLocal(2, () => 0.33), tool(NATION + 3))!, tool(NATION + 1))!, tool(START))!;
+    expect(s.humans).toEqual([3, 1]);
+    expect(s.seat).toBe(1);
+    expect(moves(s).filter((m) => m.from >= 0).every((m) => s.armies[m.from]!.nation === 1)).toBe(true);
+    const one = moves(s).find((m) => m.from >= 0)!;
+    s = play(s, one)!;
+    // 청국's only army moved: 흑국's turn, still turn 0, the cheer naming nobody as 나.
+    expect(s.seat).toBe(3);
+    expect(hexConquest.turn(s)).toBe(0);
+    expect(hexConquestConfig.whoOf!(s, 0, "local")).toBe("흑국");
+    expect(hexConquestConfig.tools!.find((t) => t.label === "턴 종료")!.show!(s)).toBe(true);
+    s = play(s, moves(s).find((m) => m.from >= 0)!)!;
+    expect(s.seat).toBe(1);
+    expect(s.round).toBe(2);
+    expect(human(s, 1) && human(s, 3) && !human(s, 0)).toBe(true);
+  });
+  test("an alliance offered to a person waits for that person's turn, and that person answers", () => {
+    let s = local({ present: [0, 1, 2], seat: 1, armies: { [C0]: [0, 30, 20], [C1]: [1, 30, 20], [C2]: [2, 30, 20] } }, [1, 0, 2]);
+    const asking = play(s, tool(PROPOSE))!;
+    s = play(asking, tool(NATION + 2))!;
+    // Nothing is decided by the rules for a person: the answer waits.
+    expect(allied(s, 1, 2)).toBe(false);
+    expect(s.last!.pact).toEqual({ from: 1, to: 2, accepted: null });
+    expect(hexConquestConfig.cheer!(asking, s, "local")).toBe("청국 → 황국 동맹 제안");
+    s = play(s, tool(END))!;
+    // 홍국 (no offer) moves next, then 황국 answers first thing.
+    expect(s.seat).toBe(0);
+    expect(s.phase).toBe("play");
+    s = play(s, tool(END))!;
+    expect(s.seat).toBe(2);
+    expect(s.phase).toBe("offer");
+    expect(hexConquest.hint(s)).toMatch(/^청국이 동맹을 제안했습니다/);
+    const yes = play(s, tool(ACCEPT))!;
+    expect(allied(yes, 1, 2)).toBe(true);
+    expect(yes.phase).toBe("play");
+    expect(yes.seat).toBe(2);
+    expect(hexConquestConfig.cheer!(s, yes, "local")).toBe("청국·황국 동맹!");
+    const no = play(s, tool(REFUSE))!;
+    expect(allied(no, 1, 2)).toBe(false);
+    expect(hexConquestConfig.cheer!(s, no, "local")).toBe("황국: 동맹 거절");
+  });
+  test("a person's nation that falls is out but the game goes on; the last standing wins", () => {
+    const near = NEIGHBOURS[C1][0];
+    // Three players: 홍국 takes 청국's capital, and 황국 still stands.
+    const three = go(local({ present: [0, 1, 2], all: 0, owner: { [C1]: 1, [C2]: 2 }, armies: { [near]: [0, 80, 10], [C2]: [2, 10, 10] } }, [0, 1, 2]), near, C1);
+    expect(three.nations[1].alive).toBe(false);
+    expect(three.winner).toBeNull();
+    expect(hexConquestConfig.cheer!(three, three, "local")).toBeNull();
+    // Two: the conquest ends it, a win told for the one who took it.
+    const two = go(local({ present: [0, 1], seat: 0, all: 0, owner: { [C1]: 1 }, armies: { [near]: [0, 80, 10] } }, [1, 0]), near, C1);
+    expect(two.winner).toBe(0);
+    expect(hexConquestConfig.whoOf!(two, 0, "local")).toBe("홍국");
+    expect(hexConquest.reason(two)).toMatch(/^모든 나라를 정복했습니다\. 세계가 홍국의/);
+    // A person's capital held by a nation that falls comes back to that person, as anyone's does.
+    const by = NEIGHBOURS[C1][0];
+    const back = go(local({ present: [0, 1, 2], dead: [2], all: 0, owner: { [C2]: 1 }, armies: { [by]: [0, 60, 30] } }, [2, 0, 1]), by, C1);
+    expect(back.nations[2].alive).toBe(true);
+    expect(back.winner).toBeNull();
   });
 });

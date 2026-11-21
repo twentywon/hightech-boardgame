@@ -81,6 +81,17 @@ import { CAPITAL, CITY, NONE, PORT, VILLAGE, generateMap, seeded, type HexMap } 
  * Conquest. A nation whose own capital is taken is out: its armies vanish and its land goes to the conqueror. Any
  * other capital it held comes back to its own nation with an army of 99 men and morale 99 (as in the original). I
  * win when every other nation is out and lose when my capital is taken. After 300 rounds the game is drawn.
+ *
+ * People at one screen (로컬 2–4인, the user asked). `createLocal(people)` seats two to four people and no computer:
+ * the corners no person takes are empty, as above. In setup player 1, then 2 and so on, take a corner each by a tap
+ * on its capital (or `NATION + n`); a tap on a capital already taken opens the choice again from the player who took
+ * it, and a tap once everyone has chosen is refused. Until they have chosen, the players still to choose are seated
+ * by default (`localSeats`: the corners `seatsFor` would give, in the order of play), so `START` may be pressed at
+ * any time. The order of play is still 청국, 홍국, 황국, 흑국, whoever holds them (`humans` says which player holds
+ * which; player numbers count only in setup). Every rule is as above, every nation being a person's: an alliance
+ * offered to a person waits, as one offered to me does, for that person's next turn (`offers` holds a bit for each
+ * pair, `offerBit`); a capital comes back to its nation whoever plays it; and the last nation standing wins
+ * (`winner` 0, `victor`). `turn` is 0 whenever a person is to move, so always in this mode.
  */
 export { CAPITAL, CITY, NONE, PORT, VILLAGE } from "./map";
 export type { HexMap } from "./map";
@@ -132,6 +143,21 @@ export function seatsFor(me: number, computers: number) {
   if (k === 2) seats.push(3 - me);
   return seats.sort((a, b) => a - b);
 }
+/** How many people may sit at one screen. */
+export const PEOPLE_MIN = 2,
+  PEOPLE_MAX = 4;
+/**
+ * The corners of `people` players at one screen, by player, when the first `chosen` have taken theirs: the rest are
+ * seated where `seatsFor` would put the others round player 1's corner (홍국 when nobody has chosen), in the order of
+ * play, then on any corner left.
+ */
+export function localSeats(chosen: readonly number[], people: number) {
+  const k = Math.min(PEOPLE_MAX, Math.max(PEOPLE_MIN, Math.round(people) || PEOPLE_MIN)),
+    seats = chosen.slice(0, k),
+    near = seatsFor(seats[0] ?? 0, k - 1);
+  for (const n of [...ORDER.filter((n) => near.includes(n)), ...ORDER]) if (seats.length < k && !seats.includes(n)) seats.push(n);
+  return seats;
+}
 export interface Army {
   nation: number;
   count: number;
@@ -182,16 +208,20 @@ export interface State {
   world: HexMap;
   map: HexMap;
   phase: Phase;
-  /** The nation I play, and how many computers play. */
+  /** The nation I play, and how many computers play (with people at one screen: player 1's nation, and none). */
   me: number;
   computers: number;
+  /** People at one screen (0 against the computer), the nation of each player in turn, and how many have chosen in setup. */
+  people: number;
+  humans: number[];
+  picked: number;
   /** Each hex's owner (-1 for none). */
   owner: number[];
   armies: (Army | null)[];
   nations: Nation[];
   /** Each nation's allies, a bit a nation. */
   allies: number[];
-  /** The nations the one to move has offered an alliance this turn, and those that offered me one (bits). */
+  /** The nations the one to move has offered an alliance this turn (bits), and the offers waiting for a person's answer (`offerBit`). */
   asked: number;
   offers: number;
   /** Each nation's speech given, and the nation whose speech is in force this turn (-1 for none). */
@@ -208,6 +238,12 @@ export interface State {
   last: Last | null;
 }
 export const allied = (s: State, a: number, b: number) => a >= 0 && b >= 0 && a !== b && !!(s.allies[a] & (1 << b));
+/** Whether a person plays `nation`: me against the computer, any player's nation at one screen. */
+export const human = (s: State, nation: number) => (s.people ? s.humans.includes(nation) : nation === s.me);
+/** The bit in `offers` of an alliance `from` offered and `to` has still to answer. */
+export const offerBit = (from: number, to: number) => 1 << (to * NATIONS + from);
+/** The nation that has won: the last standing (or none yet). */
+export const victor = (s: State) => (s.winner === 0 ? (s.people ? (standingNations(s)[0] ?? -1) : s.me) : -1);
 const plainEmpty = (s: State, h: number) => s.map.land[h] && s.map.estate[h] === NONE && !s.armies[h];
 const emptyWater = (s: State, h: number) => !s.map.land[h] && !s.armies[h];
 /** Where the army on `from` may go, each with the hex it passes over (-1 for a single step). */
@@ -331,6 +367,7 @@ const clone = (s: State): State => ({
   nations: s.nations.map((n) => ({ ...n })),
   allies: [...s.allies],
   speeches: [...s.speeches],
+  humans: [...s.humans],
 });
 const cap = (a: Army) => {
   a.morale = Math.max(0, Math.min(a.count, a.morale));
@@ -380,7 +417,7 @@ function conquer(s: State, loser: number, winner: number, last: Last) {
   for (let h = 0; h < HEXES; h++) {
     if (s.owner[h] !== loser) continue;
     const back = s.map.estate[h] === CAPITAL ? s.nations.findIndex((n) => n.capital === h) : -1;
-    if (back >= 0 && back !== loser && back !== s.me) {
+    if (back >= 0 && back !== loser && (s.people > 0 || back !== s.me)) {
       s.nations[back].alive = true;
       s.owner[h] = back;
       s.armies[h] = { nation: back, count: MAX, morale: MAX, moved: false };
@@ -394,7 +431,9 @@ function conquer(s: State, loser: number, winner: number, last: Last) {
   }
   settleAlliances(s, last);
   // The plain land round a restored capital that was not the loser's stays where it is.
-  if (loser === s.me) s.winner = 1;
+  if (s.people) {
+    if (standingNations(s).length <= 1) s.winner = 0;
+  } else if (loser === s.me) s.winner = 1;
   else if (s.nations.every((n, i) => i === s.me || !n.present || !n.alive)) s.winner = 0;
 }
 /** An army has come onto `h`: what it takes there and round it, and the morale that goes with it. */
@@ -556,17 +595,17 @@ function reinforce(s: State, nation: number) {
   }
   return spawned;
 }
-/** The nation to move begins its turn: its moves counted, and offers to me waiting for an answer. */
+/** The nation to move begins its turn: its moves counted, and offers to a person waiting for an answer. */
 function begin(s: State, nation: number) {
   s.seat = nation;
   s.asked = 0;
   s.budget = Math.min(MOVES, standing(s, nation).armies);
   s.left = s.budget;
   s.phase = "play";
-  if (nation === s.me) {
+  if (human(s, nation)) {
     // Offers from nations that have fallen, or that are allies already, lapse.
-    for (let n = 0; n < NATIONS; n++) if (s.offers & (1 << n) && (!s.nations[n].alive || allied(s, n, s.me))) s.offers &= ~(1 << n);
-    if (s.offers) s.phase = "offer";
+    for (let n = 0; n < NATIONS; n++) if (s.offers & offerBit(n, nation) && (!s.nations[n].alive || allied(s, n, nation))) s.offers &= ~offerBit(n, nation);
+    if (offerFrom(s) >= 0) s.phase = "offer";
   }
 }
 /** The turn of the nation to move ends, and the next nation that can move begins its own. Changes `s`. */
@@ -607,10 +646,9 @@ function passOn(s: State, last: Last) {
     if (s.phase === "offer" || (s.left > 0 && movable(s, next).length)) return;
   }
 }
-/** The map as played and the nations on it, for `world` with me on corner `me` and this many computers. */
-function lay(world: HexMap, computers: number, me: number) {
-  const seats = seatsFor(me, computers),
-    owner = new Array<number>(HEXES).fill(-1),
+/** The map as played and the nations on it, for `world` with these corners seated. */
+function lay(world: HexMap, seats: readonly number[]) {
+  const owner = new Array<number>(HEXES).fill(-1),
     armies: (Army | null)[] = new Array(HEXES).fill(null);
   const nations: Nation[] = world.corners.map((capital, i) => ({ present: seats.includes(i), alive: seats.includes(i), capital: seats.includes(i) ? capital : -1 }));
   // An unused corner is plain land: no capital there.
@@ -629,10 +667,13 @@ function setupState(world: HexMap, computers: number, me: number, ply: number): 
   const k = Math.min(3, Math.max(1, Math.round(computers) || 3));
   return {
     world,
-    ...lay(world, k, me),
+    ...lay(world, seatsFor(me, k)),
     phase: "setup",
     me,
     computers: k,
+    people: 0,
+    humans: [],
+    picked: 0,
     allies: [0, 0, 0, 0],
     asked: 0,
     offers: 0,
@@ -651,7 +692,25 @@ function setupState(world: HexMap, computers: number, me: number, ply: number): 
 export function createGame(computers = 3, random: Random = cryptoRandom, me = 0): State {
   return setupState(generateMap(seeded(random())), computers, me, 0);
 }
-export const create = (_variant: string, options: GameOptions = {}) => createGame(Number(options.computers) || 3);
+/** A state in setup for `people` at one screen, the first `picked` of `chosen` having taken their corners. */
+function localState(world: HexMap, people: number, chosen: readonly number[], picked: number, ply: number): State {
+  const humans = localSeats(chosen.slice(0, picked), people);
+  return {
+    ...setupState(world, 1, humans[0], ply),
+    ...lay(world, humans),
+    computers: 0,
+    people: humans.length,
+    humans,
+    picked: Math.min(picked, humans.length),
+  };
+}
+/** A new game for `people` (2–4) at one screen, its map drawn from `random`, in setup with nobody's corner chosen yet. */
+export function createLocal(people = 2, random: Random = cryptoRandom): State {
+  return localState(generateMap(seeded(random())), people, [], 0, 0);
+}
+/** People at one screen when the setup window gave `people` (offered only then), else me against the computers. */
+export const create = (_variant: string, options: GameOptions = {}) =>
+  options.people !== undefined ? createLocal(Number(options.people) || PEOPLE_MIN) : createGame(Number(options.computers) || 3);
 /** Every legal move of the nation to move (in setup, mine). */
 export function moves(s: State): Move[] {
   if (s.winner !== null) return [];
@@ -660,6 +719,8 @@ export function moves(s: State): Move[] {
   if (s.phase === "setup") {
     tool(NEW_MAP);
     for (let n = 0; n < NATIONS; n++) {
+      // At one screen, once everyone has chosen only a capital taken already may be tapped (to choose again).
+      if (s.people && s.picked >= s.people && !s.humans.includes(n)) continue;
       tool(NATION + n);
       tool(s.world.corners[n]);
     }
@@ -689,8 +750,11 @@ export function moves(s: State): Move[] {
   }
   return out;
 }
-/** The first nation that offered me an alliance and waits for my answer. */
-export const offerFrom = (s: State) => (s.offers ? [0, 1, 2, 3].find((n) => s.offers & (1 << n))! : -1);
+/** The first nation that offered the nation to move an alliance and waits for its answer, or -1. */
+export function offerFrom(s: State) {
+  for (let n = 0; n < NATIONS; n++) if (s.offers & offerBit(n, s.seat)) return n;
+  return -1;
+}
 /** An offer of an alliance from the nation to move to `to`. */
 function offer(s: State, to: number): State | null {
   if (!offerable(s).includes(to)) return null;
@@ -698,8 +762,8 @@ function offer(s: State, to: number): State | null {
     last = blank(s.seat, "pact", -1, to);
   n.asked |= 1 << to;
   n.phase = "play";
-  if (to === s.me) {
-    n.offers |= 1 << s.seat;
+  if (human(s, to)) {
+    n.offers |= offerBit(s.seat, to);
     last.pact = { from: s.seat, to, accepted: null };
   } else {
     const yes = !dominates(s, to);
@@ -719,9 +783,16 @@ export function play(s: State, move: Move, random: Random = cryptoRandom): State
   let next: State;
   if (s.phase === "setup") {
     if (!tool) return null;
-    const corner = s.world.corners.indexOf(to);
-    if (to === NEW_MAP) next = setupState(generateMap(seeded(random())), s.computers, s.me, s.ply);
-    else if ((to >= NATION && to < NATION + NATIONS) || corner >= 0) next = setupState(s.world, s.computers, corner >= 0 ? corner : to - NATION, s.ply);
+    const corner = s.world.corners.indexOf(to),
+      chosen = to >= NATION && to < NATION + NATIONS ? to - NATION : corner;
+    if (to === NEW_MAP) next = s.people ? localState(generateMap(seeded(random())), s.people, s.humans, s.picked, s.ply) : setupState(generateMap(seeded(random())), s.computers, s.me, s.ply);
+    else if (chosen >= 0 && s.people) {
+      // A capital taken already opens the choice again from its player; a free one goes to the player choosing now.
+      const at = s.humans.slice(0, s.picked).indexOf(chosen);
+      if (at >= 0) next = localState(s.world, s.people, s.humans, at, s.ply);
+      else if (s.picked < s.people) next = localState(s.world, s.people, [...s.humans.slice(0, s.picked), chosen], s.picked + 1, s.ply);
+      else return null;
+    } else if (chosen >= 0) next = setupState(s.world, s.computers, chosen, s.ply);
     else if (to === START) {
       next = clone(s);
       begin(next, standingNations(next)[0]);
@@ -733,12 +804,12 @@ export function play(s: State, move: Move, random: Random = cryptoRandom): State
     if (!tool || (to !== ACCEPT && to !== REFUSE)) return null;
     const from = offerFrom(s);
     next = clone(s);
-    next.offers &= ~(1 << from);
-    next.last = blank(s.me, "answer", -1, from);
-    next.last.pact = { from, to: s.me, accepted: to === ACCEPT };
-    if (to === ACCEPT && next.nations[from].alive) ally(next, from, s.me);
+    next.offers &= ~offerBit(from, s.seat);
+    next.last = blank(s.seat, "answer", -1, from);
+    next.last.pact = { from, to: s.seat, accepted: to === ACCEPT };
+    if (to === ACCEPT && next.nations[from].alive) ally(next, from, s.seat);
     settleAlliances(next, next.last);
-    if (!next.offers) {
+    if (offerFrom(next) < 0) {
       next.phase = "play";
       if (next.left <= 0 || !movable(next).length) passOn(next, next.last);
     }
@@ -793,9 +864,9 @@ export const hexConquest: PointGame<State> = {
   create,
   moves,
   play: (s, m, random) => play(s, m, random),
-  turn: (s) => (s.phase === "setup" || s.seat === s.me ? 0 : 1),
+  turn: (s) => (s.phase === "setup" || human(s, s.seat) ? 0 : 1),
   winner: (s) => s.winner,
-  owners: (s) => s.owner.map((o) => (o < 0 ? null : o === s.me ? 0 : 1)),
+  owners: (s) => s.owner.map((o) => (o < 0 ? null : o === (s.people ? s.seat : s.me) ? 0 : 1)),
   effect: () => null,
   ply: (s) => s.ply,
   evaluate: (s, player) => {
@@ -805,12 +876,18 @@ export const hexConquest: PointGame<State> = {
     return player === 0 ? v : -v;
   },
   hint: (s) => {
+    if (s.phase === "setup" && s.people)
+      return s.picked < s.people ? `${s.picked + 1}번 플레이어: 수도를 눌러 제국을 고르세요.` : "모두 골랐습니다. 다른 맵이나 시작을 누르세요.";
     if (s.phase === "setup") return "맵을 고르고, 수도를 눌러 제국을 고른 뒤 시작을 누르세요.";
     if (s.phase === "offer") return `${nameOf(offerFrom(s))}이 동맹을 제안했습니다. 수락 또는 거절을 고르세요.`;
     if (s.phase === "propose") return "동맹을 제안할 나라의 수도나 이름을 고르세요.";
     return `남은 이동 ${s.left}/${s.budget}${s.speaking === s.seat ? " · 연설 중" : ""} · 움직일 군대를 고르세요.`;
   },
   tally: (s) => {
+    if (s.people) {
+      const line = (n: number) => (s.nations[n].alive ? `${nameOf(n)} 병력 ${standing(s, n).men} · 사기 ${standing(s, n).morale}` : `${nameOf(n)} 멸망`);
+      return [ORDER.filter((n) => s.nations[n].present).map(line).join(" · "), ""];
+    }
     const me = standing(s, s.me);
     const others = [0, 1, 2, 3]
       .filter((n) => n !== s.me && s.nations[n].present)
@@ -818,6 +895,7 @@ export const hexConquest: PointGame<State> = {
     return [`${nameOf(s.me)} 병력 ${me.men} · 사기 ${me.morale} · 마을 ${me.villages} · 도시 ${me.cities}`, others.join(" · ")];
   },
   reason: (s) => {
+    if (s.people && s.winner === 0) return `모든 나라를 정복했습니다. 세계가 ${nameOf(victor(s))}의 깃발 아래 하나가 되었습니다.`;
     const mine = nameOf(s.me);
     if (s.winner === 0) return `모든 나라를 정복했습니다. 세계가 ${mine}의 깃발 아래 하나가 되었습니다.`;
     if (s.winner === "draw") return `${LIMIT}바퀴가 지나 비겼습니다. 끝내 승부가 나지 않았습니다.`;

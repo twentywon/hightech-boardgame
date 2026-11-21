@@ -6,7 +6,7 @@ import { HEXES, NEIGHBOURS } from "./board";
 import { ARMY_FORWARD, LAND_TOP, MAP_HALF, MAP_HALF_Z, SEA_TOP, SIZE, hexAt, hexSubject, menFor, pieceFor, viewShift, type Piece } from "./layout";
 /** How far toward the eye an army's plate hangs below its piece, in the army's own units. */
 const PLATE_FORWARD = 0.2;
-import { CAPITAL, CITY, COLORS, NONE, PORT, VILLAGE, allied, destinations, type Army, type HexMap, type State } from "./rules";
+import { CAPITAL, CITY, COLORS, NONE, PORT, VILLAGE, allied, destinations, human, type Army, type HexMap, type State } from "./rules";
 
 /** The colour of land nobody holds, and how far a nation's colour tints the grass of its land. */
 const WILD = "#9fb96c",
@@ -691,6 +691,10 @@ export class HexConquestView extends TableView<State> {
     el.dataset.owners = state.owner.join(",");
     el.dataset.seat = String(state.seat);
     el.dataset.me = String(state.me);
+    // People at one screen: how many, each player's nation, and how many have chosen in setup.
+    el.dataset.people = String(state.people);
+    el.dataset.humans = state.humans.join(",");
+    el.dataset.picked = String(state.picked);
     el.dataset.last = state.last ? `${state.last.kind}:${state.last.from}:${state.last.to}:${state.last.nation}` : "";
     el.dataset.phase = state.phase;
     el.dataset.corners = state.world.corners.join(",");
@@ -862,9 +866,9 @@ export class HexConquestView extends TableView<State> {
   /** A press on an army of mine that may move is followed: let go on another hex it moves there, on itself it is a tap. */
   protected dragStart(point: number) {
     const s = this.state;
-    if (!s || s.winner !== null || s.phase !== "play" || s.seat !== s.me || point < 0) return false;
+    if (!s || s.winner !== null || s.phase !== "play" || !human(s, s.seat) || point < 0) return false;
     const army = s.armies[point];
-    if (!army || army.nation !== s.me || army.moved || !destinations(s, point).length) return false;
+    if (!army || army.nation !== s.seat || army.moved || !destinations(s, point).length) return false;
     this.dragging = { from: point, at: null, over: point };
     return true;
   }
@@ -922,10 +926,10 @@ export class HexConquestView extends TableView<State> {
         return !a ? "move" : a.nation === state.seat ? "join" : "attack";
       };
       if (state.phase === "setup") {
-        // Each corner in its nation's colour, mine in gold over it.
+        // Each corner in its nation's colour, mine (at one screen, every one a player has chosen) in gold over it.
         state.world.corners.forEach((h, i) => {
           this.ring(n++, this.ringShape, this.nationRings[i], h);
-          if (i === state.me) this.ring(n++, this.ringShape, this.ringPaint.selected, h, 0.003).scale.setScalar(1.18);
+          if (state.people ? state.humans.slice(0, state.picked).includes(i) : i === state.me) this.ring(n++, this.ringShape, this.ringPaint.selected, h, 0.003).scale.setScalar(1.18);
         });
       } else if (state.phase === "propose") {
         for (const h of marks.targets) if (h < HEXES) this.ring(n++, this.ringShape, this.nationRings[state.owner[h]] ?? this.ringPaint.move, h);

@@ -19,13 +19,15 @@ export interface PointOptions {
  * Something a game lets the player set before it starts, beyond its variant (the user asked for a game whose numbers
  * can be chosen): a number is offered as − value + (the value may be typed too), a rule only on or off as a
  * checkbox, a list as buttons. It is not offered for the variants in `fixed`, nor out of play against the computer
- * when it is `ai`; `value` is then what `create` receives.
+ * when it is `ai`; `value` is then what `create` receives. One that is `local` is offered only to people at one
+ * screen, and out of that `create` receives nothing for it at all (so that it tells the two modes apart).
  */
 export type PointSetting = {
   id: string;
   label: string;
   note?: string;
   ai?: boolean;
+  local?: boolean;
   fixed?: string[];
 } & (
   | { kind: "number"; value: number; min: number; max: number }
@@ -150,6 +152,13 @@ export interface PointConfig<S> {
   /** The names and colours of the two sides, when they depend on the variant (or on the state shown: the empire chosen). */
   sidesOf?: (variant: string, state?: S) => [string, string];
   colorsOf?: (variant: string) => [string, string];
+  /**
+   * Names a side for the state shown, where the side alone cannot (several people taking turns as side 0: the nation
+   * to move); null keeps the usual name, and "" leaves the status line to the hint alone.
+   */
+  whoOf?: (state: S, player: number, mode: "local" | "ai") => string | null;
+  /** The words of the mode for people at one screen, when it is not 로컬 2인 (more than two may sit down). */
+  localLabel?: string;
   /** Who moves first against the computer, when it is not simply side 0. */
   firstNote?: string;
   /** What a piece coming to rest sounds like, instead of a tap. */
@@ -215,7 +224,7 @@ export interface PointController {
 const QUEUE_LIMIT = 24;
 /** How long a failure stands on the table before a `restartOnFail` puzzle begins again. */
 const RESTART_AFTER = 1600;
-const offered = (setting: PointSetting, variant: string, mode: PointOptions["mode"]) => !setting.fixed?.includes(variant) && (!setting.ai || mode === "ai");
+const offered = (setting: PointSetting, variant: string, mode: PointOptions["mode"]) => !setting.fixed?.includes(variant) && (!setting.ai || mode === "ai") && (!setting.local || mode === "local");
 /** A setting's value as it may be used: a whole number within its bounds, a rule on or off, one of its choices; else its own. */
 function settled(setting: PointSetting, value: unknown): number | boolean | string {
   if (setting.kind === "number") {
@@ -229,7 +238,7 @@ function settled(setting: PointSetting, value: unknown): number | boolean | stri
 function optionsOf(settings: PointSetting[] | undefined, preferences: PointOptions, mode: PointOptions["mode"]): GameOptions {
   const out: GameOptions = {};
   for (const setting of settings ?? [])
-    out[setting.id] = offered(setting, preferences.variant, mode) ? settled(setting, preferences.settings?.[setting.id]) : setting.value;
+    if (!setting.local || offered(setting, preferences.variant, mode)) out[setting.id] = offered(setting, preferences.variant, mode) ? settled(setting, preferences.settings?.[setting.id]) : setting.value;
   return out;
 }
 /** The setup's field for a setting: − value + for a number, a checkbox for a rule, a list (turned into buttons) for a choice. */
@@ -293,7 +302,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   /** Played alone: the game is for one, or this variant of it is. */
   const lone = () => solo || !!config.soloOf?.(variant);
   const who = (player: number) =>
-    lone() ? "나" : mode === "local" ? `${sides()[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${sides()[0]})` : `컴퓨터 · ${LEVELS[level].label} (${sides()[1]})`;
+    config.whoOf?.(shown, player, mode) ??
+    (lone() ? "나" : mode === "local" ? `${sides()[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${sides()[0]})` : `컴퓨터 · ${LEVELS[level].label} (${sides()[1]})`);
   function stop() {
     generation++;
     thinking = false;
@@ -305,7 +315,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
     else if (config.stages) return stagePicker(host);
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> ${config.localLabel ?? "로컬 2인"}</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
     /** The game's own settings as the form has them, each shown only where it is offered. */
     const readSettings = () => {
@@ -913,8 +923,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
             : next?.field === "to" && chosen.from !== undefined
               ? `${who(turn)} 차례 — 갈 곳을 고르세요.`
               : warned && warned.state === s
-                ? `${who(turn)} 차례 — ${warned.text}`
-                : `${who(turn)} 차례 — ${game.hint(s)}`;
+                ? `${who(turn) ? `${who(turn)} 차례 — ` : ""}${warned.text}`
+                : `${who(turn) ? `${who(turn)} 차례 — ` : ""}${game.hint(s)}`;
     const tally = game.tally(s);
     for (const p of [0, 1]) {
       // A game may draw its tally (a fleet) instead of writing it.

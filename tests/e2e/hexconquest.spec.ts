@@ -115,3 +115,60 @@ test("hex conquest: another map and an empire chosen before the start, an army m
   await expect(page.locator(".game-layout.hud aside.game-sidebar")).toContainText("청국 (나)");
   expect(errors).toEqual([]);
 });
+
+test("hex conquest at one screen: two people take capitals in turn, then each moves once", async ({ page }, info) => {
+  const mobile = info.project.name === "mobile",
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "헥스 정복전");
+  await page.locator("dialog.entry").getByLabel("로컬 2–4인", { exact: true }).check({ force: true });
+  await page.locator("dialog.entry .choice[data-value='2']:visible").click();
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(canvas(page)).toHaveAttribute("data-people", "2");
+  await settled(page);
+  await expect(page.locator("#turn")).toContainText("1번 플레이어: 수도를 눌러 제국을 고르세요");
+  const corners = (await canvas(page).getAttribute("data-corners"))!.split(",").map(Number);
+  // Player 1 takes 흑국 (lower right), player 2 청국 (upper left).
+  await tap(page, (await table(page)).places[corners[3]], mobile);
+  await expect(canvas(page)).toHaveAttribute("data-picked", "1", { timeout: 20000 });
+  await settled(page);
+  await expect(page.locator("#turn")).toContainText("2번 플레이어: 수도를 눌러 제국을 고르세요");
+  await page.waitForTimeout(500);
+  await tap(page, (await table(page)).places[corners[1]], mobile);
+  await expect(canvas(page)).toHaveAttribute("data-picked", "2", { timeout: 20000 });
+  await expect(canvas(page)).toHaveAttribute("data-humans", "3,1");
+  await settled(page);
+  await expect(page.locator("#turn")).toContainText("모두 골랐습니다");
+  await page.getByRole("button", { name: "시작", exact: true }).click();
+  await expect(canvas(page)).toHaveAttribute("data-phase", "play", { timeout: 20000 });
+  await settled(page);
+  await page.waitForTimeout(500);
+  // 청국 moves first, whoever chose it; its one army moves and the turn passes to 흑국, a person too.
+  expect((await table(page)).seat).toBe(1);
+  await expect(page.locator("#turn")).toContainText("청국 차례");
+  await expect(page.locator("#turn")).not.toContainText("(나)");
+  const moveOf = async (nation: number) => {
+    const before = await table(page),
+      army = before.armies.find((a) => a.n === nation && !a.moved)!;
+    await tap(page, army.at, mobile);
+    await expect(page.locator("#turn")).toContainText("갈 곳을 고르세요");
+    const picked = await table(page),
+      to = picked.targets.find((h) => !picked.armies.some((a) => a.h === h)) ?? picked.targets[0];
+    await tap(page, picked.places[to], mobile);
+    await expect(canvas(page)).toHaveAttribute("data-ply", String(before.ply + 1), { timeout: 20000 });
+    await settled(page);
+    await page.waitForTimeout(500);
+  };
+  await moveOf(1);
+  await expect(canvas(page)).toHaveAttribute("data-seat", "3");
+  await expect(page.locator("#turn")).toContainText("흑국 차례");
+  await moveOf(3);
+  await expect(canvas(page)).toHaveAttribute("data-seat", "1");
+  await expect(page.locator("#turn")).toContainText("청국 차례");
+  await expect(page.locator(".game-layout.hud aside.game-sidebar")).toContainText("흑국 (1번)");
+  await expect(page.locator(".game-layout.hud aside.game-sidebar")).toContainText("청국 (2번)");
+  expect(errors).toEqual([]);
+});

@@ -129,8 +129,9 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (/difficulty$/.test(select) && LEVEL_BARS[value]) return { svg: bars(...LEVEL_BARS[value]), only: false };
   if (select === "pg-level" && POINT_LEVEL[value]) return { svg: bars(...POINT_LEVEL[value]), only: false };
   // How many: people, and computers.
-  if (select === "tour-humans" || select === "yut-players" || select === "cq-humans") return { svg: people(Number(value)), only: true };
+  if (select === "tour-humans" || select === "yut-players" || select === "cq-humans" || (select === "pg-set-people" && game === "hex-conquest")) return { svg: people(Number(value)), only: true };
   if (select === "cq-opponents" && Number(value) > 0) return { svg: computers(Number(value)), only: true };
+  if (select === "pg-set-computers" && game === "hex-conquest" && Number(value) > 0) return { svg: computers(Number(value)), only: true };
   if ((select === "tour-opponents" || select === "bg-opponents" || select === "pg-set-rivals") && Number(value) > 0) return { svg: computers(Number(value)), only: true };
   // A janggi formation: its four pieces in order, 馬 and 象.
   if (select === "jg-formation" || select === "jg-formation-2")
