@@ -75,7 +75,7 @@ test("continent conquest: on the world map against two computers, claim by taps,
     errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await selectGame(page, "대륙 쟁탈전");
+  await selectGame(page, "주사위 대륙 쟁탈전");
   const dialog = page.locator("dialog.entry");
   // One person against two computers on the world map, claiming by turns, is what the window opens on.
   await expect(dialog.locator("#cq-humans")).toHaveValue("1");
@@ -140,7 +140,7 @@ test("continent conquest: a small random map dealt at random, with a secret miss
     errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
-  await selectGame(page, "대륙 쟁탈전");
+  await selectGame(page, "주사위 대륙 쟁탈전");
   const dialog = page.locator("dialog.entry");
   await dialog.locator("#cq-map").selectOption("random", { force: true });
   await expect(dialog.locator("#cq-size")).toHaveCount(1);

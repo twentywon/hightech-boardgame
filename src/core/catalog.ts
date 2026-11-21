@@ -688,7 +688,7 @@ export const games = [
     available: true,
   },
   {
-    name: "대륙 쟁탈전",
+    name: "주사위 대륙 쟁탈전",
     en: "CONTINENT CONQUEST",
     category: "보드게임",
     players: "2인용",
