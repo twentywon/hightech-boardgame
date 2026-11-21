@@ -195,6 +195,11 @@ export function weave(across: number, down = across, keep: Keep = (r) => r, dept
 }
 /** Veneer for inlaid squares: pale maple and brown walnut (Poly Haven, CC0). */
 export const veneer = (dark: boolean) => surface(dark ? walnutUrl : mapleUrl);
+/** One of the wood photographs itself, for a view that paints it into a picture of its own: `ready` as soon as it is decoded. */
+export function woodPhoto(kind: "light" | "dark" | "maple" | "walnut", ready: (image: HTMLImageElement) => void) {
+  if (typeof document === "undefined") return;
+  photo({ light: woodLightUrl, dark: woodDarkUrl, maple: mapleUrl, walnut: walnutUrl }[kind], ready);
+}
 /** The part of its way at which a hopping thing comes down; what is left of the time is its small bounce. */
 const LANDING = 0.84;
 /**
