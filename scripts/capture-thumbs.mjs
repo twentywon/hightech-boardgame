@@ -316,6 +316,16 @@ const play = {
     await keys(["h"], 100);
     await wait(1600);
   },
+  // A 보통 field with four pots of flowers set by the hint's blocks (H plays them while capturing), the cat on its way.
+  "trap-the-cat": async () => {
+    await stage(1);
+    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
+    await wait(800);
+    for (let k = 0; k < 4; k++) {
+      await keys(["h"], 100);
+      await wait(1200);
+    }
+  },
   // Two darts thrown by the keyboard (at the treble twenty, then a little left of it), their scores faded away.
   darts: async () => {
     await keys(["Enter"]);
@@ -637,7 +647,15 @@ const play = {
           break;
         }
         await tap(t.places[to]);
-        await page.waitForFunction(() => document.querySelector("#board")?.dataset.animating === "false", null, { timeout: 30000 });
+        // The turn may pass to the computers at once (a nation of one army has one move): `mine` waits for them.
+        await page.waitForFunction(
+          () => {
+            const c = document.querySelector("#board canvas");
+            return document.querySelector("#board")?.dataset.animating === "false" || c?.dataset.seat !== c?.dataset.me;
+          },
+          null,
+          { timeout: 30000 },
+        );
       }
       if ((await table()).seat === String((await table()).me)) await press("#pg-tool-0");
     }

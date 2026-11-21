@@ -441,6 +441,18 @@ export class Sound {
         for (let k = 0; k < pulses; k++) this.tone("square", base * pitch, base * pitch * 0.82, after + at + start + k * 0.021, 0.018, 0.035);
     });
   }
+  /**
+   * A cat's small, unhappy 냐옹 `after` seconds from now (trap the cat): a voice that rises and falls through a nasal
+   * vowel, with a breath under it; nothing recorded, the same each time.
+   */
+  meow(after = 0) {
+    this.tone("sawtooth", 560, 820, after, 0.2, 0.035);
+    this.tone("sawtooth", 820, 470, after + 0.16, 0.34, 0.04);
+    this.tone("triangle", 1120, 1640, after, 0.2, 0.05);
+    this.tone("triangle", 1640, 940, after + 0.16, 0.36, 0.06);
+    this.tone("sine", 2300, 1500, after + 0.1, 0.32, 0.02);
+    this.noise(after, 0.48, 0.012, 1800, "bandpass", 1200);
+  }
   /** Three light, quick notes rising (a merge of fruit; the hare's hop while its recording is not ready). */
   pop() {
     [0, 0.11, 0.22].forEach((at, i) => {

@@ -743,4 +743,12 @@ export const games = [
     icon: "⬢",
     available: true,
   },
+  {
+    name: "고양이 가두기",
+    en: "TRAP THE CAT",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "🐈",
+    available: true,
+  },
 ];
