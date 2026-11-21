@@ -132,9 +132,11 @@ test("bulb link: quick taps given while a wire is laid are kept and played in or
   for (const cell of way.slice(0, 5)) state = rules.play(state, { from: -1, to: cell, extra: -1 })!;
   const n = state.size,
     empty = state.cells.findIndex((kind, i) => kind === rules.EMPTY && (i + n >= n * n || state.cells[i + n] === rules.EMPTY));
-  await tapCell(page, state, way[5], mobile);
-  await tapCell(page, state, empty, mobile);
-  await tapCell(page, state, way[6], mobile);
+  // (By the mouse on both screens: on the emulated phone a touch waits for frames and is too slow to land while the
+  // wire before it still runs, and this part tests the queue, not the touch.)
+  await tapCell(page, state, way[5], false);
+  await tapCell(page, state, empty, false);
+  await tapCell(page, state, way[6], false);
   await expect(page.locator("#turn")).toContainText("빈 소켓입니다.", { timeout: 20000 });
   await rest(page);
   await expect(moves(page)).toHaveText("6수");
