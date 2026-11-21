@@ -66,6 +66,8 @@ export interface PointConfig<S> {
   view?: (host: HTMLElement, quality: "high" | "low", variant: string, mode: "local" | "ai", level: Level) => PointView<S>;
   /** What the further choice of a move is, when it is not a piece to take off. */
   extraHint?: string;
+  /** What the status line says while the computer thinks, for a game where several computer sides take turns (which of them moves); the default names the computer. */
+  thinkingText?: (state: S) => string;
   /** What the status line says while the table is still moving (a ball rolling, an arrow in flight); the default speaks of pieces. */
   movingText?: string;
   /** A table that needs more height on a narrow screen: an upright rack, or two boards one above the other. */
@@ -888,7 +890,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       : state !== shown
         ? (config.movingText ?? "말이 움직이는 중…")
         : bot
-          ? `${who(1)}가 생각하는 중…`
+          ? (config.thinkingText?.(s) ?? `${who(1)}가 생각하는 중…`)
           : next?.field === "extra"
             ? `${who(turn)} 차례 — ${config.extraHint ?? "떼어낼 상대 말을 고르세요."}`
             : next?.field === "to" && chosen.from !== undefined

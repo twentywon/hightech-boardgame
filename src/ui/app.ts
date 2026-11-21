@@ -82,6 +82,7 @@ import { numberCodeConfig } from "../games/numbercode/config";
 import { caromConfig } from "../games/carom/config";
 import { laserChessConfig } from "../games/laserchess/config";
 import { archeryConfig } from "../games/archery/config";
+import { hexConquestConfig } from "../games/hexconquest/config";
 import type { PointConfig } from "./point-game";
 import { thumb } from "./thumbs";
 import { mountSpider, type SpiderController, type SpiderOptions } from "./spider";
@@ -255,6 +256,8 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "carom-billiards": { config: caromConfig, options: { mode: "ai", variant: "four", level: "normal" } },
   "laser-chess": { config: laserChessConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   archery: { config: archeryConfig, options: { mode: "ai", variant: "match", level: "normal" } },
+  // 헥스 정복전 is a territory game like 대륙 쟁탈전, played on the point-game screen.
+  "hex-conquest": { config: hexConquestConfig, options: { mode: "ai", variant: "", level: "normal" } },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
@@ -369,6 +372,7 @@ type GameSelection =
   | "freecell"
   | "world-tour"
   | "continent-conquest"
+  | "hex-conquest"
   | "battleship"
   | "four-in-a-row"
   | "twist-five"

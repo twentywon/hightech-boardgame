@@ -735,4 +735,12 @@ export const games = [
     icon: "◧",
     available: true,
   },
+  {
+    name: "헥스 정복전",
+    en: "HEX CONQUEST",
+    category: "보드게임",
+    players: "2인용",
+    icon: "⬢",
+    available: true,
+  },
 ];

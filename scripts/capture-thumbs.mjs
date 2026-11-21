@@ -591,6 +591,41 @@ const play = {
     await page.locator("canvas").focus();
     await page.keyboard.press("p");
   },
+  // 헥스 정복전: five of my turns, each army sent toward a town, a port or land not yet mine (by its place on the
+  // canvas, `data-places`), so that every nation's land has spread when the picture is taken.
+  "hex-conquest": async () => {
+    const table = () =>
+      page.evaluate(() => {
+        const c = document.querySelector("#board canvas");
+        return { places: JSON.parse(c.dataset.places), armies: JSON.parse(c.dataset.armies), seat: c.dataset.seat, targets: c.dataset.targets ? c.dataset.targets.split(",").map(Number) : [], estates: c.dataset.estates, owners: c.dataset.owners.split(",").map(Number) };
+      });
+    const tap = async ([x, y]) => {
+      const box = await page.locator("canvas").boundingBox();
+      await page.mouse.click(box.x + x, box.y + y);
+      await wait(250);
+    };
+    const mine = () => page.waitForFunction(() => document.querySelector("#board canvas")?.dataset.seat === "0" && document.querySelector("#board")?.dataset.animating === "false", null, { timeout: 120000 });
+    for (let turn = 0; turn < 5; turn++) {
+      await mine();
+      for (let k = 0; k < 5; k++) {
+        let t = await table();
+        const army = t.armies.find((a) => a.n === 0 && !a.moved);
+        if (!army || t.seat !== "0") break;
+        await tap(army.at);
+        t = await table();
+        const free = t.targets.filter((h) => !t.armies.some((a) => a.h === h) && t.owners[h] !== 0);
+        const to = free.find((h) => t.estates[h] !== "0") ?? free[0];
+        if (to === undefined) {
+          await tap(army.at);
+          break;
+        }
+        await tap(t.places[to]);
+        await page.waitForFunction(() => document.querySelector("#board")?.dataset.animating === "false", null, { timeout: 30000 });
+      }
+      if ((await table()).seat === "0") await press("#pg-tool-0");
+    }
+    await mine();
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {

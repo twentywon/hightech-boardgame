@@ -3409,3 +3409,21 @@ html[data-capture] :is(.mg-card, .mg-power, .mg-view) { display:none !important;
 canvas.tx-quake { animation:tx-quake .45s linear both; }
 @keyframes tx-quake { 0%,100% { translate:0 0; } 15% { translate:-5px 3px; } 30% { translate:4px -4px; } 45% { translate:-3px -2px; } 60% { translate:3px 3px; } 80% { translate:-1px 1px; } }
 @media (prefers-reduced-motion: reduce) { .tx-flash, .tx-holy, canvas.tx-quake { animation:none;opacity:0; } }
+
+/* 헥스 정복전 (hex-conquest): every nation's line over the table, its colour, name, men, morale and towns, the one to move at full strength. */
+/* The map reaches the table's lower left (my corner), so the lines stand at its upper left, beside the far edge of the map. */
+html[data-game="hex-conquest"] .game-layout.hud .table-layout > aside.game-sidebar:not(#_) { top:58px !important;bottom:auto !important; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .yut-sides li > :is(.yut-dot, b) { display:none !important; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .yut-sides li { opacity:1 !important; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .yut-sides li > span[id^="pg-count-"]:not(#_) { display:grid !important;gap:4px;font-size:14px !important;font-weight:600 !important; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row { display:flex !important;align-items:center;gap:7px;white-space:nowrap;opacity:.72; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row.hc-now { opacity:1;font-weight:700; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row.hc-out { opacity:.5;text-decoration:line-through; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row b { font-weight:800; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-dot { flex:none;width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 2px #fff9, 0 1px 3px #0008; }
+@media (orientation: landscape) and (max-height: 540px) {
+  html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .yut-sides li > span[id^="pg-count-"]:not(#_) { font-size:10.5px !important;gap:1px; }
+  html[data-game="hex-conquest"] .game-layout.hud .table-layout > aside.game-sidebar:not(#_) { left:8px;gap:2px;top:44px !important; }
+  html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row { gap:5px; }
+  html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-dot { width:8px;height:8px; }
+}
