@@ -767,4 +767,12 @@ export const games = [
     icon: "🔭",
     available: true,
   },
+  {
+    name: "빛 케이블",
+    en: "LIGHT CABLE",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "➰",
+    available: true,
+  },
 ];

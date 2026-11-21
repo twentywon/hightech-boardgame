@@ -337,6 +337,18 @@ const play = {
     }
     await wait(800);
   },
+  // A 어려움 board (7×7 with coloured posts) with part of the cable laid along the hint's way (H plays it while
+  // capturing), a post or two lit and the cable coloured.
+  "light-cable": async () => {
+    await stage(2);
+    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
+    await wait(800);
+    for (let k = 0; k < 16; k++) {
+      await keys(["h"], 60);
+      await wait(120);
+    }
+    await wait(1200);
+  },
   // A 어려움 board (10×10) after three presses of the hint's way (H plays it while capturing): tubes drawn out, the ball moved.
   "telescope-push": async () => {
     await stage(2);
