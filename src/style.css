@@ -3434,3 +3434,5 @@ html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-ally em {
   html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar :is(.hc-estates, .hc-ally em) { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
   html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar :is(.hc-ally, .hc-speech) { padding:0 4px;gap:2px; }
 }
+/* 헥스 정복전: the empires' setup tools are pixels (a capital is tapped instead); kept at the cluster's corner, clear of 시작. */
+html[data-game="hex-conquest"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;top:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }

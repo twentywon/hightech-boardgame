@@ -77,6 +77,8 @@ test("hex conquest: another map and an empire chosen before the start, an army m
   // computer it takes the diagonal corner, 흑국.
   await expect(page.locator(".pg-tool:not(.sr-only):not([hidden])", { hasText: "청국" })).toHaveCount(0);
   const corners = (await canvas(page).getAttribute("data-corners"))!.split(",").map(Number);
+  // (The screen pauses input for a moment after a move: 다른 맵 was one.)
+  await page.waitForTimeout(500);
   await tap(page, (await table(page)).places[corners[1]], mobile);
   await expect(canvas(page)).toHaveAttribute("data-me", "1", { timeout: 20000 });
   await settled(page);
@@ -84,6 +86,8 @@ test("hex conquest: another map and an empire chosen before the start, an army m
   await page.getByRole("button", { name: "시작", exact: true }).click();
   await expect(canvas(page)).toHaveAttribute("data-phase", "play", { timeout: 20000 });
   await settled(page);
+  // (Input waits a moment after a move: 시작 was one.)
+  await page.waitForTimeout(500);
   const start = await table(page);
   expect(start.places).toHaveLength(220);
   expect(start.armies.map((a) => [a.n, a.c, a.m])).toEqual(expect.arrayContaining([[1, 10, 10], [3, 10, 10]]));
