@@ -68,6 +68,7 @@ import { tracksConfig } from "../games/tracks/config";
 import { parkingConfig } from "../games/parking/config";
 import { glideConfig } from "../games/glide/config";
 import { trapCatConfig } from "../games/trapcat/config";
+import { bulbLinkConfig } from "../games/bulblink/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -242,6 +243,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "parking-escape": { config: parkingConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "glide-cube": { config: glideConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "trap-the-cat": { config: trapCatConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "bulb-link": { config: bulbLinkConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -429,6 +431,7 @@ type GameSelection =
   | "parking-escape"
   | "glide-cube"
   | "trap-the-cat"
+  | "bulb-link"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"

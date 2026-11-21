@@ -751,4 +751,12 @@ export const games = [
     icon: "🐈",
     available: true,
   },
+  {
+    name: "전구 잇기",
+    en: "BULB LINK",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "💡",
+    available: true,
+  },
 ];
