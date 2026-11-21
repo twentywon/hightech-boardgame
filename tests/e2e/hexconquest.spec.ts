@@ -6,6 +6,9 @@ interface Table {
   places: [number, number][];
   armies: { h: number; n: number; c: number; m: number; moved: boolean; at: [number, number] }[];
   seat: number;
+  me: number;
+  phase: string;
+  land: string;
   left: number;
   ply: number;
   targets: number[];
@@ -17,6 +20,9 @@ async function table(page: Page): Promise<Table> {
     places: JSON.parse(c.dataset.places!),
     armies: JSON.parse(c.dataset.armies!),
     seat: Number(c.dataset.seat),
+    me: Number(c.dataset.me),
+    phase: c.dataset.phase!,
+    land: c.dataset.land!,
     left: Number(c.dataset.left),
     ply: Number(c.dataset.ply),
     targets: c.dataset.targets ? c.dataset.targets.split(",").map(Number) : [],
@@ -27,16 +33,16 @@ async function tap(page: Page, [x, y]: [number, number], mobile: boolean) {
   if (mobile) await page.touchscreen.tap(box.x + x, box.y + y);
   else await page.mouse.click(box.x + x, box.y + y);
 }
-/** Waits until it is my turn again and the table rests. */
+/** Waits until it is my turn again (I play 청국, nation 1) and the table rests. */
 async function myTurn(page: Page) {
-  await expect(canvas(page)).toHaveAttribute("data-seat", "0", { timeout: 90000 });
+  await expect(canvas(page)).toHaveAttribute("data-seat", "1", { timeout: 90000 });
   await settled(page);
-  await expect(page.locator("#turn")).toContainText("나 (홍국) 차례");
+  await expect(page.locator("#turn")).toContainText("나 (청국) 차례");
 }
 /** Picks up an army of mine that may move and sends it to a hex it may go to that holds no army. */
 async function moveOne(page: Page, mobile: boolean) {
   const before = await table(page),
-    army = before.armies.find((a) => a.n === 0 && !a.moved)!;
+    army = before.armies.find((a) => a.n === before.me && !a.moved)!;
   await tap(page, army.at, mobile);
   await expect(page.locator("#turn")).toContainText("갈 곳을 고르세요");
   const picked = await table(page);
@@ -47,7 +53,7 @@ async function moveOne(page: Page, mobile: boolean) {
   return { from: army.h, to };
 }
 
-test("hex conquest: an army moved by taps, the moves left counted down, the turn ended and the computers moving", async ({ page }, info) => {
+test("hex conquest: another map and an empire chosen before the start, an army moved by taps, the turn ended and the computer moving", async ({ page }, info) => {
   const mobile = info.project.name === "mobile",
     errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -59,10 +65,27 @@ test("hex conquest: an army moved by taps, the moves left counted down, the turn
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await settled(page);
+  // Setup: the map shown with its capitals; nothing moves before 시작.
+  const setup = await table(page);
+  expect(setup.phase).toBe("setup");
+  await expect(page.locator("#turn")).toContainText("맵과 제국을 고르고 시작을 누르세요");
+  await page.getByRole("button", { name: "다른 맵" }).click();
+  await expect(canvas(page)).toHaveAttribute("data-ply", String(setup.ply + 1), { timeout: 20000 });
+  await settled(page);
+  expect((await table(page)).land).not.toBe(setup.land);
+  // 청국 (upper left) is mine; with one computer it takes the diagonal corner, 흑국.
+  await page.getByRole("button", { name: "청국", exact: true }).click();
+  await expect(canvas(page)).toHaveAttribute("data-me", "1", { timeout: 20000 });
+  await settled(page);
+  await expect(page.getByRole("button", { name: "청국 (나)" })).toBeVisible();
+  await page.getByRole("button", { name: "시작", exact: true }).click();
+  await expect(canvas(page)).toHaveAttribute("data-phase", "play", { timeout: 20000 });
+  await settled(page);
   const start = await table(page);
   expect(start.places).toHaveLength(220);
-  expect(start.armies.map((a) => [a.n, a.c, a.m])).toEqual(expect.arrayContaining([[0, 10, 10], [2, 10, 10]]));
+  expect(start.armies.map((a) => [a.n, a.c, a.m])).toEqual(expect.arrayContaining([[1, 10, 10], [3, 10, 10]]));
   expect(start.armies).toHaveLength(2);
+  expect(start.seat).toBe(1);
   await expect(page.locator("#turn")).toContainText("남은 이동 1/1");
   // My only army moves; with that the turn passes to the computer, which moves, and it comes back to me.
   const first = await moveOne(page, mobile);
@@ -81,6 +104,7 @@ test("hex conquest: an army moved by taps, the moves left counted down, the turn
   await page.getByRole("button", { name: "턴 종료" }).click();
   await expect.poll(async () => (await table(page)).ply, { timeout: 60000 }).toBeGreaterThan(ply + 1);
   await myTurn(page);
-  await expect(page.locator(".game-layout.hud aside.game-sidebar")).toContainText("황국");
+  await expect(page.locator(".game-layout.hud aside.game-sidebar")).toContainText("흑국");
+  await expect(page.locator(".game-layout.hud aside.game-sidebar")).toContainText("청국 (나)");
   expect(errors).toEqual([]);
 });

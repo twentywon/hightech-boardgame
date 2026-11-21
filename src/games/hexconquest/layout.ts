@@ -31,3 +31,10 @@ export const viewShift = (aspect: number) => (aspect >= 1.95 ? 0.6 : aspect >= 1
 export function hexSubject(aspect: number): TableSubject {
   return { half: MAP_HALF + 0.6 + viewShift(aspect), halfZ: MAP_HALF_Z + 0.3, height: 0.7, lookY: 0, tilt: aspect >= 1.95 ? 1.2 : 1.16 };
 }
+/** An army on land is drawn by its count: tin soldiers under 40 men, a cannon under 70, a tank from 70 on. */
+export const CANNON_AT = 40,
+  TANK_AT = 70;
+export type Piece = "infantry" | "cannon" | "tank" | "ship";
+export const pieceFor = (count: number, atSea = false): Piece => (atSea ? "ship" : count >= TANK_AT ? "tank" : count >= CANNON_AT ? "cannon" : "infantry");
+/** How many tin soldiers stand for an infantry army: one under 15 men, two under 30, three from 30 on. */
+export const menFor = (count: number) => (count >= 30 ? 3 : count >= 15 ? 2 : 1);

@@ -3421,9 +3421,16 @@ html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row.hc-no
 html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row.hc-out { opacity:.5;text-decoration:line-through; }
 html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row b { font-weight:800; }
 html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-dot { flex:none;width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 2px #fff9, 0 1px 3px #0008; }
+/* A nation's allies (동맹 and their colours) and a speech in force (연설), as small tags after its line. */
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar :is(.hc-ally, .hc-speech) { display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:999px;font-size:.86em;font-weight:800;background:#0006;box-shadow:0 0 0 1px #fff5; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-speech { background:#a87a12d0;color:#fff; }
+html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-ally em { font-style:normal; }
 @media (orientation: landscape) and (max-height: 540px) {
   html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .yut-sides li > span[id^="pg-count-"]:not(#_) { font-size:10.5px !important;gap:1px; }
   html[data-game="hex-conquest"] .game-layout.hud .table-layout > aside.game-sidebar:not(#_) { left:8px;gap:2px;top:44px !important; }
   html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-row { gap:5px; }
   html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-dot { width:8px;height:8px; }
+  /* On a phone the estates and the word 동맹 are left to readers, so that the lines keep clear of the map. */
+  html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar :is(.hc-estates, .hc-ally em) { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
+  html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar :is(.hc-ally, .hc-speech) { padding:0 4px;gap:2px; }
 }

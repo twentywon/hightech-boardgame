@@ -140,8 +140,8 @@ export interface PointConfig<S> {
   keyMove?: (key: string, state: S, repeat?: boolean, held?: { shift: boolean; cursor: number | null }) => Move | null;
   /** A key let go that is a move of its own (an arrow that was held to move something along), on a live table. */
   keyUp?: (key: string, state: S) => Move | null;
-  /** The names and colours of the two sides, when they depend on the variant. */
-  sidesOf?: (variant: string) => [string, string];
+  /** The names and colours of the two sides, when they depend on the variant (or on the state shown: the empire chosen). */
+  sidesOf?: (variant: string, state?: S) => [string, string];
   colorsOf?: (variant: string) => [string, string];
   /** Who moves first against the computer, when it is not simply side 0. */
   firstNote?: string;
@@ -280,7 +280,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   const solo = !!config.solo,
     alone = solo || !!config.computerOnly;
   const computerTurn = (s: S = state) => mode === "ai" && !solo && game.turn(s) === 1 && !over(s);
-  const sides = () => config.sidesOf?.(variant) ?? config.sides;
+  const sides = () => config.sidesOf?.(variant, shown) ?? config.sides;
   /** Played alone: the game is for one, or this variant of it is. */
   const lone = () => solo || !!config.soloOf?.(variant);
   const who = (player: number) =>

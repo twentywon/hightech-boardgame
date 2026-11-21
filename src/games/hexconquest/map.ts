@@ -10,18 +10,27 @@ import { COLS, HEXES, NEIGHBOURS, colOf, distance, hexOf, rowOf } from "./board"
  *     on them sink, and each capital always stands on land with land round it.
  *  3. The board is shared among the four corners by distance (each corner's reach); a try whose reaches hold very
  *     different amounts of land is not fair.
- *  4. Towns: about one for every ten hexes of land, as many in each corner's reach, never next to another town, a
- *     port or a capital.
- *  5. Ports: on coasts, one in each reach where it can be, and at least one on every land mass that holds a town or a
- *     capital, apart from every other estate.
+ *  4. Cities and villages, as many of each in every corner's reach: about one village for every ten hexes of land
+ *     (at least three a reach) and a city for every three or four villages (at least one a reach), a city at least
+ *     three steps from the capital. No village or city stands next to another estate.
+ *  5. Ports on coasts (land next to water of three hexes or more): in each reach one for every six of its coastal hexes
+ *     (rounded) and at least two where it has a coast, each set as far from the ports already laid as it can be and
+ *     never next to another estate (where no such place is left, never next to another port or a capital); then at
+ *     least one on every land mass that holds an estate.
  *  6. Every capital and estate must be reachable from every capital by land, or by a port and the sea.
  * Free of Three.js and DOM.
  */
 export const NONE = 0,
   CAPITAL = 1,
-  TOWN = 2,
-  PORT = 3;
-export type Estate = typeof NONE | typeof CAPITAL | typeof TOWN | typeof PORT;
+  VILLAGE = 2,
+  PORT = 3,
+  CITY = 4;
+export type Estate = typeof NONE | typeof CAPITAL | typeof VILLAGE | typeof PORT | typeof CITY;
+/** Villages a reach holds for its land, cities for its villages, and a port for so many coastal hexes. */
+export const LAND_PER_VILLAGE = 40,
+  VILLAGES_PER_CITY = 3.5,
+  COAST_PER_PORT = 6,
+  PORTS_PER_REACH = 2;
 export interface HexMap {
   land: boolean[];
   estate: Estate[];
@@ -76,17 +85,26 @@ export function reachable(map: Pick<HexMap, "land" | "estate">, from: number) {
   }
   return seen;
 }
-/** The land in each corner's reach and the towns in it, and how fair that is: the least land over the most. */
+/** The land in each corner's reach, the villages, cities and ports in it, and how fair that is: the least land over the most. */
 export function fairness(map: HexMap) {
   const reach = reaches(map.corners),
     land = [0, 0, 0, 0],
-    towns = [0, 0, 0, 0];
+    villages = [0, 0, 0, 0],
+    cities = [0, 0, 0, 0],
+    ports = [0, 0, 0, 0];
   for (let h = 0; h < HEXES; h++) {
     if (!map.land[h]) continue;
     land[reach[h]]++;
-    if (map.estate[h] === TOWN) towns[reach[h]]++;
+    if (map.estate[h] === VILLAGE) villages[reach[h]]++;
+    if (map.estate[h] === CITY) cities[reach[h]]++;
+    if (map.estate[h] === PORT) ports[reach[h]]++;
   }
-  return { land, towns, ratio: Math.min(...land) / Math.max(...land) };
+  return { land, villages, cities, ports, ratio: Math.min(...land) / Math.max(...land) };
+}
+/** Land hexes on a coast: next to water of three hexes or more. */
+export function coastal(land: boolean[]) {
+  const water = components(land, false);
+  return Array.from({ length: HEXES }, (_, h) => land[h] && NEIGHBOURS[h].some((n) => !land[n] && water.sizes[water.group[n]] >= 3));
 }
 /** The groups of hexes joined to each other, of land (or of water). */
 function components(land: boolean[], ofLand: boolean) {
@@ -169,23 +187,45 @@ function attempt(random: () => number): HexMap | null {
   for (let h = 0; h < HEXES; h++) if (land[h]) landIn[reach[h]]++;
   if (Math.min(...landIn) / Math.max(...landIn) < 0.72) return null;
   const free = (h: number) => land[h] && estate[h] === NONE && NEIGHBOURS[h].every((n) => estate[n] === NONE);
-  // 4. Towns, as many in each reach.
+  // 4. Cities, then villages, as many of each in every reach.
   const total = landIn.reduce((a, b) => a + b, 0),
-    each = Math.max(2, Math.round(total / 40));
-  for (let r = 0; r < 4; r++)
-    for (let t = 0; t < each; t++) {
-      const spots = [];
-      for (let h = 0; h < HEXES; h++) if (reach[h] === r && free(h) && distance(h, corners[r]) >= 2) spots.push(h);
-      if (!spots.length) return null;
-      estate[pick(spots)] = TOWN;
-    }
-  // 5. Ports on coasts: one in each reach where it can be, then one on every land mass that holds an estate without one.
-  const water = components(land, false),
-    coast = (h: number) => NEIGHBOURS[h].some((n) => !land[n] && water.sizes[water.group[n]] >= 3);
+    villages = Math.max(3, Math.round(total / LAND_PER_VILLAGE)),
+    cities = Math.max(1, Math.round(villages / VILLAGES_PER_CITY));
+  for (const [kind, count, from] of [
+    [CITY, cities, 3],
+    [VILLAGE, villages, 2],
+  ] as const)
+    for (let r = 0; r < 4; r++)
+      for (let t = 0; t < count; t++) {
+        const spots = [];
+        for (let h = 0; h < HEXES; h++) if (reach[h] === r && free(h) && distance(h, corners[r]) >= from) spots.push(h);
+        if (!spots.length) return null;
+        estate[pick(spots)] = kind;
+      }
+  // 5. Ports on coasts, spread out: in each reach one for every six coastal hexes and at least two.
+  const coast = coastal(land),
+    ports: number[] = [],
+    apartFromPorts = (h: number) => Math.min(6, ...ports.map((p) => distance(h, p))),
+    loose = (h: number) => land[h] && estate[h] === NONE && coast[h] && NEIGHBOURS[h].every((n) => estate[n] !== PORT && estate[n] !== CAPITAL),
+    lay = (spots: number[]) => {
+      // The places farthest from the ports laid, one of them at random.
+      const best = Math.max(...spots.map(apartFromPorts)),
+        far = spots.filter((h) => apartFromPorts(h) === best),
+        h = pick(far);
+      estate[h] = PORT;
+      ports.push(h);
+    };
   for (let r = 0; r < 4; r++) {
-    const spots = [];
-    for (let h = 0; h < HEXES; h++) if (reach[h] === r && free(h) && coast(h)) spots.push(h);
-    if (spots.length) estate[pick(spots)] = PORT;
+    let shore = 0;
+    for (let h = 0; h < HEXES; h++) if (reach[h] === r && coast[h]) shore++;
+    const want = shore ? Math.max(PORTS_PER_REACH, Math.round(shore / COAST_PER_PORT)) : 0;
+    for (let k = 0; k < want; k++) {
+      let spots = [];
+      for (let h = 0; h < HEXES; h++) if (reach[h] === r && coast[h] && free(h)) spots.push(h);
+      if (!spots.length) for (let h = 0; h < HEXES; h++) if (reach[h] === r && loose(h)) spots.push(h);
+      if (!spots.length) break;
+      lay(spots);
+    }
   }
   const masses = components(land, true);
   for (let id = 0; id < masses.sizes.length; id++) {
@@ -193,11 +233,11 @@ function attempt(random: () => number): HexMap | null {
     for (let h = 0; h < HEXES; h++) if (masses.group[h] === id) hexes.push(h);
     if (masses.sizes.length === 1) break;
     if (!hexes.some((h) => estate[h] !== NONE) || hexes.some((h) => estate[h] === PORT)) continue;
-    const spots = hexes.filter((h) => free(h) && coast(h)),
-      // A small island may have no room apart from its town: the port may then stand beside it.
-      near = spots.length ? spots : hexes.filter((h) => land[h] && estate[h] === NONE && coast(h));
+    const spots = hexes.filter((h) => free(h) && coast[h]),
+      // A small island may have no room apart from its village: the port may then stand beside it.
+      near = spots.length ? spots : hexes.filter((h) => land[h] && estate[h] === NONE && coast[h]);
     if (!near.length) return null;
-    estate[pick(near)] = PORT;
+    lay(near);
   }
   // 6. Every capital and estate reachable from every capital.
   const map: HexMap = { land, estate, corners };
@@ -230,7 +270,8 @@ function plain(): HexMap {
     land = Array.from({ length: HEXES }, (_, h) => !(Math.abs(colOf(h) - 9.5) < 2 && Math.abs(rowOf(h) - 5) < 2)),
     estate: Estate[] = new Array(HEXES).fill(NONE);
   for (const c of corners) estate[c] = CAPITAL;
-  for (const t of [hexOf(4, 7), hexOf(4, 3), hexOf(15, 3), hexOf(15, 7), hexOf(9, 1), hexOf(10, 9)]) estate[t] = TOWN;
-  for (const p of [hexOf(7, 5), hexOf(12, 5)]) estate[p] = PORT;
+  for (const t of [hexOf(4, 7), hexOf(4, 3), hexOf(15, 3), hexOf(15, 7), hexOf(9, 1), hexOf(10, 9)]) estate[t] = VILLAGE;
+  for (const t of [hexOf(6, 9), hexOf(6, 1), hexOf(13, 1), hexOf(13, 9)]) estate[t] = CITY;
+  for (const p of [hexOf(7, 5), hexOf(12, 5), hexOf(9, 3), hexOf(10, 7)]) estate[p] = PORT;
   return { land, estate, corners };
 }

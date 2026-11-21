@@ -597,23 +597,40 @@ const play = {
     const table = () =>
       page.evaluate(() => {
         const c = document.querySelector("#board canvas");
-        return { places: JSON.parse(c.dataset.places), armies: JSON.parse(c.dataset.armies), seat: c.dataset.seat, targets: c.dataset.targets ? c.dataset.targets.split(",").map(Number) : [], estates: c.dataset.estates, owners: c.dataset.owners.split(",").map(Number) };
+        return { places: JSON.parse(c.dataset.places), armies: JSON.parse(c.dataset.armies), seat: c.dataset.seat, me: Number(c.dataset.me), phase: c.dataset.phase, targets: c.dataset.targets ? c.dataset.targets.split(",").map(Number) : [], estates: c.dataset.estates, owners: c.dataset.owners.split(",").map(Number) };
       });
     const tap = async ([x, y]) => {
       const box = await page.locator("canvas").boundingBox();
       await page.mouse.click(box.x + x, box.y + y);
       await wait(250);
     };
-    const mine = () => page.waitForFunction(() => document.querySelector("#board canvas")?.dataset.seat === "0" && document.querySelector("#board")?.dataset.animating === "false", null, { timeout: 120000 });
+    const mine = () =>
+      page.waitForFunction(
+        () => {
+          const c = document.querySelector("#board canvas");
+          return c?.dataset.seat === c?.dataset.me && document.querySelector("#board")?.dataset.animating === "false";
+        },
+        null,
+        { timeout: 120000 },
+      );
+    // Setup: the map and 홍국 as laid; 시작 (tool 6) begins.
+    await page.waitForFunction(() => document.querySelector("#board canvas")?.dataset.phase === "setup", null, { timeout: 20000 });
+    await press("#pg-tool-6");
+    await wait(600);
     for (let turn = 0; turn < 5; turn++) {
       await mine();
+      // An offer of an alliance waiting: 수락 (tool 9).
+      if ((await table()).phase === "offer") {
+        await press("#pg-tool-9");
+        await wait(600);
+      }
       for (let k = 0; k < 5; k++) {
         let t = await table();
-        const army = t.armies.find((a) => a.n === 0 && !a.moved);
-        if (!army || t.seat !== "0") break;
+        const army = t.armies.find((a) => a.n === t.me && !a.moved);
+        if (!army || t.seat !== String(t.me) || t.phase !== "play") break;
         await tap(army.at);
         t = await table();
-        const free = t.targets.filter((h) => !t.armies.some((a) => a.h === h) && t.owners[h] !== 0);
+        const free = t.targets.filter((h) => !t.armies.some((a) => a.h === h) && t.owners[h] !== t.me);
         const to = free.find((h) => t.estates[h] !== "0") ?? free[0];
         if (to === undefined) {
           await tap(army.at);
@@ -622,7 +639,7 @@ const play = {
         await tap(t.places[to]);
         await page.waitForFunction(() => document.querySelector("#board")?.dataset.animating === "false", null, { timeout: 30000 });
       }
-      if ((await table()).seat === "0") await press("#pg-tool-0");
+      if ((await table()).seat === String((await table()).me)) await press("#pg-tool-0");
     }
     await mine();
   },
