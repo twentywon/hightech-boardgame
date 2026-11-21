@@ -154,7 +154,7 @@ test("continent conquest: a small random map dealt at random, with a secret miss
   await expect(page.locator("main")).not.toContainText("탈락시키세요");
   await page.locator("#cq-mission").click();
   await expect(page.locator("dialog[open]")).toContainText("내 비밀 임무");
-  await expect(page.locator("dialog[open] .cq-mission-text")).toContainText("하세요");
+  await expect(page.locator("dialog[open] .cq-mission-text")).toContainText(/세요\./);
   await page.locator("dialog[open] .dialog-actions button").click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await oneTurn(page, mobile);
