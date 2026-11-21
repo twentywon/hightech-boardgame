@@ -35,18 +35,21 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  * `pressed` is the telescopes pressed in order (undo replays them from the start); `last` the press just made, for
  * the view: the telescope, its length before and after, and the ball's cell before and after each cell the tip moved.
  *
- * A puzzle is laid at random (`createGame`): first the ball's journey (`journey`): from the ball alone on the board,
- * telescopes are set down behind it and pressed, or ones already there pressed again, so that it keeps coming onto
- * new cells, pushed and pulled; the hole goes on the last cell it came onto. A telescope set down behind the ball is
- * mostly of a kind whose own reach is what stops the ball (a longer kind would push it further), and the kinds fewest
- * on the board are preferred. Then the rest of the stage's telescopes are crowded round, close to the others, side by
- * side or facing each other, of the kinds fewest so far (`crowd`), any that would spoil the journey left out. The
- * shortest way into the hole is then searched for (`search`, an exact A* over arrangements: every telescope's length
- * and the ball's cell), and the board is kept when its fewest presses lie within the stage's band, all three kinds
- * stand on it and their colours matter (`colourMatters`: were every telescope purple, the way laid would fail or the
- * fewest presses change); a board in the band without the last two is kept only when no better one is found within
- * `TRIES`. That shortest way is kept as `plan` (`best` presses); the hint follows it while I do, and otherwise
- * searches afresh from the arrangement shown (`solve`).
+ * A puzzle is laid at random and then climbed (`createGame`). A few journeys of the ball are laid first (`journey`:
+ * from the ball alone on the board, telescopes are set down behind it and pressed, or ones already there pressed
+ * again, so that it keeps coming onto new cells, pushed and pulled), and the telescopes of the best near the ball are
+ * the core to climb. The core is then changed a telescope at a time (carried, turned, given another kind, added or
+ * taken away), and after every change every arrangement the presses reach from the start is searched breadth first
+ * (`explore`: every telescope's length and the ball's cell, packed into a few numbers); the hole goes on the cell the
+ * ball first comes onto last, so every puzzle can be solved, in exactly `best` presses. A board is kept when that
+ * count reaches the one aimed at in the stage's band and the shortest way uses enough telescopes, pulls and presses
+ * that only set a telescope in the ball's way (or take one out of it). The rest of the stage's telescopes are then set
+ * round it (`decorate`: crowded close where the fewest presses stay the same, searched again with `search`, an exact
+ * A*; then quiet ones where nothing can reach them), and the board must hold all three kinds, their colours must matter
+ * (`colourMatters`: were every telescope purple, the way laid would fail or the fewest presses change) and neither a
+ * greedy player pressing toward the hole nor a random one may find the way (`naive`). After the stage's `budget` of
+ * boards judged, the best in the band seen is taken. That shortest way is kept as `plan`; the hint follows it while I
+ * do, and otherwise searches afresh from the arrangement shown (`solve`).
  */
 export const N = 0,
   E = 1,
@@ -114,13 +117,26 @@ export interface Stage {
   /** How many steps the ball's journey is laid with, and how many of the telescopes are kept for crowding round it. */
   walk: number;
   crowd: number;
+  /** How many telescopes the board is climbed with (the rest are crowded round after), within a square of `window` round the ball. */
+  core: [number, number];
+  window: number;
+  /** How many arrangements a board's search may take up while it is climbed. */
+  cap: number;
+  /** How many changes a board is climbed through at most, and how many boards are judged in all before the best in the
+   * band seen is taken. */
+  climb: number;
+  budget: number;
+  /** What the shortest way must come to: telescopes used, pulls, and presses that only set or take away a stop. */
+  used: number;
+  pulls: number;
+  stops: number;
 }
 export const STAGES: Stage[] = [
-  { size: 7, scopes: [4, 6], band: [3, 5], walk: 5, crowd: 1 },
-  { size: 8, scopes: [7, 9], band: [5, 8], walk: 8, crowd: 3 },
-  { size: 10, scopes: [10, 13], band: [7, 11], walk: 11, crowd: 4 },
-  { size: 11, scopes: [14, 17], band: [9, 14], walk: 14, crowd: 6 },
-  { size: 13, scopes: [18, 22], band: [12, 18], walk: 18, crowd: 8 },
+  { size: 7, scopes: [5, 7], band: [5, 7], walk: 8, crowd: 2, core: [3, 6], window: 6, cap: 3000, climb: 300, budget: 300, used: 3, pulls: 1, stops: 0 },
+  { size: 8, scopes: [8, 10], band: [7, 10], walk: 12, crowd: 3, core: [4, 8], window: 7, cap: 3000, climb: 300, budget: 400, used: 4, pulls: 2, stops: 1 },
+  { size: 10, scopes: [11, 14], band: [10, 13], walk: 16, crowd: 4, core: [5, 10], window: 8, cap: 4000, climb: 300, budget: 500, used: 5, pulls: 2, stops: 1 },
+  { size: 11, scopes: [15, 18], band: [12, 16], walk: 14, crowd: 6, core: [6, 12], window: 8, cap: 4000, climb: 300, budget: 400, used: 6, pulls: 3, stops: 2 },
+  { size: 13, scopes: [19, 23], band: [15, 19], walk: 14, crowd: 8, core: [6, 11], window: 8, cap: 2500, climb: 300, budget: 380, used: 7, pulls: 3, stops: 2 },
 ];
 export const stageOf = (stage: number) => Math.max(1, Math.min(STAGES.length, Math.round(stage) || 1));
 
@@ -393,8 +409,7 @@ export function search(n: number, scopes: Telescope[], lens: ArrayLike<number>, 
     keep = relevant(n, scopes, ball, all),
     // A telescope drawn out at the start that does not matter stays drawn out (it is never pressed).
     live = scopes.flatMap((_, t) => (keep[t] ? [t] : [])),
-    L = live.length,
-    weight: number[] = [];
+    L = live.length;
   // From each cell, the lines that can move the ball next, each with the fewest presses after it.
   const leaving: { t: number; pull: number; after: number }[][] = Array.from({ length: n * n }, () => []);
   for (const line of all) {
@@ -419,22 +434,6 @@ export function search(n: number, scopes: Telescope[], lens: ArrayLike<number>, 
     }
     return best;
   };
-  let product = 1;
-  for (const t of live) {
-    weight.push(product);
-    product *= most[t] + 1;
-  }
-  const exact = product * n * n < 2 ** 52,
-    keyOf = (store: Uint8Array, at: number, b: number): number | string => {
-      if (exact) {
-        let code = 0;
-        for (let i = 0; i < L; i++) code += store[at + i] * weight[i];
-        return code * n * n + b;
-      }
-      let text = String(b);
-      for (let i = 0; i < L; i++) text += store[at + i];
-      return text;
-    };
   let room = 1024,
     store = new Uint8Array(room * L),
     balls = new Int16Array(room),
@@ -461,14 +460,45 @@ export function search(n: number, scopes: Telescope[], lens: ArrayLike<number>, 
   const full = Uint8Array.from({ length: scopes.length }, (_, t) => lens[t]),
     first = estimate(ball, full);
   if (first < 0) return { way: null, taken: 0, capped: false };
-  const seen = new Map<number | string, number>();
+  // The arrangements already taken up, found by an open-addressed table of their numbers, keyed by a hash of their
+  // lengths and ball and compared in full on a match (so the search stays exact however many telescopes there are).
+  let mask = 4095,
+    table = new Int32Array(mask + 1).fill(-1);
+  const hashOf = (at: number, b: number) => {
+      let x = Math.imul(b + 1, 0x9e3779b1);
+      for (let i = 0; i < L; i++) x = Math.imul(x ^ store[at + i], 0x01000193);
+      return (x ^ (x >>> 15)) >>> 0;
+    },
+    /** The slot holding the arrangement written at `at` with the ball on `b`, or the empty slot where it would go. */
+    slotOf = (at: number, b: number) => {
+      let slot = hashOf(at, b) & mask;
+      for (;;) {
+        const k = table[slot];
+        if (k < 0) return slot;
+        if (balls[k] === b) {
+          let same = true;
+          for (let i = 0, x = k * L; i < L; i++)
+            if (store[x + i] !== store[at + i]) {
+              same = false;
+              break;
+            }
+          if (same) return slot;
+        }
+        slot = (slot + 1) & mask;
+      }
+    },
+    widenTable = (count: number) => {
+      mask = mask * 2 + 1;
+      table = new Int32Array(mask + 1).fill(-1);
+      for (let k = 0; k < count; k++) table[slotOf(k * L, balls[k])] = k;
+    };
   for (let i = 0; i < L; i++) store[i] = lens[live[i]];
   balls[0] = ball;
   parent[0] = -1;
   move[0] = -1;
   cost[0] = 0;
   rank[0] = first;
-  seen.set(keyOf(store, 0, ball), 0);
+  table[slotOf(0, ball)] = 0;
   let count = 1;
   // A bucket of arrangements for each estimate of the whole way (presses so far plus the estimate), the deepest first
   // within one. An estimate below the bucket being emptied is raised to it (so the order never goes back).
@@ -520,9 +550,9 @@ export function search(n: number, scopes: Telescope[], lens: ArrayLike<number>, 
         const base = count * L;
         store.copyWithin(base, at * L, at * L + L);
         store[base + i] = len;
-        const key = keyOf(store, base, nb),
-          known = seen.get(key);
-        if (known !== undefined) {
+        const slot = slotOf(base, nb),
+          known = table[slot];
+        if (known >= 0) {
           if (cost[known] <= g + 1) continue;
           // Reached more cheaply: its way and cost are mended and it goes into a bucket again.
           cost[known] = g + 1;
@@ -531,7 +561,7 @@ export function search(n: number, scopes: Telescope[], lens: ArrayLike<number>, 
           push(known, g + 1 + h);
           continue;
         }
-        seen.set(key, count);
+        table[slot] = count;
         balls[count] = nb;
         parent[count] = at;
         move[count] = t;
@@ -539,6 +569,7 @@ export function search(n: number, scopes: Telescope[], lens: ArrayLike<number>, 
         push(count, g + 1 + h);
         count++;
         if (count >= cap) return { way: null, taken: count, capped: true };
+        if (count * 2 > mask) widenTable(count);
       }
     }
   }
@@ -751,7 +782,8 @@ function crowd(n: number, scopes: Telescope[], ball: number, hole: number, plan:
   for (let tries = 0; out.length < count && tries < count * 12; tries++) {
     const taken = new Uint8Array(n * n);
     for (const s of out) taken[s.cell] = 1;
-    taken[ball] = taken[hole] = 1;
+    taken[ball] = 1;
+    if (hole >= 0) taken[hole] = 1;
     const cells: number[] = [];
     for (let c = 0; c < n * n; c++) if (!taken[c]) cells.push(c);
     if (!cells.length) break;
@@ -786,7 +818,7 @@ function crowd(n: number, scopes: Telescope[], ball: number, hole: number, plan:
       choices = ways.flatMap((dir) => REACHES.map((reach) => ({ dir, reach }))),
       { dir, reach } = pickBy(random, choices, (o) => (meets(o.dir, o.reach) ? 3 : 1) / (1 + have[o.reach]) ** 2),
       trial = [...out, { cell, dir, reach }];
-    if (lands(n, trial, ball, hole, plan)) out.splice(0, out.length, ...trial);
+    if (hole < 0 || lands(n, trial, ball, hole, plan)) out.splice(0, out.length, ...trial);
   }
   return out;
 }
@@ -817,8 +849,6 @@ export function colourMatters(state: State, cap = JUDGE_CAP) {
   const found = search(state.size, longest, longest.map(() => 0), state.start, state.hole, cap);
   return found.capped || !found.way || found.way.length !== state.best;
 }
-/** How many boards are tried at most before the one nearest the band is kept. */
-const TRIES = 40;
 /** How many cells of a journey are tried for the hole. */
 const HOLES = 2;
 /** How many journeys are laid for a board, the longest kept. */
@@ -829,14 +859,14 @@ const JUDGE_CAP = 20000;
  * A journey laid for a stage (`journey`), before it is judged: the telescopes it set down, and the holes to try (the
  * cells it came onto last, each with the presses that brought the ball there); null when it went nowhere.
  */
-export function lay(stage: number, random: Random) {
+export function lay(stage: number, random: Random, journeys = JOURNEYS) {
   const spec = STAGES[stage - 1],
     n = spec.size,
     count = spec.scopes[0] + Math.floor(random() * (spec.scopes[1] - spec.scopes[0] + 1));
   // Of a few journeys, the one with the most presses that brought the ball somewhere new.
   let d: Draft | null = null,
     most = -1;
-  for (let k = 0; k < JOURNEYS; k++) {
+  for (let k = 0; k < journeys; k++) {
     const trial = journey(n, spec.walk, Math.max(2, count - spec.crowd), random),
       fresh = new Set(trial.visited.values()).size;
     if (fresh > most) {
@@ -851,42 +881,525 @@ export function lay(stage: number, random: Random) {
   if (!order.length) return null;
   return { n, journey: d, count, holes: order.slice(0, HOLES).map(([cell, k]) => ({ cell, plan: d.plan.slice(0, k) })) };
 }
+/** What a search outward from the start found (`explore`). */
+export interface Explored {
+  /** For each cell, the fewest presses that bring the ball onto it (pushed or pulled over it, or left on it), -1 for none found. */
+  arrive: Int16Array;
+  /** The presses that first brought the ball onto a cell (good until the next search: the tables are shared). */
+  wayTo: (cell: number) => number[];
+  /** Every count of presses below this was searched in full; at and beyond it, not (the search was capped). */
+  complete: number;
+  /** Arrangements taken up. */
+  taken: number;
+}
+/** The search's tables, kept between searches and grown as needed (a board is searched hundreds of times while it is laid). */
+const tables = {
+  room: 0,
+  store: new Int32Array(0),
+  parent: new Int32Array(0),
+  move: new Int16Array(0),
+  depth: new Int16Array(0),
+  /** The open-addressed table of arrangements; a slot holds something only when its stamp is this search's. */
+  slots: new Int32Array(0),
+  stamps: new Int32Array(0),
+  stamp: 0,
+};
 /**
- * A new puzzle of `stage` (1–5): boards are laid (`lay`) and the shortest way into each hole searched for (`search`);
- * the first whose fewest presses lie within the stage's band is kept, its shortest way as `plan`. Failing that within
- * `TRIES`, the one nearest the band.
+ * A search outward from an arrangement with every telescope closed, breadth first, over every arrangement the
+ * presses reach (with no hole), up to `cap` arrangements and `deepest` presses: for every cell, the fewest presses
+ * after which the ball has come onto it. With the hole put on a cell, the game goes as it does here until the ball
+ * first comes onto it, so that count is the fewest presses the puzzle needs, and the presses that did it are a
+ * shortest way. Exact for every count below `complete`.
+ *
+ * Built for speed, as a board is searched hundreds of times while it is laid: each telescope that can matter has its
+ * cells laid out once (`ray`), an arrangement is its lengths, three bits a telescope packed ten to a word, and the
+ * ball's cell in a word of its own, and the arrangements taken up are found by an open-addressed table.
+ */
+export function explore(n: number, scopes: Telescope[], ball: number, cap: number, deepest = 1 << 14): Explored {
+  const keep = relevant(n, scopes, ball),
+    live = scopes.flatMap((_, t) => (keep[t] ? [t] : [])),
+    L = live.length,
+    R = MAX_REACH + 2,
+    ray = new Int16Array(L * R).fill(-1),
+    reach = new Uint8Array(L),
+    wordOf = new Uint8Array(L),
+    shiftOf = new Uint8Array(L),
+    lens = new Uint8Array(L),
+    trail = new Int16Array(MAX_REACH + 2),
+    baseOcc = new Int16Array(n * n).fill(-1),
+    arrive = new Int16Array(n * n).fill(-1),
+    // For each cell, the arrangement it was first come onto from and the telescope pressed.
+    from = new Int32Array(n * n).fill(-1),
+    by = new Int16Array(n * n);
+  scopes.forEach((s, t) => (baseOcc[s.cell] = t));
+  for (let i = 0; i < L; i++) {
+    const s = scopes[live[i]];
+    reach[i] = s.reach;
+    wordOf[i] = Math.floor(i / 10);
+    shiftOf[i] = (i % 10) * 3;
+    for (let k = 1; k <= s.reach + 1; k++) ray[i * R + k] = stepFrom(n, s.cell, s.dir, k);
+  }
+  // What can stand on each cell of each telescope's way: off the board or a base, always (`fixed`); or the body of
+  // another telescope drawn out far enough (the pairs `coverJ`, `coverM` from `coverAt[i * R + k]` up to the next:
+  // telescope j covers it once its length is at least m). So no picture of the whole board is made per arrangement.
+  const fixed = new Uint8Array(L * R),
+    coverAt = new Int32Array(L * R + 1),
+    coverJ: number[] = [],
+    coverM: number[] = [];
+  for (let i = 0; i < L; i++)
+    for (let k = 0; k < R; k++) {
+      const at = i * R + k,
+        cell = ray[at];
+      coverAt[at] = coverJ.length;
+      if (k === 0) continue;
+      if (cell < 0 || baseOcc[cell] >= 0) fixed[at] = 1;
+      else
+        for (let j = 0; j < L; j++)
+          for (let m = 1; m <= reach[j]; m++)
+            if (j !== i && ray[j * R + m] === cell) {
+              coverJ.push(j);
+              coverM.push(m);
+            }
+    }
+  coverAt[L * R] = coverJ.length;
+  const held = (at: number) => {
+    if (fixed[at]) return true;
+    for (let x = coverAt[at], end = coverAt[at + 1]; x < end; x++) if (lens[coverJ[x]] >= coverM[x]) return true;
+    return false;
+  };
+  // Ten telescopes a word, then the ball's cell in a word of its own.
+  const W = Math.ceil(L / 10) + 1,
+    ballWord = W - 1,
+    T = tables;
+  if (T.room < cap + 1 || T.store.length < (cap + 1) * W) {
+    T.room = Math.max(cap + 1, T.room);
+    T.store = new Int32Array(T.room * Math.max(W, 3));
+    T.parent = new Int32Array(T.room);
+    T.move = new Int16Array(T.room);
+    T.depth = new Int16Array(T.room);
+    let size = 1024;
+    while (size < 2 * T.room) size *= 2;
+    T.slots = new Int32Array(size);
+    T.stamps = new Int32Array(size);
+    T.stamp = 0;
+  }
+  const { store, parent, move, depth, slots, stamps } = T,
+    mask = slots.length - 1,
+    stamp = ++T.stamp;
+  const key = new Int32Array(W),
+    slotOf = (words: Int32Array, at: number) => {
+      let x = 0x811c9dc5;
+      for (let i = 0; i < W; i++) x = Math.imul(x ^ words[at + i], 0x01000193);
+      let slot = (x ^ (x >>> 15)) & mask;
+      for (;;) {
+        if (stamps[slot] !== stamp) return slot;
+        const k = slots[slot];
+        let same = true;
+        for (let i = 0, y = k * W; i < W; i++)
+          if (store[y + i] !== words[at + i]) {
+            same = false;
+            break;
+          }
+        if (same) return slot;
+        slot = (slot + 1) & mask;
+      }
+    },
+    wayTo = (cell: number) => {
+      if (from[cell] < 0) return [];
+      const out = [by[cell]];
+      for (let s = from[cell]; s > 0; s = parent[s]) out.push(move[s]);
+      return out.reverse();
+    };
+  for (let w = 0; w < W; w++) store[w] = 0;
+  store[ballWord] = ball;
+  parent[0] = -1;
+  move[0] = -1;
+  depth[0] = 0;
+  let first = slotOf(store, 0);
+  stamps[first] = stamp;
+  slots[first] = 0;
+  arrive[ball] = 0;
+  let count = 1,
+    complete = Infinity;
+  for (let head = 0; head < count; head++) {
+    const g = depth[head],
+      at = head * W;
+    if (g >= deepest) {
+      complete = Math.min(complete, g + 1);
+      break;
+    }
+    // The arrangement: lengths and the ball.
+    for (let i = 0; i < L; i++) lens[i] = (store[at + wordOf[i]] >>> shiftOf[i]) & 7;
+    const b = store[at + ballWord];
+    for (let i = 0; i < L; i++) {
+      const len = lens[i],
+        base = i * R;
+      let size = 0,
+        nb = b,
+        now = 0;
+      if (len > 0) {
+        // Closing: a ball touching the tip comes back over the body to the cell beyond the base.
+        if (b === ray[base + len + 1]) {
+          for (let k = len; k >= 1; k--) trail[size++] = ray[base + k];
+          nb = ray[base + 1];
+        }
+      } else {
+        let k = 0;
+        while (k < reach[i]) {
+          const next = ray[base + k + 1];
+          if (held(base + k + 1)) break;
+          if (next === nb) {
+            const beyond = ray[base + k + 2];
+            if (held(base + k + 2)) break;
+            nb = beyond;
+            trail[size++] = nb;
+          }
+          k++;
+        }
+        if (k === 0) continue;
+        now = k;
+      }
+      for (let j = 0; j < size; j++)
+        if (arrive[trail[j]] < 0) {
+          arrive[trail[j]] = g + 1;
+          from[trail[j]] = head;
+          by[trail[j]] = live[i];
+        }
+      // The arrangement after it.
+      for (let w = 0; w < W; w++) key[w] = store[at + w];
+      const word = wordOf[i],
+        shift = shiftOf[i];
+      key[word] = (key[word] & ~(7 << shift)) | (now << shift);
+      key[ballWord] = nb;
+      const slot = slotOf(key, 0);
+      if (stamps[slot] === stamp) continue;
+      if (count >= cap) {
+        complete = Math.min(complete, g + 1);
+        return { arrive, wayTo, complete, taken: count };
+      }
+      store.set(key, count * W);
+      stamps[slot] = stamp;
+      slots[slot] = count;
+      parent[count] = head;
+      move[count] = live[i];
+      depth[count] = g + 1;
+      count++;
+    }
+  }
+  return { arrive, wayTo, complete, taken: count };
+}
+
+/**
+ * One small change to a board as it is climbed: a telescope carried to a free cell (mostly near by), turned another
+ * way or given another kind, or one taken away or set down, the count kept within `fewest` to `most`. Null when the
+ * change cannot be made.
+ */
+function reshape(n: number, scopes0: Telescope[], ball: number, fewest: number, most: number, random: Random, win = n): Telescope[] | null {
+  const r0 = Math.max(0, Math.min(n - win, Math.floor(ball / n) - Math.floor(win / 2))),
+    c0 = Math.max(0, Math.min(n - win, (ball % n) - Math.floor(win / 2))),
+    within = (cell: number) => Math.floor(cell / n) >= r0 && Math.floor(cell / n) < r0 + win && cell % n >= c0 && cell % n < c0 + win;
+  const scopes = scopes0.map((s) => ({ ...s })),
+    taken = new Uint8Array(n * n);
+  for (const s of scopes) taken[s.cell] = 1;
+  taken[ball] = 1;
+  const free = (near: number) => {
+      for (let k = 0; k < 30; k++) {
+        let cell = Math.floor(random() * n * n);
+        if (near >= 0 && random() < 0.7) {
+          const r = Math.floor(near / n) + Math.floor(random() * 5) - 2,
+            c = (near % n) + Math.floor(random() * 5) - 2;
+          cell = inside(n, r, c) ? r * n + c : -1;
+        }
+        if (cell >= 0 && !taken[cell] && within(cell)) return cell;
+      }
+      return -1;
+    },
+    kind = () => REACHES[Math.floor(random() * REACHES.length)],
+    t = Math.floor(random() * scopes.length),
+    r = random();
+  if (r < 0.35) {
+    const cell = free(scopes[t].cell);
+    if (cell < 0) return null;
+    scopes[t].cell = cell;
+    if (random() < 0.5) scopes[t].dir = Math.floor(random() * 4);
+  } else if (r < 0.6) scopes[t].dir = (scopes[t].dir + 1 + Math.floor(random() * 3)) % 4;
+  else if (r < 0.8) {
+    const reach = kind();
+    if (reach === scopes[t].reach) return null;
+    scopes[t].reach = reach;
+  } else if (r < 0.9) {
+    if (scopes.length >= most) return null;
+    const cell = free(scopes[t].cell);
+    if (cell < 0) return null;
+    scopes.push({ cell, dir: Math.floor(random() * 4), reach: kind() });
+  } else {
+    if (scopes.length <= fewest) return null;
+    scopes.splice(t, 1);
+  }
+  return scopes;
+}
+/** What a way of presses from the start does: how many telescopes it uses, its pulls, its presses that leave the ball where it is, and the telescopes pressed three times or more. */
+export function traits(n: number, scopes: Telescope[], ball: number, way: number[]) {
+  const lens = scopes.map(() => 0),
+    trail: number[] = [],
+    fell = [false],
+    count = new Map<number, number>();
+  let pulls = 0,
+    stops = 0;
+  for (const t of way) {
+    const len = pressOn(n, scopes, lens, occupancy(n, scopes, lens), ball, -1, t, trail, fell);
+    if (len < 0) break;
+    const nb = trail[trail.length - 1];
+    if (nb === ball) stops++;
+    else if (lens[t] > 0) pulls++;
+    lens[t] = len;
+    ball = nb;
+    count.set(t, (count.get(t) ?? 0) + 1);
+  }
+  let again = 0;
+  for (const k of count.values()) if (k >= 3) again++;
+  return { used: count.size, pulls, stops, again };
+}
+/** What a board comes to, judged for climbing: the hole it would take, the way there, and how well it meets the stage. */
+interface Judged {
+  score: number;
+  depth: number;
+  hole: number;
+  way: number[];
+  taken: number;
+  ready: boolean;
+  parts: { depth: number; used: number; pulls: number; stops: number; again: number };
+}
+/**
+ * Judges a board: every arrangement the presses reach from the start is searched (`explore`, up to the stage's `cap`
+ * and the band's top), and the hole would go on the cell the ball comes onto last (the most presses). The score grows
+ * with those presses up to the count aimed at, then with the telescopes the way uses, its pulls, its presses that only
+ * set a telescope in the ball's way (or take one out of it), and telescopes it presses three times or more.
+ */
+function judge(n: number, scopes: Telescope[], ball: number, spec: Stage, want: number): Judged {
+  const e = explore(n, scopes, ball, spec.cap, spec.band[1]);
+  let hole = -1;
+  for (let c = 0; c < n * n; c++) if (e.arrive[c] > 0 && e.arrive[c] < e.complete && (hole < 0 || e.arrive[c] > e.arrive[hole])) hole = c;
+  if (hole < 0) return { score: -1, depth: 0, hole, way: [], taken: e.taken, ready: false, parts: { depth: 0, used: 0, pulls: 0, stops: 0, again: 0 } };
+  const way = e.wayTo(hole),
+    depth = way.length,
+    { used, pulls, stops, again } = traits(n, scopes, ball, way),
+    parts = { depth, used, pulls, stops, again },
+    score = scoreOf(parts, spec, want),
+    ready = depth >= want && used >= spec.used && pulls >= spec.pulls && stops >= spec.stops;
+  return { score, depth, hole, way, taken: e.taken, ready, parts };
+}
+/** The score of a way's traits for a count aimed at (see `judge`). */
+function scoreOf(p: Judged["parts"], spec: Stage, want: number) {
+  return 4 * Math.min(p.depth, want) + 2 * Math.min(p.used, spec.used) + Math.min(p.pulls, spec.pulls) + Math.min(p.stops, spec.stops) + Math.min(p.again, 1);
+}
+/**
+ * Whether a naive player finds the way: a greedy one that always presses what brings the ball nearest the hole (new
+ * arrangements first, ties at random), or one pressing at random; each has a few tries of a few times the fewest
+ * presses.
+ */
+export function naive(state: State, random: Random, tries = NAIVE_TRIES) {
+  const n = state.size,
+    apart = (b: number) => Math.abs(Math.floor(b / n) - Math.floor(state.hole / n)) + Math.abs((b % n) - (state.hole % n));
+  for (let attempt = 0; attempt < 2 * tries; attempt++) {
+    const greedy = attempt < tries,
+      seen = new Set<string>();
+    let s = state;
+    for (let k = 0; k < (greedy ? 3 : 2) * state.best + 4 && s.winner === null; k++) {
+      const after = s.scopes.flatMap((_, t) => {
+        const x = play(s, { from: -1, to: t, extra: -1 });
+        return x ? [x] : [];
+      });
+      if (!after.length) break;
+      if (after.some((x) => x.winner === 0)) return true;
+      if (!greedy) {
+        s = after[Math.floor(random() * after.length)];
+        continue;
+      }
+      const fresh = after.filter((x) => !seen.has(x.lens.join("") + "|" + x.ball)),
+        pool = fresh.length ? fresh : after;
+      let least = Infinity,
+        ties = 0;
+      for (const x of pool) {
+        const v = apart(x.ball);
+        if (v < least) {
+          least = v;
+          s = x;
+          ties = 1;
+        } else if (v === least && random() * ++ties < 1) s = x;
+      }
+      seen.add(s.lens.join("") + "|" + s.ball);
+    }
+  }
+  return false;
+}
+/** How many tries each naive player has. */
+const NAIVE_TRIES = 10;
+/**
+ * A new puzzle of `stage` (1–5). A count of presses is aimed at, drawn evenly from the stage's band. A few journeys
+ * are laid (`lay`), cut to the stage's core of telescopes, and the one judged best (`judge`) is climbed: one change at
+ * a time (`reshape`), kept when the board judges no worse, now and then when a little worse (less often as the climb
+ * goes on), until the cell the ball comes onto last takes at least that many presses and the way there uses enough
+ * telescopes, pulls and stops. The hole goes there and that way is the plan (`best` presses). The rest of the stage's
+ * telescopes are then crowded round (`crowd`, none that spoils the plan) and the fewest presses searched for again
+ * (`search`): they must still lie in the band. A board is kept when all three kinds stand on it, their colours matter
+ * (`colourMatters`) and neither naive player finds the way (`naive`); after a few boards, any in the band will do.
  */
 export function createGame(stage = 1, random: Random = cryptoRandom): State {
   const at = stageOf(stage),
-    spec = STAGES[at - 1];
+    spec = STAGES[at - 1],
+    n = spec.size;
   // One number is drawn from `random`; the many the laying needs come from a quick generator seeded with it.
   random = quick(Math.floor(random() * 4294967296));
-  let kept: { state: State; off: number } | null = null;
-  for (let k = 0; k < TRIES || !kept; k++) {
-    const laid = lay(at, random);
-    if (!laid) continue;
-    // The hole the journey reaches the hardest way, among the last cells it came onto.
-    let deepest: { hole: number; way: number[] } | null = null;
-    for (const { cell, plan } of laid.holes) {
-      if (!lands(laid.n, laid.journey.scopes, laid.journey.start, cell, plan)) continue;
-      const found = search(laid.n, laid.journey.scopes, laid.journey.scopes.map(() => 0), laid.journey.start, cell, JUDGE_CAP);
-      if (found.way && (!deepest || found.way.length > deepest.way.length)) deepest = { hole: cell, way: found.way };
+  const want = spec.band[0] + Math.floor(random() * (spec.band[1] - spec.band[0] + 1));
+  // The best board in the band seen on the way (by its score at the band's foot), for when patience runs out.
+  let spare: { scopes: Telescope[]; ball: number; j: Judged } | null = null,
+    judged = 0;
+  for (let round = 0; ; round++) {
+    const aim = Math.max(spec.band[0], want - round),
+      strict = judged < spec.budget,
+      judgeOf = (scopes: Telescope[], ball: number) => {
+        judged++;
+        const j = judge(n, scopes, ball, spec, aim);
+        if (j.depth >= spec.band[0] && j.depth <= spec.band[1]) {
+          const base = scoreOf(j.parts, spec, spec.band[0]);
+          if (!spare || base > scoreOf(spare.j.parts, spec, spec.band[0])) spare = { scopes, ball, j };
+        }
+        return j;
+      };
+    if (!strict && spare) {
+      const { scopes, ball, j } = spare as { scopes: Telescope[]; ball: number; j: Judged };
+      return finish(n, scopes, ball, j, spec, at, random, false)!;
     }
-    if (!deepest) continue;
-    // The rest of the telescopes crowded round; the shortest way is searched for again, as they may open a shorter one.
-    const scopes = crowd(laid.n, laid.journey.scopes, laid.journey.start, deepest.hole, deepest.way, laid.count, random),
-      found = search(laid.n, scopes, scopes.map(() => 0), laid.journey.start, deepest.hole, JUDGE_CAP);
-    if (!found.way) continue;
-    const state = blank(laid.n, scopes, laid.journey.start, deepest.hole, at, found.way);
-    // Within the band, a board is kept at once when it holds all three kinds and their colours matter; otherwise it
-    // waits, behind any board without those flaws.
-    let off = Math.max(0, spec.band[0] - found.way.length, found.way.length - spec.band[1]);
-    if (!off) off = (new Set(scopes.map((x) => x.reach)).size < REACHES.length ? 0.4 : 0) + (colourMatters(state) ? 0 : 0.2);
-    if (!off) return state;
-    if (!kept || off < kept.off) kept = { state, off };
+    // The best of a few journeys to climb from, its telescopes near the ball (within `window`) cut to the core.
+    let ball = -1,
+      scopes: Telescope[] = [],
+      cur: Judged | null = null;
+    for (let k = 0; k < SEEDS; k++) {
+      const laid = lay(at, random, 1);
+      if (!laid || laid.journey.scopes.length < 2) continue;
+      const start = laid.journey.start,
+        near = windowOf(n, start, spec.window),
+        core = laid.journey.scopes.filter((x) => near(x.cell) && x.cell !== start).slice(0, spec.core[1]),
+        j = judgeOf(core, start);
+      if (!cur || j.score > cur.score) {
+        cur = j;
+        ball = start;
+        scopes = core;
+      }
+    }
+    if (!cur) continue;
+    // The climb: it ends when the board is ready, or when it has gone `STALL` changes without a better one (the next
+    // board then aims a press lower), or after `climb` changes.
+    let top = cur.score;
+    for (let step = 0, since = 0; step < spec.climb && since < STALL && (judged < spec.budget || !spare); step++, since++) {
+      if (cur.ready) {
+        const state = finish(n, scopes, ball, cur, spec, at, random, true);
+        if (state) return state;
+        break;
+      }
+      const next = reshape(n, scopes, ball, spec.core[0], spec.core[1], random, spec.window);
+      if (!next) continue;
+      const j = judgeOf(next, ball),
+        heat = HEAT * (1 - step / spec.climb) + 0.05;
+      if (j.score >= cur.score || random() < Math.exp((j.score - cur.score) / heat)) {
+        scopes = next;
+        cur = j;
+      }
+      if (cur.score > top) {
+        top = cur.score;
+        since = 0;
+      }
+    }
   }
-  return kept.state;
+}/** Which cells lie within a square of `size` round the ball (kept on the board). */
+function windowOf(n: number, ball: number, size: number) {
+  const r0 = Math.max(0, Math.min(n - size, Math.floor(ball / n) - Math.floor(size / 2))),
+    c0 = Math.max(0, Math.min(n - size, (ball % n) - Math.floor(size / 2)));
+  return (cell: number) => {
+    const r = Math.floor(cell / n),
+      c = cell % n;
+    return r >= r0 && r < r0 + size && c >= c0 && c < c0 + size;
+  };
 }
+/**
+ * More telescopes for a board climbed to the stage's asking, up to the stage's count: first a few crowded round the
+ * others (`crowd`), each kept only when the fewest presses stay what they were (searched again); then, if more are
+ * wanted, quiet ones (`quiet`) on cells nothing can reach, which cannot change the way. A kind the board lacks is given
+ * to one of them where that keeps the fewest presses.
+ */
+function decorate(n: number, core: Telescope[], ball: number, j: Judged, spec: Stage, random: Random) {
+  const count = spec.scopes[0] + Math.floor(random() * (spec.scopes[1] - spec.scopes[0] + 1));
+  let scopes = core;
+  const same = (trial: Telescope[]) => {
+    const found = search(n, trial, trial.map(() => 0), ball, j.hole, DECOY_CAP);
+    return !!found.way && found.way.length === j.way.length;
+  };
+  for (let tries = 0; scopes.length < count && tries < DECOYS; tries++) {
+    const trial = crowd(n, scopes, ball, j.hole, j.way, scopes.length + 1, random);
+    if (trial.length > scopes.length && same(trial)) scopes = trial;
+  }
+  for (let tries = 0; scopes.length < count && tries < count * 4; tries++) {
+    const extra = quiet(n, scopes, ball, j.hole, random);
+    if (extra) scopes = [...scopes, extra];
+  }
+  for (const reach of REACHES) {
+    if (scopes.some((x) => x.reach === reach)) continue;
+    for (let t = scopes.length - 1; t >= core.length; t--) {
+      const trial = scopes.map((x, i) => (i === t ? { ...x, reach } : x));
+      if (lands(n, trial, ball, j.hole, j.way) && same(trial)) {
+        scopes = trial;
+        break;
+      }
+    }
+  }
+  return scopes;
+}
+/**
+ * A telescope that can never matter, set where it changes nothing: its base on a cell that no telescope can reach into
+ * (nor push a ball onto) and that the ball can never come onto, and the telescope itself one that cannot matter
+ * (`relevant`). Null when the cell drawn is not such a one.
+ */
+function quiet(n: number, scopes: Telescope[], ball: number, hole: number, random: Random): Telescope | null {
+  const cell = Math.floor(random() * n * n),
+    most = maxima(n, scopes);
+  if (cell === ball || cell === hole || scopes.some((s) => s.cell === cell)) return null;
+  for (let t = 0; t < scopes.length; t++)
+    for (let k = 1; k <= most[t] + 1; k++) if (stepFrom(n, scopes[t].cell, scopes[t].dir, k) === cell) return null;
+  const all = lines(n, scopes);
+  for (const line of all) if (line.from === cell || line.cells.includes(cell)) return null;
+  const extra: Telescope = { cell, dir: Math.floor(random() * 4), reach: REACHES[Math.floor(random() * REACHES.length)] },
+    keep = relevant(n, [...scopes, extra], ball);
+  // Nothing that mattered may stop mattering, nor may the new one matter.
+  const before = relevant(n, scopes, ball);
+  if (keep[scopes.length] || before.some((k, t) => k !== keep[t])) return null;
+  return extra;
+}
+/**
+ * A board climbed to the stage's asking made a puzzle: the hole on the cell the ball comes onto last and more
+ * telescopes round it (`decorate`). Null when it is not good enough: not all three kinds stand on it, the colours do
+ * not matter (`colourMatters`), or (while `strict`) a naive player finds the way (`naive`).
+ */
+function finish(n: number, core: Telescope[], ball: number, j: Judged, spec: Stage, stage: number, random: Random, strict: boolean): State | null {
+  let state: State | null = null;
+  // The decoys are drawn again a few times where the colours do not matter with them (they may make it matter).
+  for (let k = 0; k < (strict ? 1 : 3); k++) {
+    const scopes = decorate(n, core, ball, j, spec, random);
+    state = blank(n, scopes, ball, j.hole, stage, j.way);
+    if (new Set(scopes.map((x) => x.reach)).size === REACHES.length && colourMatters(state)) return !strict || !naive(state, random) ? state : null;
+  }
+  return strict ? null : state;
+}
+/** How many journeys are laid to climb from; how many stretches of `climb` changes a board may take (the aim coming
+ * down by one after each); how readily a climb takes a change for the worse at first; after how many changes without
+ * a better board it goes back to its best; how many telescopes are tried as decoys, and how far each is searched;
+ * after how many boards any board in the band will do. */
+const SEEDS = 6,
+  HEAT = 1,
+  STALL = 120,
+  DECOYS = 8,
+  DECOY_CAP = 6000,
+  STRICT_ROUNDS = 2;
 
 const effect = (s: State): Effect | null => (s.last ? { kind: "move", from: s.last.balls[0], to: s.ball, converted: [], removed: [] } : null);
 export const telescope: PointGame<State> = {

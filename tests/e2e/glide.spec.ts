@@ -56,6 +56,8 @@ async function swipe(page: Page, state: rules.State, dir: number) {
 }
 
 test("glide cube: a seeded puzzle is solved by swipes and a key, then a fall begins the board again by itself", async ({ page }, info) => {
+  // The puzzles were made harder (longer ways), so the replay by hand takes longer than the default minute.
+  test.setTimeout(150000);
   const mobile = info.project.name === "mobile",
     random = await seeded(page, 92),
     errors: string[] = [];

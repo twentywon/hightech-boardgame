@@ -51,6 +51,8 @@ async function tapScope(page: Page, state: rules.State, t: number, mobile: boole
 const press = (t: number) => ({ from: -1, to: t, extra: -1 });
 
 test("telescope push: entered through its stage window, a seeded board is solved by following hints, with a refusal and an undo", async ({ page }, info) => {
+  // The puzzles were made harder (longer ways), so the replay by hand takes longer than the default minute.
+  test.setTimeout(150000);
   const mobile = info.project.name === "mobile",
     random = await seeded(page, 4129),
     errors: string[] = [];

@@ -291,9 +291,47 @@ describe("telescope push: generated puzzles", () => {
         });
       }
       const mean = times.reduce((a, b) => a + b) / times.length;
-      expect(mean).toBeLessThan(stage < 5 ? 150 : 600);
+      // Well under the few hundred milliseconds a board may take in a browser (the top stage climbs the longest).
+      expect(mean).toBeLessThan(stage < 4 ? 300 : 900);
       // The colours matter on nearly every board: were all the telescopes purple, it would be another puzzle.
       expect(mattering).toBeGreaterThanOrEqual(10);
+    }
+  }, 120000);
+  test("the bands lie well above the old ones, and the boards are not solved the naive way", () => {
+    // The fewest presses the stages asked for before the puzzles were made harder.
+    const old = [[3, 5], [5, 8], [7, 11], [9, 14], [12, 18]];
+    R.STAGES.forEach((spec, i) => {
+      expect(spec.band[0]).toBeGreaterThan(old[i][0]);
+      expect(spec.band[1]).toBeGreaterThanOrEqual(old[i][1]);
+    });
+    for (let stage = 2; stage <= R.STAGES.length; stage++) {
+      const spec = R.STAGES[stage - 1];
+      let naive = 0,
+        rich = 0,
+        mean = 0;
+      for (let k = 0; k < 8; k++) {
+        const s = R.createGame(stage, R.quick(stage * 7919 + k));
+        mean += s.best / 8;
+        // A greedy player pressing toward the hole, and a random one, in ten tries each.
+        if (R.naive(s, R.quick(k + 1), 10)) naive++;
+        // The way leans on several telescopes, pulls as well as pushes, and presses that only set a stop.
+        const t = R.traits(s.size, s.scopes, s.start, s.plan);
+        if (t.used >= spec.used - 2 && t.pulls >= 1 && t.stops >= 1) rich++;
+      }
+      expect(naive).toBeLessThanOrEqual(1);
+      expect(rich).toBeGreaterThanOrEqual(6);
+      expect(mean).toBeGreaterThan(old[stage - 1][0] + 1);
+    }
+  }, 120000);
+  test("the outward search agrees with the A* search: the hole on the last cell reached takes exactly that many presses", () => {
+    for (let k = 0; k < 6; k++) {
+      const s = R.createGame(3, R.quick(400 + k)),
+        e = R.explore(s.size, s.scopes, s.start, 200000, s.best + 1);
+      expect(e.arrive[s.hole]).toBe(s.best);
+      expect(e.wayTo(s.hole)).toHaveLength(s.best);
+      // Another reached cell made the hole: the A* search finds the same count.
+      const other = [...e.arrive.keys()].find((c) => e.arrive[c] > 1 && e.arrive[c] < e.complete && c !== s.hole)!;
+      expect(R.search(s.size, s.scopes, s.scopes.map(() => 0), s.start, other, 200000).way!.length).toBe(e.arrive[other]);
     }
   }, 60000);
   test("the plan is a shortest way: the search from the start finds no shorter", () => {
@@ -305,8 +343,9 @@ describe("telescope push: generated puzzles", () => {
   test("following the hints from the start, and from off the plan, reaches the hole", () => {
     for (let stage = 1; stage <= 4; stage++) {
       let s = R.createGame(stage, R.quick(31 + stage));
-      // A press off the plan first (any legal one that is not the plan's first), then the hints.
-      const off = R.moves(s).find((m) => m.to !== s.plan[0]);
+      // A press off the plan first (a legal one that is not the plan's first and from which there is still a way:
+      // some presses now lead into dead ends, where the hint says to take a press back), then the hints.
+      const off = R.moves(s).find((m) => m.to !== s.plan[0] && R.solve(R.play(s, m)!) !== null);
       if (off) s = R.play(s, off)!;
       for (let k = 0; k < 60 && s.winner === null; k++) {
         const m = R.hint(s);

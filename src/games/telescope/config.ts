@@ -63,8 +63,9 @@ function stageArt(stage: number) {
   return `<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="132" height="132" rx="14" fill="#3a2a1e"/>${out}</svg>`;
 }
 const NAMES = ["쉬움", "보통", "어려움", "고수", "달인"],
-  // No counts of moves are shown (the user asked for none in the puzzles): the stages are told by their boards.
-  NOTES = ["7×7", "8×8", "10×10", "11×11", "13×13"];
+  // No counts of moves are shown (the user asked for none in the puzzles): the stages are told by their boards and
+  // by what their ways ask for.
+  NOTES = ["7×7 · 밀고 당기기", "8×8 · 막아 세우기", "10×10 · 거듭 늘이기", "11×11 · 막고 열기", "13×13 · 긴 길"];
 export const telescopeConfig: PointConfig<State> = {
   game: telescope,
   // The tip meeting the ball, or the tubes coming home: a knock of brass; a ball dropping into the hole.
@@ -129,7 +130,7 @@ export const telescopeConfig: PointConfig<State> = {
         ["망원경", "놋쇠로 된 접이식 망원경입니다. 접안부가 놓인 칸이 제자리이고, 경통 마디가 하나씩 빠져나와 늘어납니다. 마디 수와 끝의 색 고리가 얼마나 늘어나는지 알려 줍니다."],
         ["공", "하얀 대리석 공입니다. 망원경 끝에 밀려 굴러가고, 끝에 닿아 있으면 줄어드는 망원경에 끌려옵니다."],
         ["구멍", "놋쇠 테를 두른 검은 구멍입니다. 공이 이 칸에 들어서면 빠집니다."],
-        ["단계", "<b>쉬움</b>은 7×7 판에 망원경 몇 개, 단계가 오를수록 판이 넓어지고 망원경이 빽빽해져 <b>달인</b>은 13×13 판입니다. 위 단계일수록 공을 넣기까지 여러 번 밀고 당겨야 합니다. 어느 판이든 풀 수 있는 판만 나옵니다."],
+        ["단계", "<b>쉬움</b>은 7×7 판에서 밀고 당겨 넣습니다. <b>보통</b>부터는 다른 망원경을 늘여 공을 세우는 수가 꼭 들어가고, <b>어려움</b>부터는 같은 망원경을 몇 번이고 늘였다 줄여야 합니다. <b>고수</b>와 <b>달인</b>(13×13)은 길을 막았다 여는 수가 여럿 섞인 긴 길입니다. 구멍 쪽으로만 밀어서는 풀리지 않는 판만 나오고, 어느 판이든 풀 수 있습니다."],
       ),
     ) +
     part(
