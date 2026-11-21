@@ -1,6 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { GRAPHITE, PENCILS, PaperView, hatch, type PaperGame } from "../paper/view";
+import { GRAPHITE, PENCILS, PaperView, hatch, type PaperGame, type Tip } from "../paper/view";
 import { hex, sizeOf, type State } from "./rules";
 
 // The board runs from edge to edge of the page.
@@ -32,10 +32,13 @@ const paper: PaperGame<State> = {
   points: (s) => hexLayout(s.size).points,
   reach: (s) => hexLayout(s.size).radius * 0.95,
   ply: (s) => s.ply,
+  // A quick scribble over the cell.
+  drawTime: () => 330,
   paint(ctx, px, unit, s, fresh) {
     const { radius, points } = hexLayout(s.size),
       r = radius * unit,
       newest = s.effect?.to;
+    let tip: Tip | null = null;
     points.forEach((p, cell) => {
       const [cx, cy] = px(p.x, p.z),
         shape = corners(cx, cy, r),
@@ -49,7 +52,8 @@ const paper: PaperGame<State> = {
       };
       outline();
       if (owner !== null) {
-        hatch(ctx, [cx - r, cy - r, r * 2, r * 2], PENCILS[owner], r * 0.2, cell === newest ? fresh : 1);
+        const point = hatch(ctx, [cx - r, cy - r, r * 2, r * 2], PENCILS[owner], r * 0.2, cell === newest ? fresh : 1);
+        if (point) tip = { x: point[0], y: point[1], side: owner };
         // Hatching leaves its last stroke as the path: trace the cell again.
         outline();
       }
@@ -74,12 +78,14 @@ const paper: PaperGame<State> = {
       if (col === 0) edge(1, 3, PENCILS[1]);
       if (col === s.size - 1) edge(4, 0, PENCILS[1]);
     });
+    return fresh < 1 ? tip : null;
   },
 };
 export const hexConfig: PointConfig<State> = {
   game: hex,
   contact: (sound) => sound.paper(2),
   noPanel: true,
+  movingText: "색연필로 칠하는 중…",
   view: (host, quality) => new PaperView(host, quality, paper),
   colors: PENCILS as [string, string],
   keyPoints: (s) => hexLayout(s.size).points,

@@ -1,9 +1,12 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { GRAPHITE, PENCILS, PaperView, hatch, pencilLine, type PaperGame } from "../paper/view";
+import { GRAPHITE, PENCILS, PaperView, hatch, pencilLine, type PaperGame, type Tip } from "../paper/view";
 import { dots, lineCount, sizeOf, type State } from "./rules";
 
 const REACH = 3.3;
+/** Milliseconds the pencil takes over a line, and over hatching the boxes that line closed. */
+const LINE_TIME = 240,
+  BOX_TIME = 260;
 /** Ends of a line, in dot coordinates (column, row). */
 function ends(size: number, line: number): [[number, number], [number, number]] {
   const vertical = size * (size + 1);
@@ -28,17 +31,31 @@ const paper: PaperGame<State> = {
   points: (s) => dotsPoints(s.size),
   reach: (s) => (REACH / s.size) * 0.95,
   ply: (s) => s.ply,
+  drawTime: (s) => LINE_TIME + (s.last?.closed.length ? BOX_TIME : 0),
   paint(ctx, px, unit, s, fresh) {
     const cell = ((REACH * 2) / s.size) * unit,
-      newest = s.last?.line;
+      newest = s.last?.line,
+      closed = s.last?.closed ?? [],
+      // The line is drawn first, then the boxes it closed are hatched one after another.
+      lineEnd = closed.length ? LINE_TIME / (LINE_TIME + BOX_TIME) : 1,
+      lineShare = fresh >= 1 ? 1 : Math.min(1, fresh / lineEnd),
+      boxShare = (k: number) => (fresh >= 1 ? 1 : Math.max(0, Math.min(1, ((fresh - lineEnd) / (1 - lineEnd)) * closed.length - k)));
+    let tip: Tip | null = null,
+      tipBox = Infinity;
     // Boxes: hatched in their owner's colour with an initial.
     s.boxes.forEach((owner, box) => {
       if (owner === null) return;
       const corner = px(...Object.values(at(s.size, [box % s.size, Math.floor(box / s.size)])) as [number, number]),
-        share = s.last?.closed.includes(box) ? fresh : 1;
+        k = closed.indexOf(box),
+        share = k < 0 ? 1 : boxShare(k);
       ctx.beginPath();
       ctx.rect(corner[0] + cell * 0.1, corner[1] + cell * 0.1, cell * 0.8, cell * 0.8);
-      hatch(ctx, [corner[0], corner[1], cell, cell], PENCILS[owner], cell * 0.14, share);
+      const point = hatch(ctx, [corner[0], corner[1], cell, cell], PENCILS[owner], cell * 0.14, share);
+      // The first box not yet filled carries the pencil once the line is done.
+      if (point && lineShare >= 1 && k < tipBox) {
+        tipBox = k;
+        tip = { x: point[0], y: point[1], side: owner };
+      }
     });
     // Faint guides for the lines not drawn yet, then the drawn ones in pencil.
     s.lines.forEach((owner, line) => {
@@ -54,8 +71,10 @@ const paper: PaperGame<State> = {
         ctx.setLineDash([]);
         return;
       }
-      const grow = line === newest ? fresh : 1;
-      pencilLine(ctx, a, [a[0] + (b[0] - a[0]) * grow, a[1] + (b[1] - a[1]) * grow], PENCILS[owner], unit * 0.11);
+      const grow = line === newest ? lineShare : 1,
+        end: [number, number] = [a[0] + (b[0] - a[0]) * grow, a[1] + (b[1] - a[1]) * grow];
+      if (grow > 0) pencilLine(ctx, a, end, PENCILS[owner], unit * 0.11);
+      if (line === newest && (grow < 1 || !tip)) tip = { x: end[0], y: end[1], side: owner };
     });
     ctx.fillStyle = GRAPHITE;
     for (let r = 0; r <= s.size; r++)
@@ -64,12 +83,14 @@ const paper: PaperGame<State> = {
         ctx.arc(...px(...(Object.values(at(s.size, [c, r])) as [number, number])), unit * 0.085, 0, Math.PI * 2);
         ctx.fill();
       }
+    return fresh < 1 ? tip : null;
   },
 };
 export const dotsConfig: PointConfig<State> = {
   game: dots,
   contact: (sound) => sound.paper(1),
   panel: "big",
+  movingText: "색연필로 긋는 중…",
   view: (host, quality) => new PaperView(host, quality, paper),
   colors: PENCILS as [string, string],
   keyPoints: (s) => dotsPoints(s.size),
