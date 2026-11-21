@@ -126,6 +126,24 @@ describe("table tennis: serves and points", () => {
     expect(run(net, "normal", 2).at(-1)).toEqual({ kind: "let" });
     expect(net.phase).toBe("dead");
   });
+  test("a second let in a row loses the server the point; a point played between starts the count again", () => {
+    const letServe = (world: s.World) => {
+      Object.assign(world, { phase: "rally", served: true, hitter: 0, own: 1, other: 0, netted: true });
+      world.ball = ball(0, 0.15, -0.4, 0, -1, -1);
+      return run(world, "normal", 2).at(-1);
+    };
+    const world = s.createWorld(4);
+    s.serve(world, 0);
+    expect(letServe(world)).toEqual({ kind: "let" });
+    // The view serves again after a let: the count is kept.
+    s.serve(world, 0);
+    expect(world.lets).toBe(1);
+    expect(letServe(world)).toEqual({ kind: "point", to: 1, why: s.LETS });
+    expect(s.WHY[s.LETS]).toBe("렛 두 번");
+    expect(world.lets).toBe(0);
+    s.serve(world, 0);
+    expect(letServe(world)).toEqual({ kind: "let" });
+  });
   test("a ball off the table is out, and a ball nobody returns is the striker's point", () => {
     const out = rally(5, 0, ball(0, 0.3, s.HALF_L + 0.1), { tx: 0, depth: 1.5, pace: 7, top: 0, side: 0 });
     expect(run(out, "normal", 3).at(-1)).toEqual({ kind: "point", to: 1, why: s.OUT });
@@ -138,7 +156,7 @@ describe("table tennis: serves and points", () => {
     expect(end.to).toBe(1);
     expect([s.MISSED, s.DOUBLE]).toContain(end.why);
     // A short ball bounces twice on my side.
-    const short = rally(6, 1, ball(0, 0.3, -s.HALF_L - 0.2), { tx: 0, depth: 0.3, pace: 2.6, top: -40, side: 0 });
+    const short = rally(6, 1, ball(0, 0.3, -s.HALF_L - 0.2), { tx: 0, depth: 0.3, pace: 2.6, top: -40, side: 0, loop: true });
     expect(run(short, "normal", 4).at(-1)).toEqual({ kind: "point", to: 1, why: s.DOUBLE });
   });
   test("a ball into the net is the striker's fault", () => {
@@ -404,9 +422,63 @@ describe("table tennis: the fixed-step table", () => {
   });
 });
 
+describe("table tennis: low balls and the hardest computer's smash", () => {
+  /** The computer's return from a ball at its end, and how high it rises in flight and after its bounce on my side. */
+  const returned = (seed: number, level: s.Level, y?: number) => {
+    const world = s.createWorld(seed),
+      rnd = () => s.rand(world);
+    world.ball = ball((rnd() - 0.5) * 1.2, y ?? 0.05 + rnd() * 0.35, -s.HALF_L - 0.1 - rnd() * 0.4, 0, 0, 3);
+    const shot = s.computerShot(world, level);
+    s.launch(world, 1, shot);
+    let flight = 0,
+      after = 0;
+    for (let k = 0; k < world.pathLen; k++) {
+      const [py, pz, mine] = [world.path[k * 4 + 1], world.path[k * 4 + 2], world.path[k * 4 + 3] % 8];
+      if (mine === 0 && pz < 0) flight = Math.max(flight, py);
+      if (mine >= 2 || pz > s.HALF_L + 0.6) break;
+      if (mine === 1) after = Math.max(after, py);
+    }
+    return { shot, flight, after };
+  };
+  test("no level loops the ball high: the flight stays low and it sits up little after its bounce", () => {
+    for (const level of ["easy", "normal", "hard"] as s.Level[]) {
+      const tops = Array.from({ length: 200 }, (_, k) => returned(k + 1, level)).filter((x) => x.after > 0);
+      const after = tops.map((x) => x.after).sort((a, b) => a - b),
+        flight = tops.map((x) => x.flight).sort((a, b) => a - b);
+      expect(after[Math.floor(after.length * 0.9)]).toBeLessThan(0.4);
+      expect(flight[Math.floor(flight.length * 0.9)]).toBeLessThan(s.FLIGHT_TOP + 0.15);
+    }
+  });
+  test("a slow stroke is sent flatter rather than looped", () => {
+    const from = { x: 0, y: 0.2, z: -s.HALF_L - 0.2 },
+      top = (b: s.Ball) => {
+        let y = b.y;
+        for (let k = 0; k < 400 && b.z < 0; k++) {
+          s.advanceBall(b);
+          y = Math.max(y, b.y);
+        }
+        return y;
+      };
+    const slow = s.aimed(from, 1, { tx: 0, depth: 0.8, pace: 3, top: 0, side: 0 });
+    expect(top({ ...slow })).toBeLessThan(s.FLIGHT_TOP + 0.02);
+    expect(Math.hypot(slow.vx, slow.vz)).toBeGreaterThan(3);
+  });
+  test("the hardest computer smashes a ball that sits up, and sometimes one that does not; the easiest never", () => {
+    const high = Array.from({ length: 100 }, (_, k) => returned(k + 1, "hard", 0.34).shot),
+      plain = Array.from({ length: 200 }, (_, k) => returned(k + 1, "hard", 0.2).shot),
+      easy = Array.from({ length: 100 }, (_, k) => returned(k + 1, "easy", 0.34).shot);
+    const smashes = (shots: s.Shot[]) => shots.filter((x) => x.smash).length;
+    expect(smashes(high)).toBeGreaterThan(45);
+    expect(smashes(plain)).toBeGreaterThan(5);
+    expect(smashes(plain)).toBeLessThan(50);
+    expect(smashes(easy)).toBe(0);
+    for (const shot of high.filter((x) => x.smash)) expect(shot.pace).toBeGreaterThan(7);
+  });
+});
+
 describe("table tennis: the match", () => {
   test("the serve changes every two points, and every point from 10 all", () => {
-    let state = r.createGame(3);
+    let state = r.createGame(1);
     // The computer serves first in the first game.
     const servers: number[] = [];
     for (let k = 0; k < 8; k++) {
@@ -424,7 +496,7 @@ describe("table tennis: the match", () => {
     expect(state.score).toEqual([12, 12]);
   });
   test("a game is eleven points, two clear; the next game opens with the other server", () => {
-    let state = r.createGame(3);
+    let state = r.createGame(3, 11);
     for (let k = 0; k < 10; k++) state = point(state, 0);
     for (let k = 0; k < 10; k++) state = point(state, 1);
     expect(r.deuce(state)).toBe(true);
@@ -447,25 +519,40 @@ describe("table tennis: the match", () => {
     expect(r.play(state, { from: -1, to: 0, extra: s.MISSED })).toBeNull();
     expect(r.tableTennis.reason(state)).toMatch(/^게임 스코어 2 대 0로 이겼습니다/);
   });
-  test("best of five needs three games; a bad move is refused", () => {
-    let state = r.createGame(5);
+  test("three games go to seven, deuce at 6 all; a single game goes to eleven; a bad move is refused", () => {
+    let state = r.tableTennis.create("3");
+    expect([state.best, state.points]).toEqual([3, 7]);
+    for (let k = 0; k < 6; k++) state = point(point(state, 0), 1);
+    expect(r.deuce(state)).toBe(true);
+    // From 6 all the serve changes every point.
+    const servers: number[] = [];
+    for (let k = 0; k < 4; k++) {
+      servers.push(r.serverOf(state));
+      state = point(state, (k % 2) as 0 | 1);
+    }
+    expect(servers).toEqual([1, 0, 1, 0]);
+    state = point(point(state, 1), 1);
+    expect(state.done).toEqual([[8, 10]]);
     const game = (to: 0 | 1) => {
-      for (let k = 0; k < 11; k++) state = point(state, to);
+      for (let k = 0; k < 7; k++) state = point(state, to);
     };
-    game(1);
-    game(0);
-    game(1);
     game(0);
     expect(state.winner).toBeNull();
-    expect(r.gameNumber(state)).toBe(5);
+    expect(r.gameNumber(state)).toBe(3);
     game(1);
     expect(state.winner).toBe(1);
-    expect(state.games).toEqual([2, 3]);
+    expect(state.games).toEqual([1, 2]);
+    let single = r.tableTennis.create("1");
+    expect([single.best, single.points]).toEqual([1, 11]);
+    for (let k = 0; k < 10; k++) single = point(point(single, 0), 1);
+    expect(r.deuce(single)).toBe(true);
+    single = point(point(single, 0), 0);
+    expect(single.winner).toBe(0);
+    expect(r.tableTennis.reason(single)).toMatch(/^12 대 10로 이겼습니다/);
     expect(r.play(r.createGame(3), { from: 0, to: 0, extra: -1 })).toBeNull();
     expect(r.play(r.createGame(3), { from: -1, to: 2, extra: -1 })).toBeNull();
     expect(r.play(r.createGame(3), { from: -1, to: 0, extra: 99 })).toBeNull();
-    expect(r.tableTennis.create("5").best).toBe(5);
-    expect(r.tableTennis.create("3").best).toBe(3);
+    expect(r.tableTennis.create("5").best).toBe(1);
   });
 });
 
@@ -528,16 +615,17 @@ describe("table tennis: the contact marker, the paddle under the finger and the 
     // On the line of sight, the hand held still: the marker never moves while the ball comes, and the ball is met on it.
     const eye = { x: 0, y: 0.9, z: s.HALF_L + 1.35 },
       w = sent({ tx: 0.2, depth: 0.85, pace: 4.5, top: 40, side: 0 });
-    aimedHand(w, eye, s.HALF_L + 0.3);
+    // (Back from the end line, where the ball has risen off the table: met lower, the ring stands at the blade's lowest.)
+    aimedHand(w, eye, s.HALF_L + 0.5);
     const r = meet(w);
-    expect(r.most).toBeLessThan(1e-9);
+    expect(r.most).toBeLessThan(1e-6);
     expect(r.met).not.toBeNull();
     expect(Math.hypot(r.met!.x - r.first.x, r.met!.y - r.first.y, r.met!.z - r.first.z)).toBeLessThan(0.002);
     // The marker is at the face of the blade: the ball's middle one ball and the face's half-thickness before it.
     expect(r.met!.z).toBeCloseTo(r.face, 6);
   });
   test("a lob coming up to 1.1 m is returned by a paddle held where the marker shows", () => {
-    const lob = { tx: 0.2, depth: 1, pace: 3, top: 0, side: 0 };
+    const lob = { tx: 0.2, depth: 1, pace: 3, top: 0, side: 0, loop: true };
     const plain = sent(lob, { x: 0.2, z: s.HALF_L + 0.48 });
     expect(s.highest(plain)).toBeGreaterThan(1.05);
     const c = s.contact(plain)!;

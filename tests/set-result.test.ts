@@ -15,7 +15,7 @@ describe("table tennis: a game of the match told over the table", () => {
     return [state, point(state, to)];
   }
   test("a game won, a game lost, nothing in the middle of a game", () => {
-    let s = T.createGame(5);
+    let s = T.createGame(3, 11);
     const mid = point(s, 0);
     expect(gameResult(s, mid)).toBeNull();
     let [before, after] = game(s, 0, 3);
@@ -25,7 +25,7 @@ describe("table tennis: a game of the match told over the table", () => {
     expect(gameResult(before, after)).toEqual({ outcome: "lose", word: "2게임 패배", detail: "7 : 11 · 게임 1 : 1" });
   });
   test("a game won at deuce gives its full score", () => {
-    let s = T.createGame(3);
+    let s = T.createGame(3, 11);
     for (let k = 0; k < 10; k++) s = point(point(s, 0), 1);
     s = point(point(s, 1), 0);
     s = point(s, 1);
@@ -33,7 +33,7 @@ describe("table tennis: a game of the match told over the table", () => {
     expect(gameResult(s, won)).toEqual({ outcome: "lose", word: "1게임 패배", detail: "11 : 13 · 게임 0 : 1" });
   });
   test("the game that ends the match is left to the finale", () => {
-    let s = T.createGame(3);
+    let s = T.createGame(3, 11);
     s = game(s, 0)[1];
     const [before, after] = game(s, 0);
     expect(after.winner).toBe(0);

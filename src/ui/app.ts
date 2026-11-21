@@ -220,7 +220,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "whack-a-mole": { config: whackConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "tic-tac-toe": { config: tictactoeConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   "air-hockey": { config: airHockeyConfig, options: { mode: "ai", variant: "", level: "normal" } },
-  "table-tennis": { config: tableTennisConfig, options: { mode: "ai", variant: "3", level: "normal" } },
+  "table-tennis": { config: tableTennisConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   basketball: { config: basketballConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "claw-machine": { config: clawConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fox-and-geese": { config: foxGeeseConfig, options: { mode: "ai", variant: "geese", level: "normal" } },

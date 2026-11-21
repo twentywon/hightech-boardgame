@@ -426,7 +426,7 @@ export class TableTennisView extends TableView<State> {
     for (const event of events) {
       if (event.kind === "hit") {
         this.knock("disc", event.strength, now);
-        if (event.smash && event.side === 0) this.say("스매싱!", "#ff8a3a", now, Math.max(-0.5, Math.min(0.5, this.world.ball.x)));
+        if (event.smash) this.say("스매싱!", event.side === 0 ? "#ff8a3a" : "#9fd0ff", now, Math.max(-0.5, Math.min(0.5, this.world.ball.x)));
       }
       else if (event.kind === "bounce") this.knock("cushion", Math.min(1, event.strength / 3), now);
       else if (event.kind === "floor") this.knock("cushion", Math.min(0.6, event.strength / 4), now);
@@ -539,10 +539,10 @@ export class TableTennisView extends TableView<State> {
   /**
    * The contact marker, moved to where my blade will now meet the ball (it follows the prediction as my hand moves),
    * with dots along the ball's way to it; faded in while a ball is coming, out when it is struck or the point is over.
-   * It is decoration: left out while a picture is captured.
+   * It is decoration: left out while a picture is captured, and shown only at the easiest level (the user asked).
    */
   private markWay(real: number) {
-    const found = this.running() && !capturing() ? contact(this.world) : null,
+    const found = this.level === "easy" && this.running() && !capturing() ? contact(this.world) : null,
       fade = 1 - Math.exp(-(real || 0) / 0.09);
     if (found) this.marked = found;
     this.markShown += ((found ? 1 : 0) - this.markShown) * (real > 0 ? fade : 0);

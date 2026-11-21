@@ -57,6 +57,8 @@ export const SIGHT_GAP = 0.15;
 export const TOSS_MARK = 0.2;
 /** A ball that has just gone past my blade's face unstruck may still be caught by a sideways sweep that reaches it this many metres behind the face. */
 export const LATE_DEPTH = 0.1;
+/** The highest a stroke's flight may loop over the table (the user found high balls hard to meet): a slower stroke that would rise above it goes quicker and flatter. */
+export const FLIGHT_TOP = 0.42;
 /** How fast a tossed ball goes up, how low it may fall before it is tossed again, and the computer's wait before it serves. */
 export const TOSS = 2.3,
   TOSS_LOW = -0.08,
@@ -103,14 +105,19 @@ export const LEVELS = {
   hard: { speed: 1.9, react: 0.17, stray: 0.05, pace: [5.2, 7.6], depth: [0.52, 0.92], serve: [3.6, 5.0], wide: 0.05, long: 0.05, spread: 0.85, check: 1, blunder: 0.025 },
 };
 export type Level = keyof typeof LEVELS;
+/** The hardest computer smashes (the user asked): a ball over this height mostly, at this pace (metres a second). */
+export const SMASH_HIGH = 0.3,
+  THEIR_SMASH = [8.2, 9.8];
 /** Why a point ended (a move's `extra`). */
 export const OUT = 0,
   NET = 1,
   MISSED = 2,
   DOUBLE = 3,
   FAULT = 4,
-  OWN = 5;
-export const WHY = ["아웃", "네트", "놓침", "투 바운드", "서브 실수", "자기 코트"];
+  OWN = 5,
+  /** A second let in a row on one serve (a house rule the user asked for: the server loses the point). */
+  LETS = 6;
+export const WHY = ["아웃", "네트", "놓침", "투 바운드", "서브 실수", "자기 코트", "렛 두 번"];
 export interface Ball {
   x: number;
   y: number;
@@ -143,6 +150,8 @@ export interface Shot {
   rise?: number;
   /** Whether my racket came through quickly enough for a smash. */
   smash?: boolean;
+  /** A stroke let loop as high as its pace takes it (no stroke in play is: the tests of the high reach make one). */
+  loop?: boolean;
 }
 export type Phase = "ready" | "toss" | "rally" | "dead";
 /** Where the eye stands (the view's camera), for the line of sight my blade keeps to. */
@@ -208,6 +217,8 @@ export interface World {
   stanceGoal: number;
   /** How much of a step I take: 1, or less where the page asks for less motion (set by the view). */
   lean: number;
+  /** Lets served in a row on the point being played (the second loses it). */
+  lets: number;
   seed: number;
 }
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -249,6 +260,7 @@ export function createWorld(seed = 1): World {
     stanceV: 0,
     stanceGoal: 0,
     lean: 1,
+    lets: 0,
     seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
   };
   world.paddles.forEach((pad, side) => retrace(world, side as 0 | 1, pad));
@@ -422,16 +434,18 @@ export function advanceBall(b: Ball): Contact {
   }
   return hit;
 }
-/** The height (and the place across) at which the air alone would carry the ball over the line z = `tz`. */
-const crossing = { y: 0, x: 0 };
+/** The height (and the place across, and the highest the ball rose on the way) at which the air alone would carry the ball over the line z = `tz`. */
+const crossing = { y: 0, x: 0, top: 0 };
 function heightAt(start: Ball, tz: number, f: number) {
   const c = { ...start };
   crossing.x = c.x;
+  crossing.top = c.y;
   for (let t = 0; t < 3; t += DT) {
     const pz = c.z,
       py = c.y,
       px = c.x;
     fly(c);
+    if (c.y > crossing.top) crossing.top = c.y;
     if ((c.z - tz) * f >= 0) {
       const share = (tz - pz) / (c.z - pz || 1e-9);
       crossing.x = px + (c.x - px) * share;
@@ -452,13 +466,25 @@ export function aimed(from: { x: number; y: number; z: number }, side: 0 | 1, sh
     tz = f * clamp(shot.depth, 0.04, 1.8) * HALF_L,
     dz = tz - from.z,
     ball: Ball = { x: from.x, y: from.y, z: from.z, vx: 0, vy: 0, vz: 0, wx: f * shot.top, wy: shot.side, wz: 0 };
+  // A ball that would loop higher than `FLIGHT_TOP` (or than it was struck from) is sent quicker and flatter instead.
+  const cap = shot.loop ? Infinity : Math.max(FLIGHT_TOP, from.y + 0.05);
+  let pace = shot.pace;
+  for (let tries = 0; ; tries++) {
+    aimAt(from, ball, shot, pace, tz, dz, f, bend);
+    heightAt(ball, tz, f);
+    if (crossing.top <= cap || tries >= 8) return ball;
+    pace *= 1.1;
+  }
+}
+/** The speed `aimed` gives `ball` for the shot at `pace`, its height solved to come down at depth `tz`. */
+function aimAt(from: { x: number; y: number; z: number }, ball: Ball, shot: Shot, pace: number, tz: number, dz: number, f: number, bend: boolean) {
   let toward = shot.tx;
   const rounds = bend && shot.side ? 5 : 1;
   for (let round = 0; round < rounds; round++) {
     const dx = toward - from.x,
       far = Math.hypot(dx, dz) || 1;
-    ball.vx = (dx / far) * shot.pace;
-    ball.vz = (dz / far) * shot.pace;
+    ball.vx = (dx / far) * pace;
+    ball.vz = (dz / far) * pace;
     let lo = -7,
       hi = 7;
     for (let k = 0; k < 24; k++) {
@@ -471,7 +497,6 @@ export function aimed(from: { x: number; y: number; z: number }, side: 0 | 1, sh
     heightAt(ball, tz, f);
     toward += shot.tx - crossing.x;
   }
-  return ball;
 }
 /** Where a ball goes with the table alone: the sides of its first two bounces and where the second was, whether it met the net, and how high it rose between them. */
 function course(start: Ball) {
@@ -821,6 +846,12 @@ export function computerShot(world: World, level: Level): Shot {
     top,
     side: (r() - 0.5) * (level === "hard" ? 90 : 30),
   };
+  // At the hardest level a ball that sits up is smashed (most of the time), and now and then one that does not.
+  if (level === "hard" && !low && r() < (b.y > SMASH_HIGH ? 0.65 : 0.12)) {
+    const smash: Shot = { tx: shot.tx, depth: 0.78 + 0.12 * r(), pace: THEIR_SMASH[0] + r() * (THEIR_SMASH[1] - THEIR_SMASH[0]), top: 170 + 50 * r(), side: shot.side * 0.5, smash: true };
+    for (let k = 0; k < 4 && !lands(world, 1, smash); k++) [smash.pace, smash.depth] = [smash.pace * 0.92, Math.max(0.6, smash.depth - 0.05)];
+    if (lands(world, 1, smash)) return smash;
+  }
   // Now and then a stroke is misjudged: hit long or flat into the net, without a second look.
   if (r() < L.blunder * (1 + Math.max(0, Math.abs(b.vz) - 4) * 0.25)) return r() < 0.5 ? { ...shot, depth: shot.depth + 0.55 } : { ...shot, pace: shot.pace * 1.35, depth: 0.3, top: 0 };
   if (r() < L.check)
@@ -858,6 +889,7 @@ export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   if (side === 1) world.stanceGoal = leanFor(arrival(world));
 }
 function point(world: World, to: 0 | 1, why: number): Happening {
+  world.lets = 0;
   world.phase = "dead";
   world.dead = 0;
   return { kind: "point", to, why };
@@ -876,8 +908,9 @@ function bounced(world: World, side: 0 | 1): Happening | null {
     }
     if (world.served && world.own === 0) return point(world, r, FAULT);
     world.other = 1;
-    // A serve that touched the net and came down right is played again.
+    // A serve that touched the net and came down right is played again; the second in a row loses the point.
     if (world.served && world.netted) {
+      if (++world.lets >= 2) return point(world, r, LETS);
       world.phase = "dead";
       world.dead = 0;
       return { kind: "let" };
