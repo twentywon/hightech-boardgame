@@ -377,6 +377,14 @@ const play = {
       await wait(9000);
     }
   },
+  // Three arrows of mine by the keyboard (Enter throws at the mouth; the last one a little long, so that it lies on
+  // the mat), each answered by the computer: arrows stand in the pot and the board shows a round under way.
+  tuho: async () => {
+    for (const aim of [[], ["ArrowLeft"], ["ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp"]]) {
+      await keys([...aim, "Enter"], 80);
+      await wait(6500);
+    }
+  },
   // A few stones on the 19×19 board, the computer answering each.
   go: async () => {
     await keys(["ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowLeft", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "Enter"], 60);
@@ -492,6 +500,51 @@ const play = {
     await wait(1600);
     await page.keyboard.press(" ");
     await wait(1250);
+    await page.keyboard.press("p");
+  },
+  // Space held a while drops a run of coins (some in the air as the picture is taken); a few have come out into the tray.
+  "coin-pusher": async () => {
+    await page.locator("canvas").focus();
+    await page.keyboard.down(" ");
+    await wait(2600);
+    await page.keyboard.up(" ");
+    await wait(3200);
+    await page.keyboard.down(" ");
+    await wait(450);
+    await page.keyboard.up(" ");
+    await page.keyboard.press("p");
+  },
+  // 사격 (the BB booth, the default): a few lit targets shot by hand, each press held until the sights are near a line and
+  // let go on the target, so that the displays show a score and other targets are lit; then paused at rest.
+  shooting: async () => {
+    const canvas = page.locator("#board canvas");
+    for (let n = 0; n < 4; n++) {
+      await page.waitForFunction(() => { const c = document.querySelector("#board canvas"); return c.dataset.zoom === "0.00" && c.dataset.loaded === "true" && JSON.parse(c.dataset.targets || "[]").length > 0; }, null, { timeout: 20000 }).catch(() => {});
+      const box = await canvas.boundingBox(),
+        t = JSON.parse((await canvas.getAttribute("data-targets")) || "[]")[0];
+      if (!t) break;
+      const at = { x: box.x + t.x, y: box.y + t.y };
+      await page.mouse.move(at.x, at.y);
+      await page.mouse.down();
+      await page.evaluate(({ at, height }) => new Promise((done) => {
+        const c = document.querySelector("#board canvas"), start = performance.now();
+        const look = () => {
+          const [ox, oy] = (c.dataset.offset || "99,99").split(",").map(Number), [yaw, pitch] = c.dataset.aim.split(",").map(Number),
+            t = JSON.parse(c.dataset.targets || "[]").sort((p, q) => Math.hypot(p.yaw - yaw, p.pitch - pitch) - Math.hypot(q.yaw - yaw, q.pitch - pitch))[0];
+          if ((!t || c.dataset.zoom !== "1.00" || Math.hypot(ox, oy) > 5) && performance.now() - start < 8000) return setTimeout(look, 15);
+          // The BB booth's aimed field is 22°: a drag of a pixel turns the gun by that over the canvas's height.
+          const k = (22 * Math.PI) / 180 / height, x = at.x + (t ? (t.yaw - yaw) / 1000 / k : 0), y = at.y - (t ? (t.pitch - pitch) / 1000 / k : 0);
+          c.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, pointerType: "mouse", clientX: x, clientY: y, bubbles: true }));
+          c.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1, pointerType: "mouse", button: 0, clientX: x, clientY: y, bubbles: true }));
+          done();
+        };
+        look();
+      }), { at, height: box.height });
+      await page.mouse.up();
+      await wait(900);
+    }
+    await wait(1200);
+    await canvas.focus();
     await page.keyboard.press("p");
   },
   // Marks laid by the keyboard (the computer answers each), so that the board shows a game under way.

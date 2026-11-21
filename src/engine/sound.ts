@@ -618,6 +618,23 @@ export class Sound {
     this.noise(0, 0.05, 0.14, 2400, "bandpass", 900);
     this.noise(0.02, 0.34, 0.05, 5200, "highpass", 3000);
   }
+  /** Bamboo striking bronze (투호): a dry wooden clack with a short metallic ping over it; made by the page. */
+  clack(strength = 0.6) {
+    const s = Math.max(0.15, Math.min(1, strength));
+    this.noise(0, 0.035, 0.16 * s, 1900, "bandpass", 1300);
+    this.tone("triangle", 720, 540, 0, 0.06, 0.09 * s);
+    this.tone("sine", 2380, 2350, 0.003, 0.32, 0.028 * s);
+    this.tone("sine", 3710, 3690, 0.003, 0.2, 0.014 * s);
+  }
+  /** An arrow dropping into a bronze pot (투호): a soft knock deep inside and the hollow body ringing low; made by the page. */
+  hollow(strength = 0.6) {
+    const s = Math.max(0.3, Math.min(1, strength));
+    this.noise(0, 0.05, 0.12 * s, 900, "lowpass", 400);
+    this.tone("sine", 196, 188, 0.01, 0.9, 0.11 * s);
+    this.tone("sine", 523, 519, 0.01, 0.7, 0.04 * s);
+    this.tone("sine", 1131, 1127, 0.01, 0.45, 0.018 * s);
+    this.tone("triangle", 98, 96, 0.02, 0.5, 0.05 * s);
+  }
   /** A crowd clapping (`strength` 0 to 1, how many and how long), beginning a moment from now; made by the page. */
   applause(strength = 1, after = 0.3) {
     if (!this.enabled || !this.context) return;
@@ -628,6 +645,77 @@ export class Sound {
       const at = Math.random() ** 1.5 * length;
       this.noise(after + at, 0.03, (0.045 + 0.04 * s) * (1 - at / (length + 0.4)), 1300 + Math.random() * 1800, "bandpass", 900 + Math.random() * 1200);
     }
+  }
+  /**
+   * 사격, made by the page: a BB rifle's spring-air pop, a shotgun's deep boom or a rifle's sharp crack, each with its
+   * echo rolling away over the range or the wood.
+   */
+  gunshot(kind: "bb" | "shotgun" | "rifle") {
+    if (kind === "bb") {
+      this.noise(0, 0.05, 0.22, 2600, "bandpass", 1200);
+      this.tone("square", 900, 500, 0, 0.03, 0.035);
+      this.noise(0.01, 0.12, 0.05, 5000, "highpass", 4000);
+      return;
+    }
+    const big = kind === "shotgun";
+    this.noise(0, 0.03, big ? 0.5 : 0.45, big ? 4000 : 5200, "highpass", 2500);
+    this.noise(0, big ? 0.2 : 0.13, big ? 0.5 : 0.42, big ? 1000 : 1500, "lowpass", 220);
+    this.tone("sine", big ? 95 : 125, 32, 0, big ? 0.36 : 0.24, big ? 0.45 : 0.32);
+    this.noise(0.09, big ? 1.2 : 0.9, 0.08, 650, "lowpass", 180);
+    this.noise(0.38, 0.7, 0.04, 520, "lowpass", 160);
+  }
+  /** The trigger pulled on nothing (out, or reloading): a dry metallic click. */
+  dryFire() {
+    this.tone("square", 2400, 1800, 0, 0.02, 0.045);
+    this.noise(0, 0.025, 0.14, 3500, "bandpass", 3000);
+  }
+  /** Reloading: a BB magazine out and in, a shotgun broken open and shut, a rifle's bolt worked; "done" is the last soft click. */
+  reload(kind: "bb" | "shotgun" | "rifle" | "done") {
+    const click = (at: number, f: number, v: number) => {
+      this.noise(at, 0.03, v, f, "bandpass", f * 0.8);
+      this.tone("triangle", f * 0.7, f * 0.55, at, 0.03, v * 0.25);
+    };
+    if (kind === "done") return click(0, 2600, 0.08);
+    if (kind === "bb") {
+      click(0, 2200, 0.12);
+      click(0.42, 2600, 0.14);
+    } else if (kind === "shotgun") {
+      click(0, 1500, 0.18);
+      this.noise(0.25, 0.22, 0.06, 1800, "bandpass", 900);
+      click(0.75, 1300, 0.2);
+    } else {
+      this.noise(0, 0.12, 0.1, 2000, "bandpass", 3000);
+      click(0.06, 2400, 0.12);
+      this.noise(0.24, 0.12, 0.1, 3000, "bandpass", 1900);
+      click(0.36, 1900, 0.15);
+    }
+  }
+  /** A BB striking plastic or sheet metal: a light, hard tick (`strength` 0 to 1). */
+  bbTick(strength = 0.6) {
+    const s = Math.max(0.2, Math.min(1, strength));
+    this.noise(0, 0.015, 0.18 * s, 5200, "bandpass", 4200);
+    this.tone("triangle", 3200, 2600, 0, 0.03, 0.045 * s);
+  }
+  /** A lit target struck: the machine's bright chime, a third note more for a yellow one (`strength` near 1). */
+  ding(strength = 0.6) {
+    this.tone("square", 1318.5, 1318.5, 0, 0.09, 0.03);
+    this.tone("square", 1760, 1760, 0.07, 0.14, 0.03);
+    if (strength > 0.9) this.tone("square", 2637, 2637, 0.14, 0.2, 0.026);
+  }
+  /** The trap machine throwing a clay: its arm's thump and the spring's twang. */
+  trap() {
+    this.tone("sine", 160, 70, 0, 0.12, 0.18);
+    this.noise(0, 0.1, 0.1, 600, "lowpass", 200);
+    this.tone("triangle", 420, 380, 0.01, 0.26, 0.035);
+  }
+  /** A clay shattering far off: a crisp crack and its pieces tinkling. */
+  clayBreak() {
+    this.noise(0, 0.08, 0.22, 3200, "highpass", 1800);
+    for (let k = 0; k < 6; k++) this.noise(0.03 + k * 0.025, 0.02, 0.05, 4200 + k * 300, "bandpass", 3800);
+  }
+  /** Birds taking off: a flurry of wing beats fading. */
+  flutter() {
+    for (let k = 0; k < 9; k++) this.noise(k * 0.065, 0.05, 0.08 * (1 - k / 11), 520 + (k % 3) * 120, "bandpass", 380);
   }
   /** A soft bell: a note with two partials over it, struck and left to ring. */
   private bell(frequency: number, at: number, length: number, volume: number) {

@@ -111,6 +111,17 @@ const NIM: Record<string, string> = {
 const caromTable = (balls: string[]) =>
   svg(44, 26, `<rect x="1.5" y="3" width="41" height="21" rx="3" fill="#8a5a3a"/><rect x="4.5" y="6" width="35" height="15" rx="1" fill="#2b5fae"/>` + balls.map((fill, k) => `<circle cx="${11 + k * 7.4}" cy="${k % 2 ? 11 : 16}" r="2.7" fill="${fill}" stroke="#00000055" stroke-width=".6"/>`).join(""));
 const CAROM: Record<string, string> = { four: caromTable(["#f6f3ea", "#f2c230", "#d0302a", "#d0302a"]), three: caromTable(["#f6f3ea", "#f2c230", "#d0302a"]) };
+/**
+ * 사격's three places: an orange clay flying over the grass with its trail, a booth's round targets lit blue and
+ * yellow, a deer under trees by the water; and its BB tiers as the bronze, silver and gold coins of the price card.
+ */
+const SHOOT: Record<string, string> = {
+  clay: svg(48, 26, `<rect x="0" y="19" width="48" height="7" rx="1.5" fill="#6f9a43"/><path d="M6 19 Q18 4 34 7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 2.2" opacity=".6"/><ellipse cx="36" cy="7.5" rx="6.4" ry="2.6" fill="#ff6a1c" stroke="#7a2c08" stroke-width=".8"/><rect x="3" y="15" width="7" height="4" rx="1" fill="#3c6b3a"/>`),
+  bb: svg(48, 26, `<rect x="1" y="1" width="46" height="24" rx="3" fill="#121626"/>${[9, 19, 29, 39].map((x, i) => `<circle cx="${x}" cy="9" r="3.6" fill="${i === 1 ? "#ffcf2e" : i === 3 ? "#2f7bff" : "#3a4152"}" stroke="#8b93a3" stroke-width=".8"/>`).join("")}${[14, 24, 34].map((x, i) => `<circle cx="${x}" cy="18.5" r="3.6" fill="${i === 0 ? "#2f7bff" : "#3a4152"}" stroke="#8b93a3" stroke-width=".8"/>`).join("")}`),
+  hunt: svg(48, 26, `<rect x="0" y="0" width="48" height="26" rx="3" fill="#f3b27e" opacity=".35"/><path d="M0 20 Q24 15 48 20 V26 H0z" fill="#56703a"/><ellipse cx="34" cy="22" rx="12" ry="2.4" fill="#5a6fa0"/><path d="M4 20 L8 6 L12 20z M10 20 L14 9 L18 20z" fill="#2a4424"/><path d="M22 13 h9 q2 0 2.6-2 l1.4-3 l1 1 l-1 3.4 v2.6 h-1.2 v5 h-1 v-4.6 h-8 v4.6 h-1 v-5 q-1.6-.6-1.8-2z" fill="#6b4426"/><path d="M33.6 8 l-1.2-3 M34.6 7.6 l.8-3.2 M32.8 5.6 l-1.6-.6 M35.2 5 l1.4-.8" stroke="#5a3a20" stroke-width=".8" stroke-linecap="round"/>`),
+};
+const coin = (fill: string, edge: string) => svg(26, 26, `<circle cx="13" cy="13" r="10.5" fill="${fill}" stroke="${edge}" stroke-width="2"/><circle cx="13" cy="13" r="6.5" fill="none" stroke="${edge}" stroke-width="1" opacity=".7"/><circle cx="10" cy="9.5" r="2.4" fill="#ffffff" opacity=".45"/>`);
+const TIER_COINS: Record<string, string> = { "0": coin("#c0773a", "#7a4519"), "1": coin("#d9dde3", "#8b929c"), "2": coin("#f2c230", "#a77a0a") };
 /** A die, for a choice left to chance. */
 const die =svg(26, 26, `<rect x="4" y="4" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/>${[[9, 9], [17, 9], [13, 13], [9, 17], [17, 17]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" fill="currentColor"/>`).join("")}`);
 const LEVEL_BARS: Record<string, [number, number]> = { beginner: [1, 5], easy: [2, 5], normal: [3, 5], hard: [4, 5], expert: [5, 5] };
@@ -143,6 +154,8 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "pg-variant" && game === "dots-and-boxes" && Number(value) > 1) return { svg: dots(Number(value)), only: false };
   if (select === "pg-variant" && game === "nim" && NIM[value]) return { svg: NIM[value], only: false };
   if (select === "pg-variant" && game === "carom-billiards" && CAROM[value]) return { svg: CAROM[value], only: false };
+  if (select === "pg-variant" && game === "shooting" && SHOOT[value]) return { svg: SHOOT[value], only: false };
+  if (select === "pg-set-tier" && game === "shooting" && TIER_COINS[value]) return { svg: TIER_COINS[value], only: false };
   // Who moves first against the computer: me, the computer, or a throw of a die.
   if (select === "pg-set-first") return value === "me" ? { svg: svg(26, 26, person(13, 14)), only: false } : value === "computer" ? { svg: svg(26, 26, computer(13, 14)), only: false } : value === "random" ? { svg: die, only: false } : null;
   return null;

@@ -775,4 +775,28 @@ export const games = [
     icon: "➰",
     available: true,
   },
+  {
+    name: "투호",
+    en: "TUHO",
+    category: "스포츠게임",
+    players: "2인용",
+    icon: "🏺",
+    available: true,
+  },
+  {
+    name: "코인 푸셔",
+    en: "COIN PUSHER",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "🪙",
+    available: true,
+  },
+  {
+    name: "사격",
+    en: "SHOOTING",
+    category: "스포츠게임",
+    players: "1인용",
+    icon: "🎯",
+    available: true,
+  },
 ];

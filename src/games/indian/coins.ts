@@ -190,9 +190,10 @@ export function pairs(before: Counts, after: Counts) {
 type Own = <R extends { dispose(): void }>(resource: R) => R;
 /**
  * One coin, lying flat on y = 0 about its middle: a rim with a milled edge (ridges in the turned profile) and a
- * sunk field on either face that carries its picture (group 1).
+ * sunk field on either face that carries its picture (group 1). Fewer `segments` (the coin pusher's hundreds of
+ * coins) leave the milling out.
  */
-export function coinGeometry() {
+export function coinGeometry(segments = 120) {
   const R = COIN_R,
     h = COIN_H / 2,
     field = R * 0.8,
@@ -206,7 +207,6 @@ export function coinGeometry() {
       [R * 0.86, h],
       [field, h - 0.009],
     ].map(([x, y]) => new T.Vector2(x, y)),
-    segments = 120,
     rim = new T.LatheGeometry(profile, segments),
     at = rim.getAttribute("position");
   // The milling: every other column of the outer edge stands a little in.
@@ -214,11 +214,11 @@ export function coinGeometry() {
     const column = Math.floor(i / profile.length),
       x = at.getX(i),
       z = at.getZ(i);
-    if (Math.hypot(x, z) > R * 0.995 && column % 2) at.setXYZ(i, x * 0.972, at.getY(i), z * 0.972);
+    if (Math.hypot(x, z) > R * 0.995 && column % 2 && segments >= 60) at.setXYZ(i, x * 0.972, at.getY(i), z * 0.972);
   }
   rim.computeVertexNormals();
-  const top = new T.CircleGeometry(field + 0.002, 48),
-    bottom = new T.CircleGeometry(field + 0.002, 48);
+  const top = new T.CircleGeometry(field + 0.002, Math.min(48, segments)),
+    bottom = new T.CircleGeometry(field + 0.002, Math.min(48, segments));
   top.rotateX(-Math.PI / 2).translate(0, h - 0.009, 0);
   bottom.rotateX(Math.PI / 2).translate(0, -h + 0.009, 0);
   const faces = mergeGeometries([top, bottom])!,

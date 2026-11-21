@@ -86,6 +86,9 @@ import { numberCodeConfig } from "../games/numbercode/config";
 import { caromConfig } from "../games/carom/config";
 import { laserChessConfig } from "../games/laserchess/config";
 import { archeryConfig } from "../games/archery/config";
+import { tuhoConfig } from "../games/tuho/config";
+import { coinPusherConfig } from "../games/coinpusher/config";
+import { shootingConfig } from "../games/shooting/config";
 import { hexConquestConfig } from "../games/hexconquest/config";
 import type { PointConfig } from "./point-game";
 import { thumb } from "./thumbs";
@@ -264,6 +267,9 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "carom-billiards": { config: caromConfig, options: { mode: "ai", variant: "four", level: "normal" } },
   "laser-chess": { config: laserChessConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   archery: { config: archeryConfig, options: { mode: "ai", variant: "match", level: "normal" } },
+  tuho: { config: tuhoConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "coin-pusher": { config: coinPusherConfig, options: { mode: "ai", variant: "30", level: "normal" } },
+  shooting: { config: shootingConfig, options: { mode: "ai", variant: "bb", level: "normal" } },
   // 헥스 정복전 is a territory game like 대륙 쟁탈전, played on the point-game screen.
   "hex-conquest": { config: hexConquestConfig, options: { mode: "ai", variant: "", level: "normal" } },
 };
@@ -454,6 +460,9 @@ type GameSelection =
   | "carom-billiards"
   | "laser-chess"
   | "archery"
+  | "tuho"
+  | "coin-pusher"
+  | "shooting"
   | null;
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" ${mode === "local" ? "checked" : ""}> 로컬 2인</label><label><input type="radio" name="mode" value="ai" ${mode === "ai" ? "checked" : ""}> 컴퓨터 대전</label></div>${aiForm()}<label class="rule-option"><input type="checkbox" id="allow-33" ${allowDoubleThree ? "checked" : ""}> 삼삼(3-3) 허용<small>끄면 열린 삼을 한 번에 두 개 만드는 수를 둘 수 없습니다.</small></label><button class="primary" id="start">테이블에 앉기 <span>↗</span></button></div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;

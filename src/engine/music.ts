@@ -384,11 +384,13 @@ const PIECES = { lobby: LOBBY, table: TABLE };
 const OWN: Record<string, Piece> = {
   gonu: KOREA,
   "yut-nori": KOREA,
+  tuho: KOREA,
   mancala: INDIA,
   carrom: INDIA,
   "peg-solitaire": INDIA,
   "whack-a-mole": ARCADE,
   "claw-machine": ARCADE,
+  "coin-pusher": ARCADE,
   basketball: ARCADE,
   bowling: ROCK,
 };

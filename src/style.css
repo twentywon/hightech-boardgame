@@ -2764,7 +2764,7 @@ html[data-game="battleship"] .game-layout.hud aside.game-sidebar .fleet .ship.wa
   html[data-game="battleship"] .game-layout.hud aside.game-sidebar li:has(.fleet) > span { grid-column:auto; }
 }
 /* No status line over these tables (the user asked); #turn stays in the page as the live region. */
-:is(html[data-game="meat-grill"], html[data-game="minesweeper"], html[data-game="lights-on"], html[data-game="water-pouring"], html[data-game="marble-shot"], html[data-game="brick-breaker"], html[data-game="2048"], html[data-game="falling-blocks"], html[data-game="fruit-merge"], html[data-game="snake"], html[data-game="whack-a-mole"], html[data-game="claw-machine"], html[data-game="basketball"], html[data-game="air-hockey"]) .game-layout .board-area > .board-hint { display:none !important; }
+:is(html[data-game="meat-grill"], html[data-game="minesweeper"], html[data-game="lights-on"], html[data-game="water-pouring"], html[data-game="marble-shot"], html[data-game="brick-breaker"], html[data-game="2048"], html[data-game="falling-blocks"], html[data-game="fruit-merge"], html[data-game="snake"], html[data-game="whack-a-mole"], html[data-game="claw-machine"], html[data-game="coin-pusher"], html[data-game="basketball"], html[data-game="air-hockey"]) .game-layout .board-area > .board-hint { display:none !important; }
 /* Every letter on a game screen is set in gomoku's face (the user asked): the status line, the lettering over
    the table, scores, money, buttons and the words that come up across the table. Letters painted into the
    pictures themselves (piece glyphs, board coordinates, card faces) keep their own. */
@@ -3436,3 +3436,38 @@ html[data-game="hex-conquest"] .game-layout.hud aside.game-sidebar .hc-ally em {
 }
 /* 헥스 정복전: the empires' setup tools are pixels (a capital is tapped instead); kept at the cluster's corner, clear of 시작. */
 html[data-game="hex-conquest"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;top:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
+/* 사격: the figures over the place (score, what is left in the gun, the combo, the clock, the clays' card) stand at
+   the lower left as small dark plates; decoration, the unseen panel keeps the words for readers. */
+.sh-hud { position:absolute;left:16px;bottom:40px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;max-width:min(560px, calc(100% - 140px));pointer-events:none;z-index:2;font-family:"Inter","Noto Sans KR",sans-serif;color:#fff;user-select:none;-webkit-user-select:none; }
+.sh-hud[hidden] { display:none; }
+.sh-box { display:flex;flex-direction:column;gap:2px;padding:6px 11px;border-radius:8px;background:rgba(8,10,22,.74);box-shadow:0 4px 14px rgba(0,0,0,.3);line-height:1.05; }
+.sh-box small { font-size:10.5px;font-weight:700;opacity:.75;white-space:nowrap; }
+.sh-box b { font-size:20px;font-weight:900;font-variant-numeric:tabular-nums; }
+.sh-box b em { font-style:normal;font-size:13px;opacity:.7; }
+.sh-box.big b { font-size:28px;color:#ffd84a; }
+.sh-box.combo { background:rgba(150,20,110,.82); }
+.sh-box.combo b { color:#ffd6f2; }
+.sh-rounds { display:flex;gap:3px;margin-top:3px; }
+.sh-rounds i { width:6px;height:11px;border-radius:3px 3px 1px 1px;background:rgba(255,255,255,.18); }
+.sh-rounds i.on { background:#e8c25a; }
+.sh-rounds.bb i { width:7px;height:7px;border-radius:50%; }
+.sh-rounds.bb i.on { background:#fff2a8;box-shadow:0 0 4px #ffcf3a; }
+.sh-rounds.shell i { width:9px;height:16px;border-radius:2px; }
+.sh-rounds.shell i.on { background:linear-gradient(#d23a2a 70%, #c9a24a 70%); }
+.sh-card { display:grid;grid-template-columns:repeat(13, 9px);gap:3px;padding:7px 9px;border-radius:8px;background:rgba(8,10,22,.74); }
+.sh-card i { width:9px;height:9px;border-radius:2px;background:rgba(255,255,255,.14); }
+.sh-card i.x { background:#ff8a2a; }
+.sh-card i.o { background:rgba(255,255,255,.4);box-shadow:inset 0 0 0 2px rgba(8,10,22,.8); }
+.sh-note { padding:5px 10px;border-radius:999px;background:rgba(8,10,22,.74);font-size:12px;font-weight:700;color:#ffe08a; }
+.sh-bag { display:flex;flex-wrap:wrap;gap:4px;max-width:260px; }
+.sh-bag span { padding:3px 8px;border-radius:999px;background:rgba(60,90,40,.85);font-size:11.5px;font-weight:800; }
+@media (max-height: 500px) {
+  .sh-hud { left:10px;bottom:28px;gap:5px;max-width:calc(100% - 120px); }
+  .sh-box { padding:4px 8px; }
+  .sh-box b { font-size:16px; }
+  .sh-box.big b { font-size:21px; }
+  .sh-box small { font-size:9.5px; }
+  .sh-card { grid-template-columns:repeat(13, 7px);gap:2px;padding:5px 7px; }
+  .sh-card i { width:7px;height:7px; }
+}
+html[data-capture] .sh-hud { display:none !important; }
