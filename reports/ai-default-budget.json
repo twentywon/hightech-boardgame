@@ -1,0 +1,245 @@
+{
+  "runtime": "v24.22.1",
+  "samples": [
+    {
+      "difficulty": "beginner",
+      "positionMoves": 2,
+      "budgetMs": 100,
+      "move": {
+        "row": 7,
+        "col": 5
+      },
+      "nodes": 0,
+      "depth": 0,
+      "elapsedMs": 3.6046870000000126,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "evaluation"
+    },
+    {
+      "difficulty": "easy",
+      "positionMoves": 2,
+      "budgetMs": 300,
+      "move": {
+        "row": 6,
+        "col": 6
+      },
+      "nodes": 0,
+      "depth": 0,
+      "elapsedMs": 1.9238839999999868,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "evaluation"
+    },
+    {
+      "difficulty": "normal",
+      "positionMoves": 2,
+      "budgetMs": 1000,
+      "move": {
+        "row": 6,
+        "col": 6
+      },
+      "nodes": 60,
+      "depth": 2,
+      "elapsedMs": 35.06836200000001,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "search"
+    },
+    {
+      "difficulty": "hard",
+      "positionMoves": 2,
+      "budgetMs": 2000,
+      "move": {
+        "row": 6,
+        "col": 6
+      },
+      "nodes": 86,
+      "depth": 2,
+      "elapsedMs": 27.507221000000015,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "search"
+    },
+    {
+      "difficulty": "expert",
+      "positionMoves": 2,
+      "budgetMs": 3000,
+      "move": {
+        "row": 6,
+        "col": 6
+      },
+      "nodes": 106,
+      "depth": 2,
+      "elapsedMs": 25.72578599999997,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "search"
+    },
+    {
+      "difficulty": "beginner",
+      "positionMoves": 8,
+      "budgetMs": 100,
+      "move": {
+        "row": 8,
+        "col": 4
+      },
+      "nodes": 0,
+      "depth": 0,
+      "elapsedMs": 2.610810000000015,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "evaluation"
+    },
+    {
+      "difficulty": "easy",
+      "positionMoves": 8,
+      "budgetMs": 300,
+      "move": {
+        "row": 5,
+        "col": 5
+      },
+      "nodes": 0,
+      "depth": 0,
+      "elapsedMs": 1.0013759999999934,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "evaluation"
+    },
+    {
+      "difficulty": "normal",
+      "positionMoves": 8,
+      "budgetMs": 1000,
+      "move": {
+        "row": 7,
+        "col": 5
+      },
+      "nodes": 183,
+      "depth": 3,
+      "elapsedMs": 128.10827899999998,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "search"
+    },
+    {
+      "difficulty": "hard",
+      "positionMoves": 8,
+      "budgetMs": 2000,
+      "move": {
+        "row": 7,
+        "col": 5
+      },
+      "nodes": 3908,
+      "depth": 5,
+      "elapsedMs": 1657.164067,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "search"
+    },
+    {
+      "difficulty": "expert",
+      "positionMoves": 8,
+      "budgetMs": 3000,
+      "move": {
+        "row": 5,
+        "col": 6
+      },
+      "nodes": 6679,
+      "depth": 4,
+      "elapsedMs": 3000.1535759999997,
+      "timedOut": true,
+      "nodeLimited": false,
+      "tableHits": 91,
+      "reason": "budget"
+    },
+    {
+      "difficulty": "beginner",
+      "positionMoves": 12,
+      "budgetMs": 100,
+      "move": {
+        "row": 9,
+        "col": 10
+      },
+      "nodes": 0,
+      "depth": 0,
+      "elapsedMs": 0.31263699999999517,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "evaluation"
+    },
+    {
+      "difficulty": "easy",
+      "positionMoves": 12,
+      "budgetMs": 300,
+      "move": {
+        "row": 9,
+        "col": 7
+      },
+      "nodes": 0,
+      "depth": 0,
+      "elapsedMs": 0.4371719999999186,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "evaluation"
+    },
+    {
+      "difficulty": "normal",
+      "positionMoves": 12,
+      "budgetMs": 1000,
+      "move": {
+        "row": 5,
+        "col": 5
+      },
+      "nodes": 122,
+      "depth": 3,
+      "elapsedMs": 61.64022299999942,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "search"
+    },
+    {
+      "difficulty": "hard",
+      "positionMoves": 12,
+      "budgetMs": 2000,
+      "move": {
+        "row": 5,
+        "col": 5
+      },
+      "nodes": 3639,
+      "depth": 5,
+      "elapsedMs": 1844.4537040000005,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 0,
+      "reason": "search"
+    },
+    {
+      "difficulty": "expert",
+      "positionMoves": 12,
+      "budgetMs": 3000,
+      "move": {
+        "row": 5,
+        "col": 5
+      },
+      "nodes": 1320,
+      "depth": 6,
+      "elapsedMs": 716.3119409999999,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 6,
+      "reason": "search"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "file": "dist/world-table-games.html",
+  "bytes": 604111,
+  "embeddedWorkers": 2,
+  "workerStarts": 4,
+  "gomokuOpeningAndReply": true,
+  "reversiExpertOpeningAndReply": true,
+  "externalRequests": [],
+  "errors": [],
+  "validation": "HTTP served single file; all non-navigation network requests blocked. Direct file:// execution was not tested in the cloud."
+}

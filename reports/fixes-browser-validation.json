@@ -1,0 +1,260 @@
+{
+  "fullRun": {
+    "passed": 36,
+    "failed": 2,
+    "failures": [
+      "AI responds and settings persist",
+      "random color is resolved once and retained when resuming"
+    ],
+    "project": "mobile"
+  },
+  "recheck": {
+    "startTime": "2026-11-10T14:17:36.736Z",
+    "duration": 67473.066,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "latestDistinctCases": 38,
+  "startup": [
+    {
+      "project": "desktop",
+      "elapsedMs": 7574
+    },
+    {
+      "project": "mobile",
+      "elapsedMs": 488
+    }
+  ],
+  "cases": [
+    {
+      "project": "desktop",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "menu, actual WebGL moves, persistence, camera and restart",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "AI responds and settings persist",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "five difficulties, white opening, next-game policy and persisted preferences",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "random color is resolved once and retained when resuming",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "AI selection remains usable when storage writes are blocked",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: secondary buttons and cancelled gestures never place a stone",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: leaving the playable board clears the pending selection",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: Worker failure stays visible through camera changes and retry recovers",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: game result waits for open settings instead of discarding edits",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: secondary buttons and cancelled gestures never place a stone",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: leaving the playable board clears the pending selection",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: Worker failure stays visible through camera changes and retry recovers",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: game result waits for open settings instead of discarding edits",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi actual WebGL mouse/touch flips, save, camera, restart and game selection",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi difficulty/color persist independently; changes apply next match",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi auto-pass announcement and validated saved history",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "actual Workers stay responsive and are cancelled when switching both games",
+      "status": "passed"
+    },
+    {
+      "project": "desktop",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi random color stays resolved across resume and storage failure is safe",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "menu, actual WebGL moves, persistence, camera and restart",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "AI responds and settings persist",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "five difficulties, white opening, next-game policy and persisted preferences",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "random color is resolved once and retained when resuming",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/game.spec.ts",
+      "title": "AI selection remains usable when storage writes are blocked",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: secondary buttons and cancelled gestures never place a stone",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: leaving the playable board clears the pending selection",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: Worker failure stays visible through camera changes and retry recovers",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "gomoku: game result waits for open settings instead of discarding edits",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: secondary buttons and cancelled gestures never place a stone",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: leaving the playable board clears the pending selection",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: Worker failure stays visible through camera changes and retry recovers",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/recovery.spec.ts",
+      "title": "reversi: game result waits for open settings instead of discarding edits",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi actual WebGL mouse/touch flips, save, camera, restart and game selection",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi difficulty/color persist independently; changes apply next match",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi auto-pass announcement and validated saved history",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "actual Workers stay responsive and are cancelled when switching both games",
+      "status": "passed"
+    },
+    {
+      "project": "mobile",
+      "file": "tests/e2e/reversi.spec.ts",
+      "title": "Reversi random color stays resolved across resume and storage failure is safe",
+      "status": "passed"
+    }
+  ]
+}

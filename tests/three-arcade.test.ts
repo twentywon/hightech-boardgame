@@ -1,0 +1,409 @@
+import { describe, expect, test } from "vitest";
+import { seededRandom } from "../src/core/ai";
+import * as ah from "../src/games/airhockey/rules";
+import * as hs from "../src/games/airhockey/sim";
+import { airHockeyConfig } from "../src/games/airhockey/config";
+import * as br from "../src/games/basketball/rules";
+import * as bs from "../src/games/basketball/sim";
+import { swipe, swipeFor } from "../src/games/basketball/layout";
+import * as t3 from "../src/games/tictactoe/rules";
+
+const at = (to: number) => ({ from: -1, to, extra: -1 });
+function line(mode: t3.Mode, cells: number[]) {
+  let s = t3.createGame(mode);
+  for (const c of cells) s = t3.play(s, at(c))!;
+  return s;
+}
+describe("tic-tac-toe", () => {
+  test("three in a row wins, a full board is a draw, and a taken square is refused", () => {
+    const won = line("classic", [0, 3, 1, 4, 2]);
+    expect(won.winner).toBe(0);
+    expect(won.line).toEqual([0, 1, 2]);
+    expect(t3.play(line("classic", [4]), at(4))).toBeNull();
+    const drawn = line("classic", [0, 1, 2, 4, 3, 5, 7, 6, 8]);
+    expect(drawn.winner).toBe("draw");
+  });
+  test("in the vanishing game each side keeps only its last three marks", () => {
+    const s = line("vanish", [0, 3, 1, 4, 8, 6]);
+    expect(s.winner).toBeNull();
+    const next = t3.play(s, at(7))!;
+    // X's fourth mark takes its first one away.
+    expect(next.last?.gone).toBe(0);
+    expect(next.cells[0]).toBeNull();
+    expect(next.cells.filter((c) => c === 0)).toHaveLength(t3.KEEP);
+  });
+  test("in misère whoever makes three in a row loses", () => {
+    expect(line("misere", [0, 3, 1, 4, 2]).winner).toBe(1);
+  });
+  test("in the ultimate game a square sends the other to the board of its place, unless that board is decided", () => {
+    const s = t3.play(t3.createGame("ultimate"), at(4))!;
+    expect(s.active).toBe(4);
+    expect(t3.moves(s).every((m) => Math.floor(m.to / 9) === 4)).toBe(true);
+    // Sent to a board already won, the next player may go anywhere.
+    const free = t3.createGame("ultimate");
+    free.boards = free.boards.slice();
+    free.boards[0] = 0;
+    const sent = t3.play(free, at(9 * 5 + 0))!;
+    expect(sent.active).toBe(-1);
+  });
+  test("the cube has 76 lines of four, and four down through the layers wins", () => {
+    expect(t3.CUBE_LINES).toHaveLength(76);
+    expect(new Set(t3.CUBE_LINES.map((l) => [...l].sort((a, b) => a - b).join())).size).toBe(76);
+    expect(t3.CUBE_LINES.every((l) => l.length === 4)).toBe(true);
+    const s = line("cube", [5, 0, 21, 1, 37, 2, 53]);
+    expect(s.winner).toBe(0);
+  });
+  test("the computer blocks a line and wins when it can; two perfect players draw", () => {
+    const random = seededRandom(5);
+    // X threatens the top row; O must block at 2.
+    const threat = line("classic", [0, 4, 1]);
+    expect(t3.chooseMove(threat, "hard", random)?.to).toBe(2);
+    // X can finish the top row at once (O threatens the middle one): it does.
+    const chance = line("classic", [0, 3, 1, 4]);
+    expect(t3.chooseMove(chance, "hard", random)?.to).toBe(2);
+    let s = t3.createGame("classic");
+    while (s.winner === null) s = t3.play(s, t3.chooseMove(s, "hard", random)!)!;
+    expect(s.winner).toBe("draw");
+  });
+  test("every mode plays out to an end with legal moves", () => {
+    for (const mode of t3.MODES.map((m) => m.value)) {
+      const random = seededRandom(9);
+      let s = t3.createGame(mode);
+      for (let k = 0; k < 120 && s.winner === null; k++) {
+        const m = mode === "ultimate" || mode === "cube" ? t3.moves(s)[Math.floor(random() * t3.moves(s).length)] : t3.chooseMove(s, "easy", random)!;
+        expect(t3.moves(s).some((x) => x.to === m.to)).toBe(true);
+        s = t3.play(s, m)!;
+      }
+      expect(s.winner).not.toBeNull();
+    }
+  });
+});
+describe("air hockey", () => {
+  test("five goals win a set, the set starts again from nothing, and two sets of three win the match", () => {
+    let s = ah.createGame();
+    for (let k = 0; k < ah.POINTS - 1; k++) s = ah.play(s, at(1))!;
+    expect(s.score).toEqual([0, ah.POINTS - 1]);
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(0))!;
+    // My fifth goal took the first set: the score is back to nothing.
+    expect(s.sets).toEqual([1, 0]);
+    expect(s.score).toEqual([0, 0]);
+    expect(s.done).toEqual([[ah.POINTS, ah.POINTS - 1]]);
+    expect(ah.setNumber(s)).toBe(2);
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(1))!;
+    expect(s.sets).toEqual([1, 1]);
+    expect(s.winner).toBeNull();
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(0))!;
+    expect(s.sets).toEqual([2, 1]);
+    expect(s.winner).toBe(0);
+    expect(ah.play(s, at(1))).toBeNull();
+  });
+  test("each mallet stays in its own half, inside the rails", () => {
+    expect(hs.keep(0, 9, -9)).toEqual({ x: hs.HALF_X - hs.MALLET, z: hs.MALLET * 0.6 });
+    expect(hs.keep(1, -9, 9)).toEqual({ x: -hs.HALF_X + hs.MALLET, z: -hs.MALLET * 0.6 });
+  });
+  test("a puck through the far slot is my goal, through mine the computer's, and off the rail beside a slot it bounces", () => {
+    const shoot = (x: number, vz: number) => {
+      const w = hs.createWorld(0);
+      // The mallets stand aside.
+      w.mallets[0].x = w.targets[0].x = hs.HALF_X - hs.MALLET;
+      w.mallets[1].x = w.targets[1].x = hs.HALF_X - hs.MALLET;
+      Object.assign(w.puck, { x, z: 0, vx: 0, vz });
+      for (let k = 0; k < 240 * 0.7; k++) {
+        const scored = hs.step(w, "easy");
+        if (scored !== null) return scored;
+      }
+      return w.puck.vz;
+    };
+    expect(shoot(0, -8)).toBe(0);
+    expect(shoot(0, 8)).toBe(1);
+    expect(shoot(-hs.HALF_X + 0.4, -8)).toBeGreaterThan(0);
+  });
+  test("my mallet goes all the way to the hand in one slice and sweeps the puck along instead of passing through it", () => {
+    const w = hs.createWorld(0);
+    expect(w.puck).toMatchObject({ x: 0, z: 1.5 });
+    w.targets[0] = { x: 0, z: 0.3 };
+    hs.step(w, "normal");
+    expect(w.mallets[0].z).toBeCloseTo(0.3, 5);
+    // The puck lay on the way: it is now ahead of the mallet, struck toward the far goal.
+    expect(w.puck.z).toBeLessThan(w.mallets[0].z);
+    expect(w.puck.vz).toBeLessThan(-5);
+  });
+  test("the computer meets a puck coming at its goal", () => {
+    const w = hs.createWorld(0);
+    Object.assign(w.puck, { x: 0.9, z: 1, vx: 0, vz: -6 });
+    for (let k = 0; k < 120; k++) {
+      hs.think(w, "hard", seededRandom(1));
+      hs.step(w, "hard");
+    }
+    expect(Math.abs(w.mallets[1].x - w.puck.x)).toBeLessThan(0.8);
+  });
+  /** A rally from a slow puck lying in the computer's half (a third of them in a corner), my mallet on guard. */
+  function rally(level: hs.Level, seed: number, seconds = 20) {
+    const random = seededRandom(seed),
+      w = hs.createWorld(1),
+      wx = hs.HALF_X - hs.PUCK,
+      wz = hs.HALF_Z - hs.PUCK,
+      corner = seed % 3 === 0;
+    Object.assign(w.puck, {
+      x: corner ? (random() < 0.5 ? -1 : 1) * (wx - random() * 0.2) : (random() - 0.5) * 2 * wx,
+      z: corner ? -(wz - random() * 0.3) : -(0.3 + random() * (hs.HALF_Z - 0.6)),
+      vx: random() - 0.5,
+      vz: random() - 0.5,
+    });
+    let slow = 0,
+      longest = 0,
+      outside = false;
+    for (let k = 0; k < seconds / hs.DT; k++) {
+      w.targets[0] = { x: Math.max(-1, Math.min(1, w.puck.x * 0.5)), z: hs.HALF_Z - 0.6 };
+      hs.think(w, level, random);
+      if (hs.step(w, level) !== null) break;
+      // A puck in a goal's mouth may be past the end; anywhere else it stays between the rails.
+      if (Math.abs(w.puck.x) > wx + 1e-6 || (Math.abs(w.puck.z) > wz + 1e-6 && Math.abs(w.puck.x) >= hs.GOAL - hs.PUCK * 0.4)) outside = true;
+      slow = w.puck.z < 0 && Math.hypot(w.puck.vx, w.puck.vz) < 1.5 ? slow + hs.DT : 0;
+      longest = Math.max(longest, slow);
+    }
+    return { longest, outside };
+  }
+  test("the computer strikes a slow puck out of its corners and off its end rail at every level, never pressing it there", () => {
+    // Before, about a quarter of these rallies ended with the puck pressed into a corner for good.
+    for (const level of ["easy", "normal", "hard"] as hs.Level[])
+      for (let seed = 1; seed <= 60; seed++) {
+        const { longest, outside } = rally(level, seed);
+        expect(longest, `${level} seed ${seed}`).toBeLessThan(3);
+        expect(outside, `${level} seed ${seed}`).toBe(false);
+      }
+  });
+  test("a mallet pressed into a corner where the puck lies is stopped by it and never pushes it through the rails", () => {
+    const w = hs.createWorld(0),
+      wx = hs.HALF_X - hs.PUCK,
+      wz = hs.HALF_Z - hs.PUCK;
+    Object.assign(w.puck, { x: wx, z: wz, vx: 0, vz: 0 });
+    w.mallets[1].x = w.targets[1].x = -hs.HALF_X + hs.MALLET;
+    for (let k = 0; k < 240; k++) {
+      // The hand pushes as far into the corner as the mallet may go.
+      w.targets[0] = { x: hs.HALF_X, z: hs.HALF_Z };
+      hs.step(w, "normal");
+      expect(Math.abs(w.puck.x)).toBeLessThanOrEqual(wx + 1e-9);
+      expect(Math.abs(w.puck.z)).toBeLessThanOrEqual(wz + 1e-9);
+      expect(Math.hypot(w.puck.x - w.mallets[0].x, w.puck.z - w.mallets[0].z)).toBeGreaterThan(hs.PUCK + hs.MALLET - 1e-6);
+    }
+  });
+  test("a puck kept in one half for longer than HOLD seconds is laid still in the other half, and crossing starts the count again", () => {
+    const w = hs.createWorld(0);
+    // My mallet stands aside; the puck lies still in my half.
+    w.mallets[0].x = w.targets[0].x = hs.HALF_X - hs.MALLET;
+    w.mallets[1].x = w.targets[1].x = -hs.HALF_X + hs.MALLET;
+    Object.assign(w.puck, { x: 0.5, z: 2, vx: 0, vz: 0 });
+    for (let k = 0; k < (hs.HOLD - 0.5) / hs.DT; k++) hs.step(w, "normal");
+    expect(w.served).toBeNull();
+    expect(w.puck.z).toBeGreaterThan(0);
+    for (let k = 0; k < 1 / hs.DT && w.served === null; k++) hs.step(w, "normal");
+    expect(w.served).toBe(1);
+    expect(w.puck).toMatchObject({ z: -1.5, vx: 0, vz: 0 });
+    // Sent back across before the time is up, the count begins again on the other side.
+    w.served = null;
+    for (let k = 0; k < 3 / hs.DT; k++) hs.step(w, "normal");
+    Object.assign(w.puck, { x: 0.5, z: 0.5, vx: 0, vz: 0 });
+    for (let k = 0; k < (hs.HOLD - 0.5) / hs.DT; k++) hs.step(w, "normal");
+    expect(w.served).toBeNull();
+  });
+  test("a puck at rest on the centre line can be reached by both mallets anywhere along it", () => {
+    for (let x = -(hs.HALF_X - hs.PUCK); x <= hs.HALF_X - hs.PUCK; x += 0.05)
+      for (const side of [0, 1] as const) {
+        const m = hs.keep(side, x, 0);
+        expect(Math.hypot(m.x - x, m.z)).toBeLessThan(hs.PUCK + hs.MALLET);
+      }
+  });
+  test("for two at one screen both mallets go all the way to their hands at once, each kept to its own half", () => {
+    const w = hs.createWorld(0);
+    w.targets[0] = { x: -1.2, z: 0.6 };
+    w.targets[1] = { x: 1.3, z: 1 };
+    hs.step(w, "easy", true);
+    expect(w.mallets[0].x).toBeCloseTo(-1.2, 5);
+    expect(w.mallets[0].z).toBeCloseTo(0.6, 5);
+    // The right hand reached over the centre line: its mallet stops at its own side of it.
+    expect(w.mallets[1].x).toBeCloseTo(1.3, 5);
+    expect(w.mallets[1].z).toBeCloseTo(-hs.MALLET * 0.6, 5);
+    // Against the computer its mallet keeps its top speed.
+    const v = hs.createWorld(0);
+    v.targets[1] = { x: 1.3, z: -0.5 };
+    hs.step(v, "easy");
+    expect(Math.hypot(v.mallets[1].x, v.mallets[1].z + hs.HALF_Z - 0.9)).toBeCloseTo(hs.LEVELS.easy.speed * hs.DT, 5);
+  });
+  test("two at one screen: the sides are 왼쪽 and 오른쪽, a set is told over the table by the side that took it, and no computer plays", () => {
+    expect(airHockeyConfig.computerOnly).toBeFalsy();
+    let s = ah.createGame();
+    // Nobody waits for a turn: the screen never gives one to the computer.
+    expect(airHockeyConfig.game.turn(s)).toBe(0);
+    for (let k = 0; k < ah.POINTS - 1; k++) s = ah.play(s, at(1))!;
+    const before = s;
+    s = ah.play(s, at(1))!;
+    expect(airHockeyConfig.cheer!(before, s, "local")).toBe("GOAL");
+    expect(airHockeyConfig.setResult!(before, s, "local")).toEqual({ outcome: "win", word: "1세트 · 오른쪽", detail: `0 : ${ah.POINTS} · 세트 0 : 1` });
+    expect(airHockeyConfig.setResult!(before, s, "ai")).toEqual({ outcome: "lose", word: "1세트 패배", detail: `0 : ${ah.POINTS} · 세트 0 : 1` });
+    expect(airHockeyConfig.setResult!(s, ah.play(s, at(0))!, "ai")).toBeNull();
+    expect(airHockeyConfig.cheer!(s, ah.play(s, at(0))!, "local")).toBe("GOAL");
+    const board = (mode: "local" | "ai") => airHockeyConfig.tallyHtml!(s, mode)[0];
+    expect(board("local")).toContain("<b>왼쪽</b>");
+    expect(board("local")).toContain("<b>오른쪽</b>");
+    expect(board("local")).not.toContain("컴퓨터");
+    expect(board("ai")).toContain("<b>컴퓨터</b>");
+    // The result says nothing of one person winning or losing: the screen puts the winner before it.
+    for (let k = 0; k < ah.POINTS; k++) s = ah.play(s, at(1))!;
+    expect(s.winner).toBe(1);
+    expect(ah.airHockey.reason(s)).not.toMatch(/졌습니다|컴퓨터|이겼습니다/);
+    expect(ah.airHockey.reason(s)).toMatch(/^세트 0 대 2로 끝났습니다/);
+  });
+});
+describe("basketball", () => {
+  const throwOnce = (power: number, yaw: number, level = 1) => {
+    const w = bs.createWorld(level);
+    expect(bs.shoot(w, power, yaw)).toBe(true);
+    const seen: bs.Happening["kind"][] = [];
+    for (let k = 0; k < 240 * 6; k++) for (const e of bs.step(w)) seen.push(e.kind);
+    return { w, seen };
+  };
+  test("a throw through the middle of a still hoop goes in, and every ball rolls back to the tray", () => {
+    const ideal = bs.idealThrow(0);
+    const { w, seen } = throwOnce(ideal.power, ideal.yaw);
+    expect(seen).toContain("score");
+    expect(seen).not.toContain("miss");
+    expect(bs.inTray(w)).toHaveLength(bs.BALLS);
+    expect(bs.canShoot(w)).toBe(true);
+  });
+  test("the balls lie in the tray as they came down, not in a row, and the hand takes up the nearest", () => {
+    const w = bs.createWorld(1),
+      ideal = bs.idealThrow(0);
+    let thrown = 0;
+    for (let k = 0; k < 240 * 40; k++) {
+      if (thrown < 12 && k % 150 === 0 && bs.shoot(w, ideal.power, 0)) thrown++;
+      bs.step(w);
+    }
+    expect(thrown).toBe(12);
+    const lying = bs.inTray(w).map((k) => w.balls[k]);
+    expect(lying).toHaveLength(bs.BALLS);
+    // Spread across the tray and at different depths: no line along the lane or across it.
+    const xs = lying.map((b) => b.x),
+      zs = lying.map((b) => b.z);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.8);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(0.05);
+    // None in another, all inside the tray.
+    for (const a of lying) {
+      expect(a.z).toBeLessThanOrEqual(bs.TRAY_FRONT + 1e-9);
+      for (const b of lying) if (a !== b) expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(bs.BALL * 2 - 0.02);
+    }
+    const ready = w.balls[bs.readyBall(w)];
+    for (const b of lying) expect(Math.hypot(ready.x, ready.z - bs.HAND.z)).toBeLessThanOrEqual(Math.hypot(b.x, b.z - bs.HAND.z));
+  });
+  test("too weak or too far aside misses", () => {
+    const ideal = bs.idealThrow(0);
+    for (const [power, yaw] of [[ideal.power - 0.15, 0], [ideal.power, 0.12], [ideal.power, -0.12]]) expect(throwOnce(power, yaw).seen).toContain("miss");
+  });
+  test("the ball falls at the machine's scale of real gravity, and its bounces die away soon", () => {
+    expect(bs.G).toBeCloseTo(9.81 / 0.6, 2);
+    const w = bs.createWorld(1);
+    bs.shoot(w, 0.3, 0);
+    const ball = w.balls.find((b) => b.phase === "flight")!;
+    // Let go from rest high over the lane.
+    Object.assign(ball, { x: 0, y: 3.5, z: -2, vx: 0, vy: 0, vz: 0 });
+    for (let k = 0; k < 120; k++) bs.step(w);
+    expect(ball.vy).toBeCloseTo(-bs.G * 0.5, 1);
+    let bounces = 0;
+    for (let k = 0; k < 240 * 2 && ball.phase === "flight"; k++) bounces += bs.step(w).filter((e) => e.kind === "bounce").length;
+    expect(ball.phase).not.toBe("flight");
+    expect(bounces).toBeLessThanOrEqual(4);
+  });
+  test("a ball is lifted and thrown from where it lay, and a throw turned toward the hoop from there goes in", () => {
+    const w = bs.createWorld(1),
+      k = bs.ballNear(w, -0.7, 1.2),
+      ball = w.balls[k],
+      from = { x: ball.x, z: ball.z };
+    expect(from.x).toBeLessThan(-0.5);
+    const ideal = bs.idealThrow(0, from);
+    // From the left of the tray the throw is turned toward the middle.
+    expect(ideal.yaw).toBeGreaterThan(0.05);
+    expect(bs.shoot(w, ideal.power, ideal.yaw, k)).toBe(true);
+    expect([ball.x, ball.y, ball.z]).toEqual([from.x, bs.HAND.y, from.z]);
+    let scored = false;
+    for (let s = 0; s < 240 * 3 && !scored; s++) scored = bs.step(w).some((e) => e.kind === "score");
+    expect(scored).toBe(true);
+    // The aiming dots start there too.
+    expect(bs.arc(ideal.power, ideal.yaw, 0.1, 0.05, from)[0].x).toBeLessThan(-0.4);
+  });
+  test("the clock starts with the first throw and tells whole seconds", () => {
+    const w = bs.createWorld(1);
+    const seconds = (steps: number) => {
+      let n = 0;
+      for (let k = 0; k < steps; k++) n += bs.step(w).filter((e) => e.kind === "second").length;
+      return n;
+    };
+    expect(seconds(240 * 3)).toBe(0);
+    bs.shoot(w, 0.5, 0);
+    expect(seconds(240 * 3 + 2)).toBe(3);
+    // Only one ball can be thrown at a time from the hand.
+    expect(bs.canShoot(w)).toBe(true);
+    bs.shoot(w, 0.5, 0);
+    expect(bs.canShoot(w)).toBe(false);
+  });
+  test("the hoop stands still at the first stage and slides wider and quicker at each after, never jumping", () => {
+    expect(bs.hoopAt(1, 30)).toBe(0);
+    expect(Math.abs(bs.hoopAt(2, 1.3))).toBeGreaterThan(0.1);
+    const reach = (level: number) => Math.max(...Array.from({ length: 200 }, (_, k) => Math.abs(bs.hoopAt(level, k * 0.05))));
+    for (let level = 2; level < bs.LEVELS.length; level++) expect(reach(level + 1)).toBeGreaterThan(reach(level));
+    // A new stage starts its clock again, but the hoop goes there at its own pace.
+    const w = bs.createWorld(5);
+    bs.shoot(w, 0.5, 0);
+    for (let k = 0; k < 150; k++) bs.step(w);
+    const before = w.hoopX;
+    bs.nextStage(w, 2);
+    bs.step(w);
+    expect(Math.abs(w.hoopX - before)).toBeLessThan(0.02);
+  });
+  test("a swipe up throws with the power of its length and the turn of its slant", () => {
+    const made = swipeFor(0.54, 0.05, 800),
+      read = swipe(made.dx, made.dy, 800)!;
+    expect(read.power).toBeCloseTo(0.54, 5);
+    expect(read.yaw).toBeCloseTo(0.05, 5);
+    expect(swipe(0, 20, 800)).toBeNull();
+    expect(swipe(0, -10, 800)).toBeNull();
+  });
+  test("fifty points in a stage clear it, the next begins with a full clock, and the last one cleared wins", () => {
+    let s = br.createGame(1);
+    s = br.play(s, at(br.SHOT))!;
+    for (let k = 0; k < 10; k++) s = br.play(s, at(br.TICK))!;
+    while (s.stage === 1) s = br.play(s, at(br.SCORE + 2))!;
+    expect(s.stage).toBe(2);
+    expect(s.cleared).toBe(1);
+    expect(s.stageScore).toBe(0);
+    expect(s.left).toBe(br.ROUND);
+    expect(s.score).toBeGreaterThanOrEqual(br.GOAL);
+    // Running out of time before the goal ends the run.
+    let late = s;
+    while (late.winner === null) late = br.play(late, at(br.TICK))!;
+    expect(late.winner).toBe(1);
+    // The last stage made wins it.
+    let last = br.createGame(br.LAST_STAGE);
+    while (last.winner === null) last = br.play(last, at(br.SCORE + 4))!;
+    expect(last.winner).toBe(0);
+    expect(last.cleared).toBe(1);
+    expect(br.createGame(99).stage).toBe(br.LAST_STAGE);
+  });
+  test("a basket is worth 2, 3 in the last seconds and one more on fire; a miss puts the fire out", () => {
+    let s = br.createGame(1);
+    expect(br.worth(s)).toBe(2);
+    for (let k = 0; k < br.FIRE; k++) s = br.play(s, at(br.SCORE + br.worth(s)))!;
+    expect(br.onFire(s)).toBe(true);
+    expect(br.worth(s)).toBe(3);
+    s = br.play(s, at(br.MISS))!;
+    expect(br.worth(s)).toBe(2);
+    while (s.left > br.FINAL) s = br.play(s, at(br.TICK))!;
+    expect(br.worth(s)).toBe(3);
+    expect(br.play(s, at(br.SCORE + 5))).toBeNull();
+    while (s.winner === null) s = br.play(s, at(br.TICK))!;
+    expect(s.left).toBe(0);
+    expect(s.winner).toBe(1);
+    // Two, two, two (the third made the fire), then a miss.
+    expect(s.score).toBe(2 + 2 + 2);
+    expect(br.play(s, at(br.SHOT))).toBeNull();
+  });
+});

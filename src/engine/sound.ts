@@ -1,0 +1,646 @@
+// Recorded effects, inlined so nothing is fetched at run time. They are
+// Kenney's packs, BigSoundBank's recordings and a few more (all CC0); see
+// public/sound-license.txt. Each kind of sound has several recordings
+// ("wood-1" … "wood-4"): a game takes one of them for its pieces and keeps
+// to it, so that a game always sounds the same and no two games quite alike.
+const recordings = import.meta.glob<string>("./sounds/*.{wav,mp3}", {
+  query: "?inline",
+  import: "default",
+  eager: true,
+});
+/** Decoded recordings by name ("dice-1", "card-2", …), shared by every Sound. */
+const samples = new Map<string, AudioBuffer>();
+let decoding = false;
+/** A few seconds of fire made by the page, to be looped: a soft low rush with snaps of burning wood in it. */
+function crackling(context: BaseAudioContext) {
+  const rate = context.sampleRate,
+    length = Math.ceil(rate * 4.3),
+    buffer = context.createBuffer(1, length, rate),
+    data = buffer.getChannelData(0);
+  let seed = 7,
+    low = 0;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < length; i++) {
+    low += (random() * 2 - 1 - low) * 0.02;
+    data[i] = low * 0.6;
+  }
+  for (let k = 0; k < 80; k++) {
+    const at = Math.floor(random() * (length - rate * 0.03)),
+      size = 0.12 + random() * 0.55,
+      span = Math.floor(rate * (0.002 + random() * 0.012));
+    for (let j = 0; j < span; j++) data[at + j] += (random() * 2 - 1) * size * Math.exp((-6 * j) / span);
+  }
+  return buffer;
+}
+function decode(context: AudioContext) {
+  if (decoding) return;
+  decoding = true;
+  for (const [path, url] of Object.entries(recordings)) {
+    const name = path.slice(path.lastIndexOf("/") + 1, -4),
+      bytes = Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (c) => c.charCodeAt(0));
+    // A recording that cannot be decoded simply falls back to the synthesised sound.
+    void context
+      .decodeAudioData(bytes.buffer)
+      .then((buffer) => samples.set(name, buffer))
+      .catch(() => {});
+  }
+}
+/**
+ * The loops (motor-1, winch-1, roll-1) carry this many seconds of their own continuation before and after the stretch
+ * that loops, so that the loop is seamless whether or not the decoder keeps the MP3's padding.
+ */
+const LOOP_MARGIN = 0.15;
+/**
+ * A loop that is not asked for again within this many seconds fades away by itself (a safety net: views ask every
+ * frame and say 0 when they stop; long enough for a slow software-drawn frame not to cut the loop off).
+ */
+const LOOP_HOLD = 1;
+interface Loop {
+  source: AudioBufferSourceNode;
+  gain: GainNode;
+  /** The loudness and the rate it was last sent toward. */
+  volume: number;
+  rate: number;
+  /** The context's time after which it fades unless asked for again. */
+  until: number;
+}
+export class Sound {
+  private context: AudioContext | null = null;
+  enabled = true;
+  /** Sounds that last while something goes on (a motor, a winch, balls rolling), by recording. */
+  private loops = new Map<string, Loop>();
+  private watch = 0;
+  unlock() {
+    if (!this.enabled) return;
+    try {
+      this.context ??= new AudioContext();
+      void this.context.resume().catch(() => {});
+      decode(this.context);
+    } catch {}
+  }
+  dispose() {
+    this.hush();
+    void this.context?.close().catch(() => {});
+    this.context = null;
+  }
+  /** A page put away silences what goes on (a view's clock stops with it and can no longer say so). */
+  private readonly hidden = () => {
+    if (document.hidden) this.hush();
+  };
+  /**
+   * A sound that lasts while something goes on: the recording `name` looped at `volume` (0 lets it fade out), played
+   * at `rate`. It has to be asked for again at least every `LOOP_HOLD` seconds (a view does so every frame), or it
+   * fades away by itself: a view that stops (a page hidden, a view thrown away) never leaves it running.
+   */
+  private hum(name: string, volume: number, rate = 1) {
+    const c = this.context,
+      held = this.loops.get(name);
+    if (!c || !this.enabled || volume <= 0.002) {
+      if (held) this.fade(name, held);
+      return;
+    }
+    const now = c.currentTime;
+    if (held) {
+      // Only a change worth hearing is sent, so that a view asking every frame does not pile up automation.
+      if (Math.abs(volume - held.volume) > 0.005) held.gain.gain.setTargetAtTime((held.volume = volume), now, 0.05);
+      if (Math.abs(rate - held.rate) > 0.005) held.source.playbackRate.setTargetAtTime((held.rate = rate), now, 0.08);
+      held.until = now + LOOP_HOLD;
+      return;
+    }
+    const buffer = samples.get(name);
+    if (!buffer || buffer.duration < LOOP_MARGIN * 3) return;
+    const source = c.createBufferSource(),
+      gain = c.createGain();
+    source.buffer = buffer;
+    source.loop = true;
+    source.loopStart = LOOP_MARGIN;
+    source.loopEnd = buffer.duration - LOOP_MARGIN;
+    source.playbackRate.value = rate;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(volume, now + 0.06);
+    source.connect(gain);
+    gain.connect(c.destination);
+    source.start(now, LOOP_MARGIN);
+    this.loops.set(name, { source, gain, volume, rate, until: now + LOOP_HOLD });
+    if (!this.watch) {
+      this.watch = window.setInterval(() => this.lapse(), 100);
+      document.addEventListener("visibilitychange", this.hidden);
+    }
+  }
+  /** A loop let go: a quick fade, then it stops. */
+  private fade(name: string, loop: Loop) {
+    this.loops.delete(name);
+    const c = this.context;
+    try {
+      if (c) {
+        loop.gain.gain.cancelScheduledValues(c.currentTime);
+        loop.gain.gain.setTargetAtTime(0, c.currentTime, 0.03);
+        loop.source.stop(c.currentTime + 0.25);
+      } else loop.source.stop();
+    } catch {}
+    if (!this.loops.size) this.unwatch();
+  }
+  /** Loops that have not been asked for again lately fade away. */
+  private lapse() {
+    const now = this.context?.currentTime ?? Infinity;
+    for (const [name, loop] of this.loops) if (now > loop.until) this.fade(name, loop);
+  }
+  private unwatch() {
+    if (!this.watch) return;
+    clearInterval(this.watch);
+    this.watch = 0;
+    document.removeEventListener("visibilitychange", this.hidden);
+  }
+  /** Every lasting sound faded out at once (paused, a window opened, the page hidden, the table left). */
+  hush() {
+    for (const [name, loop] of this.loops) this.fade(name, loop);
+    this.unwatch();
+  }
+  private tone(
+    type: OscillatorType,
+    from: number,
+    to: number,
+    at: number,
+    length: number,
+    volume: number,
+  ) {
+    const c = this.context;
+    if (!this.enabled || !c) return;
+    const o = c.createOscillator(),
+      g = c.createGain(),
+      t = c.currentTime + at;
+    o.type = type;
+    o.frequency.setValueAtTime(from, t);
+    o.frequency.exponentialRampToValueAtTime(to, t + length * 0.65);
+    g.gain.setValueAtTime(volume, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + length);
+    o.connect(g);
+    g.connect(c.destination);
+    o.start(t);
+    o.stop(t + length + 0.01);
+  }
+  /** A light touch on a board that is of no particular stuff (the flat games). */
+  tap() {
+    this.tone("triangle", 780, 160, 0, 0.1, 0.07);
+  }
+  /** Plays one recording; false when it is not ready. */
+  private recording(name: string, volume: number, rate = 1, at = 0) {
+    const c = this.context,
+      buffer = samples.get(name);
+    if (!this.enabled || !c) return true;
+    if (!buffer) return false;
+    const source = c.createBufferSource(),
+      gain = c.createGain();
+    source.buffer = buffer;
+    source.playbackRate.value = rate;
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(c.destination);
+    source.start(c.currentTime + at);
+    return true;
+  }
+  /**
+   * Cards, dice and chips: one of the recordings whose name starts with `kind`, a little higher or lower each
+   * time, as no two throws or deals are alike; false when none is ready.
+   */
+  private sample(kind: string, volume: number, at = 0) {
+    if (!this.enabled || !this.context) return true;
+    const ready = [...samples.keys()].filter((name) => name.startsWith(`${kind}-`));
+    return ready.length > 0 && this.recording(ready[Math.floor(Math.random() * ready.length)], volume, 0.94 + Math.random() * 0.12, at);
+  }
+  /**
+   * A piece set down: the `which`-th recording of its kind, always the same one at the same pitch, so that every
+   * move of a game sounds alike (the user asked); games of one stuff take different recordings.
+   */
+  private piece(kind: string, which: number, volume: number) {
+    return this.recording(`${kind}-${which}`, volume) || this.recording(`${kind}-1`, volume);
+  }
+  /** A wooden piece set down on a wooden board: chess, janggi, a pawn, a checker. */
+  wood(which = 1) {
+    if (!this.piece("wood", which, 0.5)) this.tap();
+  }
+  /** Something heavier of wood: a disc on its peg, a wall pushed into its groove. */
+  knock(which = 1) {
+    if (!this.piece("knock", which, 0.45)) this.tap();
+  }
+  /** A stone on a board: the click of the stone, and the board under it. */
+  stone(which = 1) {
+    if (!this.piece("stone", which, 0.6)) return this.tap();
+    this.tone("sine", 210, 120, 0, 0.07, 0.07);
+  }
+  /** A tile, a domino, a ball: something hard clacking on something hard. */
+  tile(which = 1) {
+    if (!this.piece("tile", which, 0.55)) this.plastic();
+  }
+  /** Glass or porcelain: a marble into its hollow, with a short ring. */
+  glass(which = 1) {
+    if (!this.piece("glass", which, 0.4)) return this.plastic();
+    this.tone("sine", 2900, 2700, 0, 0.16, 0.018);
+  }
+  /** Something set down on cloth, earth or a mat. */
+  soft(which = 1) {
+    if (!this.piece("soft", which, 0.5)) this.tap();
+  }
+  /** Paper: a pencil's stroke, a page, chalk. */
+  paper(which = 1) {
+    if (!this.piece("paper", which, 0.4)) this.tap();
+  }
+  /** A card or a hwatu landing on the felt. */
+  card() {
+    if (!this.sample("card", 0.5)) this.tap();
+  }
+  /** One die knocking against another or against the board: a short, bright click. */
+  private click(at: number, volume: number, pitch = 1) {
+    const f = (2600 + Math.random() * 1800) * pitch;
+    this.noise(at, 0.018, volume, f, "bandpass", f * 0.8);
+    this.tone("triangle", f * 0.42, f * 0.3, at, 0.025, volume * 0.35);
+  }
+  /**
+   * Dice rolled: rattled in the hand while they fly, thrown into the tray as they land (`land` seconds from now,
+   * when the view's dice come down), then tumbling over a few times, each knock softer and later than the last,
+   * until they lie still. Several dice rattle more and roll longer than one.
+   */
+  dice(count: number, land = 0) {
+    if (!this.enabled || !this.context) return;
+    const many = Math.max(1, Math.min(5, count));
+    // The rattle in the hand: quick knocks while they are shaken and fly.
+    for (let t = 0; t < land - 0.1; t += 0.035 + Math.random() * 0.035) this.click(t, 0.035 + Math.random() * 0.03, 0.85);
+    if (!this.sample(many >= 3 ? "dice" : "die", 0.6, land)) this.click(land, 0.14);
+    // Rolling to a stop: knocks closing up and dying away.
+    const knocks = 4 + many * 2;
+    let t = land + 0.08,
+      gap = 0.05;
+    for (let i = 0; i < knocks; i++) {
+      this.click(t, 0.075 * (1 - i / knocks) + 0.012, 1 - i * 0.02);
+      t += gap * (0.6 + Math.random() * 0.8);
+      gap *= 1.2;
+    }
+  }
+  /** One yut stick knocking on another or landing on the mat. */
+  stick() {
+    if (!this.sample("stick", 0.32)) this.knock(2);
+  }
+  /** The four sticks shaken together in the hand as they are thrown: a few quick knocks. */
+  sticks() {
+    if (!this.enabled || !this.context) return;
+    [0, 0.05, 0.11, 0.15].forEach((at, i) => this.sample("stick", 0.22 - i * 0.03, at));
+  }
+  /** Glass marbles knocking together: always the same knock, as for any piece. */
+  marble() {
+    if (!this.piece("marble", 1, 0.45)) this.glass(1);
+  }
+  /** Two billiard balls striking each other; `strength` from 0 to 1 sets how loud. */
+  ball(strength = 0.6) {
+    if (!this.sample("ball", 0.15 + 0.45 * strength)) this.tile(5);
+  }
+  /** A billiard ball against a cushion. */
+  cushion(strength = 0.6) {
+    if (!this.sample("cushion", 0.12 + 0.35 * strength)) this.soft();
+  }
+  /** A billiard ball dropping into a pocket and rolling down into it. */
+  pocket() {
+    if (!this.piece("pocket", 1, 0.5)) this.knock();
+  }
+  /** Meat laid on a hot grill, or turned over: a hiss of fat. */
+  sizzle() {
+    if (!this.sample("sizzle", 0.32)) this.noise(0, 1.2, 0.08, 5200, "highpass");
+  }
+  /** Something eaten with relish: chewing and the smack of the lips. */
+  chew() {
+    if (!this.sample("chew", 0.55)) this.tap();
+  }
+  /** Water poured from one beaker into another, glugging as it goes. */
+  pour() {
+    if (!this.piece("pour", 1, 0.5)) return this.plop();
+    this.recording("gurgle-1", 0.22, 1, 0.35);
+  }
+  /** Chips sliding across the felt. */
+  chips() {
+    if (!this.sample("chips", 0.5))
+      [1900, 2300, 2050].forEach((f, i) => this.tone("triangle", f, f * 0.8, i * 0.05, 0.07, 0.035));
+  }
+  /** A burst of filtered noise that swells and dies away. */
+  private noise(at: number, length: number, volume: number, frequency: number, type: BiquadFilterType = "bandpass", sweep = frequency) {
+    const c = this.context;
+    if (!this.enabled || !c) return;
+    const buffer = c.createBuffer(1, Math.ceil(c.sampleRate * length), c.sampleRate),
+      data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const source = c.createBufferSource(),
+      filter = c.createBiquadFilter(),
+      gain = c.createGain(),
+      t = c.currentTime + at;
+    source.buffer = buffer;
+    filter.type = type;
+    filter.frequency.setValueAtTime(frequency, t);
+    filter.frequency.linearRampToValueAtTime(sweep, t + length);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(volume, t + length * 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(c.destination);
+    source.start(t);
+  }
+  /** A cash machine: coins, the drawer's rattle, then two bright bells. */
+  cash() {
+    this.sample("coin", 0.35);
+    this.noise(0, 0.12, 0.12, 3200, "highpass");
+    this.noise(0.1, 0.1, 0.1, 2600, "highpass");
+    [1568, 2093].forEach((f, i) => this.tone("triangle", f, f, 0.2 + i * 0.09, 0.5, 0.09));
+    this.tone("sine", 3136, 3136, 0.29, 0.6, 0.04);
+  }
+  /** Something dropping into water: a plop and the wash after it, made by the page (a boat's oars, a pour that has not loaded). */
+  plop() {
+    this.tone("sine", 420, 90, 0, 0.22, 0.16);
+    this.noise(0.03, 0.55, 0.2, 2600, "lowpass", 500);
+    this.noise(0.2, 0.5, 0.08, 1200, "bandpass", 600);
+  }
+  /** A shell falling into the sea: a recording of a big splash, the same each time (made by the page until it is ready). */
+  splash() {
+    if (!this.piece("splash", 1, 0.6)) this.plop();
+  }
+  /** An explosion: a recording of a close blast and its rumble rolling away (made by the page until it is ready). */
+  explosion() {
+    if (!this.piece("explosion", 1, 0.75)) this.blast();
+  }
+  /** An explosion made by the page: a crack, a deep thump and a rumble dying away. */
+  private blast() {
+    this.noise(0, 0.12, 0.3, 3000, "highpass", 800);
+    this.tone("sine", 140, 34, 0, 0.6, 0.4);
+    this.tone("triangle", 90, 30, 0.02, 0.5, 0.2);
+    this.noise(0.04, 0.9, 0.26, 900, "lowpass", 120);
+  }
+  /** A plastic disc dropping into a plastic rack: a hard click and a lighter rattle. */
+  plastic() {
+    this.noise(0, 0.035, 0.3, 4200, "bandpass", 3200);
+    this.tone("square", 1900, 1300, 0, 0.04, 0.05);
+    this.noise(0.07, 0.03, 0.14, 5200, "bandpass", 4200);
+    this.tone("square", 2300, 1700, 0.07, 0.03, 0.025);
+  }
+  /**
+   * 레이저 체스, made by the page: the laser firing (a falling zap over a low hum), its beam stopped by a shield's
+   * front or a laser (a short metallic clink), and a piece it takes bursting (a crackle, a thump and glassy glints).
+   */
+  laser(what: "fire" | "block" | "burst") {
+    if (what === "fire") {
+      this.tone("sawtooth", 1500, 380, 0, 0.24, 0.03);
+      this.tone("sine", 2400, 900, 0, 0.18, 0.04);
+      this.tone("sine", 110, 96, 0, 0.42, 0.05);
+      this.noise(0, 0.2, 0.03, 6000, "highpass", 3000);
+    } else if (what === "block") {
+      this.tone("triangle", 2500, 1900, 0, 0.07, 0.05);
+      this.noise(0, 0.05, 0.08, 5200, "bandpass", 4000);
+    } else {
+      this.noise(0, 0.28, 0.2, 3200, "highpass", 700);
+      this.tone("sine", 190, 55, 0, 0.32, 0.14);
+      [3300, 4200, 2900].forEach((f, i) => this.tone("triangle", f, f * 0.92, 0.05 + i * 0.06, 0.12, 0.025));
+    }
+  }
+  /** A hound's bark: a recording, the same each time. */
+  bark() {
+    if (this.piece("bark", 2, 0.32)) return;
+    this.barked();
+  }
+  /** Two barks, made by the page while the recording is not ready. */
+  private barked() {
+    for (const at of [0, 0.2]) {
+      this.tone("sawtooth", 520, 210, at, 0.13, 0.16);
+      this.tone("square", 260, 120, at, 0.12, 0.06);
+      this.noise(at, 0.1, 0.1, 1400, "bandpass", 700);
+    }
+  }
+  /** The hare's hop: a light footfall in the grass, the same each time. */
+  hop() {
+    if (this.recording("hop-1", 0.5, 1.25)) return;
+    this.pop();
+  }
+  /**
+   * A frog's 폴짝 (the user asked for it instead of the knock on wood): a springy rise as it leaps, higher and
+   * longer over another frog (`far`), and a soft, damp landing `land` seconds later; nothing recorded, the same each time.
+   */
+  leap(far: boolean, land: number) {
+    const rise = far ? 0.2 : 0.13;
+    this.tone("sine", far ? 250 : 310, far ? 1250 : 960, 0, rise, 0.13);
+    this.tone("triangle", far ? 380 : 470, far ? 1700 : 1350, 0.025, rise * 0.8, 0.035);
+    this.noise(0.01, rise + 0.08, 0.025, 900, "bandpass", 2600);
+    this.tone("sine", 430, 150, land, 0.09, 0.1);
+    this.noise(land, 0.06, 0.05, 520, "lowpass", 260);
+  }
+  /** Frogs croaking (every frog home): a few rib-bits, each a buzz of quick pulses, lower and higher, `after` seconds from now. */
+  croak(after = 0) {
+    [
+      [0.12, 1],
+      [0.42, 1.18],
+      [0.7, 0.88],
+    ].forEach(([at, pitch]) => {
+      for (const [start, pulses, base] of [
+        [0, 5, 205],
+        [0.14, 7, 170],
+      ])
+        for (let k = 0; k < pulses; k++) this.tone("square", base * pitch, base * pitch * 0.82, after + at + start + k * 0.021, 0.018, 0.035);
+    });
+  }
+  /**
+   * A cat's small, unhappy 냐옹 `after` seconds from now (trap the cat): a voice that rises and falls through a nasal
+   * vowel, with a breath under it; nothing recorded, the same each time.
+   */
+  meow(after = 0) {
+    this.tone("sawtooth", 560, 820, after, 0.2, 0.035);
+    this.tone("sawtooth", 820, 470, after + 0.16, 0.34, 0.04);
+    this.tone("triangle", 1120, 1640, after, 0.2, 0.05);
+    this.tone("triangle", 1640, 940, after + 0.16, 0.36, 0.06);
+    this.tone("sine", 2300, 1500, after + 0.1, 0.32, 0.02);
+    this.noise(after, 0.48, 0.012, 1800, "bandpass", 1200);
+  }
+  /** Three light, quick notes rising (a merge of fruit; the hare's hop while its recording is not ready). */
+  pop() {
+    [0, 0.11, 0.22].forEach((at, i) => {
+      this.tone("sine", 880 + i * 120, 620 + i * 120, at, 0.07, 0.09);
+      this.noise(at, 0.04, 0.05, 2600, "bandpass", 1800);
+    });
+  }
+  /** A double: a short rising fanfare. */
+  double() {
+    [784, 988, 1175, 1568].forEach((f, i) => this.tone("triangle", f, f, 0.25 + i * 0.09, i === 3 ? 0.5 : 0.16, 0.08));
+    this.tone("sine", 3136, 3136, 0.52, 0.5, 0.03);
+  }
+  /** A bright, glittering run of notes. */
+  sparkle() {
+    [1047, 1319, 1568, 2093, 2637, 3136, 4186].forEach((f, i) => {
+      this.tone("sine", f, f, i * 0.07, 0.5, 0.05);
+      this.tone("triangle", f * 2, f * 2, i * 0.07 + 0.02, 0.25, 0.015);
+    });
+  }
+  /** Waves breaking on a beach, twice. */
+  waves() {
+    this.noise(0, 1.3, 0.16, 500, "lowpass", 2200);
+    this.noise(1.0, 1.6, 0.13, 700, "lowpass", 1600);
+  }
+  /** Something vast and far away: a slow rising sweep over a hollow chord. */
+  space() {
+    this.tone("sine", 110, 440, 0, 1.6, 0.07);
+    this.tone("sine", 165, 660, 0.1, 1.6, 0.045);
+    this.tone("triangle", 880, 1760, 0.5, 1.3, 0.02);
+    this.noise(0.2, 1.4, 0.03, 4000, "bandpass", 900);
+  }
+  /**
+   * The angel's coming (전술 대전): a choir-like chord of soft voices swelling for a second, a shimmer rising under it,
+   * then at `flash` seconds a bright struck chord on bells with a glitter running up, the chord held as it dies away.
+   */
+  heavenly(flash = 1.15) {
+    const c = this.context;
+    if (!this.enabled || !c) return;
+    const now = c.currentTime;
+    for (const [f, detune] of [[261.63, -6], [329.63, 5], [392, -4], [523.25, 7], [261.63, 9], [392, 6]] as const) {
+      const o = c.createOscillator(),
+        low = c.createBiquadFilter(),
+        g = c.createGain();
+      o.type = "sawtooth";
+      o.frequency.value = f;
+      o.detune.value = detune;
+      low.type = "lowpass";
+      low.frequency.setValueAtTime(500, now);
+      low.frequency.linearRampToValueAtTime(1600, now + flash);
+      low.frequency.exponentialRampToValueAtTime(700, now + flash + 1.6);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(0.011, now + flash);
+      g.gain.setValueAtTime(0.011, now + flash + 0.15);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + flash + 1.7);
+      o.connect(low);
+      low.connect(g);
+      g.connect(c.destination);
+      o.start(now);
+      o.stop(now + flash + 1.75);
+    }
+    this.tone("sine", 300, 1400, 0, flash, 0.02);
+    this.noise(0.1, flash, 0.02, 2000, "bandpass", 7000);
+    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => this.bell(f, flash + i * 0.015, 1.5, 0.045));
+    [1568, 2093, 2637, 3136, 4186, 5274].forEach((f, i) => this.tone("sine", f, f, flash + 0.1 + i * 0.06, 0.45, 0.025));
+  }
+  /** A bowling ball rolling away down its lane for `length` seconds: a low rumble that swells and fades as it goes. */
+  rumble(length = 2.4) {
+    if (!this.enabled || !this.context) return;
+    this.noise(0, length, 0.22, 190, "lowpass", 110);
+    this.noise(0.05, length * 0.8, 0.05, 420, "bandpass", 260);
+    this.tone("sine", 58, 46, 0, length, 0.05);
+  }
+  /**
+   * Pins scattered by a ball (`strength` 0 to 1): the full crash of a rack going down for a strong hit, a few pins
+   * for a lighter one, a pin or two knocking for the knocks after; louder the harder (made by the page until the
+   * recordings are ready).
+   */
+  pins(strength = 1) {
+    if (!this.enabled || !this.context) return;
+    const s = Math.max(0, Math.min(1, strength)),
+      name = s >= 0.55 ? "pins-1" : s >= 0.22 ? "pins-2" : "pins-3";
+    if (!this.recording(name, 0.28 + 0.34 * s)) this.knocked(s);
+  }
+  /** Pins made by the page: hard knocks one after another, with their clatter, dying away. */
+  private knocked(strength: number) {
+    const knocks = 3 + Math.round(Math.min(1, strength) * 9);
+    let at = 0;
+    for (let i = 0; i < knocks; i++) {
+      const loud = (0.45 * Math.min(1, strength) + 0.15) * (1 - i / (knocks + 2));
+      if (!this.recording(`knock-${1 + (i % 4)}`, loud, 0.9 + Math.random() * 0.35, at)) this.click(at, loud * 0.4, 0.5);
+      this.noise(at, 0.06, loud * 0.22, 2400 + Math.random() * 1600, "bandpass", 1400);
+      at += (0.02 + Math.random() * 0.05) * (1 + i * 0.2);
+    }
+    this.tone("sine", 160, 70, 0, 0.25, 0.08 * Math.min(1, strength));
+  }
+  /** An air hockey puck struck by a mallet (`strength` 0 to 1): a hard plastic clack. */
+  puck(strength = 0.6) {
+    if (!this.recording("puck-1", 0.12 + 0.4 * Math.min(1, strength))) this.plastic();
+  }
+  /** The puck against a rail: a duller knock. */
+  rail(strength = 0.6) {
+    if (!this.recording("puck-2", 0.1 + 0.38 * Math.min(1, strength))) this.plastic();
+  }
+  /** The puck dropping into a goal slot and clattering down the chute under it. */
+  slot() {
+    if (!this.recording("puck-3", 0.55)) this.plastic();
+  }
+  /** A basketball against the rim (`strength` 0 to 1): the steel rings over the ball's thump. */
+  rim(strength = 0.6) {
+    if (!this.recording("hoop-1", 0.14 + 0.42 * Math.min(1, strength))) this.tile(5);
+  }
+  /** A basketball against the backboard. */
+  backboard(strength = 0.6) {
+    if (!this.recording("board-1", 0.14 + 0.42 * Math.min(1, strength))) this.cushion(strength);
+  }
+  /** A basketball bouncing on the floor, or knocking another (`strength` 0 to 1): its thump and the ring of its air. */
+  bounce(strength = 0.6) {
+    if (!this.recording("bounce-1", 0.06 + 0.46 * Math.min(1, strength))) this.soft(2);
+  }
+  /** A basketball through the net: the swish of the cords. */
+  swish() {
+    if (!this.recording("swish-1", 0.5)) this.noise(0, 0.3, 0.06, 3200, "bandpass", 1800);
+  }
+  /** Balls rolling back down the ramp (`level` 0 to 1, 0 is silence), as long as it is asked for. */
+  rolling(level: number) {
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("roll-1", 0.24 * l, 0.85 + 0.3 * l);
+  }
+  /** The claw machine's gantry motor (`level` 0 to 1, how fast the trolley goes; 0 is silence), as long as it is asked for. */
+  motor(level: number) {
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("motor-1", l > 0.03 ? 0.1 + 0.18 * l : 0, 0.82 + 0.22 * l);
+  }
+  /** The claw machine's winch letting the claw down (quicker, higher) or winding it up, as long as it is asked for. */
+  winch(level: number, rising = false) {
+    this.hum("winch-1", 0.26 * Math.max(0, Math.min(1, level)), rising ? 0.92 : 1.08);
+  }
+  /** Fires burning in 전술 대전's dungeon (`level` 0 to 1, 0 is silence), as long as it is asked for; made by the page. */
+  crackle(level: number) {
+    const c = this.context;
+    if (c && !samples.has("crackle-0")) samples.set("crackle-0", crackling(c));
+    this.hum("crackle-0", 0.14 * Math.max(0, Math.min(1, level)));
+  }
+  /** The claw's prongs closing on their solenoid (or, softer, opening). */
+  clasp(strength = 1) {
+    if (!this.recording("clasp-1", 0.2 + 0.32 * Math.min(1, strength), strength < 1 ? 1.15 : 1)) this.knock(1);
+  }
+  /** A heavy, dull thud: a soft mallet striking a mole. */
+  thud() {
+    if (this.recording("thud-1", 0.6)) return;
+    this.tone("sine", 150, 55, 0, 0.18, 0.3);
+    this.noise(0, 0.08, 0.12, 700, "lowpass", 300);
+  }
+  /** A bow let go (archery): the string's low thrum and the arrow's hiss as it leaves; made by the page, the same each time. */
+  bow() {
+    this.tone("triangle", 148, 92, 0, 0.24, 0.13);
+    this.tone("sine", 74, 52, 0, 0.2, 0.12);
+    this.noise(0, 0.05, 0.14, 2400, "bandpass", 900);
+    this.noise(0.02, 0.34, 0.05, 5200, "highpass", 3000);
+  }
+  /** A crowd clapping (`strength` 0 to 1, how many and how long), beginning a moment from now; made by the page. */
+  applause(strength = 1, after = 0.3) {
+    if (!this.enabled || !this.context) return;
+    const s = Math.max(0, Math.min(1, strength)),
+      claps = Math.round(16 + 44 * s),
+      length = 1.1 + 1.3 * s;
+    for (let k = 0; k < claps; k++) {
+      const at = Math.random() ** 1.5 * length;
+      this.noise(after + at, 0.03, (0.045 + 0.04 * s) * (1 - at / (length + 0.4)), 1300 + Math.random() * 1800, "bandpass", 900 + Math.random() * 1200);
+    }
+  }
+  /** A soft bell: a note with two partials over it, struck and left to ring. */
+  private bell(frequency: number, at: number, length: number, volume: number) {
+    this.tone("sine", frequency, frequency, at, length, volume);
+    this.tone("sine", frequency * 2, frequency * 2, at, length * 0.6, volume * 0.3);
+    this.tone("triangle", frequency * 3.01, frequency * 3.01, at, length * 0.3, volume * 0.12);
+  }
+  /** A win or a draw: a rising broken chord on bells and the chord held under its last note; one of three keys. */
+  win() {
+    const key = [1, 1.122, 0.891][Math.floor(Math.random() * 3)],
+      notes = [523.25, 659.25, 783.99, 1046.5].map((f) => f * key);
+    notes.forEach((f, i) => this.bell(f, i * 0.12, i === 3 ? 1.1 : 0.5, 0.055));
+    notes.slice(0, 3).forEach((f) => this.tone("sine", f / 2, f / 2, 0.36, 1.2, 0.022));
+  }
+  /** A loss against the computer: three falling notes, soft, the last one held. */
+  lose() {
+    const key = [1, 0.944, 1.059][Math.floor(Math.random() * 3)];
+    [392, 349.23, 293.66].forEach((f, i) => this.bell(f * key, i * 0.2, i === 2 ? 1.0 : 0.45, 0.05));
+    this.tone("sine", 146.83 * key, 146.83 * key, 0.4, 1.0, 0.03);
+  }
+}

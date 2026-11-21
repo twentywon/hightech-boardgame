@@ -1,0 +1,31 @@
+{
+  "runtime": "v24.22.1",
+  "samples": [
+    {
+      "empty": 8,
+      "budgetMs": 3000,
+      "nodes": 1470,
+      "depth": 8,
+      "elapsedMs": 20.340841000000182,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 24,
+      "solved": true,
+      "score": 60000,
+      "reason": "search"
+    },
+    {
+      "empty": 10,
+      "budgetMs": 3000,
+      "nodes": 6787,
+      "depth": 10,
+      "elapsedMs": 99.15121799999997,
+      "timedOut": false,
+      "nodeLimited": false,
+      "tableHits": 327,
+      "solved": true,
+      "score": 160000,
+      "reason": "search"
+    }
+  ]
+}
