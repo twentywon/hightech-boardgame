@@ -319,6 +319,11 @@ export class Sound {
     if (!this.sample("chips", 0.5))
       [1900, 2300, 2050].forEach((f, i) => this.tone("triangle", f, f * 0.8, i * 0.05, 0.07, 0.035));
   }
+  /** One coin landing on the felt or on other coins: a short clink, a little higher or lower each time, softer with `strength`. */
+  coin(strength = 1) {
+    if (!this.recording("coin-2", 0.1 + 0.32 * strength, 0.9 + Math.random() * 0.3))
+      this.tone("triangle", 2500 + Math.random() * 500, 2300, 0, 0.09, 0.012 + 0.03 * strength);
+  }
   /** A burst of filtered noise that swells and dies away. */
   private noise(at: number, length: number, volume: number, frequency: number, type: BiquadFilterType = "bandpass", sweep = frequency) {
     const c = this.context;
