@@ -1,23 +1,27 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { block, glossy, stuff } from "../../engine/scene-utils";
+import { block, capable, glossy, stuff } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { CUBE, SWIPE, TILE_TOP, WAY, arrowAt, cellAt, cellUnder, glideSubject, spotAt, swipeDir } from "./layout";
 import { AIR, BACKSLASH, BLOCK, GATE, GOAL, ICE, PORTAL, SLASH, SWITCH, attempt, type State } from "./rules";
+import { TURTLE_TOP, turtle, type Mood, type Turtle } from "./turtle";
 
-export const GLIDE_COLORS: [string, string] = ["#f0a23c", "#5a6472"];
+export const GLIDE_COLORS: [string, string] = ["#4f9e3c", "#5a6472"];
 /** The colours of the portal pairs and of the gates (with their switch), by tag. */
 const PORTAL_PAINT = ["#a46bff", "#22c3ad"],
   GATE_PAINT = ["#2fa86b", "#e0563f"];
 const SLAB = 0.92,
   SLAB_H = 0.26,
-  /** The cube's middle at rest, and how tall the blocks, the ice and a raised gate stand. */
+  /** The middle of the turtle (the piece the rules call the cube) at rest, and how tall the blocks, the ice and a raised gate stand. */
   REST = TILE_TOP + CUBE / 2,
   BLOCK_H = 0.72,
   GATE_H = 0.62,
-  WELL = 0.32;
+  WELL = 0.32,
+  /** How long a speech bubble stays, in seconds, the last part of it fading. */
+  SAID = 1.15,
+  FADE = 0.3;
 /** A sequence for scenery, the same every time. */
 const sequence = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 const canvasOf = (w: number, h = w) => {
@@ -270,11 +274,13 @@ interface Leg {
  * and far floating islands round about. On the tiles: blocks of dark basalt with rounded edges, turners as brass
  * ridges across the diagonal on engraved tiles, clear cracked ice that shatters into shards, portals as rings of
  * one colour round a swirl, switches as enamelled buttons and gates as enamelled blocks that sink flush, and the
- * goal as a well cut through its tile, lit from far below, with a beam rising from it. The cube is warm amber
- * glass with a glowing core and a light of its own. It slides cell by cell, eased; into a portal it shrinks away
- * and grows out of the other; off the edge it tips over and tumbles down into the mist; on the goal it sinks into
- * the well. A swipe anywhere (screen up is north), a tap on one of the four arrows round the cube, or a tap on the
- * board in the cube's row or column pushes it.
+ * goal as a well cut through its tile, lit from far below, with a beam rising from it. The piece the rules call the
+ * cube is a turtle lying on its back (`turtle.ts`), paddling its legs. It slides cell by cell, eased, spinning round
+ * on its shell, and comes to rest looking at the player; into a portal it shrinks away and grows out of the other;
+ * off the edge it tips over and tumbles down into the mist crying 으아악!; against a block, ice or a gate it says
+ * 아쿵! (speech bubbles over the canvas, decoration); on the goal it wriggles happily and sinks into the well. A
+ * swipe anywhere (screen up is north), a tap on one of the four arrows round the cube, or a tap on the board in the
+ * cube's row or column pushes it.
  */
 export class GlideView extends TableView<State> {
   private board = new T.Group();
@@ -284,8 +290,15 @@ export class GlideView extends TableView<State> {
   private gates: { cell: number; tag: number; mesh: T.Mesh }[] = [];
   private paint: Record<string, T.Material> = {};
   private shapes: Record<string, T.BufferGeometry> = {};
+  /** What moves over the tiles: the turtle, held so that its middle is at `REST`. */
   private cube = new T.Group();
-  private glow: T.PointLight;
+  private critter: Turtle;
+  private mood: Mood = "rest";
+  /** The speech bubbles' layer over the canvas, the bubble, and when it was said (seconds, by the page's clock). */
+  private layer: HTMLDivElement;
+  private bubble: HTMLDivElement;
+  private saidAt = -Infinity;
+  private clock = 0;
   private well: { beam: T.Mesh; floor: T.MeshBasicMaterial; light: T.PointLight } | null = null;
   private arrows: T.Mesh[] = [];
   private arrowPaint: T.MeshBasicMaterial[] = [];
@@ -368,18 +381,47 @@ export class GlideView extends TableView<State> {
     g("arrow", arrowShape(0.42, 0.34));
     g("hintArrow", arrowShape(0.62, 0.46));
     g("shard", new T.TetrahedronGeometry(0.13, 0));
-    // The cube: amber glass with rounded edges round a glowing core, and a warm light that goes with it.
-    const glass = glossy({ color: "#ffb24a", roughness: 0.1, metalness: 0.05, transparent: true, opacity: 0.8, emissive: "#ff7a14", emissiveIntensity: 0.32 }),
-      core = new T.MeshBasicMaterial({ color: "#ffe2a4" });
-    this.own(glass);
-    this.own(core);
-    const shell = new T.Mesh(g("cube", block(CUBE, CUBE, CUBE, 0.1)), glass);
-    shell.castShadow = true;
-    shell.renderOrder = 2;
-    const heart = new T.Mesh(g("core", block(CUBE * 0.46, CUBE * 0.46, CUBE * 0.46, 0.05)), core);
-    this.glow = new T.PointLight("#ffb15c", 2.4, 3.2, 2);
-    this.cube.add(heart, shell, this.glow);
+    // The turtle on its back, its shell on the tile.
+    this.critter = turtle(keep);
+    this.critter.root.position.y = TILE_TOP - REST;
+    this.cube.add(this.critter.root);
     this.scene.add(this.board, this.cube);
+    // Its speech bubbles: words over the canvas, decoration only.
+    this.layer = document.createElement("div");
+    this.layer.className = "gl-say";
+    this.layer.setAttribute("aria-hidden", "true");
+    Object.assign(this.layer.style, { position: "absolute", pointerEvents: "none", overflow: "hidden", zIndex: "3", left: "0", top: "0", width: "0", height: "0" });
+    this.bubble = document.createElement("div");
+    Object.assign(this.bubble.style, {
+      position: "absolute",
+      display: "none",
+      padding: "0.28em 0.8em 0.32em",
+      borderRadius: "1.1em",
+      border: "3px solid #2b2233",
+      fontWeight: "900",
+      lineHeight: "1.1",
+      whiteSpace: "nowrap",
+      letterSpacing: "0.02em",
+      webkitTextStroke: "0.035em currentColor",
+      boxShadow: "0 4px 0 rgba(43, 34, 51, 0.28)",
+      transformOrigin: "50% 100%",
+    });
+    const tail = document.createElement("span");
+    Object.assign(tail.style, {
+      position: "absolute",
+      left: "50%",
+      bottom: "-9px",
+      width: "13px",
+      height: "13px",
+      marginLeft: "-8px",
+      background: "inherit",
+      borderRight: "3px solid #2b2233",
+      borderBottom: "3px solid #2b2233",
+      transform: "rotate(45deg)",
+    });
+    this.bubble.append(document.createElement("b"), tail);
+    this.layer.append(this.bubble);
+    host.append(this.layer);
     // The four arrows round the cube, and the hint's arrow and ring in gold.
     for (let d = 0; d < 4; d++) {
       const material = this.own(new T.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.78, depthTest: false, depthWrite: false })),
@@ -405,6 +447,59 @@ export class GlideView extends TableView<State> {
     }
     this.scenery();
     this.begin();
+    this.clock = requestAnimationFrame(this.idle);
+  }
+  /**
+   * The turtle paddles its legs (held still under reduced motion), and a bubble follows it on the screen and fades.
+   * At rest it paddles only where a graphics card draws: drawn by the processor alone (as in the browser tests) a frame
+   * of this table took half a second, so there the legs move only while the table is drawn anyway.
+   */
+  private idle = (now: number) => {
+    if (this.disposed) return;
+    this.clock = requestAnimationFrame(this.idle);
+    const t = now / 1000;
+    if (!this.reducedMotion && this.cube.visible && (this.mood !== "rest" || capable())) {
+      this.critter.move(t, this.mood);
+      this.redraw();
+    }
+    this.follow();
+  };
+  /** Says `words` in a bubble over the turtle: a cry (으아악!) or a bump (아쿵!). */
+  private say(words: string, cry: boolean) {
+    if (capturing()) return;
+    const style = this.bubble.style;
+    (this.bubble.firstChild as HTMLElement).textContent = words;
+    style.background = cry ? "#fff1a8" : "#ffffff";
+    style.color = cry ? "#d23a2a" : "#2b2233";
+    this.bubble.dataset.tilt = cry ? "-7" : "5";
+    style.fontSize = `${Math.round(Math.max(18, Math.min(34, this.renderer.domElement.clientHeight * 0.045)))}px`;
+    style.display = "block";
+    this.saidAt = performance.now() / 1000;
+    this.follow();
+  }
+  /** Keeps the bubble over the turtle's place on the screen, popping in and fading out. */
+  private follow() {
+    const age = Math.max(0, performance.now() / 1000 - this.saidAt);
+    if (this.bubble.style.display === "none") return;
+    if (age > SAID || capturing()) {
+      this.bubble.style.display = "none";
+      return;
+    }
+    const el = this.renderer.domElement,
+      W = el.clientWidth,
+      H = el.clientHeight;
+    Object.assign(this.layer.style, { left: `${el.offsetLeft}px`, top: `${el.offsetTop}px`, width: `${W}px`, height: `${H}px` });
+    const at = this.cube.getWorldPosition(new T.Vector3());
+    at.y += (TURTLE_TOP + 0.12) * this.cube.scale.y + (TILE_TOP - REST);
+    const spot = this.screenOf(at),
+      half = this.bubble.offsetWidth / 2 + 6,
+      x = Math.max(half, Math.min(W - half, spot.x)),
+      y = Math.max(this.bubble.offsetHeight + 64, Math.min(H - 14, spot.y - 10)),
+      pop = this.reducedMotion ? 1 : age < 0.16 ? 0.55 + 0.6 * Math.sin((age / 0.16) * (Math.PI / 2)) : age < 0.26 ? 1.15 - ((age - 0.16) / 0.1) * 0.15 : 1;
+    this.bubble.style.left = `${x}px`;
+    this.bubble.style.top = `${y}px`;
+    this.bubble.style.transform = `translate(-50%, -100%) rotate(${this.bubble.dataset.tilt}deg) scale(${pop})`;
+    this.bubble.style.opacity = String(age > SAID - FADE ? Math.max(0, (SAID - age) / FADE) : 1);
   }
   private beamMap: T.Texture | null = null;
   /** The mist below, far floating islands with grass and a few trees, laid by a fixed sequence. */
@@ -467,6 +562,8 @@ export class GlideView extends TableView<State> {
     fog.far = far + 34;
   }
   dispose() {
+    cancelAnimationFrame(this.clock);
+    this.layer.remove();
     for (const thing of this.laid) thing.dispose();
     this.laid = [];
     super.dispose();
@@ -627,16 +724,27 @@ export class GlideView extends TableView<State> {
     this.onMove({ from: -1, to: dir, extra: -1 });
     // A push that moves nothing: the cube gives a little shake that way.
     // While it still slides a push is only kept for later (the screen queues it), so nothing shakes then.
-    if (blocked && this.state === state && !this.sliding) this.shake(dir);
+    if (blocked && this.state === state && !this.sliding) this.shake(dir, attempt(state, dir) === "none");
   }
-  private shake(dir: number) {
+  /** A push that moves nothing: the turtle gives a little shake that way, and says 아쿵! when it was something in its way. */
+  private shake(dir: number, bumped: boolean) {
     const state = this.state!,
       at = cellAt(state.w, state.h, state.cube),
       [dx, dz] = WAY[dir];
+    if (bumped) this.say("아쿵!", false);
     this.tween(0, 180, (p) => {
       const k = Math.sin(p * Math.PI * 2) * 0.05 * (1 - p);
       this.cube.position.set(at.x + dx * k, REST, at.z + dz * k);
     });
+  }
+  /** Under reduced motion nothing slides, but the turtle still says what befell it. */
+  sync(state: State, animate = true) {
+    const before = this.state;
+    super.sync(state, animate);
+    const slide = state.last;
+    if (this.reducedMotion && animate && before && slide && before !== state && state.ply === before.ply + 1 && before.kinds === state.kinds && slide.path.length)
+      if (slide.end === "fall") this.say("으아악!", true);
+      else if (slide.end !== "goal") this.say("아쿵!", false);
   }
   protected place(state: State) {
     this.lay(state);
@@ -646,6 +754,7 @@ export class GlideView extends TableView<State> {
     this.cube.scale.setScalar(1);
     // Fallen into the mist, or sunk into the well.
     this.cube.visible = state.fell === null && state.winner !== 0;
+    this.mood = "rest";
     for (const [cell, crystal] of this.ice) crystal.visible = !state.broken.includes(cell);
     for (const gate of this.gates) gate.mesh.scale.y = state.raised[gate.tag] ? 1 : 0.06;
     for (const shard of this.shards) shard.visible = false;
@@ -695,12 +804,20 @@ export class GlideView extends TableView<State> {
     this.sliding = true;
     this.fallingOrHome = fall || slide.end === "goal";
     this.mark(this.marks);
+    // Round and round on its shell as it goes: a turn or more for a longer way, ending where it began (looking at the
+    // player), and the other way round when pushed east or south.
+    const turns = Math.max(1, Math.min(5, Math.round(total * 0.55))),
+      sign = slide.dir === 1 || slide.dir === 2 ? -1 : 1,
+      spin = (u: number) => sign * (u / total) * turns * Math.PI * 2;
+    let cried = false;
     // The table counts as at rest once the cube does: the bump against what stopped it and flying ice do not hold the
     // next push back (the user found the wait after each stop too long; a push given ahead is played at once).
     if (!fall && slide.end !== "goal")
       this.tween(duration, 1, () => {
         if (!this.sliding) return;
         this.sliding = false;
+        this.mood = "rest";
+        this.say("아쿵!", false);
         this.onSettled();
       });
     this.cube.visible = true;
@@ -724,18 +841,20 @@ export class GlideView extends TableView<State> {
         x = near ? leg.from.x : leg.to.x;
         z = near ? leg.from.z : leg.to.z;
         scale = near ? 1 - f * 2 : f * 2 - 1;
-        this.cube.rotation.y = f * Math.PI * 2;
       } else {
         x = leg.from.x + (leg.to.x - leg.from.x) * f;
         z = leg.from.z + (leg.to.z - leg.from.z) * f;
-        this.cube.rotation.y = 0;
-        // Over the edge, past the middle of the void it falls toward: it begins to drop and tip.
+        // Over the edge, past the middle of the void it falls toward: it begins to drop and tip, and cries out.
         if (leg.fall && f > 0.45) {
           const g = (f - 0.45) / 0.55;
           y -= 0.5 * g * g;
           tip = g * 0.7;
-        }
+          this.mood = "fall";
+          if (!cried) this.say("으아악!", true);
+          cried = true;
+        } else this.mood = "slide";
       }
+      this.cube.rotation.y = spin(u);
       // A little lift as it rides over a turner's ridge.
       for (const l of legs) if (l.turn) y += 0.1 * Math.max(0, Math.cos(Math.min(Math.PI / 2, Math.abs(u - (l.at + l.length)) * Math.PI))) ** 2;
       this.cube.position.set(x, y, z);
@@ -764,6 +883,8 @@ export class GlideView extends TableView<State> {
         this.cube.position.set(x0 + dx * t * 0.9, REST - 0.5 - 9.5 * t * t, z0 + dz * t * 0.9);
         this.cube.rotation.x = dz * (0.7 + t * 5);
         this.cube.rotation.z = -dx * (0.7 + t * 5);
+        this.cube.rotation.y = spin(total) + sign * t * 5;
+        this.mood = "fall";
         this.cube.scale.setScalar(1 - p * 0.3);
       });
       return true;
@@ -778,12 +899,15 @@ export class GlideView extends TableView<State> {
     }
     if (slide.end === "ice" && slide.struck >= 0) this.shatter(slide.struck, duration, dx, dz);
     if (slide.end === "goal") {
-      // Down the well, smaller and smaller, as the light rises.
+      // A happy wriggle and a little hop, then down the well, smaller and smaller, as the light rises.
+      this.tween(duration, 1, () => (this.mood = "happy"));
       this.tween(duration + 120, 650, (p) => {
         const e = p * p;
-        this.cube.position.set(rest.x, REST - e * 1.05, rest.z);
+        this.mood = "happy";
+        this.cube.position.set(rest.x, REST - e * 1.05 + Math.sin(Math.min(1, p * 2.5) * Math.PI) * 0.09, rest.z);
         this.cube.scale.setScalar(1 - e * 0.55);
         this.cube.rotation.y = e * 1.6;
+        this.cube.rotation.z = Math.sin(p * Math.PI * 6) * 0.2 * (1 - p);
         if (this.well) {
           this.well.light.intensity = 2.2 + 2.3 * p;
           (this.well.beam.material as T.MeshBasicMaterial).opacity = 0.5 + 0.35 * p;

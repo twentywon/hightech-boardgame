@@ -102,6 +102,9 @@ test("glide cube: a seeded puzzle is solved by swipes and a key, then a fall beg
   else await page.mouse.click(arrow.x, arrow.y);
   await expect(moves(page)).toHaveText("1수", { timeout: 20000 });
   await expect(page.locator("#turn")).toContainText("실패!");
+  // The turtle cried out as it went over the edge (a speech bubble over the canvas, decoration only).
+  await expect(page.locator(".gl-say")).toContainText("으아악!");
+  await expect(page.locator(".gl-say")).toHaveAttribute("aria-hidden", "true");
   // A fall begins the board again by itself after a moment.
   await expect(moves(page)).toHaveText("0수", { timeout: 20000 });
   await expect(page.locator("#pg-note")).toContainText("처음부터 다시 시작했습니다");

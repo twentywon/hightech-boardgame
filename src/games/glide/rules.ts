@@ -263,7 +263,7 @@ export function play(state: State, move: Move): State | null {
     fell: fell ? path[path.length - 1].dir : null,
     last: { dir: move.to, from: state.cube, path, end, struck, rest: cube },
     winner: code === WIN ? 0 : fell ? 1 : null,
-    trouble: fell ? "큐브가 허공으로 떨어졌습니다." : "",
+    trouble: fell ? "거북이가 허공으로 떨어졌습니다." : "",
     ply: state.ply + 1,
   };
 }
@@ -271,7 +271,7 @@ export function play(state: State, move: Move): State | null {
 export function refusal(state: State, move: Move) {
   if (state.winner !== null || move.from !== -1 || move.to < 0 || move.to > 3) return null;
   const tried = attempt(state, move.to);
-  return tried === "none" ? "그쪽은 막혀 있습니다." : tried === "loop" ? "그쪽으로 밀면 큐브가 끝없이 돕니다." : null;
+  return tried === "none" ? "그쪽은 막혀 있습니다." : tried === "loop" ? "그쪽으로 밀면 거북이가 끝없이 돕니다." : null;
 }
 
 /*
@@ -629,7 +629,7 @@ export const glide: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s) => -s.ply,
-  hint: () => "밀면 막힐 때까지 미끄러집니다 · 빛나는 출구 위에 큐브를 멈추세요",
+  hint: () => "밀면 막힐 때까지 미끄러집니다 · 빛나는 출구 위에 거북이를 멈추세요",
   tally: () => ["", ""],
-  reason: (s) => (s.winner === 0 ? "성공! 큐브가 출구에 들어갔습니다." : `실패! ${s.trouble}`),
+  reason: (s) => (s.winner === 0 ? "성공! 거북이가 출구에 들어갔습니다." : `실패! ${s.trouble}`),
 };
