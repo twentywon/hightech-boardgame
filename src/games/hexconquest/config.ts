@@ -18,6 +18,7 @@ import {
   NAMES,
   NATION,
   NEW_MAP,
+  ORDER,
   PORT,
   PROPOSE,
   REFUSE,
@@ -90,8 +91,8 @@ export const hexConquestConfig: PointConfig<State> = {
     ...[0, 1, 2, 3].map((n) => ({
       label: NAMES[n],
       point: NATION + n,
-      show: (s: State) => s.winner === null && (s.phase === "setup" || (s.phase === "propose" && mine(s) && offerable(s).includes(n))),
-      text: (s: State) => (s.phase === "setup" ? (s.me === n ? `${NAMES[n]} (나)` : NAMES[n]) : `${NAMES[n]}에 제안`),
+      show: (s: State) => s.winner === null && s.phase === "propose" && mine(s) && offerable(s).includes(n),
+      text: () => `${NAMES[n]}에 제안`,
     })),
     { label: "시작", point: START, show: (s) => s.phase === "setup" },
     {
@@ -103,6 +104,15 @@ export const hexConquestConfig: PointConfig<State> = {
     { label: "연설", point: SPEECH, show: (s) => mine(s) && s.phase === "play" && !s.speeches[s.me] },
     { label: "수락", point: ACCEPT, show: (s) => s.phase === "offer" && s.winner === null },
     { label: "거절", point: REFUSE, show: (s) => s.phase === "offer" && s.winner === null },
+    // In setup an empire is chosen by a tap on its capital (the user asked for no buttons): these stay as pixels for
+    // readers, the keyboard and the tests.
+    ...[0, 1, 2, 3].map((n) => ({
+      label: NAMES[n],
+      point: NATION + n,
+      onBoard: true,
+      show: (s: State) => s.winner === null && s.phase === "setup",
+      text: (s: State) => (s.me === n ? `${NAMES[n]} (나)` : NAMES[n]),
+    })),
   ],
   // Several nations take turns against me, and a battle cannot be taken back.
   computerOnly: true,
@@ -164,7 +174,7 @@ export const hexConquestConfig: PointConfig<State> = {
       steps(
         `시작하기 전에 지도와 나라를 고릅니다. <b>다른 맵</b>을 누르면 새 지도가 나오고, 네 나라(${NAMES.join(", ")}) 가운데 하나의 수도나 이름을 눌러 내 나라로 정합니다. <b>시작</b>을 누르면 게임이 시작됩니다.`,
         `컴퓨터가 셋보다 적으면 내 나라에서 먼 귀퉁이부터 차지합니다(하나면 대각선 건너편, 둘이면 그 나라와 가로로 건너편). 빈 귀퉁이는 수도 없는 빈 땅이 됩니다. 나라마다 수도에 군대 하나(병력 ${START_ARMY.count}, 사기 ${START_ARMY.morale})를 가지고 시작합니다.`,
-        `차례는 ${NAMES.join(" → ")} 순서로 돕니다. 내 차례에는 군대를 <b>최대 ${MOVES}번</b> 움직입니다(군대가 그보다 적으면 군대 수만큼). 한 군대는 한 차례에 한 번만 움직입니다. 다 움직이면 차례가 저절로 넘어가고, <b>턴 종료</b>로 일찍 마칠 수도 있습니다.`,
+        `차례는 ${ORDER.map((n) => NAMES[n]).join(" → ")} 순서로 돕니다. 내 차례에는 군대를 <b>최대 ${MOVES}번</b> 움직입니다(군대가 그보다 적으면 군대 수만큼). 한 군대는 한 차례에 한 번만 움직입니다. 다 움직이면 차례가 저절로 넘어가고, <b>턴 종료</b>로 일찍 마칠 수도 있습니다.`,
         "군대는 이웃한 땅으로, 또는 사이 칸이 건물도 군대도 없는 빈 땅이면 두 칸까지 갑니다. 항구에서는 바다로 나가 배가 되고, 배는 바다에서 한두 칸을 가거나 땅에 오릅니다.",
         "다른 나라의 군대가 있는 칸으로 가면 전투가 벌어집니다. 우리 군대가 있는 칸으로 가면 합쳐집니다.",
         "다른 나라의 <b>수도</b>를 차지하면 그 나라는 멸망하고 땅은 모두 내 것이 됩니다. 다른 나라를 모두 멸망시키면 이기고, 내 수도를 빼앗기면 집니다.",
@@ -184,11 +194,10 @@ export const hexConquestConfig: PointConfig<State> = {
     part(
       "마을·도시·항구·수도",
       table(
-        ["몫", "차례가 끝날 때 몫 = (빈 땅 수 + 항구 수 × 5) ÷ (마을 수 + 도시 수)를 셉니다(마을도 도시도 없으면 0). 땅과 항구가 많을수록 몫이 큽니다."],
-        ["수도", `증원 병력 ${CAPITAL_MEN} + 몫 × 2. 가장 많은 병력이 나옵니다. 다른 나라의 수도를 차지하면 그 나라가 멸망하고 차지한 군대 사기 +${GAIN.conquest[0]}, 모든 군대 +${GAIN.conquest[1]}. 남이 차지하고 있던 수도는 +${GAIN.capital[0]}, 모든 군대 +${GAIN.capital[1]}이며 빼앗긴 나라는 모든 군대 사기 −${GAIN.capital[2]}.`],
-        ["도시", `증원 병력 ${CITY_MEN} + 몫 × 2. 마을보다 드뭅니다(귀퉁이마다 같은 수). 차지하면 그 군대와 모든 군대 사기 +${GAIN.city[0]}, 빼앗긴 나라 −${GAIN.city[2]}.`],
-        ["마을", `증원 병력 ${VILLAGE_MEN} + 몫. 차지하면 그 군대와 모든 군대 사기 +${GAIN.village[0]}, 빼앗긴 나라 −${GAIN.village[2]}.`],
-        ["항구", `병력은 나오지 않지만 몫을 크게 늘리고(항구 하나가 빈 땅 다섯 칸), 바다로 나가는 길입니다. 차지하면 사기 +${GAIN.port[0]}, 빼앗긴 나라 −${GAIN.port[2]}.`],
+        ["수도", `증원 병력 ${CAPITAL_MEN}. 가장 많은 병력이 나옵니다. 다른 나라의 수도를 차지하면 그 나라가 멸망하고 차지한 군대 사기 +${GAIN.conquest[0]}, 모든 군대 +${GAIN.conquest[1]}. 남이 차지하고 있던 수도는 +${GAIN.capital[0]}, 모든 군대 +${GAIN.capital[1]}이며 빼앗긴 나라는 모든 군대 사기 −${GAIN.capital[2]}.`],
+        ["도시", `증원 병력 ${CITY_MEN}. 마을보다 드뭅니다(귀퉁이마다 같은 수). 차지하면 그 군대와 모든 군대 사기 +${GAIN.city[0]}, 빼앗긴 나라 −${GAIN.city[2]}.`],
+        ["마을", `증원 병력 ${VILLAGE_MEN}. 차지하면 그 군대와 모든 군대 사기 +${GAIN.village[0]}, 빼앗긴 나라 −${GAIN.village[2]}.`],
+        ["항구", `병력은 나오지 않지만 바다로 나가는 길입니다. 차지하면 사기 +${GAIN.port[0]}, 빼앗긴 나라 −${GAIN.port[2]}.`],
       ),
     ) +
     part(
@@ -220,7 +229,7 @@ export const hexConquestConfig: PointConfig<State> = {
       ),
     ),
   help: "마우스·터치: 내 군대를 누른 뒤 갈 칸을 누르거나, 군대를 끌어다 놓습니다. E 키는 턴 종료",
-  firstNote: "맵과 나라를 고르고 시작하면 홍국부터 차례로 움직입니다.",
+  firstNote: "맵과 나라를 고르고 시작하면 청국부터 차례로 움직입니다.",
   sides: [NAMES[0], "컴퓨터 나라"],
   startWord: "작전 지도 펼치기",
 };

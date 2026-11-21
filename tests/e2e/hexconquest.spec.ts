@@ -68,16 +68,19 @@ test("hex conquest: another map and an empire chosen before the start, an army m
   // Setup: the map shown with its capitals; nothing moves before 시작.
   const setup = await table(page);
   expect(setup.phase).toBe("setup");
-  await expect(page.locator("#turn")).toContainText("맵과 제국을 고르고 시작을 누르세요");
+  await expect(page.locator("#turn")).toContainText("맵을 고르고, 수도를 눌러 제국을 고른 뒤 시작을 누르세요");
   await page.getByRole("button", { name: "다른 맵" }).click();
   await expect(canvas(page)).toHaveAttribute("data-ply", String(setup.ply + 1), { timeout: 20000 });
   await settled(page);
   expect((await table(page)).land).not.toBe(setup.land);
-  // 청국 (upper left) is mine; with one computer it takes the diagonal corner, 흑국.
-  await page.getByRole("button", { name: "청국", exact: true }).click();
+  // 청국 (upper left) is mine, chosen by a tap on its capital (no buttons are shown for the empires); with one
+  // computer it takes the diagonal corner, 흑국.
+  await expect(page.locator(".pg-tool:not(.sr-only):not([hidden])", { hasText: "청국" })).toHaveCount(0);
+  const corners = (await canvas(page).getAttribute("data-corners"))!.split(",").map(Number);
+  await tap(page, (await table(page)).places[corners[1]], mobile);
   await expect(canvas(page)).toHaveAttribute("data-me", "1", { timeout: 20000 });
   await settled(page);
-  await expect(page.getByRole("button", { name: "청국 (나)" })).toBeVisible();
+  await expect(page.locator("#turn")).toContainText("나 (청국) 차례");
   await page.getByRole("button", { name: "시작", exact: true }).click();
   await expect(canvas(page)).toHaveAttribute("data-phase", "play", { timeout: 20000 });
   await settled(page);

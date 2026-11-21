@@ -13,8 +13,8 @@ import { CAPITAL, CITY, NONE, PORT, VILLAGE, generateMap, seeded, type HexMap } 
  * an estate: a capital (수도), a city (도시), a village (마을) or a port (항구, on a coast). A land hex has an owner, a
  * nation or none; water has none.
  *
- * Nations. Four corners, a capital near each, in this order of play: 홍국 (lower left), 청국 (upper left), 황국 (upper
- * right) and 흑국 (lower right). I play one of them (`me`) and 1–3 computers play others. With one computer it takes
+ * Nations. Four corners, a capital near each: 홍국 (lower left), 청국 (upper left), 황국 (upper right) and 흑국 (lower
+ * right), played in the order 청국, 홍국, 황국, 흑국 (`ORDER`; the user asked). I play one of them (`me`) and 1–3 computers play others. With one computer it takes
  * the corner diagonally across from mine; with two, that one and the corner across the width of the map from mine
  * (on my side, top or bottom), so that the empty corner is the one above or below mine. An unused corner is plain
  * land with no nation and no capital. Each nation begins with one army of 10 men and morale 10 at its capital, and
@@ -41,8 +41,8 @@ import { CAPITAL, CITY, NONE, PORT, VILLAGE, generateMap, seeded, type HexMap } 
  * The joined army and anything left behind count as moved. `END` (턴 종료) ends the turn early; the turn also ends by
  * itself once the moves are used up or no army has a move left. At the end of a nation's turn its speech, if it gave
  * one that turn, wears off (below); then every army of it that did not move loses 1 morale; then reinforcements come.
- * With s = ⌊(its plain land hexes + 5 × its ports) ÷ (its villages + its cities)⌋ (0 when it holds neither), every
- * capital it holds gives 15 + 2s men, every city 10 + 2s and every village 5 + s. They join an army of its own
+ * Every capital it holds gives 30 men, every city 20 and every village 10 (the user asked for 10 and 20; the capital
+ * stays the most); ports and plain land give none. They join an army of its own
  * standing there (its morale unchanged, at most 99 men) or stand as a new army with the nation's average morale.
  *
  * Battle. Attacker's power greater than the defender's: the defender is destroyed, the attacker moves in with
@@ -91,13 +91,15 @@ export const MAX = 99,
   LIMIT = 300;
 /** The army each nation begins with at its capital. */
 export const START_ARMY = { count: 10, morale: 10 };
-/** Reinforcements: each estate's men before its share of the land (and how many shares it takes). */
-export const CAPITAL_MEN = 15,
-  CITY_MEN = 10,
-  VILLAGE_MEN = 5,
-  CAPITAL_SHARES = 2,
-  CITY_SHARES = 2,
-  VILLAGE_SHARES = 1;
+/** Reinforcements: each estate's men before its share of the land (and how many shares it takes; none now). */
+export const CAPITAL_MEN = 30,
+  CITY_MEN = 20,
+  VILLAGE_MEN = 10,
+  CAPITAL_SHARES = 0,
+  CITY_SHARES = 0,
+  VILLAGE_SHARES = 0;
+/** The order of play by corner: 청국 (upper left), 홍국, 황국, 흑국. */
+export const ORDER: readonly number[] = [1, 0, 2, 3];
 /** Morale for taking an estate (the army, every army) and lost by the nation that held it. */
 export const GAIN = {
   conquest: [30, 50, 0],
@@ -119,7 +121,7 @@ export const END = 1000,
   REFUSE = 1006,
   /** `NATION + n` chooses nation n: mine in setup, the one offered an alliance otherwise. */
   NATION = 1010;
-/** Each nation's name and colour: lower left, upper left, upper right, lower right (the order of play). */
+/** Each nation's name and colour by corner: lower left, upper left, upper right, lower right. */
 export const NAMES = ["홍국", "청국", "황국", "흑국"] as const;
 export const COLORS = ["#c8402f", "#2f68c4", "#e0aa1c", "#3a3d44"] as const;
 /** Which corners play when I hold `me` with this many computers: mine, the diagonal, then the one across the width. */
@@ -285,7 +287,8 @@ export function standing(s: State, nation: number) {
   return { armies, men, morale: armies ? Math.floor(morale / armies) : 10, totalMorale: morale, power: men + morale, villages, cities, ports, plain, capitals, land };
 }
 /** The nations still in the game. */
-export const standingNations = (s: State) => s.nations.map((n, i) => (n.present && n.alive ? i : -1)).filter((i) => i >= 0);
+/** The nations still in the game, in the order of play. */
+export const standingNations = (s: State) => ORDER.filter((i) => s.nations[i].present && s.nations[i].alive);
 /** The share of the land behind each estate's reinforcements (see A turn). */
 export function share(s: State, nation: number) {
   const { villages, cities, plain, ports } = standing(s, nation);
@@ -587,11 +590,15 @@ function passOn(s: State, last: Last) {
     last.ended.push(nation);
     floors(s);
     // The next nation still in the game, a new round when the order comes back round.
-    let next = nation;
+    let at = ORDER.indexOf(nation),
+      next = nation,
+      wrapped = false;
     do {
-      next = (next + 1) % NATIONS;
+      at = (at + 1) % NATIONS;
+      if (at === 0) wrapped = true;
+      next = ORDER[at];
     } while (!(s.nations[next].present && s.nations[next].alive));
-    if (next <= nation) s.round++;
+    if (wrapped) s.round++;
     if (s.round > LIMIT) {
       s.winner = "draw";
       return;
@@ -798,7 +805,7 @@ export const hexConquest: PointGame<State> = {
     return player === 0 ? v : -v;
   },
   hint: (s) => {
-    if (s.phase === "setup") return "맵과 제국을 고르고 시작을 누르세요.";
+    if (s.phase === "setup") return "맵을 고르고, 수도를 눌러 제국을 고른 뒤 시작을 누르세요.";
     if (s.phase === "offer") return `${nameOf(offerFrom(s))}이 동맹을 제안했습니다. 수락 또는 거절을 고르세요.`;
     if (s.phase === "propose") return "동맹을 제안할 나라의 수도나 이름을 고르세요.";
     return `남은 이동 ${s.left}/${s.budget}${s.speaking === s.seat ? " · 연설 중" : ""} · 움직일 군대를 고르세요.`;

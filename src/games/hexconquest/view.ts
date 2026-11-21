@@ -4,6 +4,8 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { HEXES, NEIGHBOURS } from "./board";
 import { ARMY_FORWARD, LAND_TOP, MAP_HALF, MAP_HALF_Z, SEA_TOP, SIZE, hexAt, hexSubject, menFor, pieceFor, viewShift, type Piece } from "./layout";
+/** How far toward the eye an army's plate hangs below its piece, in the army's own units. */
+const PLATE_FORWARD = 0.2;
 import { CAPITAL, CITY, COLORS, NONE, PORT, VILLAGE, allied, destinations, type Army, type HexMap, type State } from "./rules";
 
 /** The colour of land nobody holds, and how far a nation's colour tints the grass of its land. */
@@ -46,7 +48,7 @@ interface Figure {
  * capitals as small castles flying their holder's banner, towns as clusters of houses, ports as a pier with a boat.
  * An army on land is drawn by its count (`pieceFor`): a stand of tin soldiers in its nation's colour under 40 men
  * (one, two or three by its size), a field gun on two wheels with a gunner from 40, a tank (hull, tracks, turret and
- * gun) from 70; at sea a small ship; with a plate over it showing count/morale (edged in gold while its nation's
+ * gun) from 70; at sea a small ship; with a plate under it showing count/morale (edged in gold while its nation's
  * speech is in force). Cities are a walled cluster of tall houses round a tower, villages three low houses. Allied
  * nations' borders carry a thin line of both colours. A move is walked or sailed hex by hex; a battle meets halfway in a puff of
  * smoke and the loser falls; land changing hands changes colour as the army arrives. Everything is modelled in code.
@@ -524,7 +526,8 @@ export class HexConquestView extends TableView<State> {
     texture.anisotropy = 4;
     const plate = new T.Sprite(this.own(new T.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true })));
     plate.renderOrder = 10;
-    plate.center.set(0.5, 0);
+    // Hung from its top edge under the piece (the user asked: over it, it hid the village behind).
+    plate.center.set(0.5, 1);
     group.add(plate);
     this.scene.add(group);
     const made: Figure = { group, men, stand, ship, cannon, tank, piece: "infantry", plate, canvas, texture, label: "", nation: -1 };
@@ -572,7 +575,8 @@ export class HexConquestView extends TableView<State> {
     // The plate is sized in the army's own scale: about three quarters of a hex across, larger on a phone.
     const wide = (this.camera.aspect >= 1.95 ? 1.25 : 1) / ARMY_SCALE;
     f.plate.scale.set(0.74 * wide, 0.296 * wide, 1);
-    f.plate.position.set(0, piece === "ship" ? 0.36 : piece === "infantry" ? 0.38 : 0.3, 0);
+    // Under the piece on the screen: at its foot, a little toward the eye.
+    f.plate.position.set(0, 0.02, PLATE_FORWARD);
   }
   /** Where an army on `h` stands. */
   private standAt(h: number) {
@@ -956,7 +960,7 @@ export class HexConquestView extends TableView<State> {
   }
 }
 type S = State;
-/** The plate over an army: its count and morale, white on dark with its nation's colour down the left. */
+/** The plate under an army: its count and morale, white on dark with its nation's colour down the left. */
 function drawPlate(canvas: HTMLCanvasElement, label: string, color: string, rallied = false) {
   const ctx = canvas.getContext("2d")!,
     w = canvas.width,

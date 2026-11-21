@@ -8,6 +8,7 @@ import {
   MAX,
   NATION,
   NEW_MAP,
+  ORDER,
   PROPOSE,
   REFUSE,
   SPEECH,
@@ -249,7 +250,7 @@ describe("hex conquest morale", () => {
   });
 });
 describe("hex conquest turns", () => {
-  test("idle armies lose 1 morale; with s = ⌊(plain + 5 × ports) ÷ (villages + cities)⌋ a capital gives 15 + 2s, a village 5 + s", () => {
+  test("idle armies lose 1 morale; a capital gives 30 men and a village 10, whatever the land and ports", () => {
     const t1 = hexOf(6, 6),
       t2 = hexOf(6, 3),
       port = hexOf(8, 8),
@@ -262,12 +263,12 @@ describe("hex conquest turns", () => {
     expect(standing(s, 0)).toMatchObject({ plain: 10, villages: 2, ports: 1, capitals: 1 });
     s = play(s, { from: -1, to: END, extra: -1 })!;
     expect(army(s, idle)).toEqual([20, 5]);
-    // s = ⌊(10 + 5) ÷ 2⌋ = 7: the capital 15 + 14 = 29 men onto its 10.
-    expect(army(s, C0)).toEqual([39, 9]);
-    // Average morale (9 + 5) ÷ 2 = 7; 5 + 7 = 12 men in each village.
-    expect(army(s, t1)).toEqual([12, 7]);
-    expect(army(s, t2)).toEqual([12, 7]);
-    expect(s.seat).toBe(1);
+    // The capital's 30 men onto its 10.
+    expect(army(s, C0)).toEqual([40, 9]);
+    // Average morale (9 + 5) ÷ 2 = 7; 10 men in each village.
+    expect(army(s, t1)).toEqual([10, 7]);
+    expect(army(s, t2)).toEqual([10, 7]);
+    expect(s.seat).not.toBe(0);
     expect(s.last!.spawned).toEqual(expect.arrayContaining([C0, t1, t2]));
   });
   test("a turn has at most five moves, one for each army, and passes on by itself", () => {
@@ -310,7 +311,8 @@ describe("hex conquest turns", () => {
         expect(army(s, n.capital)).toEqual([10, 10]);
         for (const m of NEIGHBOURS[n.capital]) if (s.map.land[m] && s.map.estate[m] === NONE) expect(s.owner[m]).toBe(i);
       });
-      expect(s.seat).toBe(0);
+      // 청국 moves first when it plays, else 홍국.
+      expect(s.seat).toBe(k === 3 ? 1 : 0);
     }
     // The same number gives the same map.
     expect(createGame(3, () => 0.5).map).toEqual(createGame(3, () => 0.5).map);
@@ -424,10 +426,11 @@ describe("hex conquest setup", () => {
     expect(black.me).toBe(3);
     expect(hexConquest.turn(black)).toBe(0);
     expect(hexConquest.owners(black)[black.world.corners[3]]).toBe(0);
-    // 시작: play begins with the first nation present in the order of play.
+    // 시작: play begins with the first nation present in the order of play, 청국.
+    expect(ORDER).toEqual([1, 0, 2, 3]);
     const started = play(black, tool(START))!;
     expect(started.phase).toBe("play");
-    expect(started.seat).toBe(0);
+    expect(started.seat).toBe(1);
     expect(hexConquest.turn(started)).toBe(1);
   });
   test("computers sit on the corners farthest from mine: the diagonal, then across the width", () => {
@@ -448,7 +451,7 @@ describe("hex conquest setup", () => {
     const started = play(s, tool(START))!;
     expect(started.seat).toBe(1);
     expect(hexConquest.turn(started)).toBe(0);
-    expect(hexConquest.hint(s)).toBe("맵과 제국을 고르고 시작을 누르세요.");
+    expect(hexConquest.hint(s)).toBe("맵을 고르고, 수도를 눌러 제국을 고른 뒤 시작을 누르세요.");
     expect(hexConquestConfig.tallyHtml!(s, "ai")[0]).toContain("청국 (나)");
   });
   test("whoever I chose: I win when the others are out and lose with my capital", () => {
@@ -462,7 +465,7 @@ describe("hex conquest setup", () => {
   });
 });
 describe("hex conquest estates", () => {
-  test("a city gives +15 and +15 and costs its holder 15; a city raises 10 + 2s, a village 5 + s, a capital 15 + 2s", () => {
+  test("a city gives +15 and +15 and costs its holder 15; a city raises 20, a village 10, a capital 30", () => {
     const s = go(
       lay({ all: 0, owner: { [N0]: 1, [FAR1]: 1 }, estates: { [N0]: CITY }, armies: { [H]: [0, 30, 10], [FAR0]: [0, 40, 5], [FAR1]: [1, 30, 20] } }),
       H,
@@ -472,7 +475,7 @@ describe("hex conquest estates", () => {
     expect(army(s, FAR0)).toEqual([40, 20]);
     expect(army(s, FAR1)).toEqual([30, 5]);
     expect(s.last!.captured).toBe("city");
-    // Two villages, a city, two ports and eleven plain hexes: s = ⌊(11 + 10) ÷ 3⌋ = 7.
+    // Two villages, a city, two ports and eleven plain hexes: the land and ports change nothing.
     const v1 = hexOf(6, 6),
       v2 = hexOf(6, 3),
       city = hexOf(9, 3),
@@ -484,14 +487,14 @@ describe("hex conquest estates", () => {
     const t = lay({ owner, estates: { [v1]: VILLAGE, [v2]: VILLAGE, [city]: CITY, [p1]: PORT, [p2]: PORT }, armies: { [C0]: [0, 10, 10], [C1]: [1, 5, 5] } });
     expect(standing(t, 0)).toMatchObject({ plain: 11, villages: 2, cities: 1, ports: 2, capitals: 1 });
     const after = play(t, tool(END))!;
-    expect(army(after, C0)![0]).toBe(10 + 15 + 14);
-    expect(army(after, city)![0]).toBe(10 + 14);
-    expect(army(after, v1)![0]).toBe(5 + 7);
-    expect(army(after, v2)![0]).toBe(5 + 7);
+    expect(army(after, C0)![0]).toBe(10 + 30);
+    expect(army(after, city)![0]).toBe(20);
+    expect(army(after, v1)![0]).toBe(10);
+    expect(army(after, v2)![0]).toBe(10);
     expect(after.armies[p1]).toBeNull();
-    // A capital alone (no village, no city): s = 0, and it still gives the most, 15.
+    // A capital alone (no village, no city) gives its 30 all the same.
     const alone = play(lay({ armies: { [C0]: [0, 10, 10], [C1]: [1, 5, 5] }, owner: { [hexOf(2, 8)]: 0 } }), tool(END))!;
-    expect(army(alone, C0)![0]).toBe(25);
+    expect(army(alone, C0)![0]).toBe(40);
   });
 });
 describe("hex conquest landings", () => {
@@ -633,7 +636,7 @@ describe("hex conquest alliances", () => {
     s = play(s, tool(NATION + 0))!;
     expect(s.offers).toBe(1 << 1);
     expect(hexConquestConfig.cheer!(s, s, "ai")).toBeNull();
-    s = play(s, tool(END))!;
+    // 청국 moves just before 홍국: its turn's end brings mine.
     s = play(s, tool(END))!;
     expect(s.seat).toBe(0);
     expect(s.phase).toBe("offer");
