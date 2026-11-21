@@ -3,6 +3,7 @@ import { PerspectiveCamera, Vector3 } from "three";
 import { selectGame } from "./library";
 import { FOV, cameraDistance } from "../../src/engine/camera";
 import { ORBIT, R, caromSubject } from "../../src/games/carom/layout";
+import { AIM_LENGTH } from "../../src/games/carom/aim";
 
 const canvas = (page: Page) => page.locator("canvas");
 const settled = (page: Page) => expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 60000 });
@@ -89,5 +90,45 @@ test("carom billiards: 3쿠션, the tip picker sets where the cue strikes and th
   await expect(canvas(page)).toHaveAttribute("data-last-tip", `${tip[0] - 1},${tip[1]}`);
   // The next shot starts from the middle of the ball again.
   await expect(canvas(page)).toHaveAttribute("data-tip", "0,0");
+  expect(errors).toEqual([]);
+});
+
+test("carom billiards: the dotted line of aim bends at a ball and at a cushion, always the same length", async ({ page }) => {
+  const errors = await sit(page, "four");
+  const path = async () => {
+      const text = await canvas(page).getAttribute("data-aim-path");
+      return text ? text.split(";").map((p) => p.split(",").map(Number) as [number, number]) : null;
+    },
+    length = (line: [number, number][]) => line.reduce((sum, p, i) => (i ? sum + Math.hypot(p[0] - line[i - 1][0], p[1] - line[i - 1][1]) : 0), 0),
+    hold = async (tx: number, tz: number, pull: number) => {
+      const [bx, bz] = (await balls(page))[0],
+        d = Math.hypot(tx - bx, tz - bz),
+        to = await onScreen(page, bx - ((tx - bx) / d) * pull, 0, bz - ((tz - bz) / d) * pull);
+      await page.mouse.move(to.x, to.y, { steps: 3 });
+    };
+  const [bx, bz] = (await balls(page))[0],
+    from = await onScreen(page, bx, R, bz);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  // Aimed thin at the red in the middle: the line meets it and turns, and the red's own way is shown.
+  await hold(0.2, 0, 0.6);
+  await expect(canvas(page)).toHaveAttribute("data-aim-struck", "3");
+  const thin = (await path())!;
+  expect(thin.length).toBeGreaterThan(2);
+  expect(Math.abs(length(thin) - AIM_LENGTH)).toBeLessThan(0.05);
+  // Harder, the same way: the line is no longer.
+  await hold(0.2, 0, 1.8);
+  expect(Math.abs(length((await path())!) - AIM_LENGTH)).toBeLessThan(0.05);
+  // Toward the near long rail and clear of the balls: it turns there.
+  await hold(2.5, bz - 0.3, 1);
+  await expect(canvas(page)).toHaveAttribute("data-aim-struck", "");
+  const rail = (await path())!;
+  expect(rail.length).toBeGreaterThan(2);
+  expect(rail[1][0]).toBeCloseTo(2.5 - R, 1);
+  // Let go back on the ball: no shot, and the line goes.
+  await page.mouse.move(from.x, from.y, { steps: 3 });
+  await page.mouse.up();
+  await expect(canvas(page)).not.toHaveAttribute("data-aim-path", /./);
+  await expect(page.locator("#move-count")).toHaveText("0수");
   expect(errors).toEqual([]);
 });

@@ -8,6 +8,8 @@ import { DT, HALF_X, HALF_Z, R, isCushion, moving, step, type Ball, type Contact
 import { TIP_STEPS, cueOf, nearestTip, shotCode, struck, tipCode, tipOf, type State } from "./rules";
 import { BeadBoard, FLOOR, hall } from "./hall";
 import { ORBIT, caromSubject } from "./layout";
+import { aimPath, dotsAlong, type Point } from "./aim";
+import { capturing } from "../../ui/banner";
 
 export const CAROM_COLORS: [string, string] = ["#f4f1e6", "#f2c230"];
 /** The cloth: tournament blue, heated, with the three spots on the long string and the sights' lines faintly. */
@@ -84,6 +86,12 @@ const CUE_LENGTH = 5.0,
   RAIL_TOP = 0.24,
   RAIL_OUT = 0.6,
   CUSHION_W = 0.14;
+/** The dots of the line of aim: their size and spacing as the shared row of dots has them, and how many may be drawn. */
+const AIM_DOT = 0.03,
+  AIM_SPACING = 0.15,
+  AIM_DOTS = 48,
+  STRUCK_DOT = 0.024,
+  STRUCK_DOTS = 40;
 /** The disc a pull is aimed from. */
 const asDisc = (b: Ball): Disc => ({ id: b.id, x: b.x, z: b.z, vx: 0, vz: 0, r: R, m: 1, on: true });
 /**
@@ -99,9 +107,16 @@ export class CaromView extends FlickView<State> {
   protected aimColor() {
     return "#ffffff";
   }
+  /** The line of aim is drawn here: it turns at cushions and balls (`aimPath`). */
+  protected ownAimLine() {
+    return true;
+  }
   protected orbit = ORBIT;
   private meshes: T.Group[] = [];
   private ring: T.Mesh;
+  /** The cue ball's way while a pull aims it, and fainter, smaller dots for the ways of the balls it strikes. */
+  private aimDots: T.InstancedMesh;
+  private struckDots: T.InstancedMesh;
   private cue = new T.Group();
   private beads: BeadBoard;
   /** Where my tip will strike, in steps (`tipOf`): set on the picker. */
@@ -184,6 +199,21 @@ export class CaromView extends FlickView<State> {
     this.top = R;
     this.ring = ringMesh(keep, R + 0.08, R + 0.14, "#ffd24a");
     this.scene.add(this.ring);
+    const dots = (radius: number, opacity: number, count: number) => {
+      const mesh = new T.InstancedMesh(
+        this.own(new T.CircleGeometry(radius, 14).rotateX(-Math.PI / 2)),
+        this.own(new T.MeshBasicMaterial({ color: this.aimColor(), depthTest: false, transparent: true, opacity })),
+        count,
+      );
+      mesh.renderOrder = 9;
+      mesh.frustumCulled = false;
+      mesh.count = 0;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      return mesh;
+    };
+    this.aimDots = dots(AIM_DOT, 0.95, AIM_DOTS);
+    this.struckDots = dots(STRUCK_DOT, 0.5, STRUCK_DOTS);
     // The cue: a carom cue, maple shaft with a white ferrule and a blue tip, an ebony butt with a pale inlay.
     const stick = new T.Group(),
       piece = (from: number, to: number, a: number, b: number, color: string) => {
@@ -405,6 +435,7 @@ export class CaromView extends FlickView<State> {
   /** The cue behind my ball, drawn back with the pull, its tip where the picker says it strikes; raised over the rail when it must be. */
   protected aimed(aim: { x: number; z: number; angle: number; power: number } | null) {
     this.cue.visible = !!aim;
+    this.showPath(aim);
     if (!aim) return;
     const bx = -Math.cos(aim.angle),
       bz = -Math.sin(aim.angle),
@@ -436,6 +467,35 @@ export class CaromView extends FlickView<State> {
     const stick = this.cue.children[0];
     stick.position.x = -offset;
     stick.rotation.z = -Math.min(tilt, 1.0);
+  }
+  /**
+   * The dotted line of aim: the cue ball's way, turning where it would meet a cushion or a ball, always the same
+   * length (`AIM_LENGTH`) whatever the pull's strength, and the way each ball it strikes would go. Left out of pictures.
+   */
+  private showPath(aim: { x: number; z: number; angle: number } | null) {
+    const s = this.state,
+      canvas = this.renderer.domElement;
+    if (!aim || !s || capturing()) {
+      this.aimDots.visible = this.struckDots.visible = false;
+      delete canvas.dataset.aimPath;
+      delete canvas.dataset.aimStruck;
+      return;
+    }
+    const me = cueOf(s.turn),
+      path = aimPath(aim, aim.angle, s.balls.filter((b) => b.id !== me)),
+      y = R + 0.02,
+      matrix = new T.Matrix4(),
+      lay = (mesh: T.InstancedMesh, points: Point[]) => {
+        mesh.count = Math.min(points.length, mesh.instanceMatrix.count);
+        for (let i = 0; i < mesh.count; i++) mesh.setMatrixAt(i, matrix.makeTranslation(points[i].x, y, points[i].z));
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.visible = mesh.count > 0;
+      };
+    // The dots begin just outside the balls, so that none is hidden on them.
+    lay(this.aimDots, dotsAlong(path.cue, AIM_SPACING, R + 0.08));
+    lay(this.struckDots, path.struck.flatMap((b) => dotsAlong(b.line, AIM_SPACING, R + 0.07)));
+    canvas.dataset.aimPath = path.cue.map((p) => `${p.x.toFixed(2)},${p.z.toFixed(2)}`).join(";");
+    canvas.dataset.aimStruck = path.struck.map((b) => b.id).join(",");
   }
   protected mark(_marks: Marks) {
     const s = this.state;

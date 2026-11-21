@@ -46,6 +46,10 @@ export abstract class FlickView<S> extends TableView<S> {
   protected aimColor() {
     return "#111111";
   }
+  /** Whether the view draws a line of aim of its own (through `aimed`), so that the shared row of dots is left out. */
+  protected ownAimLine() {
+    return false;
+  }
   /** Stretches a dashed line to a length, keeping its dashes the same size. */
   private stretch(mesh: T.Mesh, length: number) {
     // Each dot with its gap is twice as long as the line is wide, so the dots stay round.
@@ -170,7 +174,7 @@ export abstract class FlickView<S> extends TableView<S> {
     aim.power = Math.min(POWERS, Math.round(length * 7));
     const show = aim.power >= 1,
       reach = 0.35 + aim.power * 0.075;
-    this.arrow.visible = this.pull.visible = show;
+    this.arrow.visible = this.pull.visible = show && !this.ownAimLine();
     const angle = Math.atan2(dz, dx);
     this.aimed(show ? { x: aim.x, z: aim.z, angle, power: aim.power } : null);
     if (!show) return;

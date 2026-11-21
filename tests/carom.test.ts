@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DT, HALF_Z, R, ball, copy, run, speedOf, step, strike, moving, type Ball, type Contact } from "../src/games/carom/sim";
+import { DT, HALF_X, HALF_Z, R, ball, copy, run, speedOf, step, strike, moving, type Ball, type Contact } from "../src/games/carom/sim";
 import {
   RED,
   RED2,
@@ -10,6 +10,7 @@ import {
   createGame,
   judge,
   moves,
+  opening,
   play,
   shotCode,
   shotOf,
@@ -20,6 +21,7 @@ import {
   touches,
   type State,
 } from "../src/games/carom/rules";
+import { AIM_LENGTH, STRUCK_LENGTH, aimPath, dotsAlong, lengthOf } from "../src/games/carom/aim";
 
 /** A contact of the cue ball (white) with a ball or with cushion `wall` (0–3), at slice `n`. */
 const hit = (n: number, other: number): Contact => ({ slice: n, a: WHITE, b: other, speed: 2 });
@@ -195,5 +197,104 @@ describe("carom computer", () => {
       expect(move.from).toBe(YELLOW);
       expect(play(s, move)).not.toBeNull();
     }
+  });
+});
+
+describe("carom line of aim", () => {
+  const near = (a: number, b: number, eps = 1e-6) => expect(Math.abs(a - b)).toBeLessThan(eps);
+  it("runs straight for its whole length when nothing is in the way", () => {
+    const path = aimPath({ x: 0, z: 0 }, -Math.PI / 2, [], 2);
+    expect(path.cue).toHaveLength(2);
+    near(path.cue[1].x, 0);
+    near(path.cue[1].z, -2);
+    expect(path.struck).toEqual([]);
+  });
+  it("turns at a cushion as a mirror turns light", () => {
+    // From the middle at 45° toward the +x rail: it meets the rail where the middle is a radius from its face.
+    const path = aimPath({ x: 0, z: 0 }, Math.PI / 4, [], 5),
+      wall = HALF_X - R;
+    expect(path.cue.length).toBe(3);
+    near(path.cue[1].x, wall);
+    near(path.cue[1].z, wall);
+    // After it: x comes back, z goes on.
+    expect(path.cue[2].x).toBeLessThan(wall);
+    expect(path.cue[2].z).toBeGreaterThan(path.cue[1].z);
+    near(path.cue[2].x - path.cue[1].x, -(path.cue[2].z - path.cue[1].z));
+  });
+  it("turns at a corner on both rails", () => {
+    const wall = HALF_X - R,
+      // Aimed exactly into a corner from a point on its diagonal.
+      path = aimPath({ x: wall - 1, z: HALF_Z - R - 1 }, Math.PI / 4, [], 4);
+    const end = path.cue[path.cue.length - 1];
+    // It comes back along the way it went.
+    expect(end.x).toBeLessThan(wall - 1);
+    expect(end.z).toBeLessThan(HALF_Z - R - 1);
+    near(lengthOf(path.cue), 4);
+  });
+  it("meets a ball two radii from its middle and leaves along the tangent line", () => {
+    // A ball ahead along −z, offset half a radius: a thick hit.
+    const target = { id: RED, x: R / 2, z: -2 },
+      path = aimPath({ x: 0, z: 0 }, -Math.PI / 2, [target], 3),
+      contact = path.cue[1];
+    near(Math.hypot(contact.x - target.x, contact.z - target.z), 2 * R);
+    near(contact.x, 0);
+    // The struck ball goes along the line of the middles.
+    expect(path.struck).toHaveLength(1);
+    expect(path.struck[0].id).toBe(RED);
+    const line = path.struck[0].line,
+      nx = (target.x - contact.x) / (2 * R),
+      nz = (target.z - contact.z) / (2 * R),
+      ox = line[1].x - line[0].x,
+      oz = line[1].z - line[0].z;
+    near(line[0].x, target.x);
+    near((ox * nx + oz * nz) / Math.hypot(ox, oz), 1);
+    near(lengthOf(line), STRUCK_LENGTH);
+    // The cue ball goes on at right angles to that line, to the other side.
+    const after = path.cue[2],
+      cx = after.x - contact.x,
+      cz = after.z - contact.z;
+    near((cx * nx + cz * nz) / Math.hypot(cx, cz), 0);
+    expect(cx).toBeLessThan(0);
+  });
+  it("stops at a ball struck full", () => {
+    const path = aimPath({ x: 0, z: 0 }, -Math.PI / 2, [{ id: RED, x: 0, z: -2 }], 5);
+    expect(path.cue).toHaveLength(2);
+    near(path.cue[1].z, -2 + 2 * R);
+    expect(path.struck).toHaveLength(1);
+    near(path.struck[0].line[1].x, 0);
+    expect(path.struck[0].line[1].z).toBeLessThan(-2);
+  });
+  it("passes a ball it misses by more than two radii, and ignores balls behind", () => {
+    const path = aimPath({ x: 0, z: 0 }, -Math.PI / 2, [{ id: RED, x: 2 * R + 0.01, z: -2 }, { id: YELLOW, x: 0, z: 1 }], 3);
+    expect(path.struck).toEqual([]);
+    expect(path.cue).toHaveLength(2);
+  });
+  it("keeps the same whole length whatever it meets, inside the cushions", () => {
+    let turned = 0,
+      struckAny = 0;
+    for (const kind of ["four", "three"] as const)
+      for (let k = 0; k < 72; k++) {
+        const balls = opening(kind),
+          path = aimPath(balls[WHITE], (k * Math.PI) / 36 + 0.01, balls.filter((b) => b.id !== WHITE));
+        near(lengthOf(path.cue), AIM_LENGTH, 1e-6);
+        turned += path.cue.length > 2 ? 1 : 0;
+        struckAny += path.struck.length;
+        for (const p of path.cue) {
+          expect(Math.abs(p.x)).toBeLessThanOrEqual(HALF_X - R + 1e-9);
+          expect(Math.abs(p.z)).toBeLessThanOrEqual(HALF_Z - R + 1e-9);
+        }
+      }
+    expect(turned).toBeGreaterThan(50);
+    expect(struckAny).toBeGreaterThan(0);
+  });
+  it("lays dots at even spacing across the turns", () => {
+    const line = [{ x: 0, z: 0 }, { x: 1, z: 0 }, { x: 1, z: 1 }],
+      dots = dotsAlong(line, 0.25, 0.1);
+    expect(dots).toHaveLength(8);
+    near(dots[0].x, 0.1);
+    // 0.85 along: on the second piece.
+    near(dots[3].x, 0.85);
+    near(dots[4].x, 1);
+    near(dots[4].z, 0.1);
   });
 });
