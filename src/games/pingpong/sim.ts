@@ -28,12 +28,12 @@ const DRAG = 0.11,
 /**
  * The blade's radius as drawn, half its thickness, and how far from its middle the ball is still struck: sideways
  * and up or down (well beyond the blade itself, so that a person meets the ball rather than misses it: the user asked
- * for a generous judgement).
+ * for a generous judgement, and then for a wider one still: about three blade widths each way across).
  */
 export const BLADE = 0.082,
   FACE = 0.012,
-  REACH = 0.17,
-  REACH_Y = 0.22,
+  REACH = 0.26,
+  REACH_Y = 0.32,
   /** The computer's reach, as it was: only mine was made generous. */
   THEIR_REACH = 0.118,
   THEIR_REACH_Y = 0.15;
@@ -56,7 +56,7 @@ export const SIGHT_GAP = 0.15;
 /** The height on the tossed ball's column at which my contact marker stands during my serve. */
 export const TOSS_MARK = 0.2;
 /** A ball that has just gone past my blade's face unstruck may still be caught by a sideways sweep that reaches it this many metres behind the face. */
-export const LATE_DEPTH = 0.1;
+export const LATE_DEPTH = 0.18;
 /** The highest a stroke's flight may loop over the table (the user found high balls hard to meet): a slower stroke that would rise above it goes quicker and flatter. */
 export const FLIGHT_TOP = 0.42;
 /** How fast a tossed ball goes up, how low it may fall before it is tossed again, and the computer's wait before it serves. */

@@ -277,8 +277,8 @@ describe("table tennis: my stroke", () => {
     expect(flight(4).bow).toBeGreaterThan(0.15);
   });
   test("the judgement is generous: a ball well off the blade's middle is still struck", () => {
-    expect(s.REACH).toBeGreaterThan(s.BLADE * 2);
-    expect(s.REACH_Y).toBeGreaterThan(s.BLADE * 2.5);
+    expect(s.REACH).toBeGreaterThan(s.BLADE * 3);
+    expect(s.REACH_Y).toBeGreaterThan(s.BLADE * 3.5);
   });
   test("a fair drive lands on the computer's side", () => {
     for (const vz of [0, -3, -6]) {
@@ -726,11 +726,11 @@ describe("table tennis: the contact marker, the paddle under the finger and the 
         }
         return { hit, off: Math.abs(xAt(cross) - c.x), w };
       };
-    for (const shift of [-4, -2, 2, 4]) {
+    for (const shift of [-6, -3, 3, 6]) {
       const r = sweep(shift);
       expect(r.hit, `${shift}`).not.toBeNull();
       // Where the ball came to the face the blade was wider of it than the reach.
-      if (Math.abs(shift) === 4) expect(r.off).toBeGreaterThan(s.REACH);
+      if (Math.abs(shift) === 6) expect(r.off).toBeGreaterThan(s.REACH);
       // Struck while sweeping across at that speed: a smash, sent across the way of the swing.
       expect(r.w.ball.vx).toBeGreaterThan(0);
     }
