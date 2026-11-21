@@ -246,7 +246,7 @@ export function heightAt(hole: Hole, x: number, z: number) {
         dz = f.b.z - f.a.z;
       h += f.rise * smooth(((x - f.a.x) * dx + (z - f.a.z) * dz) / (dx * dx + dz * dz));
     } else if (f.kind === "hill") {
-      const d = Math.hypot(x - f.x, z - f.z);
+      const d = Math.sqrt((x - f.x) ** 2 + (z - f.z) ** 2);
       if (d < f.r) h += (f.h * (1 + Math.cos((Math.PI * d) / f.r))) / 2;
     } else if (x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1) h += f.h * Math.sin((Math.PI * (z - f.z0)) / (f.z1 - f.z0));
   }
@@ -260,7 +260,10 @@ const boxed = (poly: Poly) => {
   if (!box) boxes.set(poly, (box = boxOf(poly)));
   return box;
 };
-const hits = (polys: Poly[], x: number, z: number) => polys.some((poly) => within(boxed(poly), x, z) && inside(poly, x, z));
+const hits = (polys: Poly[], x: number, z: number) => {
+  for (const poly of polys) if (within(boxed(poly), x, z) && inside(poly, x, z)) return true;
+  return false;
+};
 export function groundAt(hole: Hole, x: number, z: number): Ground {
   if (!within(boxed(hole.outline), x, z) || !inside(hole.outline, x, z) || hits(hole.blocks, x, z)) return "off";
   if (hits(hole.water, x, z)) return hits(hole.bridges, x, z) ? "bridge" : "water";

@@ -14,14 +14,24 @@ import { boxOf, groundAt, heightAt, wallsOf, type Ground, type Hole, type P } fr
  * - Over the cup the ball is drawn toward its middle and loses speed; it drops in when it is slow enough there (the
  *   nearer the middle, the faster it may be), and a ball too fast runs over the lip and out again.
  * - A ball that rolls into a pond is out of play there; the rules put it back where it was hit.
+ * - A ball that has hardly moved for a while (pressed by a slope against a rail, rocking or creeping there) is at rest
+ *   where it is: when the way it has gone in the last `STILL_TIME` seconds (looked at a few times in that while, and
+ *   counted along its path, so that a ball turning back on a slope is not taken for one standing) is less than
+ *   `STILL_DIST`, it stops, unless it is over the cup. `MAX_TIME` is the last resort.
  */
 export const R = 0.024,
   /** Half the thickness of a rail, which stands on its wall line. */
   WALL = 0.03,
   CUP_R = 0.058,
   DT = 1 / 360,
-  /** A shot is run for at most this long; a ball still rolling then stops where it is. */
-  MAX_TIME = 30;
+  /** A shot is run for at most this long; a ball still rolling then stops where it is (a last resort). */
+  MAX_TIME = 15,
+  /** How long a ball is watched for standing still, seconds, and how little it may move in that time to be at rest. */
+  STILL_TIME = 0.5,
+  STILL_DIST = 0.012;
+/** The ball's place is noted `STILL_MARKS` times in every `STILL_TIME`. */
+const STILL_MARKS = 3,
+  STILL_STEPS = Math.round(STILL_TIME / DT / STILL_MARKS);
 /** The speeds a putt may be struck at, metres a second. */
 export const SPEED_MIN = 0.25,
   SPEED_MAX = 5.2;
@@ -68,7 +78,12 @@ export interface World {
   result: Result | null;
   ground: Ground;
   knocks: Knock[];
+  /** How far the ball has gone along its path, and how far it had gone the last `STILL_MARKS` times it was noted (oldest first). */
+  run: number;
+  marks: number[];
 }
+/** The length of a vector (as `Math.hypot`, which is slow in the step's inner loop). */
+const mag = (x: number, z: number) => Math.sqrt(x * x + z * z);
 /** The direction of a yaw along the ground. */
 export const along = (yaw: number) => ({ x: Math.sin(yaw), z: -Math.cos(yaw) });
 export const yawOf = (dx: number, dz: number) => Math.atan2(dx, -dz);
@@ -86,6 +101,7 @@ interface Prepared {
   nz: number;
   segs: number[][];
   near: number[][];
+  gate: [P, P] | null;
 }
 const CELL = 0.4;
 const ready = new WeakMap<Hole, Prepared>();
@@ -117,6 +133,7 @@ function prepared(hole: Hole): Prepared {
     nz,
     segs,
     near,
+    gate: gateOf(hole),
   };
   walls.forEach(([a, b], k) => file(segs, k, Math.min(a.x, b.x) - reach, Math.min(a.z, b.z) - reach, Math.max(a.x, b.x) + reach, Math.max(a.z, b.z) + reach));
   hole.posts.forEach((p, k) => file(near, k, p.x - p.r - reach, p.z - p.r - reach, p.x + p.r + reach, p.z + p.r + reach));
@@ -149,7 +166,7 @@ export function shut(hole: Hole, angle: number) {
 }
 export function createWorld(hole: Hole, at: P, shot: Shot, open = false): World {
   const dir = along(shot.angle);
-  return { hole, x: at.x, z: at.z, vx: dir.x * shot.speed, vz: dir.z * shot.speed, steps: 0, phase: shot.phase, open, result: null, ground: groundAt(hole, at.x, at.z), knocks: [] };
+  return { hole, x: at.x, z: at.z, vx: dir.x * shot.speed, vz: dir.z * shot.speed, steps: 0, phase: shot.phase, open, result: null, ground: groundAt(hole, at.x, at.z), knocks: [], run: 0, marks: new Array<number>(STILL_MARKS).fill(0) };
 }
 const knock = (w: World, kind: Knock["kind"], strength: number) => {
   if (strength > 0.06) w.knocks.push({ step: w.steps, kind, strength });
@@ -164,13 +181,13 @@ function bounce(w: World, ax: number, az: number, bx: number, bz: number, reach:
     qz = az + t * ez;
   let dx = w.x - qx,
     dz = w.z - qz,
-    d = Math.hypot(dx, dz);
+    d = mag(dx, dz);
   if (d >= reach) return false;
   if (d < 1e-9) {
     // On the line itself: out toward the side it came from.
     dx = px - qx;
     dz = pz - qz;
-    d = Math.hypot(dx, dz) || 1;
+    d = mag(dx, dz) || 1;
   }
   const nx = dx / d,
     nz = dz / d;
@@ -207,7 +224,7 @@ export function step(w: World) {
   // Over the cup: drawn to its middle and slowed by the lip.
   let cx = w.x - cup.x,
     cz = w.z - cup.z,
-    cd = Math.hypot(cx, cz);
+    cd = mag(cx, cz);
   if (cd < CUP_R && cd > 1e-6) {
     w.vx -= (WELL * cx * DT) / cd;
     w.vz -= (WELL * cz * DT) / cd;
@@ -216,7 +233,7 @@ export function step(w: World) {
     w.vz *= damp;
   }
   // Rolling friction, never past a standstill.
-  let v = Math.hypot(w.vx, w.vz);
+  let v = mag(w.vx, w.vz);
   if (v > 0) {
     const kept = Math.max(0, v - mu * DT) / v;
     w.vx *= kept;
@@ -235,7 +252,7 @@ export function step(w: World) {
       const p = prep.posts[k],
         dx = w.x - p.x,
         dz = w.z - p.z,
-        d = Math.hypot(dx, dz),
+        d = mag(dx, dz),
         reach = R + p.r;
       if (d >= reach || d < 1e-9) continue;
       const nx = dx / d,
@@ -250,10 +267,11 @@ export function step(w: World) {
       }
     }
   }
-  const gate = gateOf(hole);
+  const gate = prep.gate;
   if (gate && !w.open && shut(hole, sailAngle(hole, w.phase, w.steps * DT)))
     bounce(w, gate[0].x, gate[0].z, gate[1].x, gate[1].z, R + 0.02, BOUNCE.blade, "blade", px, pz);
   w.steps++;
+  w.run += mag(w.x - px, w.z - pz);
   w.ground = groundAt(hole, w.x, w.z);
   if (w.ground === "water" || w.ground === "off") {
     w.result = w.ground === "water" ? "water" : "out";
@@ -264,8 +282,8 @@ export function step(w: World) {
   // Into the cup when slow enough over it: the nearer its middle, the faster it may be.
   cx = w.x - cup.x;
   cz = w.z - cup.z;
-  cd = Math.hypot(cx, cz);
-  v = Math.hypot(w.vx, w.vz);
+  cd = mag(cx, cz);
+  v = mag(w.vx, w.vz);
   if (cd < CUP_R - 0.4 * R && v < CAPTURE * Math.sqrt(1 - (cd / CUP_R) ** 2)) {
     w.result = "cup";
     knock(w, "cup", Math.max(0.3, v));
@@ -275,11 +293,23 @@ export function step(w: World) {
     return;
   }
   // At rest where the ground's pull cannot overcome the carpet; or stopped by the clock.
-  const pull = Math.hypot(ax, az),
+  const pull = mag(ax, az),
     hold = FRICTION[w.ground] * G * 0.9;
   if ((v < V_REST && pull < hold) || w.steps * DT >= MAX_TIME) {
     w.result = "rest";
     w.vx = w.vz = 0;
+    return;
+  }
+  // Hardly moved in the last `STILL_TIME` (pressed against a rail on a slope): at rest there, the cup apart.
+  if (w.steps % STILL_STEPS === 0) {
+    const m = w.marks;
+    if (w.steps >= STILL_STEPS * STILL_MARKS && w.run - m[0] < STILL_DIST && cd > CUP_R + R) {
+      w.result = "rest";
+      w.vx = w.vz = 0;
+      return;
+    }
+    m.copyWithin(0, 1);
+    m[m.length - 1] = w.run;
   }
 }
 export const settled = (w: World) => w.result !== null;

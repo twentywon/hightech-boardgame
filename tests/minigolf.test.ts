@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { HOLES, PAR, groundAt, heightAt } from "../src/games/minigolf/course";
-import { planShot } from "../src/games/minigolf/ai";
+import { aimedShot, planShot } from "../src/games/minigolf/ai";
 import { MAX_STROKES, chooseMove, createGame, minigolf, moves, play, record, shotMove, shotOf, total, type State } from "../src/games/minigolf/rules";
-import { CUP_R, R, SPEED_MAX, SPEED_MIN, aimYaw, createWorld, roll, sailAngle, shut, step, yawOf } from "../src/games/minigolf/sim";
+import { CUP_R, DT, MAX_TIME, R, SPEED_MAX, SPEED_MIN, STILL_DIST, STILL_TIME, aimYaw, createWorld, roll, sailAngle, shut, step, yawOf } from "../src/games/minigolf/sim";
 import { ORIGINS, pullFor, pullShot, golferCamera, ballWorld, speedOf, powerOf } from "../src/games/minigolf/layout";
 import { PerspectiveCamera } from "three";
 
@@ -106,6 +106,110 @@ describe("mini golf physics", () => {
     expect(roll(hole, hole.tee, shot(open)).z).toBeLessThan(mill.z - mill.depth);
     expect(roll(hole, hole.tee, shot(closed)).z).toBeGreaterThan(mill.z);
   });
+});
+
+describe("mini golf: a ball that hardly moves", () => {
+  // The hill of hole 2 reaches the side rails: a ball against the right rail is pressed into it by the slope.
+  const hill = HOLES[1];
+  /** How hard the slope pulls a ball at a place, against what the carpet can hold (as `sim.ts` reckons them). */
+  const pullAt = (x: number, z: number) => {
+    const e = 0.004,
+      hx = (heightAt(hill, x + e, z) - heightAt(hill, x - e, z)) / (2 * e),
+      hz = (heightAt(hill, x, z + e) - heightAt(hill, x, z - e)) / (2 * e);
+    return (9.81 * (5 / 7) * Math.hypot(hx, hz)) / Math.sqrt(1 + hx * hx + hz * hz);
+  };
+  it("stops a ball pressed against a rail by a slope soon after it comes there, and passes the turn", () => {
+    // Pinned square against the rail (z 0.1), and run along it a little first (z 0.25).
+    for (const [z, within] of [
+      [0.1, 1.5],
+      [0.25, 1.5],
+    ]) {
+      const w = createWorld(hill, { x: 0.5, z }, { angle: Math.PI / 2, speed: 0.4, phase: 0 });
+      let touched = -1;
+      while (!w.result) {
+        step(w);
+        if (touched < 0 && w.knocks.some((k) => k.kind === "rail")) touched = w.steps;
+      }
+      expect(touched).toBeGreaterThan(0);
+      expect(w.result).toBe("rest");
+      // Soon after meeting the rail, though the slope there pulls harder than the carpet holds.
+      expect((w.steps - touched) * DT).toBeLessThanOrEqual(within);
+      expect(pullAt(w.x, w.z)).toBeGreaterThan(0.068 * 9.81);
+      expect(w.x).toBeGreaterThan(0.5);
+      // The rules count it as a stroke at rest there, and the other side plays on.
+      let state: State = { ...createGame(true), hole: 1, ball: { x: 0.5, z }, strokes: 0 };
+      state = play(state, shotMove({ angle: Math.PI / 2, speed: 0.4, phase: 0 }))!;
+      expect(state.last?.result).toBe("rest");
+      expect(state.strokes).toBe(1);
+    }
+  });
+  it("does not cut short a slow roll that is going somewhere, nor a ball dropping into the cup", () => {
+    // Down the gentle slope behind the windmill, barely pushed: it creeps on down for seconds and comes to rest at its foot.
+    const mill = HOLES[3],
+      slow = roll(mill, { x: 0.2, z: -0.7 }, { angle: 0, speed: 0.02, phase: 0 });
+    expect(slow.result).toBe("rest");
+    expect(slow.steps * DT).toBeGreaterThan(3 * STILL_TIME);
+    expect(slow.z).toBeLessThan(-1);
+    // Struck gently from just before the cup, it still drops.
+    const first = HOLES[0];
+    for (const speed of [0.3, 0.4]) expect(roll(first, { x: 0.01, z: first.cup.z + 0.15 }, { angle: 0, speed, phase: 0 }).result).toBe("cup");
+    expect(STILL_DIST).toBeLessThan(0.02);
+  });
+  it("never runs a putt longer than its last-resort limit", () => {
+    for (const [k, hole] of HOLES.entries())
+      for (let i = 0; i < 24; i++) {
+        const end = roll(hole, hole.tee, { angle: towardCup(k) + (i - 12) * 0.13, speed: SPEED_MIN + ((i * 7) % 24) * 0.205, phase: (i % 5) / 5 });
+        expect(end.steps * DT).toBeLessThanOrEqual(MAX_TIME + DT);
+      }
+  });
+});
+
+describe("mini golf computer", () => {
+  /** A hole played out from its tee by the computer at a level: its strokes (penalties in) and how often it went in the water. */
+  const playOut = (k: number, level: "easy" | "normal" | "hard", random: () => number) => {
+    const hole = HOLES[k];
+    let at = { ...hole.tee },
+      strokes = 0,
+      wet = 0,
+      holed = false;
+    while (strokes < MAX_STROKES && !holed) {
+      const end = roll(hole, at, aimedShot(hole, at, level, random));
+      if (end.result === "water" || end.result === "out") {
+        wet++;
+        strokes += 2;
+      } else strokes++;
+      holed = end.result === "cup";
+      if (end.result === "rest") at = { x: end.x, z: end.z };
+    }
+    return { strokes: Math.min(strokes, MAX_STROKES), wet, holed };
+  };
+  it("lays up before the narrow bridge instead of putting into the pond", () => {
+    // Its first putt from the tee stops short of the pond, on the green, at both levels.
+    const bridge = HOLES[5];
+    for (const level of ["normal", "hard"] as const) {
+      const plan = roll(bridge, bridge.tee, planShot(bridge, bridge.tee, level));
+      expect(plan.result).toBe("rest");
+      let dry = 0,
+        wet = 0;
+      for (let seed = 1; seed <= 5; seed++) {
+        const round = playOut(5, level, seeded(seed * 7 + 5));
+        expect(round.holed, `${level} seed ${seed}`).toBe(true);
+        wet += round.wet;
+        if (!round.wet) dry++;
+      }
+      // Most rounds without a ball in the water, and hardly any wet balls at all.
+      expect(dry, level).toBeGreaterThanOrEqual(4);
+      expect(wet, level).toBeLessThanOrEqual(1);
+    }
+  }, 120000);
+  it("finishes every hole within the stroke limit at the normal and hard levels", () => {
+    for (const level of ["normal", "hard"] as const)
+      HOLES.forEach((_, k) => {
+        const round = playOut(k, level, seeded(31 + k));
+        expect(round.holed, `${level} hole ${k + 1}`).toBe(true);
+        expect(round.strokes, `${level} hole ${k + 1}`).toBeLessThan(MAX_STROKES);
+      });
+  }, 180000);
 });
 
 describe("mini golf rules", () => {
