@@ -8,14 +8,9 @@ import { FLY_SECONDS, GO, arenaOf, goPoint, type Mode, type State } from "./rule
 import { HOP, HOP_HEIGHT, fallTrack, stepStones, stirring, type Bump, type Fall, type FallPose, type Stone, type StoneHeard } from "./physics";
 import { Specks, edgeTexture, faceTexture, pieceGeometry, shadowTexture, stoneGeometry, stoneMaterial } from "./pieces";
 import { study } from "./study";
-import { FlickHand } from "./hand";
 
 export const STONE_COLORS: [string, string] = ["#1b1c20", "#f1ece0"];
 export const PIECE_COLORS: [string, string] = ["#2f7d4f", "#c0392b"];
-/** How long the computer's hand takes to come to its stone, and how long a flick's snap and the hand's going take. */
-const APPROACH = 560,
-  SNAP = 70,
-  WITHDRAW = 520;
 /** A stone's way through the air is drawn this many times the rules' arc. */
 const FLIGHT_HEIGHT = 1.5;
 interface Piece {
@@ -34,7 +29,7 @@ interface Piece {
  * The alkkagi table: a go board on its feet or a folding janggi board on a low table, in a study. A shot is run
  * here with the very physics the rules ran (`stepStones`), so it ends exactly where the rules say: stones slide
  * and turn, knock each other turning, throw up specks where they meet, fly and bounce, and tip off the edge to lie
- * on what is below. A hand comes to the stone and flicks it; mine is there while I pull.
+ * on what is below.
  */
 export class AlkkagiView extends FlickView<State> {
   private pieces: Piece[] = [];
@@ -47,7 +42,6 @@ export class AlkkagiView extends FlickView<State> {
   private faces = new Map<string, T.Material[]>();
   private shapes = new Map<number, T.BufferGeometry>();
   private edge: T.Material;
-  private hand: FlickHand;
   private sparks: Specks;
   private dust: Specks;
   /** Ways of falls already worked out, by the fall. */
@@ -55,8 +49,6 @@ export class AlkkagiView extends FlickView<State> {
   /** The shot being run, so that a newer state stops an older run; and its frame. */
   private run = 0;
   private frame = 0;
-  /** My last flick: the hand is already at the stone, so it snaps at once. */
-  private flicked: { disc: number; at: number; angle: number; power: number } | null = null;
   private aim: { x: number; z: number; angle: number; power: number } | null = null;
   constructor(
     host: HTMLElement,
@@ -82,8 +74,6 @@ export class AlkkagiView extends FlickView<State> {
     }
     this.cursor = ringMesh(own, 0.26, 0.33, "#ffffff");
     this.scene.add(this.cursor);
-    this.hand = new FlickHand(own);
-    this.scene.add(this.hand.root);
     // A knock of stones throws a few bright specks; wood throws dust, as does a stone coming down.
     this.sparks = new Specks(own, 90, mode === "go" ? "#fff3d0" : "#f4d9a6", mode === "go", 3, 9);
     this.dust = new Specks(own, 140, mode === "go" ? "#d9c29a" : "#c9a874", false, 4, 2.5);
@@ -213,14 +203,11 @@ export class AlkkagiView extends FlickView<State> {
         this.pieces[disc.id].shadow.visible = false;
       }
     }
-    if (!this.aim && !this.handBusy) this.hand.root.visible = false;
   }
-  private handBusy = false;
   sync(state: State, animate = true) {
     // A newer state stops a shot still being run.
     this.run++;
     cancelAnimationFrame(this.frame);
-    this.handBusy = false;
     super.sync(state, animate);
   }
   protected animate(before: State, state: State) {
@@ -229,24 +216,13 @@ export class AlkkagiView extends FlickView<State> {
     if (!live || !state.last) return false;
     const run = this.run,
       arena = arenaOf(state.mode),
-      shot = shotOf(state.last.code)!,
-      id = state.last.disc,
-      shooter = before.discs[id],
-      piece = this.pieces[id],
-      now = performance.now(),
-      mine = this.flicked && this.flicked.disc === id && now - this.flicked.at < 3000,
-      // A hand that was not already there comes to the stone first.
-      start = now + (mine ? 0 : APPROACH) + SNAP,
+      start = performance.now(),
       heard: StoneHeard = { hits: 0, discs: 0, walls: 0, force: 0, at: [] },
-      falls = new Map<number, { track: FallPose[]; fall: Fall; t0: number; next: number }>(),
-      scale = state.mode === "go" ? 0.74 : 0.86;
-    this.flicked = null;
-    this.handBusy = true;
-    this.hand.root.visible = true;
+      falls = new Map<number, { track: FallPose[]; fall: Fall; t0: number; next: number }>();
     this.tween(0, 60000, () => {});
     let count = 0,
       sounded = 0,
-      last = now,
+      last = start,
       bumps = 0;
     const tick = () => {
       if (run !== this.run || this.disposed) return;
@@ -254,22 +230,7 @@ export class AlkkagiView extends FlickView<State> {
         // Specks live by the clock, however slowly the frames come.
         dt = Math.min(0.25, (t - last) / 1000);
       last = t;
-      // The hand: coming down to the stone, snapping, then drawn away.
       const since = t - start;
-      if (since < -SNAP) {
-        const p = 1 - (start - SNAP - t) / APPROACH;
-        this.hand.pose(1);
-        this.hand.place(shooter.x, piece.half, shooter.z, shot.angle, shooter.r, scale, (1 - Math.max(0, p)) ** 2);
-      } else if (since < 0) {
-        this.hand.pose(1 - (since + SNAP) / SNAP);
-        this.hand.place(shooter.x, piece.half, shooter.z, shot.angle, shooter.r, scale);
-      } else if (since < WITHDRAW + 160) {
-        this.hand.pose(Math.min(1, Math.max(0, (since - 160) / WITHDRAW)) * 0.6);
-        this.hand.place(shooter.x, piece.half, shooter.z, shot.angle, shooter.r, scale, Math.max(0, (since - 160) / WITHDRAW) ** 1.5 * 1.2);
-      } else {
-        this.hand.root.visible = false;
-        this.handBusy = false;
-      }
       if (since >= 0) {
         const due = Math.floor(since / (DT * 1000));
         while (count < due && stirring(live)) {
@@ -306,7 +267,7 @@ export class AlkkagiView extends FlickView<State> {
         specks = sparking || dusting;
       this.redraw();
       const falling = [...falls.values()].some((f) => f.next < f.track.length);
-      if (since < 0 || stirring(live) || falling || this.handBusy || specks) this.frame = requestAnimationFrame(tick);
+      if (since < 0 || stirring(live) || falling || specks) this.frame = requestAnimationFrame(tick);
       else {
         this.settleNow();
         this.place(state);
@@ -358,36 +319,10 @@ export class AlkkagiView extends FlickView<State> {
     return disc?.on && this.marks.movable.includes(point) ? { x: disc.x, z: disc.z } : null;
   }
   protected shoot(point: number, degrees: number, power: number) {
-    this.flicked = { disc: point, at: performance.now(), angle: (degrees * Math.PI) / 180, power };
-    // The hand stays cocked at the stone until the shot is run (or, if it never is, goes).
-    const disc = this.state?.discs[point];
-    if (disc) {
-      this.hand.root.visible = true;
-      this.hand.pose(1);
-      this.hand.place(disc.x, this.pieces[point].half, disc.z, (degrees * Math.PI) / 180, disc.r, this.mode === "go" ? 0.74 : 0.86);
-      const at = this.flicked.at;
-      setTimeout(() => {
-        if (this.flicked?.at === at && !this.handBusy) {
-          this.hand.root.visible = false;
-          this.redraw();
-        }
-      }, 1800);
-    }
     this.onMove({ from: point, to: shotCode(degrees, power), extra: -1 });
   }
   protected aimed(aim: { x: number; z: number; angle: number; power: number } | null) {
     this.aim = aim;
-    const state = this.state;
-    if (!aim || !state) {
-      if (!this.handBusy) this.hand.root.visible = false;
-      return;
-    }
-    const disc = state.discs.find((d) => d.on && Math.abs(d.x - aim.x) < 1e-6 && Math.abs(d.z - aim.z) < 1e-6);
-    if (!disc) return;
-    // My hand at the stone, the finger drawn back the harder the pull.
-    this.hand.root.visible = true;
-    this.hand.pose(0.86 + (aim.power / 20) * 0.14);
-    this.hand.place(disc.x, this.pieces[disc.id].half, disc.z, aim.angle, disc.r, this.mode === "go" ? 0.74 : 0.86);
   }
   protected spots(): Spot[] {
     const state = this.state;
