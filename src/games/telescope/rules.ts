@@ -609,6 +609,32 @@ export function hint(state: State): Move | null {
   return way && way.length ? press(way[0]) : null;
 }
 
+/**
+ * e^x for x ≤ 0 by plain arithmetic only, so that a board is laid the same in every JavaScript engine: `Math.exp` may
+ * differ in its last digit from one engine to another (Node and Chromium did), and the climb's choices hang on it.
+ */
+export function expo(x: number) {
+  if (x >= 0) return 1;
+  if (x < -60) return 0;
+  // e^x = (e^(x / 1024))^1024; the small power by its series, then squared ten times (halving and doubling are exact).
+  const y = x / 1024;
+  let term = 1,
+    sum = 1;
+  for (let i = 1; i <= 8; i++) {
+    term = (term * y) / i;
+    sum += term;
+  }
+  for (let i = 0; i < 10; i++) sum *= sum;
+  return sum;
+}
+/** `items` in a random order (Fisher–Yates, `items.length - 1` numbers drawn), in place. */
+function shuffled<X>(items: X[], random: Random) {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [items[i], items[j]] = [items[j], items[i]];
+  }
+  return items;
+}
 /** A quick generator of numbers in [0, 1) from a 32-bit seed (mulberry32). */
 export function quick(seed: number): Random {
   let t = seed >>> 0;
@@ -1538,7 +1564,10 @@ export function prune(n: number, scopes: Telescope[], ball: number, hole: number
   for (let changed = true; changed; ) {
     changed = false;
     const pressed = new Set(way),
-      order = cur.map((_, t) => t).sort((a, b) => Number(pressed.has(a)) - Number(pressed.has(b)) || random() - 0.5),
+      // Telescopes the way leaves alone first, each part in a random order. A sort with a random comparison would draw
+      // as many numbers as the engine's sort compares, which differs between engines (Node and Chromium laid other
+      // boards from one seed): a plain shuffle draws the same numbers everywhere.
+      order = shuffled(cur.map((_, t) => t), random).sort((a, b) => Number(pressed.has(a)) - Number(pressed.has(b))),
       was = checks(parts, spec);
     for (const t of order) {
       const trial = cur.filter((_, i) => i !== t),
@@ -1674,7 +1703,7 @@ export function createGame(stage = 1, random: Random = cryptoRandom): State {
       if (!next) continue;
       const j = judgeOf(next, ball),
         heat = HEAT * (1 - step / spec.climb) + 0.05;
-      if (j.score >= cur.score || random() < Math.exp((j.score - cur.score) / heat)) {
+      if (j.score >= cur.score || random() < expo((j.score - cur.score) / heat)) {
         scopes = next;
         cur = j;
       }
