@@ -9,18 +9,20 @@ import { HOLES, aimAt, fly, type Flight, type Outcome, type Pose } from "./sim";
  *   either side of the neck (its ears, 귀). They throw `ARROWS` arrows each a round (판), one at a time in turn; the
  *   side that began a round lets the other begin the next. A game is one round or three (`ROUNDS`), and the higher
  *   total over them wins; equal totals are a draw.
- * - An arrow standing in the mouth scores `POINTS.mouth` (10), one standing in an ear `POINTS.ear` (20: an ear is far
- *   narrower). An arrow that goes into a hole too slanted to stand (more than `LEAN_MAX` from upright) is caught
- *   leaning against the rim (기댄 살) and scores nothing, as does an arrow that bounces off a rim or the pot and
- *   falls out, or comes down on the ground.
+ * - What an arrow scores is judged from where it comes to rest (`judge` in sim.ts). Its point in the mouth and its
+ *   shaft standing within `LEAN_MAX` of upright scores `POINTS.mouth` (10), the same in an ear `POINTS.ear` (20: an
+ *   ear is far narrower). Its point in a hole but its shaft lying further over (against the rim, or on the arrows
+ *   already there) is caught leaning (기댄 살) and scores nothing, as does an arrow that bounces off a rim or the pot
+ *   and falls out, or comes down on the ground.
  * - Arrows in the pot stay there and arrows on the ground lie where they fell until the round is over; then all are
- *   gathered up. Arrows in the pot do not get in the way of later ones.
+ *   gathered up. They stand in the way of later ones: an arrow may knock against them, rest on them or bounce off.
  *
  * A throw is a move whose `to` is the throw's turn and speed (`throwCode`: the turn in hundred-thousandths of a
  * radian, the speed in millimetres a second) and whose `extra` is how widely the computer's hand scatters it
  * (0 to `MAX_SPREAD`; a person's throws carry none: their unsteady hand is the tremor of the aim while they hold the
  * arrow, so the throw names exactly what they let go with). The scatter is drawn in `play` from the `random` passed
- * in; then the flight (`fly` in sim.ts) decides everything, the same way every time. Nothing is taken back
+ * in; then the flight (`fly` in sim.ts, a rigid arrow among the pot and the round's arrows) decides everything,
+ * the same way every time. Nothing is taken back
  * (`noUndo`): a throw is a matter of the hand.
  */
 export const ARROWS = 10,
@@ -33,8 +35,8 @@ export const ROUND_CHOICES = [
 export const roundsOf = (variant: string) => (variant === "3" ? 3 : 1);
 /** The computer's levels: how widely its hand scatters the throw it chooses. */
 export const LEVELS: Record<"easy" | "normal" | "hard", { label: string; spread: number }> = {
-  easy: { label: "쉬움", spread: 46 },
-  normal: { label: "보통", spread: 30 },
+  easy: { label: "쉬움", spread: 48 },
+  normal: { label: "보통", spread: 33 },
   hard: { label: "어려움", spread: 22 },
 };
 /** One unit of `extra`: the scatter of the turn (rad) and of the speed (m/s), one standard deviation each. */
@@ -104,6 +106,8 @@ function gauss(random: Random) {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 const other = (side: 0 | 1): 0 | 1 => (side ? 0 : 1);
+/** Where the round's arrows lie, for the next flight to meet. */
+export const lying = (state: State): Pose[] => state.arrows.map((a) => a.rest);
 /** Who throws next: in a round, the side that has thrown fewer, the round's starter first when they are even. */
 const nextUp = (thrown: [number, number], starter: 0 | 1): 0 | 1 => (thrown[0] === thrown[1] ? starter : thrown[0] < thrown[1] ? 0 : 1);
 /** A flight as an arrow of `side`. */
@@ -124,7 +128,7 @@ export function play(state: State, move: Move, random?: Random): State | null {
     speed = kept.speed;
   }
   const side = state.turn,
-    arrow = arrowOf(side, yaw, speed, fly(yaw, speed)),
+    arrow = arrowOf(side, yaw, speed, fly(yaw, speed, { others: lying(state) })),
     thrown: [number, number] = [...state.thrown],
     scores: [number, number] = [...state.scores];
   thrown[side]++;
@@ -156,7 +160,7 @@ const SAMPLES = (() => {
   let s = 12345;
   const next = () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646,
     out: [number, number][] = [];
-  for (let k = 0; k < 48; k++) {
+  for (let k = 0; k < 24; k++) {
     const u = Math.max(1e-9, next()),
       v = next(),
       r = Math.sqrt(-2 * Math.log(u));
@@ -164,31 +168,42 @@ const SAMPLES = (() => {
   }
   return out;
 })();
-/** What a throw is worth on average from a hand that scatters `spread` (tried through the same flight as `play`). */
-export function worth(yaw: number, speed: number, spread: number) {
-  if (spread <= 0) return POINTS[fly(yaw, speed).outcome];
+/**
+ * What a throw is worth on average from a hand that scatters `spread`, among the arrows `others` (tried through the
+ * same flight as `play`, each followed only until its outcome is sure).
+ */
+export function worth(yaw: number, speed: number, spread: number, others: Pose[] = []) {
+  if (spread <= 0) return POINTS[fly(yaw, speed, { others, quick: true }).outcome];
   let sum = 0;
-  for (const [a, b] of SAMPLES) sum += POINTS[fly(yaw + a * spread * SPREAD_YAW, speed + b * spread * SPREAD_SPEED).outcome];
+  for (const [a, b] of SAMPLES) sum += POINTS[fly(yaw + a * spread * SPREAD_YAW, speed + b * spread * SPREAD_SPEED, { others, quick: true }).outcome];
   return sum / SAMPLES.length;
 }
+/** The throws tried round the middle of the mouth: the middle, a little shorter and longer, a little to either side. */
+const AROUND: [number, number][] = [
+  [0, 0],
+  [0, -0.02],
+  [0, 0.02],
+  [-0.006, 0],
+  [0.006, 0],
+];
 /**
- * The computer's throw: it tries throws round the middle of the mouth and of each ear through the flight, weighs each
- * by what its own hand would make of it, and throws the best; `play` then scatters it by the level.
+ * The computer's throw: it tries throws round the middle of the mouth and of each ear through the flight, among the
+ * arrows already there, weighs each by what its own hand would make of it, and throws the best; `play` then
+ * scatters it by the level.
  */
 export function chooseThrow(state: State, level: "easy" | "normal" | "hard"): Move | null {
   if (state.winner !== null) return null;
-  const spread = LEVELS[level]?.spread ?? LEVELS.normal.spread;
+  const spread = LEVELS[level]?.spread ?? LEVELS.normal.spread,
+    others = lying(state);
   let best = { yaw: IDEAL[0].yaw, speed: IDEAL[0].speed, value: -1 };
   IDEAL.forEach((ideal, i) => {
-    const steps = i === 0 ? [-0.02, 0, 0.02] : [0];
-    for (const ds of steps)
-      for (const dy of i === 0 ? [-0.004, 0, 0.004] : [0]) {
-        const yaw = ideal.yaw + dy,
-          speed = ideal.speed + ds,
-          // An ear must look clearly better than the mouth to be tried: a few samples flatter a narrow hole.
-          value = worth(yaw, speed, spread) * (i === 0 ? 1 : 1 / EAR_DOUBT);
-        if (value > best.value + 1e-9) best = { yaw, speed, value };
-      }
+    for (const [dy, ds] of i === 0 ? AROUND : [[0, 0]]) {
+      const yaw = ideal.yaw + dy,
+        speed = ideal.speed + ds,
+        // An ear must look clearly better than the mouth to be tried: a few samples flatter a narrow hole.
+        value = worth(yaw, speed, spread, others) * (i === 0 ? 1 : 1 / EAR_DOUBT);
+      if (value > best.value + 1e-9) best = { yaw, speed, value };
+    }
   });
   return { from: -1, to: throwCode(best.yaw, best.speed), extra: spread };
 }

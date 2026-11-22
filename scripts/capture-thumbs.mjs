@@ -382,7 +382,8 @@ const play = {
   tuho: async () => {
     for (const aim of [[], ["ArrowLeft"], ["ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp", "ArrowUp"]]) {
       await keys([...aim, "Enter"], 80);
-      await wait(6500);
+      // The arrow flies, rattles down and settles (about two and a half seconds), then the computer does the same.
+      await wait(8000);
     }
   },
   // A few stones on the 19×19 board, the computer answering each.

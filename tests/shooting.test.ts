@@ -3,7 +3,7 @@ import * as bb from "../src/games/shooting/bb";
 import * as clay from "../src/games/shooting/clay";
 import * as hunt from "../src/games/shooting/hunt";
 import { passing } from "../src/games/shooting/common";
-import { LINED_UP, RIGS, aimAt, direction, dragFor, dragTurn, misalignment, shotDirection, shotError, wander, type Aim, type Offset } from "../src/games/shooting/layout";
+import { LINED_UP, RIGS, STEADIEST, aimAt, direction, dragFor, dragTurn, misalignment, raised, shotDirection, shotError, steady, wander, type Aim, type Offset, type Steady } from "../src/games/shooting/layout";
 import * as rules from "../src/games/shooting/rules";
 import { createWorld, fire, step, type Happening, type World } from "../src/games/shooting/sim";
 
@@ -68,6 +68,44 @@ describe("shooting: the sights", () => {
       expect(jump).toBeLessThan(1);
       // The same seed and time always give the same offset.
       expect(wander(mode, 7.77, 1.5)).toEqual(wander(mode, 7.77, 1.5));
+    }
+  });
+  test("held still the hand steadies and the wander dies down to a small floor; a sweep of the gun stirs it up again", () => {
+    for (const mode of ["bb", "clay", "hunt"] as const) {
+      const widest = (amp: number) => {
+        let most = 0;
+        for (let t = 0.3; t < 20; t += 0.01) most = Math.max(most, misalignment(wander(mode, t, 3.3, amp)));
+        return most;
+      };
+      // The wander scales with how unsteady the hand is.
+      expect(widest(1)).toBeGreaterThan(RIGS[mode].wander * 0.9);
+      expect(widest(0.25)).toBeCloseTo(widest(1) * 0.25, 6);
+      // Held still: a third of a second on, still unsteady; within three seconds close to the steadiest.
+      let hand: Steady = raised();
+      const amps: number[] = [];
+      for (let k = 0; k < 360; k++) {
+        hand = steady(mode, hand, 1 / 120);
+        amps.push(hand.amp);
+      }
+      expect(amps[40]).toBeGreaterThan(0.5);
+      expect(amps[359]).toBeLessThan(STEADIEST + 0.06);
+      expect(amps[359]).toBeGreaterThanOrEqual(STEADIEST);
+      // Never rising while still.
+      expect(amps.every((a, i) => i === 0 || a <= amps[i - 1] + 1e-12)).toBe(true);
+      // A sweep: the sway rises over a moment (no jump), more for a longer sweep, and dies down again.
+      const stirred = (mrad: number) => {
+        let h = steady(mode, hand, 1 / 120, mrad);
+        const first = h.amp;
+        for (let k = 0; k < 40; k++) h = steady(mode, h, 1 / 120);
+        return { first, later: h.amp };
+      };
+      const small = stirred(10),
+        large = stirred(60);
+      expect(large.first - hand.amp).toBeLessThan(0.1);
+      expect(large.later).toBeGreaterThan(small.later);
+      expect(small.later).toBeGreaterThan(hand.amp);
+      // The same hand and the same moves always come to the same sway.
+      expect(steady(mode, { stir: 0.4, amp: 0.3 }, 0.016, 5)).toEqual(steady(mode, { stir: 0.4, amp: 0.3 }, 0.016, 5));
     }
   });
   test("a drag turns the gun as far as the finger goes, and back", () => {
@@ -147,6 +185,33 @@ describe("shooting: the BB booth", () => {
     expect(seen.filter((h) => h.kind === "done")).toHaveLength(1);
     expect(fire(world, { yaw: 0, pitch: 0 }, ALIGNED)).toEqual([{ kind: "click" }]);
   });
+  test("several targets are lit at once and each stays lit for seconds; a new one lights as one goes out", () => {
+    for (let tier = 0; tier < bb.TIERS.length; tier++) {
+      const world = bb.createBB(tier, 900 + tier),
+        t = bb.TIERS[tier],
+        lit: number[] = [],
+        litSince = new Map<number, number>(),
+        stays: number[] = [];
+      for (let k = 0; k < 120 * 40; k++) {
+        step(world);
+        world.targets.forEach((target, i) => {
+          if (target.lit && !litSince.has(i)) litSince.set(i, world.t);
+          if (!target.lit && litSince.has(i)) {
+            stays.push(world.t - litSince.get(i)!);
+            litSince.delete(i);
+          }
+        });
+        if (world.t > 3) lit.push(world.targets.filter((x) => x.lit).length);
+      }
+      expect(Math.min(...lit)).toBeGreaterThanOrEqual(t.fewest - 1);
+      expect(Math.max(...lit)).toBeLessThanOrEqual(t.most);
+      expect(lit.reduce((a, b) => a + b, 0) / lit.length).toBeGreaterThan(t.fewest - 0.3);
+      expect(Math.min(...stays)).toBeGreaterThan(2.2);
+      expect(Math.max(...stays)).toBeLessThan(4.7);
+    }
+    expect(bb.TIERS[0].stay).toBeGreaterThan(bb.TIERS[2].stay);
+    expect(bb.TIERS[2].most).toBeGreaterThan(bb.TIERS[0].most);
+  });
   test("the booth plays the same from the same seed and the same shots", () => {
     const play = () => {
       const world = createWorld("bb", 1, 1234),
@@ -165,26 +230,88 @@ describe("shooting: the BB booth", () => {
 });
 
 describe("shooting: clays", () => {
-  /** A world with a clay in the air, flown `seconds` from the house. */
+  /** A world with a single clay in the air (a seed that throws one), flown `seconds` from its house. */
   function flying(seed: number, seconds: number) {
-    const world = clay.createClay(seed);
-    run(world, clay.READY + 0.05, (h) => h.kind === "launch");
-    run(world, seconds);
-    return world;
+    for (let s = seed; ; s++) {
+      const world = clay.createClay(s);
+      run(world, clay.READY + 0.05, (h) => h.kind === "launch");
+      if (world.clays.length !== 1) continue;
+      run(world, seconds);
+      return world;
+    }
   }
   test("a pattern at the clay breaks it; one well off misses; two barrels, then the gun clicks", () => {
     const world = flying(21, 0.5),
-      at = world.clay!.p,
+      at = world.clays[0].p,
       out = fire(world, aimAt("clay", at), ALIGNED);
     expect(out.map((h) => h.kind)).toEqual(["shot", "break"]);
     expect(out[1]).toMatchObject({ barrel: 1 });
     expect(world.card).toEqual([1]);
     const other = flying(22, 0.5),
-      p = other.clay!.p;
+      p = other.clays[0].p;
     expect(fire(other, aimAt("clay", { x: p.x + 3, y: p.y + 2, z: p.z }), ALIGNED).map((h) => h.kind)).toEqual(["shot"]);
-    const second = fire(other, aimAt("clay", other.clay!.p), ALIGNED);
+    const second = fire(other, aimAt("clay", other.clays[0].p), ALIGNED);
     expect(second.find((h) => h.kind === "break")).toMatchObject({ barrel: 2 });
     expect(fire(other, aimAt("clay", { x: 0, y: 5, z: -30 }), ALIGNED)).toEqual([{ kind: "click" }]);
+  });
+  test("clays fly across the sky in view: from the house before me and from both sides, now and then in pairs", () => {
+    const world = clay.createClay(31),
+      houses = new Set<number>(),
+      pairs: number[] = [],
+      high: number[] = [],
+      far: number[] = [];
+    let flights = 0;
+    run(world, 400, (h) => {
+      if (h.kind === "launch") houses.add(h.clay.house);
+      return h.kind === "done";
+    });
+    // Replay, watching each clay at the top of its flight: how high and how far from the shooter.
+    const again = clay.createClay(31);
+    for (let k = 0; k < 400 * 120 && again.phase !== "over"; k++) {
+      const out = step(again);
+      const launched = out.filter((h) => h.kind === "launch").length;
+      if (launched) {
+        flights++;
+        if (launched > 1) pairs.push(launched);
+      }
+      for (const c of again.clays)
+        if (c.v.y <= 0 && c.v.y > -clay.GRAVITY / 120) {
+          high.push(c.p.y);
+          far.push(Math.hypot(c.p.x, c.p.z));
+        }
+    }
+    expect([...houses].sort()).toEqual([0, 1, 2]);
+    expect(pairs.length).toBeGreaterThan(2);
+    expect(flights).toBeLessThan(clay.CLAYS);
+    // At the top of their flight they stand well up in the sky, near enough to read as discs (some 10 to 20 m off).
+    expect(Math.min(...high)).toBeGreaterThan(3.5);
+    expect(Math.max(...high)).toBeLessThan(11);
+    expect(Math.min(...far)).toBeGreaterThan(8);
+    expect(Math.max(...far)).toBeLessThan(22);
+    // A side clay crosses most of the view.
+    const side = clay.throwClay(clay.createClay(5), 1);
+    let crossed = side.p.x;
+    for (let t = 0; t < clay.LONGEST && side.p.y > 0; t += 1 / 120) {
+      clay.fly(side, 1 / 120);
+      crossed = side.p.x;
+    }
+    expect(crossed - clay.HOUSES[1].x).toBeGreaterThan(18);
+  });
+  test("one pattern may break both clays of a pair; each clay is written on the card", () => {
+    for (let s = 1; ; s++) {
+      const world = clay.createClay(s);
+      run(world, clay.READY + 0.05, (h) => h.kind === "launch");
+      if (world.clays.length !== 2) continue;
+      // Both clays laid on one line from the gun, the second a little further.
+      const [a, b] = world.clays,
+        d = { x: a.p.x - RIGS.clay.pivot.x, y: a.p.y - RIGS.clay.pivot.y, z: a.p.z - RIGS.clay.pivot.z };
+      b.p = { x: a.p.x + d.x * 0.2, y: a.p.y + d.y * 0.2, z: a.p.z + d.z * 0.2 };
+      const out = fire(world, aimAt("clay", a.p), ALIGNED);
+      expect(out.filter((h) => h.kind === "break")).toHaveLength(2);
+      expect(world.card).toEqual([1, 1]);
+      expect(world.phase).toBe("rest");
+      break;
+    }
   });
   test("the pattern widens with the distance", () => {
     const world = clay.createClay(5),
@@ -195,13 +322,14 @@ describe("shooting: clays", () => {
       spread = (range: number) => Math.max(...pellets.map((p) => passing(from, d, { x: from.x + p.x * range, y: from.y + p.y * range, z: from.z + p.z * range }).across));
     expect(pellets).toHaveLength(clay.PELLETS);
     expect(spread(30)).toBeCloseTo(spread(10) * 3, 6);
-    expect(spread(25)).toBeGreaterThan(0.3);
-    expect(spread(25)).toBeLessThan(0.7);
+    expect(spread(25)).toBeGreaterThan(clay.SPREAD * 25 * 0.75);
+    expect(spread(25)).toBeLessThan(clay.SPREAD * 25 * 1.25);
   });
   test("a clay not hit falls whole; the round is over after the last clay; the range replays from its seed", () => {
     const world = clay.createClay(9),
       seen = run(world, 400, (h) => h.kind === "done");
     expect(seen.filter((h) => h.kind === "launch")).toHaveLength(clay.CLAYS);
+    expect(world.card).toHaveLength(clay.CLAYS);
     expect(seen.filter((h) => h.kind === "lost")).toHaveLength(clay.CLAYS);
     expect(world.phase).toBe("over");
     const again = clay.createClay(9);

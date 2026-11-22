@@ -3,16 +3,19 @@ import { RIGS, shotDirection, shotError, type Aim, type Offset, type Vec } from 
 
 /**
  * The BB-gun booth of an arcade, played in real time (free of Three.js and the DOM): three bays of round targets in
- * two rows; targets light up blue (now and then yellow) one at a time, in pairs or along a row in turn, and go dark
- * again after a while. A pellet that strikes a lit target scores (twice as much in its bull) and the target spins
- * round and goes dark; hitting the next lit target within `COMBO` seconds builds a combo that multiplies the points.
- * Dark targets and the bays' walls score nothing. The gun holds `MAG` pellets and reloads by itself; the round ends
- * when the last pellet of the tier has landed.
+ * two rows; several targets are lit at once, blue (now and then yellow), each for a good few seconds, and as one goes
+ * dark or is struck another lights a moment later (now and then a whole row of a bay lights one after another). A
+ * pellet that strikes a lit target scores (twice as much in its bull) and the target spins round and goes dark;
+ * hitting the next lit target within `COMBO` seconds builds a combo that multiplies the points. Dark targets and the
+ * bays' walls score nothing. The gun holds `MAG` pellets and reloads by itself; the round ends when the last pellet
+ * of the tier has landed.
  */
 export interface Tier {
   name: string;
   pellets: number;
-  /** How many targets may be lit at once, how long one stays lit (s), the pause before the next lights (s). */
+  /** How many targets are kept lit at once (at least `fewest`, at most `most`), how long one stays lit (s, give or
+   *  take a sixth), and the pause before a target gone dark is replaced (s, the most; each draws its own). */
+  fewest: number;
   most: number;
   stay: number;
   gap: number;
@@ -21,13 +24,13 @@ export interface Tier {
   runs: number;
 }
 export const TIERS: Tier[] = [
-  { name: "동", pellets: 40, most: 1, stay: 2.8, gap: 0.45, yellow: 0.12, runs: 0 },
-  { name: "은", pellets: 60, most: 2, stay: 2.1, gap: 0.35, yellow: 0.18, runs: 0.25 },
-  { name: "금", pellets: 90, most: 3, stay: 1.55, gap: 0.25, yellow: 0.24, runs: 0.35 },
+  { name: "동", pellets: 40, fewest: 2, most: 3, stay: 3.9, gap: 0.7, yellow: 0.12, runs: 0.1 },
+  { name: "은", pellets: 60, fewest: 3, most: 4, stay: 3.3, gap: 0.55, yellow: 0.18, runs: 0.2 },
+  { name: "금", pellets: 90, fewest: 3, most: 5, stay: 2.9, gap: 0.4, yellow: 0.24, runs: 0.3 },
 ];
 export const tierOf = (tier: number) => TIERS[Math.max(0, Math.min(TIERS.length - 1, Math.round(tier) || 0))];
 /** The combo window (s), the highest multiplier, the magazine and its reload (s), the pellet's speed (m/s). */
-export const COMBO = 2,
+export const COMBO = 2.5,
   MOST_COMBO = 5,
   MAG = 10,
   RELOAD = 1.1,
@@ -101,7 +104,7 @@ export function bbTargets(): BBTarget[] {
 }
 export function createBB(tier: number, seed: number): BBWorld {
   const t = tierOf(tier);
-  return { kind: "bb", t: 0, seed, tier: TIERS.indexOf(t), targets: bbTargets(), queue: [], pellets: [], ammo: t.pellets, mag: Math.min(MAG, t.pellets), reloadUntil: 0, next: 0.9, combo: 0, lastHit: -99, doneAt: 0, done: false };
+  return { kind: "bb", t: 0, seed, tier: TIERS.indexOf(t), targets: bbTargets(), queue: [], pellets: [], ammo: t.pellets, mag: Math.min(MAG, t.pellets), reloadUntil: 0, next: 0.8, combo: 0, lastHit: -99, doneAt: 0, done: false };
 }
 /** The combo standing now (0 once its window has gone by). */
 export const comboNow = (world: BBWorld) => (world.t - world.lastHit <= COMBO ? world.combo : 0);
@@ -145,29 +148,34 @@ export function fireBB(world: BBWorld, aim: Aim, offset: Offset): BBHappening[] 
   }
   return out;
 }
-/** Lights `count` dark targets (or a row in turn). */
+/**
+ * Keeps the booth lit: while fewer than the tier's `most` are lit or queued, another dark target is queued to light
+ * after a short pause of its own (at once when fewer than `fewest` are), so that several are always lit and one goes
+ * on as another goes out. Now and then, when there is room for three, a row of a bay lights one after another.
+ */
 function light(world: BBWorld, tier: Tier) {
   const free = world.targets.map((t, i) => i).filter((i) => world.targets[i].lit === 0 && world.targets[i].cool <= world.t && !world.queue.some((q) => q.target === i)),
     lit = world.targets.filter((t) => t.lit).length + world.queue.length;
   if (!free.length || lit >= tier.most) return;
   const colour = (): 1 | 2 => (draw(world) < tier.yellow ? 2 : 1);
-  if (tier.runs && draw(world) < tier.runs && lit === 0) {
-    // A row of a bay lit one after another, from one end, and the next only once the last has had its time.
-    const bay = Math.floor(draw(world) * BAYS.length),
-      row = Math.floor(draw(world) * ROWS.length),
-      backward = draw(world) < 0.5,
-      cells = world.targets.map((t, i) => i).filter((i) => world.targets[i].bay === bay && world.targets[i].row === row);
-    (backward ? cells.reverse() : cells).forEach((target, k) => world.queue.push({ at: world.t + k * 0.45, target, lit: colour() }));
-    world.next = world.t + tier.stay + 0.9 + between(world, 0, tier.gap);
-    return;
+  if (tier.runs && tier.most - lit >= 3 && draw(world) < tier.runs) {
+    // A row of a bay whose three targets are all dark, lit one after another from one end.
+    const rows = BAYS.flatMap((_, bay) => ROWS.map((__, row) => ({ bay, row }))).filter(({ bay, row }) =>
+        world.targets.every((t, i) => t.bay !== bay || t.row !== row || free.includes(i)),
+      ),
+      pick = rows.length ? rows[Math.floor(draw(world) * rows.length)] : null;
+    if (pick) {
+      const backward = draw(world) < 0.5,
+        cells = world.targets.map((t, i) => i).filter((i) => world.targets[i].bay === pick.bay && world.targets[i].row === pick.row);
+      (backward ? cells.reverse() : cells).forEach((target, k) => world.queue.push({ at: world.t + 0.15 + k * 0.4, target, lit: colour() }));
+      world.next = world.t + 0.4;
+      return;
+    }
   }
-  const many = Math.min(tier.most - lit, free.length, 1 + (draw(world) < 0.35 ? Math.floor(draw(world) * tier.most) : 0));
-  for (let k = 0; k < many; k++) {
-    const at = Math.floor(draw(world) * free.length),
-      target = free.splice(at, 1)[0];
-    world.queue.push({ at: world.t, target, lit: colour() });
-  }
-  world.next = world.t + tier.gap + between(world, 0, tier.gap * 1.5);
+  const at = Math.floor(draw(world) * free.length),
+    target = free[at];
+  world.queue.push({ at: world.t + (lit < tier.fewest ? 0.05 : between(world, 0.15, tier.gap)), target, lit: colour() });
+  world.next = world.t + 0.12;
 }
 /** One slice of the booth's time. */
 export function stepBB(world: BBWorld, dt: number): BBHappening[] {
@@ -207,7 +215,7 @@ export function stepBB(world: BBWorld, dt: number): BBHappening[] {
     if (q.at > world.t) return true;
     const target = world.targets[q.target];
     target.lit = q.lit;
-    target.until = world.t + tier.stay * (0.85 + 0.3 * draw(world));
+    target.until = world.t + tier.stay * (5 / 6 + draw(world) / 3);
     return false;
   });
   if (world.ammo > 0 && world.t >= world.next) light(world, tier);

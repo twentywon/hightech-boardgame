@@ -5,15 +5,14 @@ import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { SCALE, gesture, tremor, tuhoCamera } from "./layout";
-import { ARROWS, IDEAL, throwCode, type State, type Throw } from "./rules";
-import { ARROW_LENGTH, DISTANCE, EAR_BOTTOM, HOLES, PROFILE, RELEASE, SAMPLE, airPath, fly, type Pose, type V3 } from "./sim";
+import { ARROWS, IDEAL, lying, throwCode, type State } from "./rules";
+import { ARROW_LENGTH, DISTANCE, EAR_BOTTOM, HOLES, PROFILE, RELEASE, SAMPLE, airPath, fly, type Knock, type Pose, type V3 } from "./sim";
 
 /** The feathers of each side's arrows: 홍 (red) and 청 (blue). */
 export const TUHO_COLORS: [string, string] = ["#c8322b", "#2456b8"];
 const S = SCALE;
-/** How long an arrow takes to settle where it came to rest, how long a finished round's arrows stay before they are gathered, and the gathering (ms). */
-const SETTLE = 240,
-  REST = 1100,
+/** How long a finished round's arrows stay before they are gathered, and the gathering (ms). */
+const REST = 1100,
   GATHER = 650,
   /** How much of the flight the dotted line shows ahead of the hand (s), and its dots. */
   PREVIEW = 0.34,
@@ -25,6 +24,12 @@ const SETTLE = 240,
   /** How far above the level the arrow is held, pointing at the pot, before the throw lifts it (rad). */
   HOLD = 0.28;
 const v3 = (p: V3) => new T.Vector3(p.x * S, p.y * S, p.z * S);
+/** A wooden knock (an arrow against another) goes to the screen as a disc's knock this much stronger, so that it can be told from bronze. */
+export const WOOD_KNOCK = 10;
+/** How long a struck arrow quivers (ms), how far at most (rad) and how fast (rad/s). */
+const QUIVER = 520,
+  QUIVER_MOST = 0.05,
+  QUIVER_RATE = 42;
 const canvasTexture = (canvas: HTMLCanvasElement) => {
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
@@ -608,7 +613,28 @@ export class TuhoView extends TableView<State> {
     model.visible = true;
     model.scale.setScalar(1);
     model.position.copy(v3(pose.tip));
-    this.point(model, new T.Vector3(-pose.dir.x, -pose.dir.y, -pose.dir.z));
+    if (pose.q) model.quaternion.set(...pose.q);
+    else this.point(model, new T.Vector3(-pose.dir.x, -pose.dir.y, -pose.dir.z));
+  }
+  /** The model of the `k`-th arrow of a round's `arrows`: each side's arrows are used in turn. */
+  private modelOf(arrows: State["arrows"], k: number) {
+    const side = arrows[k].side;
+    return this.sets[side][arrows.slice(0, k).filter((a) => a.side === side).length];
+  }
+  /** An arrow struck by another quivers about its point, a little and quickly dying away, then stands as it was. */
+  private quiver(model: T.Object3D, pose: Pose, knock: Knock, at: number) {
+    const dir = new T.Vector3(pose.dir.x, pose.dir.y, pose.dir.z),
+      axis = new T.Vector3().crossVectors(dir, new T.Vector3(0, 1, 0));
+    if (axis.lengthSq() < 1e-6) axis.set(1, 0, 0);
+    axis.normalize();
+    const base = pose.q ? new T.Quaternion(...pose.q) : new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), dir.clone().negate()),
+      most = QUIVER_MOST * Math.min(1, knock.strength * 2.5),
+      turn = new T.Quaternion();
+    this.tween(at, QUIVER, (p) => {
+      const t = (p * QUIVER) / 1000,
+        angle = p >= 1 ? 0 : most * Math.exp(-t * 9) * Math.sin(t * QUIVER_RATE);
+      model.quaternion.copy(turn.setFromAxisAngle(axis, angle).multiply(base));
+    });
   }
   /** The arrow in the hand: held at the release, along the throw it would make, drawn back as far as it is pulled. */
   private handPose() {
@@ -629,8 +655,7 @@ export class TuhoView extends TableView<State> {
   }
   protected place(state: State) {
     for (const set of this.sets) for (const model of set) model.visible = false;
-    const count = [0, 0];
-    for (const arrow of state.arrows) this.lay(this.sets[arrow.side][count[arrow.side]++], arrow.rest);
+    state.arrows.forEach((arrow, k) => this.lay(this.modelOf(state.arrows, k), arrow.rest));
     this.writeBoard(state);
     this.handPose();
     this.aimShown();
@@ -639,52 +664,43 @@ export class TuhoView extends TableView<State> {
     const arrow = state.last;
     if (!arrow || state.ply !== before.ply + 1) return false;
     const model = this.sets[arrow.side][before.thrown[arrow.side]],
-      flight = fly(arrow.yaw, arrow.speed, true),
+      flight = fly(arrow.yaw, arrow.speed, { record: true, others: lying(before) }),
       path = flight.path,
-      rest = path[path.length - 1],
-      flown = path.slice(0, -1),
-      time = Math.max(SAMPLE, (flown.length - 1) * SAMPLE),
-      duration = time * 1000;
+      last = path.length - 1,
+      duration = Math.max(SAMPLE, flight.time) * 1000,
+      from = new T.Quaternion(),
+      to = new T.Quaternion();
     for (const hand of this.hands) hand.visible = false;
     this.dots.visible = false;
     model.visible = true;
-    // The flight, as the rules flew it.
+    // The flight as the rules flew it, point and turn: a sample every `SAMPLE` seconds, and the rest at the end.
     this.tween(0, duration, (p) => {
-      const at = Math.min(flown.length - 1, p * (flown.length - 1)),
-        i = Math.floor(at),
-        f = at - i,
-        a = flown[i],
-        b = flown[Math.min(flown.length - 1, i + 1)];
-      const tip = v3(a.tip).lerp(v3(b.tip), f),
-        dir = new T.Vector3(a.dir.x, a.dir.y, a.dir.z).lerp(new T.Vector3(b.dir.x, b.dir.y, b.dir.z), f).normalize();
-      model.position.copy(tip);
-      this.point(model, dir.multiplyScalar(-1));
-      // Bamboo turns a little about itself as it flies.
-      model.rotateZ(p * 4);
+      const time = p * flight.time,
+        at = Math.min(last - 1, Math.floor(time / SAMPLE)),
+        a = path[Math.max(0, at)],
+        b = path[Math.min(last, at + 1)],
+        span = at + 1 >= last ? Math.max(SAMPLE * 0.5, flight.time - at * SAMPLE) : SAMPLE,
+        f = p >= 1 ? 1 : Math.max(0, Math.min(1, (time - at * SAMPLE) / span));
+      model.position.copy(v3(a.tip).lerp(v3(b.tip), f));
+      if (a.q && b.q) model.quaternion.copy(from.set(...a.q)).slerp(to.set(...b.q), f);
     });
-    // What it strikes is heard as it strikes it.
-    for (const knock of flight.knocks)
-      this.tween(Math.min(knock.t * 1000, duration), 1, (p) => {
+    // What it strikes is heard as it strikes it, and an arrow it knocks against quivers.
+    for (const knock of flight.knocks) {
+      const when = Math.min(knock.t * 1000, duration);
+      this.tween(when, 1, (p) => {
         if (p < 1) return;
         if (knock.kind === "rim" || knock.kind === "pot") this.onKnock?.("disc", knock.strength);
-        else if (knock.kind === "in") this.onKnock?.("pocket", knock.strength);
+        else if (knock.kind === "in" || knock.kind === "inside") this.onKnock?.("pocket", knock.strength);
+        else if (knock.kind === "arrow") this.onKnock?.("disc", knock.strength + WOOD_KNOCK);
         else this.onKnock?.("cushion", knock.strength);
       });
-    // Then it settles: down into the pot, over against the rim, or flat on the mat.
-    const last = flown[flown.length - 1];
-    let from: T.Quaternion | null = null;
-    this.tween(duration, SETTLE, (p) => {
-      from ??= model.quaternion.clone();
-      const e = 1 - (1 - p) ** 2,
-        to = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), new T.Vector3(-rest.dir.x, -rest.dir.y, -rest.dir.z));
-      model.position.copy(v3(last.tip).lerp(v3(rest.tip), e));
-      model.quaternion.copy(from).slerp(to, e);
-    });
+      if (knock.kind === "arrow" && knock.other !== undefined && before.arrows[knock.other]) this.quiver(this.modelOf(before.arrows, knock.other), before.arrows[knock.other].rest, knock, when);
+    }
     if (!state.cleared) return true;
     // The round is over: every arrow stays a moment, then all are gathered up.
-    const all = [...before.arrows.map((a, k) => this.sets[a.side][before.arrows.slice(0, k).filter((b) => b.side === a.side).length]), model];
+    const all = [...before.arrows.map((_, k) => this.modelOf(before.arrows, k)), model];
     let start: T.Vector3[] | null = null;
-    this.tween(duration + SETTLE + REST, GATHER, (p) => {
+    this.tween(duration + QUIVER + REST, GATHER, (p) => {
       start ??= all.map((m) => m.position.clone());
       all.forEach((m, k) => {
         if (!start) return;

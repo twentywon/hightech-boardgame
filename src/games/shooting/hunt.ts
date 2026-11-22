@@ -137,8 +137,9 @@ export const SESSION = 90,
   /** How long a fallen animal lies before it has faded (s); how many animals may be out at once. */
   FADE = 2.6,
   CROWD = 4;
-/** The lake: an ellipse on the ground (middle and half-widths, m) and its water's height. */
-export const LAKE = { x: 8, z: -47, rx: 30, rz: 11, y: -0.12 };
+/** The lake: an ellipse on the ground (middle and half-widths, m) and its water's height. It lies across the middle
+ *  of the view from the stand, with the meadow before it and the wood on its far shore. */
+export const LAKE = { x: 6, z: -34, rx: 27, rz: 15, y: -0.12 };
 export const inLake = (x: number, z: number) => ((x - LAKE.x) / LAKE.rx) ** 2 + ((z - LAKE.z) / LAKE.rz) ** 2 < 1;
 /** How far either way the meadow runs before the wood takes the animals in again (m). */
 export const EDGE = 46;
@@ -234,12 +235,12 @@ export function spawn(world: HuntWorld, id: Kind["id"]): Animal {
   }
   if (id === "pheasant") {
     // Out of the grass at once, climbing steeply.
-    const p = { x: between(world, -18, 18), y: 0.3, z: between(world, -12, -27) };
+    const p = { x: between(world, -18, 18), y: 0.3, z: between(world, -9, -19) };
     return { ...base, p, heading: side * Math.PI * 0.5, doing: "fly", until: world.t + 30, lane: p.z, height: between(world, 5.5, 9), v: { x: side * kind.speed * 0.55, y: 6.5, z: between(world, -3, -1) } };
   }
   // From the wood at one side of the meadow, across to the other.
   const near = id === "rabbit",
-    lane = near ? between(world, -10, -20) : between(world, -16, -31),
+    lane = near ? between(world, -10, -15) : between(world, -12, -19),
     x = near && draw(world) < 0.6 ? side * between(world, 12, 26) : side * EDGE;
   return { ...base, p: { x, y: 0, z: lane }, heading: -side * Math.PI * 0.5, side: -side, doing: "walk", until: world.t + between(world, 2.5, 5), lane, height: 0 };
 }

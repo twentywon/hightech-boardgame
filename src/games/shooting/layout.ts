@@ -51,6 +51,8 @@ export interface Rig {
   /** The rear sight's widest wander (mrad as the eye sees it), the mean time between two moments of alignment (s). */
   wander: number;
   period: number;
+  /** How quickly a hand held still steadies (s: the time for the wander to fall to about a third of what is left). */
+  settle: number;
   /** The shot's error for a milliradian of misalignment. */
   gain: number;
   /** How far the gun may turn either way and down and up (radians). */
@@ -68,10 +70,11 @@ export const RIGS: Record<Mode, Rig> = {
     front: 1.0,
     restFov: 44,
     aimFov: 22,
-    gunFov: 30,
+    gunFov: 38,
     reach: 4.3,
     wander: 30,
     period: 2.4,
+    settle: 0.75,
     gain: 0.22,
     yaws: 0.42,
     pitches: [-0.22, 0.16],
@@ -80,16 +83,17 @@ export const RIGS: Record<Mode, Rig> = {
   clay: {
     pivot: { x: 0, y: 1.52, z: -0.28 },
     head: { x: 0, y: 1.66, z: 0 },
-    look: { x: 0, y: 3.2, z: -40 },
+    look: { x: 0, y: 4.6, z: -40 },
     back: 0.3,
     rear: 0.55,
     front: 1.02,
-    restFov: 56,
-    aimFov: 30,
-    gunFov: 34,
+    restFov: 50,
+    aimFov: 28,
+    gunFov: 40,
     reach: 30,
     wander: 34,
     period: 1.8,
+    settle: 0.55,
     gain: 0.3,
     yaws: 1.25,
     pitches: [-0.12, 0.8],
@@ -104,10 +108,11 @@ export const RIGS: Record<Mode, Rig> = {
     front: 1.05,
     restFov: 50,
     aimFov: 17,
-    gunFov: 30,
+    gunFov: 38,
     reach: 40,
     wander: 28,
     period: 2.6,
+    settle: 0.85,
     gain: 0.2,
     yaws: 1.05,
     pitches: [-0.6, 0.55],
@@ -177,11 +182,12 @@ export function shotDirection(aim: Aim, error: Offset): Vec {
 }
 /**
  * The rear sight's wander `t` seconds after the gun came up (mrad as the eye sees it): a slow swell that comes down
- * to nothing every `period` seconds or so (the moments when rear and front sight line up) and up again to `wander`,
- * its way turning slowly round. Smooth at every moment; `seed` (any number) starts each hold somewhere else in it,
- * always well off the line. While the gun comes up (the first `RAISE` ms) the rear sight also rises into place.
+ * to nothing every `period` seconds or so (the moments when rear and front sight line up) and up again to `wander`
+ * times `amp` (how unsteady the hand is now, see `steady`), its way turning slowly round. Smooth at every moment;
+ * `seed` (any number) starts each hold somewhere else in it, always well off the line. While the gun comes up (the
+ * first `RAISE` ms) the rear sight also rises into place.
  */
-export function wander(mode: Mode, t: number, seed: number): Offset {
+export function wander(mode: Mode, t: number, seed: number, amp = 1): Offset {
   const rig = RIGS[mode];
   let s = (Math.abs(Math.floor(seed * 7919)) % 2147483646) + 1;
   const next = () => (s = (s * 16807) % 2147483647) / 2147483647,
@@ -194,9 +200,35 @@ export function wander(mode: Mode, t: number, seed: number): Offset {
     swell = 0.5 - 0.5 * Math.cos(theta),
     // Its way round: slowly turning, now quicker, now slower.
     phi = 6.28 * c + 0.7 * t + 0.9 * Math.sin(2 * Math.PI * 0.19 * t + 6.28 * d),
-    size = rig.wander * swell,
+    size = rig.wander * swell * Math.max(0, Math.min(1, amp)),
     rise = t * 1000 < RAISE ? (1 - (t * 1000) / RAISE) ** 2 * rig.wander * 2.2 : 0;
   return { x: size * Math.cos(phi) + 0, y: size * Math.sin(phi) - rise + 0 };
+}
+/**
+ * How steady the hand holding the gun is. `stir` is what moving the gun has stirred up (1 just raised or after a
+ * long sweep, 0 utterly still) and dies away while the pointer stays still (`settle`); `amp` is the share of the
+ * rear sight's full wander it allows, never less than `STEADIEST`, rising toward what `stir` asks within `STIR_RISE`
+ * seconds (so a sudden sweep makes the sights sway more an instant later, never with a jump) and falling with it.
+ */
+export interface Steady {
+  stir: number;
+  amp: number;
+}
+/** The least wander a hand held still keeps (a share of the full), how far a turn must sweep to stir it fully (mrad),
+ *  and how long the sway takes to catch up with a stir (s). */
+export const STEADIEST = 0.1,
+  STIR_SWEEP = 70,
+  STIR_RISE = 0.22;
+/** A hand just raised: as unsteady as it gets. */
+export const raised = (): Steady => ({ stir: 1, amp: 1 });
+/** The share of the full wander that a stir asks for. */
+export const swayOf = (stir: number) => STEADIEST + (1 - STEADIEST) * Math.max(0, Math.min(1, stir));
+/** The hand `dt` seconds on, the gun having been turned through `turned` mrad meanwhile (0 when held still). */
+export function steady(mode: Mode, hand: Steady, dt: number, turned = 0): Steady {
+  const stir = Math.min(1, hand.stir * Math.exp(-dt / RIGS[mode].settle) + Math.max(0, turned) / STIR_SWEEP),
+    want = swayOf(stir),
+    amp = want > hand.amp ? hand.amp + (want - hand.amp) * (1 - Math.exp(-dt / STIR_RISE)) : want;
+  return { stir, amp };
 }
 /** The misalignment in one number (mrad). */
 export const misalignment = (o: Offset) => Math.hypot(o.x, o.y);

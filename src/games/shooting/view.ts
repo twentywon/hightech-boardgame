@@ -10,7 +10,7 @@ import { CLAYS, type ClayWorld } from "./clay";
 import { animalModel, buildForest, type AnimalModel, type Forest } from "./forest";
 import { buildGun, type Gun } from "./guns";
 import { FADE, KINDS, LAKE, MAG as HUNT_MAG, kindOf, partAt, type Animal, type HuntWorld } from "./hunt";
-import { FOLLOW, LINED_UP, RAISE, RIGS, SHOOT_SUBJECT, aimAt, clampAim, direction, dragTurn, misalignment, sightEye, wander, type Aim, type Mode, type Offset, type Vec } from "./layout";
+import { FOLLOW, LINED_UP, RAISE, RIGS, SHOOT_SUBJECT, aimAt, clampAim, direction, dragTurn, misalignment, raised, sightEye, steady, wander, type Aim, type Mode, type Offset, type Steady, type Vec } from "./layout";
 import { flashPicture, puffPicture, wordPicture } from "./paint";
 import { CLAY_LARGER, buildRange, type Range } from "./range";
 import { BREAK, DONE, ESCAPE, HIT, LAUNCH, LOST, SHOT, TAKE, TICK, WOUND, ZONES, broken, type State } from "./rules";
@@ -24,6 +24,12 @@ const KICK: Record<Mode, { back: number; up: number; eye: number }> = {
   bb: { back: 0.008, up: 0.012, eye: 0.004 },
   clay: { back: 0.06, up: 0.11, eye: 0.045 },
   hunt: { back: 0.04, up: 0.07, eye: 0.03 },
+};
+/** Where a held gun is at the ready, before the eye (right, up, back) and turned (pitch, yaw, roll) from its line. */
+const REST_POSE: Record<Mode, { at: [number, number, number]; turn: [number, number, number] }> = {
+  bb: { at: [0, 0, 0], turn: [0, 0, 0] },
+  clay: { at: [0.035, -0.205, -0.04], turn: [0.115, -0.01, 0.03] },
+  hunt: { at: [0.17, -0.25, -0.02], turn: [-0.04, 0.13, 0.2] },
 };
 /** A passing thing the frame loop moves until it is done (a fragment, a puff, a word, a flash). */
 interface Effect {
@@ -49,9 +55,12 @@ export class ShootingView extends TableView<State> {
   private booth: Booth | null = null;
   private range: Range | null = null;
   private forest: Forest | null = null;
-  /** Where the gun points, and the press that holds it up (where it began, the aim it began from, its wander's seed). */
+  /**
+   * Where the gun points, and the press that holds it up: the pointer and where it was last seen, when the gun came
+   * up, its wander's seed, how steady the hand is now and how far (mrad) the gun has been turned since the last frame.
+   */
   private aim: Aim;
-  private hold: { pointer: number | null; x: number; y: number; dx: number; dy: number; since: number; seed: number; base: Aim } | null = null;
+  private hold: { pointer: number | null; x: number; y: number; since: number; seed: number; hand: Steady; turned: number } | null = null;
   private offset: Offset = { x: 0, y: 0 };
   /** How far the eye has come to the sights (0 to 1); when the last shot went off; how far the gun is lowered to reload. */
   private zoom = 0;
@@ -76,8 +85,9 @@ export class ShootingView extends TableView<State> {
   private pelletPaint: T.MeshStandardMaterial;
   private spent: T.InstancedMesh | null = null;
   private spentCount = 0;
-  /** The clay in the air. */
-  private clayMesh: T.Mesh | null = null;
+  /** The clays in the air (two at most), and when the last throw was called. */
+  private clayMeshes: T.Mesh[] = [];
+  private pulled = -1e9;
   /** Animals shown, by the world's id. */
   private animals = new Map<number, { model: AnimalModel; seen: Vec; step: number }>();
   /** A happening's sounds: told to the screen by kind. */
@@ -115,12 +125,14 @@ export class ShootingView extends TableView<State> {
       this.spent.frustumCulled = false;
       this.scene.add(this.spent);
     }
-    if (this.range) {
-      this.clayMesh = new T.Mesh(this.range.clay.dome, this.range.clay.paint);
-      this.clayMesh.visible = false;
-      this.clayMesh.castShadow = true;
-      this.scene.add(this.clayMesh);
-    }
+    if (this.range)
+      for (let k = 0; k < 2; k++) {
+        const mesh = new T.Mesh(this.range.clay.dome, this.range.clay.paint);
+        mesh.visible = false;
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.clayMeshes.push(mesh);
+      }
     // Every press is the hand's, taken by the canvas's own listeners; the floor catches every ray so that it is.
     this.floor = new T.Plane(new T.Vector3(0, 0, 1), 1000);
     host.style.position = "relative";
@@ -130,13 +142,15 @@ export class ShootingView extends TableView<State> {
     this.hud.setAttribute("aria-hidden", "true");
     host.append(this.hud);
     this.listen();
-    this.begin();
+    // The place's own clock runs first in every frame, and the table's drawing after it in the same frame, so that
+    // what the pointer did is on the screen in the very next picture.
     const tick = () => {
       if (this.disposed) return;
       this.ticker = requestAnimationFrame(tick);
       this.advance(performance.now());
     };
     this.ticker = requestAnimationFrame(tick);
+    this.begin();
   }
   /** The tables's real-time clock never makes the screen wait. */
   get animating() {
@@ -161,11 +175,15 @@ export class ShootingView extends TableView<State> {
         // A pointer that has already gone.
       }
     });
+    // The gun turns with the pointer as it goes, by exactly as much as it moved and at once: no smoothing, no limit.
     el.addEventListener("pointermove", (e) => {
-      if (!this.hold || this.hold.pointer !== e.pointerId) return;
-      this.hold.dx = e.clientX - this.hold.x;
-      this.hold.dy = e.clientY - this.hold.y;
-      this.turnTo();
+      const h = this.hold;
+      if (!h || h.pointer !== e.pointerId) return;
+      const dx = e.clientX - h.x,
+        dy = e.clientY - h.y;
+      h.x = e.clientX;
+      h.y = e.clientY;
+      if (dx || dy) this.turnBy(dragTurn(this.mode, dx, dy, el.clientHeight || 1));
     });
     const end = (e: PointerEvent, cancelled: boolean) => {
       if (!this.hold || this.hold.pointer !== e.pointerId) return;
@@ -179,9 +197,7 @@ export class ShootingView extends TableView<State> {
       if (steps[e.key]) {
         e.preventDefault();
         const by = ((RIGS[this.mode].aimFov * Math.PI) / 180) * (e.shiftKey ? 0.01 : 0.04);
-        if (this.hold) this.hold.base = clampAim(this.mode, { yaw: this.hold.base.yaw + steps[e.key][0] * by, pitch: this.hold.base.pitch + steps[e.key][1] * by });
-        else this.aim = clampAim(this.mode, { yaw: this.aim.yaw + steps[e.key][0] * by, pitch: this.aim.pitch + steps[e.key][1] * by });
-        this.turnTo();
+        this.turnBy({ yaw: steps[e.key][0] * by, pitch: steps[e.key][1] * by });
       } else if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         if (e.repeat || this.hold || !this.running()) return;
@@ -208,8 +224,8 @@ export class ShootingView extends TableView<State> {
       aimRay(this.pointer, { clientX: x, clientY: y } as PointerEvent, this.renderer.domElement, this.camera);
       base = aimAt(this.mode, this.reach(this.pointer.ray));
     }
-    this.hold = { pointer, x, y, dx: 0, dy: 0, since: performance.now(), seed: cryptoRandom() * 1000, base };
-    this.turnTo();
+    this.aim = clampAim(this.mode, base);
+    this.hold = { pointer, x, y, since: performance.now(), seed: cryptoRandom() * 1000, hand: raised(), turned: 0 };
   }
   /** Where along a ray from the eye the hand means: the depth of a target, a clay or an animal it passes near, else the ground or the gun's reach. */
   private reach(ray: T.Ray): Vec {
@@ -239,7 +255,7 @@ export class ShootingView extends TableView<State> {
       return at(back);
     }
     if (w.kind === "clay") {
-      const s = w.clay ? near([w.clay.p], 0.12) : null;
+      const s = near(w.clays.map((c) => c.p), 0.12);
       return at(s ?? RIGS.clay.reach);
     }
     const s = near(
@@ -256,13 +272,14 @@ export class ShootingView extends TableView<State> {
       big = parts.reduce((m, p) => (p.r > m.r ? p : m), parts[0]);
     return partAt(a, big);
   }
-  /** The gun follows the drag (or the keys) from where the press began. */
-  private turnTo() {
-    const h = this.hold;
-    if (!h) return;
-    const height = this.renderer.domElement.clientHeight || 1,
-      turn = dragTurn(this.mode, h.dx, h.dy, height);
-    this.aim = clampAim(this.mode, { yaw: h.base.yaw + turn.yaw, pitch: h.base.pitch + turn.pitch });
+  /**
+   * The gun turned by `turn` from where it points now (a drag's step, or a key), kept within its reach: a drag pushed
+   * past the reach and back turns it back at once. Held up, the turn stirs the hand (see `steady`).
+   */
+  private turnBy(turn: Aim) {
+    const before = this.aim;
+    this.aim = clampAim(this.mode, { yaw: before.yaw + turn.yaw, pitch: before.pitch + turn.pitch });
+    if (this.hold) this.hold.turned += Math.hypot(this.aim.yaw - before.yaw, this.aim.pitch - before.pitch) * 1000;
   }
   /** Lowered without a shot (let go too soon, cancelled, or no longer allowed). */
   private letDown() {
@@ -275,7 +292,7 @@ export class ShootingView extends TableView<State> {
     if (!h) return;
     const now = performance.now();
     if (now - h.since < RAISE || !this.running()) return this.letDown();
-    const offset = wander(this.mode, (now - h.since) / 1000, h.seed);
+    const offset = wander(this.mode, (now - h.since) / 1000, h.seed, h.hand.amp);
     this.hold = null;
     this.offset = offset;
     this.report(fire(this.world, this.aim, offset));
@@ -324,8 +341,12 @@ export class ShootingView extends TableView<State> {
           move(DONE);
           break;
         case "launch":
-          this.onKnock?.("trap", 1);
-          this.say("풀!", "#ffffff", { x: 0, y: 3.2, z: -15 }, now, 3.2);
+          // A pair is called once.
+          if (now - this.pulled > 200) {
+            this.onKnock?.("trap", 1);
+            this.say(this.world.kind === "clay" && this.world.clays.length > 1 ? "풀! 더블!" : "풀!", "#ffffff", { x: 0, y: 3.4, z: -15 }, now, 3.2);
+          }
+          this.pulled = now;
           move(LAUNCH);
           break;
         case "break":
@@ -583,7 +604,12 @@ export class ShootingView extends TableView<State> {
     const want = this.hold || now - this.shotAt < FOLLOW ? 1 : 0,
       speed = want ? 1000 / (RAISE * 0.9) : 1000 / 420;
     this.zoom = want ? Math.min(1, this.zoom + real * speed) : Math.max(0, this.zoom - real * speed);
-    if (this.hold) this.offset = wander(this.mode, (now - this.hold.since) / 1000, this.hold.seed);
+    // Held still, the hand steadies and the rear sight's wander dies down; turning the gun stirs it up again.
+    if (this.hold) {
+      this.hold.hand = steady(this.mode, this.hold.hand, real, this.hold.turned);
+      this.hold.turned = 0;
+      this.offset = wander(this.mode, (now - this.hold.since) / 1000, this.hold.seed, this.hold.hand.amp);
+    }
     else if (now - this.shotAt > FOLLOW) this.offset = { x: this.offset.x * 0.9, y: this.offset.y * 0.9 };
     const busy = reloading(this.world) || (this.world.kind === "clay" && this.world.phase === "rest" && this.world.shells < 2);
     this.lowered += ((busy ? 1 : 0) - this.lowered) * Math.min(1, real * 7);
@@ -637,9 +663,11 @@ export class ShootingView extends TableView<State> {
       this.booth!.yoke.rotation.y = -this.aim.yaw;
     } else {
       const head = vec(rig.head),
-        // At the ready: low at the right, pointing a little down into the place.
-        restAt = head.clone().add(new T.Vector3(0.14, -0.17, 0.0).applyQuaternion(this.restQuat)),
-        restQuat = this.restQuat.clone().multiply(new T.Quaternion().setFromEuler(new T.Euler(-0.13, 0.12, 0.12))),
+        // At the ready: the shotgun low in the middle, its barrels up toward the sky where the clays will fly; the
+        // rifle low at the right, pointing a little down into the meadow, below everything that comes out.
+        ready = REST_POSE[this.mode],
+        restAt = head.clone().add(new T.Vector3(...ready.at).applyQuaternion(this.restQuat)),
+        restQuat = this.restQuat.clone().multiply(new T.Quaternion().setFromEuler(new T.Euler(...ready.turn))),
         up = Math.min(1, e * 1.25);
       g.position.copy(restAt).lerp(eye, up);
       g.quaternion.copy(restQuat).slerp(aimQuat, up);
@@ -691,13 +719,19 @@ export class ShootingView extends TableView<State> {
       for (const m of this.booth.neon) m.color.setRGB(0.24 * flicker, 0.42 * flicker, 1 * flicker);
       return;
     }
-    if (w.kind === "clay" && this.clayMesh) {
-      const clay = w.clay;
-      this.clayMesh.visible = !!clay && w.phase === "flight";
-      if (clay) {
-        this.clayMesh.position.set(clay.p.x, clay.p.y, clay.p.z);
-        this.clayMesh.rotation.set(0.12, (w.t - clay.at) * clay.spin, 0.05);
-      }
+    if (w.kind === "clay") {
+      // Each clay flies flat but leaned toward me a little more than it is, so that it reads as a disc, spinning.
+      const eye = this.camera.position;
+      this.clayMeshes.forEach((mesh, k) => {
+        const clay = w.phase === "flight" ? w.clays[k] : undefined;
+        mesh.visible = !!clay;
+        if (!clay) return;
+        mesh.position.set(clay.p.x, clay.p.y, clay.p.z);
+        const toward = eye.clone().sub(mesh.position).normalize(),
+          face = UP.clone().multiplyScalar(0.7).add(toward.multiplyScalar(0.55)).normalize();
+        mesh.quaternion.setFromUnitVectors(UP, face);
+        mesh.rotateY((w.t - clay.at) * clay.spin);
+      });
       this.range?.board(w.card, w.thrown);
       return;
     }
@@ -763,10 +797,7 @@ export class ShootingView extends TableView<State> {
         for (const g of shown.model.geometries) g.dispose();
         this.animals.delete(id);
       }
-    if (this.forest) {
-      const map = (this.forest.water.material as T.MeshStandardMaterial).map;
-      if (map) map.offset.x = (now / 60000) % 1;
-    }
+    this.forest?.update(now);
   }
   /** The figures over the place: score, what is left in the gun, the combo or the clock. */
   private writeHud(now: number) {
@@ -821,7 +852,7 @@ export class ShootingView extends TableView<State> {
     const targets: Record<string, unknown>[] = [];
     if (w.kind === "bb") w.targets.forEach((t, i) => t.lit && targets.push({ i, lit: t.lit, ...place(t) }));
     else if (w.kind === "clay") {
-      if (w.clay && w.phase === "flight") targets.push({ i: w.thrown, ...place(w.clay.p), v: [w.clay.v.x, w.clay.v.y, w.clay.v.z].map((n) => Math.round(n * 100) / 100) });
+      if (w.phase === "flight") for (const c of w.clays) targets.push({ i: c.id, house: c.house, ...place(c.p), v: [c.v.x, c.v.y, c.v.z].map((n) => Math.round(n * 100) / 100) });
     } else
       for (const a of w.animals)
         if (a.doing !== "fall" && a.doing !== "down") {
@@ -837,6 +868,7 @@ export class ShootingView extends TableView<State> {
     set("zoom", this.zoom.toFixed(2));
     set("aim", mrad(this.aim));
     set("offset", this.hold ? `${this.offset.x.toFixed(2)},${this.offset.y.toFixed(2)}` : "");
+    set("steady", this.hold ? this.hold.hand.amp.toFixed(2) : "");
     set("lined", String(!!this.hold && now - this.hold.since >= RAISE && misalignment(this.offset) <= LINED_UP));
     set("loaded", String(ready(w)));
     set("targets", JSON.stringify(targets));

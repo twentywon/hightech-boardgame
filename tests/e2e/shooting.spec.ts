@@ -88,7 +88,7 @@ async function shoot(page: Page, mode: Mode) {
 }
 
 test.describe("shooting", () => {
-  test("BB booth: a tap fires nothing; held up the rear sight wanders; a lit target shot with the sights in line scores", async ({ page }) => {
+  test("BB booth: a tap fires nothing; held up the rear sight wanders and settles; a lit target shot with the sights in line scores", async ({ page }) => {
     test.setTimeout(240000);
     await seeded(page, 31);
     const errors: string[] = [];
@@ -108,6 +108,8 @@ test.describe("shooting", () => {
     await expect.poll(() => canvas.getAttribute("data-offset"), { timeout: 20000 }).toMatch(/^-?\d/);
     const first = await canvas.getAttribute("data-offset");
     await expect.poll(() => canvas.getAttribute("data-offset"), { timeout: 20000 }).not.toBe(first);
+    // Held still, the hand steadies: the share of the full wander it allows comes down toward its floor.
+    await expect.poll(async () => Number(await canvas.getAttribute("data-steady")), { timeout: 20000 }).toBeLessThan(0.3);
     await page.keyboard.press("Escape");
     await page.mouse.up();
     await expect(canvas).toHaveAttribute("data-holding", "false");

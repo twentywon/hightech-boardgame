@@ -3,7 +3,7 @@ import type { SetResult } from "../../ui/chrome";
 import type { PointConfig } from "../../ui/point-game";
 import { ARROWS, LEVELS, POINTS, ROUND_CHOICES, outcomeName, roundsOf, tuho, type State } from "./rules";
 import { DISTANCE } from "./sim";
-import { TUHO_COLORS, TuhoView } from "./view";
+import { TUHO_COLORS, TuhoView, WOOD_KNOCK } from "./view";
 
 /** A round of a three-round game over, with the game going on: its word for the person at the screen and the scores. */
 function roundResult(before: State, state: State, mode: "local" | "ai"): SetResult | null {
@@ -35,11 +35,13 @@ export const tuhoConfig: PointConfig<State> = {
     return arrow.outcome === "lean" ? "기댄 살" : arrow.rimmed ? "튕겨 나감" : "빗나감";
   },
   setResult: roundResult,
-  // Bamboo on bronze clacks; an arrow dropping in rings the pot hollow; one on the mat falls softly.
+  // Bamboo on bronze clacks; an arrow dropping in rings the pot hollow; bamboo on bamboo knocks like yut sticks;
+  // one on the mat falls softly. Each as hard as it was struck (an arrow's knock comes `WOOD_KNOCK` stronger).
   knock: (sound, kind, strength) => {
-    if (kind === "disc") sound.clack(strength);
+    if (kind === "disc" && strength >= WOOD_KNOCK) sound.stick(0.1 + 0.3 * Math.min(1, (strength - WOOD_KNOCK) * 2));
+    else if (kind === "disc") sound.clack(strength);
     else if (kind === "pocket") sound.hollow(strength);
-    else sound.soft(2);
+    else sound.soft(2, 0.12 + 0.45 * Math.min(1, strength * 1.5));
   },
   contact: () => {},
   movingText: "화살이 날아가는 중…",
@@ -62,7 +64,7 @@ export const tuhoConfig: PointConfig<State> = {
         `홍과 청 두 편이 한 판에 <b>화살 ${ARROWS}개씩</b> 한 대씩 번갈아 던집니다. 판이 끝나면 화살을 모두 거두고, 다음 판은 다른 편이 먼저 던집니다.`,
         "화면을 누른 채 <b>아래로 당겼다가 놓으면</b> 던집니다. 길게 당길수록 세게, 비스듬히 당기면 그 반대쪽으로 날아갑니다. 위로 밀어 던져도 됩니다.",
         "당기고 있는 동안 화살이 날아갈 길의 앞부분이 점선으로 보입니다. 손이 조금씩 떨리듯 점선도 흔들리고, 화살은 <b>손을 놓는 순간</b>의 길로 날아갑니다.",
-        "화살은 높이 떴다가 촉이 무거워 앞으로 숙이며 떨어집니다. 테두리에 맞으면 튕기고, 그대로 들어가거나 밖으로 떨어집니다.",
+        "화살은 높이 떴다가 촉이 무겁고 깃이 바람을 받아 촉부터 떨어집니다. 테두리에 맞으면 그 자리에서 꺾여 안으로 미끄러져 들어가거나 밖으로 튕겨 나갑니다.",
         "판을 모두 마쳐 합계가 많은 쪽이 이깁니다. 같으면 무승부입니다.",
       ),
     ) +
@@ -73,6 +75,7 @@ export const tuhoConfig: PointConfig<State> = {
         ["귀 (관이)", `양옆 귀에 꽂혀 서면 <b>${POINTS.ear}점</b>입니다. 입보다 훨씬 좁습니다.`],
         ["기댄 살", "너무 비스듬히 들어가 테두리에 기대어 걸친 화살은 점수가 없습니다."],
         ["빗나감", "테두리나 항아리에 맞고 튕겨 나가거나 땅에 떨어진 화살은 점수가 없습니다."],
+        ["판정", "화살이 멈춘 자리로 정합니다. 날아가다 들어갔어도 튕겨 나오면 빗나감입니다."],
       ),
     ) +
     part(
@@ -80,6 +83,7 @@ export const tuhoConfig: PointConfig<State> = {
       table(
         ["한 판", `서로 ${ARROWS}개씩, 모두 ${ARROWS * 2}대를 던져 끝냅니다.`],
         ["세 판", "세 판을 이어서 던지고 세 판 합계로 겨룹니다. 판마다 들어간 화살과 떨어진 화살을 거둡니다."],
+        ["꽂힌 화살", "판이 끝날 때까지 그 자리에 그대로 있습니다. 뒤에 던진 화살이 부딪혀 튕기거나, 그 위에 걸쳐 기댄 살이 되기도 합니다."],
         ["컴퓨터", `던질 길을 미리 여러 번 따져 본 뒤 던지지만 손이 흔들립니다. 난이도가 높을수록 덜 흩어집니다(${Object.values(LEVELS)
           .map((l) => l.label)
           .join(" · ")}).`],

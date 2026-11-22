@@ -1,15 +1,17 @@
 import * as T from "three";
 import { block, stuff } from "../../engine/scene-utils";
-import { CLAYS, HOUSE } from "./clay";
+import { CLAYS, CLAY_SIZE, HOUSES } from "./clay";
 import { canvas, sequence, skyDome, texture } from "./paint";
 
 type Keep = <R extends { dispose(): void }>(resource: R) => R;
-/** How much larger than life the clays are drawn, so that they read at forty metres. */
-export const CLAY_LARGER = 1.7;
+/** How much larger than life the clays are drawn (a real one is 110 mm across), so that they read as discs in the sky. */
+export const CLAY_LARGER = CLAY_SIZE / 0.056;
 /**
- * The clay range on a bright day, all modelled and painted in code: mown grass in stripes, the shooter's concrete pad
- * and a low rail, the trap house sunk before it with its green roof, a white post-and-rail fence along both sides, a
- * line of poplars and round trees with hills behind, and a scoreboard at the left with a box for every clay.
+ * The clay range on a bright day, all modelled and painted in code, seen from the shooter's place with a low horizon
+ * and a wide sky: a blue sky with heaped white clouds over most of the view, mown grass in stripes, the shooter's
+ * concrete pad and a low rail, the trap house sunk before it with its green roof and one at either side beyond the
+ * view behind a grassy bank, a white post-and-rail fence along both sides and across the far end, a line of poplars
+ * and round trees with hills behind, and a scoreboard at the left with a box for every clay.
  */
 export interface Range {
   /** Paints the board: each clay's result so far (0 lost, 1 or 2 the barrel that broke it) and how many are thrown. */
@@ -28,8 +30,75 @@ export function buildRange(scene: T.Scene, keep: Keep): Range {
       return mesh;
     },
     random = sequence(311);
-  scene.add(skyDome(keep, "#e9eef0", "#b8d3ec", "#5b8fd6", "#fff4d8", 0.6));
-  scene.fog = new T.Fog("#d5e3ee", 70, 320);
+  scene.add(skyDome(keep, "#dfeaf3", "#8fbbe8", "#2f6fd0", "#fff4d8", 0.6, 520));
+  scene.fog = new T.Fog("#d5e3ee", 90, 420);
+  // Heaped white clouds over the sky, each a picture of its own painted from soft puffs (grey under, lit on top),
+  // standing far off so that they keep still while the eye turns.
+  const cloudPictures = [0, 1, 2, 3].map((k) => {
+    const { c, ctx } = canvas(512, 256),
+      r = sequence(900 + k * 13),
+      puffs = 26 + Math.floor(r() * 14);
+    for (let n = 0; n < puffs; n++) {
+      const along = r(),
+        x = 70 + along * 372,
+        bump = Math.sin(along * Math.PI),
+        y = 168 - bump * (40 + r() * 60) + (r() - 0.5) * 24,
+        rad = 30 + bump * 40 + r() * 26,
+        g = ctx.createRadialGradient(x, y - rad * 0.35, rad * 0.1, x, y, rad);
+      g.addColorStop(0, "rgba(255,255,255,0.95)");
+      g.addColorStop(0.55, "rgba(246,249,253,0.85)");
+      g.addColorStop(0.85, "rgba(214,226,240,0.45)");
+      g.addColorStop(1, "rgba(214,226,240,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // A flattish underside, fading out softly, faintly grey.
+    ctx.globalCompositeOperation = "destination-in";
+    const base = ctx.createLinearGradient(0, 0, 0, 256);
+    base.addColorStop(0, "rgba(0,0,0,1)");
+    base.addColorStop(0.7, "rgba(0,0,0,1)");
+    base.addColorStop(0.86, "rgba(0,0,0,0)");
+    base.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, 512, 256);
+    ctx.globalCompositeOperation = "source-atop";
+    const under = ctx.createLinearGradient(0, 120, 0, 196);
+    under.addColorStop(0, "rgba(170,186,208,0)");
+    under.addColorStop(1, "rgba(170,186,208,0.55)");
+    ctx.fillStyle = under;
+    ctx.fillRect(0, 120, 512, 76);
+    ctx.globalCompositeOperation = "source-over";
+    return keep(new T.CanvasTexture(c));
+  });
+  for (const picture of cloudPictures) {
+    picture.colorSpace = T.SRGBColorSpace;
+    // Light on the clear sky with no dark fringe at the soft edges.
+    picture.premultiplyAlpha = true;
+  }
+  const clouds = [
+    [-0.95, 0.3, 1.25],
+    [-0.55, 0.16, 1.0],
+    [-0.12, 0.38, 1.35],
+    [0.3, 0.2, 0.95],
+    [0.72, 0.34, 1.2],
+    [1.08, 0.14, 0.9],
+    [-0.35, 0.56, 1.1],
+    [0.5, 0.62, 1.3],
+    [-1.25, 0.12, 0.8],
+    [1.35, 0.42, 1.0],
+    [0.05, 0.1, 0.7],
+    [-0.75, 0.75, 1.15],
+  ];
+  clouds.forEach(([yaw, rise, size], k) => {
+    const far = 300,
+      sprite = new T.Sprite(keep(new T.SpriteMaterial({ map: cloudPictures[k % 4], fog: false, depthWrite: false, transparent: true, premultipliedAlpha: true })));
+    sprite.position.set(Math.sin(yaw) * far * Math.cos(rise), 1.6 + Math.sin(rise) * far, -Math.cos(yaw) * far * Math.cos(rise));
+    sprite.scale.set(150 * size, 75 * size, 1);
+    sprite.renderOrder = -9;
+    scene.add(sprite);
+  });
   // Mown grass in broad stripes toward the trap house.
   const { c: grassC, ctx: grass } = canvas(512, 512);
   for (let k = 0; k < 8; k++) {
@@ -51,7 +120,7 @@ export function buildRange(scene: T.Scene, keep: Keep): Range {
   put(new T.CylinderGeometry(0.025, 0.025, 1.8, 10), rail, 0, 0.98, -1.25).rotation.z = Math.PI / 2;
   // The trap house: a low concrete bunker sunk before the shooter, a green roof and a dark slot the clays leave from.
   const house = new T.Group();
-  house.position.set(HOUSE.x, 0, HOUSE.z);
+  house.position.set(HOUSES[0].x, 0, HOUSES[0].z);
   scene.add(house);
   put(block(3.4, 0.62, 2.4, 0.05), concrete, 0, 0.31, -0.2, house);
   put(block(3.6, 0.1, 2.6, 0.03), std({ color: "#3c6b3a", roughness: 0.7 }), 0, 0.67, -0.2, house);
@@ -64,6 +133,22 @@ export function buildRange(scene: T.Scene, keep: Keep): Range {
   sign.fillStyle = "#2b5a2a";
   sign.fillText("TRAP 1", 128, 47);
   put(new T.PlaneGeometry(0.9, 0.22), std({ map: texture(signC, keep) }), 0, 0.24, 1.002, house).castShadow = false;
+  // The side houses, beyond the view at either side: the same bunker turned toward the field, its slot facing across,
+  // behind a low bank of grass.
+  const bank = std({ ...stuff("grass", "#6c9842", 2, keep), flatShading: true });
+  for (const side of [-1, 1]) {
+    const at = HOUSES[side < 0 ? 1 : 2],
+      g = new T.Group();
+    g.position.set(at.x + side * 1.4, 0, at.z);
+    g.rotation.y = -side * Math.PI * 0.5;
+    scene.add(g);
+    put(block(3.0, 1.2, 2.4, 0.05), concrete, 0, 0.6, 0, g);
+    put(block(3.2, 0.1, 2.6, 0.03), std({ color: "#3c6b3a", roughness: 0.7 }), 0, 1.25, 0, g);
+    put(new T.PlaneGeometry(1.4, 0.16), std({ color: "#161616" }), 0, 1.0, 1.21, g).castShadow = false;
+    const mound = put(new T.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), bank, side * -2.6, 0, at.z);
+    mound.position.x = at.x - side * 2.4;
+    mound.scale.set(1.4, 1.3, 4.2);
+  }
   // White post-and-rail fences along both sides and across the far end of the field.
   const post = keep(new T.BoxGeometry(0.12, 1.2, 0.12)),
     bar = keep(new T.BoxGeometry(0.06, 0.1, 6)),
@@ -75,6 +160,10 @@ export function buildRange(scene: T.Scene, keep: Keep): Range {
       posts.push(new T.Matrix4().makeTranslation(side * 24, 0.6, z));
       for (const y of [0.45, 0.95]) bars.push(new T.Matrix4().makeTranslation(side * 24, y, z - 3));
     }
+  for (let x = -21; x <= 21; x += 6) {
+    posts.push(new T.Matrix4().makeTranslation(x, 0.6, -92));
+    if (x < 21) for (const y of [0.45, 0.95]) bars.push(new T.Matrix4().compose(new T.Vector3(x + 3, y, -92), new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), Math.PI / 2), new T.Vector3(1, 1, 1)));
+  }
   const fenceA = new T.InstancedMesh(post, white, posts.length),
     fenceB = new T.InstancedMesh(bar, white, bars.length);
   posts.forEach((m, i) => fenceA.setMatrixAt(i, m));
@@ -171,7 +260,7 @@ export function buildRange(scene: T.Scene, keep: Keep): Range {
       ),
     ),
     piece = keep(new T.CylinderGeometry(0.05 * CLAY_LARGER, 0.055 * CLAY_LARGER, 0.02 * CLAY_LARGER, 3, 1, false, 0, Math.PI / 3)),
-    paint = std({ color: "#ff6a1c", roughness: 0.55, emissive: "#401200" });
+    paint = std({ color: "#ff8a1a", roughness: 0.5, emissive: "#5a2400" });
   // The sun high and to the left behind the shooter, a blue sky light.
   scene.add(new T.HemisphereLight("#dbe9ff", "#5c7a3a", 1.5));
   const sun = new T.DirectionalLight("#fff4e0", 2.4);

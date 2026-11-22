@@ -238,8 +238,8 @@ export class Sound {
     this.tone("sine", 2900, 2700, 0, 0.16, 0.018);
   }
   /** Something set down on cloth, earth or a mat. */
-  soft(which = 1) {
-    if (!this.piece("soft", which, 0.5)) this.tap();
+  soft(which = 1, volume = 0.5) {
+    if (!this.piece("soft", which, volume)) this.tap();
   }
   /** Paper: a pencil's stroke, a page, chalk. */
   paper(which = 1) {
@@ -277,8 +277,8 @@ export class Sound {
     }
   }
   /** One yut stick knocking on another or landing on the mat. */
-  stick() {
-    if (!this.sample("stick", 0.32)) this.knock(2);
+  stick(volume = 0.32) {
+    if (!this.sample("stick", volume)) this.knock(2);
   }
   /** The four sticks shaken together in the hand as they are thrown: a few quick knocks. */
   sticks() {
