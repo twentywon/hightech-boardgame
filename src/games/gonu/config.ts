@@ -1,17 +1,22 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { gonuBoard } from "./board";
+import { GonuView } from "./view";
+import { pieceCue } from "../points/table";
 import { NAMES, QUIET_LIMIT, VARIANTS, gonu, type State, type Variant } from "./rules";
 
 export const gonuConfig: PointConfig<State> = {
   game: gonu,
-  contact: (sound) => sound.stone(2),
+  // A pebble set down on the stone; a pebble taken lands on the earth beside it.
+  contact: (sound) => (pieceCue.kind === "off" ? sound.soft(2) : sound.stone(2)),
   noPanel: true,
+  // The board's points and pictures; the table is a stone in the yard (the user asked for the older tables upgraded).
   board: gonuBoard,
+  view: (host, quality, variant) => new GonuView(host, quality, variant),
   name: "고누",
   english: "Gonu",
   number: "NO. 12 — ON THE GROUND",
-  intro: `<p>마당 흙바닥에 말판을 긋고 돌멩이로 두는 놀이.<br>우물·네줄·호박·자동차·참고누 다섯 가지 말판이 있습니다.</p>`,
+  intro: `<p>마당의 넓적한 돌에 말판을 새기고 조약돌로 두는 놀이.<br>우물·네줄·호박·자동차·참고누 다섯 가지 말판이 있습니다.</p>`,
   meta: "2인 · 말판 다섯 가지 · 돌멩이 2–12개씩",
   art: `<div class="pg-mini gonu"><i></i><i></i><i></i><i></i></div><span>LINES IN THE EARTH</span>`,
   artClass: "gonu-art",

@@ -1,13 +1,18 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { checkersBoard } from "./board";
+import { CheckersView } from "./view";
+import { pieceCue } from "../points/table";
 import { QUIET_LIMIT, checkers, type State } from "./rules";
 
 export const checkersConfig: PointConfig<State> = {
   game: checkers,
-  contact: (sound) => sound.wood(3),
+  // A checker set down (or a crowning checker dropped on another); a piece knocked off lands on the taker's stack.
+  contact: (sound) => (pieceCue.kind === "off" ? sound.knock(4) : sound.wood(3)),
   noPanel: true,
+  // The board's points; the table itself is a porch of its own (the user asked for the older tables upgraded).
   board: checkersBoard,
+  view: (host, quality) => new CheckersView(host, quality),
   name: "체커",
   english: "Checkers",
   number: "NO. 13 — JUMP",

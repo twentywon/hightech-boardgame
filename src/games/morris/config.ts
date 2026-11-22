@@ -1,13 +1,18 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { morrisBoard } from "./board";
+import { MorrisView } from "./view";
+import { pieceCue } from "../points/table";
 import { MEN, QUIET_LIMIT, morris, type State } from "./rules";
 
 export const morrisConfig: PointConfig<State> = {
   game: morris,
-  contact: (sound) => sound.wood(4),
+  // A man set down on the board; a man taken laid in the taker's tray.
+  contact: (sound) => (pieceCue.kind === "off" ? sound.knock(2) : sound.wood(4)),
   noPanel: true,
+  // The board's points and pictures; the table itself is a tavern of its own (the user asked for the older tables upgraded).
   board: morrisBoard,
+  view: (host, quality) => new MorrisView(host, quality),
   name: "나인 멘스 모리스",
   english: "Nine Men's Morris",
   number: "NO. 11 — MILLS",
