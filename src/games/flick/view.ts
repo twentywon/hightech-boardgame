@@ -132,17 +132,23 @@ export abstract class FlickView<S> extends TableView<S> {
             // A disc struck too hard sails over the others in an arc.
             mesh.position.set(disc.x, this.top + lift(disc) * 1.5, disc.z);
           } else {
-            // Off the table: it drops out of sight.
+            // Off the table: it drops out of sight (or wherever the table puts it).
             falling.set(disc.id, fell + 1);
-            mesh.position.y = this.top - fell * fell * 0.012;
-            mesh.visible = fell < 18;
+            this.sink(disc.id, mesh, fell);
           }
         }
         this.redraw();
-        if (moving(live) || [...falling.values()].some((n) => n < 18)) this.ticker = requestAnimationFrame(run);
+        if (moving(live) || [...falling.values()].some((n) => n < this.sinkFrames)) this.ticker = requestAnimationFrame(run);
         else done();
       };
     this.ticker = requestAnimationFrame(run);
+  }
+  /** How many frames a disc that has left the table is followed after it went. */
+  protected sinkFrames = 18;
+  /** Moves a disc that has left the table, `frame` frames after it went (from 0): by default it drops out of sight. */
+  protected sink(_id: number, mesh: T.Object3D, frame: number) {
+    mesh.position.y = this.top - frame * frame * 0.012;
+    mesh.visible = frame < this.sinkFrames;
   }
   /** Stops a shot being run, leaving its discs where they are. */
   protected stopReplay() {

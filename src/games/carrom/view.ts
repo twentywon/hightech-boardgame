@@ -1,153 +1,115 @@
 import * as T from "three";
-import { wood, glossy } from "../../engine/scene-utils";
+import { capable, glossy } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { FlickView } from "../flick/view";
 import { copy, shotCode, shotOf, speedOf, strike, type Disc } from "../flick/physics";
-import { ARENA, BASE, HALF, QUEEN, REACH, SLOTS, STRIKER, clear, owner, slotX, type State } from "./rules";
+import { Specks } from "../alkkagi/pieces";
+import { ARENA, BASE, QUEEN, SLOTS, STRIKER, clear, owner, slotX, type State } from "./rules";
+import { NET_FLOOR, buildBoard } from "./board";
+import { manGeometry, strikerGeometry } from "./men";
+import { veranda } from "./veranda";
 
 export const MEN_COLORS: [string, string] = ["#f4efe2", "#22252b"];
 /** Points of the base line a tap moves the striker to. */
 const SLOT_BASE = 100;
-function marble() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 1024;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#f3f0ea";
-  ctx.fillRect(0, 0, 1024, 1024);
-  let seed = 7;
-  const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
-  // Veins: long, faint, wandering strokes.
-  for (let i = 0; i < 70; i++) {
-    ctx.strokeStyle = `rgba(120,125,135,${0.05 + rand() * 0.12})`;
-    ctx.lineWidth = 0.6 + rand() * 2.4;
-    ctx.beginPath();
-    let x = rand() * 1024,
-      y = rand() * 1024;
-    ctx.moveTo(x, y);
-    for (let k = 0; k < 9; k++) {
-      x += (rand() - 0.3) * 190;
-      y += (rand() - 0.5) * 150;
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-  // Inlaid stone flowers in a ring, the way a marble floor is set with them.
-  const petal = (cx: number, cy: number, r: number, color: string) => {
-    ctx.fillStyle = color;
-    for (let k = 0; k < 8; k++) {
-      const a = (k * Math.PI) / 4;
-      ctx.beginPath();
-      ctx.ellipse(cx + Math.cos(a) * r, cy + Math.sin(a) * r, r * 0.62, r * 0.3, a, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = "#c9a23a";
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  for (let k = 0; k < 16; k++) {
-    const a = (k * Math.PI) / 8;
-    petal(512 + Math.cos(a) * 452, 512 + Math.sin(a) * 452, 26, k % 2 ? "#a8323a" : "#2f6b5a");
-    ctx.strokeStyle = "#2f6b5a";
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(512, 512, 452, a + 0.09, a + Math.PI / 8 - 0.09);
-    ctx.stroke();
-  }
-  ctx.strokeStyle = "#c9a23a";
-  ctx.lineWidth = 6;
-  ctx.strokeRect(22, 22, 980, 980);
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-function surface() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 1024;
-  const ctx = c.getContext("2d")!,
-    px = (v: number) => 512 + (v / HALF) * 512;
-  ctx.fillStyle = "#ecd9ae";
-  ctx.fillRect(0, 0, 1024, 1024);
-  ctx.strokeStyle = "#7a2e22";
-  ctx.lineWidth = 5;
-  // The two base lines with their end circles, the side lines, the middle circle and star.
-  for (const z of [BASE, -BASE])
-    for (const turn of [0, 1]) {
-      const along = (a: number, b: number): [number, number] => (turn ? [px(b), px(a)] : [px(a), px(b)]);
-      for (const offset of [-0.2, 0.2]) {
-        ctx.beginPath();
-        ctx.moveTo(...along(-REACH, z + offset));
-        ctx.lineTo(...along(REACH, z + offset));
-        ctx.stroke();
-      }
-      for (const end of [-REACH, REACH]) {
-        ctx.fillStyle = "#a8323a";
-        ctx.beginPath();
-        ctx.arc(...along(end, z), 22, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-  ctx.beginPath();
-  ctx.arc(512, 512, 92, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = "#7a2e22";
-  for (let k = 0; k < 8; k++) {
-    const a = (k * Math.PI) / 4;
-    ctx.beginPath();
-    ctx.moveTo(512, 512);
-    ctx.lineTo(512 + Math.cos(a - 0.14) * 60, 512 + Math.sin(a - 0.14) * 60);
-    ctx.lineTo(512 + Math.cos(a) * 88, 512 + Math.sin(a) * 88);
-    ctx.lineTo(512 + Math.cos(a + 0.14) * 60, 512 + Math.sin(a + 0.14) * 60);
-    ctx.fill();
-  }
-  for (const p of ARENA.pockets) {
-    ctx.fillStyle = "#17110c";
-    ctx.beginPath();
-    ctx.arc(px(p.x), px(p.z), (p.r / HALF) * 512, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
-}
-/** A carrom board set on a floor of inlaid white marble. */
+/** The pocket a man that has gone down lies in: the one nearest where it went in. */
+const pocketOf = (d: Disc) => ARENA.pockets.reduce((best, p, i) => (Math.hypot(d.x - p.x, d.z - p.z) < Math.hypot(d.x - ARENA.pockets[best].x, d.z - ARENA.pockets[best].z) ? i : best), 0);
+/** A carrom board on its stand in a veranda: turned wooden men, a striker, powder, and nets under the pockets. */
 export class CarromView extends FlickView<State> {
   private meshes: T.Mesh[] = [];
   private ring: T.Mesh;
   private slot = Math.floor(SLOTS / 2);
+  /** Powder thrown up where the striker is flicked and where a man drops into a pocket. */
+  private dust: Specks;
+  /** Where each disc dropping into a pocket was when it went over the edge. */
+  private sinking = new Map<number, { x: number; z: number }>();
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#e8e4dc");
-    this.daylight("#ffffff", "#cfc8ba", "#fff7e6", 10, 2.0);
-    const stone = this.own(marble()),
-      floor = this.add(new T.PlaneGeometry(22, 22), this.standard({ map: stone, roughness: 0.25 }), 0, -0.6, 0);
-    floor.rotation.x = -Math.PI / 2;
-    floor.castShadow = false;
-    const plain = this.add(new T.PlaneGeometry(120, 120), this.standard({ color: "#efece5", roughness: 0.3 }), 0, -0.61, 0);
-    plain.rotation.x = -Math.PI / 2;
-    plain.castShadow = false;
-    // The board: a playing surface inside a heavy wooden frame.
-    const timber = this.standard({ map: this.own(wood(true)), roughness: 0.5 });
-    this.add(new T.BoxGeometry(HALF * 2, 0.3, HALF * 2), [timber, timber, this.standard({ map: this.own(surface()), roughness: 0.55 }), timber, timber, timber], 0, -0.15, 0);
-    for (const [x, z, w, d] of [[0, HALF + 0.3, HALF * 2 + 1.2, 0.6], [0, -HALF - 0.3, HALF * 2 + 1.2, 0.6], [HALF + 0.3, 0, 0.6, HALF * 2], [-HALF - 0.3, 0, 0.6, HALF * 2]])
-      this.add(new T.BoxGeometry(w, 0.62, d), timber, x, -0.1, z);
-    const man = this.own(new T.CylinderGeometry(1, 1, 0.14, 32)),
-      paints = [...MEN_COLORS, "#b3262b", "#dfe9f5"].map((color) => this.own(glossy({ color, roughness: 0.35 }, 0.6)));
+    super(host, quality, "#5a3020");
+    const rich = capable();
+    this.daylight("#fff4e0", "#7a4a32", "#ffe9c8", 10, 2.0);
+    buildBoard(this.scene, (r) => this.own(r), rich);
+    veranda(this.scene, (r) => this.own(r), rich);
+    const man = this.own(manGeometry(rich ? 40 : 22)),
+      striker = this.own(strikerGeometry(rich ? 44 : 26)),
+      paints = ["#efe2c4", "#2b2622", "#b3262b", "#f3efe6"].map((color, i) => this.own(glossy({ color, roughness: i === 1 ? 0.4 : 0.34, vertexColors: true }, 0.6)));
     for (let id = 0; id <= STRIKER; id++) {
       const r = id === STRIKER ? 0.31 : 0.23,
-        mesh = new T.Mesh(man, paints[id === STRIKER ? 3 : id === QUEEN ? 2 : owner(id)!]);
+        mesh = new T.Mesh(id === STRIKER ? striker : man, paints[id === STRIKER ? 3 : id === QUEEN ? 2 : owner(id)!]);
       mesh.scale.set(r, 1, r);
       mesh.castShadow = true;
+      mesh.receiveShadow = rich;
       this.meshes.push(mesh);
       this.scene.add(mesh);
     }
     this.top = 0.07;
     this.ring = ringMesh(<R extends { dispose(): void }>(r: R) => this.own(r), 0.36, 0.45, "#ffd24a");
     this.scene.add(this.ring);
+    this.dust = new Specks(<R extends { dispose(): void }>(r: R) => this.own(r), 120, "#fbf8f0", false, 3.5, 1.6);
+    this.scene.add(this.dust.points);
     this.begin();
+  }
+  protected resize() {
+    super.resize();
+    this.dust?.setScale((this.host.clientHeight * Math.min(devicePixelRatio, 2)) / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
+  }
+  /** Men that have gone down lie in the net of the pocket they went into, one over another. */
+  protected place(state: State) {
+    for (const mesh of this.meshes) mesh.rotation.set(0, 0, 0);
+    super.place(state);
+    const counts = [0, 0, 0, 0];
+    for (const d of state.discs) {
+      if (d.on || d.id === STRIKER) continue;
+      const at = this.netSpot(d, counts[pocketOf(d)]++),
+        mesh = this.meshes[d.id];
+      mesh.visible = true;
+      mesh.position.set(at.x, at.y, at.z);
+      mesh.rotation.set(at.tilt, 0, at.tilt * 0.6);
+    }
+  }
+  /** Where the `k`-th man in a pocket's net lies. */
+  private netSpot(d: Disc, k: number) {
+    const p = ARENA.pockets[pocketOf(d)],
+      a = d.id * 2.39996,
+      off = k ? 0.1 : 0.02;
+    return { x: p.x + Math.cos(a) * off, y: NET_FLOOR + 0.07 + k * 0.045, z: p.z + Math.sin(a) * off, tilt: ((d.id % 5) - 2) * 0.12 };
+  }
+  protected sink(id: number, mesh: T.Object3D, frame: number) {
+    const state = this.state,
+      disc = state?.discs[id];
+    if (!disc || id === STRIKER || disc.on) {
+      // The striker (a foul) drops through as before; it is fished out at once.
+      super.sink(id, mesh, frame);
+      return;
+    }
+    if (frame === 0) {
+      this.sinking.set(id, { x: mesh.position.x, z: mesh.position.z });
+      if (!this.reducedMotion) this.dust.burst(mesh.position.x, 0.05, mesh.position.z, 8, 0.9, 0.5, 0.07, id * 17 + 3);
+    }
+    const from = this.sinking.get(id) ?? { x: disc.x, z: disc.z },
+      before = state.discs.filter((d) => !d.on && d.id !== STRIKER && d.id < id && pocketOf(d) === pocketOf(disc)).length,
+      to = this.netSpot(disc, before),
+      p = Math.min(1, frame / (this.sinkFrames - 1)),
+      // It slides over the lip first, then drops into the net and settles with a little bounce.
+      slide = Math.min(1, p / 0.35),
+      drop = p < 0.35 ? 0 : Math.min(1, ((p - 0.35) / 0.5) ** 2),
+      bounce = p > 0.85 ? Math.sin(((p - 0.85) / 0.15) * Math.PI) * 0.04 : 0;
+    mesh.visible = true;
+    mesh.position.set(from.x + (to.x - from.x) * slide, this.top + (to.y - this.top) * drop + bounce, from.z + (to.z - from.z) * slide);
+    mesh.rotation.set(to.tilt * drop + (1 - drop) * slide * 0.5, 0, to.tilt * 0.6 * drop);
+    if (frame >= this.sinkFrames - 1) this.sinking.delete(id);
+  }
+  protected beforeStep(_live: Disc[], _n: number) {
+    this.dust.advance(1 / 120);
+  }
+  protected animate(before: State, state: State) {
+    const going = super.animate(before, state);
+    if (going && state.last && !this.reducedMotion) {
+      // The striker's flick lifts a little powder from the board.
+      this.dust.clear();
+      this.dust.burst(slotX(state.last.slot), 0.03, state.last.by === 0 ? BASE : -BASE, 10, 0.7, 0.55, 0.06, state.ply);
+    }
+    return going;
   }
   protected subject(): TableSubject {
     return { half: 5.9, halfZ: 5.9, height: 0.6, lookY: 0, tilt: 1.08 };
@@ -177,7 +139,9 @@ export class CarromView extends FlickView<State> {
       live = copy(before.discs);
     Object.assign(live[STRIKER], { x: slotX(state.last.slot), z: state.last.by === 0 ? BASE : -BASE, on: true });
     strike(live[STRIKER], shot.angle, speedOf(shot.power));
-    return live;
+    // Men already in the nets stay there: only what is on the board is run (the order of the rest is kept, so the
+    // shot runs exactly as the rules ran it).
+    return live.filter((d) => d.on);
   }
   protected shooter(point: number) {
     const state = this.state;
