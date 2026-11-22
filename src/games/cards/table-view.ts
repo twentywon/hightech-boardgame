@@ -1,6 +1,7 @@
 import { capturing } from "../../ui/banner";
 import * as T from "three";
-import { afterGPUFrame, aim, realism, weave } from "../../engine/scene-utils";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { afterGPUFrame, aim, capable, glossy, realism, weave } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, TILT, cameraDistance, type Subject } from "../../engine/camera";
 import type { TableView, Tone } from "./game";
 
@@ -22,6 +23,22 @@ export interface CardSkin {
   secretLeft?: number;
   /** A table and room of the game's own in place of the endless felt (hold'em); left out by the others. */
   setting?: TableSetting;
+  /**
+   * Cards as rounded solids of this body (seotda, stud). With it the table also plays the livelier way: cards are
+   * flicked out in a slight arc and spin flat as they land, chips with spots round the rim slide into the pot and the
+   * pot slides to the winner, the cover of a card I must uncover peels up at a corner as it is pushed off, the cards
+   * offered for a choice glow, and a showdown turns the hands over seat by seat. Left out (hold'em), all is as before.
+   */
+  body?: CardBody;
+}
+export interface CardBody {
+  thickness: number;
+  /** Radius of the corners. */
+  corner: number;
+  /** Colour of the edge. */
+  edge: string;
+  /** A clear coat over face and back (lacquered hwatu), where a graphics card draws. */
+  lacquer?: boolean;
 }
 /** Where a seat's row of cards lies, and how large its cards are. */
 export interface SeatRow {
@@ -173,6 +190,164 @@ function chipSide(color: string, stripe: string) {
   }
   return texture(c);
 }
+/** A rounded rectangle centred on the origin, in the plane of a shape. */
+function roundedShape(w: number, h: number, r: number) {
+  const shape = new T.Shape();
+  shape.moveTo(-w / 2 + r, -h / 2);
+  shape.lineTo(w / 2 - r, -h / 2);
+  shape.absarc(w / 2 - r, -h / 2 + r, r, -Math.PI / 2, 0, false);
+  shape.lineTo(w / 2, h / 2 - r);
+  shape.absarc(w / 2 - r, h / 2 - r, r, 0, Math.PI / 2, false);
+  shape.lineTo(-w / 2 + r, h / 2);
+  shape.absarc(-w / 2 + r, h / 2 - r, r, Math.PI / 2, Math.PI, false);
+  shape.lineTo(-w / 2, -h / 2 + r);
+  shape.absarc(-w / 2 + r, -h / 2 + r, r, Math.PI, Math.PI * 1.5, false);
+  return shape;
+}
+/**
+ * A card (or a pile of them) as a rounded solid lying on the table: its top takes material 2, its underside 3 and
+ * its edge 0, as the sides of a `BoxGeometry` do, so the six materials of a card go on as before.
+ */
+function solidCard(w: number, h: number, thickness: number, r: number) {
+  const geometry = new T.ExtrudeGeometry(roundedShape(w, h, r), { depth: thickness, bevelEnabled: false, curveSegments: 5 }),
+    [caps, sides] = geometry.groups,
+    half = caps.count / 2,
+    uv = geometry.getAttribute("uv"),
+    at = geometry.getAttribute("position");
+  for (let i = caps.start; i < caps.start + caps.count; i++) uv.setXY(i, at.getX(i) / w + 0.5, at.getY(i) / h + 0.5);
+  geometry.clearGroups();
+  // The bottom cap comes before the top one.
+  geometry.addGroup(caps.start + half, half, 2);
+  geometry.addGroup(caps.start, half, 3);
+  geometry.addGroup(sides.start, sides.count, 0);
+  geometry.translate(0, 0, -thickness / 2);
+  // The shape's plane becomes the table's: its y runs to the far side, the thickness up.
+  geometry.rotateX(-Math.PI / 2);
+  return geometry;
+}
+/** The edges of a pile of cards pressed together, fine dark lines on the cards' colour. */
+function pileEdges(color: string) {
+  const { c, ctx } = canvas(64, 64);
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 64);
+  for (let y = 0; y < 64; y += 8) {
+    ctx.fillStyle = `rgba(30, 20, 10, ${0.16 + ((y * 7) % 5) * 0.03})`;
+    ctx.fillRect(0, y, 64, 2);
+  }
+  const t = texture(c);
+  t.wrapS = t.wrapT = T.RepeatWrapping;
+  return t;
+}
+/** The face of a modelled chip: its colour, inserts round the rim, a dashed ring and a printed inlay with the value. */
+function chipFace(chip: (typeof CHIPS)[number]) {
+  const { c, ctx } = canvas(256, 256);
+  ctx.fillStyle = chip.color;
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = chip.stripe;
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(128, 128, 128, a - 0.2, a + 0.2);
+    ctx.arc(128, 128, 100, a + 0.2, a - 0.2, true);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = chip.stripe;
+  ctx.globalAlpha = 0.7;
+  ctx.lineWidth = 4;
+  ctx.setLineDash([10, 8]);
+  ctx.beginPath();
+  ctx.arc(128, 128, 88, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  const light = chip.value === 10;
+  ctx.fillStyle = light ? chip.stripe : "#f3ecdb";
+  ctx.beginPath();
+  ctx.arc(128, 128, 70, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = light ? "#f3ecdb" : chip.color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(128, 128, 62, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = light ? "#f3ecdb" : chip.color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `800 ${chip.value >= 100 ? 62 : 70}px "Helvetica Neue", Arial, sans-serif`;
+  ctx.fillText(String(chip.value), 128, 133);
+  return texture(c);
+}
+/** The rim of a modelled chip: its colour with six spots, matching the face; the bevels at the top and bottom darker. */
+function chipRim(chip: (typeof CHIPS)[number]) {
+  const { c, ctx } = canvas(384, 32);
+  ctx.fillStyle = chip.color;
+  ctx.fillRect(0, 0, 384, 32);
+  ctx.fillStyle = chip.stripe;
+  for (let k = 0; k < 6; k++) ctx.fillRect(k * 64 + 20, 5, 24, 22);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
+  ctx.fillRect(0, 0, 384, 5);
+  ctx.fillRect(0, 27, 384, 5);
+  return texture(c);
+}
+/** A chip turned on a lathe: flat faces (groups 1 and 2) inside a rounded rim (group 0), as a cylinder's materials go. */
+function chipModel(radius: number, height: number) {
+  const b = 0.012,
+    y = height / 2,
+    rim = new T.LatheGeometry(
+      [
+        new T.Vector2(radius - b, -y),
+        new T.Vector2(radius - b * 0.3, -y + b * 0.3),
+        new T.Vector2(radius, -y + b),
+        new T.Vector2(radius, y - b),
+        new T.Vector2(radius - b * 0.3, y - b * 0.3),
+        new T.Vector2(radius - b, y),
+      ],
+      40,
+    ),
+    top = new T.CircleGeometry(radius - b, 40),
+    bottom = new T.CircleGeometry(radius - b, 40);
+  top.rotateX(-Math.PI / 2);
+  top.translate(0, y, 0);
+  bottom.rotateX(Math.PI / 2);
+  bottom.translate(0, -y, 0);
+  const merged = mergeGeometries([rim, top, bottom], true);
+  rim.dispose();
+  top.dispose();
+  bottom.dispose();
+  return merged;
+}
+/** A soft gold halo round an upright card, for the cards offered to be tapped. */
+function haloTexture() {
+  const { c, ctx } = canvas(256, 352);
+  // Drawn round the card's own outline (the plane is half as wide again and 1.38 times as tall as the card), so
+  // that the line and its glow lie on the cloth just outside the card.
+  ctx.strokeStyle = "rgba(255, 216, 110, 1)";
+  ctx.lineWidth = 12;
+  ctx.shadowColor = "rgba(255, 200, 80, 1)";
+  ctx.shadowBlur = 30;
+  roundRect(ctx, 40, 46, 176, 260, 20);
+  ctx.stroke();
+  ctx.stroke();
+  return texture(c);
+}
+/** Where the corners of a cover are cut round, as the card under it. */
+function cornerMask(w: number, h: number, r: number) {
+  const { c, ctx } = canvas(128, Math.round((128 * h) / w));
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "#fff";
+  roundRect(ctx, 0, 0, c.width, c.height, (r / w) * c.width);
+  ctx.fill();
+  const t = new T.CanvasTexture(c);
+  return t;
+}
+const outCubic = (p: number) => 1 - (1 - p) ** 3;
+/** A small fixed scatter, so that no two chips in a stack lie quite alike. */
+const scatter = (a: number, b: number) => {
+  const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+};
 interface Tween {
   mesh: T.Mesh;
   start: number;
@@ -184,6 +359,12 @@ interface Tween {
   lift: number;
   contact: boolean;
   done?: () => void;
+  /** The livelier tables: fast out and slowing as it lands. */
+  flick?: boolean;
+  /** Turned this far flat on the table as it starts, spinning to straight as it lands. */
+  yaw?: number;
+  /** How far the way bows to one side. */
+  bow?: number;
 }
 export interface Layout {
   subject: Subject;
@@ -212,7 +393,8 @@ export interface Layout {
   /** Chips go to the pot from the side of each row that faces the middle of the table, whatever side it sits at. */
   inward?: boolean;
 }
-const LAYOUTS: Record<"wide" | "square" | "compact" | "compactSquare", Layout> = {
+/** The felt's layouts; a game's own room (`CardSkin.setting`) may lay its cards out as one of them. */
+export const LAYOUTS: Record<"wide" | "square" | "compact" | "compactSquare", Layout> = {
   compact: {
     subject: SUBJECTS.cardsCompact,
     rivals: [[0], [-1.8, 1.8], [-2.8, 0, 2.8]],
@@ -292,12 +474,28 @@ export class CardTableView {
   private flights = new T.Group();
   private lastBets: number[] = [];
   private lastPot = 0;
+  /** When the hands being turned over at a showdown will all lie face up, from now (ms). */
+  private revealed = 0;
   private ray = new T.Raycaster();
   private plane = new T.Plane(new T.Vector3(0, 1, 0), -0.03);
   private tweens: Tween[] = [];
   private owned: { dispose(): void }[] = [];
-  private cardGeometry: T.BoxGeometry;
-  private edge = this.own(new T.MeshStandardMaterial({ color: "#efe9db", roughness: 0.8 }));
+  private cardGeometry: T.BufferGeometry;
+  private edge: T.MeshStandardMaterial;
+  /** The livelier table's own things (see `CardSkin.body`); null on the plain one. */
+  private rich: {
+    body: CardBody;
+    /** A cover's material: the back, its corners cut round. */
+    cover: T.MeshStandardMaterial;
+    halo: T.MeshBasicMaterial;
+    haloGeometry: T.PlaneGeometry;
+    /** The pot just paid, lying in front of its winner until the next hand is anted. */
+    won: T.Group;
+    /** Chips are on their way to the pot: its stacks are drawn again when they land. */
+    potLate: boolean;
+    /** Whether the halos pulse (a graphics card draws and motion is welcome). */
+    pulse: boolean;
+  } | null = null;
   private back: T.MeshStandardMaterial;
   private blank: T.MeshStandardMaterial;
   private faces = new Map<string, T.MeshStandardMaterial>();
@@ -305,7 +503,7 @@ export class CardTableView {
   private plaqueMaterials = new Map<string, T.MeshBasicMaterial>();
   private plaques = new T.Group();
   private chips = new T.Group();
-  private chipGeometry = this.own(new T.CylinderGeometry(0.24, 0.24, 0.06, 32));
+  private chipGeometry: T.BufferGeometry = this.own(new T.CylinderGeometry(0.24, 0.24, 0.06, 32));
   private chipMaterials: T.Material[][] = [];
   private glow: T.Mesh;
   private deck: T.Mesh;
@@ -339,7 +537,10 @@ export class CardTableView {
     const [w, h] = this.skin.pixels,
       { c, ctx } = canvas(w, h);
     draw(ctx, w, h);
-    return this.own(new T.MeshStandardMaterial({ map: this.own(texture(c)), roughness: 0.55 }));
+    const map = this.own(texture(c));
+    // Lacquered hwatu catch the light in a clear coat (only where a graphics card draws; plain paint elsewhere).
+    if (this.skin.body?.lacquer) return this.own(glossy({ map, roughness: 0.42 }, 0.75));
+    return this.own(new T.MeshStandardMaterial({ map, roughness: this.skin.body ? 0.5 : 0.55 }));
   }
   constructor(
     readonly host: HTMLElement,
@@ -401,14 +602,41 @@ export class CardTableView {
     this.glow.rotation.x = -Math.PI / 2;
     this.glow.visible = false;
     this.scene.add(this.glow);
-    this.cardGeometry = this.own(new T.BoxGeometry(skin.width, 0.012, skin.height));
+    const body = skin.body;
+    this.edge = this.own(new T.MeshStandardMaterial({ color: body?.edge ?? "#efe9db", roughness: body ? 0.6 : 0.8 }));
+    this.cardGeometry = this.own(
+      body ? solidCard(skin.width, skin.height, body.thickness, body.corner) : new T.BoxGeometry(skin.width, 0.012, skin.height),
+    );
     this.coverGeometry = this.own(new T.PlaneGeometry(skin.width, skin.height));
     this.back = this.paint((ctx, w, h) => skin.back(ctx, w, h));
     this.blank = this.paint((ctx, w, h) => {
       ctx.fillStyle = "#fbf8f0";
       ctx.fillRect(0, 0, w, h);
     });
+    if (body) {
+      const cover = this.own(this.back.clone());
+      cover.alphaMap = this.own(cornerMask(skin.width, skin.height, body.corner));
+      cover.alphaTest = 0.5;
+      cover.side = T.DoubleSide;
+      this.rich = {
+        body,
+        cover,
+        halo: this.own(new T.MeshBasicMaterial({ map: this.own(haloTexture()), transparent: true, depthWrite: false })),
+        haloGeometry: this.own(new T.PlaneGeometry(skin.width * 1.5, skin.height * 1.38)),
+        won: new T.Group(),
+        potLate: false,
+        pulse: capable() && !this.reducedMotion,
+      };
+      this.chipGeometry = this.own(chipModel(0.24, 0.06));
+      this.scene.add(this.rich.won);
+    }
     for (const chip of CHIPS) {
+      if (body) {
+        const face = this.own(glossy({ map: this.own(chipFace(chip)), roughness: 0.38 }, 0.5)),
+          rim = this.own(new T.MeshStandardMaterial({ map: this.own(chipRim(chip)), roughness: 0.45 }));
+        this.chipMaterials.push([rim, face, face]);
+        continue;
+      }
       const flat = this.own(
         new T.MeshStandardMaterial({
           map: this.own(chipTop(chip.color, chip.stripe, chip.value)),
@@ -420,10 +648,23 @@ export class CardTableView {
       );
       this.chipMaterials.push([side, flat, flat]);
     }
-    this.deck = new T.Mesh(
-      this.own(new T.BoxGeometry(skin.width + 0.06, 0.22, skin.height + 0.06)),
-      [this.edge, this.edge, this.back, this.edge, this.edge, this.edge],
-    );
+    if (body) {
+      // A pile of the same rounded cards, their edges pressed together.
+      const edges = this.own(pileEdges(body.edge));
+      // A line a card: the picture holds eight, and the edge's v runs one to a unit of height.
+      edges.repeat.set(4, 1 / (8 * body.thickness));
+      const side = this.own(new T.MeshStandardMaterial({ map: edges, roughness: 0.75 }));
+      this.deck = new T.Mesh(this.own(solidCard(skin.width + 0.03, skin.height + 0.03, 0.22, body.corner + 0.015)), [
+        side,
+        side,
+        this.back,
+        this.edge,
+      ]);
+    } else
+      this.deck = new T.Mesh(
+        this.own(new T.BoxGeometry(skin.width + 0.06, 0.22, skin.height + 0.06)),
+        [this.edge, this.edge, this.back, this.edge, this.edge, this.edge],
+      );
     this.deck.castShadow = true;
     this.scene.add(this.deck, this.plaques, this.chips, this.flights);
     // An arrow over the deck while a tap on it would deal.
@@ -453,7 +694,10 @@ export class CardTableView {
         this.arrow.position.set(deck.x, deck.y + 0.75 + Math.sin(now / 260) * 0.12, deck.z);
         this.arrow.rotation.y = now / 700;
       }
-      if (!this.dirty && !moved && !pointing) return;
+      // The halos round the cards offered for a choice breathe, where that costs little.
+      const pulsing = !!this.rich?.pulse && this.choices.size > 0;
+      if (pulsing) this.rich!.halo.opacity = 0.62 + 0.38 * Math.sin(now / 320);
+      if (!this.dirty && !moved && !pointing && !pulsing) return;
       this.dirty = false;
       this.renderer.render(this.scene, this.camera);
       if (!this.readyFlag && !this.cancelReady)
@@ -552,8 +796,12 @@ export class CardTableView {
     this.finish();
     const targets = new Map<
       number,
-      { face: string | null; at: T.Vector3; scale: number; covered: boolean; dim: boolean }
+      { face: string | null; at: T.Vector3; scale: number; covered: boolean; dim: boolean; seat: number; slot: number }
     >();
+    // Solid cards rest on the cloth, each a little above the one it overlaps.
+    const body = this.rich?.body,
+      rest = body ? body.thickness / 2 + 0.003 : 0.02,
+      rise = body ? Math.max(0.006, body.thickness * 0.6) : 0.006;
     model.seats.forEach((seat, s) => {
       const { x, z, width, scale } = this.row(s),
         // A folded hand is squared up into a small pile.
@@ -570,10 +818,12 @@ export class CardTableView {
           scale,
           covered: !!card.covered,
           dim: !!card.secret && !!card.face,
+          seat: s,
+          slot: i,
           // A card picked for a choice is pushed up the table a little.
           at: new T.Vector3(
             x + (i - (seat.cards.length - 1) / 2) * gap,
-            0.02 + i * 0.006,
+            rest + i * rise,
             z - (s === 0 && this.picked.has(card.id) ? 0.3 : 0),
           ),
         }),
@@ -588,7 +838,9 @@ export class CardTableView {
           scale: middle.scale,
           covered: false,
           dim: false,
-          at: new T.Vector3(middle.x + i * middle.gap, 0.02, middle.z),
+          seat: -1,
+          slot: i,
+          at: new T.Vector3(middle.x + i * middle.gap, rest, middle.z),
         }),
       );
     let removed = false;
@@ -597,12 +849,22 @@ export class CardTableView {
         this.cards.delete(id);
         removed = true;
         if (this.drag?.id === id) this.drag = null;
-        const leave = () => this.scene.remove(entry.mesh);
+        const leave = () => {
+          this.scene.remove(entry.mesh);
+          if (this.rich && entry.cover) entry.cover.geometry.dispose();
+        };
         if (quick) leave();
         else this.tween(entry.mesh, now, 260, discard, entry.mesh.rotation.z, Math.PI, 0.15, false, leave);
       }
     let order = 0;
-    for (const [id, { face, at, scale, covered, dim }] of [...targets.entries()].sort(
+    this.revealed = 0;
+    // A showdown on the livelier table turns the hands over seat by seat, each hand card by card.
+    const turning: number[] = [];
+    const reveal = (seat: number, slot: number) => {
+      if (!turning.includes(seat)) turning.push(seat);
+      return turning.indexOf(seat) * 430 + slot * 150;
+    };
+    for (const [id, { face, at, scale, covered, dim, seat, slot }] of [...targets.entries()].sort(
       ([a], [b]) => a - b,
     )) {
       const existing = this.cards.get(id);
@@ -626,14 +888,25 @@ export class CardTableView {
         const entry = { mesh, faceUp: !!face, dim, cover: null };
         this.cards.set(id, entry);
         this.setCover(id, entry, covered, true);
-        this.tween(mesh, now + order++ * 130, 300, at, mesh.rotation.z, face ? 0 : Math.PI, 0.55, true);
+        if (body) {
+          // Flicked out of the hand: off fast in a low arc that bows aside, spinning flat to straight as it slows.
+          // It waits square in the pile until its turn comes, then leaves it turned.
+          this.tween(mesh, now + order++ * 140, 360, at, mesh.rotation.z, face ? 0 : Math.PI, 0.32, true);
+          Object.assign(this.tweens[this.tweens.length - 1], { flick: true, yaw: 0.55 * (at.x >= deck.x ? -1 : 1), bow: 0.35 * (at.z > deck.z ? 1 : -1) });
+        } else this.tween(mesh, now + order++ * 130, 300, at, mesh.rotation.z, face ? 0 : Math.PI, 0.55, true);
       } else {
         existing.mesh.scale.set(scale, 1, scale);
         if (face && !existing.faceUp) {
           existing.faceUp = true;
           existing.dim = dim;
           this.setFace(existing.mesh, face, dim);
-          this.tween(existing.mesh, now + order++ * 130, 340, at, Math.PI, 0, 0.5, true);
+          // Turned over where it lies: lifted on its edge and laid down face up.
+          if (body) {
+            const delay = reveal(seat, slot);
+            this.revealed = Math.max(this.revealed, delay + 420);
+            this.tween(existing.mesh, now + delay, 420, at, Math.PI, 0, 0.42, true);
+          }
+          else this.tween(existing.mesh, now + order++ * 130, 340, at, Math.PI, 0, 0.5, true);
         } else if (!face && existing.faceUp) {
           // Folded: the card is turned face down where it lies.
           existing.faceUp = false;
@@ -679,9 +952,12 @@ export class CardTableView {
     quick: boolean,
   ) {
     if (covered && !entry.cover) {
-      const cover = new T.Mesh(this.coverGeometry, this.back);
+      const rich = this.rich,
+        cover = rich
+          ? new T.Mesh(new T.PlaneGeometry(this.skin.width, this.skin.height, 6, 9), rich.cover)
+          : new T.Mesh(this.coverGeometry, this.back);
       cover.rotation.x = -Math.PI / 2;
-      cover.position.y = 0.014;
+      cover.position.y = rich ? rich.body.thickness / 2 + 0.002 : 0.014;
       cover.userData.id = id;
       entry.mesh.add(cover);
       entry.cover = cover;
@@ -689,7 +965,10 @@ export class CardTableView {
       const cover = entry.cover;
       entry.cover = null;
       if (this.drag?.id === id) this.drag = null;
-      const gone = () => entry.mesh.remove(cover);
+      const gone = () => {
+        entry.mesh.remove(cover);
+        if (this.rich) cover.geometry.dispose();
+      };
       // The cover slides the rest of the way off toward the player.
       if (quick) gone();
       else
@@ -701,6 +980,26 @@ export class CardTableView {
           done: gone,
         });
     }
+  }
+  /**
+   * The livelier table's cover peels up as it is pushed off, as a card squeezed open: its far edge lifts, the far
+   * right corner most, the further it has gone.
+   */
+  private curl(cover: T.Mesh) {
+    if (!this.rich) return;
+    const w = this.skin.width,
+      h = this.skin.height,
+      q = Math.max(0, Math.min(1, cover.position.z / (h * 1.05))),
+      at = cover.geometry.getAttribute("position") as T.BufferAttribute;
+    for (let i = 0; i < at.count; i++) {
+      // In the cover's own plane y runs to the far side of the table and z up from it.
+      const far = at.getY(i) / h + 0.5,
+        right = at.getX(i) / w + 0.5;
+      at.setZ(i, q * (0.04 + 0.42 * far * far * (0.5 + 0.5 * right)));
+    }
+    at.needsUpdate = true;
+    cover.geometry.computeVertexNormals();
+    cover.geometry.boundingSphere = null;
   }
   /** Sliding a cover with the pointer: down the table, toward seat 0. */
   private bindCovers() {
@@ -743,6 +1042,7 @@ export class CardTableView {
       const at = spot(e);
       if (!at) return;
       this.drag.cover.position.z = Math.max(0, Math.min(this.skin.height * 1.05, at.z - this.drag.from));
+      this.curl(this.drag.cover);
       this.dirty = true;
     });
     const release = (e: PointerEvent) => {
@@ -780,6 +1080,7 @@ export class CardTableView {
     this.choices = new Set(ids);
     this.deckOpen = deck;
     if (!ids.length && !deck) this.renderer.domElement.style.cursor = "";
+    this.dressHalos();
     if (picked.length === this.picked.size && picked.every((id) => this.picked.has(id))) return;
     this.picked = new Set(picked);
     this.sync(this.model);
@@ -796,11 +1097,23 @@ export class CardTableView {
     }
     return new T.Vector3(x, 0.05, seat === 0 ? z - reach : z + reach);
   }
+  /**
+   * Where a pot that is won lies until the next hand: beside the winner's cards on the side toward the middle of
+   * the table (mine at their right), clear of the row and its labels; `spread` is half the pile's width.
+   */
+  private wonSpot(seat: number, spread: number) {
+    const { x, z, width, scale } = this.row(seat),
+      n = Math.max(1, this.model.seats[seat]?.cards.length ?? 1),
+      reach = (this.skin.width * scale + this.gap(n, width, scale) * (n - 1)) / 2,
+      side = Math.abs(x) < 0.01 ? 1 : -Math.sign(x);
+    return new T.Vector3(x + side * (reach + 0.3 + spread), 0.05, z);
+  }
   private potSpot() {
     return new T.Vector3(this.layout.pot?.x ?? 0, 0.05, this.layout.pot?.z ?? POT_Z);
   }
   /** Chips fly to the pot when a seat bets and from it when the pot is paid. */
   private moveChips(quick: boolean, now: number) {
+    if (this.rich) return this.slideChips(quick, now);
     const model = this.model,
       pot = this.potSpot(),
       fly = (from: T.Vector3, to: T.Vector3, amount: number, delay: number) => {
@@ -848,11 +1161,110 @@ export class CardTableView {
     this.lastPot = model.pot;
     if (moved) this.onChips();
   }
+  /**
+   * The livelier table's chips: a bet slides across the cloth chip by chip and joins the pot's stacks as it lands;
+   * a pot that is won slides over to its winner as it stands and lies there until the next hand is anted.
+   */
+  private slideChips(quick: boolean, now: number) {
+    const rich = this.rich!,
+      model = this.model,
+      pot = this.potSpot();
+    if (quick) {
+      this.flights.clear();
+      rich.won.clear();
+      rich.potLate = false;
+    } else {
+      let incoming = 0,
+        order = 0;
+      // The pot as it stood before these chips, for its stacks to be drawn when they land.
+      const before = this.lastPot,
+        target = model.pot;
+      if (model.pot > 0 && rich.won.children.length) rich.won.clear();
+      model.seats.forEach((seat, s) => {
+        const was = this.lastBets[s] ?? 0,
+          added = seat.bet < was ? seat.bet : seat.bet - was;
+        if (!(added > 0 && model.pot > 0)) return;
+        const kinds: number[] = [];
+        let rest = added;
+        for (const [kind, chip] of CHIPS.entries())
+          while (rest >= chip.value && kinds.length < 6) {
+            rest -= chip.value;
+            kinds.push(kind);
+          }
+        if (!kinds.length) kinds.push(CHIPS.length - 1);
+        const from = this.chipSpot(s),
+          delay = order++ * 90;
+        kinds.forEach((kind, i) => {
+          const chip = new T.Mesh(this.chipGeometry, this.chipMaterials[kind]),
+            to = pot.clone().add(new T.Vector3((scatter(s, i) - 0.5) * 0.7, 0.02, (scatter(i, s + 5) - 0.5) * 0.3));
+          chip.position.copy(from).add(new T.Vector3(0, i * 0.06, 0));
+          chip.rotation.y = scatter(s + 11, i) * Math.PI * 2;
+          chip.castShadow = true;
+          chip.visible = false;
+          this.flights.add(chip);
+          incoming++;
+          this.tweens.push({
+            mesh: chip,
+            start: now + delay + i * 60,
+            duration: 430,
+            from: chip.position.clone(),
+            to,
+            fromFlip: 0,
+            toFlip: 0,
+            lift: 0.1,
+            contact: false,
+            flick: true,
+            done: () => {
+              this.flights.remove(chip);
+              if (--incoming > 0) return;
+              rich.potLate = false;
+              this.stackPot(target);
+            },
+          });
+        });
+      });
+      if (incoming) rich.potLate = true;
+      if (before > 0 && model.pot === 0) {
+        const winners = model.seats.flatMap((seat, s) => (seat.tone === "win" ? [s] : []));
+        if (winners.length) {
+          // The stacks themselves are pushed over to the winner, split between winners chip by chip.
+          const centre = pot.clone(),
+            chips = [...this.chips.children] as T.Mesh[],
+            spread = chips.reduce((most, chip) => Math.max(most, Math.abs(chip.position.x - centre.x)), 0) * 0.75 + 0.24;
+          this.chips.clear();
+          chips.forEach((chip, k) => {
+            const to = this.wonSpot(winners[k % winners.length], spread).add(
+              new T.Vector3((chip.position.x - centre.x) * 0.75, chip.position.y - 0.05, (chip.position.z - centre.z) * 0.75),
+            );
+            rich.won.add(chip);
+            this.tweens.push({
+              mesh: chip,
+              // Once every hand shown down lies face up.
+              start: now + 280 + this.revealed + Math.floor(k / 10) * 40,
+              duration: 620,
+              from: chip.position.clone(),
+              to,
+              fromFlip: 0,
+              toFlip: 0,
+              lift: 0.04,
+              contact: false,
+              flick: true,
+            });
+          });
+          if (chips.length) this.onChips();
+        }
+      }
+      if (incoming) this.onChips();
+    }
+    this.lastBets = model.seats.map((seat) => seat.bet);
+    this.lastPot = model.pot;
+  }
   private step(now: number) {
     if (this.slides.length) {
       this.slides = this.slides.filter((s) => {
         const p = Math.min(1, (now - s.start) / 220);
         s.cover.position.z = s.from + (s.to - s.from) * p * (2 - p);
+        this.curl(s.cover);
         if (p < 1) return true;
         s.done?.();
         return false;
@@ -865,9 +1277,19 @@ export class CardTableView {
       const p = Math.min(1, (now - t.start) / t.duration);
       if (p < 0) return true;
       t.mesh.visible = true;
-      const e = p * p * (3 - 2 * p);
+      const e = t.flick ? outCubic(p) : p * p * (3 - 2 * p);
       t.mesh.position.lerpVectors(t.from, t.to, e);
-      t.mesh.position.y += Math.sin(Math.PI * p) * t.lift;
+      t.mesh.position.y += Math.sin(Math.PI * (t.flick ? e : p)) * t.lift;
+      if (t.bow) {
+        // Sideways from the way it goes, most in the middle of it.
+        const dx = t.to.x - t.from.x,
+          dz = t.to.z - t.from.z,
+          length = Math.hypot(dx, dz) || 1,
+          side = Math.sin(Math.PI * e) * t.bow;
+        t.mesh.position.x += (-dz / length) * side;
+        t.mesh.position.z += (dx / length) * side;
+      }
+      if (t.yaw !== undefined) t.mesh.rotation.y = t.yaw * (1 - e) * (1 - e);
       t.mesh.rotation.z = t.fromFlip + (t.toFlip - t.fromFlip) * e;
       // A thing in the air leans into its flight and lies flat again as it lands.
       if (t.lift > 0 && Math.abs(t.mesh.rotation.x) < 0.5) t.mesh.rotation.x = Math.sin(Math.PI * p) * 0.2;
@@ -883,6 +1305,11 @@ export class CardTableView {
     for (const t of this.tweens) {
       t.mesh.position.copy(t.to);
       t.mesh.rotation.z = t.toFlip;
+      if (t.yaw !== undefined) t.mesh.rotation.y = 0;
+      if (this.rich) {
+        t.mesh.rotation.x = 0;
+        t.mesh.visible = true;
+      }
       t.done?.();
     }
     this.tweens = [];
@@ -899,25 +1326,8 @@ export class CardTableView {
   }
   /** The pot and the outline of the seat to act follow the table at once. */
   private dressTable() {
-    this.chips.clear();
-    // One stack for each kind of chip, side by side; a tall stack goes on in a second one beside it.
-    const STACK = 10,
-      stacks: { kind: number; count: number }[] = [];
-    let rest = this.model.pot;
-    for (const [kind, chip] of CHIPS.entries()) {
-      let count = Math.floor(rest / chip.value);
-      rest %= chip.value;
-      for (; count > 0; count -= STACK) stacks.push({ kind, count: Math.min(STACK, count) });
-    }
-    stacks.forEach((stack, column) => {
-      for (let i = 0; i < stack.count; i++) {
-        const mesh = new T.Mesh(this.chipGeometry, this.chipMaterials[stack.kind]);
-        mesh.position.set((this.layout.pot?.x ?? 0) + (column - (stacks.length - 1) / 2) * 0.56, 0.035 + i * 0.062, this.layout.pot?.z ?? POT_Z);
-        mesh.rotation.y = Math.PI / 2;
-        mesh.castShadow = true;
-        this.chips.add(mesh);
-      }
-    });
+    // On the livelier table chips on their way to the pot join its stacks when they land.
+    if (!this.rich?.potLate) this.stackPot();
     const active = this.model.seats.findIndex((seat) => seat.active);
     this.glow.visible = active >= 0;
     if (active >= 0) {
@@ -931,6 +1341,56 @@ export class CardTableView {
       );
       this.glow.position.set(x, 0.006, z);
     }
+    this.dressHalos();
+  }
+  /** The cards offered for a choice get a gold halo on the cloth round them (the livelier table only). */
+  private dressHalos() {
+    const rich = this.rich;
+    if (!rich) return;
+    for (const [id, card] of this.cards) {
+      const halo = card.mesh.children.find((child) => child.userData.halo) as T.Mesh | undefined,
+        offered = this.choices.has(id) && card.faceUp;
+      if (offered && !halo) {
+        const mesh = new T.Mesh(rich.haloGeometry, rich.halo);
+        mesh.userData.halo = true;
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = -rich.body.thickness / 2 - 0.0015;
+        card.mesh.add(mesh);
+      } else if (!offered && halo) card.mesh.remove(halo);
+    }
+    if (!rich.pulse) rich.halo.opacity = 1;
+    this.dirty = true;
+  }
+  /** The pot (`amount`) as one stack for each kind of chip. */
+  private stackPot(amount = this.model.pot) {
+    this.chips.clear();
+    // One stack for each kind of chip, side by side; a tall stack goes on in a second one beside it.
+    const STACK = 10,
+      stacks: { kind: number; count: number }[] = [];
+    let rest = amount;
+    for (const [kind, chip] of CHIPS.entries()) {
+      let count = Math.floor(rest / chip.value);
+      rest %= chip.value;
+      for (; count > 0; count -= STACK) stacks.push({ kind, count: Math.min(STACK, count) });
+    }
+    stacks.forEach((stack, column) => {
+      for (let i = 0; i < stack.count; i++) {
+        const mesh = new T.Mesh(this.chipGeometry, this.chipMaterials[stack.kind]);
+        mesh.position.set((this.layout.pot?.x ?? 0) + (column - (stacks.length - 1) / 2) * 0.56, 0.035 + i * 0.062, this.layout.pot?.z ?? POT_Z);
+        mesh.rotation.y = Math.PI / 2;
+        if (this.rich) {
+          // Stacked by hand: each chip turned and set down a hair off the one below.
+          mesh.position.y = 0.03 + i * 0.0605;
+          mesh.position.x += (scatter(column, i) - 0.5) * 0.025;
+          mesh.position.z += (scatter(i, column + 7) - 0.5) * 0.025;
+          // The top chip of a stack lies with its value the right way up for me.
+          mesh.rotation.y = i === stack.count - 1 ? (scatter(column, 9) - 0.5) * 0.5 : scatter(column + 3, i) * Math.PI * 2;
+        }
+        mesh.castShadow = true;
+        this.chips.add(mesh);
+      }
+    });
+    this.dirty = true;
   }
   private showPlaques(current: boolean) {
     this.plaques.clear();

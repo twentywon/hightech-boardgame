@@ -60,14 +60,16 @@ const play = {
     await press("#yd-roll");
     await wait(2200);
   },
+  // The deal button is a pixel (a tap on the deck deals), so it is pressed from the page.
   seotda: async () => {
-    await press("#bg-deal");
-    await wait(2500);
+    await page.evaluate(() => document.querySelector("#bg-deal")?.click());
+    await wait(3500);
   },
   "seven-poker": async () => {
-    await press("#bg-deal");
-    await wait(3000);
-    await press("#bg-prompt button");
+    await page.evaluate(() => document.querySelector("#bg-deal")?.click());
+    await wait(3500);
+    // The card to show is tapped on the table, so its button is a pixel too.
+    await page.evaluate(() => document.querySelector("#bg-prompt button")?.click());
     for (let i = 0; i < 10; i++) {
       await wait(1200);
       await press("#bg-call");
@@ -159,6 +161,12 @@ const play = {
     for (const walk of [["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], Array(6).fill("ArrowRight").concat("Enter"), Array(9).fill("ArrowLeft").concat("Enter"), ["ArrowRight", "Enter"], ["ArrowRight", "Enter"], Array(9).fill("ArrowRight").concat("Enter"), Array(8).fill("ArrowLeft").concat("Enter"), ["ArrowRight", "ArrowRight", "Enter"], ["ArrowRight", "ArrowRight", "Enter"], Array(6).fill("ArrowRight").concat("Enter")]) {
       await keys(walk, 60);
       await wait(700);
+      // A throw is lit on the scoreboard digit by digit, and the computer's answer after it: let both come on.
+      if (walk.length > 4)
+        for (let k = 0; k < 2; k++) {
+          await page.waitForFunction(() => document.querySelector("#board")?.dataset.animating === "false", null, { timeout: 10000 }).catch(() => {});
+          await wait(900);
+        }
     }
     await wait(1500);
   },

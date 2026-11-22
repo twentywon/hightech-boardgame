@@ -3,6 +3,7 @@ import { roundRect, type CardSkin } from "../cards/table-view";
 import type { BettingConfig } from "../../ui/betting-game";
 import { seotda } from "./game";
 import { ANTE, START_CHIPS, type State } from "./rules";
+import { seotdaRoom } from "./room";
 
 // The card pictures, inlined so the game still needs no network requests.
 // Keys are the painter's face keys: month and the first letter of the kind.
@@ -35,6 +36,9 @@ export const seotdaSkin: CardSkin = {
   lines: ["섯다", "두 장의 족보로 겨룹니다"],
   compact: true,
   secretLeft: 2,
+  // Thick, lacquered hwatu on an army blanket in a hanok room.
+  body: { thickness: 0.032, corner: 0.07, edge: "#6e170e", lacquer: true },
+  setting: seotdaRoom(),
   back(ctx, w, h) {
     ctx.fillStyle = "#8f2416";
     ctx.fillRect(0, 0, w, h);

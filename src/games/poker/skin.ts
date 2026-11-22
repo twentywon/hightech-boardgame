@@ -4,14 +4,18 @@ import { CARD, drawBack, drawFace } from "../cards/faces";
 import type { BettingConfig } from "../../ui/betting-game";
 import { poker } from "./game";
 import { ANTE, START_CHIPS, type State } from "./rules";
+import { studRoom } from "./room";
 
-/** The shared deck (see `../cards/faces.ts`). */
+const LINES: [string, string] = ["세븐 포커", "일곱 장 가운데 다섯 장으로 겨룹니다"];
+/** The shared deck (see `../cards/faces.ts`), as rounded cards, at an eight-sided table in a card room of its own. */
 export const pokerSkin: CardSkin = {
   secretLeft: 3,
   ...CARD,
-  lines: ["세븐 포커", "일곱 장 가운데 다섯 장으로 겨룹니다"],
+  lines: LINES,
   back: drawBack,
   face: drawFace,
+  body: { thickness: 0.014, corner: 0.075, edge: "#efe9db" },
+  setting: studRoom(LINES),
 };
 export const pokerConfig: BettingConfig<State> = {
   game: poker,
