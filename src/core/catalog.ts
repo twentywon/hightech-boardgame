@@ -804,7 +804,8 @@ export const allGames = [
 
 /**
  * The student edition (built with `VITE_EDITION=student`, `npm run build:student`) leaves out the games commonly
- * thought of as gambling: the betting card games, go-stop, blackjack and the prize machines. The full edition keeps
+ * thought of as gambling: the betting card games, go-stop, blackjack and the coin pusher (Indian poker and the claw
+ * machine stay in: the user asked). The full edition keeps
  * every game; nothing else differs. `import.meta.env` is missing under plain Node (browser tests import this file).
  */
 export const EDITION: "full" | "student" =
@@ -815,10 +816,8 @@ export const STUDENT_EXCLUDED = [
   "SEOTDA",
   "SEVEN POKER",
   "TEXAS HOLDEM",
-  "INDIAN POKER",
   "GO-STOP",
   "COIN PUSHER",
-  "CLAW MACHINE",
 ];
 /** The games this edition shows. */
 export const games = EDITION === "student" ? allGames.filter((g) => !STUDENT_EXCLUDED.includes(g.en)) : allGames;

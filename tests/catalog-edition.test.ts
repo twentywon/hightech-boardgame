@@ -21,7 +21,9 @@ describe("catalog editions", () => {
     for (const en of STUDENT_EXCLUDED) expect(allGames.some((g) => g.en === en)).toBe(true);
     expect(games.length).toBe(allGames.length - STUDENT_EXCLUDED.length);
     const names = games.map((g) => g.name);
-    for (const name of ["블랙잭", "섯다", "세븐 포커", "텍사스 홀덤", "인디언 포커", "고스톱", "코인 푸셔", "인형뽑기"]) expect(names).not.toContain(name);
+    for (const name of ["블랙잭", "섯다", "세븐 포커", "텍사스 홀덤", "고스톱", "코인 푸셔"]) expect(names).not.toContain(name);
+    // Indian poker and the claw machine stay in the student edition (the user asked).
+    expect(names).toEqual(expect.arrayContaining(["인디언 포커", "인형뽑기"]));
     expect(names).toEqual(expect.arrayContaining(["오목", "바둑", "체스", "장기", "윷놀이", "원카드", "스파이더"]));
   });
 });
