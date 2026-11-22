@@ -6,6 +6,8 @@ import { DOMINO_COLORS, DominoView } from "./view";
 export const dominoConfig: PointConfig<State> = {
   game: domino,
   contact: (sound) => sound.tile(1),
+  // A tile drawn from the pile.
+  knock: (sound) => sound.tile(4),
   noPanel: true,
   view: (host, quality) => new DominoView(host, quality),
   colors: DOMINO_COLORS,
@@ -29,12 +31,12 @@ export const dominoConfig: PointConfig<State> = {
   name: "도미노",
   english: "Dominoes",
   number: "NO. 28 — MATCH THE ENDS",
-  intro: `<p>어두운 마룻바닥 위에 패를 한 줄로 이어 갑니다.<br>줄 끝의 숫자와 같은 숫자를 가진 패만 놓을 수 있습니다.</p>`,
+  intro: `<p>카페의 대리석 탁자 위에 패를 한 줄로 이어 갑니다.<br>줄 끝의 숫자와 같은 숫자를 가진 패만 놓을 수 있습니다.</p>`,
   meta: "나 대 컴퓨터 · 패 28장 · 일곱 장씩",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>END TO END</span>`,
   artClass: "domino-art",
   artLabel: "도미노 줄 미리보기",
-  tableLabel: "THE DARK FLOOR",
+  tableLabel: "THE CAFÉ TABLE",
   tableNote: () => "패 28장 · 일곱 장씩",
   rulesTitle: "끝과 끝을 맞춰 이으세요",
   rules:
@@ -44,5 +46,5 @@ export const dominoConfig: PointConfig<State> = {
     part("처음이라면", notes("눈이 많은 패부터 내면 막혔을 때 남는 눈이 줄어듭니다.", "내가 많이 가진 숫자로 양 끝을 만들면 상대가 가져와야 합니다.", "더블은 한 숫자에만 맞아 내기 어렵습니다. 기회가 오면 먼저 냅니다.", "상대가 가져간 숫자는 상대가 갖고 있지 않던 숫자입니다.")),
   help: "마우스·터치: 내 패를 누릅니다. 양쪽에 맞으면 줄 끝의 고리를 누릅니다<br>키보드: 판을 선택하고 방향키·Enter",
   sides: ["나", "컴퓨터"],
-  startWord: "바닥에 앉기",
+  startWord: "탁자에 앉기",
 };

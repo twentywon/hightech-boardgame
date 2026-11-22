@@ -1,11 +1,12 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { N, WALLS, wallRace, type State } from "./rules";
+import { CELLS, N, WALLS, wallRace, type State } from "./rules";
 import { PAWN_COLORS, WallRaceView, racePoints } from "./view";
 
 export const wallRaceConfig: PointConfig<State> = {
   game: wallRace,
-  contact: (sound) => sound.knock(2),
+  // A pawn set down on its square, or a wall pushed into its groove.
+  contact: (sound, state) => (state.last !== null && state.last < CELLS ? sound.wood(2) : sound.knock(2)),
   noPanel: true,
   view: (host, quality) => new WallRaceView(host, quality),
   colors: PAWN_COLORS,
@@ -27,8 +28,8 @@ export const wallRaceConfig: PointConfig<State> = {
     part("벽", table(["크기", "두 칸 길이입니다. 칸과 칸 사이 홈에 세웁니다."], ["개수", `각자 ${WALLS}개. 다 쓰면 말만 옮길 수 있습니다.`], ["세울 수 없는 곳", "다른 벽과 겹치거나 엇갈리는 자리, 판 밖으로 나가는 자리."], ["길 막기 금지", "어느 말이든 끝줄로 가는 길이 <b>하나도 남지 않게</b> 막을 수는 없습니다."], ["한번 세우면", "옮기거나 치울 수 없습니다."])) +
     part("말 넘기", table(["마주 섰을 때", "상대 말이 바로 옆에 있고 그 뒤가 비어 있으면 뛰어넘어 그 뒤 칸으로 갑니다."], ["뒤가 막혔을 때", "상대 말 뒤에 벽이나 판 끝이 있으면 상대 말의 양옆 칸으로 비껴 갑니다."])) +
     part("벽 세우는 법", table(["가로 벽", "위아래로 붙은 두 칸 <b>사이</b>를 누릅니다. 누른 곳에서 오른쪽으로 두 칸 길이로 놓입니다."], ["세로 벽", "좌우로 붙은 두 칸 <b>사이</b>를 누릅니다. 누른 곳에서 아래쪽으로 두 칸 길이로 놓입니다."], ["미리 보기", "마우스를 올리면 놓일 벽이 노랗게 보입니다."])) +
-    part("처음이라면", notes("옆 패널의 \"앞으로 n칸\"은 지금 벽들 사이로 끝줄까지 가는 가장 짧은 길입니다. 내 숫자가 작으면 달리고, 크면 막습니다.", "벽은 상대가 끝줄에 가까워졌을 때 세워야 돌아가는 길이 길어집니다.", "벽을 일찍 다 쓰면 나중에 막을 수가 없습니다.", "상대 벽을 내 길 막기에 함께 쓸 수 있는 자리를 찾습니다.")),
-  help: "마우스·터치: 금색 고리가 뜬 칸을 누르면 말이 가고, 칸 사이를 누르면 벽이 놓입니다<br>키보드: 판을 선택하고 방향키·Enter",
+    part("처음이라면", notes("내 차례에는 끝줄까지 가는 가장 짧은 길이 판 위에 작은 점으로 보입니다.", "옆 패널의 \"앞으로 n칸\"은 지금 벽들 사이로 끝줄까지 가는 가장 짧은 길입니다. 내 숫자가 작으면 달리고, 크면 막습니다.", "벽은 상대가 끝줄에 가까워졌을 때 세워야 돌아가는 길이 길어집니다.", "벽을 일찍 다 쓰면 나중에 막을 수가 없습니다.", "상대 벽을 내 길 막기에 함께 쓸 수 있는 자리를 찾습니다.")),
+  help: "마우스·터치: 금빛이 도는 칸을 누르면 말이 가고, 칸 사이를 누르면 벽이 놓입니다<br>키보드: 판을 선택하고 방향키·Enter",
   sides: ["빨강", "파랑"],
   startWord: "판 앞에 앉기",
 };
