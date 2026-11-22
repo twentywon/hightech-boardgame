@@ -23,7 +23,7 @@ function board(rows: string[], reaches: R.Reach[] = []): R.State {
       if (ch === "@") hole = cell;
     }
   });
-  return { size: n, scopes, lens: scopes.map(() => 0), ball, hole, start: ball, stage: 1, pressed: [], plan: [], best: 0, last: null, winner: null, ply: 0 };
+  return { size: n, scopes, lens: scopes.map(() => 0), ball, hole, start: ball, stage: 1, pressed: [], plan: [], best: 0, decoys: [], last: null, winner: null, ply: 0 };
 }
 const press = (s: R.State, t: number) => R.play(s, { from: -1, to: t, extra: -1 });
 const at = (s: R.State, r: number, c: number) => r * s.size + c;
@@ -267,10 +267,14 @@ describe("telescope push: generated puzzles", () => {
           s = R.createGame(stage, R.quick(stage * 1000 + k));
         times.push(performance.now() - t0);
         expect(s.size).toBe(spec.size);
-        // Lean: no more telescopes than the board was climbed with, and none that could go.
-        expect(s.scopes.length).toBeGreaterThanOrEqual(3);
-        expect(s.scopes.length).toBeLessThanOrEqual(spec.core[1]);
+        // Lean under its decoys: no more telescopes than the board was climbed with, and none that could go; a few
+        // decoys besides.
+        const core = R.coreOf(s);
+        expect(core.scopes.length).toBeGreaterThanOrEqual(3);
+        expect(core.scopes.length).toBeLessThanOrEqual(spec.core[1]);
         expect(R.slack(s)).toEqual([]);
+        expect(s.decoys.length).toBeLessThanOrEqual(spec.decoys[1]);
+        expect(s.scopes.length).toBe(core.scopes.length + s.decoys.length);
         expect(s.best).toBeGreaterThanOrEqual(spec.band[0]);
         expect(s.best).toBeLessThanOrEqual(spec.band[1]);
         expect(s.plan.length).toBe(s.best);
@@ -326,29 +330,34 @@ describe("telescope push: generated puzzles", () => {
       expect(mean).toBeGreaterThan(old[stage - 1][0] + 1);
     }
   }, 120000);
-  test("boards are lean: every telescope is pressed by every shortest way, and taking any away changes the puzzle", () => {
+  test("boards are lean under their decoys: every other telescope is pressed by every shortest way, and taking any away changes the puzzle", () => {
     for (let stage = 1; stage <= R.STAGES.length; stage++) {
       let everyWay = 0;
       for (let k = 0; k < 8; k++) {
         const s = R.createGame(stage, R.quick(stage * 4241 + k));
-        // The plan presses every telescope on the board (no decoys), on every board.
-        expect(new Set(s.plan).size).toBe(s.scopes.length);
+        // The plan presses every telescope of the lean board and no decoy, on every board.
+        expect(new Set(s.plan).size).toBe(s.scopes.length - s.decoys.length);
+        expect(s.plan.some((t) => s.decoys.includes(t))).toBe(false);
         // Without any one of them the fewest presses change, or the way loses what the stage asks of it.
         expect(R.slack(s)).toEqual([]);
-        s.scopes.forEach((_, t) => {
-          const rest = s.scopes.filter((_, i) => i !== t),
+        const lean = R.coreOf(s);
+        lean.scopes.forEach((_, t) => {
+          const rest = lean.scopes.filter((_, i) => i !== t),
             found = R.search(s.size, rest, rest.map(() => 0), s.start, s.hole, 200000);
           if (found.way && found.way.length === s.best) {
             // Kept only because the way found without it takes fewer turns or meets less of the stage.
-            const before = R.motifs(s.size, s.scopes, s.start, s.hole, s.plan).set.size,
+            const before = R.motifs(s.size, lean.scopes, s.start, s.hole, lean.plan).set.size,
               after = R.motifs(s.size, rest, s.start, s.hole, found.way).set.size,
-              t1 = R.traits(s.size, s.scopes, s.start, s.plan),
+              t1 = R.traits(s.size, lean.scopes, s.start, lean.plan),
               t2 = R.traits(s.size, rest, s.start, found.way);
             expect(after < before || t2.used < t1.used || t2.pulls < t1.pulls || t2.stops < t1.stops || new Set(found.way).size < rest.length || after <= before).toBe(true);
           }
         });
-        // Pressed by every shortest way (none can be left closed with the fewest presses kept).
-        if (R.needed(s).every(Boolean)) everyWay++;
+        // Pressed by every shortest way (none can be left closed with the fewest presses kept), with the decoys
+        // standing there or not; a decoy is never needed.
+        const need = R.needed(s);
+        if (need.every((x, t) => x === !s.decoys.includes(t)) && R.needed(lean).every(Boolean)) everyWay++;
+        for (const d of s.decoys) expect(need[d]).toBe(false);
       }
       expect(everyWay).toBeGreaterThanOrEqual(7);
     }
@@ -426,6 +435,124 @@ describe("telescope push: generated puzzles", () => {
     expect(b.scopes.map((x) => x.reach)).toEqual(a.scopes.map((x) => x.reach));
     expect([b.ball, b.hole, b.plan]).toEqual([a.ball, a.hole, a.plan]);
   });
+});
+
+describe("telescope push: decoys", () => {
+  /** A puzzle's telescopes with its decoys numbered last (from `first` on), and its plan numbered so. */
+  const decoysLast = (s: R.State) => {
+    const order = [...s.scopes.keys()].filter((t) => !s.decoys.includes(t)).concat(s.decoys),
+      index: number[] = [];
+    order.forEach((t, i) => (index[t] = i));
+    return { scopes: order.map((t) => s.scopes[t]), plan: s.plan.map((t) => index[t]), first: order.length - s.decoys.length };
+  };
+  test("every stage sets down its few decoys, numbered among the other telescopes", () => {
+    let boards = 0,
+      atEnd = 0;
+    for (let stage = 1; stage <= R.STAGES.length; stage++) {
+      const [fewest, most] = R.STAGES[stage - 1].decoys;
+      let enough = 0;
+      for (let k = 0; k < 8; k++) {
+        const s = R.createGame(stage, R.quick(stage * 6007 + k));
+        expect(s.decoys.length).toBeLessThanOrEqual(most);
+        if (s.decoys.length >= fewest) enough++;
+        if (s.decoys.length) {
+          boards++;
+          if (s.decoys.every((t, i) => t === s.scopes.length - s.decoys.length + i)) atEnd++;
+        }
+        // Decoys are telescopes like the others: one of the three kinds, on a cell of their own.
+        expect(new Set(s.scopes.map((x) => x.cell)).size).toBe(s.scopes.length);
+      }
+      expect(enough).toBeGreaterThanOrEqual(6);
+    }
+    // Their places among the telescopes are not a giveaway.
+    expect(atEnd).toBeLessThan(boards / 2);
+  }, 120000);
+  test("they change nothing a shortest way does: the same fewest presses with or without them, the same way and turns, and no shortest way presses one", () => {
+    for (let stage = 1; stage <= R.STAGES.length; stage++)
+      for (let k = 0; k < 4; k++) {
+        const s = R.createGame(stage, R.quick(stage * 811 + k)),
+          core = R.coreOf(s),
+          last = decoysLast(s);
+        expect(R.search(s.size, s.scopes, s.lens, s.start, s.hole, 400000).way).toHaveLength(s.best);
+        expect(R.search(s.size, core.scopes, core.lens, s.start, s.hole, 400000).way).toHaveLength(s.best);
+        expect(R.solve(s)).toHaveLength(s.best);
+        // The plan is the lean board's plan, with the same turns and parts.
+        expect([...R.motifs(s.size, s.scopes, s.start, s.hole, s.plan).set].sort()).toEqual([...R.motifs(s.size, core.scopes, s.start, s.hole, core.plan).set].sort());
+        expect(R.traits(s.size, s.scopes, s.start, s.plan)).toEqual(R.traits(s.size, core.scopes, s.start, core.plan));
+        // No way of the fewest presses (or fewer) presses a decoy, searched in full.
+        const away = R.detour(s.size, last.scopes, last.first, s.start, s.hole, s.best, 2000000);
+        expect(away.capped).toBe(false);
+        expect(away.found).toBe(false);
+        // The hints from the start bring the ball in without pressing a decoy.
+        let x = s;
+        for (let i = 0; i < 40 && x.winner === null; i++) {
+          const m = R.hint(x)!;
+          expect(s.decoys).not.toContain(m.to);
+          x = press(x, m.to)!;
+        }
+        expect(x.winner).toBe(0);
+      }
+  }, 180000);
+  test("detour finds a way through a telescope that helps, and none within the fewest presses through one that does not", () => {
+    // Telescope 0 cannot be drawn out (it faces the edge); telescope 1 (last) pushes the ball straight in.
+    const helps = board(["<......", "..v....", "..o....", "..@....", ".......", ".......", "......."], [4, 2]);
+    expect(R.detour(helps.size, helps.scopes, 1, helps.start, helps.hole, 1).found).toBe(true);
+    // Telescope 0 pushes the ball in; telescope 1 (last) reaches nothing, so a way through it takes a press more.
+    const idle = board([".......", ">.o.@..", ".......", ".......", ".......", ".......", ">......"], [4, 2]);
+    expect(R.solve(idle)).toEqual([0]);
+    expect(R.detour(idle.size, idle.scopes, 1, idle.start, idle.hole, 1).found).toBe(false);
+    expect(R.detour(idle.size, idle.scopes, 1, idle.start, idle.hole, 2).found).toBe(true);
+  });
+  test("they make the puzzle no easier: a random player's chance is not raised, and the greedy player still fails", () => {
+    for (let stage = 1; stage <= R.STAGES.length; stage++) {
+      let greedy = 0;
+      for (let k = 0; k < 6; k++) {
+        const s = R.createGame(stage, R.quick(stage * 2711 + k)),
+          core = R.coreOf(s);
+        expect(R.chance(s, 2 * s.best + 4)).toBeLessThanOrEqual(R.chance(core, 2 * s.best + 4) + 1e-12);
+        if (R.naive(s, R.quick(k + 7), 40, 0)) greedy++;
+      }
+      expect(greedy).toBeLessThanOrEqual(1);
+    }
+  }, 120000);
+  test("they tempt: each can be pressed on the way and pushes the ball, points at the hole or stands where the way runs, and pressing it costs presses", () => {
+    let all = 0,
+      pushers = 0,
+      nearer = 0,
+      early = 0;
+    for (let stage = 1; stage <= R.STAGES.length; stage++)
+      for (let k = 0; k < 4; k++) {
+        const s = R.createGame(stage, R.quick(stage * 4999 + k));
+        for (const d of s.decoys) {
+          // The board with this decoy last, the way laid out along it.
+          const order = [...s.scopes.keys()].filter((t) => t !== d).concat([d]),
+            index: number[] = [];
+          order.forEach((t, i) => (index[t] = i));
+          const scopes = order.map((t) => s.scopes[t]),
+            way = R.along(s.size, scopes, s.start, s.hole, s.plan.map((t) => index[t])),
+            l = R.lure(s.size, scopes, way, s.hole, s.best, 400000)!;
+          expect(l).not.toBeNull();
+          expect(l.presses).toBeGreaterThan(0);
+          expect(l.moves > 0 || l.aims || l.crosses > 0).toBe(true);
+          // Pressed where the way goes, it costs at least a press more, or leads nowhere.
+          expect(l.waste).toBeGreaterThanOrEqual(1);
+          // Near the ball's way or the hole, not in a far corner.
+          const r = Math.floor(s.scopes[d].cell / s.size),
+            c = s.scopes[d].cell % s.size,
+            cells = [s.hole, ...way.states.map((st) => st.ball)];
+          expect(cells.some((x) => Math.abs(Math.floor(x / s.size) - r) <= 4 && Math.abs((x % s.size) - c) <= 4)).toBe(true);
+          all++;
+          if (l.moves) pushers++;
+          if (l.nearer) nearer++;
+          if (l.first <= 2) early++;
+        }
+      }
+    expect(all).toBeGreaterThanOrEqual(30);
+    // Many push the ball, some of them toward the hole, some at the very start.
+    expect(pushers).toBeGreaterThanOrEqual(all * 0.3);
+    expect(nearer).toBeGreaterThanOrEqual(all * 0.2);
+    expect(early).toBeGreaterThanOrEqual(all * 0.1);
+  }, 180000);
 });
 
 describe("telescope push: layout", () => {
