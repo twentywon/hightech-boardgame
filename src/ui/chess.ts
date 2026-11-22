@@ -265,6 +265,8 @@ export function mountChess(
       view.onSelect = select;
       view.onCancel = clearSelection;
       view.onContact = () => sound.wood();
+      view.onKnock = () => sound.knock(2);
+      view.onPromote = () => sound.sparkle();
       view.onSettled = update;
       view.render(engine());
       const canvas = view.renderer.domElement;
