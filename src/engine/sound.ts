@@ -458,6 +458,16 @@ export class Sound {
     this.tone("sine", 2300, 1500, after + 0.1, 0.32, 0.02);
     this.noise(after, 0.48, 0.012, 1800, "bandpass", 1200);
   }
+  /**
+   * A snake's hiss as a token reaches its mouth (snakes and ladders), and over the `ride` seconds after it a soft
+   * whistle sliding down with the token; made by the page, the same each time.
+   */
+  hiss(ride = 0) {
+    this.noise(0, 0.42, 0.05, 5200, "bandpass", 4200);
+    if (ride <= 0.35) return;
+    this.tone("sine", 880, 230, 0.3, ride - 0.3, 0.045);
+    this.noise(0.3, ride - 0.3, 0.018, 1400, "bandpass", 500);
+  }
   /** Three light, quick notes rising (a merge of fruit; the hare's hop while its recording is not ready). */
   pop() {
     [0, 0.11, 0.22].forEach((at, i) => {
@@ -483,6 +493,24 @@ export class Sound {
     const f = 300 - size * 170;
     this.tone("sine", f * 1.6, f, 0, 0.09 + size * 0.05, 0.03 + strength * 0.07);
     this.noise(0, 0.05, 0.012 + strength * 0.03, 900 - size * 400, "lowpass", 300);
+  }
+  /** A soft thing thrown through the air (a germ's jump): a rising and falling whoosh, then a wet splat `land` seconds from now. */
+  whoosh(land: number) {
+    this.noise(0, land * 0.55, 0.07, 500, "bandpass", 2400);
+    this.noise(land * 0.45, land * 0.6, 0.05, 2400, "bandpass", 700);
+    this.tone("sine", 340, 120, land, 0.12, 0.13);
+    this.noise(land, 0.09, 0.08, 1300, "bandpass", 500);
+    this.tone("sine", 620, 900, land + 0.05, 0.06, 0.04);
+  }
+  /** Something soaking in (germs won over): a short gurgle and a bubble for each of `count`, rising. */
+  gurgle(count: number) {
+    if (this.context && samples.has("gurgle-1")) this.recording("gurgle-1", 0.26, 1.2);
+    else this.noise(0, 0.3, 0.06, 700, "lowpass", 300);
+    for (let k = 0; k < Math.min(count, 6); k++) {
+      const f = 330 + k * 70;
+      this.tone("sine", f, f * 1.9, 0.04 + k * 0.13, 0.07, 0.07);
+      this.tone("sine", f * 1.5, f * 2.4, 0.08 + k * 0.13, 0.05, 0.03);
+    }
   }
   /** A bite of an apple (스네이크): a crisp crunch, a second smaller one, and a little gulp. */
   crunch(gold = false) {

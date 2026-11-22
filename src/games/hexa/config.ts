@@ -1,12 +1,18 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { hexaBoard } from "./board";
+import { HexaView, germCue } from "./view";
 import { MAPS, hexa, mapOf, type State } from "./rules";
 
 export const hexaConfig: PointConfig<State> = {
   game: hexa,
   panel: "big",
+  // The board's points and pictures; the table itself is a culture dish of its own (the user asked for it grander).
   board: hexaBoard,
+  view: (host, quality, variant) => new HexaView(host, quality, variant),
+  // A copy pops off its parent with a squelch, a jump whooshes and splats down, and germs won over gurgle.
+  contact: (sound) =>
+    germCue.kind === "clone" ? sound.squish(0.3) : germCue.kind === "jump" ? sound.whoosh(germCue.land) : germCue.kind === "convert" ? sound.gurgle(germCue.count) : sound.plunk(0.5, 0.3),
   name: "헥사 세균전",
   english: "Hexa Germ War",
   number: "NO. 10 — SPREAD",
