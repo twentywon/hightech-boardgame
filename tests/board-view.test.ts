@@ -35,7 +35,7 @@ describe("Gomoku mesh lifetime", () => {
     stone.position.y = 1;
     view.renderState(play(first, { row: 8, col: 8 })!, false);
     expect(stones.children[0]).toBe(stone);
-    expect(stone.position.y).toBe(0.245);
+    expect(stone.position.y).toBe(0.24);
     view.renderState(play(createGame(), { row: 1, col: 1 })!, false);
     expect(stones.children).toHaveLength(1);
     expect(stones.children[0]).not.toBe(stone);
@@ -67,8 +67,10 @@ describe("Gomoku mesh lifetime", () => {
     const win = (view as unknown as { win: T.Group }).win;
     (view as unknown as { setCamera: () => void }).setCamera = () => {};
     view.renderState(state, false);
-    const rings = win.children as T.Mesh[];
+    // A ring round each of the five, and one line of light through them.
+    const rings = (win.children as T.Mesh[]).filter((m) => m.geometry instanceof T.RingGeometry);
     expect(rings).toHaveLength(5);
+    expect(win.children).toHaveLength(6);
     expect(new Set(rings.map((m) => m.geometry)).size).toBe(1);
     expect(new Set(rings.map((m) => m.material)).size).toBe(1);
   });

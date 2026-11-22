@@ -27,7 +27,7 @@ import {
   type Result,
   type State,
 } from "../games/blackjack/rules";
-import { cryptoRandom } from "../games/blackjack/shoe";
+import { SHOE_SIZE, cryptoRandom } from "../games/blackjack/shoe";
 import {
   BlackjackView,
   type TableModel,
@@ -88,6 +88,8 @@ export function mountBlackjack(
     disposed = false,
     lockedUntil = 0,
     soundedRound = 0;
+  /** Busts already told over the table, as "round:hand", so that none is told twice. */
+  const told = new Set<string>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as E;
@@ -140,6 +142,7 @@ export function mountBlackjack(
     try {
       view = new BlackjackView($("board"), settings.quality);
       view.onContact = () => sound.card();
+      view.onChips = () => sound.chips();
       view.onSettled = present;
       // The shoe stands for the button that draws the next card.
       view.onShoe = () => {
@@ -162,6 +165,7 @@ export function mountBlackjack(
     const dealer = handValue(s.dealer);
     return {
       stake: s.phase === "betting" ? s.bet : 0,
+      shoe: s.shoe.length / SHOE_SIZE,
       dealer: dealerCards(s).map((c) => ({ id: c.id, face: "hidden" in c ? null : c })),
       dealerLabel: !s.dealer.length
         ? ""
@@ -184,6 +188,8 @@ export function mountBlackjack(
               : `${RESULT[outcome.result].text} ${signed(outcome.net)}`
             : totalText(hand.cards),
           tone: outcome && !s.outcome!.refunded ? RESULT[outcome.result].tone : "neutral",
+          // The chips follow the settlement: paid beside the stake, taken by the dealer, or left standing.
+          net: outcome ? (s.outcome!.refunded ? 0 : outcome.net) : undefined,
         };
       }),
     };
@@ -192,13 +198,17 @@ export function mountBlackjack(
     !!view?.animating ||
     performance.now() < lockedUntil ||
     !!document.querySelector("dialog[open]");
-  /** Stake changes are instant and may repeat quickly; the engine validates each. */
+  /**
+   * Stake changes are instant and may repeat quickly; the engine validates
+   * each. The chips are set into the spot as decoration: they never hold up
+   * the next press.
+   */
   function bet(change: (s: State) => State | null) {
     if (view?.animating) return;
     const next = change(state);
     if (!next) return;
     state = next;
-    if (view) view.sync(model(state), false);
+    if (view) view.sync(model(state));
     else present();
   }
   /**
@@ -238,7 +248,19 @@ export function mountBlackjack(
       if (state.outcome.net < 0) sound.lose();
       else if (state.outcome.net > 0) sound.win();
       // Every round is told across the table, as in the other card games (the user asked); a push is a draw.
-      if (!state.outcome.refunded) shout(state.outcome.net > 0 ? "승리" : state.outcome.net < 0 ? "패배" : "무승부");
+      // A blackjack or a bust is told first, and the result after it.
+      if (!state.outcome.refunded) {
+        const word = state.outcome.net > 0 ? "승리" : state.outcome.net < 0 ? "패배" : "무승부",
+          first = highlight(state);
+        if (first) {
+          shout(first);
+          later(() => shout(word), 1150);
+        } else shout(word);
+      }
+    } else if (state.phase === "playerTurn") {
+      // A split hand that went over is told at once; play goes on with the next.
+      const first = highlight(state);
+      if (first) shout(first);
     }
     // Keep keyboard focus on the step that replaced the one just used.
     if (hadFocus && focused && (focused.offsetParent === null || (focused as HTMLButtonElement).disabled)) {
@@ -252,6 +274,20 @@ export function mountBlackjack(
               : "bj-next";
       $(target)?.focus({ preventScroll: true });
     }
+  }
+  /** A blackjack or a bust worth telling over the table before the result, at most once a hand. */
+  function highlight(s: State) {
+    const mine = s.outcome?.hands.findIndex((h) => h.result === "blackjack") ?? -1;
+    if (mine >= 0) return "블랙잭!";
+    const bust = s.hands.findIndex((h, i) => handValue(h.cards).total > 21 && !told.has(`${s.round}:${i}`));
+    if (bust >= 0) {
+      told.add(`${s.round}:${bust}`);
+      return "버스트";
+    }
+    if (s.phase !== "roundComplete") return "";
+    const dealer = handValue(s.dealer).total;
+    if (s.dealer.length === 2 && dealer === 21) return "딜러 블랙잭";
+    return dealer > 21 ? "딜러 버스트" : "";
   }
   let wasBroke = false;
   function update() {

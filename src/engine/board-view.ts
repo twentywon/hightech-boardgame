@@ -6,8 +6,8 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-import { wood, disposeScene, afterGPUFrame, aim, realism, planks, weave, glossy, block, fall } from "./scene-utils";
-import { parkBench } from "./scenery";
+import { disposeScene, afterGPUFrame, aim, realism, glossy, fall, hop } from "./scene-utils";
+import { discGeometry, gomokuRoom, lensGeometry, reversiBoard, reversiStudy, shellMap, softSpot } from "./board-scenes";
 import {
   FOV,
   OVERHEAD,
@@ -18,6 +18,17 @@ import {
 } from "./camera";
 
 const GOMOKU_BOARD = 6.55;
+/** Where a stone's or a disc's middle rests: gomoku's stones on the board's face (0.15), discs on the felt (0.18). */
+const STONE_Y = 0.24,
+  DISC_Y = 0.2325;
+/** How long a stone or disc takes to drop, a disc to turn over, and how long after one another captured discs turn. */
+const DROP = 280,
+  SETTLE = 90,
+  FLIP = 360,
+  FLIP_AFTER = 190,
+  STAGGER = 75;
+/** Whether the page is being photographed for the collection's pictures (then no marks of the moment). */
+const capturing = () => typeof document !== "undefined" && document.documentElement.dataset.capture === "1";
 /** Column letters and row numbers drawn in the Gomoku board margin. */
 function gomokuLabels() {
   const size = 1024,
@@ -46,6 +57,32 @@ function gomokuLabels() {
   texture.colorSpace = T.SRGBColorSpace;
   return texture;
 }
+/** The picture of the winning line's light: bright along its middle, fading at its sides and its ends. */
+function beamPicture() {
+  if (typeof document === "undefined") return null;
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 32;
+  const ctx = c.getContext("2d")!,
+    across = ctx.createLinearGradient(0, 0, 0, 32);
+  across.addColorStop(0, "rgba(255,255,255,0)");
+  across.addColorStop(0.5, "rgba(255,255,255,1)");
+  across.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = across;
+  ctx.fillRect(0, 0, 256, 32);
+  ctx.globalCompositeOperation = "destination-in";
+  const along = ctx.createLinearGradient(0, 0, 256, 0);
+  along.addColorStop(0, "rgba(0,0,0,0)");
+  along.addColorStop(0.1, "rgba(0,0,0,1)");
+  along.addColorStop(0.9, "rgba(0,0,0,1)");
+  along.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = along;
+  ctx.fillRect(0, 0, 256, 32);
+  const map = new T.CanvasTexture(c);
+  map.colorSpace = T.SRGBColorSpace;
+  return map;
+}
+const X_AXIS = new T.Vector3(1, 0, 0);
 export class BoardView {
   readonly renderer: T.WebGLRenderer;
   readonly scene = new T.Scene();
@@ -59,10 +96,23 @@ export class BoardView {
   private flips: {
     mesh: T.Mesh;
     start: number;
+    /** The horizontal axis the disc turns about (across its line from the disc just placed). */
+    axis: T.Vector3;
+    /** Its resting turn before and after: 0 black up, π white up. */
     from: number;
     to: number;
     sounded: boolean;
   }[] = [];
+  /** Resources of the board and the room, freed in `dispose`. */
+  private owned: { dispose(): void }[] = [];
+  private own = <R extends { dispose(): void }>(resource: R): R => {
+    this.owned.push(resource);
+    return resource;
+  };
+  private winLight: T.Mesh | null = null;
+  private markLater = false;
+  private readonly turn = new T.Quaternion();
+  private readonly base = new T.Quaternion();
   onSettled: () => void = () => {};
   private pressed = { x: 0, y: 0 };
   private ray = new T.Raycaster();
@@ -128,93 +178,23 @@ export class BoardView {
     light.position.set(-3, 9, 4);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
-    light.shadow.camera.left = -6;
-    light.shadow.camera.right = 6;
-    light.shadow.camera.top = 6;
-    light.shadow.camera.bottom = -6;
+    light.shadow.camera.left = -7;
+    light.shadow.camera.right = 7;
+    light.shadow.camera.top = 7;
+    light.shadow.camera.bottom = -7;
     light.shadow.normalBias = 0.025;
     this.scene.add(light);
-    realism(this.renderer, this.scene);
-    if (this.variant === "gomoku") {
-      // Gomoku is played on a park bench; `dispose` walks the scene for its resources.
-      this.renderer.setClearColor("#5f8a45");
-      parkBench(this.scene, (resource) => resource, -0.24);
-    } else {
-      const table = new T.Mesh(
-        new T.BoxGeometry(100, 0.2, 100),
-        new T.MeshStandardMaterial(planks(12)),
-      );
-      table.position.y = -0.34;
-      table.receiveShadow = true;
-      this.scene.add(table);
-    }
-    const board = new T.Mesh(
-      block(
-        this.variant === "reversi" ? 6.3 : 6.55,
-        0.36,
-        this.variant === "reversi" ? 6.3 : 6.55,
-      ),
-      // A quiet grain: the lines of the grid must be the only lines that count.
-      new T.MeshStandardMaterial({ map: wood(false, 0.3), roughness: 0.52 }),
-    );
-    board.position.y = -0.03;
-    board.castShadow = board.receiveShadow = true;
-    this.scene.add(board);
-    const positions: number[] = [];
+    const own = this.own;
     if (this.variant === "reversi") {
-      const felt = new T.Mesh(
-        new T.BoxGeometry(5.82, 0.025, 5.82),
-        new T.MeshStandardMaterial({ color: "#204e43", roughness: 0.94, ...weave(5) }),
-      );
-      felt.position.y = 0.17;
-      felt.receiveShadow = true;
-      this.scene.add(felt);
-      for (let i = 0; i <= 8; i++) {
-        const v = (i - 4) * 0.72;
-        positions.push(
-          -2.88,
-          0.19,
-          v,
-          2.88,
-          0.19,
-          v,
-          v,
-          0.19,
-          -2.88,
-          v,
-          0.19,
-          2.88,
-        );
-      }
-      for (let i = 0; i < 8; i++) {
-        for (const [label, x, z] of [
-          [String.fromCharCode(65 + i), (i - 3.5) * 0.72, -3.06],
-          [String(i + 1), -3.06, (i - 3.5) * 0.72],
-        ] as const) {
-          const c = document.createElement("canvas");
-          c.width = c.height = 64;
-          const ctx = c.getContext("2d")!;
-          ctx.fillStyle = "#4b3420";
-          ctx.font = "40px Georgia";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(label, 32, 32);
-          const texture = new T.CanvasTexture(c);
-          texture.colorSpace = T.SRGBColorSpace;
-          const labelMesh = new T.Mesh(
-            new T.PlaneGeometry(0.22, 0.22),
-            new T.MeshBasicMaterial({
-              map: texture,
-              transparent: true,
-              depthWrite: false,
-            }),
-          );
-          labelMesh.rotation.x = -Math.PI / 2;
-          labelMesh.position.set(x, 0.157, z);
-          this.scene.add(labelMesh);
-        }
-      }
+      // A study: the board in its raised walnut frame on a leather pad, a lamp, books, the box of discs and tea.
+      this.renderer.setClearColor("#3b2618");
+      reversiBoard(this.scene, own, this.renderer.capabilities.getMaxAnisotropy());
+      reversiStudy(this.scene, own, this.assets.stoneMaterial as T.Material[]);
     } else {
+      // A quiet ondol room: the board stands on its legs on the paper floor, a bowl of stones at each side.
+      this.renderer.setClearColor("#6b4a2c");
+      this.scene.fog = new T.Fog("#6b4a2c", 16, 34);
+      gomokuRoom(this.scene, own, [this.assets.stoneMaterial as T.Material, this.assets.white!]);
       const map = gomokuLabels();
       map.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
       this.labels = new T.Mesh(
@@ -224,48 +204,32 @@ export class BoardView {
       this.labels.rotation.x = -Math.PI / 2;
       this.labels.position.y = 0.153;
       this.scene.add(this.labels);
+      const positions: number[] = [];
       for (let i = 0; i < 15; i++) {
-        const v = (i - 7) * 0.42;
-        positions.push(
-          -2.94,
-          0.155,
-          v,
-          2.94,
-          0.155,
-          v,
-          v,
-          0.155,
-          -2.94,
-          v,
-          0.155,
-          2.94,
-        );
+        const v = (i - 7) * SPACING;
+        positions.push(-2.94, 0.153, v, 2.94, 0.153, v, v, 0.153, -2.94, v, 0.153, 2.94);
       }
+      // The border is ruled heavier, as on real boards: lines beside it.
+      for (const d of [-0.007, 0.007]) {
+        const e = 2.94 + d;
+        positions.push(-e, 0.153, -e, e, 0.153, -e, e, 0.153, -e, e, 0.153, e, e, 0.153, e, -e, 0.153, e, -e, 0.153, e, -e, 0.153, -e);
+      }
+      const dot = own(new T.CircleGeometry(0.052, 20)),
+        ink = own(new T.MeshBasicMaterial({ color: "#2e2012" }));
       for (const row of [3, 7, 11])
         for (const col of [3, 7, 11]) {
           if ((row !== 7 && col === 7) || (row === 7 && col !== 7)) continue;
           const p = toWorld({ row, col });
-          const dot = new T.Mesh(
-            new T.CircleGeometry(0.043, 20),
-            new T.MeshBasicMaterial({ color: "#594027" }),
-          );
-          dot.rotation.x = -Math.PI / 2;
-          dot.position.set(p.x, 0.16, p.z);
-          this.scene.add(dot);
+          const mark = new T.Mesh(dot, ink);
+          mark.rotation.x = -Math.PI / 2;
+          mark.position.set(p.x, 0.156, p.z);
+          this.scene.add(mark);
         }
+      const lines = new T.BufferGeometry();
+      lines.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
+      this.scene.add(new T.LineSegments(lines, new T.LineBasicMaterial({ color: "#2e2012", transparent: true, opacity: 0.82 })));
     }
-    const lines = new T.BufferGeometry();
-    lines.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
-    this.scene.add(
-      new T.LineSegments(
-        lines,
-        new T.LineBasicMaterial({
-          color: this.variant === "reversi" ? "#c4b588" : "#594027",
-          transparent: true,
-          opacity: this.variant === "reversi" ? 0.4 : 0.78,
-        }),
-      ),
-    );
+    realism(this.renderer, this.scene);
     this.scene.add(this.stones, this.win, this.hints);
     this.suggestion = new T.Mesh(
       this.variant === "reversi"
@@ -293,8 +257,9 @@ export class BoardView {
     this.ghost.visible = false;
     this.scene.add(this.ghost);
     this.marker = new T.Mesh(
-      new T.RingGeometry(0.045, 0.065, 24),
-      new T.MeshBasicMaterial({ color: "#d5af61", side: T.DoubleSide }),
+      // The last stone's mark: a small red ring, plain on black and on white alike.
+      new T.RingGeometry(0.048, 0.072, 28),
+      new T.MeshBasicMaterial({ color: "#d9472e", side: T.DoubleSide }),
     );
     this.marker.rotation.x = -Math.PI / 2;
     this.marker.visible = false;
@@ -374,33 +339,49 @@ export class BoardView {
       }
       this.camera.lookAt(0, 0, 0);
       this.flips = this.flips.filter((f) => {
-        const t = Math.max(0, Math.min(1, (time - f.start) / 380)),
-          eased = t * t * (3 - 2 * t);
-        f.mesh.rotation.x = f.from + (f.to - f.from) * eased;
-        f.mesh.position.y = 0.245 + Math.sin(Math.PI * t) * 0.27;
-        if (t >= 0.95 && !f.sounded) {
+        // The disc lifts, turns over on its edge across its line, lands and bounces once.
+        const t = Math.max(0, Math.min(1, (time - f.start) / FLIP)),
+          q = Math.min(1, t / 0.84),
+          eased = q * q * (3 - 2 * q);
+        this.base.setFromAxisAngle(X_AXIS, f.from);
+        this.turn.setFromAxisAngle(f.axis, Math.PI * eased);
+        f.mesh.quaternion.multiplyQuaternions(this.turn, this.base);
+        f.mesh.position.y = DISC_Y + hop(t) * 0.3;
+        if (t >= 0.84 && !f.sounded) {
           f.sounded = true;
           this.onContact();
         }
+        if (t >= 1) f.mesh.rotation.set(f.to, 0, 0);
         return t < 1;
       });
       this.falling = this.falling.filter((f) => {
-        const t = Math.min(1, (time - f.start) / 280);
-        f.mesh.position.y = 0.245 + 0.65 * fall(t);
-        if (this.variant === "gomoku")
-          f.mesh.scale.set(
-            0.19,
-            0.095 * (1 + Math.sin(t * Math.PI) * 0.15),
-            0.19,
-          );
-        if (t > 0.82 && !f.sounded) {
+        const elapsed = time - f.start,
+          t = Math.min(1, elapsed / DROP),
+          rest = this.variant === "gomoku" ? STONE_Y : DISC_Y;
+        f.mesh.position.y = rest + 0.65 * fall(t);
+        if (this.variant === "gomoku") {
+          // Squashed a touch as it strikes, then a tiny rock on its round back as it settles.
+          f.mesh.scale.set(1, 1 + Math.sin(t * Math.PI) * 0.15, 1);
+          const s = Math.max(0, Math.min(1, (elapsed - DROP * 0.8) / (DROP * 0.2 + SETTLE)));
+          f.mesh.rotation.x = s > 0 && s < 1 ? Math.sin(s * Math.PI * 2) * 0.07 * (1 - s) : 0;
+          f.mesh.rotation.z = s > 0 && s < 1 ? Math.sin(s * Math.PI * 2 + 1) * 0.05 * (1 - s) : 0;
+        }
+        if (t > 0.8 && !f.sounded) {
           f.sounded = true;
           this.onContact();
         }
-        return t < 1;
+        return elapsed < DROP + (this.variant === "gomoku" ? SETTLE : 0);
       });
+      if (this.markLater && !this.falling.length) {
+        this.markLater = false;
+        this.marker.visible = true;
+      }
       this.win.children.forEach((c) => {
-        c.scale.setScalar(1 + Math.sin(time * 0.004) * 0.04);
+        if (c === this.winLight) {
+          const glow = (c as T.Mesh).material as T.MeshBasicMaterial;
+          glow.opacity = 0.8 + Math.sin(time * 0.004) * 0.2;
+          c.visible = !capturing();
+        } else c.scale.setScalar(1 + Math.sin(time * 0.004) * 0.04);
       });
       this.renderer.render(this.scene, this.camera);
       if (!this.firstRendered) {
@@ -424,6 +405,10 @@ export class BoardView {
     stoneMaterial: T.Material | T.Material[] | null;
     white: T.Material | null;
     ring: Map<string, { geometry: T.BufferGeometry; material: T.Material }>;
+    /** A soft spot of light (legal-move dots, the winning line) and its picture. */
+    spot: T.Texture;
+    dot: { geometry: T.BufferGeometry; material: T.Material } | null;
+    beam: { geometry: T.BufferGeometry; material: T.Material } | null;
   } | null = null;
   /**
    * Geometry and materials every stone, disc and marker of this view shares.
@@ -431,22 +416,24 @@ export class BoardView {
    */
   private get assets() {
     if (!this.shared) {
-      const reversi = this.variant === "reversi";
+      const reversi = this.variant === "reversi",
+        keep = <R,>(r: R) => r;
       this.shared = {
-        stone: reversi
-          ? new T.CylinderGeometry(0.285, 0.285, 0.105, 40)
-          : new T.SphereGeometry(1, 32, 20),
+        // Discs: two-coloured with a rounded rim; stones: slate and shell, biconvex.
+        stone: reversi ? discGeometry(0.285, 0.0525) : lensGeometry(0.19, 0.09),
         stoneMaterial: reversi
           ? [
-              glossy({ color: "#35383a", roughness: 0.35 }, 0.5),
-              glossy({ color: "#202226", roughness: 0.3 }),
-              glossy({ color: "#f6f0e4", roughness: 0.3 }),
+              glossy({ color: "#1b1c1f", roughness: 0.34 }, 0.5),
+              glossy({ color: "#f4f0e6", roughness: 0.32 }, 0.5),
             ]
-          : glossy({ color: "#202226", roughness: 0.3, metalness: 0.04 }),
+          : glossy({ color: "#1d1e22", roughness: 0.4, metalness: 0.02 }, 0.35),
         white: reversi
           ? null
-          : glossy({ color: "#f6f0e4", roughness: 0.28, metalness: 0.04 }),
+          : glossy({ color: "#eeeae1", map: shellMap(keep), roughness: 0.32, metalness: 0.02 }, 0.55),
         ring: new Map(),
+        spot: softSpot(keep),
+        dot: null,
+        beam: null,
       };
     }
     return this.shared;
@@ -470,7 +457,38 @@ export class BoardView {
     mesh.rotation.x = -Math.PI / 2;
     return mesh;
   }
-  private makeStone(player: number) {
+  /** A soft round dot of light lying on the board, for a square that can be played. */
+  private dot() {
+    const assets = this.assets;
+    assets.dot ??= {
+      geometry: new T.PlaneGeometry(0.3, 0.3),
+      material: new T.MeshBasicMaterial({ map: assets.spot, color: "#fff4cf", transparent: true, opacity: 0.55, depthWrite: false }),
+    };
+    const mesh = new T.Mesh(assets.dot.geometry, assets.dot.material);
+    mesh.rotation.x = -Math.PI / 2;
+    return mesh;
+  }
+  /** A line of light through the winning five, from the first stone to the last. */
+  private beam(from: Point, to: Point) {
+    const assets = this.assets;
+    if (!assets.beam) {
+      const map = beamPicture();
+      assets.beam = {
+        geometry: new T.PlaneGeometry(1, 1),
+        material: new T.MeshBasicMaterial({ map, color: "#ffd36a", transparent: true, depthWrite: false, depthTest: false, blending: T.AdditiveBlending }),
+      };
+    }
+    const a = toWorld(from),
+      b = toWorld(to),
+      length = Math.hypot(b.x - a.x, b.z - a.z) + 0.75,
+      mesh = new T.Mesh(assets.beam.geometry, assets.beam.material);
+    mesh.rotation.set(-Math.PI / 2, 0, -Math.atan2(b.z - a.z, b.x - a.x));
+    mesh.scale.set(length, 0.3, 1);
+    mesh.position.set((a.x + b.x) / 2, STONE_Y + 0.1, (a.z + b.z) / 2);
+    mesh.renderOrder = 2;
+    return mesh;
+  }
+  private makeStone(player: number, at = -1) {
     const { stone, stoneMaterial, white } = this.assets;
     if (this.variant === "reversi") {
       const mesh = new T.Mesh(stone, stoneMaterial!);
@@ -479,7 +497,8 @@ export class BoardView {
       return mesh;
     }
     const mesh = new T.Mesh(stone, player === 1 ? stoneMaterial! : white!);
-    mesh.scale.set(0.19, 0.095, 0.19);
+    // Each shell's bands lie its own way.
+    if (at >= 0) mesh.rotation.y = ((at * 2654435761) % 1000) / 1000 * Math.PI * 2;
     mesh.castShadow = mesh.receiveShadow = true;
     return mesh;
   }
@@ -560,7 +579,7 @@ export class BoardView {
     this.ghost.visible = !!p && !this.moving;
     if (p) {
       const v = this.world(p);
-      this.ghost.position.set(v.x, 0.25, v.z);
+      this.ghost.position.set(v.x, this.variant === "reversi" ? DISC_Y : STONE_Y, v.z);
       if (this.variant === "reversi")
         this.ghost.rotation.x = player === 1 ? 0 : Math.PI;
       else
@@ -608,30 +627,40 @@ export class BoardView {
       this.stones.remove(stone);
     // Finish any interrupted animation before rebuilding the animation queue.
     for (const stone of this.stones.children) {
-      stone.position.y = 0.245;
-      stone.scale.set(0.19, 0.095, 0.19);
+      stone.position.y = STONE_Y;
+      stone.scale.set(1, 1, 1);
+      stone.rotation.x = stone.rotation.z = 0;
     }
     this.clearGroup(this.win);
     this.falling = [];
     state.moves.slice(prefix).forEach((m, offset) => {
-      const stone = this.makeStone(m.player), p = toWorld(m);
-      stone.position.set(p.x, 0.245, p.z);
+      const stone = this.makeStone(m.player, m.row * 15 + m.col), p = toWorld(m);
+      stone.position.set(p.x, STONE_Y, p.z);
       this.stones.add(stone);
       if (animate && state.moves.length === old + 1 && prefix + offset === state.moves.length - 1)
         this.falling.push({ mesh: stone, start: performance.now(), sounded: false });
     });
     this.stoneMoves = state.moves.map((m) => ({ ...m }));
-    this.marker.visible = state.moves.length > 0;
+    // The last stone's mark comes once the stone has landed.
+    this.markLater = state.moves.length > 0 && this.falling.length > 0;
+    this.marker.visible = state.moves.length > 0 && !this.markLater;
     const last = state.moves.at(-1);
     if (last) {
       const p = toWorld(last);
-      this.marker.position.set(p.x, 0.346, p.z);
+      this.marker.position.set(p.x, STONE_Y + 0.093, p.z);
     }
     for (const p of state.line) {
       const v = toWorld(p),
         ring = this.ring(0.205, 0.23, 40, "#f5d38b");
       ring.position.set(v.x, 0.17, v.z);
       this.win.add(ring);
+    }
+    // A line of light through the five (not in the collection's pictures).
+    this.winLight = null;
+    if (state.line.length >= 2) {
+      this.winLight = this.beam(state.line[0], state.line[state.line.length - 1]);
+      this.winLight.visible = !capturing();
+      this.win.add(this.winLight);
     }
     this.ghost.visible = false;
     if (state.winner) this.setCamera(this.top, true);
@@ -641,8 +670,8 @@ export class BoardView {
     this.dirty = true;
     for (const p of points) {
       const v = this.world(p),
-        mark = this.ring(0.06, 0.085, 24, "#d5c38d", 0.65);
-      mark.position.set(v.x, 0.195, v.z);
+        mark = this.dot();
+      mark.position.set(v.x, 0.186, v.z);
       this.hints.add(mark);
     }
   }
@@ -658,8 +687,13 @@ export class BoardView {
         this.stones.remove(mesh);
         this.discs.delete(i);
         this.discColors[i] = 0;
+      } else {
+        // Anything still in the air from an interrupted move comes to rest first.
+        mesh.rotation.set(this.discColors[i] === 1 ? 0 : Math.PI, 0, 0);
+        mesh.position.y = DISC_Y;
       }
-    let order = 0;
+    const placed = state.moves.at(-1),
+      now = performance.now();
     for (let i = 0; i < 64; i++) {
       const player = state.board[i];
       if (!player) continue;
@@ -667,30 +701,37 @@ export class BoardView {
       const p = this.world({ row: Math.floor(i / 8), col: i % 8 });
       if (!mesh) {
         mesh = this.makeStone(player);
-        mesh.position.set(p.x, 0.245, p.z);
+        mesh.position.set(p.x, DISC_Y, p.z);
         this.discs.set(i, mesh);
         this.stones.add(mesh);
         if (animate)
-          this.falling.push({ mesh, start: performance.now(), sounded: false });
+          this.falling.push({ mesh, start: now, sounded: false });
       } else if (this.discColors[i] !== player) {
+        const to = player === 1 ? 0 : Math.PI;
         if (animate) {
-          const from = mesh.rotation.x;
+          // Captured discs turn once the new disc has landed, one after another outward along each line,
+          // each over its own edge across the line.
+          const dr = placed ? Math.floor(i / 8) - placed.row : 1,
+            dc = placed ? (i % 8) - placed.col : 0,
+            reach = Math.max(1, Math.abs(dr), Math.abs(dc));
           this.flips.push({
             mesh,
-            start: performance.now() + Math.min(order++ * 25, 150),
-            from,
-            to: from + Math.PI,
+            start: now + (placed ? FLIP_AFTER : 0) + (reach - 1) * STAGGER,
+            axis: new T.Vector3(-dr, 0, dc).normalize(),
+            from: to === 0 ? Math.PI : 0,
+            to,
             sounded: false,
           });
-        } else mesh.rotation.x = player === 1 ? 0 : Math.PI;
+        } else mesh.rotation.set(to, 0, 0);
       }
       this.discColors[i] = player;
     }
     const last = state.moves.at(-1);
-    this.marker.visible = !!last;
+    this.markLater = !!last && this.falling.length > 0;
+    this.marker.visible = !!last && !this.markLater;
     if (last) {
       const p = this.world(last);
-      this.marker.position.set(p.x, 0.307, p.z);
+      this.marker.position.set(p.x, DISC_Y + 0.058, p.z);
     }
     if (state.winner) this.setCamera(this.top, true);
   }
@@ -707,15 +748,24 @@ export class BoardView {
     disposeScene(this.scene);
     if (this.shared) {
       // Shared assets may not be attached to any mesh at this moment.
-      const { stone, stoneMaterial, white, ring } = this.shared;
+      const { stone, stoneMaterial, white, ring, spot, dot, beam } = this.shared;
       stone.dispose();
-      for (const m of [stoneMaterial, white].flat()) m?.dispose();
-      ring.forEach((r) => {
+      for (const m of [stoneMaterial, white].flat()) {
+        (m as T.MeshStandardMaterial | null)?.map?.dispose();
+        m?.dispose();
+      }
+      for (const r of [...ring.values(), dot, beam]) {
+        if (!r) continue;
         r.geometry.dispose();
+        (r.material as T.MeshBasicMaterial).map?.dispose();
         r.material.dispose();
-      });
+      }
+      spot.dispose();
       this.shared = null;
     }
+    // The board's and the room's own textures (relief maps among them), whatever holds them now.
+    for (const resource of this.owned) resource.dispose();
+    this.owned = [];
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
