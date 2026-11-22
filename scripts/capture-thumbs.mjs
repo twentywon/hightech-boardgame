@@ -51,8 +51,10 @@ const play = {
   },
   blackjack: async () => {
     await press("#bj-add-100");
-    await press("#bj-deal");
-    await wait(3000);
+    // The stake's chip slides in first; the deal button may wait for it.
+    await wait(900);
+    await page.locator("#bj-deal").first().click({ timeout: 5000 }).catch(() => {});
+    await wait(3500);
   },
   "yacht-dice": async () => {
     await press("#yd-roll");
@@ -110,7 +112,8 @@ const play = {
   "snakes-and-ladders": async () => {
     for (let i = 0; i < 8; i++) {
       await press("#pg-action");
-      await wait(2600);
+      // A climb or a ride down a snake takes up to about three and a half seconds.
+      await wait(4000);
     }
   },
   spider: async () => {

@@ -6,6 +6,8 @@ import { LADDERS, SNAKES, snakes, type State } from "./rules";
 export const snakesConfig: PointConfig<State> = {
   game: snakes,
   contact: (sound) => sound.wood(2),
+  // The view tells a rung trodden (disc), the top of a ladder (pocket) and a snake's hiss and ride (cushion, its seconds).
+  knock: (sound, kind, strength) => (kind === "disc" ? sound.stick(0.16) : kind === "pocket" ? sound.pop() : sound.hiss(strength)),
   noPanel: true,
   view: (host, quality) => new SnakesView(host, quality),
   colors: TOKENS as [string, string],
