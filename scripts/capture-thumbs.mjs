@@ -42,6 +42,13 @@ const play = {
       await wait(700);
     }
   },
+  // A few discs turned, so that the table shows a game under way (each Enter plays the first legal square).
+  reversi: async () => {
+    for (let i = 0; i < 4; i++) {
+      await keys(["Enter"]);
+      await wait(1400);
+    }
+  },
   blackjack: async () => {
     await press("#bj-add-100");
     await press("#bj-deal");
@@ -109,7 +116,8 @@ const play = {
   spider: async () => {
     for (let i = 0; i < 3; i++) {
       await press("#sp-deal");
-      await wait(1100);
+      // A row is flicked out one column after another: let it land before the next.
+      await wait(1400);
     }
   },
   mancala: async () => {

@@ -76,7 +76,8 @@ export function mountSpider(root: HTMLElement, nav: Navigation, random: Random =
     $("sp-hint").onclick = showHint;
     try {
       view = new SpiderView($("board"), settings.quality);
-      view.onContact = () => {};
+      // The cards of a completed run reaching home, and of the won game landing on the felt.
+      view.onContact = () => sound.card();
       view.onSettled = update;
       view.onDrop = drop;
       view.canDrag = (column, index) => !busy() && !state.won && movable(state, column, index);

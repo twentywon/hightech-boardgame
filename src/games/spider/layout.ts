@@ -26,3 +26,11 @@ export function columnSpots(cards: Card[], column: number) {
   });
 }
 export const stockSpot = { x: 4.5 * PITCH, z: PILES_Z };
+/** Where the eight completed runs are laid, fanned to the right along the near edge between the panel and the stock. */
+export const HOME_X = -2.1,
+  HOME_STEP = 0.62;
+export const homeSpot = (pile: number) => ({ x: HOME_X + pile * HOME_STEP, z: PILES_Z });
+/** How far apart the piles of the stock lie, the last dealt from first, fanned to the left. */
+export const STOCK_STEP = 0.22;
+/** The half sizes of the felt: just clear of the cards. */
+export const FELT = { x: 6.55, z: 4.15 };
