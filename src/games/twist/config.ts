@@ -6,6 +6,8 @@ import { MARBLE_COLORS, TwistView, twistPoints } from "./view";
 export const twistConfig: PointConfig<State> = {
   game: twist,
   contact: (sound) => sound.glass(4),
+  // A quarter set back down on its tray after its turn: a wooden knock.
+  knock: (sound) => sound.knock(3),
   noPanel: true,
   view: (host, quality) => new TwistView(host, quality),
   colors: MARBLE_COLORS,

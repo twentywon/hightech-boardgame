@@ -33,6 +33,10 @@ export const seaBattleConfig: PointConfig<State> = {
   firstNote: "내 배 다섯 척을 놓은 뒤, 내가 먼저 쏩니다.",
   // A miss falls into the sea; a hit goes off.
   contact: (sound, state) => (state.last?.hit ? sound.explosion() : sound.splash()),
+  // A ship going down: water rushing in and bubbles rising.
+  knock: (sound, kind) => {
+    if (kind === "pocket") sound.gurgle(4);
+  },
   shape: "taller",
   colors: SEA_COLORS,
   keyPoints: seaPoints,
