@@ -16,6 +16,18 @@ npm test
 
 `package-lock.json`을 커밋했습니다. 재현 가능한 설치에는 `npm ci`를 사용하세요. 클라우드에서 기본 npm 캐시 쓰기 권한이 없다면 `npm ci --cache /tmp/wtg-npm`을 사용합니다.
 
+## 학생용 판 (html·apk)
+
+원본은 그대로 두고, 흔히 사행성으로 여겨지는 게임을 뺀 학생용 판을 따로 만듭니다. 빠지는 게임은 블랙잭, 섯다, 세븐 포커, 텍사스 홀덤, 인디언 포커, 고스톱, 코인 푸셔, 인형뽑기입니다(`STUDENT_EXCLUDED`, `src/core/catalog.ts`). 나머지는 원본과 같고, 첫 화면 제목 옆에 '학생용'이 붙습니다.
+
+```sh
+npm run build:html            # 원본: dist/world-table-games.html (모든 게임)
+npm run build:html:student    # 학생용: dist-student/world-table-games-student.html
+npm run build:apk             # 학생용 html을 만든 뒤 dist-student/world-table-games-student.apk
+```
+
+APK는 `android/`의 작은 안드로이드 앱(전체 화면 WebView 하나, 가로 화면, 인터넷 권한 없음)에 학생용 html을 넣어 만듭니다. JDK 17 이상, Gradle 8.13 이상, Android SDK(platform 35, build-tools 35)가 필요하고 `ANDROID_HOME`으로 SDK 위치를 알려 줍니다. 서명 키는 `WTG_KEYSTORE`와 `WTG_KEYSTORE_PASSWORD`로 주고, 없으면 `~/.wtg/`에 한 번 만들어 씁니다. 앱을 업데이트해 덮어 설치하려면 같은 키로 서명해야 하므로 그 키를 잘 보관하세요. 휴대폰의 뒤로 가기 키는 브라우저의 뒤로 가기처럼 테이블에서 컬렉션으로 돌아갑니다.
+
 ## 브라우저 테스트
 
 ```sh

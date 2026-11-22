@@ -1,4 +1,4 @@
-import { games } from "../../core/catalog";
+import { allGames as games } from "../../core/catalog";
 import { part, steps, notes, table } from "../../ui/guide";
 import { modal } from "../../ui/dialog";
 import type { PatienceConfig } from "../../ui/patience";

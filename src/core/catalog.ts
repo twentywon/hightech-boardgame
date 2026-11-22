@@ -1,4 +1,5 @@
-export const games = [
+/** Every game of the collection. */
+export const allGames = [
   {
     name: "오목",
     en: "GOMOKU",
@@ -800,3 +801,24 @@ export const games = [
     available: true,
   },
 ];
+
+/**
+ * The student edition (built with `VITE_EDITION=student`, `npm run build:student`) leaves out the games commonly
+ * thought of as gambling: the betting card games, go-stop, blackjack and the prize machines. The full edition keeps
+ * every game; nothing else differs. `import.meta.env` is missing under plain Node (browser tests import this file).
+ */
+export const EDITION: "full" | "student" =
+  // Written plainly so that Vite and Vitest both replace it; under plain Node `import.meta.env` is undefined.
+  import.meta.env?.VITE_EDITION === "student" ? "student" : "full";
+export const STUDENT_EXCLUDED = [
+  "BLACKJACK",
+  "SEOTDA",
+  "SEVEN POKER",
+  "TEXAS HOLDEM",
+  "INDIAN POKER",
+  "GO-STOP",
+  "COIN PUSHER",
+  "CLAW MACHINE",
+];
+/** The games this edition shows. */
+export const games = EDITION === "student" ? allGames.filter((g) => !STUDENT_EXCLUDED.includes(g.en)) : allGames;

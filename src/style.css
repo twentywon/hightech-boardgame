@@ -1047,6 +1047,17 @@ header {
   border-radius: 50%;
   background: var(--seal);
 }
+/* The student edition's mark beside the eyebrow (`EDITION` in src/core/catalog.ts). */
+.library .edition-mark {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 8px;
+  border: 1.5px solid var(--seal);
+  border-radius: 999px;
+  color: var(--seal);
+  font-family: inherit;
+  font-weight: 700;
+}
 .library h1 {
   font-family: var(--sans);
   font-size: clamp(36px, 6.4vw, 76px);

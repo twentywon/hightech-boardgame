@@ -3,7 +3,8 @@ import { resolve, dirname } from "node:path";
 
 // Export the pinned Vite build as one offline document, including its AI Workers.
 // Refuse unknown loader formats rather than silently shipping broken Worker URLs.
-const root = resolve("dist");
+// `EXPORT_DIR` and `EXPORT_NAME` let the student edition be exported from its own build (`npm run build:html:student`).
+const root = resolve(process.env.EXPORT_DIR || "dist");
 let html = await readFile(resolve(root, "index.html"), "utf8");
 const script =
   /<script type="module" crossorigin src="\.\/([^\"]+)"><\/script>/;
@@ -58,7 +59,7 @@ const notice = (
   )
 ).join("\n\n");
 html = html.replace("</body>", () => `<!-- ${notice.replaceAll("--", "—")} -->\n</body>`);
-const target = resolve(root, "world-table-games.html");
+const target = resolve(root, process.env.EXPORT_NAME || "world-table-games.html");
 await writeFile(target, html);
 console.log(
   `Single HTML: ${target} (${Buffer.byteLength(html)} bytes, ${workers.size} embedded AI Workers)`,

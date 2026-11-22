@@ -1,6 +1,9 @@
 import "./style.css";
 import "./ui/app";
 import { music } from "./engine/music";
+import { EDITION } from "./core/catalog";
+
+if (EDITION === "student") document.title = "World Table Games 학생용";
 
 // Fit the table below the actual header and wrapping game controls.
 const root = document.querySelector<HTMLElement>("#app")!;
