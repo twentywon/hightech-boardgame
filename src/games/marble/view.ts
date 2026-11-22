@@ -3,7 +3,8 @@ import * as T from "three";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { DX, DY, H, W, direction, moves, type State } from "./rules";
+import { DX, DY, H, W, direction, moves, play, type State } from "./rules";
+import type { Move } from "../points/types";
 
 export const MARBLE_COLORS: [string, string] = ["#2f9f8f", "#b9b3a4"];
 /** A hollow's width and a marble's radius; the marbles lie on the board, over small hollows. */
@@ -254,6 +255,18 @@ interface Ball {
   caustic: T.Mesh;
   tint: number;
 }
+/** A marble that has been knocked off the tray, played by the view's own frames so that the next shot need not wait for it. */
+interface Leaving {
+  ball: Ball;
+  /** The hollow it left, its colour, how it lay turned, where it starts and which way it goes. */
+  from: number;
+  tint: number;
+  q0: T.Quaternion;
+  dir: number;
+  start: number;
+  started: boolean;
+  landed: boolean;
+}
 interface Glass {
   shell: T.Material;
   vanes: T.Material;
@@ -278,6 +291,22 @@ export class MarbleView extends TableView<State> {
   private shaftShade: T.Mesh;
   private from: { point: number; x: number; z: number } | null = null;
   private eye = new T.Vector3();
+  /**
+   * Shots are taken while the marbles still roll and kept by the screen (`queueMoves: "all"`): the table counts as
+   * at rest once the last marble left on the tray has settled (`rolling`), and the marble going off the tray drops
+   * and rolls away in the view's own frames (`leaving`, on spare marbles), so the next shot starts at once.
+   */
+  protected pressWhileMoving = true;
+  private rolling = false;
+  private leaving: Leaving[] = [];
+  private spares: Ball[] = [];
+  private flight = 0;
+  /** Shots given while the marbles roll that the screen still keeps, and a marble picked meanwhile, handed to the screen once the table rests. */
+  private sent: Move[] = [];
+  private ahead: number | null = null;
+  get animating() {
+    return this.rolling && super.animating;
+  }
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#c9bfac");
     const rich = capable();
@@ -384,7 +413,8 @@ export class MarbleView extends TableView<State> {
       mesh.renderOrder = order;
       return mesh;
     };
-    for (let i = 0; i < W * H; i++) {
+    // One marble a hollow, and two spares for marbles on their way off the tray.
+    for (let i = 0; i < W * H + 2; i++) {
       const holder = new T.Group(),
         spin = new T.Group(),
         shell = new T.Mesh(sphere, this.glass[0].shell),
@@ -414,7 +444,8 @@ export class MarbleView extends TableView<State> {
       this.turns.push(new T.Quaternion().setFromEuler(new T.Euler(i * 1.7, i * 2.3, i * 0.9)));
       const ball: Ball = { holder, spin, shell, vanes, body, gloss, gleam, glow, shadow, caustic, tint: 0 };
       this.show(ball, false);
-      this.balls.push(ball);
+      if (i < W * H) this.balls.push(ball);
+      else this.spares.push(ball);
       this.scene.add(holder, shadow, caustic);
     }
     // The blur a fast marble draws behind it.
@@ -448,7 +479,8 @@ export class MarbleView extends TableView<State> {
     return { half: 3.95, halfZ: 5.0, height: 0.6, lookY: 0, tilt: 1.52 };
   }
   protected spots(): Spot[] {
-    return this.state ? this.state.cells.flatMap((marble, i) => (marble ? [{ x: cx(i), y: R, z: cz(i), r: 0.48, point: i }] : [])) : [];
+    const state = this.basis();
+    return state ? state.cells.flatMap((marble, i) => (marble ? [{ x: cx(i), y: R, z: cz(i), r: 0.48, point: i }] : [])) : [];
   }
   private show(ball: Ball, on: boolean) {
     ball.holder.visible = ball.shadow.visible = ball.caustic.visible = on;
@@ -565,65 +597,191 @@ export class MarbleView extends TableView<State> {
         at += duration;
         return;
       }
-      // The last one rolls over the edge, drops onto the cloth, bounces and rolls away out of sight.
-      const edge = (dir === 1 ? FX - x0 : dir === 3 ? x0 + FX : dir === 0 ? z0 + FZ : FZ - z0) + R * 0.4,
-        roll1 = 90 + edge * 55,
-        drop = 170,
-        away = 460,
-        flight = 0.75,
-        on = 1.1;
-      this.tween(start, roll1, (p) => {
-        const s = p * (1.2 - 0.2 * p),
-          at = edge * s,
-          x = x0 + dx * at,
-          z = z0 + dz * at;
-        this.pose(ball, x, R + Math.max(groundAt(x, z), FRAME_TOP), z);
-        ball.spin.quaternion.copy(turned(q0, at));
-        this.blur(ball, (edge * (1.2 - 0.4 * p) * 1000) / roll1, dir);
-      });
-      this.tween(start + roll1, drop, (p) => {
-        const at = edge + flight * p;
-        this.pose(ball, x0 + dx * at, R + FRAME_TOP - (FRAME_TOP - CLOTH) * p * p, z0 + dz * at);
-        ball.spin.quaternion.copy(turned(q0, at));
-        this.blur(ball, (flight * 1000) / drop, dir);
-        if (p === 1) {
-          this.streak.visible = false;
-          this.onContact();
-        }
-      });
-      this.tween(start + roll1 + drop, away, (p) => {
-        const at = edge + flight + on * (1 - (1 - p) ** 2),
-          hop = p < 0.32 ? 0.09 * Math.sin((Math.PI * p) / 0.32) : 0,
-          fade = p < 0.3 ? 1 : Math.max(0, 1 - (p - 0.3) / 0.7);
-        if (p > 0 && ball.shell.material !== this.fading[ball.tint].shell) this.dress(ball, ball.tint, this.fading);
-        const glass = this.fading[ball.tint];
-        glass.vanes.opacity = glass.body.opacity = glass.gloss.opacity = fade;
-        glass.shell.opacity = SKIN * fade;
-        this.pose(ball, x0 + dx * at, CLOTH + R + hop, z0 + dz * at, fade);
-        ball.spin.quaternion.copy(turned(q0, at));
-        if (p === 1) this.show(ball, false);
-      });
-      at += roll1 + drop + away;
+      // The last one rolls over the edge, drops onto the cloth and rolls away: in the view's own frames, on a spare.
+      this.leave(roll.from, ball.tint, q0, dir, start);
+    });
+    // At rest once the last marble on the tray has knocked and nearly settled back into its hollow: a shot given
+    // meanwhile is played from here (its own animation lays the rattle to rest), while the one going off goes on.
+    this.rolling = true;
+    this.tween(Math.max(at + 140, 230), 1, (p) => {
+      if (p < 1 || !this.rolling) return;
+      this.rolling = false;
+      this.onSettled();
+      setTimeout(() => this.handOver(), 0);
     });
     return true;
   }
+  /** Sends a marble off the tray on a spare: it waits until `delay` from now, when the knock reaches it. */
+  private leave(from: number, tint: number, q0: T.Quaternion, dir: number, delay: number) {
+    // The spare not in use, or the one that has been going longest.
+    const busy = new Set(this.leaving.map((l) => l.ball)),
+      ball = this.spares.find((b) => !busy.has(b)) ?? this.leaving.shift()!.ball;
+    this.leaving = this.leaving.filter((l) => l.ball !== ball);
+    this.show(ball, false);
+    this.leaving.push({ ball, from, tint, q0: q0.clone(), dir, start: performance.now() + delay, started: false, landed: false });
+    if (!this.flight) this.flight = requestAnimationFrame(this.fly);
+  }
+  private fly = (now: number) => {
+    this.flight = 0;
+    if (this.disposed) return;
+    this.leaving = this.leaving.filter((l) => this.away(l, now));
+    this.redraw();
+    if (this.leaving.length) this.flight = requestAnimationFrame(this.fly);
+  };
+  /** The marble's way off the tray at `now`: over the edge, onto the cloth with a bounce, and away, fading; false once gone. */
+  private away(l: Leaving, now: number) {
+    const t = now - l.start;
+    if (t < 0) return true;
+    const { ball, from, dir } = l,
+      x0 = cx(from),
+      z0 = cz(from),
+      dx = DX[dir],
+      dz = DY[dir],
+      axis = new T.Vector3(dz, 0, -dx),
+      turned = (way: number) => new T.Quaternion().setFromAxisAngle(axis, way / R).multiply(l.q0),
+      edge = (dir === 1 ? FX - x0 : dir === 3 ? x0 + FX : dir === 0 ? z0 + FZ : FZ - z0) + R * 0.4,
+      roll1 = 90 + edge * 55,
+      drop = 170,
+      away = 460,
+      flight = 0.75,
+      on = 1.1;
+    if (!l.started) {
+      // The knock has reached it: the spare takes the marble's place and the hollow's own marble goes.
+      l.started = true;
+      if (!this.state?.cells[from]) this.show(this.balls[from], false);
+      this.dress(ball, l.tint);
+      this.show(ball, true);
+    }
+    if (t < roll1) {
+      const p = t / roll1,
+        at = edge * p * (1.2 - 0.2 * p),
+        x = x0 + dx * at,
+        z = z0 + dz * at;
+      this.pose(ball, x, R + Math.max(groundAt(x, z), FRAME_TOP), z);
+      ball.spin.quaternion.copy(turned(at));
+      this.blur(ball, (edge * (1.2 - 0.4 * p) * 1000) / roll1, dir);
+      return true;
+    }
+    if (t < roll1 + drop) {
+      const p = (t - roll1) / drop,
+        at = edge + flight * p;
+      this.pose(ball, x0 + dx * at, R + FRAME_TOP - (FRAME_TOP - CLOTH) * p * p, z0 + dz * at);
+      ball.spin.quaternion.copy(turned(at));
+      this.blur(ball, (flight * 1000) / drop, dir);
+      return true;
+    }
+    if (!l.landed) {
+      l.landed = true;
+      this.streak.visible = false;
+      this.onContact();
+    }
+    const p = Math.min(1, (t - roll1 - drop) / away),
+      at = edge + flight + on * (1 - (1 - p) ** 2),
+      hop = p < 0.32 ? 0.09 * Math.sin((Math.PI * p) / 0.32) : 0,
+      fade = p < 0.3 ? 1 : Math.max(0, 1 - (p - 0.3) / 0.7);
+    if (p > 0 && ball.shell.material !== this.fading[l.tint].shell) this.dress(ball, l.tint, this.fading);
+    const glass = this.fading[l.tint];
+    glass.vanes.opacity = glass.body.opacity = glass.gloss.opacity = fade;
+    glass.shell.opacity = SKIN * fade;
+    this.pose(ball, x0 + dx * at, CLOTH + R + hop, z0 + dz * at, fade);
+    ball.spin.quaternion.copy(turned(at));
+    if (p < 1) return true;
+    this.show(ball, false);
+    return false;
+  }
+  /** Every marble on its way off is put away (a shot taken back, another tray). */
+  private recall() {
+    for (const l of this.leaving) this.show(l.ball, false);
+    this.leaving = [];
+  }
+  sync(state: State, animate = true) {
+    const before = this.state;
+    if (before && state !== before) {
+      if (state.ply !== before.ply + 1) {
+        // Not the next shot: what was given ahead and what is on its way off no longer belong to it.
+        this.recall();
+        this.sent = [];
+        this.ahead = null;
+      } else {
+        // The next shot: the first of those given ahead, if it is that one.
+        const next = this.sent[0],
+          last = state.last;
+        if (next && last && last.rolls[0]?.from === next.from && last.dir === direction(next.from, next.to)) this.sent.shift();
+        else this.sent = [];
+      }
+    }
+    super.sync(state, animate);
+    if (this.ahead !== null && !moves(this.basis() ?? state).some((m) => m.from === this.ahead)) this.ahead = null;
+  }
+  /** The tray as it will be once the shots given ahead are played. */
+  private basis(): State | null {
+    let state = this.state;
+    for (const move of this.sent) {
+      const next = state && play(state, move);
+      if (!next) {
+        this.sent = [];
+        return this.state;
+      }
+      state = next;
+    }
+    return state;
+  }
+  /** Gives a shot to the screen; while the marbles roll the screen keeps it, and the next is aimed from the tray it leaves. */
+  private send(shot: Move) {
+    const was = this.state,
+      moving = this.animating;
+    this.ahead = null;
+    this.onMove(shot);
+    if (moving && this.state === was) this.sent.push(shot);
+    this.mark(this.marks);
+  }
+  /** The table has come to rest: a marble picked while it moved becomes the screen's choice, with its rings. */
+  private handOver() {
+    if (this.disposed || this.ahead === null || this.animating) return;
+    const point = this.ahead;
+    this.ahead = null;
+    this.onPick(point);
+  }
+  /** A tap while the marbles roll: picks a marble of the tray to come, or shoots the one picked at it. */
+  private pickAhead(point: number) {
+    const state = this.basis();
+    if (!state) return;
+    const all = moves(state),
+      shot = this.ahead !== null ? all.find((m) => m.from === this.ahead && m.to === point) : undefined;
+    if (shot) return this.send(shot);
+    this.ahead = point !== this.ahead && all.some((m) => m.from === point) ? point : null;
+    this.mark(this.marks);
+    this.redraw();
+  }
   /** A press on a marble: let go at once it picks the marble; dragged, it shoots it that way. */
   protected dragStart(point: number, at: { x: number; z: number }) {
-    if (point < 0) return false;
+    if (point < 0) {
+      // A press on the bare tray while the marbles roll lets go of a marble picked meanwhile.
+      if (this.ahead !== null && this.animating) {
+        this.ahead = null;
+        this.mark(this.marks);
+      }
+      return false;
+    }
     this.from = { point, ...at };
     return true;
   }
   protected dragEnd(at: { x: number; z: number } | null) {
     const from = this.from,
-      state = this.state;
+      state = this.basis();
     this.from = null;
     if (!from || !at || !state) return;
     const dx = at.x - from.x,
       dz = at.z - from.z;
-    if (Math.max(Math.abs(dx), Math.abs(dz)) < 0.45) return this.onPick(from.point);
+    if (Math.max(Math.abs(dx), Math.abs(dz)) < 0.45) return this.animating || this.ahead !== null ? this.pickAhead(from.point) : this.onPick(from.point);
     const dir = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 1 : 3) : dz > 0 ? 2 : 0,
       shot = moves(state).find((m) => m.from === from.point && direction(m.from, m.to) === dir);
-    if (shot) this.onMove(shot);
+    if (shot) this.send(shot);
+  }
+  dispose() {
+    cancelAnimationFrame(this.flight);
+    this.flight = 0;
+    super.dispose();
   }
   protected mark(marks: Marks) {
     const hidden = capturing(),
@@ -631,9 +789,12 @@ export class MarbleView extends TableView<State> {
         ring.visible = !hidden && point !== null && point !== undefined && point >= 0;
         if (ring.visible) ring.position.set(cx(point!), 0.012, cz(point!));
       };
-    put(this.chosen, marks.selected);
+    // A marble picked while the marbles rolled shows its rings until the table rests and the screen takes it over.
+    const ahead = this.ahead,
+      targets = ahead !== null ? (moves(this.basis() ?? this.state!) ?? []).filter((m) => m.from === ahead).map((m) => m.to) : marks.targets;
+    put(this.chosen, ahead ?? marks.selected);
     put(this.cursor, marks.cursor);
-    this.aims.forEach((ring, i) => put(ring, marks.targets[i]));
+    this.aims.forEach((ring, i) => put(ring, targets[i]));
     // A hint: an arrow from just past the marble to shoot up to the marble it strikes.
     const hint = hidden ? null : marks.hint;
     this.arrow.visible = !!hint;

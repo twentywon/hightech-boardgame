@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block, capable, furry, glossy, hop, stuff, travel } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -226,7 +227,6 @@ export class TrapCatView extends TableView<State> {
     p("bench", new T.MeshStandardMaterial({ color: "#8a5a3a", roughness: 0.7 }));
     p("iron", new T.MeshStandardMaterial({ color: "#2f3236", roughness: 0.5, metalness: 0.6 }));
     p("bark", new T.MeshStandardMaterial({ color: "#6b4e38", roughness: 0.95 }));
-    p("crown", new T.MeshStandardMaterial({ color: "#5b8c45", roughness: 0.9, flatShading: true }));
     p("bowl", glossy({ color: "#5d8fd1", roughness: 0.3 }));
     p("milk", new T.MeshStandardMaterial({ color: "#fbfaf5", roughness: 0.25 }));
     p("wool", new T.MeshStandardMaterial({ color: "#d9566b", roughness: 0.9 }));
@@ -524,18 +524,18 @@ export class TrapCatView extends TableView<State> {
     bench.position.set(-half - 1.6, -0.07, fenceZ + 1.0);
     bench.rotation.y = 0.45;
     this.scene.add(bench);
-    const tree = new T.Group();
+    const tree = new T.Group(),
+      crowns = new Grove(tree, keep, { shadow: false, bright: 1.55, lift: 1.25 });
     tree.add(Object.assign(new T.Mesh(keep(new T.CylinderGeometry(0.16, 0.22, 2.2, 8).translate(0, 1.1, 0)), this.paint.bark), { castShadow: false }));
     for (const [x, y, z, r] of [
       [0, 2.5, 0, 1.1],
       [-0.6, 2.1, 0.2, 0.8],
       [0.7, 2.2, -0.1, 0.85],
       [0.1, 3.1, 0.1, 0.75],
-    ]) {
-      const crown = new T.Mesh(keep(new T.IcosahedronGeometry(r, 1)), this.paint.crown);
-      crown.position.set(x, y, z);
-      tree.add(crown);
-    }
+    ])
+      // A crown of painted leaves on cards round a dark core (`Grove`), casting no shadow on the field.
+      crowns.crown("broad", [x, y, z], r * 1.02, "#5b8c45", x + z);
+    crowns.build();
     tree.position.set(half + 1.4, -0.07, fenceZ - 1.2);
     this.scene.add(tree);
     // A bowl of milk and a ball of wool on the gravel at the near right.

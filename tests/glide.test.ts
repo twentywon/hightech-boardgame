@@ -175,8 +175,9 @@ describe("glide cube: puzzles", () => {
         expect(state.ply).toBe(start.best);
         expect(G.hint(state)).toBeNull();
       }
-      // Well under the few hundred milliseconds a puzzle may take in a browser, on average.
-      expect((performance.now() - started) / count).toBeLessThan(600);
+      // Well under the few hundred milliseconds a puzzle may take in a browser, on average (measured quiet: about
+      // 120–280 ms; the margin is for a busy machine).
+      expect((performance.now() - started) / count).toBeLessThan(800);
     }
   }, 120000);
   test("each stage's way uses every piece the stage asks for, and the same numbers lay the same puzzle", () => {
@@ -252,6 +253,72 @@ describe("glide cube: puzzles", () => {
       expect(straight).toBeLessThanOrEqual(1);
     }
   }, 120000);
+  test("boards are lean: no tile, block or piece is left that the puzzle can do without", () => {
+    // The puzzles as they were laid before boards were made lean, on average a stage: tiles (blocks included), blocks
+    // and pieces.
+    const before = [
+      [59.7, 25.5, 0],
+      [72.7, 26.5, 4.1],
+      [70.9, 25.2, 6.4],
+      [87.6, 29.7, 8.6],
+      [98.6, 32.1, 11.8],
+    ];
+    for (let stage = 1; stage <= G.STAGES.length; stage++) {
+      let tiles = 0,
+        blocks = 0;
+      const count = 4;
+      for (let seed = 1; seed <= count; seed++) {
+        const s = G.createGame(stage, seededRandom(seed * 577 + stage));
+        // Nothing can go any more: without any one thing the fewest pushes change or the board measures easier.
+        expect(G.slack(s)).toEqual([]);
+        // Every tile is one the cube comes onto, strikes or looks past in some push from some state it can reach.
+        const reached = new Set<number>([s.cube]),
+          seen = new Set<string>(),
+          queue = [s];
+        for (let i = 0; i < queue.length; i++)
+          for (let d = 0; d < 4; d++) {
+            const t = push(queue[i], d);
+            if (!t) continue;
+            for (const p of t.last!.path) if (p.r >= 0 && p.c >= 0 && p.r < s.h && p.c < s.w) reached.add(p.r * s.w + p.c);
+            if (t.last!.struck >= 0) reached.add(t.last!.struck);
+            const key = `${t.cube}|${t.broken}|${t.raised}`;
+            if (t.winner === null && !seen.has(key)) {
+              seen.add(key);
+              queue.push(t);
+            }
+          }
+        const kinds = s.kinds.flatMap((k, c) => (k !== G.AIR ? [c] : []));
+        // (A block may stand only as what a turner beyond it turns into: looked past, never struck.)
+        expect(kinds.filter((c) => !reached.has(c) && s.kinds[c] !== G.BLOCK)).toEqual([]);
+        tiles += kinds.length;
+        blocks += s.kinds.filter((k) => k === G.BLOCK).length;
+      }
+      expect(tiles / count).toBeLessThan(before[stage - 1][0] * 0.8);
+      expect(blocks / count).toBeLessThan(before[stage - 1][1] * 0.8);
+    }
+  }, 180000);
+  test("the ways take the turns a player must find: the stage's own and enough others", () => {
+    for (let stage = 1; stage <= G.STAGES.length; stage++) {
+      const spec = G.STAGES[stage - 1];
+      let full = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const s = G.createGame(stage, seededRandom(seed * 3191 + stage)),
+          taken = G.motifs(s);
+        expect(taken.length).toBeGreaterThanOrEqual(1);
+        if (taken.length >= spec.turns && spec.must.every((m) => taken.includes(m))) full++;
+        // A push from the start falls off, so a wrong first guess is punished.
+        expect([0, 1, 2, 3].some((d) => push(s, d)?.winner === 1)).toBe(true);
+      }
+      expect(full).toBeGreaterThanOrEqual(7);
+    }
+  }, 180000);
+  test("the turns are told from the way: the goal passed over, and a fall where the obvious push goes", () => {
+    // From C the only push is east, over the goal to the block; then south, west, and north onto the goal under the
+    // block. At (3, 4) the goal lies mostly north, and north slides off into the void.
+    const s = board(["   #  ", "#C.@.#", "   .. ", "  #.. ", "    # "]);
+    expect(G.solve(s)).toEqual([G.E, G.S, G.W, G.N]);
+    expect(G.motifs(s)).toEqual(["trap", "overshoot"]);
+  });
   test("from states scattered off the way, the hint still reaches the goal or says there is none", () => {
     const random = seededRandom(4242);
     for (let stage = 1; stage <= 5; stage++) {

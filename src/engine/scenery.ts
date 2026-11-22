@@ -1,5 +1,6 @@
 import * as T from "three";
 import { block, wood, stuff, weave, furry } from "./scene-utils";
+import { Grove, tinted } from "./foliage";
 
 /** Registers a resource with the view that must dispose it. */
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -303,6 +304,45 @@ export function hanokYard(scene: T.Object3D, own: Own) {
   add(new T.BoxGeometry(1.1, 1.5, 9), stone, 9.2, 0.7, -2.5);
   const tile = standard({ color: "#3b3d42", roughness: 0.6 });
   add(new T.BoxGeometry(1.5, 0.22, 9.2), tile, 9.2, 1.55, -2.5);
+  // Its coping is a little roof of grey 기와: rows of round tiles running down both slopes, a ridge along the top and
+  // a round end tile (막새) at the foot of each row.
+  const giwa = standard({ color: "#4a4c52", roughness: 0.45, metalness: 0.05 }),
+    rows = 40,
+    roll = own(new T.CylinderGeometry(0.075, 0.075, 0.86, 10, 1, false, 0, Math.PI)),
+    face = own(new T.CircleGeometry(0.08, 14)),
+    rolls = new T.InstancedMesh(roll, giwa, rows * 2),
+    ends = new T.InstancedMesh(face, giwa, rows * 2),
+    m = new T.Matrix4(),
+    q = new T.Quaternion();
+  for (let side = 0; side < 2; side++) {
+    const dir = side ? 1 : -1,
+      slope = 0.42,
+      // Down the slope, and out of it.
+      down = new T.Vector3(dir * Math.cos(slope), -Math.sin(slope), 0),
+      out = new T.Vector3(dir * Math.sin(slope), Math.cos(slope), 0),
+      // The half-round's open side lies on the slope, its round side out of it, its length down it.
+      basis = new T.Matrix4().makeBasis(out, down, new T.Vector3().crossVectors(out, down)),
+      turn = new T.Quaternion().setFromRotationMatrix(basis),
+      face = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), down);
+    for (let k = 0; k < rows; k++) {
+      const z = -2.5 - 4.55 + (k + 0.5) * (9.1 / rows),
+        top = new T.Vector3(9.2, 1.95, z).addScaledVector(out, 0.03);
+      m.compose(top.clone().addScaledVector(down, 0.43), turn, new T.Vector3(1, 1, 1));
+      rolls.setMatrixAt(side * rows + k, m);
+      q.copy(face);
+      m.compose(top.clone().addScaledVector(down, 0.861), q, new T.Vector3(1, 1, 1));
+      ends.setMatrixAt(side * rows + k, m);
+    }
+  }
+  rolls.castShadow = ends.castShadow = true;
+  scene.add(rolls, ends);
+  const ridge = add(new T.CylinderGeometry(0.13, 0.13, 9.3, 12), giwa, 9.2, 1.98, -2.5);
+  ridge.rotation.x = Math.PI / 2;
+  // The slopes under the tiles.
+  for (const dir of [-1, 1]) {
+    const roof = add(new T.BoxGeometry(0.95, 0.06, 9.2), tile, 9.2 + dir * 0.4, 1.78, -2.5);
+    roof.rotation.z = -dir * 0.42;
+  }
 }
 /** 장판: the oiled yellow paper of an ondol floor, laid in squares whose tones differ a little, browner where it is warm. */
 function jangpan() {
@@ -1035,10 +1075,22 @@ function schoolyard() {
   for (let i = 0; i < 26; i++) {
     const x = (i / 26) * 540 - 10,
       h = 60 + rand() * 50;
-    ctx.fillStyle = ["#4f8a3f", "#5f9a46", "#3f7a36", "#6aa14c"][i % 4];
+    const colour = ["#4f8a3f", "#5f9a46", "#3f7a36", "#6aa14c"][i % 4],
+      rx = 26 + rand() * 12,
+      ry = h * 0.6,
+      cy = 256 - h * 0.5;
+    // The crown's shade inside, then painted leaves heaped over it, so that its outline is leafy.
+    ctx.fillStyle = new T.Color(colour).multiplyScalar(0.62).getStyle();
     ctx.beginPath();
-    ctx.ellipse(x, 256 - h * 0.5, 26 + rand() * 12, h * 0.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, cy, rx * 0.86, ry * 0.88, 0, 0, Math.PI * 2);
     ctx.fill();
+    const leaves = tinted(i % 3 ? "broad" : "oak", new T.Color(colour).multiplyScalar(1.3).getStyle());
+    for (let k = 0; k < 7; k++) {
+      const a = (k / 7) * Math.PI * 2 + i,
+        d = k ? 0.42 : 0,
+        size = rx * (k ? 1.15 : 1.5);
+      ctx.drawImage(leaves, x + Math.cos(a) * rx * d - size / 2, cy + Math.sin(a) * ry * d - (size * ry) / rx / 2, size, (size * ry) / rx);
+    }
   }
   return texture(c);
 }
@@ -1778,12 +1830,16 @@ export function funfair(scene: T.Scene, own: Own, ground: number) {
   }
   // Trees along the back and the sides, lamp posts and benches at the sides.
   const trunk = standard({ color: "#7a5236", roughness: 0.9 }),
-    leaves = [standard({ color: "#4fa84a", roughness: 0.9 }), standard({ color: "#3d9440", roughness: 0.9 })];
+    greens = ["#4fa84a", "#3d9440"],
+    // Crowns of painted leaves (`Grove`): round park trees, and two cherries in flower at the sides.
+    grove = new Grove(scene, own, { near: 30, bright: 1.55, lift: 1.25 });
   const trees: [number, number, number][] = [[-26, -16, 1.2], [-21, -34, 1.4], [-30, -4, 1.1], [27, -14, 1.3], [31, -26, 1.5], [29, 2, 1.0], [-8, -30, 1.1], [8, -28, 1.2], [-34, 8, 1.2], [35, 10, 1.1]];
   trees.forEach(([x, z, s], i) => {
     add(new T.CylinderGeometry(0.3 * s, 0.4 * s, 3 * s, 8), trunk, x, ground + 1.5 * s, z);
-    add(new T.SphereGeometry(2.2 * s, 14, 10), leaves[i % 2], x, ground + 3.8 * s, z);
-    add(new T.SphereGeometry(1.5 * s, 12, 8), leaves[(i + 1) % 2], x + 1.1 * s, ground + 4.6 * s, z + 0.4);
+    const kind = i === 2 || i === 5 ? "blossom" : "broad",
+      tint = (k: number) => (kind === "blossom" ? "#ffffff" : greens[k % 2]);
+    grove.crown(kind, [x, ground + 3.8 * s, z], [2.2 * s, 2.05 * s, 2.2 * s], tint(i), i);
+    grove.crown(kind, [x + 1.1 * s, ground + 4.6 * s, z + 0.4], 1.45 * s, tint(i + 1), i + 2);
   });
   for (const [x, z] of [[-14, 1], [14, 1], [-13, -14], [13, -14]]) {
     add(new T.CylinderGeometry(0.1, 0.14, 4.5, 8), standard({ color: "#2a3a4a", roughness: 0.4, metalness: 0.5 }), x, ground + 2.25, z);
@@ -1808,8 +1864,9 @@ export function funfair(scene: T.Scene, own: Own, ground: number) {
       const a = (k * Math.PI * 2) / 9;
       add(new T.SphereGeometry(0.22, 8, 6), standard({ color: COLOURS[k % COLOURS.length] }), x + Math.cos(a) * 0.8, ground + 0.65, z + Math.sin(a) * 0.8);
     }
-    add(new T.SphereGeometry(0.7, 10, 8), leaves[0], x, ground + 0.7, z);
+    grove.crown("box", [x, ground + 0.7, z], 0.68, greens[0], x);
   }
+  grove.build();
   return { wheel, bulbs };
 }
 

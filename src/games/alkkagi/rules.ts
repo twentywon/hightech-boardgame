@@ -1,7 +1,8 @@
 import type { Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
-import { copy, launch, settle, shotCode, shotOf, speedOf, strike, type Arena, type Disc } from "../flick/physics";
+import { copy, launch, shotCode, shotOf, speedOf, strike } from "../flick/physics";
+import { settleStones, type Below, type Stone, type StoneArena } from "./physics";
 
 /**
  * Alkkagi: stones are flicked with a finger to knock the other side's off
@@ -18,7 +19,7 @@ export const GO = 19,
 export interface State {
   mode: Mode;
   phase: "place" | "play";
-  discs: Disc[];
+  discs: Stone[];
   owners: (0 | 1)[];
   /** What is written on a janggi piece; empty for go stones. */
   labels: string[];
@@ -34,13 +35,46 @@ export interface State {
 }
 /** A janggi board folds in the middle: its two hinges stand up from the fold and stop a stone. */
 export const HINGES = [-2.5, 2.5];
-export const arenaOf = (mode: Mode): Arena =>
+/**
+ * What lies round the board. The go board stands on its feet on the floor of a study (its top is 0, the floor
+ * `FLOOR`); the folding janggi board lies on a low table (`TABLE`). A stone that goes over the edge drops onto what
+ * is below and stays there, clear of the go bowls (`BOWLS`).
+ */
+export const FLOOR = -2.8,
+  GO_DEPTH = 1.75,
+  JANGGI_DEPTH = 0.3,
+  TABLE = { halfX: 6.5, halfZ: 7, y: -0.3, bottom: -0.62 },
+  BOWLS = [
+    { x: 7.3, z: 2.4, r: 1.05, top: FLOOR + 1.9 },
+    { x: -7.3, z: -2.4, r: 1.05, top: FLOOR + 1.9 },
+  ];
+const GO_BELOW: Below = { floor: FLOOR, tops: [{ halfX: 4.8, halfZ: 4.8, y: 0, bottom: -GO_DEPTH }], posts: BOWLS },
+  JANGGI_BELOW: Below = { floor: FLOOR, tops: [{ halfX: 4.55, halfZ: 5.05, y: 0, bottom: -JANGGI_DEPTH }, TABLE], posts: [] };
+/**
+ * The board and its stones' stuff: go stones of slate and shell give back most of a knock and grip little (glazed,
+ * they slip); wooden janggi pieces give back less and grip more. Friction stays high (go 12, janggi 15: the user
+ * asked for it).
+ */
+export const arenaOf = (mode: Mode): StoneArena =>
   mode === "go"
-    ? { halfX: 4.8, halfZ: 4.8, cushions: false, pockets: [], friction: 12, bounce: 0.9 }
-    : { halfX: 4.55, halfZ: 5.05, cushions: false, pockets: [], friction: 15, bounce: 0.9, posts: HINGES.flatMap((x) => [-0.26, 0, 0.26].map((dx) => ({ x: x + dx, z: 0, r: 0.13 }))) };
+    ? { halfX: 4.8, halfZ: 4.8, cushions: false, pockets: [], friction: 12, bounce: 0.88, grip: 0.12, thick: 0.42, below: GO_BELOW }
+    : {
+        halfX: 4.55,
+        halfZ: 5.05,
+        cushions: false,
+        pockets: [],
+        friction: 15,
+        bounce: 0.62,
+        grip: 0.3,
+        thick: 0.11,
+        thickFixed: true,
+        below: JANGGI_BELOW,
+        posts: HINGES.flatMap((x) => [-0.26, 0, 0.26].map((dx) => ({ x: x + dx, z: 0, r: 0.13 }))),
+      };
 /** Where a line crossing of the go board lies. */
 export const goPoint = (point: number) => ({ x: ((point % GO) - 9) * GO_STEP, z: (Math.floor(point / GO) - 9) * GO_STEP });
-const disc = (id: number, x: number, z: number, r: number, m: number): Disc => ({ id, x, z, vx: 0, vz: 0, r, m, on: true });
+// Every field a stone will carry is there from the start: stones of one shape are stepped several times faster.
+const disc = (id: number, x: number, z: number, r: number, m: number): Stone => ({ id, x, z, vx: 0, vz: 0, r, m, on: true, w: 0, a: 0, hop: 0 });
 /** The pieces of janggi at their starting places: [label, file, rank from its own back row, radius, mass]. */
 const JANGGI: [string, number, number, number, number][] = [
   ["車", 0, 0, 0.31, 1.5], ["馬", 1, 0, 0.31, 1.5], ["象", 2, 0, 0.31, 1.5], ["士", 3, 0, 0.24, 0.9],
@@ -51,7 +85,7 @@ const JANGGI: [string, number, number, number, number][] = [
 export function createGame(variant = "go-5"): State {
   const base = { turn: 0 as const, winner: null, last: null, lost: [], ply: 0 };
   if (variant === "janggi") {
-    const discs: Disc[] = [],
+    const discs: Stone[] = [],
       owners: (0 | 1)[] = [],
       labels: string[] = [];
     for (const side of [0, 1] as const)
@@ -142,7 +176,7 @@ export function play(state: State, move: Move, random: Random = () => 1): State 
     fly = state.mode === "go" && random() < flyChance(shot.power);
   strike(discs[move.from], shot.angle, speedOf(shot.power));
   if (fly) launch(discs[move.from], FLY_SECONDS);
-  const { gone } = settle(discs, arenaOf(state.mode)),
+  const { gone } = settleStones(discs, arenaOf(state.mode)),
     left = [0, 1].map((side) => discs.filter((d) => d.on && state.owners[d.id] === side).length);
   return {
     ...state,

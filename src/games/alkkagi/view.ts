@@ -1,122 +1,80 @@
 import * as T from "three";
-import { wood, planks, glossy, block } from "../../engine/scene-utils";
+import { capable, fall as drop } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { FlickView } from "../flick/view";
-import { copy, launch, shotCode, shotOf, speedOf, strike, type Disc } from "../flick/physics";
-import { FLY_SECONDS, GO, GO_STEP, HINGES, arenaOf, goPoint, type Mode, type State } from "./rules";
+import { DT, copy, launch, shotCode, shotOf, speedOf, strike, type Disc } from "../flick/physics";
+import { FLY_SECONDS, GO, arenaOf, goPoint, type Mode, type State } from "./rules";
+import { HOP, HOP_HEIGHT, fallTrack, stepStones, stirring, type Bump, type Fall, type FallPose, type Stone, type StoneHeard } from "./physics";
+import { Specks, edgeTexture, faceTexture, pieceGeometry, shadowTexture, stoneGeometry, stoneMaterial } from "./pieces";
+import { study } from "./study";
+import { FlickHand } from "./hand";
 
 export const STONE_COLORS: [string, string] = ["#1b1c20", "#f1ece0"];
 export const PIECE_COLORS: [string, string] = ["#2f7d4f", "#c0392b"];
-function boardTexture(mode: Mode) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 1024;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#d9a85c";
-  ctx.fillRect(0, 0, 1024, 1024);
-  for (let i = 0; i < 260; i++) {
-    ctx.fillStyle = `rgba(110,62,20,${0.02 + (i % 5) * 0.008})`;
-    ctx.fillRect(0, (i * 197) % 1024, 1024, 1 + (i % 3));
-  }
-  ctx.strokeStyle = "#3a2a16";
-  ctx.lineWidth = 3;
-  const line = (x1: number, y1: number, x2: number, y2: number) => {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-  };
-  if (mode === "go") {
-    // The board is 9.6 wide; lines lie half a unit apart.
-    const px = (v: number) => 512 + (v / 4.8) * 512;
-    for (let i = 0; i < GO; i++) {
-      const v = px((i - 9) * GO_STEP);
-      line(v, px(-4.5), v, px(4.5));
-      line(px(-4.5), v, px(4.5), v);
-    }
-    ctx.fillStyle = "#3a2a16";
-    for (const r of [3, 9, 15])
-      for (const col of [3, 9, 15]) {
-        ctx.beginPath();
-        ctx.arc(px((col - 9) * GO_STEP), px((r - 9) * GO_STEP), 8, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    // The middle line, which neither side may set a stone on or beyond.
-    ctx.strokeStyle = "rgba(160,40,30,0.5)";
-    ctx.lineWidth = 6;
-    line(px(-4.5), px(0), px(4.5), px(0));
-  } else {
-    const x = (v: number) => 512 + (v / 4.55) * 512,
-      y = (v: number) => 512 + (v / 5.05) * 512;
-    for (let f = -4; f <= 4; f++) line(x(f), y(-4.5), x(f), y(4.5));
-    for (let r = 0; r < 10; r++) line(x(-4), y(r - 4.5), x(4), y(r - 4.5));
-    // The two palaces.
-    for (const [a, b] of [[-4.5, -2.5], [2.5, 4.5]]) {
-      line(x(-1), y(a), x(1), y(b));
-      line(x(1), y(a), x(-1), y(b));
-    }
-  }
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
+/** How long the computer's hand takes to come to its stone, and how long a flick's snap and the hand's going take. */
+const APPROACH = 560,
+  SNAP = 70,
+  WITHDRAW = 520;
+/** A stone's way through the air is drawn this many times the rules' arc. */
+const FLIGHT_HEIGHT = 1.5;
+interface Piece {
+  /** Where the stone's middle is. */
+  holder: T.Group;
+  /** Its tip as it goes over an edge, about the level line across its way. */
+  tumbler: T.Group;
+  /** Its turn about the upright. */
+  spinner: T.Group;
+  shadow: T.Mesh;
+  /** Its half thickness, and the turn its picture starts at (so no two shell stones look alike). */
+  half: number;
+  turn: number;
 }
-function labelTexture(label: string, color: string) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 128;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#ecd9a8";
-  ctx.fillRect(0, 0, 128, 128);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.arc(64, 64, 54, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = color;
-  ctx.font = '700 74px "Noto Serif CJK KR", "Noto Serif KR", "Apple SD Gothic Neo", "Malgun Gothic", serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, 64, 68);
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  return t;
-}
-/** A board of stones to flick, on a low table. */
+/**
+ * The alkkagi table: a go board on its feet or a folding janggi board on a low table, in a study. A shot is run
+ * here with the very physics the rules ran (`stepStones`), so it ends exactly where the rules say: stones slide
+ * and turn, knock each other turning, throw up specks where they meet, fly and bounce, and tip off the edge to lie
+ * on what is below. A hand comes to the stone and flicks it; mine is there while I pull.
+ */
 export class AlkkagiView extends FlickView<State> {
-  private meshes: T.Object3D[] = [];
-  private built: Disc[] | null = null;
+  private pieces: Piece[] = [];
+  private built: Stone[] | null = null;
   private rings: T.Mesh[] = [];
   private cursor: T.Mesh;
   private stone: T.BufferGeometry;
   private paints: T.Material[];
+  private shade: T.Texture;
+  private faces = new Map<string, T.Material[]>();
+  private shapes = new Map<number, T.BufferGeometry>();
+  private edge: T.Material;
+  private hand: FlickHand;
+  private sparks: Specks;
+  private dust: Specks;
+  /** Ways of falls already worked out, by the fall. */
+  private tracks = new WeakMap<Fall, FallPose[]>();
+  /** The shot being run, so that a newer state stops an older run; and its frame. */
+  private run = 0;
+  private frame = 0;
+  /** My last flick: the hand is already at the stone, so it snaps at once. */
+  private flicked: { disc: number; at: number; angle: number; power: number } | null = null;
+  private aim: { x: number; z: number; angle: number; power: number } | null = null;
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
     private mode: Mode,
   ) {
     super(host, quality, "#2c2119");
-    this.daylight("#fff4dc", "#3a2c22", "#fff0d2", 9);
-    const floor = this.add(new T.PlaneGeometry(90, 90), this.standard(planks(11, (r) => this.own(r))), 0, -1.2, 0);
-    floor.rotation.x = -Math.PI / 2;
-    floor.castShadow = false;
-    const arena = arenaOf(mode),
-      side = this.standard({ color: "#a9793e", roughness: 0.6 });
-    // A thick board on four short feet: a stone pushed over the edge drops off it.
-    this.add(block(arena.halfX * 2, 0.7, arena.halfZ * 2), [side, side, this.standard({ map: this.own(boardTexture(mode)), roughness: 0.7 }), side, side, side], 0, -0.35, 0);
-    for (const x of [-1, 1]) for (const z of [-1, 1]) this.add(new T.CylinderGeometry(0.4, 0.3, 0.5, 16), side, x * (arena.halfX - 0.7), -0.95, z * (arena.halfZ - 0.7));
-    if (mode === "janggi") {
-      // The fold of the board and its two brass hinges, which stones bounce off.
-      this.add(new T.BoxGeometry(arena.halfX * 2, 0.012, 0.035), this.standard({ color: "#5a3a1c" }), 0, 0.004, 0).castShadow = false;
-      const brass = this.standard({ color: "#c9a23a", roughness: 0.3, metalness: 0.7 });
-      for (const x of HINGES) {
-        this.add(new T.BoxGeometry(0.8, 0.05, 0.3), brass, x, 0.025, 0);
-        this.add(new T.CylinderGeometry(0.09, 0.09, 0.78, 14), brass, x, 0.1, 0).rotation.z = Math.PI / 2;
-        for (const dx of [-0.26, 0.26]) for (const dz of [-0.09, 0.09]) this.add(new T.CylinderGeometry(0.03, 0.03, 0.07, 8), this.standard({ color: "#6a5320", metalness: 0.6 }), x + dx, 0.05, dz);
-      }
-    }
-    this.stone = this.own(new T.SphereGeometry(1, 28, 18));
-    this.paints = STONE_COLORS.map((color) => this.own(glossy({ color, roughness: 0.3 })));
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
+    const sun = this.daylight("#fff4dc", "#5a4030", "#ffeccc", 10.5, 2.2);
+    sun.position.set(-6, 12, 4);
+    // Drawn without a graphics card, the shadows are drawn at a quarter of the size: the room's large surfaces made
+    // the shadow pass the dearest part of a frame.
+    if (!capable()) sun.shadow.mapSize.set(1024, 1024);
+    study(this.scene, own, mode);
+    this.stone = own(stoneGeometry(0.42));
+    this.paints = [own(stoneMaterial(own, false)), own(stoneMaterial(own, true))];
+    this.shade = own(shadowTexture());
+    this.edge = this.standard({ map: own(edgeTexture()), roughness: 0.5 });
     for (let i = 0; i < 16; i++) {
       const ring = ringMesh(own, 0.3, 0.37, "#ffd24a");
       this.rings.push(ring);
@@ -124,10 +82,22 @@ export class AlkkagiView extends FlickView<State> {
     }
     this.cursor = ringMesh(own, 0.26, 0.33, "#ffffff");
     this.scene.add(this.cursor);
+    this.hand = new FlickHand(own);
+    this.scene.add(this.hand.root);
+    // A knock of stones throws a few bright specks; wood throws dust, as does a stone coming down.
+    this.sparks = new Specks(own, 90, mode === "go" ? "#fff3d0" : "#f4d9a6", mode === "go", 3, 9);
+    this.dust = new Specks(own, 140, mode === "go" ? "#d9c29a" : "#c9a874", false, 4, 2.5);
+    this.scene.add(this.sparks.points, this.dust.points);
     this.begin();
   }
   protected subject(): TableSubject {
     return { half: 5.3, halfZ: 5.5, height: 0.8, lookY: 0, tilt: 1.05 };
+  }
+  protected resize() {
+    super.resize();
+    const h = this.host.clientHeight * Math.min(devicePixelRatio, 2);
+    this.sparks?.setScale(h / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
+    this.dust?.setScale(h / (2 * Math.tan((this.camera.fov * Math.PI) / 360)));
   }
   protected discs(state: State) {
     this.build(state);
@@ -136,42 +106,247 @@ export class AlkkagiView extends FlickView<State> {
   protected arena(state: State) {
     return arenaOf(state.mode);
   }
-  /** Makes a mesh for every stone of the state that has none yet; a new game starts over. */
+  /** The paint of a janggi piece's faces and sides, one set a character and side. */
+  private faceOf(label: string, owner: number) {
+    const key = `${label}${owner}`;
+    let paint = this.faces.get(key);
+    if (!paint) {
+      const own = <R extends { dispose(): void }>(r: R) => this.own(r),
+        relief = capable() ? own(faceTexture(label, "#000", true)) : null,
+        face = this.standard({ map: own(faceTexture(label, PIECE_COLORS[owner])), roughness: 0.5, ...(relief ? { bumpMap: relief, bumpScale: 2.5 } : {}) });
+      paint = [face, this.edge];
+      this.faces.set(key, paint);
+    }
+    return paint;
+  }
+  /** Makes a stone for every disc of the state that has none yet; a new game starts over. */
   private build(state: State) {
-    if (this.built && state.discs.length < this.meshes.length) {
-      this.meshes.forEach((mesh) => mesh.removeFromParent());
-      this.meshes = [];
+    if (this.built && state.discs.length < this.pieces.length) {
+      for (const piece of this.pieces) {
+        piece.holder.removeFromParent();
+        piece.shadow.removeFromParent();
+        (piece.shadow.material as T.Material).dispose();
+      }
+      this.pieces = [];
     }
     this.built = state.discs;
-    for (let id = this.meshes.length; id < state.discs.length; id++) {
+    const arena = arenaOf(state.mode);
+    for (let id = this.pieces.length; id < state.discs.length; id++) {
       const disc = state.discs[id],
-        owner = state.owners[id];
-      let mesh: T.Mesh;
+        owner = state.owners[id],
+        holder = new T.Group(),
+        tumbler = new T.Group(),
+        spinner = new T.Group();
+      let mesh: T.Mesh, half: number;
       if (state.mode === "go") {
+        half = disc.r * arena.thick;
         mesh = new T.Mesh(this.stone, this.paints[owner]);
-        mesh.scale.set(disc.r, disc.r * 0.42, disc.r);
-        mesh.position.y = disc.r * 0.42;
+        mesh.scale.set(disc.r, disc.r, disc.r);
       } else {
-        const rim = this.standard({ color: "#d9be86", roughness: 0.5 });
-        mesh = new T.Mesh(this.own(new T.CylinderGeometry(disc.r, disc.r, 0.22, 8)), [rim, this.standard({ map: this.own(labelTexture(state.labels[id], PIECE_COLORS[owner])), roughness: 0.5 }), rim]);
-        // The writing reads upright from the near side, whoever the piece belongs to.
-        mesh.rotation.y = Math.PI / 8 + Math.PI / 2;
-        mesh.position.y = 0.11;
+        half = arena.thick;
+        let shape = this.shapes.get(disc.r);
+        if (!shape) this.shapes.set(disc.r, (shape = this.own(pieceGeometry(disc.r, half * 2))));
+        mesh = new T.Mesh(shape, this.faceOf(state.labels[id], owner));
       }
       mesh.castShadow = true;
-      const holder = new T.Group();
-      holder.add(mesh);
-      this.meshes.push(holder);
-      this.scene.add(holder);
+      mesh.receiveShadow = true;
+      spinner.add(mesh);
+      tumbler.add(spinner);
+      holder.add(tumbler);
+      const shadow = new T.Mesh(this.own(new T.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)), new T.MeshBasicMaterial({ map: this.shade, transparent: true, depthWrite: false, opacity: 0.6 }));
+      shadow.renderOrder = 2;
+      this.scene.add(holder, shadow);
+      // Shell stones are laid each at its own turn, so that their bands differ; janggi pieces stand square.
+      this.pieces.push({ holder, tumbler, spinner, shadow, half, turn: state.mode === "go" ? ((id * 2.399) % (Math.PI * 2)) : 0 });
     }
   }
   protected mesh(id: number) {
-    return this.meshes[id];
+    return this.pieces[id].holder;
+  }
+  /** The way a stone that went over the edge takes, worked out once. */
+  private trackOf(fall: Fall) {
+    let track = this.tracks.get(fall);
+    if (!track) this.tracks.set(fall, (track = fallTrack(fall, arenaOf(this.mode).below)));
+    return track;
+  }
+  /** Lays a stone on the board at rest or in its slide, `air` above the board. */
+  private poseOnBoard(disc: Stone, air = 0, flip = 0, way = 0) {
+    const piece = this.pieces[disc.id];
+    piece.holder.visible = disc.on;
+    piece.holder.position.set(disc.x, piece.half + air, disc.z);
+    piece.spinner.rotation.y = (disc.a ?? 0) + piece.turn;
+    // A stone in the air turns over once along its way (it lands flat again).
+    piece.tumbler.quaternion.setFromAxisAngle(new T.Vector3(Math.sin(way), 0, -Math.cos(way)), flip);
+    const shadow = piece.shadow;
+    shadow.visible = disc.on;
+    shadow.position.set(disc.x + air * 0.25, 0.004, disc.z - air * 0.12);
+    shadow.scale.setScalar(disc.r * (2.5 + air * 0.9));
+    (shadow.material as T.MeshBasicMaterial).opacity = 0.62 / (1 + air * 1.6);
+  }
+  /** Lays a stone that went over the edge where its fall has it. */
+  private poseFallen(disc: Stone, pose: FallPose, fall: Fall) {
+    const piece = this.pieces[disc.id];
+    piece.holder.visible = true;
+    piece.holder.position.set(pose.x, pose.y, pose.z);
+    piece.spinner.rotation.y = pose.a + piece.turn;
+    // Tipping toward the way out: about the level line across it.
+    piece.tumbler.quaternion.setFromAxisAngle(new T.Vector3(fall.nz, 0, -fall.nx), pose.tip);
+    const below = arenaOf(this.mode).below,
+      top = below.tops.find((t) => Math.abs(pose.x) <= t.halfX && Math.abs(pose.z) <= t.halfZ),
+      ground = top ? top.y : below.floor,
+      above = Math.max(0, pose.y - piece.half - ground);
+    piece.shadow.visible = true;
+    piece.shadow.position.set(pose.x, ground + 0.004, pose.z);
+    piece.shadow.scale.setScalar(disc.r * (2.5 + above * 0.6));
+    (piece.shadow.material as T.MeshBasicMaterial).opacity = 0.62 / (1 + above * 1.2);
+  }
+  protected place(state: State) {
+    this.build(state);
+    for (const disc of state.discs) {
+      const fall = disc.fell;
+      if (disc.on) this.poseOnBoard(disc);
+      else if (fall) {
+        const track = this.trackOf(fall);
+        this.poseFallen(disc, track[track.length - 1], fall);
+      } else {
+        this.pieces[disc.id].holder.visible = false;
+        this.pieces[disc.id].shadow.visible = false;
+      }
+    }
+    if (!this.aim && !this.handBusy) this.hand.root.visible = false;
+  }
+  private handBusy = false;
+  sync(state: State, animate = true) {
+    // A newer state stops a shot still being run.
+    this.run++;
+    cancelAnimationFrame(this.frame);
+    this.handBusy = false;
+    super.sync(state, animate);
+  }
+  protected animate(before: State, state: State) {
+    if (before.phase === "place" && state.discs.length > before.discs.length) return this.setDown(before, state);
+    const live = this.struck(before, state) as Stone[] | null;
+    if (!live || !state.last) return false;
+    const run = this.run,
+      arena = arenaOf(state.mode),
+      shot = shotOf(state.last.code)!,
+      id = state.last.disc,
+      shooter = before.discs[id],
+      piece = this.pieces[id],
+      now = performance.now(),
+      mine = this.flicked && this.flicked.disc === id && now - this.flicked.at < 3000,
+      // A hand that was not already there comes to the stone first.
+      start = now + (mine ? 0 : APPROACH) + SNAP,
+      heard: StoneHeard = { hits: 0, discs: 0, walls: 0, force: 0, at: [] },
+      falls = new Map<number, { track: FallPose[]; fall: Fall; t0: number; next: number }>(),
+      scale = state.mode === "go" ? 0.74 : 0.86;
+    this.flicked = null;
+    this.handBusy = true;
+    this.hand.root.visible = true;
+    this.tween(0, 60000, () => {});
+    let count = 0,
+      sounded = 0,
+      last = now,
+      bumps = 0;
+    const tick = () => {
+      if (run !== this.run || this.disposed) return;
+      const t = performance.now(),
+        // Specks live by the clock, however slowly the frames come.
+        dt = Math.min(0.25, (t - last) / 1000);
+      last = t;
+      // The hand: coming down to the stone, snapping, then drawn away.
+      const since = t - start;
+      if (since < -SNAP) {
+        const p = 1 - (start - SNAP - t) / APPROACH;
+        this.hand.pose(1);
+        this.hand.place(shooter.x, piece.half, shooter.z, shot.angle, shooter.r, scale, (1 - Math.max(0, p)) ** 2);
+      } else if (since < 0) {
+        this.hand.pose(1 - (since + SNAP) / SNAP);
+        this.hand.place(shooter.x, piece.half, shooter.z, shot.angle, shooter.r, scale);
+      } else if (since < WITHDRAW + 160) {
+        this.hand.pose(Math.min(1, Math.max(0, (since - 160) / WITHDRAW)) * 0.6);
+        this.hand.place(shooter.x, piece.half, shooter.z, shot.angle, shooter.r, scale, Math.max(0, (since - 160) / WITHDRAW) ** 1.5 * 1.2);
+      } else {
+        this.hand.root.visible = false;
+        this.handBusy = false;
+      }
+      if (since >= 0) {
+        const due = Math.floor(since / (DT * 1000));
+        while (count < due && stirring(live)) {
+          for (const gone of stepStones(live, arena, heard)) {
+            const fall = live[gone].fell!;
+            falls.set(gone, { track: this.trackOf(fall), fall, t0: start + count * DT * 1000, next: 0 });
+          }
+          count++;
+        }
+        // What was struck: a click for the knock, and specks where it was.
+        if (heard.hits > sounded) this.onContact();
+        sounded = heard.hits;
+        for (; bumps < heard.at!.length; bumps++) this.bump(heard.at![bumps], state.mode, count + bumps);
+        for (const disc of live) {
+          if (!disc.on) continue;
+          const flight = disc.air && disc.flight ? 1 - disc.air / disc.flight : 0,
+            air = disc.air && disc.flight ? Math.sin(Math.PI * flight) * FLIGHT_HEIGHT : disc.hop ? Math.sin(Math.PI * (1 - disc.hop / HOP)) * FLIGHT_HEIGHT * HOP_HEIGHT : 0;
+          this.poseOnBoard(disc, air, flight * Math.PI * 2, Math.atan2(disc.vz, disc.vx));
+        }
+        for (const [gone, fall] of falls) {
+          const index = Math.min(fall.track.length - 1, Math.floor((t - fall.t0) / (DT * 1000)));
+          for (; fall.next <= index; fall.next++) {
+            const pose = fall.track[fall.next];
+            if (pose.thud && pose.thud > 6) {
+              this.onContact();
+              this.dust.burst(pose.x, pose.y - this.pieces[gone].half, pose.z, 7, 1.4, 0.7, 0.11, gone * 31 + fall.next);
+            }
+          }
+          this.poseFallen(live[gone], fall.track[index], fall.fall);
+        }
+      }
+      const sparking = this.sparks.advance(dt),
+        dusting = this.dust.advance(dt),
+        specks = sparking || dusting;
+      this.redraw();
+      const falling = [...falls.values()].some((f) => f.next < f.track.length);
+      if (since < 0 || stirring(live) || falling || this.handBusy || specks) this.frame = requestAnimationFrame(tick);
+      else {
+        this.settleNow();
+        this.place(state);
+        this.onSettled();
+        this.redraw();
+      }
+    };
+    this.frame = requestAnimationFrame(tick);
+    return true;
+  }
+  /** Specks where a knock was. */
+  private bump(bump: Bump, mode: Mode, seed: number) {
+    const strength = Math.min(1, bump.force / 12);
+    if (bump.kind === "land") this.dust.burst(bump.x, 0.02, bump.z, 10, 1.6, 0.6, 0.12, seed);
+    else if (mode === "go") this.sparks.burst(bump.x, 0.12, bump.z, Math.round(3 + strength * 9), 1.5 + strength * 3, 0.32, 0.05, seed);
+    else {
+      this.dust.burst(bump.x, 0.14, bump.z, Math.round(3 + strength * 7), 0.8 + strength * 1.8, 0.55, 0.07, seed);
+      this.sparks.burst(bump.x, 0.14, bump.z, Math.round(2 + strength * 4), 1 + strength * 2, 0.22, 0.04, seed + 1);
+    }
+  }
+  /** Stones newly set on the board drop onto their points, one after another, with a click each. */
+  private setDown(before: State, state: State) {
+    const fresh = state.discs.slice(before.discs.length);
+    this.build(state);
+    fresh.forEach((disc, i) => {
+      const piece = this.pieces[disc.id];
+      this.poseOnBoard(disc, 1);
+      this.tween(i * 90, 260, (p) => {
+        const height = drop(p) * 1;
+        this.poseOnBoard(disc, height);
+        if (p >= 1) this.onContact();
+      });
+      piece.holder.visible = true;
+    });
+    return true;
   }
   protected struck(before: State, state: State) {
     if (!state.last || state.ply !== before.ply + 1) return null;
     const shot = shotOf(state.last.code)!,
-      live = copy(before.discs);
+      live = copy(before.discs) as Disc[];
     strike(live[state.last.disc], shot.angle, speedOf(shot.power));
     if (state.last.fly) launch(live[state.last.disc], FLY_SECONDS);
     return live;
@@ -183,7 +358,36 @@ export class AlkkagiView extends FlickView<State> {
     return disc?.on && this.marks.movable.includes(point) ? { x: disc.x, z: disc.z } : null;
   }
   protected shoot(point: number, degrees: number, power: number) {
+    this.flicked = { disc: point, at: performance.now(), angle: (degrees * Math.PI) / 180, power };
+    // The hand stays cocked at the stone until the shot is run (or, if it never is, goes).
+    const disc = this.state?.discs[point];
+    if (disc) {
+      this.hand.root.visible = true;
+      this.hand.pose(1);
+      this.hand.place(disc.x, this.pieces[point].half, disc.z, (degrees * Math.PI) / 180, disc.r, this.mode === "go" ? 0.74 : 0.86);
+      const at = this.flicked.at;
+      setTimeout(() => {
+        if (this.flicked?.at === at && !this.handBusy) {
+          this.hand.root.visible = false;
+          this.redraw();
+        }
+      }, 1800);
+    }
     this.onMove({ from: point, to: shotCode(degrees, power), extra: -1 });
+  }
+  protected aimed(aim: { x: number; z: number; angle: number; power: number } | null) {
+    this.aim = aim;
+    const state = this.state;
+    if (!aim || !state) {
+      if (!this.handBusy) this.hand.root.visible = false;
+      return;
+    }
+    const disc = state.discs.find((d) => d.on && Math.abs(d.x - aim.x) < 1e-6 && Math.abs(d.z - aim.z) < 1e-6);
+    if (!disc) return;
+    // My hand at the stone, the finger drawn back the harder the pull.
+    this.hand.root.visible = true;
+    this.hand.pose(0.86 + (aim.power / 20) * 0.14);
+    this.hand.place(disc.x, this.pieces[disc.id].half, disc.z, aim.angle, disc.r, this.mode === "go" ? 0.74 : 0.86);
   }
   protected spots(): Spot[] {
     const state = this.state;
@@ -206,5 +410,11 @@ export class AlkkagiView extends FlickView<State> {
     const at = marks.cursor !== null && state?.phase === "place" ? goPoint(marks.cursor) : null;
     this.cursor.visible = !!at;
     if (at) this.cursor.position.set(at.x, 0.013, at.z);
+  }
+  dispose() {
+    this.run++;
+    cancelAnimationFrame(this.frame);
+    for (const piece of this.pieces) (piece.shadow.material as T.Material).dispose();
+    super.dispose();
   }
 }

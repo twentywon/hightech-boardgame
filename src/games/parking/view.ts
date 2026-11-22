@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block, glossy, stuff } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import { CAFE, cafe } from "./cafe";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -430,8 +431,6 @@ export class ParkingView extends TableView<State> {
       coping = this.standard({ color: "#cfcac0", roughness: 0.8 }),
       hedge = this.standard({ ...stuff("grass", "#3b7333", 3, keep), roughness: 0.95 }),
       bark = this.standard({ color: "#6b4a2e", roughness: 0.9 }),
-      leaf = this.standard({ color: "#4f8a3a", roughness: 0.85 }),
-      leafDark = this.standard({ color: "#3e7432", roughness: 0.85 }),
       pole = this.standard({ color: "#3a3d42", roughness: 0.5, metalness: 0.5 }),
       glow = this.standard({ color: "#fff8e0", emissive: "#fff2c8", emissiveIntensity: 0.7 });
     // The wall runs from the café's back corner to the gate's side.
@@ -440,18 +439,18 @@ export class ParkingView extends TableView<State> {
       wallZ = -(KERB + 0.55);
     this.add(block(wallRight - wallLeft, 0.34, 0.24, 0.03), brick, (wallLeft + wallRight) / 2, 0.17, wallZ);
     this.add(block(wallRight - wallLeft + 0.04, 0.05, 0.3, 0.02), coping, (wallLeft + wallRight) / 2, 0.36, wallZ);
+    // Crowns of painted leaves on cards round a dark core (`Grove`, shared with the café's trees and the other woods).
     const trunk = this.own(new T.CylinderGeometry(0.07, 0.1, 0.7, 10)),
-      crown = this.own(new T.IcosahedronGeometry(0.55, 1));
+      grove = new Grove(this.scene, keep, { bright: 1.55, lift: 1.25 });
     [-4.2, -2.6, -1, 0.6, 2.2, 3.8].forEach((x, k) => {
       const z = wallZ - 0.75 - (k % 2) * 0.35,
-        t = new T.Mesh(trunk, bark),
-        c = new T.Mesh(crown, k % 2 ? leaf : leafDark);
+        t = new T.Mesh(trunk, bark);
       t.position.set(x, 0.35, z);
-      c.position.set(x, 0.95, z);
-      c.scale.setScalar(0.85 + (k % 3) * 0.12);
-      t.castShadow = c.castShadow = true;
-      this.scene.add(t, c);
+      grove.crown("broad", [x, 0.95, z], 0.55 * (0.85 + (k % 3) * 0.12), k % 2 ? "#4f8a3a" : "#3e7432", x);
+      t.castShadow = true;
+      this.scene.add(t);
     });
+    grove.build();
     // A hedge along the near side, low enough to hide nothing, from beyond the café's terrace to the lane.
     const hedgeLeft = CAFE.left - 0.05;
     this.add(block(LANE_END - 0.1 - hedgeLeft, 0.26, 0.36, 0.12), hedge, (LANE_END - 0.1 + hedgeLeft) / 2, 0.13, KERB + 0.5);

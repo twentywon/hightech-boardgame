@@ -1,6 +1,7 @@
 import * as T from "three";
 import { block, glossy, stuff, wood } from "../../engine/scene-utils";
 import { hanokYard } from "../../engine/scenery";
+import { Grove } from "../../engine/foliage";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -307,21 +308,18 @@ export class TuhoView extends TableView<State> {
     this.add(new T.CylinderGeometry(0.018, 0.018, 1.7 * S, 8).rotateZ(Math.PI / 2), cord, 0, 0.02, DISTANCE * S);
     // A pine: a leaning trunk of red bark and layered clouds of needles.
     const bark = this.standard({ ...stuff("stone", "#7a4a32", 1.5, keep), roughness: 1 }),
-      needles = this.standard({ color: "#2f5a35", roughness: 0.9 }),
-      dark = this.standard({ color: "#264a2c", roughness: 0.9 }),
+      // The clouds of needles are cards of painted needles round a dark core (`Grove`).
+      grove = new Grove(this.scene, keep),
       curve = new T.CatmullRomCurve3([new T.Vector3(-5.4, 0, -4.4), new T.Vector3(-5.3, 1.4, -4.5), new T.Vector3(-4.7, 2.7, -4.3), new T.Vector3(-4.1, 3.7, -4.6), new T.Vector3(-3.3, 4.4, -4.8)]);
     this.add(new T.TubeGeometry(curve, 24, 0.22, 10, false), bark).castShadow = true;
-    const random = sequence(5),
-      blob = keep(new T.IcosahedronGeometry(1, 1));
+    const random = sequence(5);
     for (const [x, y, z, r] of [[-4.6, 3.0, -4.2, 1.1], [-3.4, 4.1, -4.7, 1.3], [-5.5, 3.9, -4.8, 0.9], [-2.5, 4.6, -4.9, 1.0], [-4.2, 4.9, -5.1, 1.1]] as const)
       for (let k = 0; k < 4; k++) {
-        const mesh = new T.Mesh(blob, k % 2 ? dark : needles);
-        mesh.position.set(x + (random() - 0.5) * r, y + (random() - 0.5) * 0.3, z + (random() - 0.5) * r * 0.6);
-        mesh.scale.set(r * (0.7 + random() * 0.4), r * 0.28, r * (0.6 + random() * 0.3));
-        mesh.rotation.y = random() * 3;
-        mesh.castShadow = true;
-        this.scene.add(mesh);
+        const at: [number, number, number] = [x + (random() - 0.5) * r, y + (random() - 0.5) * 0.3, z + (random() - 0.5) * r * 0.6],
+          size: [number, number, number] = [r * (0.7 + random() * 0.4), r * 0.32, r * (0.6 + random() * 0.3)];
+        grove.crown("pine", at, size, k % 2 ? "#264a2c" : "#2f5a35", random() * 3);
       }
+    grove.build();
     // Two banners on poles behind the pot, 홍 at the left and 청 at the right.
     const pole = this.standard({ map: keep(wood(true)), roughness: 0.6 }),
       gold = this.standard({ color: "#d4a640", roughness: 0.4, metalness: 0.5 });

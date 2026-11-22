@@ -2,6 +2,7 @@ import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { cameraDistance } from "../../engine/camera";
 import { capable, glossy, hop, travel, weave } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { FROG_PAINTS, HOP_MS, JUMP_MS, LANDS_AT, SPACING, STUMP_RADIUS, SYMBOLS, frogSubject, stumpAt } from "./layout";
@@ -698,7 +699,6 @@ export class FrogView extends TableView<State> {
     many(tail, tailPaint, tails, standing);
     // The far bank: low ground and trees, mostly lost in the mist, and two dead trees nearer at the sides.
     const bankPaint = this.standard({ color: "#2b3524", roughness: 1 }),
-      treePaint = this.standard({ color: "#1f2b20", roughness: 1 }),
       trunkPaint = this.standard({ color: "#2c241d", roughness: 1 });
     const mound = keep(new T.SphereGeometry(1, 24, 10));
     for (let k = 0; k < 7; k++) {
@@ -708,21 +708,21 @@ export class FrogView extends TableView<State> {
       mesh.scale.set(5.5 + rand() * 2, 0.55 + rand() * 0.3, 2);
       standing.add(mesh);
     }
-    const crown = keep(new T.IcosahedronGeometry(1, 1)),
+    // Their crowns are painted leaves on cards round a dark core (`Grove`), dark against the mist.
+    const grove = new Grove(standing, keep, { shadow: false, leaves: 0.7 }),
       trunk = keep(new T.CylinderGeometry(0.07, 0.13, 1, 7));
     trunk.translate(0, 0.5, 0);
     for (let k = 0; k < 15; k++) {
       const x = -25 + k * 3.6 + (rand() - 0.5) * 1.5,
         z = -16.5 - rand() * 2.5,
         tall = 1.2 + rand() * 1.4,
-        t = new T.Mesh(trunk, trunkPaint),
-        c = new T.Mesh(crown, treePaint);
+        t = new T.Mesh(trunk, trunkPaint);
       t.position.set(x, 0, z);
       t.scale.set(1.4, tall, 1.4);
-      c.position.set(x, tall + 0.3, z);
-      c.scale.set(1.4 + rand() * 0.8, 1.8 + rand() * 1, 1.4 + rand() * 0.8);
-      standing.add(t, c);
+      grove.crown(k % 3 ? "oak" : "birch", [x, tall + 0.3, z], [1.4 + rand() * 0.8, 1.8 + rand() * 1, 1.4 + rand() * 0.8], "#1f2b20", k);
+      standing.add(t);
     }
+    grove.build();
     const bough = keep(new T.CylinderGeometry(0.025, 0.06, 1, 6));
     bough.translate(0, 0.5, 0);
     for (const [x, z, tall] of [

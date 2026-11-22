@@ -825,14 +825,66 @@ describe("fruit merge", () => {
       world.fruits.slice(i + 1).forEach((b) => expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan((fruit.RADII[a.kind] + fruit.RADII[b.kind]) * 0.9)),
     );
   });
+  test("merges one soon after another are a combo: counted by the box, worth more, and the longest kept", () => {
+    let state = fruit.play(fruit.createGame(), to(fruit.MERGE + 2))!;
+    expect([state.score, state.combo]).toEqual([fruit.worth(2), 1]);
+    // The third of a combo on a lime: its worth and two of its rank more.
+    state = fruit.play(state, { from: -1, to: fruit.MERGE + 2, extra: 3 })!;
+    expect(state.score).toBe(fruit.worth(2) * 2 + fruit.bonus(2, 3));
+    expect(fruit.bonus(2, 3)).toBe(2 * 3);
+    expect(state.combo).toBe(3);
+    expect(fruit.bonus(0, 40)).toBe(5);
+    // Only a merge carries a combo, and never a count below one.
+    expect(fruit.play(state, { from: -1, to: fruit.DROP, extra: 2 })).toBeNull();
+    expect(fruit.play(state, { from: -1, to: fruit.MERGE, extra: 0 })).toBeNull();
+    expect(fruit.fruit.reason(fruit.play(state, to(fruit.OVER))!)).toMatch(/최고 콤보 3연속/);
+    // In the box: a merge that sets off another within the time is the second of a combo.
+    const world = box.createWorld(() => 0);
+    box.drop(world);
+    run(world, 1.5);
+    box.drop(world);
+    const first = run(world, 1.5).filter((h) => h.kind === "merge");
+    expect(first.map((h) => h.kind === "merge" && h.combo)).toEqual([1]);
+    const lonely = box.createWorld(() => 0);
+    lonely.time = 10;
+    lonely.merged = 9.5;
+    lonely.chain = 1;
+    lonely.fruits.push(
+      { id: 1, kind: 0, x: -1, y: 0.3, px: -1, py: 0.3, turn: 0, age: 2, grown: 1 },
+      { id: 2, kind: 0, x: -0.45, y: 0.3, px: -0.45, py: 0.3, turn: 0, age: 2, grown: 1 },
+    );
+    expect(box.step(lonely, 0).filter((h) => h.kind === "merge")).toMatchObject([{ kind: "merge", fruit: 0, combo: 2 }]);
+    // The cherry it made starts smaller than a cherry and grows to it.
+    expect(lonely.fruits.map((f) => [f.kind, f.grown])).toEqual([[1, box.SWELL]]);
+    run(lonely, box.SWELL_TIME + 0.05);
+    expect(lonely.fruits[0].grown).toBe(1);
+  });
+  test("a merged fruit swells into its place, and a heap at rest neither trembles nor creeps", () => {
+    let seed = 9;
+    const world = box.createWorld(() => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x80000000);
+    for (let i = 0; i < 20 && !world.ended; i++) {
+      box.drop(world);
+      run(world, 0.8, ((i * 37) % 13) / 2.2 - 3);
+    }
+    expect(world.ended).toBe(false);
+    run(world, 3);
+    let fastest = 0;
+    for (let i = 0; i < 120; i++) {
+      box.step(world, 0);
+      for (const f of world.fruits) fastest = Math.max(fastest, Math.hypot(f.x - f.px, f.y - f.py) / box.DT);
+    }
+    expect(world.fruits.every((f) => f.grown === 1)).toBe(true);
+    expect(fastest).toBeLessThan(0.05);
+  });
   test("fruit that stays above the line ends the game, and the same drops give the same box", () => {
     const play = () => {
-      // Kinds that never match their neighbours pile up in one column.
+      // Two kinds dropped by turns either side of the middle: they merge for a while, then pile up over the line
+      // (a merged fruit swells into its place now instead of bursting the heap, so it takes more drops than it did).
       const kinds = [4, 3, 4, 3, 4, 3, 4, 3, 4, 3, 4, 3];
       let k = 0;
       const world = box.createWorld(() => kinds[k++ % kinds.length] / box.HANDED + 0.01),
         heard: box.Happening[] = [];
-      for (let i = 0; i < 40 && !world.ended; i++) {
+      for (let i = 0; i < 80 && !world.ended; i++) {
         box.drop(world);
         heard.push(...run(world, 0.9, i % 2 ? 0.6 : -0.6));
       }

@@ -32,11 +32,15 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  * A puzzle is laid at random and then climbed (`createGame`): a floating shape of tiles (a blob, a ring, islands or
  * corridors) with blocks, the stage's pieces and a start is changed a cell at a time, and after every change every
  * state the pushes reach (the cube's cell, the ice broken, the gates raised) is searched breadth first. The goal goes
- * on the plain tile the cube first comes to rest on last, so every puzzle can be solved, in exactly `best` pushes. A
- * board is kept when that count reaches the one aimed at in the stage's band and the shortest way uses every piece the
- * stage asks for and enough different pieces, passes enough pushes that fall off, often goes away from the goal, the
+ * on one of the plain tiles the cube first comes to rest on last, so every puzzle can be solved, in exactly `best`
+ * pushes. A board is kept when that count reaches the one aimed at in the stage's band and the shortest way uses every
+ * piece the stage asks for and enough different pieces, passes enough pushes that fall off (one of them from the
+ * start), often goes away from the goal, takes enough of the turns a player has to find (`Motif`: the obvious push a
+ * fall, the goal passed over first, a cell rested on again, a turner met from two sides, a path through ice broken
+ * earlier, a pair of portals gone through both ways, a gate closed behind the cube), the stage's own among them, the
  * pushes reach enough states, a player pushing at random seldom finds it (`chance`, worked out exactly) and a greedy
- * one pushing toward the goal does not (`greedily`).
+ * one pushing toward the goal does not (`greedily`). The board is then made lean (`prune`): every tile, block and
+ * piece the puzzle can do without goes, so that what is left is all needed (`slack` is empty).
  */
 export const N = 0,
   E = 1,
@@ -167,9 +171,10 @@ const NONE = 0,
 const result = { code: NONE, cube: 0, ice: 0, gates: 0, end: "block" as Slide["end"], struck: -1 };
 /**
  * One push of the cube at `cube` going `dir`, with `ice` broken and `gates` raised, by the rules above; the cells
- * passed are written to `trace` when it is given. The result is left in `result`.
+ * passed are written to `trace` when it is given, and every cell the push looks at (passed, struck, beyond a turner,
+ * come out of a portal) is marked in `seen` when that is given. The result is left in `result`.
  */
-function push(b: Compiled, cube: number, ice: number, gates: number, dir: number, trace: Step[] | null) {
+function push(b: Compiled, cube: number, ice: number, gates: number, dir: number, trace: Step[] | null, seen: Uint8Array | null = null) {
   const { w, kinds, tags, partner, iceBit, nbr } = b,
     limit = b.n * 4 * (1 << b.nGates) + 4;
   let p = cube,
@@ -178,6 +183,7 @@ function push(b: Compiled, cube: number, ice: number, gates: number, dir: number
   for (let steps = 0; ; steps++) {
     if (steps > limit) return finish(LOOP, p, ice, gates, "block", -1);
     const q = nbr[p * 4 + d];
+    if (seen && q >= 0) seen[q] = 1;
     if (q < 0 || kinds[q] === AIR) {
       trace?.push({ r: Math.floor(p / w) + DR[d], c: (p % w) + DC[d], dir: d });
       return finish(FALL, p, ice, gates, "fall", -1);
@@ -199,6 +205,7 @@ function push(b: Compiled, cube: number, ice: number, gates: number, dir: number
       for (let guard = 0; guard <= b.n; guard++) {
         e = turned(e, kinds[t]);
         out = nbr[t * 4 + e];
+        if (seen && out >= 0) seen[out] = 1;
         if (out >= 0 && isTurner(kinds[out])) t = out;
         else break;
       }
@@ -215,6 +222,7 @@ function push(b: Compiled, cube: number, ice: number, gates: number, dir: number
     if (k === PORTAL && partner[q] >= 0) {
       trace?.push({ r: Math.floor(q / w), c: q % w, dir: d });
       p = partner[q];
+      if (seen) seen[p] = 1;
       moved = true;
       trace?.push({ r: Math.floor(p / w), c: p % w, dir: d, warp: true });
       continue;
@@ -411,15 +419,18 @@ export interface Stage {
   luck: number;
   /** How many states (the cube's place, the ice broken, the gates raised) the pushes must reach at least. */
   states: number;
+  /** How many different turns a player must find (`Motif`) the shortest way must take, and the ones it must take. */
+  turns: number;
+  must: Motif[];
   /** How many changes a board is climbed through before another is begun. */
   climb: number;
 }
 export const STAGES: Stage[] = [
-  { w: 9, h: 9, lo: 7, hi: 10, fill: [0.6, 0.8], turners: [0, 0], ice: [0, 0], portals: [0, 0], colours: [0, 0], gates: [0, 0], needs: [], touch: 0, traps: 3, away: 1, luck: 0.03, states: 18, climb: 2600 },
-  { w: 10, h: 10, lo: 9, hi: 13, fill: [0.6, 0.8], turners: [3, 5], ice: [0, 0], portals: [0, 0], colours: [0, 0], gates: [0, 0], needs: ["turn"], touch: 2, traps: 4, away: 2, luck: 0.025, states: 20, climb: 3200 },
-  { w: 10, h: 10, lo: 13, hi: 18, fill: [0.6, 0.8], turners: [2, 4], ice: [2, 4], portals: [0, 0], colours: [0, 0], gates: [0, 0], needs: ["turn", "ice"], touch: 4, traps: 5, away: 3, luck: 0.02, states: 50, climb: 3800 },
-  { w: 11, h: 11, lo: 16, hi: 22, fill: [0.58, 0.78], turners: [2, 4], ice: [2, 3], portals: [1, 2], colours: [0, 0], gates: [0, 0], needs: ["turn", "ice", "warp"], touch: 5, traps: 6, away: 4, luck: 0.015, states: 80, climb: 4200 },
-  { w: 12, h: 12, lo: 20, hi: 28, fill: [0.58, 0.78], turners: [2, 4], ice: [1, 3], portals: [1, 1], colours: [1, 2], gates: [1, 3], needs: ["turn", "warp", "toggle"], touch: 6, traps: 7, away: 5, luck: 0.01, states: 150, climb: 4800 },
+  { w: 9, h: 9, lo: 7, hi: 10, fill: [0.6, 0.8], turners: [0, 0], ice: [0, 0], portals: [0, 0], colours: [0, 0], gates: [0, 0], needs: [], touch: 0, traps: 3, away: 1, luck: 0.03, states: 18, turns: 1, must: ["overshoot"], climb: 2600 },
+  { w: 10, h: 10, lo: 9, hi: 13, fill: [0.6, 0.8], turners: [3, 5], ice: [0, 0], portals: [0, 0], colours: [0, 0], gates: [0, 0], needs: ["turn"], touch: 2, traps: 4, away: 2, luck: 0.025, states: 20, turns: 2, must: ["turn2"], climb: 3200 },
+  { w: 10, h: 10, lo: 14, hi: 19, fill: [0.6, 0.8], turners: [2, 4], ice: [2, 4], portals: [0, 0], colours: [0, 0], gates: [0, 0], needs: ["turn", "ice"], touch: 4, traps: 5, away: 3, luck: 0.02, states: 50, turns: 3, must: ["ice"], climb: 3800 },
+  { w: 11, h: 11, lo: 17, hi: 23, fill: [0.58, 0.78], turners: [2, 4], ice: [2, 3], portals: [1, 2], colours: [0, 0], gates: [0, 0], needs: ["turn", "ice", "warp"], touch: 5, traps: 6, away: 4, luck: 0.015, states: 80, turns: 3, must: ["portal2"], climb: 4200 },
+  { w: 12, h: 12, lo: 20, hi: 28, fill: [0.58, 0.78], turners: [2, 4], ice: [1, 3], portals: [1, 1], colours: [1, 2], gates: [1, 3], needs: ["turn", "warp", "toggle"], touch: 6, traps: 7, away: 5, luck: 0.01, states: 150, turns: 4, must: ["gates"], climb: 4800 },
 ];
 /** The stage a variant names (1 to 5). */
 export const stageOf = (stage: number) => Math.max(1, Math.min(STAGES.length, Math.round(stage) || 1));
@@ -717,6 +728,259 @@ export const chance = (state: State, steps: number) => {
 /** Whether a greedy player pushing toward the goal finds the way in a few tries (see `greedy`). */
 export const greedily = (state: State, random: Random) => greedy(compile(state), state.cube, gatesOf(state.raised), state.best, random);
 const GREEDY_TRIES = 24;
+/**
+ * A turn of a shortest way that a player has to find for themselves, told from the way (see `motifsOf`):
+ * - `trap`: at some push the way does not take, the obvious push (toward the goal, along the longer of the two ways
+ *   to it) slides off into the void;
+ * - `overshoot`: the cube passes over the goal before it can be stopped on it;
+ * - `revisit`: the cube comes to rest again on a cell it has rested on (the board has changed meanwhile, or it had to
+ *   go round);
+ * - `turn2`: one turner is met from two different sides (turning the cube, or standing as a wall);
+ * - `ice`: the cube slides through a cell whose ice it broke earlier, to what stood behind it;
+ * - `portal2`: one pair of portals is gone through twice, once each way (through the other portal, or the other way);
+ * - `gates`: a gate passed over while lowered is later met raised, closed behind the cube by a switch.
+ */
+export type Motif = "trap" | "overshoot" | "revisit" | "turn2" | "ice" | "portal2" | "gates";
+export const MOTIFS: readonly Motif[] = ["trap", "overshoot", "revisit", "turn2", "ice", "portal2", "gates"];
+/** The turns (`Motif`) a way of pushes from `start` takes on a board, with the gates raised at first as `gates0`. */
+function motifsOf(b: Compiled, start: number, gates0: number, goal: number, way: number[]) {
+  const set = new Set<Motif>(),
+    trace: Step[] = [],
+    rested = new Set<number>([start]),
+    approach = new Map<number, number>(),
+    entries = new Map<number, number[]>(),
+    opened: boolean[] = [],
+    { w, kinds, tags, iceBit } = b,
+    gr = Math.floor(goal / w),
+    gc = goal % w;
+  let cube = start,
+    ice = 0,
+    gates = gates0;
+  for (let i = 0; i < way.length; i++) {
+    const d = way[i],
+      dr = gr - Math.floor(cube / w),
+      dc = gc - (cube % w);
+    if (dr || dc) {
+      const obvious = Math.abs(dr) >= Math.abs(dc) ? (dr < 0 ? N : S) : dc > 0 ? E : W;
+      if (obvious !== d) {
+        push(b, cube, ice, gates, obvious, null);
+        if (result.code === FALL) set.add("trap");
+      }
+    }
+    trace.length = 0;
+    push(b, cube, ice, gates, d, trace);
+    const { cube: next, ice: broke, gates: after, end, struck } = result;
+    let dir = d,
+      g = gates;
+    for (let k = 0; k < trace.length; k++) {
+      const step = trace[k],
+        cell = step.r * w + step.c;
+      if (step.turned) approach.set(cell, (approach.get(cell) ?? 0) | (1 << dir));
+      if (step.warp) {
+        const entered = trace[k - 1].r * w + trace[k - 1].c,
+          list = entries.get(tags[entered]) ?? [];
+        list.push(entered * 4 + dir);
+        entries.set(tags[entered], list);
+      }
+      if (step.toggle !== undefined) g ^= 1 << step.toggle;
+      if (kinds[cell] === ICE && (ice >> iceBit[cell]) & 1) set.add("ice");
+      if (kinds[cell] === GATE && !((g >> tags[cell]) & 1)) opened[tags[cell]] = true;
+      if (cell === goal && (i < way.length - 1 || k < trace.length - 1)) set.add("overshoot");
+      dir = step.dir;
+    }
+    if (end === "wall") approach.set(struck, (approach.get(struck) ?? 0) | (1 << dir));
+    if (end === "gate" && opened[tags[struck]]) set.add("gates");
+    if (rested.has(next)) set.add("revisit");
+    rested.add(next);
+    cube = next;
+    ice = broke;
+    gates = after;
+  }
+  for (const sides of approach.values()) if (sides & (sides - 1)) set.add("turn2");
+  for (const list of entries.values())
+    for (const a of list)
+      for (const z of list)
+        if (a < z && ((a >> 2) !== (z >> 2) || ((a & 3) ^ (z & 3)) === 2)) set.add("portal2");
+  return set;
+}
+/** The turns a shortest way from the state shown takes (see `Motif`); empty when there is no way. */
+export function motifs(state: State): Motif[] {
+  const way = solve(state);
+  if (!way) return [];
+  const kinds = [...state.kinds];
+  kinds[state.goal] = FLOOR;
+  const b = build({ ...state, kinds, goal: -1 }),
+    set = motifsOf(b, state.cube, gatesOf(state.raised), state.goal, way);
+  return MOTIFS.filter((m) => set.has(m));
+}
+/** What a board with its goal comes to, measured as it is judged (see `judge`). */
+interface Assessed {
+  depth: number;
+  way: number[];
+  needs: number;
+  pieces: number;
+  traps: number;
+  away: number;
+  states: number;
+  turns: number;
+  /** Pushes from the start that fall off. */
+  falls: number;
+}
+/** Measures a board (its goal cell plain) with the goal on `goal`: null when the cube can never rest there. */
+function assess(d: Draft, spec: Stage, goal: number): Assessed | null {
+  const b = build({ ...d, goal: -1 }),
+    n = b.n,
+    gates = gatesOf(d.raised),
+    found = search(b, d.start, 0, gates, false);
+  let at = -1;
+  for (let j = 0; j < found.count && at < 0; j++) if (found.order[j] % n === goal) at = found.order[j];
+  if (at < 0) return null;
+  const way = pathTo(found, at),
+    states = found.count,
+    falls = found.falls[found.order[0]],
+    gr = Math.floor(goal / b.w),
+    gc = goal % b.w,
+    apart = (cell: number) => Math.abs(Math.floor(cell / b.w) - gr) + Math.abs((cell % b.w) - gc);
+  let traps = 0,
+    away = 0;
+  for (let s = at; found.parent[s] >= 0; s = found.parent[s]) {
+    const p = found.parent[s];
+    if (found.falls[p] > 0) traps++;
+    if (apart(s % n) > apart(p % n)) away++;
+  }
+  const { used, pieces } = traced(b, d.start, gates, way);
+  return { depth: way.length, way, needs: spec.needs.filter((x) => used.has(x)).length, pieces, traps, away, states, turns: motifsOf(b, d.start, gates, goal, way).size, falls };
+}
+/**
+ * The chance a random player finds the way, and whether a greedy one does, on a board with its goal on `goal` (the
+ * greedy player's ties are broken by a fixed sequence, so that the answer depends on the board alone).
+ */
+function naiveOf(d: Draft, goal: number, depth: number) {
+  const kinds = [...d.kinds];
+  kinds[goal] = GOAL;
+  const solved = build({ ...d, kinds, goal }),
+    gates = gatesOf(d.raised);
+  let seed = 0x9e3779b9;
+  const ties: Random = () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  return { lucky: luck(solved, d.start, gates, 2 * depth), greedy: greedy(solved, d.start, gates, depth, ties) };
+}
+type Naive = ReturnType<typeof naiveOf>;
+/**
+ * Whether cell `c` (with its partner, for a portal) can go from a board with its goal on `goal` (see `prune`): it is
+ * tried into the void and, for a block or a piece, as plain floor. When it can, the draft is left without it and what
+ * the board then measures is returned; otherwise the draft is put back as it was and null returned.
+ */
+function without(d: Draft, spec: Stage, goal: number, c: number, before: Assessed, naive: Naive): { after: Assessed; naive: Naive } | null {
+  const kind = d.kinds[c];
+  if (kind === AIR || c === d.start || c === goal) return null;
+  const pair = kind === PORTAL ? d.kinds.findIndex((k, x) => x !== c && k === PORTAL && d.tags[x] === d.tags[c]) : -1,
+    group = pair >= 0 ? [c, pair] : [c];
+  for (const to of kind === FLOOR ? [AIR] : [AIR, FLOOR]) {
+    const was = group.map((x) => [d.kinds[x], d.tags[x]]);
+    for (const x of group) {
+      d.kinds[x] = to;
+      d.tags[x] = -1;
+    }
+    const after = assess(d, spec, goal);
+    if (after && keeps(before, after, spec)) {
+      const trial = naiveOf(d, goal, before.depth);
+      if (trial.lucky <= naive.lucky + 1e-12 && (naive.greedy || !trial.greedy)) return { after, naive: trial };
+    }
+    group.forEach((x, k) => {
+      d.kinds[x] = was[k][0];
+      d.tags[x] = was[k][1];
+    });
+  }
+  return null;
+}
+/** Whether a board measures no easier after a change than before (see `prune`). */
+const keeps = (a: Assessed, x: Assessed, spec: Stage) =>
+  x.depth === a.depth &&
+  x.needs >= a.needs &&
+  x.pieces >= Math.min(a.pieces, spec.touch) &&
+  x.traps >= Math.min(a.traps, spec.traps) &&
+  x.away >= Math.min(a.away, spec.away) &&
+  x.states >= Math.min(a.states, spec.states) &&
+  x.turns >= a.turns &&
+  x.falls >= Math.min(a.falls, 1);
+/**
+ * A board made lean once its goal is chosen: every tile, block and piece that the puzzle does not need goes.
+ * - Tiles no push from any state reached ever comes onto, strikes, looks past (beyond a turner) or comes out on go
+ *   into the void at once: nothing changes without them.
+ * - Then each remaining thing but the start and the goal is tried away, one at a time (`without`; a portal with its
+ *   partner): a block or a piece into the void with its tile or, failing that, left as plain floor; a plain tile into
+ *   the void. It goes when the fewest pushes stay the same and the board measures no easier (`assess`, `keeps`):
+ *   whatever the stage asks that was met stays met (the pieces used, the falls beside the way and from the start, the
+ *   pushes away from the goal, the states reached), the way takes no fewer turns (`Motif`), a random player's chance
+ *   does not rise past the stage's and a greedy player that did not find the way still does not.
+ * Gone over until nothing more can go. The draft is changed in place.
+ */
+function prune(d: Draft, spec: Stage, goal: number, random: Random) {
+  const n = d.w * d.h,
+    gates = gatesOf(d.raised),
+    b = build({ ...d, goal: -1 }),
+    found = search(b, d.start, 0, gates, false),
+    seen = new Uint8Array(n);
+  seen[d.start] = seen[goal] = 1;
+  for (let j = 0; j < found.count; j++) {
+    const s = found.order[j],
+      rest = Math.floor(s / n);
+    for (let dir = 0; dir < 4; dir++) push(b, s % n, rest & ((1 << b.nIce) - 1), rest >> b.nIce, dir, null, seen);
+  }
+  for (let c = 0; c < n; c++)
+    if (!seen[c]) {
+      d.kinds[c] = AIR;
+      d.tags[c] = -1;
+    }
+  let before = assess(d, spec, goal);
+  if (!before) return;
+  let naive = naiveOf(d, goal, before.depth);
+  for (let pass = 0, changed = true; changed && pass < PRUNE_PASSES; pass++) {
+    changed = false;
+    const cells = d.kinds.flatMap((k, c) => (k !== AIR && c !== d.start && c !== goal ? [c] : []));
+    for (let i = cells.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [cells[i], cells[j]] = [cells[j], cells[i]];
+    }
+    for (const c of cells) {
+      const gone = without(d, spec, goal, c, before, naive);
+      if (!gone) continue;
+      before = gone.after;
+      naive = gone.naive;
+      changed = true;
+    }
+  }
+}
+/** How many times at most the cells of a board are gone over while it is made lean. */
+const PRUNE_PASSES = 8;
+/**
+ * The cells of a puzzle as laid that could still go by the rules of `prune` (none, for a board it has made lean):
+ * each with the fewest pushes and everything the board measures kept without it.
+ */
+export function slack(state: State): number[] {
+  const spec = STAGES[stageOf(state.stage) - 1],
+    kinds = [...state.kinds];
+  kinds[state.goal] = FLOOR;
+  const d: Draft = { w: state.w, h: state.h, kinds, tags: [...state.tags], start: state.start, raised: [...state.raised] },
+    before = assess(d, spec, state.goal);
+  if (!before) return [];
+  const naive = naiveOf(d, state.goal, before.depth),
+    out: number[] = [];
+  for (let c = 0; c < d.kinds.length; c++) {
+    const kinds0 = [...d.kinds],
+      tags0 = [...d.tags];
+    if (without(d, spec, state.goal, c, before, naive)) out.push(c);
+    d.kinds.splice(0, d.kinds.length, ...kinds0);
+    d.tags.splice(0, d.tags.length, ...tags0);
+  }
+  return out;
+}
 /** What a board comes to, judged for climbing: the goal it would take and how well it meets the stage. */
 interface Judged {
   score: number;
@@ -745,8 +1009,10 @@ function judge(d: Draft, spec: Stage, want: number, random: Random, strict: bool
       c = s % n;
     if (first[c] < 0) first[c] = s;
   }
-  let goal = -1;
-  for (let c = 0; c < n; c++) if (first[c] >= 0 && d.kinds[c] === FLOOR && c !== d.start && found.dist[first[c]] <= spec.hi && (goal < 0 || found.dist[first[c]] > found.dist[first[goal]])) goal = c;
+  // The plain tiles the cube first comes to rest on last (no more than `hi` pushes), the deepest first.
+  const cells: number[] = [];
+  for (let c = 0; c < n; c++) if (first[c] >= 0 && d.kinds[c] === FLOOR && c !== d.start && found.dist[first[c]] <= spec.hi) cells.push(c);
+  cells.sort((x, y) => found.dist[first[y]] - found.dist[first[x]] || x - y);
   const hot: number[] = [];
   for (let c = 0; c < n; c++)
     if (first[c] >= 0)
@@ -755,52 +1021,70 @@ function judge(d: Draft, spec: Stage, want: number, random: Random, strict: bool
           cc = (c % b.w) + DC[k];
         if (r >= 0 && cc >= 0 && r < b.h && cc < b.w) hot.push(r * b.w + cc);
       }
-  if (goal < 0) return { score: -1, goal, way: [], ready: false, done: false, hot };
-  const depth = found.dist[first[goal]],
-    way = pathTo(found, first[goal]),
-    { used, pieces } = traced(b, d.start, gates, way),
-    needs = spec.needs.filter((x) => used.has(x)).length;
-  let traps = 0,
-    away = 0;
-  const gr = Math.floor(goal / b.w),
-    gc = goal % b.w,
-    apart = (cell: number) => Math.abs(Math.floor(cell / b.w) - gr) + Math.abs((cell % b.w) - gc);
-  for (let s = first[goal]; found.parent[s] >= 0; s = found.parent[s]) {
-    const p = found.parent[s];
-    if (found.falls[p] > 0) traps++;
-    if (apart(s % n) > apart(p % n)) away++;
+  if (!cells.length) return { score: -1, goal: -1, way: [], ready: false, done: false, hot };
+  const startFalls = found.falls[found.order[0]] > 0,
+    states = 12 * Math.min(1, found.count / spec.states) + Math.min(found.count, 4 * spec.states) / spec.states;
+  // Of the deepest few (those at least as deep as aimed at, when there are such), the goal whose way judges best.
+  let pick: { score: number; goal: number; way: number[]; depth: number; ready: boolean } | null = null;
+  for (const goal of cells.slice(0, GOALS)) {
+    const depth = found.dist[first[goal]];
+    if (pick && depth < Math.min(want, found.dist[first[cells[0]]])) break;
+    const way = pathTo(found, first[goal]),
+      { used, pieces } = traced(b, d.start, gates, way),
+      needs = spec.needs.filter((x) => used.has(x)).length;
+    let traps = 0,
+      away = 0;
+    const gr = Math.floor(goal / b.w),
+      gc = goal % b.w,
+      apart = (cell: number) => Math.abs(Math.floor(cell / b.w) - gr) + Math.abs((cell % b.w) - gc);
+    for (let s = first[goal]; found.parent[s] >= 0; s = found.parent[s]) {
+      const p = found.parent[s];
+      if (found.falls[p] > 0) traps++;
+      if (apart(s % n) > apart(p % n)) away++;
+    }
+    const taken = motifsOf(b, d.start, gates, goal, way),
+      turns = taken.size,
+      musts = spec.must.filter((m) => taken.has(m)).length,
+      score =
+        2 * musts +
+        Number(startFalls) +
+        4 * Math.min(depth, want) +
+        2 * Math.min(turns, spec.turns) +
+        0.3 * turns +
+        3 * needs +
+        Math.min(pieces, spec.touch) +
+        0.5 * Math.min(traps, spec.traps) +
+        0.7 * Math.min(away, spec.away) +
+        states,
+      ready = depth >= want && needs === spec.needs.length && pieces >= spec.touch && traps >= spec.traps && away >= spec.away && found.count >= spec.states && turns >= spec.turns && musts === spec.must.length && startFalls;
+    if (!pick || score > pick.score) pick = { score, goal, way, depth, ready };
   }
-  let score =
-      4 * Math.min(depth, want) +
-      3 * needs +
-      Math.min(pieces, spec.touch) +
-      0.5 * Math.min(traps, spec.traps) +
-      0.7 * Math.min(away, spec.away) +
-      12 * Math.min(1, found.count / spec.states) +
-      Math.min(found.count, 4 * spec.states) / spec.states,
-    done = false,
-    lucky = -1;
-  const ready = depth >= want && needs === spec.needs.length && pieces >= spec.touch && traps >= spec.traps && away >= spec.away && found.count >= spec.states;
+  const { goal, way, depth, ready } = pick!;
+  let { score } = pick!,
+    done = false;
   // Once the way is long enough, how likely a random player is to stumble on it counts too.
   if (depth >= want) {
     const kinds = [...d.kinds];
     kinds[goal] = GOAL;
-    const solved = build({ ...d, kinds, goal });
-    lucky = luck(solved, d.start, gates, 2 * depth);
+    const solved = build({ ...d, kinds, goal }),
+      lucky = luck(solved, d.start, gates, 2 * depth);
     score += 8 * Math.min(1, spec.luck / Math.max(lucky, 1e-9));
     if (ready) done = !strict || (lucky <= spec.luck && !greedy(solved, d.start, gates, depth, random));
   }
   return { score, goal, way, ready, done, hot };
 }
+/** How many of the cells the cube comes to rest on last are tried for the goal. */
+const GOALS = 3;
 /**
  * A puzzle of a stage. A count of pushes is aimed at, drawn evenly from the stage's band; a board is laid
  * (`seedBoard`) and climbed: one change at a time (`mutate`), kept when the board judges no worse (`judge`), and now
  * and then when a little worse (less often as the climb goes on), until the shortest way to its goal takes at least
  * that many pushes and no more than `hi`, uses every piece the stage needs and enough different pieces, passes
- * enough falls and goes away from the goal often enough, and neither a greedy player pushing toward the goal nor a
- * random one finds it. A board that does not get there within `climb` changes is given up for another; after a few,
- * the naive players are no longer asked about, and later only the band counts. Everything follows from one number
- * drawn from `given`, so a sequence of numbers always lays the same puzzle.
+ * enough falls (one from the start) and goes away from the goal often enough, takes the turns the stage asks for
+ * (`Motif`), and neither a greedy player pushing toward the goal nor a random one finds it. A board that does not get
+ * there within `climb` changes is given up for another; after a few, the naive players are no longer asked about, and
+ * later only the band counts. The board chosen is made lean (`prune`). Everything follows from one number drawn from
+ * `given`, so a sequence of numbers always lays the same puzzle.
  */
 export function createGame(stage = 1, given: Random = cryptoRandom): State {
   // One number is drawn from `given`, and a quick generator seeded from it draws the rest: a secure draw for each of
@@ -842,6 +1126,8 @@ export function createGame(stage = 1, given: Random = cryptoRandom): State {
     }
     const chosen = cur.done ? { d, j: cur } : kept;
     if (!chosen) continue;
+    // Everything the puzzle does not need is taken away.
+    prune(chosen.d, spec, chosen.j.goal, random);
     const kinds = [...chosen.d.kinds];
     kinds[chosen.j.goal] = GOAL;
     const state: State = {

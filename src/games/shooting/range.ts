@@ -1,5 +1,6 @@
 import * as T from "three";
 import { block, stuff } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import { CLAYS, CLAY_SIZE, HOUSES } from "./clay";
 import { canvas, sequence, skyDome, texture } from "./paint";
 
@@ -171,21 +172,20 @@ export function buildRange(scene: T.Scene, keep: Keep): Range {
   fenceA.castShadow = fenceB.castShadow = true;
   scene.add(fenceA, fenceB);
   // Trees beyond the field: tall poplars and round trees, laid by a fixed sequence; low hills behind them.
+  // Their crowns are painted leaves on cards (`Grove`, as in the hunt's wood): fewer cards beyond 48 m.
   const trunk = keep(new T.CylinderGeometry(0.22, 0.32, 1, 7)),
-    poplar = keep(new T.SphereGeometry(1, 10, 8)),
-    round = keep(new T.IcosahedronGeometry(1, 1)),
     bark = std({ color: "#5b4632" }),
-    leaves = [std({ color: "#3f6a2e", flatShading: true }), std({ color: "#4f7d35", flatShading: true }), std({ color: "#5d8a3a", flatShading: true })],
-    trunks: T.Matrix4[] = [],
-    crowns: T.Matrix4[][] = [[], [], []],
-    crownsRound: T.Matrix4[][] = [[], [], []];
+    leaves = ["#3f6a2e", "#4f7d35", "#5d8a3a"],
+    grove = new Grove(scene, keep, { near: 48, bright: 1.5, lift: 1.2 }),
+    trunks: T.Matrix4[] = [];
   const tree = (x: number, z: number) => {
     const tall = random() < 0.45,
       h = tall ? 9 + random() * 6 : 6 + random() * 4,
       w = tall ? 1.4 + random() * 0.6 : 2.6 + random() * 1.6,
       which = Math.floor(random() * 3);
     trunks.push(new T.Matrix4().compose(new T.Vector3(x, h * 0.25, z), new T.Quaternion(), new T.Vector3(1, h * 0.5, 1)));
-    (tall ? crowns : crownsRound)[which].push(new T.Matrix4().compose(new T.Vector3(x, h * (tall ? 0.58 : 0.62), z), new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), random() * 6), new T.Vector3(w, tall ? h * 0.48 : w * 0.85, w)));
+    // A poplar: a tall narrow crown; a round tree: a broad heaped one.
+    grove.crown(tall ? "broad" : "oak", [x, h * (tall ? 0.58 : 0.62), z], [w * (tall ? 1.15 : 1), tall ? h * 0.48 : w * 0.85, w * (tall ? 1.15 : 1)], leaves[which], random() * 6);
   };
   for (let x = -110; x < 110; x += 5 + random() * 4) tree(x, -128 - random() * 30);
   for (const side of [-1, 1]) for (let z = -10; z > -125; z -= 6 + random() * 6) tree(side * (32 + random() * 30), z);
@@ -197,8 +197,7 @@ export function buildRange(scene: T.Scene, keep: Keep): Range {
     scene.add(mesh);
   };
   instanced(trunk, bark, trunks);
-  crowns.forEach((list, i) => instanced(poplar, leaves[i], list));
-  crownsRound.forEach((list, i) => instanced(round, leaves[i], list));
+  grove.build();
   const hill = std({ color: "#7f9f6a", flatShading: true });
   for (let k = 0; k < 6; k++) {
     const h = put(new T.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), hill, -180 + k * 72 + random() * 20, 0, -230 - random() * 40);

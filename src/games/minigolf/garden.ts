@@ -1,6 +1,7 @@
 import * as T from "three";
 import { block, stuff } from "../../engine/scene-utils";
 import { speckled } from "../../engine/scenery";
+import { Grove, leafTexture } from "../../engine/foliage";
 import { LAWN, flatten, seeded } from "./greens";
 import { COURSE, ORIGINS } from "./layout";
 import { HOLES, boxOf } from "./course";
@@ -158,14 +159,16 @@ export function garden(scene: T.Scene, keep: Keep, blooms: Bloom[]): Garden {
   }
   for (let x = FENCE.x0 + 3; x < FENCE.x1 - 1.5; x += 3.4) bed(x, FENCE.z1 - 0.45, 1.6, 0.4);
   // Trees: round crowns on brown trunks inside the fence, palms along the beach.
+  // Crowns of painted leaves (`Grove`, shared with the other gardens and woods).
   const trunk = keep(new T.MeshStandardMaterial({ color: "#7b5434", roughness: 0.9 })),
-    crowns = [keep(new T.MeshStandardMaterial({ color: "#3e9b45", roughness: 0.85 })), keep(new T.MeshStandardMaterial({ color: "#5cb544", roughness: 0.85 }))],
+    crowns = ["#3e9b45", "#5cb544"],
+    grove = new Grove(fixed, keep, { bright: 1.55, lift: 1.25 }),
     crown = keep(new T.IcosahedronGeometry(1, 2)),
     stem = keep(new T.CylinderGeometry(0.06, 0.09, 1, 10)),
     tree = (x: number, z: number, h: number) => {
       mesh(stem, trunk, fixed, x, LAWN + h / 2, z).scale.set(1, h, 1);
-      mesh(crown, crowns[Math.floor(random() * 2)], fixed, x, LAWN + h + 0.35, z).scale.setScalar(0.55 + random() * 0.15);
-      mesh(crown, crowns[0], fixed, x + 0.25, LAWN + h + 0.1, z + 0.1).scale.setScalar(0.32);
+      grove.crown("broad", [x, LAWN + h + 0.35, z], 0.55 + random() * 0.15, crowns[Math.floor(random() * 2)], x);
+      grove.crown("broad", [x + 0.25, LAWN + h + 0.1, z + 0.1], 0.32, crowns[0], z);
     };
   // At the corners of the garden, clear of every hole's line of sight.
   for (const [x, z, h] of [
@@ -175,8 +178,10 @@ export function garden(scene: T.Scene, keep: Keep, blooms: Bloom[]): Garden {
     [FENCE.x1 - 0.7, 4.5, 1.2],
   ])
     tree(x, z, h);
-  const frond = keep(new T.MeshStandardMaterial({ color: "#3f9440", roughness: 0.8, side: T.DoubleSide })),
-    leaf = keep(new T.PlaneGeometry(0.22, 1.1, 1, 4)),
+  grove.build();
+  // Palm fronds: leaflets painted on a clear ground either side of the rib, alpha-tested.
+  const frond = keep(new T.MeshStandardMaterial({ color: "#4f9a3e", map: leafTexture("frond", keep), alphaTest: 0.5, roughness: 0.8, side: T.DoubleSide })),
+    leaf = keep(new T.PlaneGeometry(0.36, 1.1, 1, 4)),
     bend = leaf.attributes.position;
   // Each frond droops along its length.
   for (let i = 0; i < bend.count; i++) bend.setZ(i, -0.35 * ((bend.getY(i) + 0.55) / 1.1) ** 2);

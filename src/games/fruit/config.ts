@@ -1,7 +1,7 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { FRUITS, MERGE, fruit, worth, type State } from "./rules";
-import { FRUIT_COLORS, FruitView } from "./view";
+import { COMBO_TIME, FRUITS, fruit, worth, type State } from "./rules";
+import { FRUIT_COLORS, FruitView, fruitCue } from "./view";
 
 const stat = (label: string, value: string | number) => `<span class="solo-stat"><small>${label}</small><b>${value}</b></span>`;
 export const fruitConfig: PointConfig<State> = {
@@ -13,20 +13,30 @@ export const fruitConfig: PointConfig<State> = {
   view: (host, quality) => new FruitView(host, quality),
   colors: FRUIT_COLORS,
   tallyHtml: (state) => [stat("점수", state.score) + `<i hidden data-drops="${state.drops}"></i>`, ""],
-  contact: (sound, state) => (state.last !== null && state.last >= MERGE ? sound.pop() : sound.tap()),
-  name: "과일 합치기",
+  // A merge squelches (lower for a larger fruit, higher for each of a combo), a landing plunks, the line rings once as the heap goes over it.
+  contact: (sound) => (fruitCue.kind === "merge" ? sound.squish(fruitCue.size, fruitCue.combo) : fruitCue.kind === "danger" ? sound.ding(0.5) : sound.plunk(fruitCue.strength, fruitCue.size)),
+  // The user asked for this title (it was 과일 합치기); the id stays fruit-merge.
+  name: "과일 게임",
   english: "Fruit Merge",
   number: "NO. 46 — TWO OF A KIND MAKE ONE",
   intro: `<p>유리 상자에 과일을 하나씩 떨어뜨립니다.<br>같은 과일끼리 닿으면 더 큰 과일 하나가 됩니다. 넘치기 전에 수박까지 키워 보세요. '수박 게임'으로 알려진 놀이입니다.</p>`,
   meta: `1인 · 과일 ${FRUITS.length}가지 · 실시간`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>TWO OF A KIND MAKE ONE</span>`,
   artClass: "hexa-art",
-  artLabel: "과일 합치기 미리보기",
+  artLabel: "과일 게임 미리보기",
   tableLabel: "THE GLASS BOX",
   tableNote: () => `과일 ${FRUITS.length}가지`,
   rulesTitle: "같은 과일 둘이 큰 과일 하나",
   rules:
     part("기본 규칙", steps("상자 위에 과일 하나가 매달려 있습니다. 좌우로 자리를 잡고 <b>떨어뜨립니다</b>.", "<b>같은 과일 둘이 닿으면</b> 합쳐져 한 단계 큰 과일 하나가 됩니다.", "과일은 구르고 밀립니다. 합쳐져 커진 과일이 옆의 과일을 밀어 또 합쳐지기도 합니다.", "쌓인 과일이 <b>빨간 선 위에 한동안 머물면</b> 끝납니다. 떨어지는 중인 과일은 세지 않습니다.", "끝이 따로 없습니다. 넘치기 전까지 점수를 모읍니다.")) +
+    part(
+      "콤보",
+      table(
+        ["콤보", `합쳐진 뒤 <b>${COMBO_TIME}초 안에</b> 또 합쳐지면 콤보가 이어집니다. 화면에 <b>콤보 ×2</b>처럼 뜹니다.`],
+        ["콤보 점수", "콤보의 둘째부터는 과일의 순서 번호만큼씩 더 받습니다. 셋째는 두 배, 다섯 번이 넘게 이어져도 다섯 배까지입니다."],
+        ["빨간 선", "쌓인 과일이 선에 가까워지면 선이 빛나고, 선을 넘으면 상자가 붉어지며 <b>넘쳐요!</b>와 남은 시간이 뜹니다."],
+      ),
+    ) +
     part("과일의 순서", table(...FRUITS.map((name, kind): [string, string] => [`${kind + 1}. ${name}`, kind + 1 < FRUITS.length ? `둘이 합쳐지면 ${FRUITS[kind + 1]} · ${worth(kind)}점` : `가장 큰 과일. 둘이 닿으면 함께 사라지고 ${worth(kind)}점`]), ["손에 오는 과일", `${FRUITS.slice(0, 5).join(", ")} 가운데 하나가 무작위로 옵니다. 그다음에 올 과일은 상자 오른쪽 접시에 놓여 있습니다.`])) +
     part("떨어뜨리기", table(["마우스", "좌우로 움직여 자리를 잡고 누릅니다."], ["터치", "손가락을 대고 좌우로 끌다가 떼면 떨어집니다."], ["키보드", "← → 로 옮기고 스페이스(또는 ↓)로 떨어뜨립니다."], ["기다림", "하나를 떨어뜨리면 다음 과일이 손에 올 때까지 잠깐 기다립니다."])) +
     part("일시정지", table(["멈추기", "판 오른쪽 위의 <b>❙❙</b> 버튼이나 키보드 P를 누르면 멈춥니다."], ["이어 하기", "같은 자리의 <b>▶</b> 버튼이나 P를 다시 누릅니다."], ["저절로 멈출 때", "게임 방법이나 설정 창이 열려 있는 동안에도 멈춥니다."])) +

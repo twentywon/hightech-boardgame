@@ -512,7 +512,7 @@ export const games = [
     available: true,
   },
   {
-    name: "과일 합치기",
+    name: "과일 게임",
     en: "FRUIT MERGE",
     category: "아케이드게임",
     players: "1인용",

@@ -1,4 +1,4 @@
-import { KINDS, RADII } from "./rules";
+import { COMBO_TIME, KINDS, RADII } from "./rules";
 
 /**
  * The glass box of the fruit game, free of Three.js and DOM: round fruits
@@ -24,7 +24,15 @@ export const HALF = 3.4,
   MAX = 90,
   /** How much of its speed a fruit keeps from one slice to the next, and how much of its roll the floor takes: the skins are slippery (the user asked for far less friction). */
   SLIDE = 0.9993,
-  FLOOR = 0.006;
+  FLOOR = 0.006,
+  /** Below this way a slice (about 0.06 a second) a fruit is all but at rest and keeps only `SETTLE` of its motion. */
+  REST = 0.0005,
+  SETTLE = 0.5,
+  /** The size a merged fruit starts at and the seconds it takes to swell to its own. */
+  SWELL = 0.62,
+  SWELL_TIME = 0.2;
+/** A fruit's radius as it is now (a new one is still swelling). */
+export const sizeOf = (f: Fruit) => RADII[f.kind] * f.grown;
 export interface Fruit {
   id: number;
   kind: number;
@@ -36,6 +44,8 @@ export interface Fruit {
   /** How far it has rolled, for the picture. */
   turn: number;
   age: number;
+  /** How much of its size it has: a fruit just made by a merge swells into its place (from `SWELL`) instead of bursting the heap apart. */
+  grown: number;
 }
 export interface World {
   fruits: Fruit[];
@@ -48,12 +58,16 @@ export interface World {
   over: number;
   ended: boolean;
   serial: number;
+  /** The box's own clock, when the last merge was and how many have come one after another. */
+  time: number;
+  merged: number;
+  chain: number;
   random: () => number;
 }
-export type Happening = { kind: "drop" } | { kind: "merge"; fruit: number; x: number; y: number } | { kind: "bump" } | { kind: "over" };
+export type Happening = { kind: "drop" } | { kind: "merge"; fruit: number; x: number; y: number; combo: number } | { kind: "bump" } | { kind: "over" };
 const hand = (random: () => number) => Math.min(HANDED - 1, Math.floor(random() * HANDED));
 export function createWorld(random: () => number = Math.random): World {
-  return { fruits: [], held: hand(random), next: hand(random), aim: 0, wait: 0, over: 0, ended: false, serial: 0, random };
+  return { fruits: [], held: hand(random), next: hand(random), aim: 0, wait: 0, over: 0, ended: false, serial: 0, time: 0, merged: -Infinity, chain: 0, random };
 }
 const clamp = (x: number, r: number) => Math.max(-HALF + r, Math.min(HALF - r, x));
 /** Lets go of the fruit in hand over where the hand is. */
@@ -61,7 +75,7 @@ export function drop(world: World): Happening[] {
   if (world.ended || world.wait > 0 || world.fruits.length >= MAX) return [];
   const r = RADII[world.held],
     x = clamp(world.aim, r);
-  world.fruits.push({ id: world.serial++, kind: world.held, x, y: HAND, px: x, py: HAND, turn: 0, age: 0 });
+  world.fruits.push({ id: world.serial++, kind: world.held, x, y: HAND, px: x, py: HAND, turn: 0, age: 0, grown: 1 });
   world.held = world.next;
   world.next = hand(world.random);
   world.wait = WAIT;
@@ -73,7 +87,9 @@ export function step(world: World, aim: number): Happening[] {
   if (world.ended) return out;
   world.aim = clamp(aim, RADII[world.held]);
   world.wait = Math.max(0, world.wait - DT);
+  world.time += DT;
   for (const f of world.fruits) {
+    if (f.grown < 1) f.grown = Math.min(1, f.grown + ((1 - SWELL) * DT) / SWELL_TIME);
     const r = RADII[f.kind],
       limit = r * 0.45,
       vx = Math.max(-limit, Math.min(limit, (f.x - f.px) * SLIDE)),
@@ -91,11 +107,11 @@ export function step(world: World, aim: number): Happening[] {
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
       if (gone.has(a)) continue;
-      const ra = RADII[a.kind];
+      const ra = sizeOf(a);
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j];
         if (gone.has(b)) continue;
-        const rb = RADII[b.kind],
+        const rb = sizeOf(b),
           dx = b.x - a.x,
           dy = b.y - a.y,
           reach = ra + rb,
@@ -106,11 +122,17 @@ export function step(world: World, aim: number): Happening[] {
           gone.add(a).add(b);
           const x = (a.x + b.x) / 2,
             y = (a.y + b.y) / 2;
-          out.push({ kind: "merge", fruit: a.kind, x, y });
+          // One soon after another makes a combo.
+          world.chain = world.time - world.merged <= COMBO_TIME ? world.chain + 1 : 1;
+          world.merged = world.time;
+          out.push({ kind: "merge", fruit: a.kind, x, y, combo: world.chain });
           if (a.kind + 1 < KINDS) {
             const r = RADII[a.kind + 1],
-              at = { x: clamp(x, r), y: Math.max(r, y) };
-            born.push({ id: world.serial++, kind: a.kind + 1, x: at.x, y: at.y, px: at.x, py: at.y, turn: (a.turn + b.turn) / 2, age: Math.min(a.age, b.age) });
+              at = { x: clamp(x, r), y: Math.max(r * SWELL, y) },
+              // It keeps the two fruits' mean motion, so a merge in flight goes on falling.
+              vx = (a.x - a.px + b.x - b.px) / 2,
+              vy = (a.y - a.py + b.y - b.py) / 2;
+            born.push({ id: world.serial++, kind: a.kind + 1, x: at.x, y: at.y, px: at.x - vx, py: at.y - vy, turn: (a.turn + b.turn) / 2, age: Math.min(a.age, b.age), grown: SWELL });
           }
           break;
         }
@@ -128,7 +150,7 @@ export function step(world: World, aim: number): Happening[] {
     }
     for (const f of list) {
       if (gone.has(f)) continue;
-      const r = RADII[f.kind];
+      const r = sizeOf(f);
       if (f.x < -HALF + r) f.x = -HALF + r;
       else if (f.x > HALF - r) f.x = HALF - r;
       if (f.y < r) {
@@ -145,8 +167,15 @@ export function step(world: World, aim: number): Happening[] {
   if (gone.size) world.fruits = world.fruits.filter((f) => !gone.has(f)).concat(born);
   let spilling = false;
   for (const f of world.fruits) {
+    // What is all but still is let come to rest, so that a heap does not tremble or creep round (moving fruit keeps its slide).
+    const mx = f.x - f.px,
+      my = f.y - f.py;
+    if (mx * mx + my * my < REST * REST) {
+      f.px = f.x - mx * SETTLE;
+      f.py = f.y - my * SETTLE;
+    }
     f.turn -= (f.x - f.px) / RADII[f.kind];
-    if (f.age > GRACE && f.y + RADII[f.kind] > LINE) spilling = true;
+    if (f.age > GRACE && f.y + sizeOf(f) > LINE) spilling = true;
   }
   world.over = spilling ? world.over + DT : 0;
   if (world.over > SPILL) {

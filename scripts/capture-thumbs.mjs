@@ -349,7 +349,7 @@ const play = {
     }
     await wait(1200);
   },
-  // A 어려움 board (10×10) after three presses of the hint's way (H plays it while capturing): tubes drawn out, the ball moved.
+  // A 어려움 board (8×8) after three presses of the hint's way (H plays it while capturing): tubes drawn out, the ball moved.
   "telescope-push": async () => {
     await stage(2);
     await page.evaluate(() => (document.documentElement.dataset.capture = "1"));

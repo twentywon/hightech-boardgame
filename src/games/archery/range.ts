@@ -1,6 +1,6 @@
 import * as T from "three";
-import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block, stuff, wood } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import { FACE_Y, FACE_Z } from "./layout";
 import { FACE, ZONE, X_RING, type Wind } from "./rules";
 
@@ -130,27 +130,6 @@ function leaves(base: string, seed: number) {
   const texture = canvasTexture(c);
   texture.wrapS = texture.wrapT = T.RepeatWrapping;
   return texture;
-}
-/** A tree's crown: a ball of leaves, lumpy (its points pushed in and out by a fixed sequence) and softly shaded. */
-function crown() {
-  const ball = new T.IcosahedronGeometry(1, 3);
-  ball.deleteAttribute("normal");
-  ball.deleteAttribute("uv");
-  // Shared points first, so that each is pushed once and the ball stays closed.
-  const geometry = mergeVertices(ball),
-    at = geometry.getAttribute("position"),
-    random = sequence(29),
-    bumps = Array.from({ length: 9 }, () => ({ d: new T.Vector3(random() - 0.5, random() - 0.5, random() - 0.5).normalize(), k: 0.08 + random() * 0.12 })),
-    v = new T.Vector3();
-  ball.dispose();
-  for (let i = 0; i < at.count; i++) {
-    v.fromBufferAttribute(at, i).normalize();
-    let r = 0.9 + 0.025 * Math.sin(v.x * 23 + v.y * 17) * Math.cos(v.z * 19 - v.y * 11);
-    for (const bump of bumps) r += bump.k * Math.max(0, v.dot(bump.d)) ** 3;
-    at.setXYZ(i, v.x * r, v.y * r * 0.92, v.z * r);
-  }
-  geometry.computeVertexNormals();
-  return geometry;
 }
 /** The sky: deep blue overhead, hazy toward the trees. */
 function sky() {
@@ -383,7 +362,9 @@ export function buildRange(
   for (const s of [-1, 1])
     for (let z = -18; z >= -105; z -= 5 + trees2() * 4) trees.push({ x: s * (26 + trees2() * 30), z, h: 8 + trees2() * 8 });
   const trunks = new T.InstancedMesh(keep(new T.CylinderGeometry(0.22, 0.32, 1, 7)), standard({ color: "#5b4632", roughness: 1 }), trees.length),
-    crowns = new T.InstancedMesh(keep(crown()), standard({ roughness: 1 }), trees.length * 2),
+    // Crowns of painted leaves on cards round dark cores (`Grove`); the sight's long lens shows them large, so every
+    // crown keeps its whole set of cards.
+    crowns = new Grove(scene, keep, { shadow: false, leaves: 0.75 }),
     foliage = ["#2f5a2a", "#3d6b30", "#466f2e", "#2a4f2c", "#557a34"],
     scale = new T.Vector3(),
     place = new T.Vector3(),
@@ -393,13 +374,15 @@ export function buildRange(
     trunks.setMatrixAt(i, matrix.compose(place.set(tree.x, trunk / 2, tree.z), turn.identity(), scale.set(1, trunk, 1)));
     for (let k = 0; k < 2; k++) {
       const r = tree.h * (k ? 0.24 : 0.32);
-      turn.setFromAxisAngle(new T.Vector3(0, 1, 0), trees2() * 6.28);
-      crowns.setMatrixAt(i * 2 + k, matrix.compose(place.set(tree.x + (k ? (trees2() - 0.5) * r : 0), trunk + r * (k ? 1.9 : 0.85), tree.z + (k ? (trees2() - 0.5) * r : 0)), turn, scale.set(r * 1.05, r * (1.05 + trees2() * 0.3), r)));
-      crowns.setColorAt(i * 2 + k, colour.set(foliage[Math.floor(trees2() * foliage.length)]));
+      const spin = trees2() * 6.28;
+      place.set(tree.x + (k ? (trees2() - 0.5) * r : 0), trunk + r * (k ? 1.9 : 0.85), tree.z + (k ? (trees2() - 0.5) * r : 0));
+      scale.set(r * 1.05, r * (1.05 + trees2() * 0.3), r);
+      crowns.crown(i % 3 ? "oak" : "broad", place, [scale.x * 1.1, scale.y * 1.1, scale.z * 1.1], foliage[Math.floor(trees2() * foliage.length)], spin);
     }
   });
-  trunks.castShadow = crowns.castShadow = false;
-  scene.add(far(trunks), far(crowns));
+  trunks.castShadow = false;
+  scene.add(far(trunks));
+  crowns.build().forEach(far);
   // Low hills beyond, lost in the haze.
   const hillPaint = standard({ color: "#6f8f6a", roughness: 1 });
   for (const [x, z, w, h] of [[-150, -205, 120, 30], [-10, -225, 150, 38], [140, -210, 130, 28]]) {

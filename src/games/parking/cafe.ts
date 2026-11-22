@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block, glossy, stuff } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 
 type Keep = <R extends { dispose(): void }>(resource: R) => R;
 /** What the café is built with: where it goes, and the view's own keeping and paints (so that the view disposes of it all). */
@@ -479,7 +480,7 @@ export function cafe(kit: Kit) {
   });
   // Pots of shrubs by the door and along the wall toward the lot.
   const clay = paint({ color: "#b8633f", roughness: 0.8 }),
-    leaves = paint({ color: "#4f8a3a", roughness: 0.85 });
+    shrubs = new Grove(root, keep, { bright: 1.55, lift: 1.25 });
   for (const [x, z, big] of [
     [right - 1.42, front + 0.12, 1],
     [right - 0.58, front + 0.12, 1],
@@ -487,8 +488,9 @@ export function cafe(kit: Kit) {
     [right + 0.16, back + 1.27, 1.2],
   ]) {
     put(new T.CylinderGeometry(0.085 * big, 0.065 * big, 0.14 * big, 16), clay, x, 0.05 + 0.07 * big, z);
-    put(new T.IcosahedronGeometry(0.115 * big, 1), leaves, x, 0.05 + 0.22 * big, z);
+    shrubs.crown("box", [x, 0.05 + 0.22 * big, z], 0.115 * big, "#4f8a3a", x + z);
   }
+  shrubs.build();
   // A menu board on the walk, folded open.
   const chalk = paint({ map: chalkboard(keep), roughness: 0.85 }),
     stand = new T.Group();
@@ -500,22 +502,22 @@ export function cafe(kit: Kit) {
   }
   root.add(stand);
   // Trees on the grass beyond the café.
+  // Their crowns are painted leaves on cards round a dark core (`Grove`).
   const bark = paint({ color: "#6b4a2e", roughness: 0.9 }),
-    crown = keep(new T.IcosahedronGeometry(0.55, 1)),
+    grove = new Grove(root, keep, { bright: 1.55, lift: 1.25 }),
     trunk = keep(new T.CylinderGeometry(0.07, 0.1, 0.7, 10)),
-    greens = [paint({ color: "#4f8a3a", roughness: 0.85 }), paint({ color: "#3e7432", roughness: 0.85 })];
+    greens = ["#4f8a3a", "#3e7432"];
   [
     [left - 0.85, back + 0.6],
     [left - 1.05, back + 2.7],
     [left - 0.8, front + 1.6],
     [left - 1.15, front + 3.4],
   ].forEach(([x, z], k) => {
-    const t = new T.Mesh(trunk, bark),
-      c = new T.Mesh(crown, greens[k % 2]);
+    const t = new T.Mesh(trunk, bark);
     t.position.set(x, 0.35, z);
-    c.position.set(x, 0.95, z);
-    c.scale.setScalar(0.85 + (k % 3) * 0.1);
-    t.castShadow = c.castShadow = true;
-    root.add(t, c);
+    grove.crown("broad", [x, 0.95, z], 0.55 * (0.85 + (k % 3) * 0.1), greens[k % 2], z);
+    t.castShadow = true;
+    root.add(t);
   });
+  grove.build();
 }

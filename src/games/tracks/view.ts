@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block, planks, stuff, wood } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import { capturing } from "../../ui/banner";
 import type { Move } from "../points/types";
 import type { Marks } from "../points/view";
@@ -135,7 +136,6 @@ export class TracksView extends TableView<State> {
     p("trim", { color: "#2f4f3e", roughness: 0.6 });
     p("glass", { color: "#33475a", roughness: 0.15, metalness: 0.2 });
     p("platform", { ...stuff("stone", "#c8c0b2", 1, keep), roughness: 0.9 });
-    p("leaf", { color: "#3c6e34", roughness: 0.9 });
     p("bark", { color: "#5b4130", roughness: 0.9 });
     // The train's paint.
     p("red", { color: "#b5302a", roughness: 0.45, metalness: 0.15 });
@@ -411,10 +411,10 @@ export class TracksView extends TableView<State> {
       [face + 0.45, 0.62, -0.26, 0.12],
       [face + 0.7, 0.55, 0.22, 0.1],
     ];
-    for (const [x, y, z, r] of bushes) {
-      const bush = this.mesh(this.fit(new T.IcosahedronGeometry(r, 1).scale(1, 0.8, 1)), this.paint.leaf, group);
-      bush.position.set(x, GROUND + y, z);
-    }
+    // Each a heap of painted leaves on cards round a dark core (`Grove`).
+    const grove = new Grove(group, (r) => this.fit(r), { bright: 1.85, lift: 1.4 });
+    for (const [x, y, z, r] of bushes) grove.crown("oak", [x, GROUND + y, z], [r * 1.12, r * 0.9, r * 1.12], "#3c6e34", x + z);
+    grove.build();
   }
   /** The exit: rails along a platform to a buffer stop, a station house behind the platform, a lamp and a sign. */
   private station(port: Port) {
@@ -511,13 +511,15 @@ export class TracksView extends TableView<State> {
       if (spots.some((p) => Math.hypot(p.x - x, p.z - z) < 0.42)) continue;
       spots.push({ x, z });
     }
+    const grove = new Grove(this.scenery, (r) => this.fit(r), { bright: 1.85, lift: 1.4 });
     for (const spot of spots) {
       const scale = 0.75 + rand() * 0.4,
         trunk = this.mesh(this.fit(new T.CylinderGeometry(0.025 * scale, 0.035 * scale, 0.16 * scale, 8)), this.paint.bark, this.scenery);
       trunk.position.set(spot.x, GROUND + 0.08 * scale, spot.z);
-      const crown = this.mesh(this.fit(new T.IcosahedronGeometry(0.16 * scale, 1).scale(1, 1.15, 1)), this.paint.leaf, this.scenery);
-      crown.position.set(spot.x, GROUND + 0.26 * scale, spot.z);
+      // A round crown of painted leaves on cards (`Grove`).
+      grove.crown("broad", [spot.x, GROUND + 0.26 * scale, spot.z], [0.185 * scale, 0.21 * scale, 0.185 * scale], "#3c6e34", spot.x * 7);
     }
+    grove.build();
   }
   /** The train: a small locomotive and two carriages, each a group whose +z runs forward. */
   private buildTrain() {

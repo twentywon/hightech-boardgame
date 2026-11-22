@@ -33,8 +33,8 @@ export const snakeConfig: PointConfig<State> = {
   colors: SNAKE_COLORS,
   keyMove: (key) => (key in KEYS ? { from: -1, to: TURN + KEYS[key], extra: -1 } : null),
   tallyHtml: (state) => [stat("사과", state.eaten) + stat("점수", state.score), ""],
-  // An apple crunches, a golden one glitters, a crash knocks.
-  contact: (sound, state) => (state.last?.crashed ? sound.knock(2) : state.last?.ate === "gold" ? sound.sparkle() : sound.pop()),
+  // An apple crunches, a golden one crunches with a glitter, a crash bonks.
+  contact: (sound, state) => (state.last?.crashed ? sound.bonk() : sound.crunch(state.last?.ate === "gold")),
   // Arrow keys at the lower left, as on a keyboard.
   toolsLayout: "arrows",
   tools: [
@@ -67,10 +67,10 @@ export const snakeConfig: PointConfig<State> = {
         `<b>울타리, 돌, 자기 몸</b>에 머리가 부딪히면 끝납니다. 그때까지 사과를 ${GOAL}개 이상 먹었으면 성공입니다.`,
       ),
     ) +
-    part("움직이기", table(["키보드", "방향키나 W·A·S·D로 방향을 바꿉니다."], ["터치·마우스", "판 위를 바꾸고 싶은 쪽으로 쓸어 넘기거나, 왼쪽 아래의 화살표 버튼을 누릅니다."], ["미리 누르기", "다음 두 번의 방향 바꾸기까지 미리 눌러 둘 수 있습니다. 좁은 곳에서 유턴할 때 씁니다."])) +
+    part("움직이기", table(["키보드", "방향키나 W·A·S·D로 방향을 바꿉니다."], ["터치·마우스", "화면 어디서든 바꾸고 싶은 쪽으로 쓸어 넘기거나, 왼쪽 아래의 화살표 버튼을 누릅니다. 뱀 머리의 옆쪽을 톡 누르면 그쪽으로 돕니다."], ["미리 누르기", "다음 두 번의 방향 바꾸기까지 미리 눌러 둘 수 있습니다. 좁은 곳에서 유턴할 때 씁니다."])) +
     part("레벨", table(...LEVELS.map((level, i): [string, string] => [`${i + 1}. ${level.name}`, `${level.stones ? (level.stones > 1 ? "돌담으로 된 미로" : "모서리마다 돌이 놓인 정원") : "빈 정원"}, ${level.speed >= 180 ? "느린 걸음" : level.speed >= 130 ? "보통 걸음" : "빠른 걸음"}`]), ["고르기", "위쪽의 <b>레벨 선택</b>을 누르면 고를 수 있습니다."])) +
     part("처음이라면", notes("벽을 따라 크게 돌면 몸이 길어져도 갇히지 않습니다.", "몸으로 막힌 곳에 들어가기 전에 나올 길이 있는지 봅니다.", "황금 사과가 멀면 무리하지 말고 사과부터 먹습니다.")),
-  help: "키보드: 방향키·WASD로 방향을 바꿉니다<br>터치·마우스: 판을 쓸어 넘기거나 화살표 버튼을 누릅니다",
+  help: "키보드: 방향키·WASD로 방향을 바꿉니다<br>터치·마우스: 판을 쓸어 넘기거나, 머리 옆쪽을 누르거나, 화살표 버튼을 누릅니다",
   sides: ["나", ""],
   startWord: "정원에 풀어 놓기",
 };

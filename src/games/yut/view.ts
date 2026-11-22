@@ -1,8 +1,21 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, block, glossy, hop, travel } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import { hanokYard } from "../../engine/scenery";
 import { FINISHED, PIECES, WAITING } from "./rules";
+import {
+  STICK,
+  TOKEN,
+  boardTexture,
+  emblemTexture,
+  ropeTexture,
+  standOff,
+  stickBack,
+  stickFace,
+  stickGeometry,
+  strawMaterial,
+  tokenGeometry,
+} from "./props";
 
 /** What the yard shows. The view draws stations; it knows no rules. */
 export interface YardModel {
@@ -34,10 +47,12 @@ const BOARD_Z = 0.25,
   THROW_Z = 4.35,
   WAIT_X = 3.0,
   HOME_Z = -3.0,
-  PIECE_R = 0.27,
-  PIECE_H = 0.13,
-  STICK_R = 0.17,
-  STICK_L = 1.55;
+  PIECE_H = TOKEN.height,
+  /** The top of the board, which stands a little proud of the mat. */
+  BOARD_TOP = 0.055,
+  BOARD_SIZE = REACH * 2 + 1.1,
+  /** How high a stick lying still stands, either way up. */
+  STICK_REST = STICK.height / 2 + 0.002;
 /** Blue, red, green and yellow: one colour a player. */
 export const COLORS = ["#2f5fa8", "#c23b2b", "#2f8a4f", "#d9a521"];
 /** Where a player's waiting pieces begin, across the yard: the first two beside the throwing strip, the next two between it and them. */
@@ -64,150 +79,6 @@ function restAt(player: number, index: number, finished: boolean) {
       { x: side * (REACH + 0.95), z: HOME_Z + (index + (player < 2 ? 0 : PIECES)) * 0.62 }
     : { x: waitX(player) + side * (index % 2) * 0.62, z: THROW_Z - 0.35 + Math.floor(index / 2) * 0.62 };
 }
-function canvas(width: number, height: number) {
-  const c = document.createElement("canvas");
-  c.width = width;
-  c.height = height;
-  return { c, ctx: c.getContext("2d")! };
-}
-function texture(c: HTMLCanvasElement, repeat = 1) {
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  t.anisotropy = 4;
-  if (repeat !== 1) {
-    t.wrapS = t.wrapT = T.RepeatWrapping;
-    t.repeat.set(repeat, repeat);
-  }
-  return t;
-}
-function noise(seed: number) {
-  return () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-}
-/** Speckled ground: packed earth, or grey stone. */
-function speckled(base: string, marks: string[], seed: number, repeat: number) {
-  const { c, ctx } = canvas(256, 256),
-    rand = noise(seed);
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 2600; i++) {
-    ctx.fillStyle = marks[Math.floor(rand() * marks.length)];
-    const size = 1 + rand() * 2.4;
-    ctx.fillRect(rand() * 256, rand() * 256, size, size);
-  }
-  return texture(c, repeat);
-}
-/** A straw mat: rows of twisted straw bound by darker cords. */
-function strawTexture() {
-  const { c, ctx } = canvas(512, 512),
-    rand = noise(5);
-  ctx.fillStyle = "#c2a565";
-  ctx.fillRect(0, 0, 512, 512);
-  for (let y = 0; y < 512; y += 8) {
-    ctx.fillStyle = `rgba(${150 + rand() * 60}, ${118 + rand() * 40}, 52, 0.55)`;
-    ctx.fillRect(0, y, 512, 5);
-    for (let x = (y / 8) % 2 ? 0 : 6; x < 512; x += 12) {
-      ctx.fillStyle = `rgba(96, 66, 24, ${0.12 + rand() * 0.14})`;
-      ctx.fillRect(x, y, 2, 8);
-    }
-  }
-  for (let x = 32; x < 512; x += 64) {
-    ctx.fillStyle = "rgba(92, 62, 24, 0.38)";
-    ctx.fillRect(x, 0, 4, 512);
-  }
-  return texture(c, 3);
-}
-/** The board: hanji with the twenty-nine stations in ink. */
-function boardTexture() {
-  const size = 1024,
-    { c, ctx } = canvas(size, size),
-    rand = noise(23),
-    scale = size / (REACH * 2 + 1.1),
-    px = (station: number) => {
-      const p = stationAt(station);
-      return [size / 2 + p.x * scale, size / 2 + (p.z - BOARD_Z) * scale] as const;
-    };
-  ctx.fillStyle = "#efe2c2";
-  ctx.fillRect(0, 0, size, size);
-  for (let i = 0; i < 900; i++) {
-    ctx.fillStyle = `rgba(120, 92, 48, ${rand() * 0.07})`;
-    ctx.fillRect(rand() * size, rand() * size, 2 + rand() * 26, 1.5);
-  }
-  ctx.strokeStyle = "#3a2c1f";
-  ctx.lineWidth = 10;
-  ctx.strokeRect(14, 14, size - 28, size - 28);
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = "rgba(58, 44, 31, 0.55)";
-  const line = (stations: number[]) => {
-    ctx.beginPath();
-    stations.forEach((s, i) => (i ? ctx.lineTo(...px(s)) : ctx.moveTo(...px(s))));
-    ctx.stroke();
-  };
-  line([0, 5, 10, 15, 0]);
-  line([5, 22, 15]);
-  line([10, 22, 0]);
-  for (let s = 0; s < 29; s++) {
-    const [x, y] = px(s),
-      big = s % 5 === 0 && s <= 15 ? true : s === 22;
-    ctx.fillStyle = "#f8efd8";
-    ctx.strokeStyle = "#3a2c1f";
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(x, y, big ? 52 : 34, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    if (big) {
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(x, y, 38, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  }
-  const [sx, sy] = px(0);
-  ctx.fillStyle = "#b3321f";
-  ctx.font = '700 34px "Noto Serif KR", "Noto Serif CJK KR", AppleMyungjo, Batang, serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("출발", sx, sy);
-  return texture(c);
-}
-/** The flat face of a stick; the marked one carries the 빽도 sign. */
-function stickFace(marked: boolean) {
-  const { c, ctx } = canvas(64, 512),
-    rand = noise(marked ? 3 : 9);
-  ctx.fillStyle = "#ecd9ae";
-  ctx.fillRect(0, 0, 64, 512);
-  for (let i = 0; i < 60; i++) {
-    ctx.fillStyle = `rgba(150, 108, 52, ${rand() * 0.2})`;
-    ctx.fillRect(rand() * 64, 0, 1.5, 512);
-  }
-  if (marked) {
-    ctx.fillStyle = "#b3321f";
-    ctx.beginPath();
-    ctx.arc(32, 256, 16, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  return texture(c);
-}
-/** The round back of a stick: dark bark with three carved crosses. */
-function stickBack() {
-  const { c, ctx } = canvas(128, 512);
-  ctx.fillStyle = "#6a4326";
-  ctx.fillRect(0, 0, 128, 512);
-  ctx.strokeStyle = "#e9d5a6";
-  ctx.lineWidth = 7;
-  for (const y of [150, 256, 362]) {
-    ctx.beginPath();
-    ctx.moveTo(40, y - 30);
-    ctx.lineTo(88, y + 30);
-    ctx.moveTo(88, y - 30);
-    ctx.lineTo(40, y + 30);
-    ctx.stroke();
-  }
-  return texture(c);
-}
 interface Tween {
   object: T.Object3D;
   start: number;
@@ -215,10 +86,12 @@ interface Tween {
   /** Points visited in order; one hop between each pair. */
   points: T.Vector3[];
   hop: number;
-  toTurn?: T.Quaternion;
-  spins?: number;
-  bounces?: number;
   contact: boolean;
+  /** A motion of its own, told the time since its start (a thrown stick); `points` then holds only where it ends. */
+  motion?: (ms: number) => void;
+  /** When it strikes the mat, and how hard (0 to 1), for the sound. */
+  strikes?: { at: number; strength: number }[];
+  heard?: number;
 }
 const X = new T.Vector3(1, 0, 0),
   Y = new T.Vector3(0, 1, 0);
@@ -235,9 +108,11 @@ export class YutView {
   private readyFlag = false;
   private cancelReady: (() => void) | null = null;
   private owned: { dispose(): void }[] = [];
-  private pieces: T.Mesh[][] = COLORS.map(() => []);
+  private pieces: T.Group[][] = COLORS.map(() => []);
   private sticks: T.Group[] = [];
   private stickYaw = [0.2, -0.3, 0.1, -0.15];
+  /** Where each stick came to rest after the last throw. */
+  private stickAt = [-0.93, -0.31, 0.31, 0.93].map((x) => ({ x, z: THROW_Z }));
   private rings = new T.Group();
   private ringGeometry: T.RingGeometry;
   private ringMaterials: T.MeshBasicMaterial[];
@@ -249,7 +124,7 @@ export class YutView {
   private reducedMotion =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   /** A stick or a piece touched the ground. */
-  onContact: (stick: boolean) => void = () => {};
+  onContact: (stick: boolean, strength?: number) => void = () => {};
   /** Every animation has finished. */
   onSettled: () => void = () => {};
   /** The sticks were tapped while they may be thrown. */
@@ -310,37 +185,56 @@ export class YutView {
       this.own(new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false })),
     );
     this.scene.add(this.rings);
-    // Pieces: lacquered wooden discs, blue for one side and red for the other.
-    const disc = this.own(new T.CylinderGeometry(PIECE_R, PIECE_R * 1.05, PIECE_H, 28));
+    // Pieces: turned wood lacquered in each player's colour, a brass ring set in the groove round the waist and an
+    // emblem of mother-of-pearl inlaid in the top (cloud, plum blossom, bamboo, moon), so that they differ by shape too.
+    const body = this.own(tokenGeometry()),
+      band = this.own(new T.TorusGeometry(0.251, 0.0075, 6, 40)),
+      inlay = this.own(new T.CircleGeometry(0.15, 40)),
+      brass = this.own(glossy({ color: "#c8a04c", roughness: 0.3, metalness: 0.85 }, 0.6));
+    band.rotateX(Math.PI / 2);
+    band.translate(0, 0.062 - PIECE_H / 2, 0);
+    body.translate(0, -PIECE_H / 2, 0);
+    inlay.rotateX(-Math.PI / 2);
+    inlay.translate(0, PIECE_H / 2 + 0.0015, 0);
     COLORS.forEach((color, player) => {
-      const material = this.standard({ color, roughness: 0.6 });
+      const lacquer = this.own(glossy({ color, roughness: 0.38 }, 0.8)),
+        pearl = this.own(
+          new T.MeshStandardMaterial({
+            map: this.own(emblemTexture(player)),
+            transparent: true,
+            alphaTest: 0.4,
+            roughness: 0.25,
+            metalness: 0.15,
+            emissive: "#2a2626",
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+          }),
+        );
       for (let i = 0; i < PIECES; i++) {
-        const mesh = new T.Mesh(disc, material);
-        mesh.castShadow = true;
+        const piece = new T.Group(),
+          wood = new T.Mesh(body, lacquer),
+          ring = new T.Mesh(band, brass),
+          top = new T.Mesh(inlay, pearl);
+        wood.castShadow = wood.receiveShadow = true;
+        piece.add(wood, ring, top);
         const rest = restAt(player, i, false);
-        mesh.position.set(rest.x, PIECE_H / 2, rest.z);
-        this.pieces[player].push(mesh);
-        this.scene.add(mesh);
+        piece.position.set(rest.x, PIECE_H / 2, rest.z);
+        this.pieces[player].push(piece);
+        this.scene.add(piece);
       }
     });
-    // Sticks: half-round lengths of wood, flat on one face.
-    const round = this.own(new T.CylinderGeometry(STICK_R, STICK_R, STICK_L, 14, 1, false, 0, Math.PI)),
-      flat = this.own(new T.PlaneGeometry(STICK_R * 2, STICK_L)),
-      back = this.standard({ map: this.own(stickBack()), roughness: 0.7 }),
-      faces = [true, false].map((marked) => this.standard({ map: this.own(stickFace(marked)), roughness: 0.6 }));
+    // Sticks: lengths of birch split in two, the rounded back burnt with crosses, the flat face sanded pale; the first
+    // carries the red spot of 빽도.
+    const stick = this.own(stickGeometry());
     for (let i = 0; i < 4; i++) {
-      const stick = new T.Group(),
-        body = new T.Group(),
-        bark = new T.Mesh(round, back),
-        face = new T.Mesh(flat, faces[i === 0 ? 0 : 1]);
-      face.rotation.y = -Math.PI / 2;
-      bark.castShadow = face.castShadow = true;
-      body.add(bark, face);
-      // The round side points up and the stick lies along x.
-      body.rotation.z = Math.PI / 2;
-      stick.add(body);
-      this.sticks.push(stick);
-      this.scene.add(stick);
+      const back = this.own(glossy({ map: this.own(stickBack(11 + i)), roughness: 0.55 }, 0.25)),
+        face = this.standard({ map: this.own(stickFace(i === 0, 31 + i)), roughness: 0.7 }),
+        group = new T.Group(),
+        mesh = new T.Mesh(stick, [back, face]);
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
+      this.sticks.push(group);
+      this.scene.add(group);
     }
     this.placeSticks([false, false, false, false], true);
     const canvas = this.renderer.domElement;
@@ -380,17 +274,181 @@ export class YutView {
     };
     this.raf = requestAnimationFrame(loop);
   }
-  /** The yard: earth, the straw mat with the board, and the house behind it. */
+  /** The yard: earth, the straw mat (멍석) with its rope rim, the painted board on it, and the house behind. */
   private buildYard() {
-    const flatOn = (mesh: T.Mesh) => {
-      mesh.rotation.x = -Math.PI / 2;
-      return mesh;
-    };
     hanokYard(this.scene, (resource) => this.own(resource));
-    const straw = this.standard({ map: this.own(strawTexture()), roughness: 1 });
-    this.add(new T.BoxGeometry(8.6, 0.05, 10.2), straw, 0, -0.026, 0.55, false);
-    const board = this.own(new T.MeshStandardMaterial({ map: this.own(boardTexture()), roughness: 0.9 }));
-    flatOn(this.add(new T.PlaneGeometry(REACH * 2 + 1.1, REACH * 2 + 1.1), board, 0, 0.004, BOARD_Z, false));
+    const MAT_W = 8.6,
+      MAT_D = 10.2,
+      MAT_Z = 0.55;
+    const straw = strawMaterial(MAT_W / 4.2, MAT_D / 4.2, (r) => this.own(r));
+    this.own(straw);
+    const mat = this.add(block(MAT_W, 0.05, MAT_D, 0.02), straw, 0, -0.026, MAT_Z, false);
+    mat.receiveShadow = true;
+    // A rope of twisted straw bound round the mat's edge.
+    const rope = this.standard({ map: this.own(ropeTexture()), roughness: 1 }),
+      rim = new T.CurvePath<T.Vector3>(),
+      x = MAT_W / 2 - 0.05,
+      z0 = MAT_Z - MAT_D / 2 + 0.05,
+      z1 = MAT_Z + MAT_D / 2 - 0.05,
+      y = 0.0,
+      corner = 0.25;
+    const pts: [number, number][] = [
+      [-x + corner, z0],
+      [x - corner, z0],
+      [x, z0 + corner],
+      [x, z1 - corner],
+      [x - corner, z1],
+      [-x + corner, z1],
+      [-x, z1 - corner],
+      [-x, z0 + corner],
+    ];
+    for (let k = 0; k < pts.length; k++) {
+      const [ax, az] = pts[k],
+        [bx, bz] = pts[(k + 1) % pts.length];
+      if (k % 2 === 0) rim.add(new T.LineCurve3(new T.Vector3(ax, y, az), new T.Vector3(bx, y, bz)));
+      // The corners are rounded: a curve drawn toward the corner of the mat.
+      else rim.add(new T.QuadraticBezierCurve3(new T.Vector3(ax, y, az), new T.Vector3(k === 1 || k === 3 ? x : -x, y, k === 1 || k === 7 ? z0 : z1), new T.Vector3(bx, y, bz)));
+    }
+    const ropeMap = rope.map!;
+    ropeMap.repeat.set(160, 1);
+    const tube = this.add(new T.TubeGeometry(rim, 400, 0.06, 8, true), rope, 0, 0, 0, false);
+    tube.receiveShadow = true;
+    // The board: a slab of pale wood, its face painted, its edges rounded and darker.
+    const scale = 2048 / BOARD_SIZE,
+      face = this.own(
+        new T.MeshStandardMaterial({
+          map: this.own(
+            boardTexture({
+              size: 2048,
+              scale,
+              at: (station) => {
+                const p = stationAt(station);
+                return [1024 + p.x * scale, 1024 + (p.z - BOARD_Z) * scale] as const;
+              },
+            }),
+          ),
+          roughness: 0.72,
+        }),
+      ),
+      edge = this.standard({ map: this.own(wood(false, 0.7)), color: "#a8784a", roughness: 0.6 }),
+      slab = this.add(block(BOARD_SIZE, BOARD_TOP, BOARD_SIZE, 0.035), [edge, edge, face, edge, edge, edge], 0, BOARD_TOP / 2 - 0.001, BOARD_Z);
+    slab.castShadow = true;
+    this.buildProps(rope.map!);
+  }
+  /**
+   * Beside the mat: a low round table (소반) with two brass bowls of 식혜 at the right, and a straw basket of
+   * chestnuts at the left, both clear of the mat and of every place a piece or a stick may lie.
+   */
+  private buildProps(straw: T.Texture) {
+    const lacquer = this.own(glossy({ map: this.own(wood(false, 0.8)), color: "#b0623a", roughness: 0.42 }, 0.5)),
+      brass = this.own(glossy({ color: "#c79a45", roughness: 0.28, metalness: 0.9 }, 0.4)),
+      drink = this.standard({ color: "#efe3c6", roughness: 0.2 }),
+      table = new T.Group();
+    const top = new T.Mesh(this.own(new T.CylinderGeometry(0.78, 0.74, 0.07, 40)), lacquer);
+    top.position.y = 0.5;
+    const rim = new T.Mesh(this.own(new T.TorusGeometry(0.77, 0.025, 8, 48)), lacquer);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.535;
+    const skirt = new T.Mesh(this.own(new T.CylinderGeometry(0.66, 0.66, 0.1, 40, 1, true)), lacquer);
+    skirt.position.y = 0.42;
+    table.add(top, rim, skirt);
+    for (let k = 0; k < 4; k++) {
+      const a = (k * Math.PI) / 2 + Math.PI / 4,
+        leg = new T.Mesh(this.own(block(0.07, 0.46, 0.16, 0.02)), lacquer);
+      leg.position.set(Math.cos(a) * 0.6, 0.23, Math.sin(a) * 0.6);
+      leg.rotation.y = -a;
+      // A dog's leg (구족반): splayed a little at the foot.
+      leg.rotation.z = 0.12 * Math.sign(Math.cos(a));
+      table.add(leg);
+    }
+    const ring = new T.Mesh(this.own(new T.TorusGeometry(0.6, 0.02, 6, 40)), lacquer);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.08;
+    table.add(ring);
+    const bowl = this.own(
+      new T.LatheGeometry(
+        [
+          [0, 0],
+          [0.09, 0],
+          [0.1, 0.02],
+          [0.13, 0.03],
+          [0.2, 0.08],
+          [0.22, 0.16],
+          [0.215, 0.165],
+          [0.19, 0.09],
+          [0.12, 0.05],
+          [0, 0.05],
+        ].map(([r, y]) => new T.Vector2(r, y)),
+        32,
+      ),
+    );
+    for (const [x, z] of [
+      [-0.26, 0.12],
+      [0.24, -0.16],
+    ]) {
+      const b = new T.Mesh(bowl, brass),
+        d = new T.Mesh(this.own(new T.CircleGeometry(0.2, 28)), drink);
+      b.position.set(x, 0.535, z);
+      d.rotation.x = -Math.PI / 2;
+      d.position.set(x, 0.535 + 0.13, z);
+      b.castShadow = true;
+      table.add(b, d);
+    }
+    // A wooden spoon laid across.
+    const spoon = new T.Mesh(this.own(block(0.5, 0.02, 0.05, 0.01)), lacquer);
+    spoon.position.set(0.1, 0.545, 0.32);
+    spoon.rotation.y = 0.5;
+    table.add(spoon);
+    table.traverse((o) => {
+      if (o instanceof T.Mesh) o.castShadow = o.receiveShadow = true;
+    });
+    table.position.set(5.75, -0.02, 0.9);
+    this.scene.add(table);
+    // The basket: woven straw, shallow, heaped with chestnuts.
+    const weave = straw.clone();
+    this.own(weave);
+    weave.needsUpdate = true;
+    weave.repeat.set(12, 2);
+    const basketMaterial = this.standard({ map: weave, color: "#e2c48a", roughness: 1, side: T.DoubleSide }),
+      basket = new T.Mesh(
+        this.own(
+          new T.LatheGeometry(
+            [
+              [0, 0.02],
+              [0.4, 0.02],
+              [0.62, 0.12],
+              [0.74, 0.3],
+              [0.78, 0.34],
+              [0.74, 0.33],
+            ].map(([r, y]) => new T.Vector2(r, y)),
+            36,
+          ),
+        ),
+        basketMaterial,
+      );
+    basket.castShadow = basket.receiveShadow = true;
+    basket.position.set(-5.7, -0.02, 1.7);
+    this.scene.add(basket);
+    const shell = this.own(glossy({ color: "#5a2e18", roughness: 0.35 }, 0.6)),
+      nut = this.own(new T.SphereGeometry(0.075, 12, 9)),
+      count = 34,
+      nuts = new T.InstancedMesh(nut, shell, count),
+      m = new T.Matrix4(),
+      q = new T.Quaternion(),
+      rand = (() => {
+        let seed = 41;
+        return () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      })();
+    for (let k = 0; k < count; k++) {
+      const a = rand() * Math.PI * 2,
+        r = Math.sqrt(rand()) * 0.55,
+        heap = 0.3 - r * 0.25;
+      q.setFromEuler(new T.Euler(rand() * 3, rand() * 3, rand() * 3));
+      m.compose(new T.Vector3(-5.7 + Math.cos(a) * r, heap + rand() * 0.04, 1.7 + Math.sin(a) * r), q, new T.Vector3(1, 0.85, 1.1));
+      nuts.setMatrixAt(k, m);
+    }
+    nuts.castShadow = true;
+    this.scene.add(nuts);
   }
   /** True when the last aimed ray meets the strip where the sticks lie. */
   private overSticks() {
@@ -452,7 +510,7 @@ export class YutView {
         }
         const p = stationAt(station),
           below = stations.slice(0, i).filter((s) => s === station).length;
-        return new T.Vector3(p.x, PIECE_H / 2 + below * (PIECE_H + 0.012), p.z);
+        return new T.Vector3(p.x, BOARD_TOP + PIECE_H / 2 + below * (PIECE_H + 0.006), p.z);
       });
     });
   }
@@ -461,13 +519,182 @@ export class YutView {
       .setFromAxisAngle(Y, this.stickYaw[i])
       .multiply(new T.Quaternion().setFromAxisAngle(X, flat ? Math.PI : 0));
   }
-  private stickSpot(i: number, flat: boolean) {
-    return new T.Vector3((i - 1.5) * 0.62 + Math.sin(this.stickYaw[i] * 7) * 0.12, flat ? STICK_R + 0.01 : 0.01, THROW_Z + Math.cos(this.stickYaw[i] * 5) * 0.28);
+  private stickSpot(i: number) {
+    return new T.Vector3(this.stickAt[i].x, STICK_REST, this.stickAt[i].z);
+  }
+  /**
+   * Scatters the four sticks for a throw: each turned its own way, none lying on another, all within the throwing
+   * strip and clear of the waiting pieces (nearer with three or four players).
+   */
+  private scatter(players: number) {
+    const half = STICK.length / 2 + 0.03,
+      wide = STICK.width + 0.03,
+      reach = players > 2 ? 1.42 : 2.0,
+      corners = (x: number, z: number, yaw: number) => {
+        // Lying along x when unturned; a turn of `yaw` about the upright.
+        const c = Math.cos(yaw),
+          s = Math.sin(yaw);
+        return [
+          [half, wide],
+          [half, -wide],
+          [-half, -wide],
+          [-half, wide],
+        ].map(([a, b]) => [x + a * c + b * s, z - a * s + b * c] as const);
+      },
+      apart = (p: readonly (readonly [number, number])[], q: readonly (readonly [number, number])[]) => {
+        // Two rectangles are apart when some side of one has the other wholly beyond it.
+        for (const shape of [p, q])
+          for (let k = 0; k < 4; k++) {
+            const [ax, az] = shape[k],
+              [bx, bz] = shape[(k + 1) % 4],
+              nx = bz - az,
+              nz = ax - bx,
+              side = (pt: readonly [number, number]) => (pt[0] - ax) * nx + (pt[1] - az) * nz,
+              own = side(shape[(k + 2) % 4]) > 0,
+              other = shape === p ? q : p;
+            if (other.every((pt) => side(pt) > 0 !== own)) return true;
+          }
+        return false;
+      };
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const placed: { x: number; z: number; yaw: number; shape: ReturnType<typeof corners> }[] = [];
+      for (let i = 0; i < 4 && placed.length === i; i++)
+        for (let k = 0; k < 80; k++) {
+          const yaw = (Math.random() - 0.5) * Math.PI,
+            x = (Math.random() - 0.5) * 2 * reach,
+            z = THROW_Z + (Math.random() - 0.5) * 1.1,
+            shape = corners(x, z, yaw);
+          if (shape.some(([px, pz]) => Math.abs(px) > reach || pz < THROW_Z - 0.92 || pz > THROW_Z + 0.98)) continue;
+          if (placed.some((other) => !apart(other.shape, shape))) continue;
+          placed.push({ x, z, yaw, shape });
+          break;
+        }
+      if (placed.length < 4) continue;
+      // Left to right, so that each stick's flight crosses the others' as little as may be.
+      placed.sort((a, b) => a.x - b.x);
+      placed.forEach((p, i) => {
+        this.stickAt[i] = { x: p.x, z: p.z };
+        this.stickYaw[i] = p.yaw;
+      });
+      return;
+    }
+    // Rarely nothing fits: a row, each turned a little.
+    for (let i = 0; i < 4; i++) {
+      this.stickAt[i] = { x: (i - 1.5) * 0.46, z: THROW_Z + (i % 2 ? 0.2 : -0.2) };
+      this.stickYaw[i] = Math.PI / 2 + (Math.random() - 0.5) * 0.3;
+    }
+  }
+  /**
+   * A stick's throw, worked out as a thrown thing moves: tossed up from the near side, it falls under gravity, strikes
+   * the mat and bounces twice, lower each time (its spin about its length and its turn slowing at every strike), then
+   * skids to a stop and rocks on its rounded back until it lies still exactly as `to`, with its flat face up if `flat`.
+   * Its height at every moment keeps its lowest edge on or above the mat, whichever way it is turned.
+   */
+  private toss(stick: T.Group, i: number, to: T.Vector3, flat: boolean, start: number): Tween {
+    const r = Math.random,
+      G = 30,
+      yawEnd = this.stickYaw[i],
+      rollEnd = flat ? Math.PI : 0,
+      // Where it strikes: short of its place toward the thrower, then nearer, then nearly there.
+      hits = [
+        new T.Vector3(to.x + (r() - 0.5) * 0.7, 0, to.z + 0.6 + r() * 0.35),
+        new T.Vector3(to.x + (r() - 0.5) * 0.3, 0, to.z + 0.22 + r() * 0.1),
+        new T.Vector3(to.x + (r() - 0.5) * 0.08, 0, to.z + 0.06),
+      ],
+      from = new T.Vector3((i - 1.5) * 0.28 + (r() - 0.5) * 0.2, 0.75, THROW_Z + 2.3),
+      apex = 1.7 + r() * 0.5;
+    // The flights: up and down to the first strike, then two bounces whose height the strike leaves them.
+    const up = Math.sqrt((2 * (apex - from.y)) / G),
+      down = Math.sqrt((2 * apex) / G),
+      v1 = G * down,
+      v2 = v1 * (0.3 + r() * 0.06),
+      v3 = v2 * 0.3,
+      flights = [up + down, (2 * v2) / G, (2 * v3) / G],
+      skid = 0.34,
+      strikes = [flights[0], flights[0] + flights[1], flights[0] + flights[1] + flights[2]],
+      duration = strikes[2] + skid;
+    // Spin about its length: fast in the air, slower after each strike, nothing left when it settles.
+    const turns = 2 + Math.floor(r() * 2) + (r() < 0.5 ? 0.5 : 0),
+      sense = r() < 0.5 ? 1 : -1,
+      share = [1, 0.4, 0.15],
+      weight = flights.reduce((n, t, k) => n + t * share[k], 0),
+      omega = (turns * Math.PI * 2) / weight,
+      yawSwing = (r() - 0.5) * 2.6,
+      pitch = (r() - 0.5) * 0.9,
+      rock = (0.18 + r() * 0.12) * (r() < 0.5 ? 1 : -1);
+    // How much spin is still to come at time `t`, about the length and about the upright.
+    const left = (t: number) => {
+      let rest = 0;
+      for (let k = 2; k >= 0; k--) {
+        const t0 = k ? strikes[k - 1] : 0,
+          t1 = strikes[k];
+        if (t >= t1) break;
+        rest += (t1 - Math.max(t, t0)) * omega * share[k];
+      }
+      return rest;
+    };
+    const total = left(0),
+      qYaw = new T.Quaternion(),
+      qPitch = new T.Quaternion(),
+      qRoll = new T.Quaternion(),
+      Z = new T.Vector3(0, 0, 1);
+    const pose = (t: number) => {
+      t = Math.min(duration, Math.max(0, t));
+      const spinLeft = left(t);
+      let roll = rollEnd + sense * spinLeft,
+        yaw = yawEnd + yawSwing * (0.25 + (spinLeft / total) * 0.75),
+        tilt = 0;
+      const p = new T.Vector3();
+      if (t < strikes[2]) {
+        const k = t < strikes[0] ? 0 : t < strikes[1] ? 1 : 2,
+          t0 = k ? strikes[k - 1] : 0,
+          tau = t - t0,
+          T0 = flights[k],
+          a = k ? hits[k - 1] : from,
+          b = hits[k];
+        // Across the ground it goes evenly; up and down as gravity says.
+        p.lerpVectors(a, b, tau / T0);
+        const y0 = k ? 0 : from.y,
+          vy = (0 - y0 + (G * T0 * T0) / 2) / T0;
+        p.y = y0 + vy * tau - (G * tau * tau) / 2;
+        // The stick also tips end over end a little in the air, less after each strike.
+        tilt = pitch * [1, 0.35, 0.08][k] * Math.sin((Math.PI * tau) / T0);
+      } else {
+        // The skid: slowing evenly to its place, rocking on its back with less swing each time.
+        const tau = t - strikes[2],
+          q = tau / skid,
+          slow = q * (2 - q);
+        p.lerpVectors(hits[2], to, slow);
+        p.y = 0;
+        roll += rock * Math.exp(-tau / 0.09) * Math.sin(tau * 38) * (1 - q);
+        yaw += yawSwing * 0.25 * (1 - slow);
+      }
+      // Never through the mat: the lowest edge, as it is turned and tipped, stays on it.
+      const ground = standOff(roll) * Math.cos(tilt) + (STICK.length / 2) * Math.abs(Math.sin(tilt)) + 0.002;
+      p.y = Math.max(p.y + ground, ground);
+      stick.position.copy(p);
+      qYaw.setFromAxisAngle(Y, yaw);
+      qPitch.setFromAxisAngle(Z, tilt);
+      qRoll.setFromAxisAngle(X, roll);
+      stick.quaternion.copy(qYaw).multiply(qPitch).multiply(qRoll);
+    };
+    pose(0);
+    return {
+      object: stick,
+      start,
+      duration: duration * 1000,
+      points: [to],
+      hop: 0,
+      contact: false,
+      motion: (ms) => pose(ms / 1000),
+      strikes: strikes.map((t, k) => ({ at: t * 1000, strength: [1, 0.6, 0.3][k] })),
+      heard: 0,
+    };
   }
   private placeSticks(flats: boolean[], tidy = false) {
     this.sticks.forEach((stick, i) => {
       if (tidy) this.stickYaw[i] = Math.PI / 2 + (i - 1.5) * 0.05;
-      stick.position.copy(tidy ? new T.Vector3((i - 1.5) * 0.42, 0.01, THROW_Z) : this.stickSpot(i, flats[i]));
+      stick.position.copy(tidy ? new T.Vector3((i - 1.5) * 0.42, STICK_REST, THROW_Z) : this.stickSpot(i));
       stick.quaternion.copy(this.stickTurn(i, flats[i]));
     });
   }
@@ -486,30 +713,14 @@ export class YutView {
     this.dirty = true;
     this.finish();
     if (thrown || (!before && model.throwId > 0)) {
+      this.scatter(model.pieces.length);
       this.sticks.forEach((stick, i) => {
-        this.stickYaw[i] = (Math.random() - 0.5) * 1.5;
-        const to = this.stickSpot(i, model.sticks[i]),
+        const to = this.stickSpot(i),
           toTurn = this.stickTurn(i, model.sticks[i]);
         if (quick || !thrown) {
           stick.position.copy(to);
           stick.quaternion.copy(toTurn);
-        } else
-          this.tweens.push({
-            object: stick,
-            start: now + i * 45,
-            duration: 1150,
-            // Thrown from the near side: it lands short, then skips twice to rest.
-            points: [
-              new T.Vector3((i - 1.5) * 0.3, 0.9, THROW_Z + 2.4),
-              new T.Vector3(to.x + (Math.random() - 0.5) * 0.5, to.y, to.z + 0.45 + Math.random() * 0.25),
-              new T.Vector3(to.x + (Math.random() - 0.5) * 0.2, to.y, to.z + 0.14),
-              to,
-            ],
-            hop: 2.3,
-            toTurn,
-            spins: 2 + Math.floor(Math.random() * 3),
-            contact: true,
-          });
+        } else this.tweens.push(this.toss(stick, i, to, model.sticks[i], now + i * 40));
       });
     } else if (model.throwId === 0 && (!before || before.throwId !== 0)) this.placeSticks(model.sticks, true);
     // Only the players at the table have pieces out.
@@ -531,7 +742,7 @@ export class YutView {
             if (k === walk.path.length - 1) points.push(to);
             else {
               const p = stationAt(station);
-              points.push(new T.Vector3(p.x, to.y, p.z));
+              points.push(new T.Vector3(p.x, PIECE_H / 2 + BOARD_TOP, p.z));
             }
           });
           this.tweens.push({ object: mesh, start: now, duration: 190 * walk.path.length, points, hop: 0.4, contact: true });
@@ -568,10 +779,12 @@ export class YutView {
         : station === WAITING
           ? { x: waitX(this.marks.turn) + (this.marks.turn % 2 ? 0.31 : -0.31), z: THROW_Z - 0.04 }
           : stationAt(station);
+    // Stations lie on the board, which stands a little above the mat.
+    const lift = (station: number) => (station === FINISHED || station === WAITING ? 0 : BOARD_TOP);
     for (const station of this.marks.movable) {
       const p = spot(station),
         chosen = station === this.marks.selected;
-      ring(p.x, p.z, 0.012, chosen ? 1 : 2, station === WAITING ? 2.1 : 1);
+      ring(p.x, p.z, lift(station) + 0.012, chosen ? 1 : 2, station === WAITING ? 2.1 : 1);
     }
     if (this.marks.canThrow) {
       const mesh = new T.Mesh(this.ringGeometry, this.ringMaterials[0]);
@@ -583,40 +796,32 @@ export class YutView {
     for (const station of this.marks.targets) {
       const p = spot(station);
       // Red: gold was lost against the board.
-      ring(p.x, p.z, 0.014, 3, station === FINISHED ? 1.25 : 1);
+      ring(p.x, p.z, lift(station) + 0.014, 3, station === FINISHED ? 1.25 : 1);
     }
   }
   private step(now: number) {
     if (!this.tweens.length) return false;
-    const spin = new T.Quaternion();
     this.tweens = this.tweens.filter((t) => {
-      const p = Math.min(1, (now - t.start) / t.duration);
-      if (p < 0) return true;
-      const legs = t.points.length - 1;
-      let leg = Math.min(legs - 1, Math.floor(p * legs)),
-        local = p * legs - leg,
-        hop = t.hop;
-      if (t.toTurn) {
-        // A thrown stick: one long flight, then two quick, lower bounces.
-        const ends = [0, 0.56, 0.82, 1];
-        leg = p < ends[1] ? 0 : p < ends[2] ? 1 : 2;
-        local = (p - ends[leg]) / (ends[leg + 1] - ends[leg]);
-        hop = [t.hop, 0.5, 0.16][leg];
-        if (leg > (t.bounces ?? 0)) {
-          t.bounces = leg;
-          this.onContact(true);
-        }
-        // It keeps turning as it skips, slower with every bounce.
-        spin.setFromAxisAngle(X, (1 - p) ** 2 * (t.spins ?? 0) * Math.PI * 2);
-        t.object.quaternion.copy(t.toTurn).multiply(spin);
-        t.object.rotateOnWorldAxis(Y, (1 - p) * (leg ? 0.5 : 1.2) * ((t.spins ?? 0) % 2 ? 1 : -1));
+      const ms = now - t.start;
+      if (ms < 0) return true;
+      if (t.motion) {
+        t.motion(Math.min(ms, t.duration));
+        const strikes = t.strikes ?? [];
+        let heard = t.heard ?? 0;
+        for (; heard < strikes.length && ms >= strikes[heard].at; heard++) this.onContact(true, strikes[heard].strength);
+        t.heard = heard;
+        return ms < t.duration;
       }
-      t.object.position.lerpVectors(t.points[leg], t.points[leg + 1], local);
-      t.object.position.y += Math.sin(Math.PI * local) * hop;
+      const p = Math.min(1, ms / t.duration),
+        legs = t.points.length - 1,
+        leg = Math.min(legs - 1, Math.floor(p * legs)),
+        local = p * legs - leg;
+      // Each step is a hop that comes down and bounces once where it lands.
+      t.object.position.lerpVectors(t.points[leg], t.points[leg + 1], travel(local));
+      t.object.position.y += hop(local) * t.hop;
       if (p < 1) return true;
       t.object.position.copy(t.points[legs]);
-      if (t.toTurn) t.object.quaternion.copy(t.toTurn);
-      if (t.contact) this.onContact(!!t.toTurn);
+      if (t.contact) this.onContact(false);
       return false;
     });
     if (!this.tweens.length) {
@@ -628,8 +833,8 @@ export class YutView {
   /** Jumps every running animation to its end. */
   private finish() {
     for (const t of this.tweens) {
-      t.object.position.copy(t.points[t.points.length - 1]);
-      if (t.toTurn) t.object.quaternion.copy(t.toTurn);
+      if (t.motion) t.motion(t.duration);
+      else t.object.position.copy(t.points[t.points.length - 1]);
     }
     this.tweens = [];
   }

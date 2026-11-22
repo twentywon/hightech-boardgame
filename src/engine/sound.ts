@@ -465,6 +465,39 @@ export class Sound {
       this.noise(at, 0.04, 0.05, 2600, "bandpass", 1800);
     });
   }
+  /**
+   * Two fruits merging (과일 게임): a wet squelch and a bubbly pop, lower for a larger fruit (`size` 0 to 1) and a
+   * step higher for every merge of a combo; from the third a bright chime rings over it.
+   */
+  squish(size = 0.5, combo = 1) {
+    const lift = 2 ** (Math.min(6, Math.max(0, combo - 1)) / 6),
+      base = (720 - size * 420) * lift;
+    this.noise(0, 0.12 + size * 0.08, 0.1, 1400 - size * 600, "bandpass", 500);
+    this.tone("sine", base * 0.7, base * 1.5, 0, 0.12, 0.11);
+    this.tone("sine", base * 1.25, base * 2.1, 0.05, 0.1, 0.06);
+    this.tone("triangle", base * 0.5, base * 0.42, 0, 0.16 + size * 0.1, 0.05);
+    if (combo >= 3) [0, 0.06, 0.12].forEach((at, i) => this.tone("sine", 1568 * lift * (1 + i * 0.26), 1568 * lift * (1 + i * 0.26), 0.08 + at, 0.3, 0.025));
+  }
+  /** A fruit landing in the box (`strength` 0 to 1, `size` 0 to 1): a soft, rubbery plunk. */
+  plunk(strength = 0.5, size = 0.5) {
+    const f = 300 - size * 170;
+    this.tone("sine", f * 1.6, f, 0, 0.09 + size * 0.05, 0.03 + strength * 0.07);
+    this.noise(0, 0.05, 0.012 + strength * 0.03, 900 - size * 400, "lowpass", 300);
+  }
+  /** A bite of an apple (스네이크): a crisp crunch, a second smaller one, and a little gulp. */
+  crunch(gold = false) {
+    this.noise(0, 0.07, 0.12, 3200, "bandpass", 1800);
+    this.noise(0.075, 0.05, 0.07, 2600, "bandpass", 1500);
+    this.tone("sine", 260, 140, 0.13, 0.09, 0.07);
+    if (gold) [1319, 1760, 2349].forEach((f, i) => this.tone("triangle", f, f, 0.12 + i * 0.06, 0.28, 0.04));
+  }
+  /** A head running into something (스네이크): a dull bonk and a falling, dizzy wobble. */
+  bonk() {
+    this.tone("sine", 180, 60, 0, 0.22, 0.16);
+    this.noise(0, 0.12, 0.08, 700, "lowpass", 200);
+    this.tone("triangle", 660, 220, 0.18, 0.55, 0.05);
+    this.tone("triangle", 620, 200, 0.24, 0.55, 0.035);
+  }
   /** A double: a short rising fanfare. */
   double() {
     [784, 988, 1175, 1568].forEach((f, i) => this.tone("triangle", f, f, 0.25 + i * 0.09, i === 3 ? 0.5 : 0.16, 0.08));

@@ -1,5 +1,6 @@
 import * as T from "three";
 import { block, stuff } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { DIRS, E, N, S, SET, W, houses, inlets, leaks, opposite, turnsBetween, unput, type State } from "./rules";
@@ -119,7 +120,6 @@ export class PipesView extends TableView<State> {
     g("brick", block(0.215, 0.1, 0.1, 0.012));
     g("bloom", new T.IcosahedronGeometry(0.036, 0));
     g("leaf", new T.IcosahedronGeometry(0.07, 0).scale(1, 0.55, 1));
-    g("shrub", new T.IcosahedronGeometry(0.28, 1).scale(1, 0.78, 1));
     g("picket", block(0.07, 0.36, 0.025, 0.01));
     g("tip", new T.ConeGeometry(0.05, 0.06, 4).rotateY(Math.PI / 4).scale(1, 1, 0.36));
     g("stepping", new T.CylinderGeometry(0.2, 0.21, 0.04, 9));
@@ -315,7 +315,10 @@ export class PipesView extends TableView<State> {
           scale: 0.72 + rand() * 0.3,
           color: ["#2f6136", "#3b7040", "#2a5530"][k],
         });
-    this.many("shrub", this.paint.plain, shrubs);
+    // Each a clipped bush of painted leaves on cards round a dark core (`Grove`).
+    const grove = new Grove(this.board, fit, { bright: 1.85, lift: 1.4 });
+    for (const { x, y, z, turn, scale, color } of shrubs) grove.crown("box", [x, y, z], [0.31 * scale, 0.24 * scale, 0.31 * scale], color, turn);
+    grove.build();
     // A white picket fence along the back, with two rails behind it.
     const fenceZ = -(half + 1.02),
       reach = half + 2.6,

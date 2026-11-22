@@ -37,6 +37,8 @@ export const gostopConfig: PointConfig<State> = {
     const said = state.last && state.last !== before.last ? state.last.events : [];
     return said.length ? said.join(" ") + "!" : null;
   },
+  // …once the last card of the turn has landed, not as it is played (the user asked).
+  cheerOnRest: true,
   tools: [
     { label: "고", point: GO, show: (state) => state.phase === "decide" && state.turn === 0 },
     { label: "스톱", point: STOP, show: (state) => state.phase === "decide" && state.turn === 0 },

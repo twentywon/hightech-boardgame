@@ -1,6 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { capable, fall, stuff } from "../../engine/scene-utils";
+import { leafTexture } from "../../engine/foliage";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { blocked, edgeBetween, islandState, setOf, type State } from "./rules";
@@ -135,7 +136,7 @@ export class BridgesView extends TableView<State> {
     p("rim", this.standard({ color: "#8a5a32", roughness: 0.6 }));
     p("timber", this.standard({ map: this.grainTexture(), roughness: 0.78 }));
     p("bark", this.standard({ color: "#7a5532", roughness: 0.9 }));
-    p("frond", this.standard({ color: "#3f8f3a", roughness: 0.75, side: T.DoubleSide }));
+    p("frond", this.standard({ color: "#4f9a40", map: leafTexture("frond", keep), alphaTest: 0.5, roughness: 0.75, side: T.DoubleSide }));
     p("rock", this.standard({ color: "#8d8a84", roughness: 0.85, flatShading: true }));
     p("foam", this.own(new T.MeshBasicMaterial({ map: this.texture(laceTile()), transparent: true, depthWrite: false })));
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
@@ -197,13 +198,16 @@ export class BridgesView extends TableView<State> {
       }
       const leaves: T.BufferGeometry[] = [];
       for (let i = 0; i < 7; i++) {
-        // A leaf: a long narrow blade, broad near its stalk, bent down along its length.
-        const blade = new T.PlaneGeometry(0.22, 0.06, 8, 1),
-          at = blade.getAttribute("position");
+        // A leaf: a long blade bent down along its length, its leaflets painted either side of the rib (the picture
+        // runs along the blade: its stalk at the trunk) and cut out by the alpha test.
+        const blade = new T.PlaneGeometry(0.22, 0.072, 8, 1),
+          at = blade.getAttribute("position"),
+          uv = blade.getAttribute("uv");
         for (let j = 0; j < at.count; j++) {
           const x = at.getX(j) + 0.11,
-            narrow = Math.sin(Math.PI * Math.min(1, x / 0.22 + 0.08)) * (1 - x / 0.3);
+            narrow = 0.35 + 0.65 * Math.sin(Math.PI * Math.min(1, x / 0.22 + 0.08)) * (1 - x / 0.36);
           at.setXYZ(j, x, at.getY(j) * narrow, -(x * x) * 2.6);
+          uv.setXY(j, uv.getY(j), uv.getX(j));
         }
         blade.rotateX(-Math.PI / 2);
         blade.rotateZ(0.25);

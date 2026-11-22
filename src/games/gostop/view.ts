@@ -48,6 +48,8 @@ export class GostopView extends TableView<State> {
   private printed: State | null = null;
   /** The deal last shown, so that a new game is dealt from the pile once. */
   private dealt: State["opening"] | null = null;
+  /** When the last card of the move being shown lands, in ms from its start: set call-outs wait for it. */
+  private landed = 0;
   /** A tablet lying by the pile for each side, with its score painted on it (there is no panel beside the table). */
   private plates: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string }[] = [];
   constructor(host: HTMLElement, quality: "high" | "low") {
@@ -582,6 +584,7 @@ export class GostopView extends TableView<State> {
   /** With `hold`, the card is kept where it starts until its moment (a redrawn table would otherwise lay it out early). */
   private fly(id: number, p0: Pose, p1: Pose, delay: number, duration: number, heard: boolean, hold = false) {
     const mesh = this.cards[id];
+    this.landed = Math.max(this.landed, delay + duration);
     if (hold)
       return this.tween(0, delay + duration, (q) => {
         const p = Math.max(0, (q * (delay + duration) - delay) / duration);
@@ -656,6 +659,7 @@ export class GostopView extends TableView<State> {
       turned = !!last && last !== before.last && state.ply === before.ply + 1 && (before.last?.played !== last.played || last.played === -1) && !last.events.includes("보너스");
     this.poses = to;
     this.hide();
+    this.landed = 0;
     // Every card that moves, and when: the card played (with a bomb's others) lands on the floor, the pile's card is
     // turned over onto it, then what was taken goes to the taker's side and any chaff stolen crosses over.
     const plan = new Map<number, { via: Pose | null; delay: number }>();
@@ -700,11 +704,6 @@ export class GostopView extends TableView<State> {
     if (!moved.length) return false;
     const gather = turned ? (resumed ? 120 : lead + L.GATHER_AT) : 0,
       steal = gather + 380;
-    // Sets made are called out as the cards come home.
-    if (last && last !== before.last)
-      this.tween(gather + 420, 1, (p) => {
-        if (p === 1) [0, 1].forEach((side) => this.call(side as 0 | 1, last.achieved?.[side] ?? []));
-      });
     this.bubble.hidden = true;
     for (const id of moved) {
       const a = from.get(id)!,
@@ -720,6 +719,11 @@ export class GostopView extends TableView<State> {
       // A bonus card played: it goes to my side, a chaff comes across, and a card is drawn from the pile in its place.
       else this.fly(id, a, b, stolen ? (turned ? steal : 380) : turned ? gather : id === last?.drawn ? 420 : 0, turned ? 420 : 340, !turned);
     }
+    // Sets made are called out once the last card of the turn has landed (the user asked), like 쪽 and 뻑 (`cheerOnRest`).
+    if (last && last !== before.last)
+      this.tween(this.landed, 1, (p) => {
+        if (p === 1) [0, 1].forEach((side) => this.call(side as 0 | 1, last.achieved?.[side] ?? []));
+      });
     return true;
   }
   /** Takes the marks of my hand away while cards are moving; `mark` lays them again once they rest. */

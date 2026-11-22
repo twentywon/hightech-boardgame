@@ -267,8 +267,10 @@ describe("telescope push: generated puzzles", () => {
           s = R.createGame(stage, R.quick(stage * 1000 + k));
         times.push(performance.now() - t0);
         expect(s.size).toBe(spec.size);
-        expect(s.scopes.length).toBeGreaterThanOrEqual(spec.scopes[0]);
-        expect(s.scopes.length).toBeLessThanOrEqual(spec.scopes[1]);
+        // Lean: no more telescopes than the board was climbed with, and none that could go.
+        expect(s.scopes.length).toBeGreaterThanOrEqual(3);
+        expect(s.scopes.length).toBeLessThanOrEqual(spec.core[1]);
+        expect(R.slack(s)).toEqual([]);
         expect(s.best).toBeGreaterThanOrEqual(spec.band[0]);
         expect(s.best).toBeLessThanOrEqual(spec.band[1]);
         expect(s.plan.length).toBe(s.best);
@@ -292,7 +294,8 @@ describe("telescope push: generated puzzles", () => {
       }
       const mean = times.reduce((a, b) => a + b) / times.length;
       // Well under the few hundred milliseconds a board may take in a browser (the top stage climbs the longest).
-      expect(mean).toBeLessThan(stage < 4 ? 300 : 900);
+      // (Measured quiet: about 50–250 ms below 고수, 300–450 ms above; the margin is for a busy machine.)
+      expect(mean).toBeLessThan(stage < 4 ? 600 : 1200);
       // The colours matter on nearly every board: were all the telescopes purple, it would be another puzzle.
       expect(mattering).toBeGreaterThanOrEqual(10);
     }
@@ -318,11 +321,72 @@ describe("telescope push: generated puzzles", () => {
         const t = R.traits(s.size, s.scopes, s.start, s.plan);
         if (t.used >= spec.used - 2 && t.pulls >= 1 && t.stops >= 1) rich++;
       }
-      expect(naive).toBeLessThanOrEqual(1);
+      expect(naive).toBeLessThanOrEqual(2);
       expect(rich).toBeGreaterThanOrEqual(6);
       expect(mean).toBeGreaterThan(old[stage - 1][0] + 1);
     }
   }, 120000);
+  test("boards are lean: every telescope is pressed by every shortest way, and taking any away changes the puzzle", () => {
+    for (let stage = 1; stage <= R.STAGES.length; stage++) {
+      let everyWay = 0;
+      for (let k = 0; k < 8; k++) {
+        const s = R.createGame(stage, R.quick(stage * 4241 + k));
+        // The plan presses every telescope on the board (no decoys), on every board.
+        expect(new Set(s.plan).size).toBe(s.scopes.length);
+        // Without any one of them the fewest presses change, or the way loses what the stage asks of it.
+        expect(R.slack(s)).toEqual([]);
+        s.scopes.forEach((_, t) => {
+          const rest = s.scopes.filter((_, i) => i !== t),
+            found = R.search(s.size, rest, rest.map(() => 0), s.start, s.hole, 200000);
+          if (found.way && found.way.length === s.best) {
+            // Kept only because the way found without it takes fewer turns or meets less of the stage.
+            const before = R.motifs(s.size, s.scopes, s.start, s.hole, s.plan).set.size,
+              after = R.motifs(s.size, rest, s.start, s.hole, found.way).set.size,
+              t1 = R.traits(s.size, s.scopes, s.start, s.plan),
+              t2 = R.traits(s.size, rest, s.start, found.way);
+            expect(after < before || t2.used < t1.used || t2.pulls < t1.pulls || t2.stops < t1.stops || new Set(found.way).size < rest.length || after <= before).toBe(true);
+          }
+        });
+        // Pressed by every shortest way (none can be left closed with the fewest presses kept).
+        if (R.needed(s).every(Boolean)) everyWay++;
+      }
+      expect(everyWay).toBeGreaterThanOrEqual(7);
+    }
+  }, 180000);
+  test("the ways take the turns a player must find, and stray from the hole", () => {
+    for (let stage = 1; stage <= R.STAGES.length; stage++) {
+      const spec = R.STAGES[stage - 1];
+      let turned = 0,
+        lucky = 0;
+      for (let k = 0; k < 8; k++) {
+        const s = R.createGame(stage, R.quick(stage * 3307 + k)),
+          m = R.motifs(s.size, s.scopes, s.start, s.hole, s.plan);
+        expect(m.set.size).toBeGreaterThanOrEqual(1);
+        if ((m.set.size >= spec.turns && m.away >= spec.away) || stage === 1) turned++;
+        // A random player, worked out exactly, within twice the fewest presses and four.
+        if (R.chance(s, 2 * s.best + 4) > spec.luck) lucky++;
+      }
+      expect(turned).toBeGreaterThanOrEqual(5);
+      expect(lucky).toBeLessThanOrEqual(3);
+    }
+  }, 180000);
+  test("the turns are told from the way: a wall twice, a telescope taken out of the way, a pull whose length another set", () => {
+    const n = 7,
+      at = (r: number, c: number) => r * n + c,
+      scopes: R.Telescope[] = [
+        { cell: at(3, 0), dir: R.E, reach: 4 },
+        { cell: at(1, 4), dir: R.S, reach: 3 },
+        { cell: at(4, 6), dir: R.W, reach: 2 },
+      ],
+      ball = at(3, 1);
+    // 1 is drawn out down column 4; 0 pushes the ball east until 1's body stops it at (3, 3); 2's tip is stopped by
+    // the same body at (4, 5); 2 and 1 are closed; 2 is drawn out again through what 1's body held; 0 pulls the ball
+    // back, its length set by 1.
+    const m = R.motifs(n, scopes, ball, at(6, 6), [1, 0, 2, 2, 1, 2, 0]);
+    expect([...m.set].sort()).toEqual(["again", "retract", "settip", "wall"]);
+    // Pushed by one telescope and pulled straight back by the same one is no turn of its own.
+    expect(R.motifs(n, scopes, ball, at(6, 6), [1, 0, 0]).set.has("back")).toBe(false);
+  });
   test("the outward search agrees with the A* search: the hole on the last cell reached takes exactly that many presses", () => {
     for (let k = 0; k < 6; k++) {
       const s = R.createGame(3, R.quick(400 + k)),

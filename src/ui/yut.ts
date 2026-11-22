@@ -179,7 +179,7 @@ export function mountYut(
     try {
       view = new YutView($("board"), settings.quality);
       // A stick knocks on the mat each time it lands or bounces; a piece set down is soft.
-      view.onContact = (stick) => (stick ? sound.stick() : sound.soft());
+      view.onContact = (stick, strength = 1) => (stick ? sound.stick(0.12 + 0.24 * strength) : sound.soft());
       view.onSettled = present;
       view.onPick = pick;
       view.onThrow = () => act((s) => throwSticks(s, random));
@@ -334,7 +334,7 @@ export function mountYut(
     const effect = (m: Move) =>
       m.to === FINISHED
         ? "나기"
-        : s.pieces[1 - s.turn].includes(m.to)
+        : s.pieces.some((pieces, player) => player !== s.turn && pieces.includes(m.to))
           ? `${place(m.to)} · 잡기`
           : s.pieces[s.turn].includes(m.to)
             ? `${place(m.to)} · 업기`

@@ -1,5 +1,6 @@
 import * as T from "three";
 import { capable, furry, wood } from "../../engine/scene-utils";
+import { Grove } from "../../engine/foliage";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { GO, type State } from "./rules";
@@ -451,7 +452,6 @@ export class RiverView extends TableView<State> {
   /** Trees, bushes, stones, flowers, reeds and lily pads, all clear of where the company stands and of the boat's way. */
   private greenery() {
     const random = sequence(5),
-      ball = new T.IcosahedronGeometry(0.5, 2),
       white = this.standard({ color: "#ffffff", roughness: 0.9 }),
       trunks: Parameters<RiverView["scatter"]>[2] = [],
       cones: typeof trunks = [],
@@ -529,8 +529,12 @@ export class RiverView extends TableView<State> {
     }
     // Trunks in bark (each tree's own brown laid over it).
     this.scatter(new T.CylinderGeometry(0.4, 0.5, 1, 12), this.standard({ map: this.bark(), roughness: 0.95 }), trunks);
-    this.scatter(new T.ConeGeometry(0.5, 1, 12), white, cones);
-    this.scatter(ball, white, leaves);
+    // Crowns and skirts of painted leaves and needles on cards round dark cores (`Grove`, shared with the other woods):
+    // a pine's skirts are spruce tiers standing where its cones stood, a round crown is a ball of broad leaves.
+    const grove = new Grove(this.scene, this.own_, { near: 16, centre: [0, -4], lift: 1.1 });
+    for (const { at: [x, y, z], size: [w, h], turn = 0, color = "#3f8a4a" } of cones) grove.tier([x, y - h / 2, z], [w / 2, h, w / 2], color, turn);
+    leaves.forEach(({ at, size: [w, h, d], color = "#5fae4c" }, i) => grove.crown(h < w * 0.7 ? "oak" : "broad", at, [w * 0.52, h * 0.52, d * 0.52], color, i));
+    grove.build();
     this.scatter(new T.DodecahedronGeometry(0.5, 0), this.standard({ color: "#ffffff", roughness: 1, flatShading: true }), stones);
     this.scatter(new T.SphereGeometry(0.5, 8, 6), white, blooms, false);
     this.scatter(new T.ConeGeometry(0.5, 1, 5), white, tufts, false);

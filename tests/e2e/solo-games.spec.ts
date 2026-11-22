@@ -648,7 +648,7 @@ test("minesweeper: the first square is safe, a flag guards a mine, and the clear
   expect(errors).toEqual([]);
 });
 test("fruit merge: fruit is dropped, the box can be stopped, and nothing drops while it is", async ({ page }) => {
-  const errors = await sit(page, "과일 합치기"),
+  const errors = await sit(page, "과일 게임"),
     drops = page.locator("[data-drops]"),
     // The hand needs a moment (of the box's own time, which runs slow on a busy machine) before it holds the next fruit: the key is pressed until it lets go.
     dropTo = (total: number) =>
