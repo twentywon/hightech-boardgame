@@ -161,6 +161,10 @@ export function mountYacht(
       // The roll has one recorded sound of its own; landings add nothing.
       view.onContact = () => {};
       view.onSettled = present;
+      // The pad on the table is written in pencil; a tap on the cup throws the dice when a roll may be made.
+      view.onWrite = () => sound.paper(2);
+      view.onCup = () => $("yd-roll").click();
+      view.setNames(state.cards.map((_, p) => who(p)));
       // Before the first roll of a turn there is nothing to set aside: a tap on the dice throws them.
       view.onPick = (index) => (!hasRolled(state) && !state.over ? $("yd-roll").click() : hold(index));
       view.sync(state, false);

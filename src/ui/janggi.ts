@@ -205,6 +205,8 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
       view = new JanggiView($("board"), settings.quality, facing);
       view.onSelect = select;
       view.onContact = () => sound.wood(2);
+      // A piece knocked off the board lands on the reed mat.
+      view.onKnock = () => sound.soft(2, 0.35);
       view.onSettled = update;
       view.render(state.board, null, false);
       view.renderer.domElement.addEventListener("keydown", (e) => {
@@ -455,6 +457,9 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
         : `무승부 — ${state.outcome.reason}`;
       if (!announced && !view?.animating) {
         announced = true;
+        // The beaten general falls over on the board.
+        const loser = state.outcome.winner && other(state.outcome.winner);
+        if (loser) view?.topple(state.board.indexOf(loser === "cho" ? "K" : "k"));
         if (mode === "ai" && state.outcome.winner === other(human)) sound.lose();
         else sound.win();
       }

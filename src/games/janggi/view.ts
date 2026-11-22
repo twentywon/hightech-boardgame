@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, disposeScene, wood, realism, planks, block, hop, travel } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, capable, disposeScene, realism, hop, travel } from "../../engine/scene-utils";
 import {
   FOV,
   OVERHEAD,
@@ -10,6 +10,8 @@ import {
   orbit,
 } from "../../engine/camera";
 import { FILES, RANKS, at, kindOf, sideOf, xOf, yOf, type Move, type Side } from "./rules";
+import { PieceKit, RADIUS, THICK } from "./pieces";
+import { FACE, MAT, janggiBoard, sarangbang } from "./room";
 
 export const SPACING = 0.7;
 /** Centre of a board point in the scene. */
@@ -25,63 +27,43 @@ export function fromWorld(x: number, z: number): number | null {
   const centre = toWorld(at(file, rank));
   return Math.hypot(x - centre.x, z - centre.z) <= SPACING * 0.48 ? at(file, rank) : null;
 }
-const GLYPH: Record<string, string> = {
-  K: "楚", A: "士", R: "車", C: "包", N: "馬", E: "象", P: "卒",
-  k: "漢", a: "士", r: "車", c: "包", n: "馬", e: "象", p: "兵",
-};
-const RADIUS: Record<string, number> = { K: 0.32, R: 0.27, C: 0.27, N: 0.27, E: 0.27, A: 0.21, P: 0.21 };
-const PIECE_Y = 0.26;
-function pieceTexture(piece: string) {
-  const c = document.createElement("canvas");
-  c.width = c.height = 160;
-  const ctx = c.getContext("2d")!,
-    color = sideOf(piece) === "cho" ? "#1f6a4b" : "#b3271b";
-  ctx.fillStyle = "#f3e7c9";
-  ctx.fillRect(0, 0, 160, 160);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 7;
-  // An octagonal rim that follows the edge of the piece.
-  ctx.lineJoin = "miter";
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = Math.PI / 8 + (i * Math.PI) / 4;
-    ctx.lineTo(80 + Math.cos(a) * 66, 80 + Math.sin(a) * 66);
-  }
-  ctx.closePath();
-  ctx.stroke();
-  ctx.fillStyle = color;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font =
-    '700 84px "Noto Serif CJK KR", "Noto Serif KR", "AppleMyungjo", "Batang", "Songti SC", "Noto Sans CJK KR", "Apple SD Gothic Neo", "Malgun Gothic", serif';
-  ctx.fillText(GLYPH[piece], 80, 86);
-  const t = new T.CanvasTexture(c);
-  t.colorSpace = T.SRGBColorSpace;
-  t.anisotropy = 4;
-  // The cap's texture starts a quarter turn off; this puts the glyph upright.
-  t.center.set(0.5, 0.5);
-  t.rotation = -Math.PI / 2;
-  return t;
-}
+const PIECE_Y = FACE + THICK / 2;
+/** The height a pointer is read at (the browser test projects the same height). */
+const AIM_Y = 0.26;
+/** How high a chosen piece is lifted off its point. */
+const LIFT = 0.07;
+/** A move takes as long as it always did; a piece knocked off flies after the mover has come down on it. */
+const MOVE_MS = 260,
+  KNOCK_AFTER = 200,
+  KNOCK_MS = 420,
+  TOPPLE_MS = 640;
 interface Tween {
   mesh: T.Mesh;
   start: number;
   from: T.Vector3;
   to: T.Vector3;
-  /** A taken piece: it hops higher and grows smaller on its way off the board. */
-  taken?: boolean;
+}
+/** Something that moves for show only: it never holds up play, and is put at its end when the board is drawn again. */
+interface Flight {
+  start: number;
+  duration: number;
+  /** Puts the thing `p` (0 to 1) of the way along. */
+  at: (p: number) => void;
+  /** Called once when it has come to rest. */
+  done?: () => void;
 }
 /** How large a taken piece lies beside the board, and every side's full set of pieces. */
 const TAKEN_SCALE = 0.75,
   FULL: Record<string, number> = { K: 1, A: 2, R: 2, C: 2, N: 2, E: 2, P: 5 },
   ORDER = "RCNEAPK";
 /**
- * Where the `i`-th piece `taker` took lies: on the table at its player's right hand. Cho sits at the near edge (+z)
- * with its right at +x; han sits across (−z) with its right at −x. Three to a row, from the player's own edge inward.
+ * Where the `i`-th piece `taker` took lies: on the mat at its player's right hand, beside the board. Cho sits at the
+ * near edge (+z) with its right at +x; han sits across (−z) with its right at −x. Three to a row, from the player's
+ * own edge inward.
  */
 export function takenAt(taker: Side, i: number) {
   const side = taker === "cho" ? 1 : -1;
-  return new T.Vector3(side * (3.72 + (i % 3) * 0.56), -0.2 + 0.1 * TAKEN_SCALE, side * (3.2 - Math.floor(i / 3) * 0.6));
+  return new T.Vector3(side * (3.82 + (i % 3) * 0.56), MAT + (THICK / 2) * TAKEN_SCALE, side * (3.2 - Math.floor(i / 3) * 0.6));
 }
 export interface Marks {
   selected: number | null;
@@ -91,8 +73,12 @@ export interface Marks {
   check: number | null;
   cursor: number | null;
 }
+const UP = new T.Vector3(0, 1, 0);
 
-/** A wooden janggi board with octagonal pieces. It draws a board string; it knows no rules. */
+/**
+ * A thick janggi board on its feet in a sarangbang, with carved, lacquered octagonal pieces. It draws a board
+ * string; it knows no rules.
+ */
 export class JanggiView {
   readonly renderer: T.WebGLRenderer;
   private scene = new T.Scene();
@@ -108,12 +94,18 @@ export class JanggiView {
   private meshes: (T.Mesh | null)[] = Array(FILES * RANKS).fill(null);
   private shown = "";
   private tweens: Tween[] = [];
+  private flights: Flight[] = [];
   /** How many pieces each side has taken (they stand at its right). */
   private taken: Record<Side, number> = { cho: 0, han: 0 };
-  private geometries = new Map<string, T.BufferGeometry>();
-  private tops = new Map<string, T.MeshStandardMaterial>();
-  private side = new T.MeshStandardMaterial({ color: "#e2d2a8", roughness: 0.6 });
+  private kit = new PieceKit();
+  private owned: { dispose(): void }[] = [];
   private markKey = "";
+  /** The chosen piece, lifted off its point; pieces still easing up or down. */
+  private raised: T.Mesh | null = null;
+  private easing = new Set<T.Mesh>();
+  /** The ring round a general in check, which breathes where a graphics card draws. */
+  private pulse: T.Mesh | null = null;
+  private rich = capable();
   private facing: Side;
   private top = false;
   private cameraFrom = new T.Vector3();
@@ -121,19 +113,25 @@ export class JanggiView {
   private cameraAt = 0;
   private cameraMs = 450;
   private ray = new T.Raycaster();
-  private plane = new T.Plane(new T.Vector3(0, 1, 0), -PIECE_Y);
+  private plane = new T.Plane(new T.Vector3(0, 1, 0), -AIM_Y);
   private reducedMotion =
     typeof matchMedia === "function" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
   /** A board point was chosen; `confirm` when the gesture also commits (a mouse click). */
   onSelect: (index: number | null, confirm: boolean) => void = () => {};
   onContact: () => void = () => {};
+  /** A piece knocked off the board has landed on the mat. */
+  onKnock: () => void = () => {};
   onSettled: () => void = () => {};
   get animating() {
     return this.tweens.length > 0 || this.cameraAt !== 0;
   }
   get ready() {
     return this.readyFlag;
+  }
+  private own<R extends { dispose(): void }>(resource: R) {
+    this.owned.push(resource);
+    return resource;
   }
   constructor(
     readonly host: HTMLElement,
@@ -145,62 +143,30 @@ export class JanggiView {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;
-    this.renderer.setClearColor("#65452f");
+    this.renderer.setClearColor("#3a2716");
     this.renderer.outputColorSpace = T.SRGBColorSpace;
     host.append(this.renderer.domElement);
     const canvas = this.renderer.domElement;
     canvas.setAttribute("aria-label", "3D 장기판");
     canvas.tabIndex = 0;
-    this.scene.add(new T.HemisphereLight("#fff1d2", "#44352b", 2.5));
-    const light = new T.DirectionalLight("#fff4dc", 3.2);
-    light.position.set(-3, 9, 4);
+    // Daylight through the paper doors: a warm sky light and one low sun from the left.
+    this.scene.add(new T.HemisphereLight("#fff1d6", "#5a3e26", 2.4));
+    const light = new T.DirectionalLight("#fff0d4", 3.2);
+    // From the side (the paper doors at the right), so that neither player looks into its reflection.
+    light.position.set(7.5, 9, -1.5);
     light.castShadow = true;
     light.shadow.mapSize.set(1024, 1024);
-    light.shadow.camera.left = -6;
-    light.shadow.camera.right = 6;
-    light.shadow.camera.top = 6;
-    light.shadow.camera.bottom = -6;
+    light.shadow.camera.left = -8.6;
+    light.shadow.camera.right = 8.6;
+    light.shadow.camera.top = 6.6;
+    light.shadow.camera.bottom = -6.6;
     light.shadow.normalBias = 0.025;
+    this.own(light.shadow);
     this.scene.add(light);
+    const own = <R extends { dispose(): void }>(r: R) => this.own(r);
+    janggiBoard(this.scene, own, SPACING, this.rich);
+    sarangbang(this.scene, own, this.rich);
     realism(this.renderer, this.scene);
-    const table = new T.Mesh(
-      new T.BoxGeometry(80, 0.2, 80),
-      new T.MeshStandardMaterial(planks(12)),
-    );
-    table.position.y = -0.3;
-    table.receiveShadow = true;
-    this.scene.add(table);
-    const width = (FILES - 1) * SPACING,
-      depth = (RANKS - 1) * SPACING;
-    const board = new T.Mesh(
-      block(width + 1, 0.34, depth + 1),
-      new T.MeshStandardMaterial({ map: wood(), roughness: 0.52 }),
-    );
-    board.position.y = -0.03;
-    board.castShadow = board.receiveShadow = true;
-    this.scene.add(board);
-    const lines: number[] = [],
-      y = 0.142,
-      line = (a: number, b: number) => {
-        const p = toWorld(a),
-          q = toWorld(b);
-        lines.push(p.x, y, p.z, q.x, y, q.z);
-      };
-    for (let rank = 0; rank < RANKS; rank++) line(at(0, rank), at(8, rank));
-    for (let file = 0; file < FILES; file++) line(at(file, 0), at(file, 9));
-    // The palace diagonals.
-    for (const rank of [0, 7]) {
-      line(at(3, rank), at(5, rank + 2));
-      line(at(5, rank), at(3, rank + 2));
-    }
-    const geometry = new T.BufferGeometry();
-    geometry.setAttribute("position", new T.Float32BufferAttribute(lines, 3));
-    this.scene.add(
-      new T.LineSegments(
-        geometry,
-        new T.LineBasicMaterial({ color: "#4a3320", transparent: true, opacity: 0.85 }),
-      ),
-    );
     this.scene.add(this.pieces, this.marks);
     const pick = (e: PointerEvent, confirm: boolean) => {
       if (this.disposed || this.cameraAt) return;
@@ -244,17 +210,37 @@ export class JanggiView {
       }
       if (this.tweens.length) {
         moved = true;
-        this.tweens = this.tweens.filter((t) => {
-          const p = Math.min(1, (time - t.start) / 260);
+        this.tweens = this.tweens.filter((t) => this.slide(t, time));
+        if (!this.tweens.length) this.onSettled();
+      }
+      if (this.flights.length) {
+        moved = true;
+        this.flights = this.flights.filter((f) => {
+          const p = Math.min(1, (time - f.start) / f.duration);
           if (p < 0) return true;
-          t.mesh.position.lerpVectors(t.from, t.to, travel(p));
-          t.mesh.position.y += hop(p) * (t.taken ? 0.9 : 0.5);
-          if (t.taken) t.mesh.scale.setScalar(1 - (1 - TAKEN_SCALE) * Math.min(1, p * 1.4));
+          f.at(p);
           if (p < 1) return true;
-          this.onContact();
+          f.done?.();
           return false;
         });
-        if (!this.tweens.length) this.onSettled();
+      }
+      if (this.easing.size) {
+        moved = true;
+        for (const mesh of this.easing) {
+          if (this.tweens.some((t) => t.mesh === mesh)) continue;
+          const goal = PIECE_Y + (mesh === this.raised ? LIFT : 0);
+          mesh.position.y += (goal - mesh.position.y) * 0.35;
+          if (Math.abs(goal - mesh.position.y) < 0.002) {
+            mesh.position.y = goal;
+            this.easing.delete(mesh);
+          }
+        }
+      }
+      if (this.pulse) {
+        const breath = 0.5 + 0.5 * Math.sin(time / 170);
+        this.pulse.scale.setScalar(1 + breath * 0.12);
+        (this.pulse.material as T.MeshBasicMaterial).opacity = 0.55 + breath * 0.4;
+        moved = true;
       }
       if (!this.dirty && !moved) return;
       this.dirty = false;
@@ -266,6 +252,28 @@ export class JanggiView {
         });
     };
     this.raf = requestAnimationFrame(loop);
+  }
+  /**
+   * One step of a move: the piece is picked up, carried low leaning into its way, and set down with a tap and a small
+   * bounce (`hop`). Returns false once it has landed.
+   */
+  private slide(t: Tween, time: number) {
+    const p = Math.min(1, (time - t.start) / MOVE_MS);
+    if (p < 0) return true;
+    const mesh = t.mesh;
+    mesh.position.lerpVectors(t.from, t.to, travel(p));
+    mesh.position.y += hop(p) * 0.34;
+    const way = new T.Vector3().subVectors(t.to, t.from).setY(0);
+    if (way.lengthSq() > 1e-6) {
+      const axis = new T.Vector3().crossVectors(UP, way.normalize()),
+        lean = 0.32 * Math.sin(Math.PI * Math.min(1, p / 0.84));
+      mesh.quaternion.setFromAxisAngle(axis, lean).multiply(this.yaw());
+    }
+    if (p < 1) return true;
+    mesh.position.copy(t.to);
+    mesh.quaternion.copy(this.yaw());
+    this.onContact();
+    return false;
   }
   private target() {
     const distance = cameraDistance(this.camera.aspect, this.top, SUBJECTS.janggi),
@@ -305,7 +313,7 @@ export class JanggiView {
     } else this.cameraAt = performance.now() + delay;
     // The glyphs turn with the table once it has swung half way.
     const turn = () => {
-      for (const mesh of this.meshes) if (mesh) this.orient(mesh);
+      for (const mesh of this.meshes) if (mesh && !this.tweens.some((t) => t.mesh === mesh)) this.orient(mesh);
       this.dirty = true;
     };
     if (this.cameraAt) setTimeout(() => !this.disposed && turn(), delay + this.cameraMs / 2);
@@ -315,27 +323,15 @@ export class JanggiView {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.resize();
   }
-  /** Every glyph reads upright from the viewer's side of the board. */
+  /** The turn that has every glyph read upright from the viewer's side of the board. */
+  private yaw() {
+    return new T.Quaternion().setFromAxisAngle(UP, this.facing === "cho" ? Math.PI : 0);
+  }
   private orient(mesh: T.Mesh) {
-    mesh.rotation.y = this.facing === "cho" ? Math.PI : 0;
+    mesh.quaternion.copy(this.yaw());
   }
   private make(piece: string, index: number) {
-    const kind = kindOf(piece);
-    let geometry = this.geometries.get(kind);
-    if (!geometry) {
-      // A crisp octagonal prism: a flat edge faces the player and every face
-      // is shaded on its own, so the eight corners read clearly.
-      const r = RADIUS[kind] * 1.05;
-      geometry = new T.CylinderGeometry(r * 0.95, r, 0.2, 8, 1, false, Math.PI / 8).toNonIndexed();
-      geometry.computeVertexNormals();
-      this.geometries.set(kind, geometry);
-    }
-    let top = this.tops.get(piece);
-    if (!top) {
-      top = new T.MeshStandardMaterial({ map: pieceTexture(piece), roughness: 0.5 });
-      this.tops.set(piece, top);
-    }
-    const mesh = new T.Mesh(geometry, [this.side, top, this.side]);
+    const mesh = new T.Mesh(this.kit.geometry(kindOf(piece)), this.kit.materials(piece));
     mesh.castShadow = true;
     mesh.userData.piece = piece;
     const p = toWorld(index);
@@ -345,15 +341,57 @@ export class JanggiView {
     return mesh;
   }
   /**
+   * A taken piece is knocked off the board as the mover comes down on it: it flies off to the taker's right turning
+   * over once, lands on the mat with a bounce, smaller, and lies there. It is decoration: play never waits for it.
+   */
+  private knock(mesh: T.Mesh, to: T.Vector3, now: number) {
+    const from = mesh.position.clone(),
+      way = new T.Vector3().subVectors(to, from).setY(0),
+      axis = new T.Vector3().crossVectors(UP, way.lengthSq() > 1e-6 ? way.normalize() : new T.Vector3(1, 0, 0)),
+      spin = (Math.random() - 0.5) * 1.6;
+    this.flights.push({
+      start: now + KNOCK_AFTER,
+      duration: KNOCK_MS,
+      at: (p) => {
+        mesh.position.lerpVectors(from, to, travel(p));
+        mesh.position.y += hop(p) * 0.95;
+        mesh.scale.setScalar(1 - (1 - TAKEN_SCALE) * Math.min(1, p * 1.4));
+        const roll = Math.PI * 2 * travel(p);
+        mesh.quaternion
+          .setFromAxisAngle(axis, roll)
+          .multiply(new T.Quaternion().setFromAxisAngle(UP, spin * travel(p)))
+          .multiply(this.yaw());
+      },
+      done: () => {
+        mesh.position.copy(to);
+        mesh.scale.setScalar(TAKEN_SCALE);
+        this.onKnock();
+      },
+    });
+  }
+  /** Puts every flight at its end at once. */
+  private land() {
+    for (const f of this.flights) {
+      f.at(1);
+      f.done?.();
+    }
+    this.flights = [];
+  }
+  /**
    * Shows `board`. With `last` and matching pieces already on the board the
    * move is animated; otherwise every piece is placed afresh.
    */
   render(board: string, last: Move | null = null, animate = true) {
     if (this.disposed) return;
     this.dirty = true;
-    for (const t of this.tweens) t.mesh.position.copy(t.to);
+    for (const t of this.tweens) {
+      t.mesh.position.copy(t.to);
+      this.orient(t.mesh);
+    }
     this.tweens = [];
-    const moving = last ? this.meshes[last.from] : null;
+    this.land();
+    const moving = last ? this.meshes[last.from] : null,
+      now = performance.now();
     if (
       last &&
       moving &&
@@ -366,8 +404,8 @@ export class JanggiView {
         taker = sideOf(this.shown[last.from])!;
       if (taken) {
         const to = takenAt(taker, this.taken[taker]++);
-        if (animate && !this.reducedMotion)
-          this.tweens.push({ mesh: taken, start: performance.now(), from: taken.position.clone(), to, taken: true });
+        this.easing.delete(taken);
+        if (animate && !this.reducedMotion) this.knock(taken, to, now);
         else {
           taken.position.copy(to);
           taken.scale.setScalar(TAKEN_SCALE);
@@ -378,10 +416,15 @@ export class JanggiView {
       const p = toWorld(last.to),
         to = new T.Vector3(p.x, PIECE_Y, p.z);
       if (animate && !this.reducedMotion)
-        this.tweens.push({ mesh: moving, start: performance.now(), from: moving.position.clone(), to });
-      else moving.position.copy(to);
+        this.tweens.push({ mesh: moving, start: now, from: moving.position.clone(), to });
+      else {
+        moving.position.copy(to);
+        this.orient(moving);
+      }
     } else {
       this.pieces.clear();
+      this.easing.clear();
+      this.raised = null;
       this.meshes = [...board].map((piece, i) => (piece === "." ? null : this.make(piece, i)));
       // What is missing from each side's full set has been taken by the other; it is laid out by kind.
       this.taken = { cho: 0, han: 0 };
@@ -398,6 +441,36 @@ export class JanggiView {
     this.shown = board;
     if (!this.tweens.length) this.onSettled();
   }
+  /**
+   * The general at `index` falls over on its side, away from the player who beat it: the end of the game, told on the
+   * board. Decoration only.
+   */
+  topple(index: number) {
+    const mesh = this.meshes[index];
+    if (!mesh || this.disposed) return;
+    this.land();
+    const side = sideOf(this.shown[index]),
+      // It falls toward its own player's edge.
+      away = new T.Vector3(0, 0, side === "cho" ? 1 : -1),
+      axis = new T.Vector3().crossVectors(UP, away),
+      r = RADIUS[kindOf(this.shown[index])] * 1.05,
+      apothem = r * Math.cos(Math.PI / 8) * 0.975,
+      start = mesh.position.clone(),
+      pivot = start.clone().addScaledVector(away, apothem).setY(FACE),
+      arm = start.clone().sub(pivot),
+      yaw = mesh.quaternion.clone(),
+      q = new T.Quaternion();
+    const at = (p: number) => {
+      // It tips slowly, then quickly, and rocks once where it lies.
+      const angle = p < 0.8 ? (Math.PI / 2) * (p / 0.8) ** 2 : Math.PI / 2 - 0.12 * Math.sin((Math.PI * (p - 0.8)) / 0.2);
+      q.setFromAxisAngle(axis, angle);
+      mesh.position.copy(pivot).add(arm.clone().applyQuaternion(q));
+      mesh.quaternion.copy(q).multiply(yaw);
+    };
+    if (this.reducedMotion) at(1);
+    else this.flights.push({ start: performance.now() + 150, duration: TOPPLE_MS, at, done: () => this.onKnock() });
+    this.dirty = true;
+  }
   highlights(m: Marks) {
     const key = JSON.stringify(m);
     if (key === this.markKey || this.disposed) return;
@@ -405,25 +478,48 @@ export class JanggiView {
     this.dirty = true;
     disposeScene(this.marks);
     this.marks.clear();
-    const ring = (index: number, color: string, inner: number, outer: number, y = 0.15) => {
+    this.pulse = null;
+    const y = FACE + 0.006;
+    const ring = (index: number, color: string, inner: number, outer: number, lift = 0, opacity = 0.92) => {
       const p = toWorld(index),
         mesh = new T.Mesh(
           new T.RingGeometry(inner, outer, 40),
-          new T.MeshBasicMaterial({ color, side: T.DoubleSide, transparent: true, opacity: 0.92 }),
+          new T.MeshBasicMaterial({ color, side: T.DoubleSide, transparent: true, opacity, depthWrite: false }),
         );
       mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(p.x, y, p.z);
+      mesh.position.set(p.x, y + lift, p.z);
       this.marks.add(mesh);
+      return mesh;
     };
     if (m.last) {
-      ring(m.last.from, "#d6af57", 0.08, 0.13);
+      ring(m.last.from, "#d6af57", 0.06, 0.11);
       ring(m.last.to, "#d6af57", 0.33, 0.37);
     }
-    if (m.check !== null) ring(m.check, "#e2452c", 0.35, 0.41);
-    if (m.selected !== null) ring(m.selected, "#f3d27a", 0.33, 0.4, 0.152);
-    for (const index of m.legal) ring(index, "#2f8f6f", this.shown[index] === "." ? 0 : 0.3, this.shown[index] === "." ? 0.1 : 0.35, 0.153);
-    if (m.target !== null) ring(m.target, "#f6f0e2", 0.3, 0.38, 0.154);
-    if (m.cursor !== null) ring(m.cursor, "#fff2c6", 0.4, 0.44, 0.155);
+    if (m.check !== null) {
+      const alarm = ring(m.check, "#e2452c", 0.36, 0.44, 0.001);
+      if (this.rich && !this.reducedMotion) this.pulse = alarm;
+    }
+    if (m.selected !== null) ring(m.selected, "#f3d27a", 0.33, 0.41, 0.002);
+    for (const index of m.legal)
+      if (this.shown[index] === ".") {
+        // An empty point it may go to: a jade dot with a pale rim.
+        ring(index, "#f3ecd6", 0.085, 0.115, 0.003);
+        ring(index, "#1f8a6c", 0, 0.088, 0.003);
+      } else ring(index, "#e0452c", 0.3, 0.36, 0.003);
+    if (m.target !== null) ring(m.target, "#f6f0e2", 0.3, 0.38, 0.004);
+    if (m.cursor !== null) ring(m.cursor, "#fff2c6", 0.41, 0.45, 0.005);
+    // The chosen piece is lifted a little off the board; the one chosen before goes down again.
+    const raised = m.selected !== null ? this.meshes[m.selected] : null;
+    if (raised !== this.raised) {
+      if (this.raised) this.easing.add(this.raised);
+      if (raised) this.easing.add(raised);
+      this.raised = raised;
+      if (this.reducedMotion)
+        for (const mesh of this.easing) {
+          mesh.position.y = PIECE_Y + (mesh === raised ? LIFT : 0);
+          this.easing.delete(mesh);
+        }
+    }
   }
   dispose() {
     if (this.disposed) return;
@@ -431,13 +527,9 @@ export class JanggiView {
     this.cancelReady?.();
     cancelAnimationFrame(this.raf);
     this.observer.disconnect();
-    disposeScene(this.scene);
-    this.geometries.forEach((g) => g.dispose());
-    this.tops.forEach((m) => {
-      m.map?.dispose();
-      m.dispose();
-    });
-    this.side.dispose();
+    disposeScene(this.marks);
+    this.kit.dispose();
+    for (const r of this.owned) r.dispose();
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
