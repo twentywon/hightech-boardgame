@@ -759,26 +759,73 @@ export class ShootingView extends TableView<State> {
       model.root.position.set(a.p.x, a.p.y, a.p.z);
       model.root.rotation.set(0, a.heading, 0);
       const falling = a.doing === "fall" || a.doing === "down",
-        since = w.t - a.since;
+        since = w.t - a.since,
+        staying = a.doing === "idle" || a.doing === "swim",
+        // A quick twitch now and then (an ear, a tail), different for each animal and each ear.
+        twitch = (k: number, every: number) => Math.max(0, Math.sin(w.t * (6.28 / every) + a.phase * (k + 1.7) + k * 2.1)) ** 24,
+        head = model.head,
+        rest = (o: T.Object3D) => o.userData.rest as [number, number];
+      if (head.userData.base === undefined) head.userData.base = head.position.y;
+      model.ears.forEach((ear, k) => {
+        const [rx, rz] = rest(ear),
+          flick = falling ? 0 : twitch(k, staying ? 3.1 + k * 0.7 : 1.7) * (staying ? 0.55 : 0.25);
+        // Laid back while running off; pricked up while startled.
+        ear.rotation.set(rx + (a.doing === "flee" && !a.hurt ? -0.35 : 0) - flick * 0.4, Math.sin(w.t * 1.3 + a.phase + k) * (staying ? 0.15 : 0), rz + (k ? -1 : 1) * flick);
+      });
+      model.tails.forEach((tail, k) => {
+        const [rx, rz] = rest(tail),
+          wag = falling ? 0 : staying ? twitch(k + 3, 2.3) * 0.6 + Math.sin(w.t * 2.1 + a.phase) * 0.05 : a.doing === "flee" ? 0.35 : 0.08;
+        tail.rotation.set(rx - wag * (kind.bird ? 0.5 : 1), kind.bird ? Math.sin(w.t * 1.7 + a.phase) * (staying ? 0.12 : 0) : 0, rz + (staying && !kind.bird ? Math.sin(w.t * 9 + a.phase) * twitch(k + 5, 2.9) * 0.6 : 0));
+      });
       if (kind.bird) {
-        const flap = a.doing === "swim" ? 0 : a.doing === "fall" || a.doing === "down" ? 0.2 : Math.sin(w.t * (a.hurt ? 11 : 16) + a.phase) * (a.hurt ? 0.5 + 0.4 * Math.sin(w.t * 3) : 0.9);
+        const air = a.doing === "fly" || a.doing === "flee" || a.doing === "land",
+          // Landing it glides with a few slow beats, flaring as it comes down; startled it beats hard.
+          beat = a.doing === "land" ? Math.sin(w.t * 9 + a.phase) * (0.35 + 0.35 * Math.max(0, Math.sin(w.t * 1.3 + a.phase))) : Math.sin(w.t * (a.hurt ? 11 : a.doing === "flee" ? 17 : 13) + a.phase) * (a.hurt ? 0.5 + 0.4 * Math.sin(w.t * 3) : 0.9),
+          flap = air ? beat : falling ? 0.2 : -0.05;
         model.wings.forEach((wing, i) => (wing.rotation.z = (i ? -1 : 1) * (flap - 0.1)));
-        model.body.rotation.set(a.doing === "fly" || a.doing === "flee" ? -Math.atan2(a.v.y, Math.hypot(a.v.x, a.v.z)) * 0.6 : 0, 0, a.hurt && !falling ? Math.sin(w.t * 7) * 0.35 : 0);
-        if (a.doing === "swim") model.root.position.y = LAKE.y + 0.1 + Math.sin(w.t * 2 + a.phase) * 0.02;
+        model.body.rotation.set(air ? -Math.atan2(a.v.y, Math.hypot(a.v.x, a.v.z)) * 0.6 : 0, 0, a.hurt && !falling ? Math.sin(w.t * 7) * 0.35 : 0);
+        // Legs let down to stand on and folded back in the air.
+        const down = a.doing === "idle" || (a.doing === "land" && a.p.y - a.goal.y < 1.2);
+        model.legs.forEach((leg) => (leg.rotation.x = down ? 0 : 1.35));
+        if (a.doing === "swim") {
+          // Paddling gently, bobbing on the water, now and then dipping its bill.
+          model.root.position.y = LAKE.y + 0.1 + Math.sin(w.t * 2 + a.phase) * 0.02;
+          model.body.rotation.x = Math.sin(w.t * 1.4 + a.phase) * 0.04;
+        }
+        if (staying) {
+          const peck = a.mood === "graze" ? (a.doing === "swim" ? 0.25 + 0.55 * twitch(1, 2.4) : 0.4 + 0.7 * Math.abs(Math.sin(w.t * 4.5 + a.phase)) ** 6) : 0;
+          head.rotation.set(peck, a.mood === "look" ? Math.sin(w.t * 0.9 + a.phase) * 0.6 : 0, 0);
+          head.position.y = head.userData.base - peck * 0.05;
+        } else {
+          head.rotation.set(0, 0, 0);
+          head.position.y = head.userData.base;
+        }
         if (falling) model.body.rotation.set(a.doing === "fall" ? since * 9 : Math.PI, 0, a.doing === "fall" ? since * 5 : 0.4);
       } else {
-        // Walking, the legs swing in pairs (a limping leg stiff); grazing, the head goes down; fallen, it lies on its side.
-        const swing = Math.min(1, rate / 2.5) * 0.55;
+        // Walking or running, the legs swing in pairs (a hurt one drags: its legs short and stiff); staying, it grazes
+        // with its head down or lifts it and looks about; startled, it stands with its head up a moment; fallen, it
+        // lies on its side.
+        const crawl = !!a.hurt && !falling,
+          swing = rate > 0.05 ? Math.max(crawl ? 0.35 : 0, Math.min(1, rate / 2.5) * 0.55) : 0;
         model.legs.forEach((leg, i) => {
           const pair = i === 0 || i === 3 ? 0 : Math.PI,
-            limp = a.hurt === "legs" && i === 1 ? 0.2 : 1;
+            limp = a.hurt === "legs" && i === 1 ? 0.15 : crawl ? 0.6 : 1;
           leg.rotation.x = falling ? 0.25 : Math.sin(shown!.step + pair) * swing * limp;
         });
-        model.head.rotation.x = a.doing === "graze" ? 0.9 : Math.sin(shown.step * 2) * 0.04 * swing;
+        const grazing = a.doing === "idle" && a.mood === "graze",
+          looking = a.doing === "idle" && a.mood === "look",
+          alert = a.doing === "flee" && w.t < a.until;
+        head.rotation.set(
+          grazing ? 0.95 + Math.sin(w.t * 5 + a.phase) * 0.05 * twitch(2, 1.1) : alert ? -0.35 : crawl ? 0.35 + Math.sin(shown.step * 0.5) * 0.1 : Math.sin(shown.step * 2) * 0.04 * swing,
+          looking ? Math.sin(w.t * 0.8 + a.phase) * 0.55 : alert ? Math.sin(w.t * 14) * 0.08 : 0,
+          0,
+        );
         const roll = falling ? Math.min(1, since / 0.7) : 0,
-          lean = a.hurt === "legs" && !falling ? Math.sin(shown.step) * 0.08 : 0;
-        model.body.rotation.set(0, 0, roll * roll * (Math.PI / 2) * 0.95 + lean);
-        model.body.position.y = falling ? -roll * 0.1 : a.kind === "rabbit" ? Math.abs(Math.sin(shown.step)) * 0.12 * swing : 0;
+          lean = a.hurt === "legs" && !falling ? Math.sin(shown.step) * 0.12 : crawl ? Math.sin(shown.step * 0.5) * 0.06 : 0;
+        model.body.rotation.set(crawl ? 0.06 : 0, 0, roll * roll * (Math.PI / 2) * 0.95 + lean);
+        // A rabbit hops; staying, it sits and breathes.
+        model.body.position.y = falling ? -roll * 0.1 : a.kind === "rabbit" ? Math.abs(Math.sin(shown.step)) * 0.12 * swing : crawl ? -0.04 : 0;
+        if (staying) model.body.scale.set(1, 1 + Math.sin(w.t * 2.2 + a.phase) * 0.012, 1);
       }
       // A fallen animal fades away, with a puff once it is down.
       if (a.doing === "down") {

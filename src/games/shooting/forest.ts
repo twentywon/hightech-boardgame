@@ -1,6 +1,6 @@
 import * as T from "three";
 import { furry, stuff } from "../../engine/scene-utils";
-import { EDGE, LAKE, inLake, type Kind } from "./hunt";
+import { EDGE, LAKE, ROCKS, inLake, type Kind } from "./hunt";
 import { canvas, sequence, skyDome, texture } from "./paint";
 
 type Keep = <R extends { dispose(): void }>(resource: R) => R;
@@ -22,8 +22,10 @@ export interface Forest {
 /** One kind of instanced part of the wood: its shape and paint, and where each of it stands (and its tint). */
 interface Crowd {
   geometry: T.BufferGeometry;
-  material: T.MeshStandardMaterial;
+  material: T.MeshStandardMaterial | T.MeshLambertMaterial;
   shadow: boolean;
+  /** Whether it is darkened by the shadows of others (leaf cards are not: it costs too much under software drawing). */
+  shaded?: boolean;
   at: { m: T.Matrix4; c: T.Color }[];
 }
 export function buildForest(scene: T.Scene, keep: Keep): Forest {
@@ -139,11 +141,11 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
   // The wood: crowds of trunks, crowns, bushes, ferns and stones, each one instanced mesh tinted tree by tree.
   const crowds: Record<string, Crowd> = {},
     mirrored: Record<string, Crowd> = {},
-    crowd = (key: string, geometry: T.BufferGeometry, material: T.MeshStandardMaterial, shadow = true) =>
-      (crowds[key] ??= { geometry: keep(geometry), material, shadow, at: [] }),
+    crowd = (key: string, geometry: T.BufferGeometry, material: Crowd["material"], shadow = true, shaded = true) =>
+      (crowds[key] ??= { geometry: keep(geometry), material, shadow, shaded, at: [] }),
     // The far shore's trees, seen across the water, are mirrored in it.
     mirrors = (x: number, z: number) => z < LAKE.z - LAKE.rz * 0.3 && Math.abs(x - LAKE.x) < LAKE.rx + 8 && z > LAKE.z - LAKE.rz - 22,
-    place = (key: string, at: T.Vector3, turnBy: number, size: T.Vector3, tint: T.Color, mirror: boolean) => {
+    place = (key: string, at: T.Vector3, turnBy: number, size: T.Vector3, tint: T.Color, mirror: boolean, mirrorSize = size) => {
       crowds[key].at.push({
         m: new T.Matrix4().compose(at, turn(turnBy), size),
         c: tint,
@@ -156,7 +158,7 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
           shadow: false,
           at: [],
         }).at.push({
-          m: new T.Matrix4().compose(new T.Vector3(at.x, 2 * LAKE.y - at.y, at.z), turn(turnBy), new T.Vector3(size.x, -size.y, size.z)),
+          m: new T.Matrix4().compose(new T.Vector3(at.x, 2 * LAKE.y - at.y, at.z), turn(turnBy), new T.Vector3(mirrorSize.x, -mirrorSize.y, mirrorSize.z)),
           c: tint.clone().multiplyScalar(0.62),
         });
       }
@@ -172,14 +174,63 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
   }
   const birchMap = texture(birchC, keep, [2, 3]);
   const trunkShape = new T.CylinderGeometry(0.62, 1, 1, 7).translate(0, 0.5, 0),
-    coneShape = new T.ConeGeometry(1, 1, 9).translate(0, 0.5, 0),
-    ballShape = new T.IcosahedronGeometry(1, 1),
     leafy = (o: T.MeshStandardMaterialParameters = {}) => std({ color: "#ffffff", flatShading: true, roughness: 0.9, ...o });
   crowd("trunk", trunkShape, std({ color: "#ffffff", roughness: 0.95 }));
   crowd("birch", trunkShape.clone(), std({ color: "#ffffff", map: birchMap, roughness: 0.8 }));
-  crowd("cone", coneShape, leafy());
-  crowd("ball", ballShape, leafy());
-  crowd("bush", new T.IcosahedronGeometry(1, 1), leafy(), false);
+  // Crowns: a dark core that gives each its mass (and keeps a far crown whole), and round it cards of painted leaves
+  // or needles, alpha-tested so that the outline is leafy; one picture a kind of foliage, shared by every tree.
+  // Foliage is matt, so its paint is the cheaper Lambert kind: there are a great many leaves.
+  // A core is painted with the same foliage laid thick over a shadowed ground, so that what shows of it between the
+  // cards (and the whole of it in the water's mirror) is leaves too, in the shade inside the crown.
+  const pictures = new Map<string, { cards: T.MeshLambertMaterial; core: T.MeshLambertMaterial }>(),
+    paints = (kind: Parameters<typeof foliage>[0]) => {
+      let p = pictures.get(kind);
+      if (!p) {
+        const leafC = foliage(kind),
+          { c: thickC, ctx: thick } = canvas(256, 256);
+        thick.fillStyle = "#4a5a3c";
+        thick.fillRect(0, 0, 256, 256);
+        const tall = kind === "spray" ? 128 : 256;
+        for (let y = -tall / 2; y < 256; y += tall / 2) for (const x of [-128, 0, 128]) thick.drawImage(leafC, x + ((y / (tall / 2)) % 2 ? 64 : 0), y, 256, tall);
+        p = {
+          cards: keep(new T.MeshLambertMaterial({ color: "#ffffff", map: texture(leafC, keep), alphaTest: 0.5, side: T.DoubleSide })),
+          core: keep(new T.MeshLambertMaterial({ color: kind === "spray" ? "#ffffff" : "#c8c8c8", map: texture(thickC, keep, [2, 1]) })),
+        };
+        pictures.set(kind, p);
+      }
+      return p;
+    };
+  // A spruce tier's core: its underside is lit as if it faced up, as the needles under a branch catch the sky's light
+  // from round it (facing down it was a black disc under every tier).
+  const coneCore = new T.ConeGeometry(0.82, 0.9, 9).translate(0, 0.45, 0),
+    up = coneCore.getAttribute("normal");
+  for (let i = 0; i < up.count; i++) if (up.getY(i) < -0.5) up.setXYZ(i, 0, 1, 0);
+  crowd("cone", coneCore, paints("spray").core);
+  // Inside their cards the cores need few faces.
+  crowd("pineCore", new T.IcosahedronGeometry(0.74, 0), paints("pine").core);
+  crowd("birchCore", new T.IcosahedronGeometry(0.74, 0), paints("birch").core);
+  crowd("oakCore", new T.IcosahedronGeometry(0.74, 0), paints("oak").core);
+  crowd("bush", new T.IcosahedronGeometry(0.72, 0), paints("oak").core, false);
+  // Near trees have their cards whole; far ones (`…Far`) fewer and plainer, with the same pictures.
+  crowd("spray", sprayTier(61), paints("spray").cards, false, false);
+  crowd("sprayFar", sprayTier(62, true), paints("spray").cards, false, false);
+  crowd("needles", leafBall(9, 67), paints("pine").cards, false, false);
+  crowd("needlesFar", leafBall(6, 68), paints("pine").cards, false, false);
+  crowd("birchLeaves", leafBall(11, 71), paints("birch").cards, false, false);
+  crowd("birchLeavesFar", leafBall(7, 72), paints("birch").cards, false, false);
+  crowd("oakLeaves", leafBall(11, 73), paints("oak").cards, false, false);
+  crowd("oakLeavesFar", leafBall(7, 74), paints("oak").cards, false, false);
+  crowd("bushLeaves", leafBall(8, 79), paints("oak").cards, false, false);
+  crowd("bushLeavesFar", leafBall(5, 80), paints("oak").cards, false, false);
+  crowd("moss", new T.IcosahedronGeometry(1, 1), leafy(), false);
+  /** A crown: its core, smaller than the crown to give the depth inside (in the water's mirror it stands for the whole
+   *  crown), and its cards of foliage, set alike: fewer and plainer beyond `NEAR` m, where a leaf is a pixel or two. */
+  const CORE = new T.Vector3(0.78, 0.86, 0.78),
+    NEAR = 48;
+  const crown = (core: string, cards: string, at: T.Vector3, turnBy: number, size: T.Vector3, tint: T.Color, mirror: boolean) => {
+    place(core, at, turnBy, size.clone().multiply(CORE), tint, mirror, size);
+    place(Math.hypot(at.x, at.z) < NEAR ? cards : `${cards}Far`, at, turnBy, size, tint.clone().multiplyScalar(1.25), false);
+  };
   const plant = (x: number, z: number, kind = random(), scale = 1) => {
     const mirror = mirrors(x, z),
       v = (a: number, b: number, c: number) => new T.Vector3(a, b, c);
@@ -190,8 +241,9 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
         tint = hsl(0.31 + random() * 0.05, 0.38, 0.13 + random() * 0.06);
       place("trunk", v(x, 0, z), 0, v(0.28 * scale, h * 0.5, 0.28 * scale), hsl(0.07, 0.3, 0.22), mirror);
       for (let k = 0; k < 4; k++)
-        place(
+        crown(
           "cone",
+          "spray",
           v(x, h * (0.18 + k * 0.19), z),
           random() * 6,
           v(w * (1 - k * 0.22), h * 0.32, w * (1 - k * 0.22)),
@@ -207,7 +259,7 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
         const w = (1.1 + random() * 0.9) * scale,
           a = random() * 6.28,
           r = k ? (0.8 + random() * 0.8) * scale : 0;
-        place("ball", v(x + Math.cos(a) * r, h * (0.76 + random() * 0.18), z + Math.sin(a) * r), random() * 6, v(w, w * 0.82, w), tint.clone().offsetHSL(0, 0, (random() - 0.5) * 0.05), mirror);
+        crown("pineCore", "needles", v(x + Math.cos(a) * r, h * (0.76 + random() * 0.18), z + Math.sin(a) * r), random() * 6, v(w, w * 0.82, w), tint.clone().offsetHSL(0, 0, (random() - 0.5) * 0.05), mirror);
       }
     } else if (kind < 0.78) {
       // A birch: a slim white trunk, leaning a little, with light yellow-green crowns.
@@ -216,8 +268,9 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
       place("birch", v(x, 0, z), random() * 6, v(0.16 * scale, h * 0.85, 0.16 * scale), new T.Color("#ffffff"), mirror);
       for (let k = 0; k < 3; k++) {
         const w = (1.2 + random() * 1.0) * scale;
-        place(
-          "ball",
+        crown(
+          "birchCore",
+          "birchLeaves",
           v(x + (random() - 0.5) * 1.8 * scale, h * (0.62 + k * 0.13), z + (random() - 0.5) * 1.8 * scale),
           random() * 6,
           v(w, w * 1.1, w),
@@ -233,8 +286,9 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
       for (let k = 0; k < 4; k++) {
         const w = (1.9 + random() * 1.4) * scale,
           a = (k / 4) * Math.PI * 2 + random();
-        place(
-          "ball",
+        crown(
+          "oakCore",
+          "oakLeaves",
           v(x + Math.cos(a) * 1.4 * scale * (k ? 1 : 0), h * (0.72 + (k ? 0 : 0.15)) + random() * 0.6, z + Math.sin(a) * 1.4 * scale * (k ? 1 : 0)),
           random() * 6,
           v(w, w * 0.85, w),
@@ -248,8 +302,9 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
     const tint = hsl(0.24 + random() * 0.08, 0.38, 0.16 + random() * 0.08);
     for (let k = 0; k < 3; k++) {
       const w = size * (0.6 + random() * 0.5);
-      place(
+      crown(
         "bush",
+        "bushLeaves",
         new T.Vector3(x + (random() - 0.5) * size, w * 0.45, z + (random() - 0.5) * size),
         random() * 6,
         new T.Vector3(w, w * 0.7, w),
@@ -330,21 +385,9 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
     const grey = hsl(0.1, 0.06, 0.32 + random() * 0.1);
     place("rock", new T.Vector3(x, s * 0.25, z), random() * 6, new T.Vector3(s * (0.9 + random() * 0.4), s * 0.6, s * (0.9 + random() * 0.5)), grey, false);
     // Moss on its top.
-    place("bush", new T.Vector3(x, s * 0.52, z), random() * 6, new T.Vector3(s * 0.7, s * 0.16, s * 0.7), hsl(0.25, 0.45, 0.24), false);
+    place("moss", new T.Vector3(x, s * 0.52, z), random() * 6, new T.Vector3(s * 0.7, s * 0.16, s * 0.7), hsl(0.25, 0.45, 0.24), false);
   };
-  for (const [x, z, s] of [
-    [-8, -13, 0.9],
-    [-21, -18, 1.4],
-    [25, -14, 1.1],
-    [13, -9, 0.7],
-    [-17, -30, 1.2],
-    [33, -27, 1.5],
-    [-6, -20.5, 0.8],
-    [-3, -21.5, 0.5],
-    [30, -40, 1.3],
-    [-20, -44, 1.6],
-  ])
-    boulder(x, z, s);
+  for (const [x, z, s] of ROCKS) boulder(x, z, s);
   // Grass tufts on the meadow, reeds and cattails round the water (thinner on the near shore, where ducks are watched).
   const blade = new T.ConeGeometry(0.03, 1, 3).translate(0, 0.5, 0);
   crowd("blade", blade, std({ color: "#ffffff", flatShading: true }), false);
@@ -425,12 +468,12 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
     if (!c.at.length) return;
     const material = mirror
         ? keep(
-            new T.MeshStandardMaterial({
-              color: "#ffffff",
+            new T.MeshLambertMaterial({
+              color: c.material.color,
               map: c.material.map,
+              alphaTest: c.material.alphaTest,
               side: T.DoubleSide,
               flatShading: c.material.flatShading,
-              roughness: 1,
             }),
           )
         : c.material,
@@ -440,7 +483,7 @@ export function buildForest(scene: T.Scene, keep: Keep): Forest {
       mesh.setColorAt(i, tint);
     });
     mesh.castShadow = c.shadow && !mirror;
-    mesh.receiveShadow = !mirror;
+    mesh.receiveShadow = !mirror && c.shaded !== false;
     scene.add(mesh);
   };
   for (const c of Object.values(crowds)) instanced(c, false);
@@ -591,6 +634,9 @@ export interface AnimalModel {
   legs: T.Object3D[];
   wings: T.Object3D[];
   head: T.Object3D;
+  /** The ears and the tail (a bird's tail feathers), which twitch and flick while it stays; each keeps its rest pose. */
+  ears: T.Object3D[];
+  tails: T.Object3D[];
   /** Its own paints, faded when it has fallen and thrown away with it. */
   paints: T.Material[];
   geometries: T.BufferGeometry[];
@@ -608,7 +654,19 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     paints: T.Material[] = [],
     geometries: T.BufferGeometry[] = [],
     legs: T.Object3D[] = [],
-    wings: T.Object3D[] = [];
+    wings: T.Object3D[] = [],
+    ears: T.Object3D[] = [],
+    tails: T.Object3D[] = [],
+    /** A pivot for an ear or a tail at (x, y, z) on `parent`, turned to its rest pose. */
+    pivot = (list: T.Object3D[], parent: T.Object3D, x: number, y: number, z: number, rx = 0, rz = 0) => {
+      const g = new T.Group();
+      g.position.set(x, y, z);
+      g.rotation.set(rx, 0, rz);
+      g.userData.rest = [rx, rz];
+      parent.add(g);
+      list.push(g);
+      return g;
+    };
   root.add(body);
   const mat = (o: T.MeshStandardMaterialParameters, fur = 0) => {
       const m = fur
@@ -692,7 +750,7 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     blob(coat, 0, 1.12, -0.42, 0.28, 0.3, 0.3);
     blob(pale, 0, 0.9, 0.02, 0.21, 0.13, 0.48);
     blob(pale, 0, 1.12, -0.69, 0.17, 0.2, 0.07);
-    blob(dark, 0, 1.22, -0.73, 0.04, 0.08, 0.04);
+    blob(dark, 0, -0.02, -0.01, 0.04, 0.08, 0.04, pivot(tails, body, 0, 1.24, -0.72, 0.15));
     // The neck rising to the head, with a darker mane under it.
     rod(v(0, 1.18, 0.5), v(0, 1.6, 0.82), 0.16, 0.09, coat);
     rod(v(0, 1.08, 0.55), v(0, 1.5, 0.82), 0.12, 0.07, darker);
@@ -704,8 +762,7 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     blob(dark, 0, -0.045, 0.29, 0.04, 0.032, 0.03, h);
     eyes(h, 0.075, 0.03, 0.06, 0.018);
     for (const s of [-1, 1]) {
-      const ear = blob(coat, s * 0.11, 0.09, -0.05, 0.035, 0.1, 0.05, h);
-      ear.rotation.set(0, 0, -s * 0.8);
+      blob(coat, 0, 0.06, 0, 0.035, 0.1, 0.05, pivot(ears, h, s * 0.08, 0.04, -0.05, 0, -s * 0.8));
       // An antler: a beam curving up and back, with three tines forward.
       const beam = [v(s * 0.05, 0.08, -0.02), v(s * 0.16, 0.3, -0.08), v(s * 0.2, 0.52, -0.14), v(s * 0.16, 0.7, -0.08)];
       for (let k = 0; k < 3; k++) rod(beam[k], beam[k + 1], 0.02 - k * 0.004, 0.016 - k * 0.004, antler, h);
@@ -752,13 +809,13 @@ export function animalModel(id: Kind["id"]): AnimalModel {
       blob(dark, s * 0.025, -0.06, 0.421, 0.012, 0.016, 0.006, h);
       const t = part(shape(new T.ConeGeometry(0.016, 0.1, 6)), tusk, s * 0.07, -0.05, 0.3, 1, 1, 1, h);
       t.rotation.set(-0.5, 0, s * 0.6);
-      const ear = part(shape(new T.ConeGeometry(0.05, 0.13, 6)), coat, s * 0.1, 0.17, -0.06, 1, 1, 1, h);
-      ear.rotation.set(-0.3, 0, -s * 0.5);
+      part(shape(new T.ConeGeometry(0.05, 0.13, 6)), coat, 0, 0.05, 0, 1, 1, 1, pivot(ears, h, s * 0.08, 0.12, -0.06, -0.3, -s * 0.5));
     }
     eyes(h, 0.1, 0.07, 0.1, 0.016);
     head = h;
-    rod(v(0, 0.66, -0.62), v(0, 0.48, -0.72), 0.02, 0.012, coat);
-    blob(bristle, 0, 0.46, -0.73, 0.03, 0.05, 0.03);
+    const boarTail = pivot(tails, body, 0, 0.66, -0.62);
+    rod(v(0, 0, 0), v(0, -0.18, -0.1), 0.02, 0.012, coat, boarTail);
+    blob(bristle, 0, -0.2, -0.11, 0.03, 0.05, 0.03, boarTail);
     for (const [sx, sz] of [
       [-1, 1],
       [1, 1],
@@ -781,12 +838,13 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     blob(muzzle, 0, -0.07, 0.22, 0.12, 0.1, 0.15, h);
     blob(dark, 0, -0.03, 0.36, 0.045, 0.035, 0.03, h);
     for (const s of [-1, 1]) {
-      blob(coat, s * 0.18, 0.2, -0.04, 0.08, 0.08, 0.05, h);
-      blob(muzzle, s * 0.18, 0.2, -0.01, 0.045, 0.045, 0.03, h);
+      const ear = pivot(ears, h, s * 0.15, 0.15, -0.04);
+      blob(coat, s * 0.03, 0.05, 0, 0.08, 0.08, 0.05, ear);
+      blob(muzzle, s * 0.03, 0.05, 0.03, 0.045, 0.045, 0.03, ear);
     }
     eyes(h, 0.1, 0.06, 0.2, 0.022);
     head = h;
-    blob(coat, 0, 1.0, -0.9, 0.08, 0.08, 0.07);
+    blob(coat, 0, 0, -0.03, 0.08, 0.08, 0.07, pivot(tails, body, 0, 1.0, -0.87));
     for (const [sx, sz] of [
       [-1, 1],
       [1, 1],
@@ -802,7 +860,7 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     blob(coat, 0, 0.22, -0.02, 0.14, 0.15, 0.2);
     // Big haunches for its hind legs, and its white tail.
     for (const s of [-1, 1]) blob(coat, s * 0.08, 0.18, -0.1, 0.08, 0.11, 0.13);
-    blob(white, 0, 0.26, -0.24, 0.055, 0.055, 0.05);
+    blob(white, 0, 0.01, -0.03, 0.055, 0.055, 0.05, pivot(tails, body, 0, 0.25, -0.21));
     blob(white, 0, 0.17, 0.05, 0.09, 0.08, 0.13);
     const h = new T.Group();
     h.position.set(0, 0.34, 0.17);
@@ -811,10 +869,7 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     blob(coat, 0, -0.02, 0.07, 0.055, 0.05, 0.05, h);
     blob(pink, 0, -0.01, 0.115, 0.012, 0.01, 0.008, h);
     for (const s of [-1, 1]) {
-      const ear = new T.Group();
-      ear.position.set(s * 0.035, 0.06, -0.03);
-      ear.rotation.set(-0.35, 0, -s * 0.18);
-      h.add(ear);
+      const ear = pivot(ears, h, s * 0.035, 0.06, -0.03, -0.35, -s * 0.18);
       blob(coat, 0, 0.1, 0, 0.026, 0.11, 0.016, ear);
       blob(pink, 0, 0.1, 0.008, 0.016, 0.085, 0.01, ear);
     }
@@ -877,9 +932,10 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     head = h;
     if (duck) {
       // The drake's black tail with its curl and a white fringe.
-      blob(dark, 0, 0.03, -0.24, 0.06, 0.05, 0.07);
-      blob(white, 0, 0.02, -0.3, 0.07, 0.015, 0.05);
-      part(shape(new T.TorusGeometry(0.025, 0.007, 5, 10, Math.PI * 1.3)), dark, 0, 0.08, -0.25, 1, 1, 1).rotation.y = Math.PI / 2;
+      const tail = pivot(tails, body, 0, 0.03, -0.18);
+      blob(dark, 0, 0, -0.06, 0.06, 0.05, 0.07, tail);
+      blob(white, 0, -0.01, -0.12, 0.07, 0.015, 0.05, tail);
+      part(shape(new T.TorusGeometry(0.025, 0.007, 5, 10, Math.PI * 1.3)), dark, 0, 0.05, -0.07, 1, 1, 1, tail).rotation.y = Math.PI / 2;
     } else {
       // A long tail of barred feathers.
       const barMap = birdPicture("tail", () => {
@@ -892,11 +948,15 @@ export function animalModel(id: Kind["id"]): AnimalModel {
           t.colorSpace = T.SRGBColorSpace;
           return t;
         }),
-        tailPaint = mat({ map: barMap, color: "#ffffff", side: T.DoubleSide });
+        tailPaint = mat({ map: barMap, color: "#ffffff", side: T.DoubleSide }),
+        tail = pivot(tails, body, 0, 0.02, -0.2);
       for (const s of [-1, 0, 1]) {
-        const feather = part(shape(new T.PlaneGeometry(0.05, 0.6)), tailPaint, s * 0.02, 0.02 + Math.abs(s) * -0.01, -0.52, 1, 1, 1);
+        const feather = part(shape(new T.PlaneGeometry(0.05, 0.6)), tailPaint, s * 0.02, Math.abs(s) * -0.01, -0.32, 1, 1, 1, tail);
         feather.rotation.set(-Math.PI / 2 + 0.12, 0, s * 0.12);
       }
+      // Its legs, to stand in the grass on (folded back under it in the air).
+      const shank = mat({ color: "#8a7a62" });
+      for (const s of [-1, 1]) leg(s * 0.04, -0.06, 0.02, 0.2, 0.011, shank, shank, false);
     }
     // Wings: a broad flat outline with its primaries, about a shoulder joint.
     const outline = new T.Shape();
@@ -943,5 +1003,232 @@ export function animalModel(id: Kind["id"]): AnimalModel {
     }
     root.scale.setScalar(1.15);
   }
-  return { root, body, legs, wings, head, paints, geometries };
+  return { root, body, legs, wings, head, ears, tails, paints, geometries };
+}
+/**
+ * A picture of foliage for leaf cards, painted in code with clear gaps between the leaves (the cards are drawn with an
+ * alpha test, so a crown's outline is leafy): `birch` small pointed leaves on fine twigs, `oak` larger lobed leaves,
+ * `pine` tufts of long needles, `spray` a drooping spruce branch thick with short needles (wide, its twig's base at the
+ * left). The leaves are painted in pale greys of a green cast, light and dark, so that each tree's own tint gives the
+ * hue; the twigs are dark.
+ */
+export function foliage(kind: "birch" | "oak" | "pine" | "spray") {
+  const wide = kind === "spray",
+    { c, ctx } = canvas(256, wide ? 128 : 256),
+    random = sequence({ birch: 41, oak: 43, pine: 47, spray: 53 }[kind]),
+    shade = (light: number, alpha = 1) => `hsla(${78 + random() * 16}, ${18 + random() * 14}%, ${light}%, ${alpha})`,
+    twig = (x0: number, y0: number, x1: number, y1: number, width: number) => {
+      ctx.strokeStyle = "rgba(52,40,28,1)";
+      ctx.lineWidth = width;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.quadraticCurveTo((x0 + x1) / 2 + (random() - 0.5) * 12, (y0 + y1) / 2 + (random() - 0.5) * 12, x1, y1);
+      ctx.stroke();
+    };
+  if (kind === "spray") {
+    // A main twig from the trunk (left) to the tip (right), drooping, with side shoots angled forward; short needles
+    // all along every twig, thickest near the trunk, the whole spray tapering to its tip.
+    const along = (t: number) => ({ x: 4 + t * 246, y: 56 + t * 10 + Math.sin(t * Math.PI) * 6 }),
+      needles = (x0: number, y0: number, x1: number, y1: number, length: number, count: number) => {
+        const d = Math.hypot(x1 - x0, y1 - y0) || 1,
+          ux = (x1 - x0) / d,
+          uy = (y1 - y0) / d;
+        for (let k = 0; k < count; k++) {
+          const t = random(),
+            x = x0 + (x1 - x0) * t,
+            y = y0 + (y1 - y0) * t,
+            side = random() < 0.5 ? -1 : 1,
+            // Each needle leans toward the tip and out to its side.
+            a = Math.atan2(uy, ux) + side * (0.7 + random() * 0.5),
+            l = length * (0.7 + random() * 0.5) * (1 - t * 0.35);
+          ctx.strokeStyle = shade(40 + random() * 52);
+          ctx.lineWidth = 2.2 + random() * 1.4;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+          ctx.stroke();
+        }
+      };
+    const shoots: [number, number, number, number][] = [];
+    for (let k = 0; k < 12; k++) {
+      const t = 0.04 + k * 0.075 + random() * 0.03,
+        p = along(t),
+        side = k % 2 ? -1 : 1,
+        reach = (1 - t) * 52 + 12;
+      shoots.push([p.x, p.y, p.x + reach * 0.9, p.y + side * reach * 0.75]);
+    }
+    const end = along(1);
+    twig(along(0).x, along(0).y, end.x, end.y, 3);
+    for (const [x0, y0, x1, y1] of shoots) twig(x0, y0, x1, y1, 1.6);
+    needles(along(0).x, along(0).y, end.x, end.y, 22, 520);
+    for (const [x0, y0, x1, y1] of shoots) needles(x0, y0, x1, y1, 15, 150);
+  } else {
+    // Sprays of foliage round twigs from the middle: clusters with gaps between them, sparse at the rim, all within a
+    // round so that no straight edge of the card shows.
+    ctx.beginPath();
+    ctx.arc(128, 128, 126, 0, Math.PI * 2);
+    ctx.clip();
+    const clusters = kind === "pine" ? 24 : kind === "birch" ? 24 : 18;
+    for (let k = 0; k < clusters; k++) {
+      const a = random() * Math.PI * 2,
+        r = 12 + random() ** 0.8 * (kind === "pine" ? 66 : 60),
+        x = 128 + Math.cos(a) * r,
+        y = 128 + Math.sin(a) * r;
+      twig(128 + Math.cos(a) * 8, 128 + Math.sin(a) * 8, x, y, kind === "pine" ? 2.4 : 1.8);
+      if (kind === "pine") {
+        // A tuft of long needles bursting from the twig's end, the upper ones lighter.
+        for (let n = 0; n < 70; n++) {
+          const b = random() * Math.PI * 2,
+            l = 18 + random() * 26;
+          ctx.strokeStyle = shade(Math.sin(b) < 0 ? 62 + random() * 32 : 36 + random() * 34);
+          ctx.lineWidth = 2 + random() * 1.4;
+          ctx.beginPath();
+          ctx.moveTo(x + Math.cos(b) * 3, y + Math.sin(b) * 3);
+          ctx.lineTo(x + Math.cos(b) * l, y + Math.sin(b) * l);
+          ctx.stroke();
+        }
+        continue;
+      }
+      const leaves = kind === "birch" ? 30 : 20;
+      for (let n = 0; n < leaves; n++) {
+        // Leaves round the twig, lower ones in shadow; each on its own stalk, turned its own way.
+        const b = random() * Math.PI * 2,
+          d = random() ** 0.7 * (kind === "birch" ? 30 : 34),
+          lx = x + Math.cos(b) * d,
+          ly = y + Math.sin(b) * d,
+          length = kind === "birch" ? 18 + random() * 10 : 28 + random() * 14,
+          width = length * (kind === "birch" ? 0.36 : 0.32),
+          turn = b + (random() - 0.5) * 1.2,
+          light = ly - y < -4 ? 70 + random() * 26 : 42 + random() * 34;
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(turn);
+        ctx.fillStyle = shade(light);
+        ctx.beginPath();
+        if (kind === "birch") {
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(length * 0.35, -width, length, 0);
+          ctx.quadraticCurveTo(length * 0.35, width, 0, 0);
+        } else {
+          // An oak leaf: rounded lobes either side, widest beyond its middle.
+          ctx.moveTo(0, 0);
+          for (const s of [-1, 1]) {
+            for (let j = 0; j <= 12; j++) {
+              const t = s < 0 ? j / 12 : 1 - j / 12,
+                lobe = 0.62 + 0.38 * Math.abs(Math.cos(t * Math.PI * 4.5)),
+                half = width * Math.sin(Math.PI * t) ** 0.8 * (0.6 + 0.5 * t) * lobe;
+              ctx.lineTo(t * length, s * half);
+            }
+          }
+        }
+        ctx.closePath();
+        ctx.fill();
+        // The midrib, darker.
+        ctx.strokeStyle = shade(light - 22, 0.6);
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(-2, 0);
+        ctx.lineTo(length * 0.85, 0);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+  return c;
+}
+/** A quad of a leaf card: its four corners in order round it, their normals, and the stretch of the picture across
+ *  its first edge (the whole picture when not given). */
+interface Card {
+  corners: T.Vector3[];
+  normals: T.Vector3[];
+  u?: [number, number];
+}
+/** A geometry put together from leaf cards. */
+function cards(quads: Card[]) {
+  const positions: number[] = [],
+    normals: number[] = [],
+    uvs: number[] = [],
+    index: number[] = [];
+  quads.forEach(({ corners, normals: n, u = [0, 1] }, q) => {
+    corners.forEach((p, k) => {
+      positions.push(p.x, p.y, p.z);
+      normals.push(n[k].x, n[k].y, n[k].z);
+      uvs.push(k === 1 || k === 2 ? u[1] : u[0], k >= 2 ? 1 : 0);
+    });
+    index.push(q * 4, q * 4 + 1, q * 4 + 2, q * 4, q * 4 + 2, q * 4 + 3);
+  });
+  const g = new T.BufferGeometry();
+  g.setAttribute("position", new T.Float32BufferAttribute(positions, 3));
+  g.setAttribute("normal", new T.Float32BufferAttribute(normals, 3));
+  g.setAttribute("uv", new T.Float32BufferAttribute(uvs, 2));
+  g.setIndex(index);
+  return g;
+}
+/**
+ * A crown of `count` leaf cards about a unit ball: cards spread evenly over the sphere (a Fibonacci spiral), each
+ * facing outward, turned its own way and leaning a little, reaching a little past the ball, with the normals of a ball
+ * so that the crown is lit as one rounded mass, brighter on top.
+ */
+export function leafBall(count: number, seed: number) {
+  const random = sequence(seed),
+    quads: Card[] = [];
+  for (let k = 0; k < count; k++) {
+    const y = 1 - ((k + 0.5) / count) * 2,
+      r = Math.sqrt(1 - y * y),
+      a = k * 2.39996 + random() * 0.4,
+      out = new T.Vector3(Math.cos(a) * r, y, Math.sin(a) * r).normalize(),
+      centre = out.clone().multiplyScalar(0.6 + random() * 0.12),
+      // Two axes across the card: tangent to the ball, rolled at random, tipped a little out of the tangent plane.
+      helper = Math.abs(out.y) > 0.9 ? new T.Vector3(1, 0, 0) : new T.Vector3(0, 1, 0),
+      u0 = new T.Vector3().crossVectors(helper, out).normalize(),
+      v0 = new T.Vector3().crossVectors(out, u0),
+      roll = random() * Math.PI * 2,
+      u = u0.clone().multiplyScalar(Math.cos(roll)).addScaledVector(v0, Math.sin(roll)).addScaledVector(out, (random() - 0.5) * 0.5).normalize(),
+      v = new T.Vector3().crossVectors(out, u).normalize(),
+      half = 0.6 + random() * 0.12,
+      corners = [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ].map(([i, j]) => centre.clone().addScaledVector(u, i * half).addScaledVector(v, j * half));
+    quads.push({ corners, normals: corners.map((p) => p.clone().normalize().lerp(out, 0.35).normalize()) });
+  }
+  return cards(quads);
+}
+/**
+ * The branches of one tier of a spruce about a unit cone (base radius 1 at y = 0, its tip at y = 1): two rings of
+ * spray cards from near the trunk out and down to the rim, drooping in the middle, the upper ring shorter and steeper,
+ * lit as a cone; `plain`, fewer and straight, for far trees.
+ */
+export function sprayTier(seed: number, plain = false) {
+  const random = sequence(seed),
+    quads: Card[] = [],
+    pieces = plain ? 1 : 2;
+  for (const [ring, count, inner, top, reach, foot] of [
+    [0, plain ? 5 : 7, 0.06, 0.62, 1.05, 0.02],
+    [1, plain ? 4 : 5, 0.05, 0.92, 0.72, 0.36],
+  ] as const) {
+    for (let k = 0; k < count; k++) {
+      const a = ((k + ring * 0.5) / count) * Math.PI * 2 + (random() - 0.5) * 0.3,
+        out = new T.Vector3(Math.cos(a), 0, Math.sin(a)),
+        side = new T.Vector3(-Math.sin(a), 0, Math.cos(a)),
+        r = reach * (0.92 + random() * 0.14),
+        // Along the branch in two pieces (one, plain), sagging between the trunk and the tip.
+        at = (t: number) => out.clone().multiplyScalar(inner + (r - inner) * t).setY(top + (foot - top) * t - Math.sin(t * Math.PI) * 0.07),
+        width = (t: number) => (0.34 + 0.16 * (1 - t)) * (ring ? 0.85 : 1),
+        lit = (p: T.Vector3) => new T.Vector3(p.x, 0, p.z).normalize().multiplyScalar(0.75).setY(0.66).normalize();
+      for (let s = 0; s < pieces; s++) {
+        const t0 = s / pieces,
+          t1 = (s + 1) / pieces,
+          p0 = at(t0),
+          p1 = at(t1),
+          corners = [p0.clone().addScaledVector(side, -width(t0)), p1.clone().addScaledVector(side, -width(t1)), p1.clone().addScaledVector(side, width(t1)), p0.clone().addScaledVector(side, width(t0))];
+        // Each piece shows its own part of the spray along the picture.
+        quads.push({ corners, normals: corners.map(lit), u: [t0, t1] });
+      }
+    }
+  }
+  return cards(quads);
 }

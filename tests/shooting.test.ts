@@ -345,69 +345,153 @@ describe("shooting: the hunt", () => {
   function standing(id: hunt.Kind["id"], x = 0, z = -25) {
     const world = hunt.createHunt(77);
     world.nextSpawn = 999;
-    const animal = hunt.spawn(world, id);
-    Object.assign(animal, { p: { x, y: id === "duck" || id === "pheasant" ? 6 : 0, z }, heading: Math.PI / 2, doing: id === "duck" || id === "pheasant" ? "fly" : "graze", until: 999, v: { x: 8, y: 0, z: 0 } });
+    const animal = hunt.spawn(world, id),
+      bird = id === "duck" || id === "pheasant";
+    Object.assign(animal, { p: { x, y: bird ? 6 : 0, z }, goal: { x, y: bird ? 6 : 0, z }, heading: Math.PI / 2, doing: bird ? "fly" : "idle", until: 999, moodUntil: 999, face: Math.PI / 2, v: { x: 8, y: 0, z: 0 } });
     world.animals.push(animal);
     return { world, animal };
   }
   const zoneAt = (animal: hunt.Animal, zone: hunt.Zone) => hunt.partAt(animal, hunt.kindOf(animal.kind).parts.find((p) => p.zone === zone)!);
-  test("each zone takes its own health; the legs slow most; at no health the animal falls and is taken", () => {
+  /** Steps a world until an animal of `id` has come out and settled at its spot. */
+  function settled(seed: number, id: hunt.Kind["id"]) {
+    const world = hunt.createHunt(seed);
+    world.nextSpawn = 999;
+    const animal = hunt.spawn(world, id);
+    world.animals.push(animal);
+    const seen = run(world, 40, (h) => h.kind === "settle");
+    return { world, animal, seen };
+  }
+  test("the health of each kind: small game and birds fall to one hit anywhere, a deer to one head or two body shots", () => {
+    expect(hunt.KINDS.map((k) => [k.id, k.health])).toEqual([
+      ["duck", 1],
+      ["pheasant", 1],
+      ["rabbit", 1],
+      ["deer", 4],
+      ["boar", 6],
+      ["bear", 8],
+    ]);
+    for (const id of ["duck", "pheasant", "rabbit"] as const)
+      for (const zone of ["head", "body", hunt.kindOf(id).bird ? "wing" : "legs"] as const) {
+        const { world, animal } = standing(id, 0, -12);
+        if (id === "pheasant") animal.heading = Math.PI;
+        expect(fire(world, aimAt("hunt", zoneAt(animal, zone)), ALIGNED).find((h) => h.kind === "take")).toBeTruthy();
+      }
+    const head = standing("deer");
+    expect(fire(head.world, aimAt("hunt", zoneAt(head.animal, "head")), ALIGNED).some((h) => h.kind === "take")).toBe(true);
+    const body = standing("deer");
+    expect(fire(body.world, aimAt("hunt", zoneAt(body.animal, "body")), ALIGNED).find((h) => h.kind === "wound")).toMatchObject({ zone: "body" });
+    body.world.boltUntil = 0;
+    expect(fire(body.world, aimAt("hunt", zoneAt(body.animal, "body")), ALIGNED).find((h) => h.kind === "take")).toMatchObject({ points: hunt.kindOf("deer").points });
+    expect(body.animal.doing).toBe("fall");
+    // Bigger game takes a few shots and is worth more.
+    expect(hunt.kindOf("bear").health / hunt.DAMAGE.body).toBeLessThanOrEqual(4);
+    expect(hunt.kindOf("bear").health).toBeGreaterThan(hunt.kindOf("deer").health);
+    expect(Math.max(...hunt.KINDS.map((k) => k.points))).toBe(hunt.kindOf("bear").points);
+    expect(hunt.DAMAGE.head).toBeGreaterThan(hunt.DAMAGE.body);
+    expect(hunt.DAMAGE.body).toBeGreaterThan(hunt.DAMAGE.legs);
+  });
+  test("speeds are calm: a walk under 1.5 m/s, a run under 5 m/s, birds under 8 m/s", () => {
+    for (const k of hunt.KINDS) {
+      expect(k.flee).toBeGreaterThan(k.speed);
+      if (k.bird) expect(k.flee).toBeLessThanOrEqual(8);
+      else {
+        expect(k.speed).toBeLessThanOrEqual(1.5);
+        expect(k.flee).toBeLessThanOrEqual(4.6);
+      }
+    }
+  });
+  test("one hit that does not take an animal leaves it a crawl, a leg worst", () => {
     for (const zone of ["head", "body", "legs"] as const) {
-      const { world, animal } = standing("deer");
-      const out = fire(world, aimAt("hunt", zoneAt(animal, zone)), ALIGNED);
-      expect(out.find((h) => h.kind === "wound")).toMatchObject({ zone });
-      expect(animal.health).toBe(hunt.kindOf("deer").health - hunt.DAMAGE[zone]);
+      const { world, animal } = standing("bear");
+      expect(fire(world, aimAt("hunt", zoneAt(animal, zone)), ALIGNED).find((h) => h.kind === "wound")).toMatchObject({ zone });
+      expect(animal.health).toBe(hunt.kindOf("bear").health - hunt.DAMAGE[zone]);
       expect(animal.slow).toBeCloseTo(hunt.SLOW[zone], 9);
+      expect(animal.slow).toBeLessThanOrEqual(0.25);
       expect(animal.doing).toBe("flee");
     }
     expect(hunt.SLOW.legs).toBeLessThan(hunt.SLOW.body);
-    expect(hunt.DAMAGE.head).toBeGreaterThan(hunt.DAMAGE.body);
-    expect(hunt.DAMAGE.body).toBeGreaterThan(hunt.DAMAGE.legs);
-    // A deer takes two head shots, or three to the body.
-    const { world, animal } = standing("deer");
-    fire(world, aimAt("hunt", zoneAt(animal, "head")), ALIGNED);
-    world.boltUntil = 0;
-    const second = fire(world, aimAt("hunt", zoneAt(animal, "head")), ALIGNED);
-    expect(second.find((h) => h.kind === "take")).toMatchObject({ points: hunt.kindOf("deer").points });
-    expect(animal.doing).toBe("fall");
-  });
-  test("every kind has its own health; bigger game takes more shots and is worth more", () => {
-    const healths = hunt.KINDS.map((k) => k.health),
-      points = hunt.KINDS.map((k) => k.points);
-    expect(new Set(healths).size).toBeGreaterThan(3);
-    expect(hunt.kindOf("bear").health).toBeGreaterThan(hunt.kindOf("deer").health);
-    expect(hunt.kindOf("bear").points).toBeGreaterThan(hunt.kindOf("rabbit").points);
-    expect(Math.max(...points)).toBe(hunt.kindOf("bear").points);
-    // A bird is taken by one shot to its body; a wing only wounds it.
-    const duck = standing("duck");
-    expect(fire(duck.world, aimAt("hunt", zoneAt(duck.animal, "body")), ALIGNED).some((h) => h.kind === "take")).toBe(true);
-    // Flying away, its wings stand out to either side.
-    const wing = standing("pheasant");
-    wing.animal.heading = Math.PI;
-    const flutter = fire(wing.world, aimAt("hunt", zoneAt(wing.animal, "wing")), ALIGNED).find((h) => h.kind === "wound");
-    expect(flutter).toMatchObject({ zone: "wing" });
-  });
-  test("a hit animal goes slower than it would have", () => {
+    // Measured: a wounded boar covers a fifth of what a sound one does in its run.
     const far = (hurt: boolean) => {
-      const { world, animal } = standing("boar", -10, -20);
-      Object.assign(animal, { doing: "flee", side: 1 });
-      if (hurt) animal.slow = hunt.SLOW.legs;
+      const { world, animal } = standing("boar", -6, -14);
+      world.boltUntil = 0;
+      if (hurt) fire(world, aimAt("hunt", zoneAt(animal, "body")), ALIGNED);
+      else fire(world, { yaw: 0, pitch: 0.4 }, ALIGNED);
       const x0 = animal.p.x;
-      run(world, 1);
-      return animal.p.x - x0;
+      run(world, 3);
+      return Math.abs(animal.p.x - x0);
     };
-    expect(far(true)).toBeLessThan(far(false) * 0.6);
+    const sound = far(false),
+      hurt = far(true);
+    expect(sound).toBeGreaterThan(6);
+    expect(hurt).toBeLessThan(sound * 0.25);
+    expect(hurt).toBeGreaterThan(0.5);
   });
-  test("animals come out and go again; the hunt replays from its seed; the clock tells every second", () => {
+  test("animals come out to a spot in view and stay there, grazing and looking about, until they leave calmly", () => {
+    for (const [seed, id] of [
+      [5, "deer"],
+      [6, "rabbit"],
+      [7, "bear"],
+      [8, "duck"],
+      [9, "pheasant"],
+    ] as const) {
+      const { world, animal, seen } = settled(seed, id);
+      expect(seen.some((h) => h.kind === "settle")).toBe(true);
+      expect(animal.doing).toBe(id === "duck" ? "swim" : "idle");
+      // In view from the stand at rest: within the meadow's seen width, before the lake (a duck on it).
+      expect(Math.abs(animal.p.x)).toBeLessThan(Math.abs(animal.p.z) * 0.6);
+      expect(hunt.inLake(animal.p.x, animal.p.z)).toBe(id === "duck");
+      const at = { ...animal.p },
+        moods = new Set<string>();
+      for (let k = 0; k < 8 * 120 && hunt.staying(animal); k++) {
+        step(world);
+        moods.add(animal.mood);
+        expect(Math.hypot(animal.p.x - at.x, animal.p.z - at.z)).toBeLessThan(1.2);
+      }
+      expect([...moods].sort()).toEqual(["graze", "look"]);
+      // Left alone, it goes again of itself, calmly (a bird flies off at its own pace), and is gone.
+      const later = run(world, 40, (h) => h.kind === "escape");
+      expect(later.some((h) => h.kind === "escape")).toBe(true);
+      expect(world.animals).not.toContain(animal);
+    }
+  });
+  test("a shot, hit or miss, startles every animal: the ground game runs for the wood, birds take off; then a quiet while", () => {
+    const world = hunt.createHunt(1234);
+    for (let k = 0; k < 40 * 120 && world.animals.filter((a) => a.doing === "idle" || a.doing === "swim").length < 3; k++) step(world);
+    const out = world.animals.filter(hunt.standing);
+    expect(out.filter((a) => a.doing === "idle" || a.doing === "swim").length).toBeGreaterThanOrEqual(3);
+    const miss = fire(world, { yaw: 0, pitch: 0.4 }, ALIGNED);
+    expect(miss.some((h) => h.kind === "miss")).toBe(true);
+    for (const a of out) expect(a.doing).toBe("flee");
+    expect(miss.filter((h) => h.kind === "startle" || h.kind === "takeoff")).toHaveLength(out.length);
+    const shotAt = world.t,
+      spawns: number[] = [],
+      seen: Happening[] = [];
+    for (let k = 0; k < 20 * 120; k++)
+      for (const h of step(world)) {
+        seen.push(h);
+        if (h.kind === "spawn") spawns.push(world.t);
+      }
+    // Every one of them has run or flown out of the place; nothing came out for a while after the shot, then some did.
+    for (const a of out) expect(world.animals).not.toContain(a);
+    expect(seen.filter((h) => h.kind === "escape")).toHaveLength(out.length);
+    expect(spawns.length).toBeGreaterThan(0);
+    expect(spawns[0] - shotAt).toBeGreaterThanOrEqual(hunt.QUIET[0] - 1e-9);
+  });
+  test("the same hunt with the same shots replays the same; the clock tells every second", () => {
     const go = () => {
-      const world = hunt.createHunt(4321);
-      return run(world, hunt.SESSION).map((h) => (h.kind === "second" ? "s" : `${h.kind}:${"animal" in h ? h.animal.kind : ""}`));
+      const world = hunt.createHunt(4321),
+        out: string[] = [];
+      for (let k = 0; k < hunt.SESSION * 120; k++) {
+        if (k % 900 === 450) fire(world, { yaw: (k % 7) * 0.05 - 0.15, pitch: -0.15 }, ALIGNED).forEach((h) => out.push(h.kind));
+        step(world).forEach((h) => out.push(h.kind === "second" ? "s" : `${h.kind}:${"animal" in h ? h.animal.kind + h.animal.id : ""}`));
+      }
+      return out;
     };
     const a = go();
     expect(a.filter((h) => h === "s")).toHaveLength(hunt.SESSION);
     expect(a.filter((h) => h.startsWith("spawn")).length).toBeGreaterThan(8);
     expect(a.filter((h) => h.startsWith("escape")).length).toBeGreaterThan(3);
-    expect(new Set(a.filter((h) => h.startsWith("spawn"))).size).toBeGreaterThan(3);
+    expect(new Set(a.filter((h) => h.startsWith("spawn")).map((h) => h.replace(/\d+$/, ""))).size).toBeGreaterThan(3);
     expect(go()).toEqual(a);
   });
   test("the cartridges run out: the bolt, the reload, a click, then the hunt is over", () => {
