@@ -1,3 +1,4 @@
+import { josa } from "../../core/josa";
 import { cryptoRandom, type Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
@@ -119,7 +120,7 @@ export function play(state: State, move: Move): State | null {
     const penalty = state.cards[me] === 10 ? Math.min(TEN_PENALTY, next.chips[me]) : 0;
     next.chips[me] -= penalty;
     next.chips[other] += penalty;
-    return settle(next, other, `${NAMES[me]}이(가) 접었습니다${penalty ? ` — 접은 카드가 10이라 ${penalty}개를 더 냅니다` : ""}.`);
+    return settle(next, other, `${NAMES[me]}${josa(NAMES[me], "이", "가")} 접었습니다${penalty ? ` — 접은 카드가 10이라 ${penalty}개를 더 냅니다` : ""}.`);
   }
   const due = Math.min(owed(state), next.chips[me]);
   next.chips[me] -= due;

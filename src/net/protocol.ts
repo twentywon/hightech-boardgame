@@ -11,17 +11,19 @@ import type { GameOptions, Move } from "../games/points/types";
  *  seats    host → all: who is in the room and who sits where (each seat a person, a computer, closed or open).
  *  sit      guest → host: the seat I take (null: I only watch).
  *  start    host → all: a game begins (round, variant, options, the shared random seed, the seats).
- *  move     guest → host: a move I make on the game's `ply`-th move; host → all: the `ply`-th move, from `seat`.
+ *  move     guest → host: a move I make on the game's `ply`-th move; host → all: the `ply`-th move, from `seat`,
+ *           with the `salt` the host drew for its chance when it took it (a guest's own move comes back so too).
  *  refuse   host → guest: that move was not taken, with the words why.
  *  request  undo or new game asked by `from`; host → all. answer: yes or no, guest → host → all.
- *  resync   host → guest: the game as it stands (its start and every move), on (re)connection and after an undo.
+ *  resync   host → guest: the game as it stands (its start and every move with its salt), on (re)connection and
+ *           after an undo.
  *  notice   host → all: a line for the status (someone left, a request declined).
  *  bye      leaving, or a refusal to let in, with the words why.
  *  ping     both ways every few seconds (`echo` answers one), so a device that went quiet is noticed.
  */
 export const PROTOCOL = 1;
 /** Bumped whenever a rule or a move changes meaning, so that devices of different builds do not play together. */
-export const APP_VERSION = "2026.11-net1";
+export const APP_VERSION = "2026.11-net2";
 
 /** A seat: waiting for a person, taken by a person, played by the host's computer, or left out (an empty corner). */
 export type SeatKind = "open" | "person" | "computer" | "closed";
@@ -56,6 +58,8 @@ export interface NetMove {
   move: Move;
   /** The seat that moved; -1 for a move only the host makes (hex conquest's map and start). */
   seat: number;
+  /** What the host drew for the move's chance when it took it (`streamFor`); 0 or left out: none. */
+  salt?: number;
 }
 export type Request = "undo" | "new";
 export type Message =
@@ -63,7 +67,7 @@ export type Message =
   | { t: "seats"; seats: SeatInfo[]; people: PersonInfo[] }
   | { t: "sit"; seat: number | null }
   | { t: "start"; start: StartInfo }
-  | { t: "move"; round: number; ply: number; move: Move; seat: number }
+  | { t: "move"; round: number; ply: number; move: Move; seat: number; salt?: number }
   | { t: "refuse"; round: number; ply: number; text: string }
   | { t: "request"; id: number; kind: Request; from: string }
   | { t: "answer"; id: number; yes: boolean; from: string }
@@ -85,6 +89,8 @@ const isMove = (x: unknown): x is Move => {
 const isOptions = (x: unknown): x is GameOptions =>
   !!x && typeof x === "object" && !Array.isArray(x) && Object.values(x as object).every((v) => typeof v === "number" || typeof v === "boolean" || isStr(v, 200));
 const KINDS: SeatKind[] = ["open", "person", "computer", "closed"];
+/** A salt as the host draws it: a whole number of 32 bits, or none. */
+const isSalt = (x: unknown) => x === undefined || (isInt(x) && x >= 0 && x <= 0xffffffff);
 const isTaken = (x: unknown): x is Taken => {
   const t = x as Taken;
   return !!t && (t.kind === "person" || t.kind === "computer" || t.kind === "closed") && (t.person === null || isStr(t.person, 64));
@@ -127,7 +133,7 @@ function checked(whole: Record<string, unknown>): Message | null {
     case "start":
       return isStart(m.start) ? (m as Message) : null;
     case "move":
-      return isInt(m.round) && isInt(m.ply) && m.ply >= 0 && isMove(m.move) && isInt(m.seat) ? (m as Message) : null;
+      return isInt(m.round) && isInt(m.ply) && m.ply >= 0 && isMove(m.move) && isInt(m.seat) && isSalt(m.salt) ? (m as Message) : null;
     case "refuse":
       return isInt(m.round) && isInt(m.ply) && isStr(m.text, 400) ? (m as Message) : null;
     case "request":
@@ -135,7 +141,7 @@ function checked(whole: Record<string, unknown>): Message | null {
     case "answer":
       return isInt(m.id) && typeof m.yes === "boolean" && isStr(m.from, 64) ? (m as Message) : null;
     case "resync":
-      return isStart(m.start) && Array.isArray(m.moves) && m.moves.length <= 20000 && m.moves.every((x: NetMove) => x && isMove(x.move) && isInt(x.seat)) ? (m as Message) : null;
+      return isStart(m.start) && Array.isArray(m.moves) && m.moves.length <= 20000 && m.moves.every((x: NetMove) => x && isMove(x.move) && isInt(x.seat) && isSalt(x.salt)) ? (m as Message) : null;
     case "notice":
       return isStr(m.text, 400) ? (m as Message) : null;
     case "bye":

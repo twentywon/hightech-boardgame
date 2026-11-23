@@ -180,6 +180,8 @@ export class BackgammonView extends TableView<State> {
     });
   }
   protected place(s: State) {
+    // The dice as they lie, for tests (two devices over Wi-Fi must show the same throw).
+    this.renderer.domElement.dataset.dice = s.dice.join(",");
     this.stands(s).forEach((spots, side) =>
       this.checkers[side].forEach((mesh, k) => {
         const p = spots[k];

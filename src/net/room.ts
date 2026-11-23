@@ -208,10 +208,12 @@ export class HostRoom<S> extends Room<S> {
           this.send(link, { t: "refuse", round: m.round, ply: m.ply, text: "그 사이에 판이 바뀌었습니다. 다시 맞췄습니다." });
           return this.resync(link);
         }
+        // The move's chance is drawn now, on its acceptance: nobody could have foreseen it (`random.ts`).
         const seat = this.seatOf(id),
-          tried = seat === null ? { text: "자리에 앉지 않았습니다. 구경만 할 수 있습니다." } : this.match.try(m.move, seat, false);
+          salt = newSeed(),
+          tried = seat === null ? { text: "자리에 앉지 않았습니다. 구경만 할 수 있습니다." } : this.match.try(m.move, seat, false, salt);
         if ("text" in tried) return this.send(link, { t: "refuse", round: m.round, ply: m.ply, text: tried.text });
-        return this.record(m.move, seat!);
+        return this.record(m.move, seat!, salt);
       }
       case "request": {
         const text = this.request(m.kind, id);
@@ -364,20 +366,22 @@ export class HostRoom<S> extends Room<S> {
   play(move: Move, seat: number): string | null {
     if (!this.match) return "게임이 시작되지 않았습니다.";
     const to = this.match.toMove,
-      mine = to === HOST_ONLY || to === this.mySeat || this.seats[to]?.kind === "computer" || this.away(to);
-    const tried = this.match.try(move, to === HOST_ONLY ? HOST_ONLY : seat, true);
+      mine = to === HOST_ONLY || to === this.mySeat || this.seats[to]?.kind === "computer" || this.away(to),
+      salt = newSeed();
+    const tried = this.match.try(move, to === HOST_ONLY ? HOST_ONLY : seat, true, salt);
     if ("text" in tried) return tried.text;
     if (!mine) return "상대 차례입니다.";
-    this.record(move, to === HOST_ONLY ? HOST_ONLY : seat);
+    this.record(move, to === HOST_ONLY ? HOST_ONLY : seat, salt);
     return null;
   }
-  private record(move: Move, seat: number) {
+  /** Adds a move taken, its chance under `salt`, and tells everyone (the salt with it). */
+  private record(move: Move, seat: number, salt: number) {
     const match = this.match!,
       ply = match.ply,
-      state = match.push(move, seat);
+      state = match.push(move, seat, salt);
     if (!state) return;
-    this.broadcast({ t: "move", round: this.start!.round, ply, move, seat });
-    this.events.moved?.(state, { move, seat }, ply);
+    this.broadcast({ t: "move", round: this.start!.round, ply, move, seat, salt });
+    this.events.moved?.(state, match.moves[ply], ply);
   }
   /** An undo or a new game asked (by me, or by a guest): granted at once when nobody else is to answer. */
   request(kind: Request, from = this.me): string | null {
@@ -564,9 +568,9 @@ export class GuestRoom<S> extends Room<S> {
         if (!this.match || !this.start || m.round !== this.start.round || m.ply < this.match.ply) return;
         // A move missed: the host is asked for the whole list again.
         if (m.ply > this.match.ply) return this.greet();
-        const state = this.match.push(m.move, m.seat);
+        const state = this.match.push(m.move, m.seat, m.salt ?? 0);
         if (!state) return this.greet();
-        return this.events.moved?.(state, { move: m.move, seat: m.seat }, m.ply);
+        return this.events.moved?.(state, this.match.moves[m.ply], m.ply);
       }
       case "refuse":
         return this.events.refused?.(m.text);
@@ -613,7 +617,10 @@ export class GuestRoom<S> extends Room<S> {
   sit(seat: number | null) {
     this.say({ t: "sit", seat });
   }
-  /** Sends a move of mine to the host, once it is seen to be mine and legal here: null, or why it may not be made. */
+  /**
+   * Sends a move of mine to the host, once it is seen to be mine and legal here: null, or why it may not be made. It
+   * is played here only when the host tells it back, with the salt of its chance.
+   */
   play(move: Move): string | null {
     if (!this.online) return "방장과 연결되어 있지 않습니다.";
     if (!this.match || !this.start) return "게임이 시작되지 않았습니다.";

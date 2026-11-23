@@ -8,6 +8,9 @@ export const backgammonConfig: PointConfig<State> = {
   contact: (sound) => sound.wood(3),
   noPanel: true,
   view: (host, quality) => new BackgammonView(host, quality),
+  // Over one Wi-Fi each device plays one side; the dice are thrown by the side to move and fall as the host draws them
+  // when it takes the throw (`src/net/random.ts`). There is no doubling cube to offer.
+  net: {},
   colors: BG_COLORS,
   keyPoints: (s) => [...Array.from({ length: 24 }, (_, p) => spotOf(p, 0)), spotOf(BAR, s.turn), spotOf(OFF, s.turn), DICE_AT],
   cheer: (before, state, mode) => (state.last && state.last !== before.last && state.last.hit ? (mode === "ai" && state.last.side === 1 ? "잡혔다!" : "잡았다!") : null),

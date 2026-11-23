@@ -23,8 +23,8 @@ export interface NetRules<S> {
 
 /**
  * One game of a room as a list of moves from a start: the state after each, rebuilt by replaying through `play`,
- * each move's chance drawn from its own stream of the shared seed. Every device of a room keeps one; the host's is
- * the one that decides.
+ * each move's chance drawn from its own stream of the shared seed and of the salt the host drew for it (kept in the
+ * list, so a replay draws the same). Every device of a room keeps one; the host's is the one that decides.
  */
 export class Match<S> {
   readonly states: S[];
@@ -45,22 +45,29 @@ export class Match<S> {
   get toMove(): number {
     return this.rules.toMove(this.state);
   }
-  /** The state `move` by `seat` would lead to, or the words why it may not be made. `host`: asked by the host's device. */
-  try(move: Move, seat: number, host: boolean): { state: S } | { text: string } {
+  /**
+   * The state `move` by `seat` would lead to, or the words why it may not be made. `host`: asked by the host's device.
+   * `salt`: the one the move will be played with (a guest checking its own move knows none yet: its chance may differ).
+   */
+  try(move: Move, seat: number, host: boolean, salt = 0): { state: S } | { text: string } {
     const to = this.toMove;
     if (to === NOBODY) return { text: "게임이 끝났습니다." };
     if (to === HOST_ONLY ? !host : to !== seat) return { text: to === HOST_ONLY ? "방장이 고르는 차례입니다." : "상대 차례입니다." };
     const not = this.rules.allow?.(this.state, move);
     if (not) return { text: not };
-    const next = this.rules.play(this.state, move, streamFor(this.start.seed, this.ply + 1));
+    const next = this.rules.play(this.state, move, this.stream(salt));
     return next ? { state: next } : { text: "둘 수 없는 수입니다." };
   }
-  /** Plays `move` for `seat` whoever's turn it is (the host has checked it): the new state, or null if illegal. */
-  push(move: Move, seat: number): S | null {
-    const next = this.rules.play(this.state, move, streamFor(this.start.seed, this.ply + 1));
+  /** The chance of the next move under `salt`. */
+  private stream(salt: number) {
+    return streamFor(this.start.seed, this.ply + 1, salt);
+  }
+  /** Plays `move` for `seat` whoever's turn it is (the host has checked it), its chance under `salt`: the new state, or null if illegal. */
+  push(move: Move, seat: number, salt = 0): S | null {
+    const next = this.rules.play(this.state, move, this.stream(salt));
     if (!next) return null;
     this.states.push(next);
-    this.moves.push({ move, seat });
+    this.moves.push(salt ? { move, seat, salt } : { move, seat });
     return next;
   }
   /** Takes the list back to its first `length` moves. */
@@ -71,7 +78,7 @@ export class Match<S> {
   /** Plays a whole list after the start; false when one of it does not play (the match then holds what did). */
   replay(moves: readonly NetMove[]): boolean {
     this.truncate(0);
-    for (const m of moves) if (!this.push(m.move, m.seat)) return false;
+    for (const m of moves) if (!this.push(m.move, m.seat, m.salt ?? 0)) return false;
     return true;
   }
   /** How long the list is once the last move of `seat`, and everything after it, is taken back; null if it made none. */

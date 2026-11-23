@@ -14,6 +14,11 @@ export const tacticsConfig: PointConfig<State> = {
   // The computer weighs every place and strike of the unit whose turn it is, and carries its plan out a command at a time.
   game: { ...tactics, choose: (state, level, random) => chooseMove(state, level, random) },
   view: (host, quality, variant, mode) => new TacticsView(host, quality, variant, mode),
+  // Over one Wi-Fi each device leads one army. Nothing is left to chance (damage is reckoned, the order of units is
+  // the charge-time queue), so the side to move is the side of the unit whose turn it is, often one side twice; every
+  // command (이동, a tile tapped to see its reach, 되돌리기) is a move of the room, so every copy of the game follows it
+  // (the tiles offered are drawn only on the device that chooses).
+  net: {},
   variants: FIELDS.map((f) => ({ value: f.id, label: f.name })),
   variantLabel: "전장",
   colors: SIDE_COLORS,

@@ -216,6 +216,9 @@ export class UrView extends TableView<State> {
     });
   }
   protected place(state: State) {
+    // The dice and the pieces as they lie, for tests (two devices over Wi-Fi must show the same throw).
+    this.renderer.domElement.dataset.dice = state.dice.map(Number).join("");
+    this.renderer.domElement.dataset.pieces = JSON.stringify(state.pieces);
     this.stands(state).forEach((p, i) => this.pieces[i].position.set(p.x, p.y, p.z));
     this.showDice(state.dice);
   }

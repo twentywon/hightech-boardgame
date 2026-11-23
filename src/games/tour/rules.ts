@@ -1,3 +1,4 @@
+import { josa } from "../../core/josa";
 import type { Random } from "../../core/random";
 
 /**
@@ -236,7 +237,7 @@ export function sell(state: State, player: number, index: number): State | null 
   s.actor = player;
   // Having sold the very place it was about to build on, it may buy it back instead.
   if (s.phase === "build" && s.players[player].at === index) s.phase = "buy";
-  s.note = `${SPACES[index].name}을(를) ${won(back)}에 팔았습니다.`;
+  s.note = `${SPACES[index].name}${josa(SPACES[index].name, "을", "를")} ${won(back)}에 팔았습니다.`;
   return s;
 }
 /** Cash plus half of what was spent on land and buildings. */
@@ -272,7 +273,7 @@ function charge(s: State, player: number, amount: number) {
     p.money += Math.round(value(sold) / 2);
     s.owners[sold] = -1;
     s.levels[sold] = 0;
-    s.note += ` ${SPACES[sold].name}을(를) 팔았습니다.`;
+    s.note += ` ${SPACES[sold].name}${josa(SPACES[sold].name, "을", "를")} 팔았습니다.`;
   }
   if (p.money < 0) {
     const paid = amount + p.money;
@@ -406,7 +407,7 @@ export function roll(state: State, random: Random): State | null {
   s.actor = me;
   s.dice = [1 + Math.floor(random() * 6), 1 + Math.floor(random() * 6)];
   const double = s.dice[0] === s.dice[1];
-  s.note = `${s.dice[0]}와 ${s.dice[1]}이(가) 나왔습니다.`;
+  s.note = `${s.dice[0]}${josa(s.dice[0], "과", "와")} ${s.dice[1]}${josa(s.dice[1], "이", "가")} 나왔습니다.`;
   if (p.wait > 0) {
     // On the island a double gets the traveller off at once; otherwise the turn is spent there.
     if (!double) {
@@ -525,7 +526,7 @@ export function follow(state: State): State | null {
       p.money += back;
       s.owners[dearest] = -1;
       s.levels[dearest] = 0;
-      s.note += ` ${SPACES[dearest].name}을(를) ${won(back)}에 팔았습니다.`;
+      s.note += ` ${SPACES[dearest].name}${josa(SPACES[dearest].name, "을", "를")} ${won(back)}에 팔았습니다.`;
     }
   }
   if (card.gift)
@@ -576,13 +577,13 @@ export function decide(state: State, yes: boolean): State | null {
   if (yes && s.phase === "buy") {
     p.money -= space.price;
     s.owners[p.at] = me;
-    s.note = `${space.name}을(를) ${won(space.price)}에 샀습니다.`;
+    s.note = `${space.name}${josa(space.name, "을", "를")} ${won(space.price)}에 샀습니다.`;
   } else if (yes) {
     const level = s.levels[p.at] + 1;
     p.money -= buildCost(space, level);
     s.levels[p.at] = level;
-    s.note = `${space.name}에 ${LEVELS[level]}을(를) 지었습니다.`;
-  } else s.note = `${space.name}을(를) 지나칩니다.`;
+    s.note = `${space.name}에 ${LEVELS[level]}${josa(LEVELS[level], "을", "를")} 지었습니다.`;
+  } else s.note = `${space.name}${josa(space.name, "을", "를")} 지나칩니다.`;
   // Only a double rolled in the open earns another roll, not one that freed the traveller from the island.
   return pass(s, s.doubles > 0);
 }

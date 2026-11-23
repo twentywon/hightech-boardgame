@@ -8,6 +8,9 @@ export const urConfig: PointConfig<State> = {
   contact: (sound) => sound.stone(3),
   noPanel: true,
   view: (host, quality) => new UrView(host, quality),
+  // Over one Wi-Fi each device plays one side; the four dice are thrown by the side to move and fall as the host draws
+  // them when it takes the throw (`src/net/random.ts`).
+  net: {},
   colors: UR_COLORS,
   keyPoints: (state) => [...state.pieces.flatMap((pieces, side) => pieces.map((progress, k) => pieceAt(side, progress, k))), ...Array(6).fill({ x: NaN, z: NaN }), DICE],
   autoSingle: true,

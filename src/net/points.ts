@@ -4,8 +4,8 @@ import type { SeatKind } from "./protocol";
 
 /**
  * How a game is played over one Wi-Fi (와이파이 여럿이, the user asked): each device plays its own seat, and every
- * move goes through `play` on every device in the host's order (`src/net/`). Only games with nothing hidden, no
- * chance and no clock opt in. Left out, a game has two seats (its two sides, either may be the host's computer),
+ * move goes through `play` on every device in the host's order (`src/net/`). Only games with nothing hidden and no
+ * clock opt in; chance (dice) is drawn from the `random` passed to `play`, which the host salts as it takes each move. Left out, a game has two seats (its two sides, either may be the host's computer),
  * is laid by `create` with the room's shared random stream, and the seat to move is `turn`.
  */
 export interface NetSpec<S> {

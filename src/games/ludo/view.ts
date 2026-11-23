@@ -4,25 +4,37 @@ import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { HOME, LAST_ROAD, ROAD, ROLL, SAFE, START, YARD, roadSquare, type State } from "./rules";
 
-const S = 0.68,
-  SUBJECT: TableSubject = { half: 5.7, halfZ: 5.7, height: 1.0, lookY: 0, tilt: 1.05 };
-export const LUDO_COLORS: [string, string] = ["#d2452f", "#2f8a4f"];
+const S = 0.68;
+export const LUDO_SUBJECT: TableSubject = { half: 5.7, halfZ: 5.7, height: 1.0, lookY: 0, tilt: 1.05 };
+/** The tokens' paint by colour (`COLOR_NAMES`: red, green, yellow, blue); the first two are the game for two. */
+export const TOKEN_COLORS = ["#d2452f", "#2f8a4f", "#e2b93b", "#3f6fc8"];
+export const LUDO_COLORS: [string, string] = [TOKEN_COLORS[0], TOKEN_COLORS[1]];
 const ARMS = ["#e2b93b", "#2f8a4f", "#3f6fc8", "#d2452f"];
 const at = (c: number, r: number) => ({ x: (c - 7) * S, z: (r - 7) * S });
-/** Where a token of a side stands for a place on its way; `k` spreads tokens that wait or have arrived. */
-export function tokenAt(side: number, progress: number, k: number) {
+/** The middle of each colour's yard: red near left, green far right, yellow far left, blue near right. */
+const YARDS: [number, number][] = [
+  [2.5, 11.5],
+  [11.5, 2.5],
+  [2.5, 2.5],
+  [11.5, 11.5],
+];
+/** Where a token of a colour stands for a place on its way; `k` spreads tokens that wait or have arrived. */
+export function tokenAt(color: number, progress: number, k: number) {
   if (progress === YARD) {
-    const [c, r] = side === 0 ? [2.5, 11.5] : [11.5, 2.5];
+    const [c, r] = YARDS[color];
     return at(c + (k % 2 ? 0.9 : -0.9), r + (k < 2 ? -0.9 : 0.9));
   }
   if (progress <= LAST_ROAD) {
-    const [c, r] = ROAD[roadSquare(side, progress)];
+    const [c, r] = ROAD[roadSquare(color, progress)];
     return at(c, r);
   }
-  // Up its own column, then into the middle.
-  const step = progress - LAST_ROAD;
-  if (progress === HOME) return at(7 + (k % 2 ? 0.28 : -0.28), side === 0 ? 7.75 + (k < 2 ? 0 : 0.42) : 6.25 - (k < 2 ? 0 : 0.42));
-  return at(7, side === 0 ? 14 - step : step);
+  // Up its own column, then into the middle: each colour's from its own arm.
+  const step = progress - LAST_ROAD,
+    across = k % 2 ? 0.28 : -0.28,
+    deep = k < 2 ? 0 : 0.42;
+  if (progress === HOME)
+    return color === 0 ? at(7 + across, 7.75 + deep) : color === 1 ? at(7 + across, 6.25 - deep) : color === 2 ? at(6.25 - deep, 7 + across) : at(7.75 + deep, 7 + across);
+  return color === 0 ? at(7, 14 - step) : color === 1 ? at(7, step) : color === 2 ? at(step, 7) : at(14 - step, 7);
 }
 function boardTexture() {
   const c = document.createElement("canvas");
@@ -144,9 +156,17 @@ function upright(face: number) {
   else if (face === 4) q.setFromAxisAngle(z, -Math.PI / 2);
   return q;
 }
-// The die lies in a yard nobody plays from, clear of the road and the middle.
-const DIE = at(2.5, 2.5);
-/** The cross-shaped board, eight tokens and a die. */
+/**
+ * Where the die lies: in a yard nobody plays from, clear of the road and the middle (yellow's, in the game for two);
+ * with all four colours playing, in the middle of the yard of the side to roll, between its waiting tokens.
+ */
+export function dieAt(state: State | null) {
+  const colors = state?.colors ?? [0, 1],
+    free = [2, 3].find((c) => !colors.includes(c)),
+    [c, r] = YARDS[free ?? colors[state!.turn]];
+  return at(c, r);
+}
+/** The cross-shaped board, the tokens of two to four colours and a die. */
 export class LudoView extends TableView<State> {
   private tokens: T.Mesh[] = [];
   private die: T.Mesh;
@@ -163,7 +183,8 @@ export class LudoView extends TableView<State> {
     this.add(block(15 * S + 0.3, 0.2, 15 * S + 0.3), [edge, edge, this.standard({ map: this.own(boardTexture()), roughness: 0.85 }), edge, edge, edge], 0, -0.1, 0);
     // A turned man, standing where the old one did (its foot 0.23 under the middle the tokens are placed by).
     const man = this.own(pawn(0.7).translate(0, -0.23, 0));
-    LUDO_COLORS.forEach((color) => {
+    // Four of each colour, `color * 4 + k`; those of colours not playing are hidden.
+    TOKEN_COLORS.forEach((color) => {
       const paint = this.standard({ color, roughness: 0.35 });
       for (let k = 0; k < 4; k++) {
         const mesh = new T.Mesh(man, paint);
@@ -174,7 +195,8 @@ export class LudoView extends TableView<State> {
     });
     this.die = new T.Mesh(this.own(block(0.62, 0.62, 0.62)), FACES.map((value) => this.standard({ map: this.own(dieFace(value)), roughness: 0.4 })));
     this.die.castShadow = true;
-    this.die.position.set(DIE.x, 0.31, DIE.z);
+    const die = dieAt(null);
+    this.die.position.set(die.x, 0.31, die.z);
     this.scene.add(this.die);
     const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     for (let i = 0; i < 4; i++) {
@@ -187,15 +209,19 @@ export class LudoView extends TableView<State> {
     this.begin();
   }
   protected subject() {
-    return SUBJECT;
+    return LUDO_SUBJECT;
   }
-  /** Where each of the eight tokens stands. Tokens sharing a square stand side by side, each made smaller, so that none hides another. */
+  /** The mesh of a side's token: its colour's. */
+  private meshOf(state: State, point: number) {
+    return this.tokens[state.colors[Math.floor(point / 4)] * 4 + (point % 4)];
+  }
+  /** Where each token stands, by point. Tokens sharing a square stand side by side, each made smaller, so that none hides another. */
   private stands(state: State) {
     const out: { x: number; z: number; scale: number }[] = [],
       groups = new Map<string, number[]>();
     state.tokens.forEach((tokens, side) =>
       tokens.forEach((progress, k) => {
-        const p = tokenAt(side, progress, k);
+        const p = tokenAt(state.colors[side], progress, k);
         out.push({ ...p, scale: 1 });
         if (progress < 0 || progress >= HOME) return;
         const key = `${Math.round(p.x * 100)},${Math.round(p.z * 100)}`;
@@ -218,16 +244,30 @@ export class LudoView extends TableView<State> {
     if (!state) return [];
     const out: Spot[] = this.stands(state).map((p, point) => ({ x: p.x, z: p.z, y: 0.3, r: 0.42 * p.scale, point }));
     // The die is a place too: a tap on it rolls.
-    out.push({ ...DIE, y: 0.3, r: 0.75, point: ROLL });
+    out.push({ ...dieAt(state), y: 0.3, r: 0.75, point: ROLL });
     return out;
   }
   protected place(state: State) {
+    // The die and the tokens as they lie, for tests (every device over Wi-Fi must show the same).
+    this.renderer.domElement.dataset.die = String(state.die);
+    this.renderer.domElement.dataset.tokens = JSON.stringify(state.tokens);
+    for (const mesh of this.tokens) mesh.visible = false;
     this.stands(state).forEach((p, i) => {
-      this.tokens[i].position.set(p.x, 0.25 * p.scale, p.z);
-      this.tokens[i].scale.setScalar(p.scale);
+      const mesh = this.meshOf(state, i);
+      mesh.visible = true;
+      mesh.position.set(p.x, 0.25 * p.scale, p.z);
+      mesh.scale.setScalar(p.scale);
     });
+    const die = dieAt(state);
     this.die.quaternion.copy(upright(state.die));
-    this.die.position.y = 0.31;
+    this.die.position.set(die.x, 0.31, die.z);
+  }
+  /** With every yard taken the die goes over to the yard of the side to roll next, after `delay`. */
+  private passDie(before: State, state: State, delay: number) {
+    const a = dieAt(before),
+      b = dieAt(state);
+    if (a.x === b.x && a.z === b.z) return;
+    this.tween(delay, 380, (p) => this.die.position.set(a.x + (b.x - a.x) * p, 0.31 + Math.sin(Math.PI * p) * 0.5, a.z + (b.z - a.z) * p));
   }
   protected animate(before: State, state: State) {
     const last = state.last;
@@ -245,15 +285,19 @@ export class LudoView extends TableView<State> {
         this.die.position.y = 0.31 + hop(p) * 0.9;
       });
       // A roll nobody can use is left to be seen for a moment.
-      if (state.turn !== before.turn) this.tween(520, 500, () => {});
+      if (state.turn !== before.turn) {
+        this.tween(520, 500, () => {});
+        this.passDie(before, state, 1020);
+      }
       return true;
     }
     const side = last.side,
+      color = state.colors[side],
       k = last.token - side * 4,
-      mesh = this.tokens[last.token],
+      mesh = this.meshOf(state, last.token),
       steps: { x: number; z: number }[] = [];
-    if (last.from === YARD) steps.push(tokenAt(side, 0, k));
-    else for (let p = last.from + 1; p <= last.to; p++) steps.push(tokenAt(side, p, k));
+    if (last.from === YARD) steps.push(tokenAt(color, 0, k));
+    else for (let p = last.from + 1; p <= last.to; p++) steps.push(tokenAt(color, p, k));
     let from = { x: mesh.position.x, z: mesh.position.z };
     steps.forEach((to, i) => {
       const a = from;
@@ -265,11 +309,12 @@ export class LudoView extends TableView<State> {
     });
     // Tokens sent back fly home to their yard.
     for (const point of last.sent) {
-      const sent = this.tokens[point],
+      const sent = this.meshOf(state, point),
         a = { x: sent.position.x, z: sent.position.z },
-        b = tokenAt(point < 4 ? 0 : 1, YARD, point % 4);
+        b = tokenAt(state.colors[Math.floor(point / 4)], YARD, point % 4);
       this.tween(steps.length * 150, 420, (p) => sent.position.set(a.x + (b.x - a.x) * p, 0.25 + Math.sin(Math.PI * p) * 1.6, a.z + (b.z - a.z) * p));
     }
+    this.passDie(before, state, steps.length * 150 + (last.sent.length ? 420 : 0));
     return true;
   }
   protected mark(marks: Marks) {
@@ -277,10 +322,10 @@ export class LudoView extends TableView<State> {
       stands = state ? this.stands(state) : [];
     this.rings.forEach((ring, i) => {
       const point = marks.movable[i];
-      ring.visible = point !== undefined && point < 8 && !!stands[point];
+      ring.visible = point !== undefined && point < ROLL && !!stands[point];
       if (ring.visible) ring.position.set(stands[point].x, 0.012, stands[point].z);
     });
-    const cursor = marks.cursor !== null ? (marks.cursor === ROLL ? DIE : stands[marks.cursor]) : undefined;
+    const cursor = marks.cursor !== null ? (marks.cursor === ROLL ? dieAt(state) : stands[marks.cursor]) : undefined;
     this.cursor.visible = !!cursor;
     if (cursor) this.cursor.position.set(cursor.x, 0.014, cursor.z);
   }

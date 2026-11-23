@@ -1,3 +1,4 @@
+import { josa } from "../../core/josa";
 import { cryptoRandom, type Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
@@ -137,9 +138,9 @@ export const ur: PointGame<State> = {
   hint: (s) =>
     s.phase === "throw"
       ? s.last && s.last.piece < 0 && s.last.side !== s.turn
-        ? `상대가 ${s.last.thrown}이(가) 나와 움직일 말이 없었습니다. 주사위를 던지세요.`
+        ? `상대가 ${s.last.thrown}${josa(s.last.thrown, "이", "가")} 나와 움직일 말이 없었습니다. 주사위를 던지세요.`
         : "주사위를 던지세요."
-      : `${thrown(s)}이(가) 나왔습니다. 움직일 말을 고르세요.`,
+      : `${thrown(s)}${josa(thrown(s), "이", "가")} 나왔습니다. 움직일 말을 고르세요.`,
   tally: (s) => [0, 1].map((p) => `나간 말 ${s.pieces[p].filter((t) => t === OFF).length} / ${PIECES}`) as [string, string],
   reason: () => "말 일곱 개를 모두 판 밖으로 내보냈습니다.",
 };

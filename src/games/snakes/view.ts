@@ -12,7 +12,8 @@ import { LAWN, garden } from "./garden";
 
 export { squareAt } from "./layout";
 export const SNAKES_SUBJECT: Subject & { tilt: number } = { half: 4.6, halfZ: 4.5, height: 0.9, lookY: 0, tilt: 1.02 };
-export const TOKENS = ["#d2452f", "#2f62c0"];
+/** The tokens' paint (`TOKEN_NAMES`: red, blue, green, yellow); the first two are the game for two. */
+export const TOKENS = ["#d2452f", "#2f62c0", "#2f9a52", "#e6b52c"];
 /** Our own cheerful paints for the squares; across a row and up a column no two neighbours share one. */
 const PAINTS = ["#f7d65a", "#f4a28c", "#8fd3b0", "#8ec5ef", "#c9b0ea"];
 const RIM = 0.15,
@@ -180,7 +181,7 @@ const UP = new T.Vector3(0, 1, 0);
 /**
  * A snakes-and-ladders board in a garden: a thick painted wooden board on a garden table, modelled ladders standing
  * on posts over it, modelled snakes lying across it (their heads and tails swaying, tongues flicking, where a
- * graphics card draws), two glossy tokens and a die thrown into a tray. A token climbs a ladder rung by rung and
+ * graphics card draws), two to four glossy tokens and a die thrown into a tray. A token climbs a ladder rung by rung and
  * rides a snake's back down from its open mouth to its tail.
  */
 export class SnakesView implements PointView<State> {
@@ -354,16 +355,26 @@ export class SnakesView implements PointView<State> {
     for (const snake of this.snakes) snake.pose(now / 1000, this.life);
     this.heads.update();
   }
-  /** Where a token stands: two tokens on one square stand side by side, on the board or on what lies over it. */
-  private stand(player: number, square: number, shared: boolean) {
-    const p = worldAt(square),
-      shift = square <= 0 ? (player ? 0.5 : -0.1) : shared ? (player ? 0.18 : -0.18) : 0;
-    return new T.Vector3(p.x + (square <= 0 ? 0 : shift), restHeight(square), p.z + (square <= 0 ? -shift : 0));
+  /**
+   * Where a token of `color` stands: waiting in a row beside square 1; on a square alone in its middle, two side by
+   * side, three or four in its corners (`slot` of `count`), on the board or on what lies over it.
+   */
+  private stand(color: number, square: number, slot = 0, count = 1) {
+    const p = worldAt(square);
+    if (square <= 0) return new T.Vector3(p.x, restHeight(square), p.z + 0.1 - color * 0.6);
+    const [dx, dz] = count === 2 ? [slot ? 0.18 : -0.18, 0] : count > 2 ? [slot % 2 ? 0.17 : -0.17, slot < 2 ? -0.17 : 0.17] : [0, 0];
+    return new T.Vector3(p.x + dx, restHeight(square), p.z + dz);
   }
   private place(state: State) {
-    const shared = state.positions[0] === state.positions[1];
-    this.tokens.forEach((token, player) => {
-      token.position.copy(this.stand(player, state.positions[player], shared));
+    // The die and the squares as they lie, for tests (every device over Wi-Fi must show the same).
+    this.renderer.domElement.dataset.die = String(state.roll?.die ?? 0);
+    this.renderer.domElement.dataset.squares = state.positions.join(",");
+    for (const token of this.tokens) token.visible = false;
+    state.positions.forEach((square, player) => {
+      const token = this.tokens[state.colors[player]],
+        sharing = state.positions.map((q, i) => (q === square ? i : -1)).filter((i) => i >= 0);
+      token.visible = true;
+      token.position.copy(this.stand(state.colors[player], square, sharing.indexOf(player), sharing.length));
       token.quaternion.identity();
     });
     for (const snake of this.snakes) snake.open = snake.flick = 0;
@@ -381,7 +392,7 @@ export class SnakesView implements PointView<State> {
       this.trail.count = 0;
       return;
     }
-    const color = TOKENS[roll.player],
+    const color = TOKENS[state.colors[roll.player]],
       end = state.positions[roll.player];
     (this.ring.material as T.MeshBasicMaterial).color.set(color);
     (this.trail.material as T.MeshBasicMaterial).color.set(color);
@@ -434,7 +445,8 @@ export class SnakesView implements PointView<State> {
     this.place(before);
     this.mark(null);
     const now = performance.now(),
-      token = this.tokens[roll.player],
+      color = state.colors[roll.player],
+      token = this.tokens[color],
       to = restOf(roll.die, state.ply),
       axis = new T.Vector3(1, 0.4, 0.6).normalize(),
       spin = new T.Quaternion();
@@ -466,10 +478,10 @@ export class SnakesView implements PointView<State> {
       at += duration;
       from = end.clone();
     };
-    for (const square of roll.path) hopTo(this.stand(roll.player, square, false), 170, 0.35, () => this.onContact());
+    for (const square of roll.path) hopTo(this.stand(color, square), 170, 0.35, () => this.onContact());
     if (roll.slide === null) return;
     const landing = roll.path[roll.path.length - 1],
-      end = this.stand(roll.player, roll.slide, false);
+      end = this.stand(color, roll.slide);
     if (roll.slide > landing) {
       // A ladder: up it rung by rung, a knock at every other rung, a little jump for joy at the top.
       const line = LADDER_LINES.find((l) => l.from === landing)!;
@@ -564,7 +576,7 @@ export class SnakesView implements PointView<State> {
       });
       if (!this.tweens.length && this.state) {
         this.place(this.state);
-        if (typeof this.state.winner === "number" && !this.reducedMotion) this.dance(this.state.winner, now);
+        if (this.state.winner !== null && !this.reducedMotion) this.dance(this.state.colors[this.state.winner], now);
         this.onSettled();
       }
     } else if (this.flourish) {
@@ -575,9 +587,9 @@ export class SnakesView implements PointView<State> {
     }
     return moved;
   }
-  /** The winner hops and turns on the last square a few times. */
-  private dance(player: number, now: number) {
-    const token = this.tokens[player],
+  /** The winner (the token of `color`) hops and turns on the last square a few times. */
+  private dance(color: number, now: number) {
+    const token = this.tokens[color],
       base = token.position.clone();
     this.flourish = {
       start: now + 150,

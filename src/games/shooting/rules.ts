@@ -1,3 +1,4 @@
+import { josa } from "../../core/josa";
 import type { Effect, GameOptions, Move, PointGame, Winner } from "../points/types";
 import { COMBO, TIERS, tierOf } from "./bb";
 import { CLAYS } from "./clay";
@@ -147,7 +148,7 @@ export function reason(state: State): string {
     return `${CLAYS}개 가운데 ${broken(state)}개 명중! 첫 발에 ${first}개, 둘째 발에 ${broken(state) - first}개를 깨뜨렸습니다 (${state.shots}발).`;
   }
   const bag = bagWords(state);
-  return `${state.score}점! ${bag ? `${bag}을(를) 잡았습니다` : "아무것도 잡지 못했습니다"}. ${state.shots}발을 쏴 ${state.hits}발 맞혔습니다 (명중률 ${rate(state)}%).`;
+  return `${state.score}점! ${bag ? `${bag}${josa(bag, "을", "를")} 잡았습니다` : "아무것도 잡지 못했습니다"}. ${state.shots}발을 쏴 ${state.hits}발 맞혔습니다 (명중률 ${rate(state)}%).`;
 }
 export function tally(state: State): [string, string] {
   if (state.mode === "bb") return [`점수 ${state.score} · 남은 BB탄 ${state.ammo}발 · 명중 ${state.hits}/${state.shots} · 최고 콤보 ${state.best}`, ""];
