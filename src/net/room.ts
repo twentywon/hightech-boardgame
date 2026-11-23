@@ -174,8 +174,8 @@ export class HostRoom<S> extends Room<S> {
       // A channel closing as it is written to is noticed by its own close.
     }
   }
-  private broadcast(message: Message) {
-    for (const [link, id] of this.links) if (id) this.send(link, message);
+  private broadcast(message: Message, skip?: Link) {
+    for (const [link, id] of this.links) if (id && link !== skip) this.send(link, message);
   }
   private seatsMessage(): Message {
     return { t: "seats", seats: this.seats, people: this.people };
@@ -265,14 +265,15 @@ export class HostRoom<S> extends Room<S> {
     }
     this.broadcast(this.seatsMessage());
     if (this.match) this.resync(link);
-    this.tell(back ? `${who.name} 님이 다시 연결되었습니다.` : `${who.name} 님이 들어왔습니다.`);
+    this.tell(back ? `${who.name} 님이 다시 연결되었습니다.` : `${who.name} 님이 들어왔습니다.`, link);
     this.changed();
   }
   private resync(link: Link) {
     if (this.match && this.start) this.send(link, { t: "resync", start: this.start, moves: this.match.moves });
   }
-  private tell(text: string) {
-    this.broadcast({ t: "notice", text });
+  /** A line for every status but the one of `skip` (a returning person is not told of their own return). */
+  private tell(text: string, skip?: Link) {
+    this.broadcast({ t: "notice", text }, skip);
     this.events.notice?.(text);
   }
   /** A channel closed: its person is away (the seat waits, or the computer stands in, as the screen decides). */
