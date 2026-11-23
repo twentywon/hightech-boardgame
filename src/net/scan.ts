@@ -20,8 +20,19 @@ interface Detector {
 }
 declare const BarcodeDetector: { new (options: { formats: string[] }): Detector; getSupportedFormats?: () => Promise<string[]> } | undefined;
 
-/** Starts the camera into `video` and reads frames until a code that `wanted` accepts is seen; `stop` ends it. */
-export function scan(video: HTMLVideoElement, wanted: (text: string) => boolean, found: (text: string) => void, failed: (words: string) => void) {
+/** Why the camera could not be used: none in this browser, refused by the person, none found, or another failure. */
+export type CameraTrouble = "unsupported" | "denied" | "missing" | "broken";
+
+/**
+ * Starts the camera into `video` and reads frames until a code that `wanted` accepts is seen; `stop` ends it. A
+ * failure is told in words for the paste fields of the QR way, and by its kind for a caller with other advice.
+ */
+export function scan(
+  video: HTMLVideoElement,
+  wanted: (text: string) => boolean,
+  found: (text: string) => void,
+  failed: (words: string, why: CameraTrouble) => void,
+) {
   let stream: MediaStream | null = null,
     stopped = false,
     timer: ReturnType<typeof setTimeout> | null = null;
@@ -36,7 +47,7 @@ export function scan(video: HTMLVideoElement, wanted: (text: string) => boolean,
   };
   (async () => {
     const problem = cameraProblem();
-    if (problem) return failed(problem);
+    if (problem) return failed(problem, "unsupported");
     let detector: Detector | null = null;
     try {
       if (typeof BarcodeDetector !== "undefined" && (!BarcodeDetector.getSupportedFormats || (await BarcodeDetector.getSupportedFormats()).includes("qr_code")))
@@ -47,13 +58,15 @@ export function scan(video: HTMLVideoElement, wanted: (text: string) => boolean,
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
     } catch (error) {
-      const name = (error as Error)?.name;
+      const name = (error as Error)?.name,
+        why: CameraTrouble = name === "NotAllowedError" ? "denied" : name === "NotFoundError" ? "missing" : "broken";
       return failed(
-        name === "NotAllowedError"
+        why === "denied"
           ? "카메라 사용이 허락되지 않았습니다. 코드를 붙여 넣거나 카메라를 허용해 주세요."
-          : name === "NotFoundError"
+          : why === "missing"
             ? "이 기기에서 카메라를 찾지 못했습니다. 코드를 복사해 붙여 넣어 주세요."
             : "카메라를 켤 수 없습니다. 코드를 복사해 붙여 넣어 주세요.",
+        why,
       );
     }
     if (stopped) return stop();

@@ -3541,6 +3541,14 @@ dialog.net-lobby .net-address b { font-family:var(--mono, ui-monospace, monospac
 dialog.net-lobby .net-find { margin-top:8px; }
 dialog.net-lobby .net-find-head { display:flex;align-items:center;justify-content:space-between;gap:8px; }
 dialog.net-lobby .net-find-head h3 { margin:6px 0; }
+dialog.net-lobby .net-address-text { display:flex;flex:1 1 0;flex-wrap:wrap;align-items:center;gap:4px 10px;min-width:0; }
+dialog.net-lobby .net-address.coded { flex-wrap:nowrap;gap:14px;padding:10px; }
+dialog.net-lobby .net-room-code { flex:none;width:136px;aspect-ratio:1;border-radius:10px;background:#fff;box-shadow:0 0 0 1px var(--line, #d9d3c4); }
+dialog.net-lobby .net-room-code-line { flex:1 1 100%;margin:0 0 2px;font-size:14px;font-weight:700;line-height:1.45;color:var(--ink, #16181a); }
+dialog.net-lobby .net-find-tools { display:flex;align-items:center;gap:10px; }
+dialog.net-lobby .net-scan-room { min-height:36px;padding:0 16px;border:1.5px solid #16181a;border-radius:999px;background:#16181a;color:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer; }
+dialog.net-lobby .net-room-scan { margin:2px 0 10px; }
+dialog.net-lobby .net-room-scan p { margin:0;font-size:12.5px;color:var(--ink-soft, #5c5a55);text-align:center; }
 dialog.net-lobby .net-rooms { display:grid;gap:6px;margin:0;padding:0;list-style:none; }
 dialog.net-lobby .net-rooms > li { margin:0; }
 dialog.net-lobby .net-room { display:grid;grid-template-columns:minmax(0, 1fr) auto;align-items:center;gap:2px 12px;width:100%;min-height:58px;padding:10px 14px;border:1.5px solid var(--line, #d9d3c4);border-radius:14px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;text-align:left;cursor:pointer;white-space:normal !important; }
@@ -3584,6 +3592,15 @@ dialog.setup-dialog .net-new .net-leave { min-height:44px;border:1.5px solid var
   dialog.net-lobby .dialog-actions button { min-height:38px; }
   dialog.net-lobby .net-find-head h3 { margin:2px 0; }
   dialog.net-lobby .net-address b { font-size:15px; }
+  dialog.net-lobby .net-room-code { width:min(30vh, 112px); }
+  dialog.net-lobby .net-room-code-line { font-size:13px; }
+  dialog.net-lobby .net-find.scanning { display:grid;grid-template-columns:minmax(0, .85fr) minmax(0, 1.15fr);gap:4px 14px;align-items:start; }
+  dialog.net-lobby .net-find.scanning > * { grid-column:2; }
+  dialog.net-lobby .net-find.scanning > .net-find-head { grid-column:1 / -1; }
+  dialog.net-lobby .net-find.scanning > .net-room-scan { grid-column:1;grid-row:2 / span 5;margin:0; }
+  dialog.net-lobby .net-room-scan { gap:4px; }
+  dialog.net-lobby .net-room-scan video { width:auto;max-width:100%;height:min(34vh, 150px); }
+  dialog.net-lobby .net-room-scan .net-scan-stop { min-height:30px; }
   dialog.net-lobby .net-room { min-height:50px;padding:7px 12px; }
   dialog.net-lobby .net-address { margin-top:6px;padding:6px 10px; }
   dialog.net-lobby .net-dial { margin-top:6px; }

@@ -4,7 +4,8 @@ import { PROTOCOL } from "./protocol";
 /**
  * Wi-Fi play inside the Android app, with no QR code: the host's app opens a room on a small TCP server of its own
  * and announces it on the Wi-Fi by DNS-SD (`NsdManager`, type `_wtgroom._tcp`); the others' apps list the rooms
- * they find and join with one tap (or by a typed address where announcements are filtered). Free of the page and of
+ * they find and join with one tap (or by scanning the host's room QR code, `roomCode`, or by a typed address where
+ * announcements are filtered). Free of the page and of
  * Three.js, like the rest of `src/net/`: the app is reached through a `LanBridge` (`window.wtgNet`, see
  * `android/app/src/main/java/kr/worldtable/student/LanBridge.java`), whose events come back through `receive`
  * (`window.wtgNetEvent`). Every connection is a `Link`, so `HostRoom` and `GuestRoom` play over it as over WebRTC.
@@ -118,8 +119,9 @@ export function adAttrs(room: HostRoom<unknown>, self: LanSelf): Record<string, 
   };
 }
 /** Why this page may not join a room (another version, edition or game), or null. */
-export function joinProblem(ad: RoomAd, self: LanSelf, game: string): string | null {
-  if (ad.protocol !== PROTOCOL || ad.app !== self.app) return "버전이 다릅니다";
+export function joinProblem(ad: Pick<RoomAd, "protocol" | "app" | "edition" | "game" | "title">, self: LanSelf, game: string): string | null {
+  // A room's QR code carries the version in capitals (`roomCode`).
+  if (ad.protocol !== PROTOCOL || ad.app.toUpperCase() !== self.app.toUpperCase()) return "버전이 다릅니다";
   if (ad.edition !== self.edition) return `버전이 다릅니다 (${ad.edition === "student" ? "학생용" : "일반"} 앱)`;
   if (ad.game !== game) return `다른 게임: ${ad.title}`;
   return null;
@@ -137,6 +139,30 @@ export function typedAddress(text: string): { address: string } | { text: string
   const port = m[2] ? Number(m[2]) : LAN_PORT;
   if (port < 1 || port > 65535) return { text: "콜론 뒤의 포트 번호가 맞지 않습니다." };
   return { address: `${m[1]}:${port}` };
+}
+
+/**
+ * A room's address as the host's QR code carries it, for a guest's app to join with one scan (QR 찍기):
+ * `WTGROOM://192.168.0.12:47297/TIC-TAC-TOE/FULL/1/2026.11-NET2` (address, game, edition, protocol, app version).
+ * All in capitals so that the code is written in the QR's compact alphanumeric mode (a game id with another
+ * character, such as morris's apostrophe, falls back to bytes); the reader takes any case.
+ */
+export interface RoomCode {
+  address: string;
+  game: string;
+  edition: string;
+  protocol: number;
+  app: string;
+}
+export const ROOM_SCHEME = "WTGROOM://";
+export const roomCode = (address: string, self: LanSelf, game: string) => `${ROOM_SCHEME}${address}/${game}/${self.edition}/${PROTOCOL}/${self.app}`.toUpperCase();
+/** The room a scanned (or pasted) code names, or null for any other text (the QR way's codes among them). */
+export function readRoomCode(text: string): RoomCode | null {
+  const m = /^wtgroom:\/\/([^/\s]+)\/([a-z0-9'-]+)\/([a-z]+)\/(\d{1,4})\/(\S{1,40})$/i.exec(text.trim());
+  if (!m) return null;
+  const at = typedAddress(m[1]);
+  if ("text" in at) return null;
+  return { address: at.address, game: m[2].toLowerCase(), edition: m[3].toLowerCase(), protocol: Number(m[4]), app: m[5] };
 }
 
 /** A connection of the app's as a `Link`: messages that come before anyone listens are kept, then handed on. */

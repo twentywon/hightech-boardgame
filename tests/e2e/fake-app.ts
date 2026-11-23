@@ -165,3 +165,63 @@ export class FakeWifi {
     if (phone) for (const peer of [...phone.sockets.keys()]) this.end(phone, peer);
   }
 }
+
+/*
+ * A stand-in for a phone's camera (test-only): `getUserMedia` gives a stream drawn from a canvas that shows whatever
+ * picture the test holds up with `aimCamera` (the host's room QR code as the host's page shows it, say), or is
+ * refused as a person refusing the camera would, while nothing is held up.
+ */
+function fakeCamera() {
+  const w = window as unknown as { __wtgCamera?: (url: string | null) => Promise<void> };
+  let picture: HTMLImageElement | null = null;
+  w.__wtgCamera = (url) =>
+    new Promise<void>((resolve) => {
+      if (!url) {
+        picture = null;
+        return resolve();
+      }
+      const image = new Image();
+      image.onload = () => {
+        picture = image;
+        resolve();
+      };
+      image.src = url;
+    });
+  const devices = (navigator.mediaDevices ?? {}) as MediaDevices;
+  if (!navigator.mediaDevices) Object.defineProperty(navigator, "mediaDevices", { value: devices, configurable: true });
+  devices.getUserMedia = async () => {
+    const shown = picture;
+    if (!shown) throw new DOMException("The camera was refused.", "NotAllowedError");
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 480;
+    const ctx = canvas.getContext("2d")!,
+      side = 400;
+    const draw = () => {
+      ctx.fillStyle = "#6d6a64";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(shown, (canvas.width - side) / 2, (canvas.height - side) / 2, side, side);
+    };
+    draw();
+    const timer = setInterval(draw, 100),
+      stream = canvas.captureStream(10);
+    for (const track of stream.getTracks()) {
+      const stop = track.stop.bind(track);
+      track.stop = () => {
+        clearInterval(timer);
+        stop();
+      };
+    }
+    return stream;
+  };
+}
+/** Gives the phone of `context` the fake camera (before its page is opened). */
+export async function attachCamera(context: BrowserContext) {
+  await context.addInitScript(fakeCamera);
+}
+/** Holds a picture (PNG bytes) up to a phone's camera, or nothing (the camera is then refused). */
+export async function aimCamera(page: Page, png: Buffer | null) {
+  const url = png ? `data:image/png;base64,${png.toString("base64")}` : null;
+  await page.evaluate((u) => (window as unknown as { __wtgCamera(url: string | null): Promise<void> }).__wtgCamera(u), url);
+}

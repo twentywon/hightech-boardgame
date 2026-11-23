@@ -4,20 +4,22 @@ import { FOV, cameraDistance } from "../../src/engine/camera";
 import { cellPos, tttSubject } from "../../src/games/tictactoe/layout";
 import { APP_VERSION } from "../../src/net/protocol";
 import { selectGame } from "./library";
-import { FAKE_PORT, FakeWifi } from "./fake-app";
+import { roomCode } from "../../src/net/lan";
+import { FAKE_PORT, FakeWifi, aimCamera, attachCamera } from "./fake-app";
 
 /*
  * 와이파이 여럿이 inside the Android app, with no QR code: each page is a phone whose `window.wtgNet` is a test-only
  * stand-in for the app (fake-app.ts), all joined by one simulated Wi-Fi. The host's room is announced and shows its
  * address; the guest sees the list (rooms of another version or game greyed), joins with one tap, plays, drops and
- * comes back to its seat by tapping the room again.
+ * comes back to its seat by tapping the room again. A guest may instead read the host's room QR code with QR 찍기
+ * (the fake camera is shown the code as the host's page draws it).
  */
 test.setTimeout(300000);
 
 const moves = async (page: Page) => Number(/(\d+)/.exec(await page.locator("#move-count").innerText())?.[1] ?? 0);
 
 /** A phone of its own on the fake Wi-Fi at `ip`, with the project's screen and the page errors it hears. */
-async function phone(browser: Browser, info: TestInfo, wifi: FakeWifi, ip: string) {
+async function phone(browser: Browser, info: TestInfo, wifi: FakeWifi, ip: string, camera = false) {
   const use = info.project.use;
   const context = await browser.newContext({
     baseURL: use.baseURL,
@@ -28,6 +30,7 @@ async function phone(browser: Browser, info: TestInfo, wifi: FakeWifi, ip: strin
     userAgent: use.userAgent,
   });
   await wifi.attach(context, ip);
+  if (camera) await attachCamera(context);
   const page = await context.newPage(),
     errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -152,6 +155,67 @@ test("a typed address joins where the list stays empty, and a wrong one is answe
   // The QR way is still there in the app: the host's invite code comes up behind its link.
   await a.page.locator("#net-qr").click();
   await expect(a.page.locator("#net-offer")).toBeVisible({ timeout: 20000 });
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});
+
+test("QR 찍기: the guest reads the host's room code once and is in; a refused camera and other rooms' codes are answered with words", async ({ browser }, info) => {
+  const wifi = new FakeWifi();
+  const a = await phone(browser, info, wifi, "192.168.0.12"),
+    b = await phone(browser, info, wifi, "192.168.0.23", true),
+    host = a.page,
+    guest = b.page;
+  await lobby(host, "틱택토", "방장");
+  await host.locator("#net-host").click();
+  await expect(host.locator("#net-address")).toHaveText(`192.168.0.12:${FAKE_PORT}`);
+  const code = host.locator("#net-room-code");
+  await expect(code.locator("svg")).toBeVisible();
+  await expect(code).toHaveAttribute("data-code", roomCode(`192.168.0.12:${FAKE_PORT}`, { app: APP_VERSION, edition: "full" }, "tic-tac-toe"));
+  await expect(host.locator(".net-room-code-line")).toContainText("'QR 찍기'로 찍으면 바로 들어옵니다");
+  const picture = await code.locator("svg").screenshot();
+
+  await lobby(guest, "틱택토", "민수");
+  await guest.locator("#net-join").click();
+  // Nothing held up to the camera: refused, and the window points to the list and the address field.
+  await guest.locator("#net-scan-room").click();
+  await expect(guest.locator(".net-pair-note")).toContainText("카메라 사용이 허락되지 않았습니다", { timeout: 15000 });
+  await expect(guest.locator(".net-pair-note")).toContainText("주소 입력");
+  await expect(guest.locator(".net-room-scan")).toHaveCount(0);
+  // Codes of another game and of another version, pasted into the address field, are refused as a scan would be.
+  await guest.locator("#net-address-in").fill(roomCode(`192.168.0.12:${FAKE_PORT}`, { app: APP_VERSION, edition: "full" }, "gomoku"));
+  await guest.locator("#net-dial").click();
+  await expect(guest.locator(".net-pair-note")).toContainText("다른 게임의 방입니다: 오목");
+  await guest.locator("#net-address-in").fill(roomCode(`192.168.0.12:${FAKE_PORT}`, { app: "2025.01-old", edition: "full" }, "tic-tac-toe"));
+  await guest.locator("#net-dial").click();
+  await expect(guest.locator(".net-pair-note")).toContainText("버전이 다릅니다");
+  await guest.locator("#net-address-in").fill("");
+
+  // The host's code held up: one scan and the guest is in its seat.
+  await aimCamera(guest, picture);
+  await guest.locator("#net-scan-room").click();
+  await expect(guest.locator(".net-room-scan video")).toBeVisible();
+  await expect(guest.locator(".net-seats")).toBeVisible({ timeout: 20000 });
+  await expect(guest.locator(".net-seat").nth(1)).toContainText("나");
+  await expect(host.locator(".net-people li", { hasText: "민수" })).toBeVisible();
+
+  await host.locator("#net-start").click();
+  for (const page of [host, guest]) await expect(page.locator("main.game-layout canvas")).toHaveAttribute("data-ready", "true", { timeout: 30000 });
+  await tap(host, 4);
+  await agree([host, guest], 1);
+
+  // During the game the host's room window still shows the code; a guest that dropped scans it again to return.
+  await host.locator("#net-room").click();
+  await expect(host.locator("#net-room-code svg")).toBeVisible();
+  await host.locator("#net-cancel").click();
+  wifi.drop(guest);
+  await expect(guest.locator("#turn")).toContainText("방장과의 연결이 끊겼습니다", { timeout: 15000 });
+  await guest.locator("#net-room").click();
+  await guest.locator("#net-scan-room").click();
+  await expect(guest.locator(".net-status")).toContainText("게임 중입니다", { timeout: 20000 });
+  await guest.locator("#net-cancel").click();
+  await expect(guest.locator("#turn")).toContainText("나 (O) 차례");
+  await tap(guest, 0);
+  await agree([host, guest], 2);
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });

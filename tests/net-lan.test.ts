@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { Lan, LAN_PORT, adLine, adOf, joinProblem, typedAddress, type LanBridge, type LanEvent, type LanSelf } from "../src/net/lan";
+import { Lan, LAN_PORT, ROOM_SCHEME, adLine, adOf, joinProblem, readRoomCode, roomCode, typedAddress, type LanBridge, type LanEvent, type LanSelf } from "../src/net/lan";
+import { qrModules, qrPixels, readQr } from "../src/net/qr";
+import { codeProblem } from "../src/net/sdp";
 import { APP_VERSION, PROTOCOL, type SeatInfo } from "../src/net/protocol";
 import { GuestRoom, HostRoom } from "../src/net/room";
 import type { NetRules } from "../src/net/match";
@@ -313,5 +315,44 @@ describe("rooms announced on the Wi-Fi", () => {
     expect(app.finding).toBe(true);
     b();
     expect(app.finding).toBe(false);
+  });
+});
+
+describe("the room's QR code (QR 찍기)", () => {
+  const at = `192.168.0.12:${LAN_PORT}`;
+  test("holds the address, game, edition and version, in capitals, and reads back in any case", () => {
+    const code = roomCode(at, SELF, "tic-tac-toe");
+    expect(code).toBe(`${ROOM_SCHEME}192.168.0.12:${LAN_PORT}/TIC-TAC-TOE/FULL/${PROTOCOL}/${APP_VERSION.toUpperCase()}`);
+    expect(readRoomCode(code)).toEqual({ address: at, game: "tic-tac-toe", edition: "full", protocol: PROTOCOL, app: APP_VERSION.toUpperCase() });
+    expect(readRoomCode(` ${code.toLowerCase()}\n`)?.game).toBe("tic-tac-toe");
+    // Morris's id has an apostrophe: the code is written in bytes, and still read.
+    expect(readRoomCode(roomCode(at, SELF, "nine-men's-morris"))?.game).toBe("nine-men's-morris");
+    // Small enough for a phone across the table: the alphanumeric code is a version 3 symbol (29 modules).
+    expect(qrModules(code).length).toBeLessThanOrEqual(29);
+  });
+
+  test("survives a round trip through a QR picture", () => {
+    const code = roomCode(at, SELF, "chess"),
+      image = qrPixels(code, 4);
+    expect(readRoomCode(readQr(image.data, image.width, image.height)!)).toEqual(readRoomCode(code));
+  });
+
+  test("anything else is not a room's code: the QR way's codes, a bare address, a bad address", () => {
+    expect(readRoomCode("WTG1ABC.DEF")).toBeNull();
+    expect(readRoomCode(at)).toBeNull();
+    expect(readRoomCode("WTGROOM://192.168.0.300:47297/CHESS/FULL/1/X")).toBeNull();
+    expect(readRoomCode("WTGROOM://192.168.0.12:47297/CHESS/FULL")).toBeNull();
+    expect(readRoomCode("https://example.com/")).toBeNull();
+    // And the QR way does not take a room's code for one of its own.
+    expect(codeProblem(roomCode(at, SELF, "chess"))).not.toBeNull();
+  });
+
+  test("is checked as a room in the list is: another game, version or edition is refused with words", () => {
+    const check = (code: string, game = "tic-tac-toe", title = "오목") => joinProblem({ ...readRoomCode(code)!, title }, SELF, game);
+    expect(check(roomCode(at, SELF, "tic-tac-toe"))).toBeNull();
+    expect(check(roomCode(at, SELF, "gomoku"))).toBe("다른 게임: 오목");
+    expect(check(roomCode(at, { ...SELF, app: "2025.01-old" }, "tic-tac-toe"))).toBe("버전이 다릅니다");
+    expect(check(roomCode(at, { ...SELF, edition: "student" }, "tic-tac-toe"))).toBe("버전이 다릅니다 (학생용 앱)");
+    expect(check(roomCode(at, SELF, "tic-tac-toe").replace(`/${PROTOCOL}/`, `/${PROTOCOL + 1}/`))).toBe("버전이 다릅니다");
   });
 });

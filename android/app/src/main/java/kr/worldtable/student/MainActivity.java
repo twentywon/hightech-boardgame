@@ -26,7 +26,8 @@ import android.webkit.WebViewClient;
  * connects to other devices on the same Wi-Fi by WebRTC (no server) and may read a pairing QR code with the camera,
  * which is granted to the page only after the person allows it here. Inside the app the page needs no QR code:
  * {@link LanBridge} (`window.wtgNet`) hosts a room on a small server announced on the Wi-Fi and finds the rooms of
- * the others. The same code is packed as the student edition and as the full edition (Gradle flavors).
+ * the others; the host's window also shows the room's address as a QR code that a guest's QR 찍기 reads with the
+ * same camera permission, to join at once. The same code is packed as the student edition and as the full edition (Gradle flavors).
  */
 public class MainActivity extends Activity {
     private static final int CAMERA_REQUEST = 7;
