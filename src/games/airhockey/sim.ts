@@ -252,17 +252,19 @@ function strike(world: World, m: Body, side: 0 | 1) {
 }
 /**
  * One slice of time. Returns who scored in it (0 when the puck went into the far goal, 1 into mine), or null. With
- * `two` both mallets are hands (two at one screen) and neither has a speed limit.
+ * `two` both mallets are hands (two at one screen) and neither has a speed limit; over Wi-Fi it says for each side
+ * whether a hand drives it (`[true, false]`: side 0 a hand, side 1 the computer, as against the computer).
  */
-export function step(world: World, level: Level, two = false): 0 | 1 | null {
-  const { puck } = world;
+export function step(world: World, level: Level, two: boolean | [boolean, boolean] = false): 0 | 1 | null {
+  const { puck } = world,
+    hand = (side: number) => (Array.isArray(two) ? two[side] : side === 0 || two);
   world.mallets.forEach((m, side) => {
     const target = world.targets[side],
       dx = target.x - m.x,
       dz = target.z - m.z,
       far = Math.hypot(dx, dz),
       // A hand's mallet goes all the way to the hand; the computer's hand has its top speed.
-      most = side === 0 || two ? Infinity : LEVELS[level].speed * DT,
+      most = hand(side) ? Infinity : LEVELS[level].speed * DT,
       move = far > most ? most / far : 1,
       kept = keep(side as 0 | 1, m.x + dx * move, m.z + dz * move),
       [ox, oz] = [m.x, m.z];
@@ -314,4 +316,35 @@ export function step(world: World, level: Level, two = false): 0 | 1 | null {
     world.served = other;
   }
   return null;
+}
+
+/** What the computer keeps in mind between its looks (`think` keeps side 1's in the world itself). */
+export interface Mind {
+  look: number;
+  stray: number;
+  escape: 0 | 1 | 2;
+  escapeT: number;
+  escapeAt: number;
+}
+export const freshMind = (): Mind => ({ look: 0, stray: 0, escape: 0, escapeT: 0, escapeAt: 0 });
+const turned = (b: Body): Body => ({ x: -b.x, z: -b.z, vx: -b.vx, vz: -b.vz });
+/**
+ * The computer's hand for either side (over Wi-Fi it stands in for a person whose device dropped, whichever side):
+ * side 1 is `think` itself; side 0 is the same thinking on the table turned round, its own `mind` kept apart.
+ */
+export function thinkFor(world: World, side: 0 | 1, level: Level, mind: Mind, random: () => number = Math.random) {
+  if (side === 1) return think(world, level, random);
+  const t0 = world.targets[0],
+    seen: World = {
+      ...world,
+      puck: turned(world.puck),
+      mallets: [turned(world.mallets[1]), turned(world.mallets[0])],
+      targets: [{ x: -world.targets[1].x, z: -world.targets[1].z }, { x: -t0.x, z: -t0.z }],
+      half: world.half === 0 ? 1 : 0,
+      strikes: [world.strikes[1], world.strikes[0]],
+      ...mind,
+    };
+  think(seen, level, random);
+  world.targets[0] = { x: -seen.targets[1].x, z: -seen.targets[1].z };
+  Object.assign(mind, { look: seen.look, stray: seen.stray, escape: seen.escape, escapeT: seen.escapeT, escapeAt: seen.escapeAt });
 }

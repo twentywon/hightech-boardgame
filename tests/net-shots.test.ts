@@ -110,8 +110,8 @@ describe("the host's settled state", () => {
     const text = encode({ t: "move", round: 1, ply: 0, move: { from: 1, to: 2, extra: -1 }, seat: 0, salt: 5, settled: { a: [1.5, 2] } });
     expect(decode(text)).toMatchObject({ settled: { a: [1.5, 2] } });
     expect(decode(text.replace('{"a":[1.5,2]}', "[1]"))).toBeNull();
-    const live = encode({ t: "live", round: 1, ply: 3, move: { from: 100, to: 7, extra: 4 }, seat: 1 });
-    expect(decode(live)).toMatchObject({ t: "live", ply: 3, seat: 1 });
+    const live = encode({ t: "shot", round: 1, ply: 3, move: { from: 100, to: 7, extra: 4 }, seat: 1 });
+    expect(decode(live)).toMatchObject({ t: "shot", ply: 3, seat: 1 });
     expect(decode(live.replace('"ply":3', '"ply":-1'))).toBeNull();
   });
 });

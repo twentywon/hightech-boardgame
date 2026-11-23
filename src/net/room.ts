@@ -1,6 +1,6 @@
 import type { GameOptions, Move } from "../games/points/types";
 import { HOST_ONLY, Match, type NetRules } from "./match";
-import { APP_VERSION, PROTOCOL, decode, encode, type Message, type NetMove, type PersonInfo, type Request, type SeatInfo, type SeatKind, type StartInfo } from "./protocol";
+import { APP_VERSION, PROTOCOL, decode, encode, type LiveMessage, type Message, type NetMove, type PersonInfo, type Request, type SeatInfo, type SeatKind, type StartInfo } from "./protocol";
 import { newSeed } from "./random";
 
 /**
@@ -79,6 +79,8 @@ abstract class Room<S> {
   /** The request waiting for answers, and who has still to answer. */
   pending: (Ask & { waiting: string[] }) | null = null;
   events: RoomEvents<S> = {};
+  /** A real-time table's messages (`live`, `input`, `hold`), for its session (`live.ts`); `from` is the guest's id on the host. */
+  onlive: ((message: LiveMessage, from: string | null) => void) | null = null;
   protected timer: ReturnType<typeof setInterval> | null = null;
   abstract readonly host: boolean;
   constructor(
@@ -231,11 +233,11 @@ export class HostRoom<S> extends Room<S> {
         if ("text" in tried) return this.send(link, { t: "refuse", round: m.round, ply: m.ply, text: tried.text });
         return this.record(m.move, seat!, salt);
       }
-      case "live": {
+      case "shot": {
         // A shot on its way, from the seat to move only: passed on to everyone else, kept nowhere.
         const seat = this.seatOf(id);
         if (!this.match || !this.start || m.round !== this.start.round || m.ply !== this.match.ply || seat === null || seat !== this.match.toMove) return;
-        this.broadcast({ t: "live", round: m.round, ply: m.ply, move: m.move, seat }, link);
+        this.broadcast({ t: "shot", round: m.round, ply: m.ply, move: m.move, seat }, link);
         return this.events.previewed?.(m.move, seat);
       }
       case "request": {
@@ -248,6 +250,10 @@ export class HostRoom<S> extends Room<S> {
       case "ping":
         if (!m.echo) this.send(link, { t: "ping", at: m.at, echo: true });
         return;
+      // A real-time table's controls and pauses go to its session (`live.ts`), outside the move list.
+      case "input":
+      case "hold":
+        return this.onlive?.(m, id);
       case "bye":
         this.links.delete(link);
         link.onclose = null;
@@ -304,7 +310,7 @@ export class HostRoom<S> extends Room<S> {
   /** My shot as it is being made (`live`), for everyone else to watch; it is a move only once `play` makes it. */
   preview(move: Move) {
     if (!this.match || !this.start || this.match.toMove !== this.mySeat) return;
-    this.broadcast({ t: "live", round: this.start.round, ply: this.match.ply, move, seat: this.mySeat! });
+    this.broadcast({ t: "shot", round: this.start.round, ply: this.match.ply, move, seat: this.mySeat! });
   }
   /** A line for every status but the one of `skip` (a returning person is not told of their own return). */
   private tell(text: string, skip?: Link) {
@@ -407,6 +413,10 @@ export class HostRoom<S> extends Room<S> {
     if (!mine) return "상대 차례입니다.";
     this.record(move, as, salt);
     return null;
+  }
+  /** A real-time table's message to every guest (`live.ts`). */
+  sendLive(message: LiveMessage) {
+    this.broadcast(message);
   }
   /** Adds a move taken, its chance under `salt`, and tells everyone (the salt with it). */
   private record(move: Move, seat: number, salt: number) {
@@ -612,7 +622,7 @@ export class GuestRoom<S> extends Room<S> {
       }
       case "refuse":
         return this.events.refused?.(m.text);
-      case "live":
+      case "shot":
         if (!this.match || !this.start || m.round !== this.start.round || m.ply !== this.match.ply) return;
         return this.events.previewed?.(m.move, m.seat);
       case "request": {
@@ -646,7 +656,15 @@ export class GuestRoom<S> extends Room<S> {
       case "ping":
         if (!m.echo) this.say({ t: "ping", at: m.at, echo: true });
         return;
+      // A real-time table's state and pauses go to its session (`live.ts`).
+      case "live":
+      case "hold":
+        return this.onlive?.(m, null);
     }
+  }
+  /** A real-time table's message to the host (`live.ts`). */
+  sendLive(message: LiveMessage) {
+    if (this.online) this.say(message);
   }
   /** Whether a channel to the host is open. */
   get online() {
@@ -680,7 +698,7 @@ export class GuestRoom<S> extends Room<S> {
   /** My shot as it is being made (`live`), sent to the host for everyone else to watch. */
   preview(move: Move) {
     if (!this.online || !this.match || !this.start || this.match.toMove !== this.mySeat) return;
-    this.say({ t: "live", round: this.start.round, ply: this.match.ply, move, seat: this.mySeat! });
+    this.say({ t: "shot", round: this.start.round, ply: this.match.ply, move, seat: this.mySeat! });
   }
   request(kind: Request): string | null {
     if (!this.online) return "방장과 연결되어 있지 않습니다.";
