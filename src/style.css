@@ -3532,6 +3532,33 @@ dialog.net-lobby .net-scan video { width:min(100%, 320px);aspect-ratio:4 / 3;bor
 dialog.net-lobby .net-pair-note { margin:8px 0 0;font-size:13px;color:var(--ink, #16181a); }
 dialog.net-lobby .net-pair-note:empty { display:none; }
 dialog.net-lobby #net-start { width:100%;margin-top:14px;justify-content:center; }
+/* Inside the Android app: the rooms on the Wi-Fi, a typed address, the host's address, the QR way as a link. */
+dialog.net-lobby .net-link { min-height:32px;padding:0 4px;border:0;background:none;color:var(--ink-soft, #5c5a55);font:inherit;font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer; }
+dialog.net-lobby .net-address { display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:10px 0 0;padding:10px 12px;border-radius:14px;background:#efe9dc;font-size:12.5px;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-address span { flex:0 1 auto; }
+dialog.net-lobby .net-address .net-link { margin-left:auto; }
+dialog.net-lobby .net-address b { font-family:var(--mono, ui-monospace, monospace);font-size:17px;letter-spacing:.02em;color:var(--ink, #16181a); }
+dialog.net-lobby .net-find { margin-top:8px; }
+dialog.net-lobby .net-find-head { display:flex;align-items:center;justify-content:space-between;gap:8px; }
+dialog.net-lobby .net-find-head h3 { margin:6px 0; }
+dialog.net-lobby .net-rooms { display:grid;gap:6px;margin:0;padding:0;list-style:none; }
+dialog.net-lobby .net-rooms > li { margin:0; }
+dialog.net-lobby .net-room { display:grid;grid-template-columns:minmax(0, 1fr) auto;align-items:center;gap:2px 12px;width:100%;min-height:58px;padding:10px 14px;border:1.5px solid var(--line, #d9d3c4);border-radius:14px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;text-align:left;cursor:pointer;white-space:normal !important; }
+dialog.net-lobby .net-room:hover:not(:disabled) { border-color:#16181a; }
+dialog.net-lobby .net-room-title { display:flex;align-items:baseline;gap:8px;font-size:16px;white-space:nowrap; }
+dialog.net-lobby .net-room-title small { padding:1px 8px;border-radius:999px;background:#16181a;color:#fff;font-size:11px;font-weight:600; }
+dialog.net-lobby .net-room-meta { grid-column:1;font-size:12.5px;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-room-go { grid-column:2;grid-row:1 / span 2;min-height:34px;padding:0 14px;border-radius:999px;background:#16181a;color:#fff;font-size:13px;font-weight:700;line-height:34px; }
+dialog.net-lobby .net-room-why { grid-column:2;grid-row:1 / span 2;font-size:12px;font-weight:600;color:#a33a22; }
+dialog.net-lobby .net-room.other { opacity:1;background:#f4f1ea;color:var(--ink-faint, #8a8780); }
+dialog.net-lobby .net-room.other .net-room-meta { color:var(--ink-faint, #8a8780); }
+dialog.net-lobby .net-room.mine { border-color:#16181a;box-shadow:inset 0 0 0 1px #16181a; }
+dialog.net-lobby .net-rooms-empty { padding:14px;border:1.5px dashed var(--line, #d9d3c4);border-radius:14px;font-size:13px;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-dial { display:grid;grid-template-columns:auto minmax(0, 1fr) auto;align-items:center;gap:8px;margin-top:10px; }
+dialog.net-lobby .net-dial label { font-size:12px;font-weight:600;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-dial input { font-family:var(--mono, ui-monospace, monospace); }
+dialog.net-lobby .net-dial .net-go { min-height:40px;padding:0 16px;border:1.5px solid #16181a;border-radius:999px;background:#16181a;color:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer; }
+dialog.net-lobby .net-find > .net-link, dialog.net-lobby .net-pair > .net-link { margin-top:4px; }
 dialog.setup-dialog .net-new { display:grid;gap:10px; }
 dialog.setup-dialog .net-new p { margin:0; }
 dialog.setup-dialog .net-new .net-leave { min-height:44px;border:1.5px solid var(--line, #d9d3c4);border-radius:999px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-weight:600;cursor:pointer; }
@@ -3555,6 +3582,11 @@ dialog.setup-dialog .net-new .net-leave { min-height:44px;border:1.5px solid var
   dialog.net-lobby .net-code textarea { font-size:11px; }
   dialog.net-lobby .dialog-actions { margin-top:10px; }
   dialog.net-lobby .dialog-actions button { min-height:38px; }
+  dialog.net-lobby .net-find-head h3 { margin:2px 0; }
+  dialog.net-lobby .net-address b { font-size:15px; }
+  dialog.net-lobby .net-room { min-height:50px;padding:7px 12px; }
+  dialog.net-lobby .net-address { margin-top:6px;padding:6px 10px; }
+  dialog.net-lobby .net-dial { margin-top:6px; }
   .game-layout .net-ask { top:40px;padding:8px 12px; }
 }
 html[data-capture] .game-layout .net-ask { display:none !important; }

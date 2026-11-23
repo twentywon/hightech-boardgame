@@ -4,6 +4,7 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.wifi.WifiManager;
 import android.os.Build;
@@ -23,7 +24,9 @@ import android.webkit.WebViewClient;
  * The whole app: one full-screen WebView showing the student edition's single HTML file from the app's assets.
  * The page needs nothing from the network; links that lead out of it are not followed. For 와이파이 여럿이 the page
  * connects to other devices on the same Wi-Fi by WebRTC (no server) and may read a pairing QR code with the camera,
- * which is granted to the page only after the person allows it here.
+ * which is granted to the page only after the person allows it here. Inside the app the page needs no QR code:
+ * {@link LanBridge} (`window.wtgNet`) hosts a room on a small server announced on the Wi-Fi and finds the rooms of
+ * the others. The same code is packed as the student edition and as the full edition (Gradle flavors).
  */
 public class MainActivity extends Activity {
     private static final int CAMERA_REQUEST = 7;
@@ -32,6 +35,8 @@ public class MainActivity extends Activity {
     private PermissionRequest pendingCamera;
     /** Lets the Wi-Fi hand multicast to the app while it is on screen: mDNS names of the other devices need it. */
     private WifiManager.MulticastLock multicast;
+    /** The Wi-Fi rooms of 와이파이 여럿이 (hosting, finding, connections). */
+    private LanBridge lan;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -76,10 +81,18 @@ public class MainActivity extends Activity {
                 if (pendingCamera == request) pendingCamera = null;
             }
         });
+        lan = new LanBridge(this, web);
+        web.addJavascriptInterface(lan, "wtgNet");
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return !"file".equals(request.getUrl().getScheme());
+            }
+
+            /** A page opened anew owns none of the old page's rooms or connections. */
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                lan.reset();
             }
         });
         setContentView(web);
@@ -164,7 +177,21 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        lan.onStart();
+    }
+
+    /** Off screen: the Wi-Fi room stays open for a while, then closes until the app comes back (`LanBridge`). */
+    @Override
+    protected void onStop() {
+        lan.onStop();
+        super.onStop();
+    }
+
+    @Override
     protected void onDestroy() {
+        lan.destroy();
         web.destroy();
         super.onDestroy();
     }

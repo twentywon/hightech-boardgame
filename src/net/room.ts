@@ -130,6 +130,19 @@ export class HostRoom<S> extends Room<S> {
   private heard = new Map<Link, number>();
   private asks = 0;
   private closed = false;
+  /**
+   * Called after the people, the seats or the game changed, and once the room is left, besides `events` (which the
+   * screens set): the app's announcement of the room on the Wi-Fi (`lan.ts`) follows the room here.
+   */
+  onstate: (() => void) | null = null;
+  /** Whether the room was left (closed for everyone). */
+  get left() {
+    return this.closed;
+  }
+  private changed() {
+    this.events.changed?.();
+    this.onstate?.();
+  }
   constructor(setup: HostSetup, rules: NetRules<S>, me = personId()) {
     super(me, rules);
     this.game = setup.game;
@@ -253,7 +266,7 @@ export class HostRoom<S> extends Room<S> {
     this.broadcast(this.seatsMessage());
     if (this.match) this.resync(link);
     this.tell(back ? `${who.name} 님이 다시 연결되었습니다.` : `${who.name} 님이 들어왔습니다.`);
-    this.events.changed?.();
+    this.changed();
   }
   private resync(link: Link) {
     if (this.match && this.start) this.send(link, { t: "resync", start: this.start, moves: this.match.moves });
@@ -282,7 +295,7 @@ export class HostRoom<S> extends Room<S> {
     if (this.pending?.waiting.includes(who.id) || this.pending?.from === who.id) this.dropRequest(`${who.name} 님이 없어 요청을 취소했습니다.`);
     this.broadcast(this.seatsMessage());
     this.tell(text);
-    this.events.changed?.();
+    this.changed();
   }
   private lastBeat = Date.now();
   private beat() {
@@ -309,7 +322,7 @@ export class HostRoom<S> extends Room<S> {
     if (was !== null) this.seats[was] = { ...this.seats[was], kind: "open", person: null };
     if (seat !== null && target) this.seats[seat] = { ...this.seats[seat], kind: "person", person: id };
     this.broadcast(this.seatsMessage());
-    this.events.changed?.();
+    this.changed();
   }
   /** The host makes a seat open, a computer's or closed (as the game allows). */
   setKind(seat: number, kind: SeatKind) {
@@ -317,7 +330,7 @@ export class HostRoom<S> extends Room<S> {
     if (this.match || !s || (kind !== "open" && !s.kinds.includes(kind))) return;
     this.seats[seat] = { ...s, kind, person: null };
     this.broadcast(this.seatsMessage());
-    this.events.changed?.();
+    this.changed();
   }
   /** Why the game cannot begin yet, or null. `least`: the fewest people seated; `closable`: an open seat counts as closed. */
   startProblem(least = 2): string | null {
@@ -344,6 +357,7 @@ export class HostRoom<S> extends Room<S> {
     this.broadcast(this.seatsMessage());
     this.broadcast({ t: "start", start: this.start });
     this.events.started?.();
+    this.onstate?.();
   }
   /** A move made on the host's device: its own seat's, a host-only one, or a computer seat's. Null, or why not. */
   play(move: Move, seat: number): string | null {
@@ -427,6 +441,7 @@ export class HostRoom<S> extends Room<S> {
     }
     this.links.clear();
     if (this.timer) clearInterval(this.timer);
+    this.onstate?.();
   }
 }
 

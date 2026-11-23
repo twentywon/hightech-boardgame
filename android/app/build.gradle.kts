@@ -1,5 +1,6 @@
-// The student edition of World Table Games as an Android app: one WebView showing the single exported HTML
-// (copied into assets/index.html by build-apk.sh). No library beyond the Android platform itself.
+// World Table Games as an Android app: one WebView showing the single exported HTML (copied into
+// pages/<edition>/index.html by build-apk.sh). Two flavors share the code: `student` (kr.worldtable.student, the
+// student edition) and `full` (kr.worldtable.games, every game). No library beyond the Android platform itself.
 import java.util.Properties
 
 plugins {
@@ -30,6 +31,25 @@ android {
                 keyPassword = System.getenv("WTG_KEYSTORE_PASSWORD")
             }
         }
+    }
+
+    // One app per edition, installable side by side; both are signed with the same key.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("student") {
+            dimension = "edition"
+            applicationId = "kr.worldtable.student"
+        }
+        create("full") {
+            dimension = "edition"
+            applicationId = "kr.worldtable.games"
+        }
+    }
+    // Each edition's page lives outside the sources (it is a build product); main has no assets of its own.
+    sourceSets {
+        getByName("main").assets.setSrcDirs(listOf<String>())
+        getByName("student").assets.setSrcDirs(listOf("../pages/student"))
+        getByName("full").assets.setSrcDirs(listOf("../pages/full"))
     }
 
     buildTypes {

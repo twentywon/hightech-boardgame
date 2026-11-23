@@ -14,7 +14,8 @@
     "build:html": "npm run build && node scripts/export-html.mjs",
     "build:student": "tsc --noEmit && VITE_EDITION=student vite build --outDir dist-student",
     "build:html:student": "npm run build:student && EXPORT_DIR=dist-student EXPORT_NAME=world-table-games-student.html node scripts/export-html.mjs",
-    "build:apk": "npm run build:html:student && bash android/build-apk.sh",
+    "build:apk": "npm run build:html:student && bash android/build-apk.sh student",
+    "build:apk:full": "npm run build:html && bash android/build-apk.sh full",
     "chess:measure": "vitest run --config chess-performance.config.ts",
     "e2e": "playwright test --trace off && PW_WORKERS=1 playwright test --trace off --grep @alone"
   },

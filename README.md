@@ -24,6 +24,7 @@ npm test
 npm run build:html            # 원본: dist/world-table-games.html (모든 게임)
 npm run build:html:student    # 학생용: dist-student/world-table-games-student.html
 npm run build:apk             # 학생용 html을 만든 뒤 dist-student/world-table-games-student.apk
+npm run build:apk:full        # 원본 html을 만든 뒤 dist/world-table-games.apk (앱 이름 '월드 테이블 게임')
 ```
 
 APK는 `android/`의 작은 안드로이드 앱(전체 화면 WebView 하나, 가로 화면, 인터넷 권한 없음)에 학생용 html을 넣어 만듭니다. JDK 17 이상, Gradle 8.13 이상, Android SDK(platform 35, build-tools 35)가 필요하고 `ANDROID_HOME`으로 SDK 위치를 알려 줍니다. 서명 키는 `WTG_KEYSTORE`와 `WTG_KEYSTORE_PASSWORD`로 주고, 없으면 `~/.wtg/`에 한 번 만들어 씁니다. 앱을 업데이트해 덮어 설치하려면 같은 키로 서명해야 하므로 그 키를 잘 보관하세요. 휴대폰의 뒤로 가기 키는 브라우저의 뒤로 가기처럼 테이블에서 컬렉션으로 돌아갑니다.
@@ -67,6 +68,8 @@ CHROMIUM_PATH=/usr/bin/chromium npm run test:e2e
 3. 참가자는 **참가하기** → 카메라로 방장 QR을 읽거나 코드를 붙여 넣고 **다음**을 누르면 답 QR이 뜹니다.
 4. 방장이 그 답 QR을 읽거나 붙여 넣고 **연결**을 누릅니다. 사람마다 2~4를 되풀이합니다.
 5. 대기실에서 자리를 고르고(빈자리는 컴퓨터로 채울 수 있음) 방장이 **시작**을 누릅니다.
+
+안드로이드 앱(APK)끼리는 QR 없이 됩니다: 방장이 방을 만들면 같은 와이파이의 다른 앱 **참가하기** 목록에 방이 뜨고, 누르면 들어갑니다(목록에 안 보이면 방장 화면의 주소를 입력). 끊기면 목록에서 같은 방을 다시 누르면 원래 자리로 돌아갑니다.
 
 각자 자기 기기에서 자기 차례에 둡니다. 무르기와 새 게임은 다른 사람이 수락해야 합니다. 지금은 체스·오목·리버시·장기(각자 자기 쪽에서 판을 봄)와, 정보가 다 보이고 운이 없는 보드게임(바둑, 체커, 모리스, 고누, 헥사 세균전, 헥스, 닷츠 앤 박시스, 만칼라, 아마존스, 여우와 거위, 바이킹 체스, 님 게임, 틱택토, 사목, 돌림 오목, 토끼와 사냥개, 길막기, 레이저 체스, 차이니즈 체커, 구슬 밀기)과 헥스 정복전 2~4인에서 됩니다. 학교·회사처럼 기기끼리 통신을 막아 둔 와이파이에서는 연결되지 않으며, 집 와이파이나 휴대폰 핫스팟에서는 대체로 됩니다.
 

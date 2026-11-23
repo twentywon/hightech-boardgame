@@ -4,7 +4,9 @@ import { qrSvg } from "../net/qr";
 import { codeProblem, PREFIX } from "../net/sdp";
 import { cameraProblem, scan } from "../net/scan";
 import type { NetRules } from "../net/match";
-import type { SeatInfo, SeatKind } from "../net/protocol";
+import { APP_VERSION, type SeatInfo, type SeatKind } from "../net/protocol";
+import { appLan, joinProblem, typedAddress, LAN_PORT, type RoomAd } from "../net/lan";
+import { EDITION } from "../core/catalog";
 import type { GameOptions } from "../games/points/types";
 
 /**
@@ -13,6 +15,11 @@ import type { GameOptions } from "../games/points/types";
  * that). Every code is also shown as text with a copy button and taken pasted (no camera: a page opened from a file,
  * a browser test). Before a game it is the lobby; during one, the 방 button over the table opens it again (people
  * and their connection, the host's 다음 사람 연결 for someone coming back, a guest's 다시 참가).
+ *
+ * Inside the Android app (`window.wtgNet`, `src/net/lan.ts`) no code is needed: 방 만들기 opens the room at once and
+ * announces it on the Wi-Fi (its address shown for typing where announcements do not get through), and 참가하기
+ * lists the rooms found, joined with one tap; a guest that dropped taps its room again to return to its seat. The
+ * QR way stays there behind QR로 연결.
  */
 export type AnyRoom<S> = HostRoom<S> | GuestRoom<S>;
 export interface LobbyOptions<S> {
@@ -65,9 +72,14 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     pairing: { link: PeerLink; accept?: (answer: string) => Promise<string | null>; code: string } | null = null,
     pairNote = "",
     busy = false;
+  // The app's Wi-Fi rooms (null in a plain browser), whether the QR way is chosen there, and the search for rooms.
+  const lan = appLan({ app: APP_VERSION, edition: EDITION });
+  let qr = !lan,
+    stopFind: (() => void) | null = null;
+  const unwatch = lan?.watch(() => lanChanged()) ?? null;
   const d = document.createElement("dialog");
   d.className = "setup-dialog net-lobby";
-  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES · 와이파이 여럿이</div><h2></h2><p class="setup-note">같은 와이파이에 있는 기기끼리 QR 코드로 바로 연결합니다. 인터넷도 서버도 쓰지 않습니다.</p><div class="dialog-body net-body"></div><div class="dialog-actions"><button id="net-cancel">← 뒤로</button></div>`;
+  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES · 와이파이 여럿이</div><h2></h2><p class="setup-note">같은 와이파이에 있는 기기끼리 ${lan ? "" : "QR 코드로 "}바로 연결합니다. 인터넷도 서버도 쓰지 않습니다.</p><div class="dialog-body net-body"></div><div class="dialog-actions"><button id="net-cancel">← 뒤로</button></div>`;
   d.querySelector("h2")!.textContent = o.title;
   const body = d.querySelector<HTMLElement>(".net-body")!,
     cancel = d.querySelector<HTMLButtonElement>("#net-cancel")!;
@@ -79,6 +91,8 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     if (closed) return;
     closed = true;
     stopScan?.();
+    stopFind?.();
+    unwatch?.();
     // A pairing never finished is let go (a link that opened belongs to the room by now).
     if (pairing && !(pairing.link as PeerLink).open) pairing.link.close();
     pairing = null;
@@ -127,53 +141,155 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
   const pasteBlock = (id: string, what: string, go: string, goId: string) =>
     `<div class="net-paste"><label>${what}<textarea id="${id}" rows="2" spellcheck="false" autocapitalize="characters" placeholder="${PREFIX}…"></textarea></label><div class="net-paste-actions"><button class="net-scan-start" data-for="${id}">카메라로 읽기</button><button id="${goId}" class="net-go">${go}</button></div><div class="net-scan" hidden><video playsinline muted></video><button class="net-scan-stop">그만 읽기</button></div></div>`;
 
+  /** The host's address for typing (inside the app), with the way to the QR codes while they are not shown. */
+  const addressBlock = () =>
+    lan
+      ? `<div class="net-address"><span>목록에 안 보이면 참가하는 기기의 주소 입력에:</span><b id="net-address">${escape(lan.address || (lan.problem ? "주소 없음" : "주소를 여는 중…"))}</b>${qr ? "" : `<button id="net-qr" class="net-link">QR로 연결</button>`}</div>${lan.problem ? `<p class="net-problem net-lan-problem">${escape(lan.problem)}</p>` : ""}`
+      : "";
+  /** The person id of the host this guest was with (its room in the list is marked). */
+  const myHost = () => room?.people.find((p) => p.host)?.id ?? "";
+  /** One room found on the Wi-Fi: its title, game and people; another version's or game's is shown greyed. */
+  const roomItem = (ad: RoomAd) => {
+    const problem = joinProblem(ad, lan!.self, o.game),
+      mine = !!myHost() && ad.id === myHost();
+    return `<li><button class="net-room${problem ? " other" : ""}${mine ? " mine" : ""}" data-room="${escape(ad.name)}" ${problem ? "disabled" : ""}><span class="net-room-title"><b>${escape(ad.host)}의 방</b>${mine ? "<small>내가 있던 방</small>" : ""}</span><span class="net-room-meta">${escape(ad.title)} · ${ad.people}/${ad.seats}명${ad.playing ? " · 게임 중" : ""}</span>${problem ? `<small class="net-room-why">${escape(problem)}</small>` : `<span class="net-room-go">${mine ? "돌아가기" : "들어가기"}</span>`}</button></li>`;
+  };
+  const roomList = () => {
+    const rooms = lan!.list(o.game);
+    return `<ul class="net-rooms" aria-label="같은 와이파이의 방">${
+      rooms.length
+        ? rooms.map(roomItem).join("")
+        : `<li class="net-rooms-empty">${escape(lan!.findProblem || "방을 찾는 중… 같은 와이파이에서 방장이 방 만들기를 누르면 여기에 나옵니다.")}</li>`
+    }</ul>`;
+  };
+  /** The rooms on the Wi-Fi, a field for a typed address, and the way to the QR codes. */
+  const findBlock = () =>
+    `<section class="net-find"><div class="net-find-head"><h3>같은 와이파이의 방</h3><button id="net-refind" class="net-link">다시 찾기</button></div>${roomList()}<div class="net-dial"><label for="net-address-in">주소 입력</label><input id="net-address-in" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.0.12:${LAN_PORT}"><button id="net-dial" class="net-go" ${busy ? "disabled" : ""}>연결</button></div><p class="net-pair-note" role="status">${escape(pairNote)}</p><button id="net-qr" class="net-link">QR로 연결</button></section>`;
+
   function render() {
     if (closed) return;
     stopScan?.();
     stopScan = null;
-    const net = webrtcAvailable();
-    let html = "";
+    const net = webrtcAvailable() || !!lan;
+    // What is being typed stays through a redraw.
+    const typed = body.querySelector<HTMLInputElement>("#net-address-in")?.value ?? "";
+    let html = "",
+      finding = false;
     if (!room) {
       html = net
-        ? `<label class="net-name-field">내 이름<input id="net-name" maxlength="12" value="${escape(lastName)}" placeholder="플레이어" autocomplete="nickname"></label><div class="net-roles"><button id="net-host" class="net-role"><b>방 만들기</b><small>이 기기가 방장이 됩니다. 다른 기기를 한 대씩 연결하고 시작합니다.</small></button><button id="net-join" class="net-role"><b>참가하기</b><small>방장의 기기에 나온 QR 코드를 읽어 들어갑니다. 같은 게임을 고른 뒤 누르세요.</small></button></div>`
+        ? `<label class="net-name-field">내 이름<input id="net-name" maxlength="12" value="${escape(lastName)}" placeholder="플레이어" autocomplete="nickname"></label><div class="net-roles"><button id="net-host" class="net-role"><b>방 만들기</b><small>${lan ? "이 기기가 방장이 됩니다. 같은 와이파이의 기기들이 방 목록에서 바로 들어옵니다." : "이 기기가 방장이 됩니다. 다른 기기를 한 대씩 연결하고 시작합니다."}</small></button><button id="net-join" class="net-role"><b>참가하기</b><small>${lan ? "같은 와이파이에 열린 방 목록에서 골라 들어갑니다. 같은 게임을 고른 뒤 누르세요." : "방장의 기기에 나온 QR 코드를 읽어 들어갑니다. 같은 게임을 고른 뒤 누르세요."}</small></button></div>`
         : `<p class="net-problem">이 브라우저에서는 기기끼리 바로 연결(WebRTC)을 쓸 수 없습니다. 최신 Chrome에서 열어 주세요.</p>`;
     } else if (room.host) {
       const h = room as HostRoom<S>,
         problem = h.startProblem(o.least);
       // While a device is being paired its codes come first (the QR code must be in view to be read).
       const status = started()
-          ? `<p class="net-status">게임 중입니다. 연결이 끊긴 사람은 다음 사람 연결로 다시 들어올 수 있습니다.</p>`
-          : `<p class="net-status">방을 열었습니다. 다음 사람 연결을 눌러 기기를 한 대씩 연결하세요.</p>`,
+          ? `<p class="net-status">게임 중입니다. 연결이 끊긴 사람은 ${lan ? "방 목록에서 이 방을 다시 누르면 같은 자리로 돌아옵니다" : "다음 사람 연결로 다시 들어올 수 있습니다"}.</p>`
+          : `<p class="net-status">${lan ? "방을 열었습니다. 같은 와이파이의 기기에서 이 게임의 참가하기를 누르면 이 방이 보입니다." : "방을 열었습니다. 다음 사람 연결을 눌러 기기를 한 대씩 연결하세요."}</p>`,
         room_ = `<h3>자리</h3>${seatList()}<h3>사람 <small>${room.people.length}/8</small></h3>${peopleList()}`,
         pair = pairing
           ? `<section class="net-pair"><h3>다음 사람 연결</h3><ol class="net-steps"><li>참가할 기기에서 같은 게임 → 와이파이 여럿이 → 참가하기를 누르고 이 QR 코드를 읽습니다.</li><li>그 기기에 나온 답 QR 코드를 이 기기로 읽거나, 답 코드를 붙여 넣고 연결을 누릅니다.</li></ol>${codeBlock(pairing.code, "net-offer", "초대 코드")}${pasteBlock("net-answer-in", "참가하는 기기의 답 코드", "연결", "net-connect")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
-          : `<button id="net-invite" class="net-invite" ${busy || room.people.length >= 8 ? "disabled" : ""}>${busy ? "초대 코드를 만드는 중…" : "다음 사람 연결"}</button>${pairNote ? `<p class="net-pair-note" role="status">${escape(pairNote)}</p>` : ""}`,
+          : qr
+            ? `<button id="net-invite" class="net-invite" ${busy || room.people.length >= 8 ? "disabled" : ""}>${busy ? "초대 코드를 만드는 중…" : "다음 사람 연결"}</button>${pairNote ? `<p class="net-pair-note" role="status">${escape(pairNote)}</p>` : ""}`
+            : pairNote
+              ? `<p class="net-pair-note" role="status">${escape(pairNote)}</p>`
+              : "",
         begin = started() ? "" : `<p class="net-problem" ${problem ? "" : "hidden"}>${escape(problem ?? "")}</p><button id="net-start" class="primary" ${problem ? "disabled" : ""}>시작</button>`;
-      html = pairing ? pair + room_ + begin : status + room_ + pair + begin;
+      html = pairing ? pair + room_ + begin : status + addressBlock() + room_ + pair + begin;
     } else {
       const g = room as GuestRoom<S>;
+      finding = !!lan && !qr && !g.online && !pairing;
       const status = g.online
         ? started()
           ? "게임 중입니다."
           : `${escape(g.hostName)} 님의 방에 들어왔습니다. 자리를 고르고 방장이 시작하기를 기다리세요.`
         : pairing
           ? "아래 답 QR 코드를 방장의 기기로 읽게 하거나, 답 코드를 복사해 방장에게 보내세요. 연결되면 자리가 나옵니다."
-          : g.match
-            ? `${escape(g.reason || "방장과의 연결이 끊겼습니다.")} 방장이 다음 사람 연결을 누르면 새 초대 코드로 다시 참가하세요.`
-            : g.reason
-              ? `${escape(g.reason)} 다시 하려면 새 초대 코드를 넣으세요.`
-              : "방장의 기기에 나온 초대 QR 코드를 읽거나, 초대 코드를 붙여 넣으세요.";
+          : finding
+            ? g.match
+              ? `${escape(g.reason || "방장과의 연결이 끊겼습니다.")} 목록에서 방을 다시 누르면 같은 자리로 돌아갑니다.`
+              : g.reason
+                ? `${escape(g.reason)} 목록에서 방을 다시 골라 주세요.`
+                : "같은 와이파이에 열린 방입니다. 들어갈 방을 누르세요."
+            : g.match
+              ? `${escape(g.reason || "방장과의 연결이 끊겼습니다.")} 방장이 다음 사람 연결을 누르면 새 초대 코드로 다시 참가하세요.`
+              : g.reason
+                ? `${escape(g.reason)} 다시 하려면 새 초대 코드를 넣으세요.`
+                : "방장의 기기에 나온 초대 QR 코드를 읽거나, 초대 코드를 붙여 넣으세요.";
       html =
         `<p class="net-status" role="status">${status}</p>` +
         (g.online
           ? `<h3>자리</h3>${seatList()}<h3>사람</h3>${peopleList()}`
           : pairing
             ? `<section class="net-pair">${codeBlock(pairing.code, "net-answer", "답 코드")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
-            : `<section class="net-pair">${pasteBlock("net-offer-in", "방장의 초대 코드", "다음", "net-accept")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`);
+            : finding
+              ? findBlock()
+              : `<section class="net-pair">${pasteBlock("net-offer-in", "방장의 초대 코드", "다음", "net-accept")}<p class="net-pair-note" role="status">${escape(pairNote)}</p>${lan ? `<button id="net-list" class="net-link">방 목록으로</button>` : ""}</section>`);
+    }
+    // The app looks for rooms only while their list is shown.
+    if (finding && !stopFind) stopFind = lan!.find();
+    else if (!finding && stopFind) {
+      stopFind();
+      stopFind = null;
     }
     body.innerHTML = html;
+    const field = body.querySelector<HTMLInputElement>("#net-address-in");
+    if (field && typed) field.value = typed;
     cancel.textContent = started() ? "닫기" : "← 뒤로";
     bind();
+  }
+  /** The app's rooms or address changed: only those parts are drawn again (a typed address stays). */
+  function lanChanged() {
+    if (closed || !lan) return;
+    const list = body.querySelector(".net-rooms");
+    if (list) {
+      list.outerHTML = roomList();
+      bindRooms();
+    }
+    const address = body.querySelector(".net-address");
+    if (address) {
+      body.querySelector(".net-lan-problem")?.remove();
+      address.outerHTML = addressBlock();
+      onPress("#net-qr", chooseQr);
+    }
+  }
+  function bindRooms() {
+    body.querySelectorAll<HTMLButtonElement>(".net-room").forEach(
+      (b) =>
+        (b.onclick = () => {
+          const ad = lan?.rooms.get(b.dataset.room ?? "");
+          if (ad && !joinProblem(ad, lan!.self, o.game)) join(ad.address);
+        }),
+    );
+  }
+  /** The QR way inside the app: the host's next invite code, or the guest's field for one. */
+  function chooseQr() {
+    qr = true;
+    pairNote = "";
+    if (room?.host) return startInvite();
+    render();
+  }
+  /** A guest joins the room at `address` (a tapped room, or one typed). */
+  function join(address: string) {
+    const g = guest();
+    if (!g || !lan || busy) return;
+    busy = true;
+    note("연결하는 중…");
+    body.querySelectorAll<HTMLButtonElement>(".net-room, #net-dial").forEach((b) => (b.disabled = true));
+    lan.dial(address).then(
+      (link) => {
+        busy = false;
+        if (closed) return link.close();
+        pairNote = "";
+        g.connect(link as Link);
+        render();
+      },
+      (error: Error) => {
+        busy = false;
+        pairNote = `연결하지 못했습니다(${error.message}). 같은 와이파이에 있는지, 방이 아직 열려 있는지 확인하세요.`;
+        render();
+      },
+    );
   }
 
   const onPress = (selector: string, fn: () => void) => {
@@ -185,6 +301,8 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
       lastName = cleanName(body.querySelector<HTMLInputElement>("#net-name")!.value);
       room = new HostRoom({ game: o.game, title: o.title, name: lastName, variant: o.variant, options: o.options, seats: o.seats }, o.rules);
       o.opened(room);
+      // Inside the app the room is open to the Wi-Fi at once.
+      lan?.host(room as HostRoom<unknown>);
       render();
     });
     onPress("#net-join", () => {
@@ -197,6 +315,21 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     onPress("#net-connect", () => takeAnswer(body.querySelector<HTMLTextAreaElement>("#net-answer-in")!.value));
     onPress("#net-accept", () => takeOffer(body.querySelector<HTMLTextAreaElement>("#net-offer-in")!.value));
     onPress("#net-start", () => host()?.begin());
+    onPress("#net-qr", chooseQr);
+    onPress("#net-list", () => {
+      qr = false;
+      pairNote = "";
+      render();
+    });
+    onPress("#net-refind", () => lan?.refind());
+    onPress("#net-dial", () => {
+      const typed = typedAddress(body.querySelector<HTMLInputElement>("#net-address-in")?.value ?? "");
+      if ("text" in typed) return note(typed.text);
+      join(typed.address);
+    });
+    const field = body.querySelector<HTMLInputElement>("#net-address-in");
+    if (field) field.onkeydown = (e) => e.key === "Enter" && body.querySelector<HTMLButtonElement>("#net-dial")?.click();
+    bindRooms();
     body.querySelectorAll<HTMLButtonElement>(".net-sit").forEach((b) => (b.onclick = () => sit(Number(b.dataset.seat))));
     body.querySelectorAll<HTMLButtonElement>(".net-stand").forEach((b) => (b.onclick = () => sit(null)));
     body.querySelectorAll<HTMLButtonElement>(".net-kind").forEach((b) => (b.onclick = () => host()?.setKind(Number(b.dataset.seat), b.dataset.kind as SeatKind)));
@@ -348,6 +481,8 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     close() {
       closed = true;
       stopScan?.();
+      stopFind?.();
+      unwatch?.();
       if (d.open) d.close();
       d.remove();
     },
