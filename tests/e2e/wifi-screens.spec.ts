@@ -160,7 +160,8 @@ test("yut nori and continent conquest: the room's seats lay the same table on bo
     await resting(guest);
     const pending = (page: Page) => page.locator("#yut-pending").textContent();
     await expect.poll(() => pending(guest), { timeout: 30000 }).toBe(await pending(host));
-    await expect.poll(async () => (await guest.locator("#yut-side-0").textContent()) === (await host.locator("#yut-side-0").textContent())).toBe(true);
+    // Each device names its own seat 나, so the pieces are compared, not the names.
+    for (const p of [0, 1]) await expect.poll(() => guest.locator(`#yut-count-${p}`).textContent(), { timeout: 30000 }).toBe(await host.locator(`#yut-count-${p}`).textContent());
     await done();
   }
   {
