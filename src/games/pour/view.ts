@@ -1,12 +1,12 @@
 import * as T from "three";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { goalText, type State } from "./rules";
+import { goalText, holding, vesselsOf, type State } from "./rules";
 
 export const POUR_COLORS: [string, string] = ["#2f8fd0", "#b9b3a4"];
-/** Where the three beakers stand, how wide they are, and how tall a litre makes them. */
-const XS = [-3.4, 0, 3.4],
-  RADIUS = 0.95,
+/** Where the beakers stand (three, or four on the harder stages), how wide they are, and how tall a litre makes them. */
+export const vesselXs = (count: number) => (count === 4 ? [-4.5, -1.5, 1.5, 4.5] : [-3.4, 0, 3.4]);
+const RADIUS = 0.95,
   INNER = RADIUS * 0.93,
   LITRE = 0.3,
   FLOOR = 0.07;
@@ -80,15 +80,23 @@ export class PourView extends TableView<State> {
   private surfaces: T.Group[] = [];
   /** For each beaker: the level its liquid is cut at, and its floor and its top, which bound the surface. */
   private cuts: { level: T.Plane; floor: T.Plane; top: T.Plane }[] = [];
+  /** The stream that falls from the spout in a curve, its paint, and what it makes where it lands: a ring spreading on the water and drops thrown up. */
   private stream: T.Mesh;
+  private ripples: T.Mesh[] = [];
+  private drops: T.Mesh[] = [];
   private cards: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string }[] = [];
   private slate: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string };
   private chosen: T.Mesh;
   private aims: T.Mesh[] = [];
   private cursor: T.Mesh;
   private arrow = new T.Group();
-  constructor(host: HTMLElement, quality: "high" | "low") {
+  /** The liquids' paint, which glows a moment when the goal is met. */
+  private waters: T.MeshPhysicalMaterial[] = [];
+  private xs: number[];
+  onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
+  constructor(host: HTMLElement, quality: "high" | "low", variant = "1") {
     super(host, quality, "#dfe7ea");
+    const XS = (this.xs = vesselXs(vesselsOf(Number(variant) || 1)));
     // The liquid is cut level by a plane of its own in each beaker.
     this.renderer.localClippingEnabled = true;
     this.scene.add(new T.HemisphereLight("#ffffff", "#b4c0c4", 1.7));
@@ -169,7 +177,8 @@ export class PourView extends TableView<State> {
       const cut = { level: new T.Plane(new T.Vector3(0, -1, 0), 0), floor: new T.Plane(new T.Vector3(0, 1, 0), 0), top: new T.Plane(new T.Vector3(0, -1, 0), 0) },
         beaker = new T.Group(),
         vessel = new T.Mesh(wall, glass),
-        fill = new T.Mesh(inside, this.own(new T.MeshPhysicalMaterial({ color: "#2f8fd0", transparent: true, opacity: 0.85, roughness: 0.12, clippingPlanes: [cut.level] }))),
+        water = this.own(new T.MeshPhysicalMaterial({ color: "#2f8fd0", transparent: true, opacity: 0.85, roughness: 0.12, clippingPlanes: [cut.level] })),
+        fill = new T.Mesh(inside, water),
         streak = new T.Mesh(gleam, shine),
         streak2 = new T.Mesh(gleam, shine),
         rim = new T.Group(),
@@ -198,6 +207,7 @@ export class PourView extends TableView<State> {
       this.walls.push([vessel, fill, streak, streak2]);
       this.tops.push(rim);
       this.liquids.push(fill);
+      this.waters.push(water);
       this.surfaces.push(surface);
       this.cuts.push(cut);
       this.scene.add(beaker, surface);
@@ -208,10 +218,43 @@ export class PourView extends TableView<State> {
       this.add(new T.BoxGeometry(2.0, 0.1, 0.34), steel, x, 0.05, 2.02);
       this.cards.push(card);
     });
-    // What runs from one beaker into the other while it is poured.
-    this.stream = new T.Mesh(this.own(new T.CylinderGeometry(0.1, 0.06, 1, 14)), this.own(new T.MeshPhysicalMaterial({ color: "#4fa6e6", transparent: true, opacity: 0.85, roughness: 0.1 })));
+    // What runs from one beaker into the other while it is poured: a stream bent by its fall (laid anew each frame),
+    // a ring that spreads where it strikes the water, and drops thrown up there.
+    const streamPaint = this.own(new T.MeshPhysicalMaterial({ color: "#4fa6e6", transparent: true, opacity: 0.82, roughness: 0.08 }));
+    this.stream = new T.Mesh(new T.BufferGeometry(), streamPaint);
     this.stream.visible = false;
+    this.stream.renderOrder = 4;
     this.scene.add(this.stream);
+    const ringShape = this.own(new T.RingGeometry(0.7, 1, 32).rotateX(-Math.PI / 2)),
+      drop = this.own(new T.SphereGeometry(0.045, 8, 6));
+    for (let i = 0; i < 3; i++) {
+      const ripple = new T.Mesh(ringShape, this.own(new T.MeshBasicMaterial({ color: "#d8f0ff", transparent: true, opacity: 0, depthWrite: false })));
+      ripple.visible = false;
+      ripple.renderOrder = 5;
+      this.ripples.push(ripple);
+      this.scene.add(ripple);
+    }
+    for (let i = 0; i < 7; i++) {
+      const bead = new T.Mesh(drop, streamPaint);
+      bead.visible = false;
+      this.drops.push(bead);
+      this.scene.add(bead);
+    }
+    // More of the laboratory, at the ends of the bench: a microscope and a wash bottle at the left.
+    const black = this.standard({ color: "#2b3236", roughness: 0.45 }),
+      cream = this.standard({ color: "#ece8df", roughness: 0.5 }),
+      left = XS[0] - 2.75;
+    this.add(new T.BoxGeometry(0.9, 0.12, 1.0), black, left, 0.06, -1.5);
+    this.add(new T.CylinderGeometry(0.09, 0.11, 1.1, 12), cream, left, 0.65, -1.85).rotation.x = 0.15;
+    this.add(new T.BoxGeometry(0.7, 0.06, 0.6), black, left, 0.55, -1.42);
+    const tube = this.add(new T.CylinderGeometry(0.11, 0.13, 0.95, 16), cream, left, 1.25, -1.6);
+    tube.rotation.x = -0.45;
+    this.add(new T.CylinderGeometry(0.05, 0.05, 0.25, 10), black, left, 1.72, -1.83).rotation.x = -0.45;
+    this.add(new T.CylinderGeometry(0.16, 0.16, 0.1, 16), black, left + 0.28, 0.95, -1.8).rotation.z = Math.PI / 2;
+    const bottle = this.own(new T.LatheGeometry([[0, 0], [0.26, 0], [0.28, 0.05], [0.28, 0.6], [0.2, 0.72], [0.09, 0.78], [0.09, 0.86], [0, 0.86]].map(([r, y]) => new T.Vector2(r, y)), 20));
+    this.add(bottle, this.standard({ color: "#f3f6f7", roughness: 0.35, transparent: true, opacity: 0.88 }), left + 0.2, 0, 0.75);
+    const nozzle = this.add(new T.CylinderGeometry(0.025, 0.025, 0.55, 8), this.standard({ color: "#f3f6f7", roughness: 0.4 }), left + 0.42, 0.98, 0.75);
+    nozzle.rotation.z = -1.0;
     // The goal is written on a whiteboard in a frame, with a ledge for the pens.
     const slate = sign(9, 1.1, 1152, 140);
     slate.mesh.position.set(0, 8.0, -3.2);
@@ -221,7 +264,7 @@ export class PourView extends TableView<State> {
     this.slate = slate;
     this.chosen = ringMesh(own, RADIUS * 1.12, RADIUS * 1.32, "#f0a020");
     this.cursor = ringMesh(own, RADIUS * 1.12, RADIUS * 1.32, "#3f8cff");
-    for (let i = 0; i < 2; i++) this.aims.push(ringMesh(own, RADIUS * 1.12, RADIUS * 1.32, "#3fa66b"));
+    for (let i = 1; i < XS.length; i++) this.aims.push(ringMesh(own, RADIUS * 1.12, RADIUS * 1.32, "#3fa66b"));
     // The arrow of a hint: it stands over the beaker that is to be poured into, pointing down into it.
     const gold = this.own(new T.MeshBasicMaterial({ color: "#f0a020", depthTest: false, transparent: true, opacity: 0.96, side: T.DoubleSide })),
       tip = new T.Mesh(this.own(new T.ShapeGeometry(new T.Shape([new T.Vector2(0, 0), new T.Vector2(-0.5, 0.66), new T.Vector2(0.5, 0.66)]))), gold),
@@ -234,11 +277,16 @@ export class PourView extends TableView<State> {
     this.begin();
   }
   protected subject(aspect: number): TableSubject {
-    return { half: aspect < 1 ? 5.2 : 6.4, halfZ: 1.2, height: 8.2, lookY: 3.6, tilt: 0.3 };
+    const wide = this.xs.length === 4 ? 1.15 : 0;
+    return { half: (aspect < 1 ? 5.2 : 6.4) + wide, halfZ: 1.2, height: 8.2, lookY: 3.6, tilt: 0.3 };
   }
   protected spots(): Spot[] {
     const state = this.state;
-    return state ? XS.map((x, i) => ({ x, y: (state.caps[i] * LITRE) / 2, z: 0, r: 1.5, point: i })) : [];
+    return state ? this.xs.map((x, i) => ({ x, y: (state.caps[i] * LITRE) / 2, z: 0, r: this.xs.length === 4 ? 1.4 : 1.5, point: i })) : [];
+  }
+  dispose() {
+    this.stream.geometry.dispose();
+    super.dispose();
   }
   private write(sign: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string }, text: string, paint: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
     if (sign.said === text) return;
@@ -248,7 +296,9 @@ export class PourView extends TableView<State> {
   }
   /** Lays the beakers out with so much in each (fractions while a pour is shown); a beaker stands in its place unless `held` says otherwise. */
   private fill(state: State, amounts: number[], held?: { beaker: number; pose: Pose }) {
-    XS.forEach((x, i) => {
+    // Once solved, the cards of the vessels that hold the goal turn green and the board is ticked.
+    const won = state.winner === 0 && amounts === state.amounts ? (holding(state.amounts, state.goal) ?? []) : [];
+    this.xs.forEach((x, i) => {
       const tall = state.caps[i] * LITRE + 0.25,
         deep = amounts[i] * LITRE,
         pose = held?.beaker === i ? held.pose : { x, y: 0, tilt: 0, turn: 0 },
@@ -279,10 +329,11 @@ export class PourView extends TableView<State> {
       this.surfaces[i].rotation.y = pose.turn;
       this.surfaces[i].scale.x = 1 / Math.max(0.12, Math.cos(pose.tilt));
       const now = Math.round(amounts[i]);
-      this.write(this.cards[i], `${now}/${state.caps[i]}`, (ctx, w, h) => {
-        ctx.fillStyle = "#fbf7ec";
+      const good = won.includes(i);
+      this.write(this.cards[i], `${now}/${state.caps[i]}${good ? "!" : ""}`, (ctx, w, h) => {
+        ctx.fillStyle = good ? "#e6f6df" : "#fbf7ec";
         ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = "#2f6fa8";
+        ctx.strokeStyle = good ? "#3a9a4a" : "#2f6fa8";
         ctx.lineWidth = 8;
         ctx.strokeRect(4, 4, w - 8, h - 8);
         // The amount large, the size of the vessel small beside it; both are made to fit the card whatever the numbers.
@@ -304,7 +355,7 @@ export class PourView extends TableView<State> {
         const left = (w - (a + 12 + b)) / 2;
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
-        ctx.fillStyle = "#1f5f98";
+        ctx.fillStyle = good ? "#2a7a3a" : "#1f5f98";
         ctx.font = `800 ${size}px "Helvetica Neue", Arial, sans-serif`;
         ctx.fillText(big, left, h * 0.54);
         ctx.fillStyle = "#5c5a55";
@@ -312,7 +363,8 @@ export class PourView extends TableView<State> {
         ctx.fillText(small, left + a + 12, h * 0.6);
       });
     });
-    this.write(this.slate, goalText(state), (ctx, w, h) => {
+    const ticked = won.length > 0;
+    this.write(this.slate, `${goalText(state)}${ticked ? "!" : ""}`, (ctx, w, h) => {
       // A whiteboard in a metal frame.
       ctx.fillStyle = "#fdfdfb";
       ctx.fillRect(0, 0, w, h);
@@ -322,64 +374,128 @@ export class PourView extends TableView<State> {
       ctx.fillStyle = "#1f3a52";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      // The longest goal must fit the slate as well as the shortest.
+      // The longest goal must fit the slate as well as the shortest (with room for the tick once it is met).
+      const room = w - 60 - (ticked ? 150 : 0);
       let size = 64;
       do ctx.font = `700 ${size}px "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif`;
-      while (ctx.measureText(`목표: ${goalText(state)}`).width > w - 60 && (size -= 3) > 30);
-      ctx.fillText(`목표: ${goalText(state)}`, w / 2, h / 2 + 4);
+      while (ctx.measureText(`목표: ${goalText(state)}`).width > room && (size -= 3) > 30);
+      ctx.fillText(`목표: ${goalText(state)}`, w / 2 - (ticked ? 60 : 0), h / 2 + 4);
+      if (ticked) {
+        // Met: a tick in red marker at the end of the line, as a teacher would mark it.
+        const end = w / 2 - 60 + ctx.measureText(`목표: ${goalText(state)}`).width / 2 + 40;
+        ctx.strokeStyle = "#d0382a";
+        ctx.lineWidth = 12;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(end, h * 0.5);
+        ctx.lineTo(end + 26, h * 0.78);
+        ctx.lineTo(end + 80, h * 0.16);
+        ctx.stroke();
+      }
     });
   }
   protected place(state: State) {
     this.stream.visible = false;
+    for (const ripple of this.ripples) ripple.visible = false;
+    for (const bead of this.drops) bead.visible = false;
+    for (const water of this.waters) water.emissive.setRGB(0, 0, 0);
     this.fill(state, state.amounts);
+  }
+  /** Lays the stream from the spout to where it strikes: it leaves the lip level and bends down as it falls, `thick` its width. */
+  private bend(from: T.Vector3, to: T.Vector3, thick: number, wobble: number) {
+    const points: T.Vector3[] = [];
+    for (let k = 0; k <= 10; k++) {
+      const s = k / 10;
+      points.push(new T.Vector3(from.x + (to.x - from.x) * s + Math.sin(s * 9 + wobble) * 0.012 * s, from.y - (from.y - to.y) * s * s, Math.cos(s * 7 + wobble) * 0.01 * s));
+    }
+    this.stream.geometry.dispose();
+    this.stream.geometry = new T.TubeGeometry(new T.CatmullRomCurve3(points), 22, Math.max(0.012, thick), 8);
   }
   protected animate(before: State, state: State) {
     const last = state.last;
     if (!last || state.ply !== before.ply + 1) return false;
-    const { from, to } = last,
+    const XS = this.xs,
+      { from, to } = last,
       way = Math.sign(XS[to] - XS[from]),
       tall = state.caps[from] * LITRE + 0.25,
       over = state.caps[to] * LITRE + 0.25,
-      smooth = (p: number) => p * p * (3 - 2 * p);
+      // A beaker carried past others is lifted clear of the tallest between.
+      between = XS.flatMap((_, k) => ((k - from) * (k - to) < 0 ? [state.caps[k] * LITRE + 0.25] : [])),
+      clearance = between.length ? Math.max(...between) + 0.2 : 0,
+      smooth = (p: number) => p * p * (3 - 2 * p),
+      span = (p: number, a: number, b: number) => smooth(Math.max(0, Math.min(1, (p - a) / (b - a)))),
+      ms = 1700,
+      landing = new T.Vector3(),
+      spout = new T.Vector3();
     let heard = false;
-    // Lifted and carried over (turned round when the other stands to its left, so that the spout leads),
-    // tipped until the liquid reaches the lip, held there while it runs, then set back.
-    this.tween(0, 1700, (p) => {
-      const lift = smooth(Math.min(1, p / 0.3)),
-        back = smooth(Math.max(0, (p - 0.78) / 0.22)),
+    // Lifted, carried over (turned round when the other stands to its left, so that the spout leads), tipped until
+    // the liquid reaches the lip, held there while it runs in a curve into the other, then carried back and set down.
+    this.tween(0, ms, (p) => {
+      const up = span(p, 0, 0.12) * (1 - span(p, 0.9, 1)),
+        across = span(p, 0.06, 0.3) * (1 - span(p, 0.78, 0.94)),
         pouring = Math.max(0, Math.min(1, (p - 0.3) / 0.48)),
-        held = lift * (1 - back),
         amounts = before.amounts.map((v, i) => v + (state.amounts[i] - v) * smooth(pouring)),
         // Just far enough for the level liquid to reach the lip: more as the beaker empties.
         need = Math.max(0.35, Math.min(1.42, Math.atan((tall - FLOOR - amounts[from] * LITRE) / RADIUS) + 0.06)),
-        tilt = held * need,
-        turn = way < 0 ? Math.PI * held : 0,
+        tilt = across * need,
+        turn = way < 0 ? Math.PI * across : 0,
         // Where the tipped beaker carries its spout, from its foot.
         reach = Math.cos(turn) * (RADIUS * Math.cos(tilt) + tall * Math.sin(tilt)),
         rise = tall * Math.cos(tilt) - RADIUS * Math.sin(tilt),
-        x = XS[from] + (XS[to] - way * RADIUS * 0.4 - reach - XS[from]) * held,
-        y = Math.max(0, over + 0.5 - rise) * held;
+        x = XS[from] + (XS[to] - way * RADIUS * 0.4 - reach - XS[from]) * across,
+        y = Math.max(over + 0.5 - rise, clearance + RADIUS * Math.sin(tilt), 0.6) * up;
       this.fill(state, amounts, { beaker: from, pose: { x, y, tilt, turn } });
-      const running = pouring > 0.03 && pouring < 0.97;
+      const running = pouring > 0.02 && pouring < 0.98,
+        flow = Math.sqrt(Math.sin(Math.PI * pouring)),
+        now = p * ms,
+        level = FLOOR + amounts[to] * LITRE;
       this.stream.visible = running;
+      spout.set(x + reach + way * 0.08, y + rise, 0);
+      landing.set(XS[to] - way * 0.22, level, 0);
       if (running) {
-        const top = y + rise,
-          drop = Math.max(0.1, top - (FLOOR + amounts[to] * LITRE));
-        this.stream.scale.y = drop;
-        this.stream.position.set(x + reach + way * 0.08, top - drop / 2, 0);
+        this.bend(spout, landing, 0.075 * flow, now / 90);
         if (!heard) {
           heard = true;
           this.onContact();
         }
       }
+      // Rings spread on the water where it strikes, and drops leap up and fall back.
+      this.ripples.forEach((ripple, k) => {
+        const phase = (now / 460 + k / this.ripples.length) % 1;
+        ripple.visible = running;
+        ripple.position.set(landing.x, level + 0.012, 0);
+        ripple.scale.setScalar(0.12 + phase * 0.62);
+        (ripple.material as T.MeshBasicMaterial).opacity = 0.65 * (1 - phase) * flow;
+      });
+      this.drops.forEach((bead, k) => {
+        const phase = (now / 380 + k / this.drops.length) % 1,
+          a = (k / this.drops.length) * Math.PI * 2 + 0.6,
+          far = (0.12 + (k % 3) * 0.08) * phase;
+        bead.visible = running && flow > 0.35 && amounts[to] > 0.2;
+        bead.position.set(landing.x + Math.cos(a) * far, level + 4 * phase * (1 - phase) * (0.16 + (k % 2) * 0.1), Math.sin(a) * far);
+      });
     });
+    if (state.winner === 0 && before.winner === null) {
+      // Solved: the water that meets the goal glows a moment and a chime rings.
+      const glowing = (holding(state.amounts, state.goal) ?? []).map((i) => this.waters[i]);
+      let rang = false;
+      this.tween(ms, 900, (p) => {
+        if (!rang) {
+          rang = true;
+          this.onKnock?.("pocket", 1);
+        }
+        for (const water of glowing) water.emissive.setRGB(0.12, 0.32, 0.5).multiplyScalar(Math.sin(Math.PI * p));
+      });
+    }
     return true;
   }
   protected mark(marks: Marks) {
-    const put = (ring: T.Mesh, point: number | null | undefined) => {
-      ring.visible = point !== null && point !== undefined && point >= 0 && point < 3;
-      if (ring.visible) ring.position.set(XS[point!], 0.012, 0);
-    };
+    const XS = this.xs,
+      put = (ring: T.Mesh, point: number | null | undefined) => {
+        ring.visible = point !== null && point !== undefined && point >= 0 && point < XS.length;
+        if (ring.visible) ring.position.set(XS[point!], 0.012, 0);
+      };
     put(this.chosen, marks.selected);
     put(this.cursor, marks.cursor);
     this.aims.forEach((ring, i) => put(ring, marks.targets[i]));
