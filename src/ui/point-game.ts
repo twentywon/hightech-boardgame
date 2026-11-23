@@ -1067,7 +1067,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         : winner === "draw"
           ? `비겼습니다. ${game.reason(s)}`
           : net
-            ? `${netOutcome(s) === "win" ? "이겼습니다!" : `${netWinner(s)} 승리!`} ${config.net!.reason?.(s) ?? game.reason(s)}`
+            ? `${netOutcome(s) === "win" ? "이겼습니다!" : netWinner(s) ? `${netWinner(s)} 승리!` : "졌습니다."} ${config.net!.reason?.(s) ?? game.reason(s)}`
             : `${mode === "ai" ? (winner === 0 ? "이겼습니다!" : "컴퓨터가 이겼습니다.") : `${who(winner as number)} 승리!`} ${game.reason(s)}`;
     }
   }
@@ -1337,6 +1337,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     return config.net!.winnerSeat ? config.net!.winnerSeat(s) : winner;
   }
   function netOutcome(s: S): "win" | "lose" | "draw" {
+    // A game no one seat wins (old maid) tells each seat how it ended.
+    if (config.net!.outcome && net!.room.mySeat !== null && config.game.winner(truth(s)) !== null) return config.net!.outcome(truth(s), net!.room.mySeat);
     const seat = winnerSeatOf(s),
       mine = net!.room.mySeat;
     if (seat === null || mine === null) return "draw";

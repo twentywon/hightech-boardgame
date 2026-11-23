@@ -4,12 +4,14 @@ import { BUST, DRAW, HAND, SUIT_BASE, oneCard, type State } from "./rules";
 import { ONECARD_COLORS, OneCardView, sorted } from "./view";
 import { handX, ONECARD } from "./layout";
 import { SUIT_GLYPH, SUIT_NAME } from "../deck/cards";
+import { oneCardNet } from "./net";
 
 export const oneCardConfig: PointConfig<State> = {
   game: oneCard,
   contact: (sound) => sound.card(),
   noPanel: true,
-  view: (host, quality) => new OneCardView(host, quality),
+  // Over Wi-Fi the cards out of my sight are blind ones (`net.ts`).
+  view: (host, quality, _variant, _mode, _level, net) => new OneCardView(host, quality, net),
   colors: ONECARD_COLORS,
   keyPoints: (s) => {
     const points = Array.from({ length: DRAW + 1 }, () => ({ x: NaN, z: NaN }));
@@ -23,6 +25,8 @@ export const oneCardConfig: PointConfig<State> = {
   // Each side sees only its own hand, and a card drawn cannot be put back.
   computerOnly: true,
   noUndo: true,
+  // Over Wi-Fi each device holds its own hand, two to four round the bed (`net.ts`).
+  net: oneCardNet,
   showMovable: false,
   ponder: (s) => (s.phase === "play" ? 350 : 200),
   cheer: (before, state) => {

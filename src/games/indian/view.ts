@@ -256,6 +256,8 @@ export class IndianView extends TableView<State> {
     return t;
   }
   private face(value: number) {
+    // A card not known to this device (its own over Wi-Fi, or one not yet raised) is 0: its back only.
+    if (!value) return this.back;
     let material = this.faces.get(value);
     if (!material) {
       material = this.standard({ map: this.texture((ctx, w, h) => drawFace(ctx, w, h, `${value === 1 ? "A" : value}S`)), roughness: 0.55 });
@@ -326,6 +328,10 @@ export class IndianView extends TableView<State> {
     this.mine.visible = !showing && !ready;
     this.shown.visible = this.easel.visible = showing;
     this.shown.material = [this.back, showing ? this.face(state.cards[0]) : this.back, this.edge];
+    // For browser tests: the card on the figure's forehead once raised, and my own only once the round is shown.
+    const el = this.renderer.domElement;
+    el.dataset.theirs = ready || !state.cards[1] ? "" : String(state.cards[1]);
+    el.dataset.mine = showing && state.cards[0] ? String(state.cards[0]) : "";
   }
   sync(state: State, animate = true) {
     // A table laid out afresh (a new game, a rebuild) has nothing in the air: every coin lies where the state says.

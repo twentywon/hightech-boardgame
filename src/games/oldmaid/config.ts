@@ -3,15 +3,19 @@ import type { PointConfig } from "../../ui/point-game";
 import { oldMaid, source, type State } from "./rules";
 import { OLDMAID_COLORS, OldMaidView } from "./view";
 import { fanSpot, holdOf } from "./layout";
+import { BLIND } from "../deck/blind";
+import { oldMaidNet } from "./net";
 
 export const oldMaidConfig: PointConfig<State> = {
   game: oldMaid,
   contact: (sound) => sound.card(),
   noPanel: true,
-  view: (host, quality) => new OldMaidView(host, quality),
+  // Over Wi-Fi the cards out of my sight are blind ones (`net.ts`).
+  view: (host, quality, _variant, _mode, _level, net) => new OldMaidView(host, quality, net),
   colors: OLDMAID_COLORS,
   keyPoints: (s) => {
-    const points = Array.from({ length: 53 }, () => ({ x: NaN, z: NaN })),
+    // Over Wi-Fi the hand held out is of blind cards, numbered from `BLIND`.
+    const points = Array.from({ length: BLIND + 53 }, () => ({ x: NaN, z: NaN })),
       from = source(s, 0);
     // The keyboard walks the fan held out to me from left to right as I see it.
     if (s.seat === 0 && s.winner === null) {
@@ -27,6 +31,8 @@ export const oldMaidConfig: PointConfig<State> = {
   // The others' hands are hidden, and a card drawn cannot be given back.
   computerOnly: true,
   noUndo: true,
+  // Over Wi-Fi each device holds its own fan, two to four round the desks (`net.ts`).
+  net: oldMaidNet,
   showMovable: false,
   ponder: () => 450,
   cheer: (before, state, mode) => (state.last && state.last !== before.last && state.last.laid.length && state.last.seat === 0 ? "짝!" : null),

@@ -44,6 +44,11 @@ export interface NetSpec<S> {
   hint?: (state: S, seat: number | null) => string;
   /** How the match ended, told alike on every device (the game's own `reason` may speak for side 0). */
   reason?: (state: S) => string;
+  /**
+   * How the game ended for `seat`, where no one seat wins it (old maid: the thief loses, every other seat is safe);
+   * left out, the seat `winnerSeat` names won and the others lost. With it `winnerSeat` may give null.
+   */
+  outcome?: (state: S, seat: number) => "win" | "lose" | "draw";
 }
 /** A point game as a room plays it: laid from the room's start and seed, the seat to move, what a room refuses. */
 export function pointRules<S>(game: PointGame<S>, spec: NetSpec<S>): NetRules<S> {

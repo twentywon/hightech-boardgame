@@ -25,9 +25,13 @@ export interface State {
   thief: number | null;
   winner: Winner;
   ply: number;
+  /** Over Wi-Fi (`net.ts`): the blind number of each card (`deck/blind.ts`); a device's view leaves it out. */
+  net?: { masks: number[] };
+  /** A view over Wi-Fi: the blind card each card in sight stands for when out of sight (`deck/blind.ts`). */
+  blinds?: Record<number, number>;
 }
 /** Lays down every pair a hand holds (the joker never pairs). */
-function lay(hand: number[]) {
+export function lay(hand: number[]) {
   const kept: number[] = [],
     laid: number[] = [];
   for (const card of hand) {
@@ -60,7 +64,7 @@ export function next(s: Pick<State, "hands">, seat: number) {
 /** The seat a player draws from. */
 export const source = (s: Pick<State, "hands">, seat: number) => next(s, seat);
 /** Ends the game once only the joker is left in play; else makes sure the seat to move holds cards. */
-function finish(s: State): State {
+export function finish(s: State): State {
   const holding = s.hands.flatMap((h, i) => (h.length ? [i] : []));
   if (holding.length <= 1) {
     const thief = holding[0] ?? s.hands.findIndex((h) => h.includes(JOKER));
@@ -72,7 +76,8 @@ export function moves(s: State): Move[] {
   if (s.winner !== null) return [];
   return s.hands[source(s, s.seat)].map((card) => ({ from: -1, to: card, extra: -1 }));
 }
-export function play(s: State, move: Move, random: Random = cryptoRandom): State | null {
+/** `keep` is the seat whose hand is left in its order (mine, which I see sorted; over Wi-Fi none: -1). */
+export function play(s: State, move: Move, random: Random = cryptoRandom, keep = 0): State | null {
   if (s.winner !== null || move.extra !== -1 || move.from !== -1) return null;
   const from = source(s, s.seat);
   if (!s.hands[from].includes(move.to)) return null;
@@ -80,8 +85,8 @@ export function play(s: State, move: Move, random: Random = cryptoRandom): State
   hands[from] = hands[from].filter((c) => c !== move.to);
   const { kept, laid } = lay([...hands[s.seat], move.to]);
   // A hand that has been drawn from is shuffled, so that nothing can be told from where a card sits.
-  hands[s.seat] = s.seat === 0 ? kept : shuffle(kept, random);
-  hands[from] = from === 0 ? hands[from] : shuffle(hands[from], random);
+  hands[s.seat] = s.seat === keep ? kept : shuffle(kept, random);
+  hands[from] = from === keep ? hands[from] : shuffle(hands[from], random);
   return finish({ ...s, hands, pairs: [...s.pairs, ...laid], seat: next({ hands }, s.seat), last: { seat: s.seat, from, card: move.to, laid }, ply: s.ply + 1 });
 }
 /** A computer draws blind: any card of the hand it draws from. */

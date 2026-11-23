@@ -7,6 +7,7 @@ import { DeckView, type CardPose } from "../deck/view";
 import { CARD_H, SUIT_GLYPH, isJoker, rankOf, suitOf } from "../deck/cards";
 import { DRAW, SEATS, type State } from "./rules";
 import { ONECARD as L, handX, rivalCard } from "./layout";
+import { isBlind } from "../deck/blind";
 
 export const ONECARD_COLORS: [string, string] = ["#c8321f", "#22355c"];
 /** My hand in order: by suit, then rank; the jokers at the end. */
@@ -18,8 +19,9 @@ export class OneCardView extends DeckView<State> {
   private cursor: T.Mesh;
   /** A soft light under the hand of whoever is to play. */
   private glow: T.Mesh;
-  constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, 54, false);
+  /** `net`: over Wi-Fi, where the cards out of my sight are blind ones (`deck/blind.ts`). */
+  constructor(host: HTMLElement, quality: "high" | "low", net = false) {
+    super(host, quality, 54, false, net);
     // On a bed in a bedroom (the user asked): warm light from a window at the left, and the bedside lamp.
     this.renderer.setClearColor("#efe4d2");
     this.scene.add(new T.HemisphereLight("#fff6ea", "#6a5a4a", 1.6));
@@ -120,6 +122,16 @@ export class OneCardView extends DeckView<State> {
     super.place(s);
     this.say(s);
     this.light(s);
+    this.tell(s);
+  }
+  /**
+   * What the canvas tells a browser test without telling a card: how many cards lie blind (over Wi-Fi, those out of
+   * my sight: `deck/blind.ts`) and how many of the others' cards are known (none before the end).
+   */
+  private tell(s: State) {
+    const el = this.renderer.domElement;
+    el.dataset.blind = String([...s.pile, ...s.hands.flat()].filter(isBlind).length);
+    el.dataset.open = String(s.hands.slice(1).flat().filter((id) => !isBlind(id)).length);
   }
   protected spots(): Spot[] {
     const s = this.state;
@@ -135,6 +147,7 @@ export class OneCardView extends DeckView<State> {
     const moved = this.shift(before, s, (id) => (id === played ? -1 : drew.includes(id) ? drew.indexOf(id) : 50), 110);
     this.say(s);
     this.light(s);
+    this.tell(s);
     return moved;
   }
   protected mark(marks: Marks) {

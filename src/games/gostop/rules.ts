@@ -187,6 +187,10 @@ export interface State {
   /** The points the winner takes, with what doubled them; how it ended. */
   result: { points: number; notes: string[]; lines: Line[] } | null;
   ply: number;
+  /** Over Wi-Fi (`net.ts`): the blind number of each card (`deck/blind.ts`); a device's view leaves it out. */
+  net?: { masks: number[] };
+  /** A view over Wi-Fi: the blind card each card in sight stands for when out of sight (`deck/blind.ts`). */
+  blinds?: Record<number, number>;
 }
 const shuffle = (random: Random) => {
   const deck = Array.from({ length: CARDS }, (_, i) => i);

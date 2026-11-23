@@ -3,6 +3,7 @@ import { planks, weave, block } from "../../engine/scene-utils";
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import { TableView } from "../table/view";
 import { BLACK_JOKER, CARD_H, CARD_W, COLOUR_JOKER, faceKey, isJoker } from "./cards";
+import { BLIND, unveil } from "./blind";
 
 export interface CardPose {
   x: number;
@@ -63,8 +64,12 @@ function jokerFace(ctx: CanvasRenderingContext2D, w: number, h: number, colour: 
 export abstract class DeckView<S> extends TableView<S> {
   protected cards: T.Mesh[] = [];
   protected poses = new Map<number, CardPose>();
-  /** `felt` false leaves out the green table and its light, for a game that sets its own room. */
-  constructor(host: HTMLElement, quality: "high" | "low", count: number, felt = true) {
+  /**
+   * `felt` false leaves out the green table and its light, for a game that sets its own room. `blind` adds a blind
+   * card for each card, `BLIND + k`, backed on both faces: what a view over Wi-Fi shows for a card out of its seat's
+   * sight (`blind.ts`).
+   */
+  constructor(host: HTMLElement, quality: "high" | "low", count: number, felt = true, blind = false) {
     super(host, quality, "#14231b");
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
     if (felt) {
@@ -84,6 +89,22 @@ export abstract class DeckView<S> extends TableView<S> {
       this.cards.push(mesh);
       this.scene.add(mesh);
     }
+    if (blind)
+      for (let k = 0; k < count; k++) {
+        const mesh = new T.Mesh(geometry, [edge, edge, back, back, edge, edge]);
+        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.visible = false;
+        this.cards[BLIND + k] = mesh;
+        this.scene.add(mesh);
+      }
+  }
+  /**
+   * A view over Wi-Fi: a card that came into sight between two states starts where its blind card was, and the other
+   * way round (`unveil`); the states' `blinds` say which blind card each card in sight is.
+   */
+  protected unveil(before: S, state: S, from: Map<number, CardPose>, to: Map<number, CardPose>) {
+    const blinds = (s: S) => (s as { blinds?: Record<number, number> }).blinds;
+    unveil(from, to, blinds(before), blinds(state));
   }
   private paint(draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
     const canvas = document.createElement("canvas");
@@ -157,6 +178,7 @@ export abstract class DeckView<S> extends TableView<S> {
   protected shift(before: S, state: S, order: (id: number) => number = () => 0, gap = 90) {
     const from = this.arrange(before),
       to = this.arrange(state);
+    this.unveil(before, state, from, to);
     this.poses = to;
     const moved = this.cards
       .map((_, id) => id)

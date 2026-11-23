@@ -2,6 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { AS_PI, AS_YEOL, CARDS, choicesOf, FLIP, GO, GOAL, NO, STOP, YES, gostop, type State } from "./rules";
 import { GOSTOP_COLORS, GostopView } from "./view";
+import { gostopNet } from "./net";
 
 /** Where the keyboard walks: the cards that can be chosen now, my hand in a row and the floor's two choices above it. */
 function keyPoints(state: State) {
@@ -19,7 +20,8 @@ const first = (state: State) => {
 export const gostopConfig: PointConfig<State> = {
   game: gostop,
   contact: (sound) => sound.card(),
-  view: (host, quality) => new GostopView(host, quality),
+  // Over Wi-Fi the other is 상대 and the cards out of my sight are blind ones (`net.ts`).
+  view: (host, quality, _variant, _mode, _level, net) => new GostopView(host, quality, net),
   colors: GOSTOP_COLORS,
   keyPoints,
   keyStart: first,
@@ -29,6 +31,8 @@ export const gostopConfig: PointConfig<State> = {
   // No panel beside the table (the user asked): the scores are painted on tablets by the pile.
   noPanel: true,
   noUndo: true,
+  // Over Wi-Fi each device holds its own hand and makes its own choices (`net.ts`).
+  net: gostopNet(GOSTOP_COLORS),
   showMovable: false,
   // The computer waits for the deal to be over when it is the first to play (선).
   ponder: (state) => (state.ply === 0 ? 3000 + 800 * state.opening.swaps.length : 500),
