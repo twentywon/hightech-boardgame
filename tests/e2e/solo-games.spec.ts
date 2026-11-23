@@ -506,7 +506,8 @@ function walker(page: Page, cols: number, rows: number) {
 }
 test("tower of Hanoi: discs are chosen, a move is taken back, and the tower is moved in the fewest", async ({ page }) => {
   const errors = await sit(page, "하노이의 탑");
-  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(6);
+  // Six towers on three pegs and four on four pegs (tests/e2e/five-puzzles.spec.ts plays one of those).
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(10);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "원판 3개" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
