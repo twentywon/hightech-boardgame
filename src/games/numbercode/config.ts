@@ -3,6 +3,7 @@ import type { PointConfig } from "../../ui/point-game";
 import { numberCode } from "./game";
 import { AGAIN, DRAW_BLACK, DRAW_WHITE, GAP, HELPER, POOL, STOP, handOf, said, seatNames, tileCode, type State } from "./rules";
 import { NUMBERCODE_COLORS, NumberCodeView } from "./view";
+import { numberCodeNet } from "./net";
 import { gapAt, lieAt, poolAt, standAt } from "./layout";
 
 /** Where the keyboard's points are: every tile on the table, the pool's places, and the gaps a joker of mine may go to. */
@@ -36,7 +37,7 @@ function keyStart(s: State) {
 function cheer(before: State, s: State) {
   const last = s.last;
   if (!last || last === before.last || (last.kind !== "right" && last.kind !== "wrong")) return null;
-  const names = seatNames(s.seats),
+  const names = seatNames(s.seats, !!s.net),
     aimed = s.rows.findIndex((row) => row.includes(last.target!));
   if (last.kind === "right") {
     if (aimed === 0) return "들켰다!";
@@ -57,6 +58,8 @@ export const numberCodeConfig: PointConfig<State> = {
   rehome: (before, next) => before.phase !== next.phase || before.seat !== next.seat,
   // The others' tiles are hidden, and nothing said can be taken back.
   computerOnly: true,
+  // Over Wi-Fi each device holds its own row, 2–4 of them (`net.ts`).
+  net: numberCodeNet,
   noUndo: true,
   showMovable: false,
   extraHint: "그 타일의 숫자를 고르세요. 다른 곳을 누르면 취소됩니다.",
@@ -68,6 +71,8 @@ export const numberCodeConfig: PointConfig<State> = {
       id: "rivals",
       kind: "choice",
       label: "상대",
+      // Over Wi-Fi the room's seats say who plays.
+      net: false,
       value: "1",
       options: [
         { value: "1", label: "컴퓨터 1명" },
@@ -91,13 +96,15 @@ export const numberCodeConfig: PointConfig<State> = {
   english: "Number Code",
   number: "NO. 85 — CRACK THE CODE",
   intro: `<p>검은 타일과 흰 타일에 숨은 숫자를 추리해 맞히는 게임. 흔히 '다빈치 코드'라는 이름으로 알려져 있습니다.<br>작은 수부터 늘어선 상대의 타일을 하나씩 짚어 숫자를 말하고, 모두의 코드를 먼저 풀어내세요.</p>`,
-  meta: "나 대 컴퓨터 1~3명 · 타일 24장과 조커 2장",
+  meta: "나 대 컴퓨터 1~3명 · 와이파이 2~4인 · 타일 24장과 조커 2장",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>CRACK THE CODE</span>`,
   artClass: "indian-art",
   artLabel: "숫자 코드 미리보기",
   tableLabel: "THE CODE TABLE",
   tableNote: (_variant, options) => {
-    const seats = Math.min(3, Math.max(1, Number(options.rivals ?? 1))) + 1;
+    // Over Wi-Fi the room's seats say how many play (`rivals` is not given).
+    if (options.rivals === undefined) return `2~4명${options.jokers === false ? "" : " · 조커 2장"}`;
+    const seats = Math.min(3, Math.max(1, Number(options.rivals))) + 1;
     return `${seats}명 · ${handOf(seats)}장씩${options.jokers === false ? "" : " · 조커 2장"}`;
   },
   rulesTitle: "상대의 코드를 풀어내세요",
@@ -121,6 +128,15 @@ export const numberCodeConfig: PointConfig<State> = {
         ["계속 맞히기", "맞힌 뒤 한 번 더 도전합니다. 틀리면 가져온 타일이 공개되니 확신이 있을 때만 계속하세요."],
         ["추리 도우미", "켜 두면 상대의 숨은 타일마다 아직 가능한 숫자를 아래에 보여 줍니다. 내가 볼 수 있는 것만으로 계산합니다."],
         ["탈락", "타일이 모두 앞면이 된 사람은 빠지고, 남은 사람끼리 계속합니다. 내가 탈락하면 게임이 끝납니다."],
+      ),
+    ) +
+    part(
+      "와이파이 여럿이",
+      table(
+        ["자리", "같은 와이파이의 기기 2~4대가 한 줄씩 맡습니다. 빈자리는 방장의 컴퓨터가 맡거나(1번·2번) 닫을 수 있습니다(3번·4번)."],
+        ["조커", "조커를 받은 사람은 첫 차례 전에 <b>각자 자기 기기에서 동시에</b> 놓을 자리를 고릅니다."],
+        ["보이는 것", "내 줄은 언제나 내 앞에 앞면으로 보이고, 다른 사람의 숨은 타일은 뒷면만 보입니다. 1번부터 자리 순서대로 합니다."],
+        ["탈락", "탈락한 사람은 남은 사람의 게임을 지켜봅니다. 마지막까지 숨은 타일을 지킨 사람이 이깁니다."],
       ),
     ) +
     part(

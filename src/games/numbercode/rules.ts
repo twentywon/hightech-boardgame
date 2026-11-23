@@ -85,12 +85,19 @@ export interface State {
   last: Last | null;
   winner: Winner;
   ply: number;
+  /**
+   * Over Wi-Fi (`net.ts`): the room's seat of each player, the jokers each was dealt and has still to place (all
+   * place theirs at once before the first turn), each player's own 추리 도우미, and the player left last (the
+   * winner; `winner` is then 0). A player who goes out watches the rest; the game goes on until one is left.
+   */
+  net?: { seats: number[]; waiting: number[][]; helpers: boolean[]; champion: number | null };
 }
-/** What each seat is called, for two, three or four players (me at the near side). */
-export function seatNames(seats: number) {
-  if (seats === 2) return ["나", "컴퓨터"];
-  if (seats === 3) return ["나", "왼쪽 컴퓨터", "오른쪽 컴퓨터"];
-  return ["나", "왼쪽 컴퓨터", "맞은편 컴퓨터", "오른쪽 컴퓨터"];
+/** What each seat is called, for two, three or four players (me at the near side); `people`: over Wi-Fi, 상대 for 컴퓨터. */
+export function seatNames(seats: number, people = false) {
+  const rival = people ? "상대" : "컴퓨터";
+  if (seats === 2) return ["나", rival];
+  if (seats === 3) return ["나", `왼쪽 ${rival}`, `오른쪽 ${rival}`];
+  return ["나", `왼쪽 ${rival}`, `맞은편 ${rival}`, `오른쪽 ${rival}`];
 }
 /** Tiles dealt to each player. */
 export const handOf = (seats: number) => (seats === 4 ? 3 : 4);
@@ -195,6 +202,8 @@ const legal = (s: State, m: Move) => moves(s).some((x) => x.from === m.from && x
 const bare = (s: State, seat: number) => hiddenIn(s, seat) === 0 && !(s.seat === seat && s.held !== null);
 /** The game is over when I am out, or when every computer is. */
 function settle(s: State) {
+  // Over Wi-Fi it is settled in the room's terms (`net.ts`): the last one left wins.
+  if (s.net) return;
   if (s.out[0]) s.winner = 1;
   else if (s.out.every((o, seat) => seat === 0 || o)) s.winner = 0;
 }

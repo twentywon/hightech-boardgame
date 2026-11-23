@@ -765,9 +765,13 @@ export class SeaBattleView extends TableView<State> {
         }),
       );
       this.laid = state.fleets;
-      this.pegs.forEach((peg) => peg.removeFromParent());
-      this.pegs.clear();
-      this.puffs = [];
+      // A new battle clears the waters; a fleet seen anew in the battle (over Wi-Fi the other's ships are known as
+      // they are hit) keeps its pegs and smoke.
+      if (!state.shots.some((side) => side.includes(true))) {
+        this.pegs.forEach((peg) => peg.removeFromParent());
+        this.pegs.clear();
+        this.puffs = [];
+      }
     }
     state.fleets.forEach((fleet, side) =>
       fleet.forEach((ship, k) => {
@@ -787,6 +791,8 @@ export class SeaBattleView extends TableView<State> {
         });
       }),
     );
+    // How many ships of each side are in sight, for the browser tests (over Wi-Fi the other's stay hidden).
+    this.renderer.domElement.dataset.shown = this.ships.map((fleet) => fleet.filter((g) => g.visible).length).join(",");
     for (const [point, peg] of this.pegs)
       if (!state.shots[Math.floor(point / CELLS)][point % CELLS]) {
         peg.removeFromParent();
@@ -952,11 +958,11 @@ export class SeaBattleView extends TableView<State> {
     // A ship that has gone down lists over and settles low in the water as it burns out.
     if (state.last.sunk) {
       const ship = state.fleets[target].findIndex((s) => s.cells.includes(point % CELLS)),
-        g = this.ships[target][ship],
         lean = ship % 2 ? 0.32 : -0.32;
       let gurgled = false;
       this.tween(FLIGHT + 260, SINKING, (u) => {
-        const body = g?.userData.body as T.Group | undefined;
+        // Found as it sinks: over Wi-Fi a ship of the other's is first seen whole as the shell lands, and built anew then.
+        const body = this.ships[target][ship]?.userData.body as T.Group | undefined;
         if (!body) return;
         const e = 1 - (1 - u) ** 3;
         body.rotation.set(lean * e + Math.sin(u * Math.PI * 3) * 0.04 * (1 - u), 0, 0.035 * e);

@@ -2,15 +2,18 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { DRAW, END, NEW_SET, OPENING, RACK_SIZE, REGROUP, RESET, tileRummy, type State } from "./rules";
 import { RACK_COLORS, TileRummyView } from "./view";
+import { tileRummyNet } from "./net";
 
 export const tileRummyConfig: PointConfig<State> = {
   game: tileRummy,
   contact: (sound) => sound.tile(2),
   noPanel: true,
-  view: (host, quality) => new TileRummyView(host, quality),
+  view: (host, quality, _variant, _mode, _level, net) => new TileRummyView(host, quality, net ? "상대" : "컴퓨터"),
   colors: RACK_COLORS,
   // The other rack and the pool are hidden: against the computer only, and nothing is taken back but this turn's own work.
   computerOnly: true,
+  // Over Wi-Fi each device holds its own rack (`net.ts`).
+  net: tileRummyNet(RACK_COLORS),
   noUndo: true,
   showMovable: false,
   tools: [
@@ -25,7 +28,7 @@ export const tileRummyConfig: PointConfig<State> = {
   english: "Tile Rummy",
   number: "NO. 29 — SETS AND RUNS",
   intro: `<p>흔히 '루미큐브'로 알려진 놀이 방식입니다. 거실 탁자에 타일을 펼쳐 놓고,<br>같은 숫자끼리 또는 이어지는 숫자끼리 묶어 내 타일을 먼저 다 내려놓으세요.</p>`,
-  meta: `나 대 컴퓨터 · 타일 106개 · ${RACK_SIZE}개씩`,
+  meta: `나 대 컴퓨터 · 와이파이 2인 · 타일 106개 · ${RACK_SIZE}개씩`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>GROUPS AND RUNS</span>`,
   artClass: "tilerummy-art",
   artLabel: "타일 러미 미리보기",
@@ -39,6 +42,7 @@ export const tileRummyConfig: PointConfig<State> = {
     part("타일 내는 법", table(["새 묶음 내기", "내 타일 가운데 낼 것들을 <b>하나씩 눌러 고릅니다</b>(고른 타일은 떠오릅니다). 고른 타일이 묶음이 되면 판에 <b>새 묶음으로 내기</b> 버튼이 뜹니다."], ["판의 묶음에 붙이기", "내 타일 하나를 누르면, 그 타일을 붙일 수 있는 묶음 끝에 <b>금색 칸</b>이 뜹니다. 금색 칸을 누르면 붙습니다. 붙일 곳이 없으면 칸이 뜨지 않습니다."], ["재구성", "판에 놓인 타일들을 눌러 고르고 내 타일도 눌러 고릅니다. 고른 타일이 묶음이 되면 <b>재구성</b> 버튼이 뜨고, 누르면 그 타일들이 새 묶음이 됩니다. 타일을 내준 묶음이 틀려지면 바닥이 붉어지니 이어서 고쳐 짭니다."], ["고르기 취소", "떠오른 타일을 다시 누르면 내려갑니다."], ["도로 가져오기", "이번 차례에 낸 내 타일을 고르면 받침대 옆에 금색 칸이 뜹니다. 누르면 되가져옵니다."])) +
     part("판 위의 버튼", table(["새 묶음으로 내기", "고른 내 타일이 맞는 묶음일 때만 뜹니다."], ["재구성", "판의 타일이 섞인 고른 타일들이 맞는 묶음일 때만 뜹니다."], ["차례 마치기", "모든 묶음이 맞고 내 타일을 하나 이상 내려놓았을 때 뜹니다."], ["한 장 가져오기", "아무것도 내려놓지 않았을 때만 뜹니다. 가져오면 차례가 끝납니다."], ["이번 차례 되돌리기", "이번 차례에 고르고 옮긴 것을 모두 처음대로 돌립니다."])) +
     part("끝", table(["승리", "받침대를 먼저 비운 쪽."], ["더미가 비면", "두 사람이 잇달아 아무것도 못 내면 끝나고, 남은 타일의 숫자 합이 적은 쪽이 이깁니다. 조커는 30으로 셉니다."])) +
+    part("와이파이 여럿이", table(["타일", "두 사람이 각자 자기 기기로 합니다. 내 타일은 내 기기에만 보이고, 상대 타일은 뒷면만 보입니다."], ["순서", "<b>선공</b>(방장 자리)이 먼저 합니다. 상대가 차례에 고르고 옮기는 타일은 판 위에서 그대로 보입니다."], ["끝", "게임이 끝나면 상대 타일이 펼쳐집니다."])) +
     part("처음이라면", notes(`첫 등록 ${OPENING}점은 10 이상의 숫자 셋이면 채워집니다.`, "판의 긴 줄에서 끝 타일을 떼어 내 타일과 새 묶음을 만들 수 있습니다. 남은 줄이 3개 이상이어야 합니다.", "네 개짜리 같은 숫자 묶음에서 하나를 떼어 쓸 수 있습니다.", "조커는 아껴 두면 좋지만, 끝까지 들고 있으면 30점짜리 짐이 됩니다.", "컴퓨터도 보통과 어려움에서는 판의 묶음을 풀어 자기 타일을 끼워 넣습니다. 쉬움에서는 자기 타일로 만든 묶음만 냅니다.")),
   help: "마우스·터치: 타일을 눌러 고르고, 판의 버튼이나 금색 칸을 누릅니다",
   sides: ["나", "컴퓨터"],

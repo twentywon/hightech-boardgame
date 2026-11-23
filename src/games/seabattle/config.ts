@@ -18,6 +18,7 @@ function fleetHtml(state: State, side: number) {
   return `<span class="fleet-count sr-text">${state.phase === "place" ? `배 ${laid.length} / ${FLEET.length}척 배치` : `남은 배 ${left}척`}</span><span class="fleet" role="img" aria-label="${FLEET.map(([name, length], i) => `${name} ${length}칸 ${{ waiting: "아직 안 놓음", sunk: "격침", afloat: "건재" }[status(i)]}`).join(", ")}">${FLEET.map(([name, length], i) => `<span class="ship ${SHIP_KINDS[i]}${status(i) === "afloat" ? "" : ` ${status(i)}`}" title="${name}"><svg viewBox="0 0 ${length * 20} 14" style="--cells:${length}" aria-hidden="true">${SILHOUETTE[SHIP_KINDS[i]]}${status(i) === "sunk" ? `<path class="strike" d="M3 2L${length * 20 - 3} 13"/>` : ""}</svg></span>`).join("")}</span>`;
 }
 import { SEA_COLORS, SeaBattleView, seaPoints } from "./view";
+import { seaBattleNet } from "./net";
 
 export const seaBattleConfig: PointConfig<State> = {
   game: seaBattle,
@@ -26,6 +27,8 @@ export const seaBattleConfig: PointConfig<State> = {
   view: (host, quality) => new SeaBattleView(host, quality, [true, false]),
   // One screen cannot hide two fleets from two players: the game is played against the computer only.
   computerOnly: true,
+  // Over Wi-Fi each device lays its own fleet and sees only its own chart open (`net.ts`).
+  net: seaBattleNet(SEA_COLORS),
   tools: [
     { label: "배 돌리기 (가로 ↔ 세로)", point: TURN_SHIP },
     { label: "남은 배 무작위로 놓기", point: LAY_REST },
@@ -40,15 +43,15 @@ export const seaBattleConfig: PointConfig<State> = {
   shape: "taller",
   colors: SEA_COLORS,
   keyPoints: seaPoints,
-  // The keyboard starts in the waters the player to move fires at.
-  keyStart: (state) => (state.phase === "battle" && state.turn === 0 ? CELLS + 44 : 44),
+  // The keyboard starts in the waters I fire at once the battle begins (over Wi-Fi 후공 does not fire first, but fires there).
+  keyStart: (state) => (state.phase === "battle" ? CELLS + 44 : 44),
   // Once the fleet is laid, the keyboard moves over to the waters to fire at.
   rehome: (before, next) => before.phase !== next.phase,
   name: "배틀십",
   english: "Battleship",
   number: "NO. 20 — HIDDEN FLEETS",
   intro: `<p>지하 작전실, 탁자 위의 해도 두 장.<br>보이지 않는 상대 함대를 한 칸씩 쏘아 모두 가라앉히세요.</p>`,
-  meta: `2인 · 10×10 해도 두 장 · 배 ${FLEET.length}척`,
+  meta: `나 대 컴퓨터 · 와이파이 2인 · 10×10 해도 두 장 · 배 ${FLEET.length}척`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FIND AND SINK</span>`,
   artClass: "seabattle-art",
   artLabel: "배틀십 해도 미리보기",
@@ -62,7 +65,8 @@ export const seaBattleConfig: PointConfig<State> = {
     part("표시", table(["빨간 말뚝", "명중한 칸"], ["흰 말뚝", "빗나간 칸"], ["검게 탄 배", "격침된 배. 어느 쪽 배든 격침되면 보입니다."], ["노란 고리", "마지막으로 쏜 칸"])) +
     part("해도", table(["청군 해역", "왼쪽(좁은 화면에서는 아래). 내 것이며 내 배가 보입니다."], ["홍군 해역", "오른쪽(좁은 화면에서는 위). 컴퓨터의 것이며 여기를 쏩니다."])) +
     part("처음이라면", notes("명중하면 그 칸의 <b>위·아래·왼쪽·오른쪽</b>을 이어서 쏩니다. 두 칸이 이어 맞으면 그 줄을 따라갑니다.", "찾을 때는 <b>한 칸씩 건너</b> 바둑판 무늬로 쏘면 가장 작은 배도 놓치지 않습니다.", "남은 배 가운데 가장 긴 배가 들어갈 수 없는 좁은 틈은 쏠 필요가 없습니다.")) +
-    part("그 밖에", notes("한 화면에서는 서로의 배를 가릴 수 없어 컴퓨터 대전만 있습니다.", "빗나가면 풍덩, 명중하면 폭발 소리가 납니다.", "컴퓨터는 자기가 쏜 결과와 격침된 배만 보고 쏩니다. 내 배의 위치는 알지 못합니다.", "무르기는 숨은 배를 알아내는 데 쓸 수 있으니 연습용으로만 쓰세요.", "저장은 없습니다. 새로고침하면 처음으로 돌아갑니다.")),
+    part("와이파이 여럿이", table(["배 놓기", "두 사람이 <b>각자 자기 기기에서 동시에</b> 배를 놓습니다. 상대의 배는 보이지 않습니다."], ["시작", "둘 다 다 놓으면 <b>선공</b>(방장 자리)부터 쏩니다."], ["보이는 것", "내 해도는 언제나 내 쪽(청색)에 보입니다. 상대 배는 맞힌 칸만 알 수 있고, 격침되거나 게임이 끝나면 모습이 드러납니다."], ["무르기", "상대가 수락해야 합니다."])) +
+    part("그 밖에", notes("한 화면에서는 서로의 배를 가릴 수 없어 컴퓨터 대전만 있습니다. 둘이 하려면 와이파이 여럿이로 기기를 하나씩 씁니다.", "빗나가면 풍덩, 명중하면 폭발 소리가 납니다.", "컴퓨터는 자기가 쏜 결과와 격침된 배만 보고 쏩니다. 내 배의 위치는 알지 못합니다.", "무르기는 숨은 배를 알아내는 데 쓸 수 있으니 연습용으로만 쓰세요.", "저장은 없습니다. 새로고침하면 처음으로 돌아갑니다.")),
   help: "배 놓기: 내 해역의 칸을 누르면 그 칸부터 놓입니다<br>마우스·터치: 상대 해역의 칸을 누르면 바로 쏩니다<br>키보드: 판을 선택하고 방향키로 칸 이동, Enter로 발사",
   sides: ["청군", "홍군"],
   startWord: "작전실에 들어가기",

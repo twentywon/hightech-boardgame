@@ -140,7 +140,8 @@ export class HitBlowView extends TableView<State> {
   private ticking = 0;
   /** When the last home run was hit: the bulbs flash for a while. */
   private homeRun = -1e9;
-  constructor(host: HTMLElement, quality: "high" | "low") {
+  /** `rival`: who throws against me (컴퓨터, or 상대 over Wi-Fi). */
+  constructor(host: HTMLElement, quality: "high" | "low", private readonly rival = "컴퓨터") {
     super(host, quality, "#0b1330");
     this.daylight("#a9b9e8", "#26331f", "#fff3dc", 12, 1.9);
     this.canvas.width = W;
@@ -320,7 +321,7 @@ export class HitBlowView extends TableView<State> {
       if (!guesses.length) text("아직 없음", x, 134, 26, "rgba(244,241,230,0.35)");
     };
     column(0, "내가 던진 숫자", 70, CHALK_COLORS[0]);
-    column(1, "컴퓨터가 던진 숫자", 690, CHALK_COLORS[1]);
+    column(1, `${this.rival}가 던진 숫자`, 690, CHALK_COLORS[1]);
     ctx.fillStyle = "rgba(244,241,230,0.35)";
     ctx.fillRect(40, 552, W - 80, 2);
     // What is being keyed in, the count of the last throw, and my own number: a caption above each.
@@ -349,7 +350,8 @@ export class HitBlowView extends TableView<State> {
     // The count of the last throw, large, as a scoreboard shows the count of the batter at the plate.
     const mine = state.guesses[0],
       theirs = state.guesses[1],
-      latest: [0 | 1, Guess] | null = mine.length > theirs.length ? [0, mine[mine.length - 1]] : theirs.length ? [1, theirs[theirs.length - 1]] : null;
+      // The last throw is the one of the side not to throw now (over Wi-Fi 후공 sees the other throw first).
+      latest: [0 | 1, Guess] | null = state.turn === 1 ? (mine.length ? [0, mine[mine.length - 1]] : null) : theirs.length ? [1, theirs[theirs.length - 1]] : null;
     if (state.winner !== null) {
       text("경기 종료", 640, 574, 26, "#f4f1e6", "center");
       text(`상대 숫자 ${state.secrets[1].join(" ")}`, 640, 612, 26, AMBER, "center", 700);
@@ -358,7 +360,7 @@ export class HitBlowView extends TableView<State> {
         count = latest && seen?.verdict ? latest[1] : null,
         lit = seen?.lamps ?? 0,
         left = 470;
-      caption(latest ? (latest[0] ? "방금 던진 공 · 컴퓨터" : "방금 던진 공 · 나") : "방금 던진 공", left);
+      caption(latest ? (latest[0] ? `방금 던진 공 · ${this.rival}` : "방금 던진 공 · 나") : "방금 던진 공", left);
       text("S", left + 10, 612, 28, STRIKE, "center");
       for (let j = 0; j < size; j++) lamp(left + 40 + j * 28, 612, 11, STRIKE, !!count && j < Math.min(count.strikes, lit));
       const b = left + 40 + size * 28 + 18;
@@ -373,6 +375,11 @@ export class HitBlowView extends TableView<State> {
       caption("내 숫자", W - 70, "right");
       state.secrets[0].forEach((digit, i) => tile(digit, W - 70 - (size - 1 - i) * 52 - 24, 612, 46, 52, "#9fe7b4", Math.min(1, Math.max(0, this.fixing * (size + 1) - i))));
     }
+    // What the board shows of the numbers, for the browser tests: the keys pressed, my number, the other's once told.
+    const el = this.renderer.domElement;
+    el.dataset.entry = state.entry.join("");
+    el.dataset.mine = state.secrets[0]?.join("") ?? "";
+    el.dataset.theirs = state.winner !== null ? state.secrets[1].join("") : "";
     this.texture.needsUpdate = true;
   }
   /** Lights the keys: those that can be pressed are lit, the one under the keyboard or the mouse brighter. */
