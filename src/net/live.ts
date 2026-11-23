@@ -67,10 +67,11 @@ class Glide {
   private at = 0;
   private span = 1000 / INPUT_HZ;
   push(data: number[], now: number) {
-    if (this.last) {
+    // After a silence (a drop, a page that was hidden) the hand is where it is now, not swept there from where it was.
+    if (this.last && now - this.at < 500) {
       this.from = this.value(now);
       this.span = clamp(now - this.at, 10, 120);
-    }
+    } else this.from = null;
     this.last = data;
     this.at = now;
   }
