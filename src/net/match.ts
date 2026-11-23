@@ -17,6 +17,8 @@ export interface NetRules<S> {
   toMove(state: S): number;
   /** Words refusing a move the rules allow but a game over Wi-Fi does not; null lets it through. */
   allow?(state: S, move: Move): string | null;
+  /** A move never taken back by an undo (janggi's formation, chosen before the first move). */
+  firm?(move: Move): boolean;
 }
 
 /**
@@ -74,7 +76,7 @@ export class Match<S> {
   }
   /** How long the list is once the last move of `seat`, and everything after it, is taken back; null if it made none. */
   undoFor(seat: number): number | null {
-    for (let i = this.moves.length - 1; i >= 0; i--) if (this.moves[i].seat === seat) return i;
+    for (let i = this.moves.length - 1; i >= 0; i--) if (this.moves[i].seat === seat) return this.rules.firm?.(this.moves[i].move) ? null : i;
     return null;
   }
 }

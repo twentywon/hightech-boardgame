@@ -25,6 +25,8 @@ import { BoardView } from "../engine/board-view";
 import { Sound } from "../engine/sound";
 import { modal, setupDialog } from "./dialog";
 import { setSettings, type Settings, type Mode } from "../core/storage";
+import { NetTable } from "./net-table";
+import { reversiMove, reversiNet } from "../net/boards";
 interface Navigation {
   header: () => string;
   bindHeader: () => void;
@@ -60,7 +62,10 @@ export function mountReversi(
     disposed = false,
     aiError = "",
     hintKey = "",
-    resultPending = false;
+    resultPending = false,
+    // A game over Wi-Fi (와이파이 여럿이) is on the table; `wantWifi`, the setup chose it.
+    wifi = false,
+    wantWifi = false;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
@@ -71,7 +76,40 @@ export function mountReversi(
     }, ms);
     timers.add(timer);
   };
-  const aiTurn = () => mode === "ai" && state.turn !== human;
+  const aiTurn = () => (wifi ? net.computer(state) : mode === "ai" && state.turn !== human);
+  const net: NetTable<State> = new NetTable<State>({
+    net: reversiNet,
+    title: "리버시",
+    options: () => ({}),
+    begin(next, fresh) {
+      wifi = true;
+      mode = "local";
+      difficulty = preferences.difficulty;
+      state = next;
+      if (fresh) {
+        sound.unlock();
+        screen();
+        return;
+      }
+      // Rebuilt from the room's list (an undo, a return): shown at once.
+      generation++;
+      ai.cancel();
+      timers.forEach(clearTimeout);
+      timers.clear();
+      candidate = null;
+      aiError = "";
+      resultPending = false;
+      view?.renderReversi(state, false);
+      update();
+      schedule();
+    },
+    show: (next) => accept(next),
+    resting: () => !!view && !view.animating,
+    table: () => !!document.getElementById("black-count"),
+    update: () => update(),
+    resume: () => schedule(),
+    back: () => nav.back(),
+  });
   function stop() {
     generation++;
     ai.cancel();
@@ -85,9 +123,11 @@ export function mountReversi(
     resultPending = false;
   }
   function setup(host = nav.setupHost) {
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi && net.playing && host !== nav.setupHost) return net.newGame(host);
     if (host === nav.setupHost) stop();
     host.innerHTML =
-      `<section class="featured"><div class="feature-copy"><h2>리버시 <span>Reversi</span></h2><p>코너를 지키고, 다음 수를 열어두세요.<br>마지막 순간까지 승부는 바뀔 수 있습니다.</p><div class="game-meta">2인 · 8×8 보드 · 전략</div><div class="mode-select"><label><input type="radio" name="rv-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="rv-mode" value="ai"> 컴퓨터 대전</label></div><div id="rv-options" class="ai-options" hidden><label>AI 난이도<select id="rv-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><label>플레이어 색상<select id="rv-color">${[
+      `<section class="featured"><div class="feature-copy"><h2>리버시 <span>Reversi</span></h2><p>코너를 지키고, 다음 수를 열어두세요.<br>마지막 순간까지 승부는 바뀔 수 있습니다.</p><div class="game-meta">2인 · 8×8 보드 · 전략</div><div class="mode-select"><label><input type="radio" name="rv-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="rv-mode" value="ai"> 컴퓨터 대전</label><label><input type="radio" name="rv-mode" value="net"> 와이파이 여럿이</label></div><div id="rv-options" class="ai-options" hidden><label>AI 난이도<select id="rv-difficulty">${difficulties.map((d) => `<option value="${d}" ${preferences.difficulty === d ? "selected" : ""}>${difficultyLabels[d]}</option>`).join("")}</select></label><label>플레이어 색상<select id="rv-color">${[
         ["black", "흑돌"],
         ["white", "백돌"],
         ["random", "무작위"],
@@ -99,14 +139,14 @@ export function mountReversi(
         .join(
           "",
         )}</select></label><small>선택한 설정은 다음 새 대국부터 적용됩니다.</small></div><button id="rv-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art reversi-art" role="img" aria-label="리버시판 미리보기"><div class="reversi-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 || i === 36 ? '<b class="white"></b>' : i === 28 || i === 35 ? '<b class="black"></b>' : ""}</i>`).join("")}</div><span>THE ART OF REVERSAL</span></div></section>`;
+    // Over Wi-Fi only the computer's level is asked (for a seat the host gives the computer); sides are taken in the room.
+    const arrange = (chosen: string) => {
+      $("rv-options").hidden = chosen === "local";
+      $("rv-color").closest("label")!.hidden = chosen === "net";
+    };
+    const chosen = () => document.querySelector<HTMLInputElement>("input[name=rv-mode]:checked")!.value;
     document.querySelectorAll<HTMLInputElement>("input[name=rv-mode]").forEach(
-      (input) =>
-        (input.onchange = () => {
-          $("rv-options").hidden =
-            document.querySelector<HTMLInputElement>(
-              "input[name=rv-mode]:checked",
-            )!.value !== "ai";
-        }),
+      (input) => (input.onchange = () => arrange(chosen())),
     );
     const remember = () => {
       preferences = {
@@ -118,18 +158,21 @@ export function mountReversi(
     $("rv-difficulty").onchange = remember;
     $("rv-color").onchange = remember;
     $("rv-start").onclick = () => {
-      mode = document.querySelector<HTMLInputElement>(
-        "input[name=rv-mode]:checked",
-      )!.value as Mode;
+      wantWifi = chosen() === "net";
+      // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+      if (wantWifi) return net.open();
+      mode = chosen() as Mode;
       start();
     };
     // From the table, the panel opens on the mode being played.
     document.querySelectorAll<HTMLInputElement>("input[name=rv-mode]").forEach((input) => {
-      input.checked = input.value === mode;
+      input.checked = input.value === (wantWifi ? "net" : mode);
     });
-    $("rv-options").hidden = mode !== "ai";
+    arrange(chosen());
   }
   function start() {
+    net.leave();
+    wifi = false;
     difficulty = preferences.difficulty;
     human =
       preferences.color === "black"
@@ -147,11 +190,12 @@ export function mountReversi(
     stop();
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>리버시 <small>REVERSI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE REVERSI TABLE</span><span>8 × 8 · 흑 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div id="turn" role="status" aria-live="polite"></div><div id="pass-notice" role="status" aria-live="polite" hidden></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "local" ? "플레이어 1" : human === 1 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="black-count">2</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "local" ? "플레이어 2" : human === 2 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="white-count">2</b></div><label class="hint-toggle"><input id="hints" type="checkbox" ${showHints ? "checked" : ""}> 합법 수 안내</label><p class="hint">상대 돌을 사이에 두고 뒤집으세요.<br>마지막에 더 많은 돌을 가진 쪽이 승리합니다.</p><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 클릭하여 착수<br>터치: 칸을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
+      `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>리버시 <small>REVERSI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE REVERSI TABLE</span><span>8 × 8 · 흑 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div id="turn" role="status" aria-live="polite"></div><div id="pass-notice" role="status" aria-live="polite" hidden></div><div class="player"><i class="stone black"></i><span>흑돌<small>${wifi ? net.who(0) : mode === "local" ? "플레이어 1" : human === 1 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="black-count">2</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${wifi ? net.who(1) : mode === "local" ? "플레이어 2" : human === 2 ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span><b id="white-count">2</b></div><label class="hint-toggle"><input id="hints" type="checkbox" ${showHints ? "checked" : ""}> 합법 수 안내</label><p class="hint">상대 돌을 사이에 두고 뒤집으세요.<br>마지막에 더 많은 돌을 가진 쪽이 승리합니다.</p><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 클릭하여 착수<br>터치: 칸을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
     dress(setup, [".hint-toggle", ".assist"]);
+    if (wifi) net.dress();
     $("camera").onclick = () => {
       settings.top = !settings.top;
       view?.setCamera(settings.top);
@@ -173,6 +217,8 @@ export function mountReversi(
       view.renderReversi(state, false);
       if (settings.top) view.setCamera(true);
       view.onSelect = (p, confirm) => {
+        // Over Wi-Fi a tap out of my turn is told why.
+        if (wifi && p && confirm && view && !view.animating && !state.winner && !net.mine(state)) return net.warn(state);
         if (
           !p ||
           !canPlay() ||
@@ -238,23 +284,29 @@ export function mountReversi(
       !view.animating &&
       !state.winner &&
       !aiTurn() &&
+      (!wifi || net.mine(state)) &&
       !document.querySelector("dialog[open]")
     );
   }
   function place(p: Point) {
     if (!canPlay()) return;
     const next = play(state, p);
-    if (next) {
-      sound.unlock();
-      accept(next);
-    }
+    if (!next) return;
+    sound.unlock();
+    // Over Wi-Fi the disc goes to the room; it is shown when the room tells it (at once on the host's device).
+    if (wifi) {
+      candidate = null;
+      view?.preview(null, state.turn);
+      net.commit(reversiMove(p));
+      update();
+    } else accept(next);
   }
   /**
    * State one press of 무르기 returns to. Against the computer that is the
    * person's own previous turn, which may be several moves back after passes.
    */
   function undoTarget(): State | null {
-    if (state.winner || !state.moves.length) return null;
+    if (wifi || state.winner || !state.moves.length) return null;
     if (mode === "local") return undo(state);
     for (let count = 1; count <= state.moves.length; count++) {
       const previous = undo(state, count);
@@ -270,6 +322,8 @@ export function mountReversi(
   function takeBack() {
     if (!view || view.animating || document.querySelector("dialog[open]"))
       return;
+    // Over Wi-Fi an undo is a request the other accepts; the room then rebuilds the game on both devices.
+    if (wifi) return net.undo();
     const previous = undoTarget();
     if (!previous) return;
     // Drop searches and pending replies for the abandoned position.
@@ -304,11 +358,15 @@ export function mountReversi(
     $("white-count").textContent = String(c.white);
     $("move-count").textContent = `${state.moves.length}수`;
     $("turn").textContent = state.winner
-      ? state.winner === "draw"
-        ? "무승부"
-        : `${state.winner === 1 ? "흑" : "백"}돌 승리`
+      ? wifi
+        ? net.verdict(state)
+        : state.winner === "draw"
+          ? "무승부"
+          : `${state.winner === 1 ? "흑" : "백"}돌 승리`
       : aiError ||
-        (aiTurn()
+        (wifi
+          ? (net.line(state) ?? `${net.who(state.turn - 1)} 차례입니다`)
+          : aiTurn()
           ? "컴퓨터가 생각 중…"
           : `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`);
     if (aiError) {
@@ -328,9 +386,10 @@ export function mountReversi(
     // Where the next disc would go, now that no button names it.
     if (view) view.renderer.domElement.dataset.candidate = candidate && isLegal(candidate) ? `${String.fromCharCode(65 + candidate.col)}${candidate.row + 1}` : "";
     // Enabled again by onSettled once the discs stop flipping.
-    $<HTMLButtonElement>("undo").disabled = !undoTarget() || !!view?.animating;
+    $<HTMLButtonElement>("undo").disabled = (wifi ? !net.canUndo() : !undoTarget()) || !!view?.animating;
+    // Over Wi-Fi the places shown are mine only, in my turn.
     const legal =
-      showHints && !state.winner
+      showHints && !state.winner && (!wifi || net.mine(state))
         ? legalMoves(state.board, state.turn).map((m) => point(m.index))
         : [];
     const key = legal.map(indexOf).join(",");
@@ -373,7 +432,14 @@ export function mountReversi(
             return;
           }
           const next = r.move && play(state, r.move);
-          if (next) accept(next);
+          // Over Wi-Fi the host's computer moves through the room, which tells both devices.
+          if (next && wifi) {
+            const refused = net.commit(reversiMove(r.move!), state.turn - 1);
+            if (refused) {
+              aiError = refused;
+              update();
+            }
+          } else if (next) accept(next);
           else {
             aiError = "컴퓨터가 유효한 수를 반환하지 못했습니다.";
             update();
@@ -408,7 +474,7 @@ export function mountReversi(
     resultPending = false;
     // No window at the end for now (the user asked): the result's word comes up in the middle of the table.
     if (!RESULT_WINDOWS) {
-      finale(state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win", setup);
+      finale(wifi ? net.outcome(state) : state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win", setup);
       return;
     }
     const c = counts(state.board);
@@ -448,6 +514,7 @@ export function mountReversi(
     rules,
     dispose() {
       disposed = true;
+      net.dispose();
       stop();
       sound.dispose();
       window.removeEventListener("pagehide", hide);

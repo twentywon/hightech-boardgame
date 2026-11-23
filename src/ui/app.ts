@@ -140,6 +140,8 @@ import {
 import { BoardView } from "../engine/board-view";
 import { Sound } from "../engine/sound";
 import { music } from "../engine/music";
+import { NetTable } from "./net-table";
+import { gomokuMove, gomokuNet } from "../net/boards";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 let state = createGame(),
   mode: Mode = "local",
@@ -290,7 +292,49 @@ let aiOptions = getAIOptions(),
   human: Player = 1;
 let sessionGeneration = 0;
 let aiError = "";
-const isAITurn = () => mode === "ai" && state.turn !== human;
+/** Gomoku over Wi-Fi (와이파이 여럿이): the room's game is on the table; `wantWifi`, the setup chose it. */
+let wifi = false,
+  wantWifi = false;
+const isAITurn = () => (wifi ? gomokuRoom.computer(state) : mode === "ai" && state.turn !== human);
+const gomokuRoom: NetTable<typeof state> = new NetTable<typeof state>({
+  net: gomokuNet,
+  title: "오목",
+  // 삼삼 is the host's choice.
+  options: () => ({ noDoubleThree: !allowDoubleThree }),
+  begin(next, fresh) {
+    wifi = true;
+    mode = "local";
+    difficulty = aiOptions.difficulty;
+    if (fresh) {
+      state = next;
+      lockedUntil = 0;
+      refusal = "";
+      game();
+      return;
+    }
+    // Rebuilt from the room's list (an undo, a return): shown at once.
+    sessionGeneration++;
+    ai.cancel();
+    if (timer) clearTimeout(timer);
+    if (resultTimer) clearTimeout(resultTimer);
+    timer = resultTimer = null;
+    resultPending = false;
+    state = next;
+    candidate = null;
+    refusal = "";
+    aiError = "";
+    lockedUntil = performance.now() + 200;
+    view?.renderState(state, false);
+    update();
+    scheduleAI();
+  },
+  show: (next) => accept(next),
+  resting: () => !!view && !view.animating && performance.now() >= lockedUntil,
+  table: () => !!view && !!document.getElementById("undo"),
+  update: () => update(),
+  resume: () => scheduleAI(),
+  back: () => leave(),
+});
 function newMatch() {
   // Keep the current selection even when browser storage is unavailable.
   difficulty = aiOptions.difficulty;
@@ -471,7 +515,7 @@ type GameSelection =
   | "marble-push"
   | null;
 function gomokuSetup() {
-  return `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" ${mode === "local" ? "checked" : ""}> 로컬 2인</label><label><input type="radio" name="mode" value="ai" ${mode === "ai" ? "checked" : ""}> 컴퓨터 대전</label></div>${aiForm()}<label class="rule-option"><input type="checkbox" id="allow-33" ${allowDoubleThree ? "checked" : ""}> 삼삼(3-3) 허용<small>끄면 열린 삼을 한 번에 두 개 만드는 수를 둘 수 없습니다.</small></label><button class="primary" id="start">테이블에 앉기 <span>↗</span></button></div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
+  return `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" ${mode === "local" && !wantWifi ? "checked" : ""}> 로컬 2인</label><label><input type="radio" name="mode" value="ai" ${mode === "ai" && !wantWifi ? "checked" : ""}> 컴퓨터 대전</label><label><input type="radio" name="mode" value="net" ${wantWifi ? "checked" : ""}> 와이파이 여럿이</label></div>${aiForm()}<label class="rule-option"><input type="checkbox" id="allow-33" ${allowDoubleThree ? "checked" : ""}> 삼삼(3-3) 허용<small>끄면 열린 삼을 한 번에 두 개 만드는 수를 둘 수 없습니다.</small></label><button class="primary" id="start">테이블에 앉기 <span>↗</span></button></div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;
 }
 /** Wires the gomoku setup panel, in the collection or in the new-game dialog. */
 function bindGomokuSetup() {
@@ -492,24 +536,37 @@ function bindGomokuSetup() {
     showStats();
   };
   $("ai-color").onchange = rememberAI;
+  // Over Wi-Fi only the computer's level is asked (for a seat the host gives the computer); sides are taken in the room.
+  const arrange = (chosen: string) => {
+    $("ai-options").hidden = chosen === "local";
+    $("ai-color").closest("label")!.hidden = chosen === "net";
+  };
+  arrange(document.querySelector<HTMLInputElement>("input[name=mode]:checked")!.value);
   document.querySelectorAll<HTMLInputElement>("input[name=mode]").forEach((input) =>
-    (input.onchange = () => {
-      $("ai-options").hidden = document.querySelector<HTMLInputElement>("input[name=mode]:checked")!.value !== "ai";
-    }),
+    (input.onchange = () => arrange(document.querySelector<HTMLInputElement>("input[name=mode]:checked")!.value)),
   );
   $("start").onclick = () => {
-    mode = document.querySelector<HTMLInputElement>("input[name=mode]:checked")!.value as Mode;
+    const chosen = document.querySelector<HTMLInputElement>("input[name=mode]:checked")!.value;
     allowDoubleThree = $<HTMLInputElement>("allow-33").checked;
+    wantWifi = chosen === "net";
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    if (wantWifi) return gomokuRoom.open();
+    gomokuRoom.leave();
+    wifi = false;
+    mode = chosen as Mode;
     newMatch();
     game();
   };
 }
 /** The new-game dialog: the same panel as in the collection. */
 function askNewGame() {
-  setupDialog((host) => {
-    host.innerHTML = gomokuSetup();
-    bindGomokuSetup();
-  });
+  setupDialog(fillGomokuSetup);
+}
+/** The setup in a window over the table: over Wi-Fi a request to the room instead. */
+function fillGomokuSetup(host: HTMLElement) {
+  if (wifi && gomokuRoom.playing) return gomokuRoom.newGame(host);
+  host.innerHTML = gomokuSetup();
+  bindGomokuSetup();
 }
 /**
  * Leaves a table for the collection and brings the game that was played back into view, its tile in the middle of
@@ -551,6 +608,9 @@ function menu(selected: GameSelection = null, category = "전체", people = "전
     // The table sat down at knows which game it is (its information is laid over the table for some).
     document.documentElement.dataset.game = selected;
   }
+  // A gomoku room over Wi-Fi is left with its table.
+  gomokuRoom.leave();
+  wifi = false;
   clear();
   app.innerHTML = header() +
     `<main class="library"><section class="hero"><div class="hero-copy"><div class="eyebrow">The world, at your table${EDITION === "student" ? `<span class="edition-mark">학생용</span>` : ""}</div><h1>World <em>Table</em> Games</h1><p class="intro">오래도록 사랑받은 게임들, 새로운 테이블 위에서.<br>잠깐의 여유를 위한 당신만의 게임 컬렉션.</p></div></section><div class="collection-heading"><h2>게임 컬렉션 <span>${String(games.filter(g => g.available).length).padStart(2,"0")} / ${String(games.length).padStart(2,"0")}</span></h2><div class="filters" role="group" aria-label="게임 카테고리">${["전체", "보드게임", "카드게임", "주사위게임", "퍼즐게임", "아케이드게임", "스포츠게임"].map((x) => `<button class="filter ${x === category ? "active" : ""}" data-category="${x}" aria-label="${x}" aria-pressed="${x === category}">${x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.category === x).length}</span></button>`).join("")}</div><div class="filters people" role="group" aria-label="인원">${["전체", "1인용", "2인용"].map((x) => `<button class="filter ${x === people ? "active" : ""}" data-players="${x}" aria-label="인원 ${x}" aria-pressed="${x === people}">${x === "전체" ? "인원 전체" : x}<span aria-hidden="true">${x === "전체" ? games.length : games.filter((g) => g.players === x).length}</span></button>`).join("")}</div></div><div class="collection game-list game-grid" id="game-rail">${games.map((g, i) => {
@@ -715,17 +775,12 @@ function game() {
   clear();
   app.innerHTML =
     header() +
-    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · ${state.noDoubleThree ? "삼삼 금지" : "삼삼 허용"}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 교차점을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
+    `<main class="game-layout"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>오목 <small>GOMOKU</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="${settings.top}">시점 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE GOMOKU TABLE</span><span>15 × 15 · ${state.noDoubleThree ? "삼삼 금지" : "삼삼 허용"}</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div id="turn" role="status" aria-live="polite"></div><div class="player"><i class="stone black"></i><span>흑돌<small>${wifi ? gomokuRoom.who(0) : mode === "ai" ? (human === 1 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 1"}</small></span><b>선공</b></div><div class="player"><i class="stone white"></i><span>백돌<small>${wifi ? gomokuRoom.who(1) : mode === "ai" ? (human === 2 ? "나" : `컴퓨터 · ${profiles[difficulty].label}`) : "플레이어 2"}</small></span></div><p class="hint">가로, 세로, 대각선으로<br>다섯 개의 돌을 먼저 연결하세요.</p><div class="assist"><button id="undo">무르기</button></div><p class="input-help">마우스: 교차점을 클릭하여 착수<br>터치: 교차점을 누르면 바로 착수<br>키보드: 방향키로 선택, Enter로 착수</p></aside></div></main>`;
   bindHeader();
   $("back").onclick = leave;
   $("rules").onclick = showRules;
-  dress(
-    (host) => {
-      host.innerHTML = gomokuSetup();
-      bindGomokuSetup();
-    },
-    [".assist"],
-  );
+  dress(fillGomokuSetup, [".assist"]);
+  if (wifi) gomokuRoom.dress();
   $("camera").onclick = () => {
     settings.top = !settings.top;
     setSettings(settings);
@@ -740,6 +795,8 @@ function game() {
     view.onContact = () => sound.stone();
     view.onSelect = (p, confirm) => {
       refusal = "";
+      // Over Wi-Fi a tap out of my turn is told why.
+      if (wifi && p && confirm && view && !view.moving && state.winner === null && !gomokuRoom.mine(state)) return gomokuRoom.warn(state);
       if (!p || !canPlay() || state.board[p.row][p.col] || barred(p)) {
         if (p && canPlay() && barred(p)) refusal = "삼삼 금지 자리입니다. 다른 곳에 두세요.";
         view?.preview(null, state.turn);
@@ -800,6 +857,7 @@ function canPlay() {
     state.winner === null &&
     performance.now() >= lockedUntil &&
     !isAITurn() &&
+    (!wifi || gomokuRoom.mine(state)) &&
     !document.querySelector("dialog[open]")
   );
 }
@@ -810,7 +868,13 @@ function place(p: Point) {
   if (!canPlay()) return;
   sound.unlock();
   const next = play(state, p);
-  if (next) accept(next);
+  // Over Wi-Fi the stone goes to the room; it is shown when the room tells it (at once on the host's device).
+  if (next && wifi) {
+    candidate = null;
+    view?.preview(null, state.turn);
+    gomokuRoom.commit(gomokuMove(p));
+    update();
+  } else if (next) accept(next);
   else if (barred(p)) {
     refusal = "삼삼 금지 자리입니다. 다른 곳에 두세요.";
     candidate = null;
@@ -823,7 +887,7 @@ function accept(next: typeof state) {
   aiError = "";
   refusal = "";
   candidate = null;
-  if (state.winner && mode === "ai")
+  if (state.winner && mode === "ai" && !wifi)
     addResult(
       difficulty,
       state.winner === "draw" ? "draw" : state.winner === human ? "win" : "loss",
@@ -838,6 +902,7 @@ function accept(next: typeof state) {
 }
 /** How many moves one press of 무르기 takes back; 0 when it is unavailable. */
 function undoCount() {
+  if (wifi) return gomokuRoom.canUndo() ? 1 : 0;
   if (state.winner || !state.moves.length) return 0;
   if (mode === "local") return 1;
   // Against the computer, return to the person's own previous turn.
@@ -848,6 +913,8 @@ function takeBack() {
   const count = undoCount();
   // A take-back may come while the table is still turning to the next player.
   if (!count || !view || document.querySelector("dialog[open]")) return;
+  // Over Wi-Fi an undo is a request the other accepts; the room then rebuilds the game on both devices.
+  if (wifi) return gomokuRoom.undo();
   const previous = undo(state, count);
   if (!previous) return;
   // Drop any search for the abandoned position before replacing the state.
@@ -894,7 +961,11 @@ function scheduleAI() {
           return;
         }
         const next = result.move && play(state, result.move);
-        if (next) accept(next);
+        // Over Wi-Fi the host's computer moves through the room, which tells both devices.
+        if (next && wifi) {
+          const refused = gomokuRoom.commit(gomokuMove(result.move!), state.turn - 1);
+          if (refused) showAIError(refused);
+        } else if (next) accept(next);
         else showAIError("컴퓨터가 유효한 수를 반환하지 못했습니다.");
       };
       submit();
@@ -936,7 +1007,7 @@ function update() {
     mirrorStatus();
   if (!document.getElementById("turn")) return;
   $("turn").innerHTML =
-    `<i class="stone ${state.turn === 1 ? "black" : "white"}"></i><span>${state.winner ? (state.winner === "draw" ? "무승부" : `${state.winner === 1 ? "흑" : "백"}돌 승리`) : isAITurn() ? "컴퓨터가 생각 중…" : refusal || `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`}</span>`;
+    `<i class="stone ${state.turn === 1 ? "black" : "white"}"></i><span>${state.winner ? (wifi ? gomokuRoom.verdict(state) : state.winner === "draw" ? "무승부" : `${state.winner === 1 ? "흑" : "백"}돌 승리`) : wifi ? refusal || (gomokuRoom.line(state) ?? `${gomokuRoom.who(state.turn - 1)} 차례입니다`) : isAITurn() ? "컴퓨터가 생각 중…" : refusal || `${state.turn === 1 ? "흑" : "백"}돌의 차례입니다`}</span>`;
   if (aiError && !state.winner) {
     $("turn").textContent = aiError;
     const retry = document.createElement("button");
@@ -961,12 +1032,12 @@ function showResult() {
     return;
   }
   resultPending = false;
-  if (mode === "ai" && state.winner !== "draw" && state.winner !== human)
+  if (wifi ? gomokuRoom.outcome(state) === "lose" : mode === "ai" && state.winner !== "draw" && state.winner !== human)
     sound.lose();
   else sound.win();
   // No window at the end for now (the user asked): the result's word comes up in the middle of the table.
   if (!RESULT_WINDOWS) {
-    finale(state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win");
+    finale(wifi ? gomokuRoom.outcome(state) : state.winner === "draw" ? "draw" : mode === "ai" && state.winner !== human ? "lose" : "win");
     return;
   }
   modal(

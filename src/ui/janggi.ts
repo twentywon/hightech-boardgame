@@ -31,6 +31,8 @@ import { difficulties, type ColorChoice, type Difficulty } from "../core/ai";
 import { Sound } from "../engine/sound";
 import { modal, setupDialog } from "./dialog";
 import type { Mode, Settings } from "../core/storage";
+import { NetTable } from "./net-table";
+import { choosing, formationMove, janggiMove, janggiNet, type JanggiRoom } from "../net/boards";
 
 export interface JanggiOptions {
   mode: Mode;
@@ -88,7 +90,11 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     aiError = "",
     computing = false,
     hinting = false,
-    announced = false;
+    announced = false,
+    // A game over Wi-Fi (와이파이 여럿이): the room's game, `state` being its board; `wantWifi`, the setup chose it.
+    wifi = false,
+    wantWifi = false,
+    held: JanggiRoom = { picks: [], game: state };
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as E;
@@ -99,9 +105,60 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     }, ms);
     timers.add(timer);
   };
-  const aiTurn = () => mode === "ai" && state.turn !== human && !state.outcome;
+  const aiTurn = () => (wifi ? net.computer(held) : mode === "ai" && state.turn !== human && !state.outcome);
+  const seatOf = (side: Side) => (side === "cho" ? 0 : 1);
+  const net: NetTable<JanggiRoom> = new NetTable<JanggiRoom>({
+    net: janggiNet,
+    title: "장기",
+    // Each side's formation is its own device's, sent as the game's first moves; nothing else is agreed.
+    options: () => ({}),
+    begin(next, fresh) {
+      if (fresh) {
+        stop();
+        wifi = true;
+        mode = "local";
+        difficulty = preferences.difficulty;
+        facing = net.seat === 1 ? "han" : "cho";
+        top = false;
+        held = next;
+        state = next.game;
+        announced = false;
+        sound.enabled = settings.sound;
+        sound.unlock();
+        screen();
+        return;
+      }
+      // Rebuilt from the room's list (an undo, a return): shown at once.
+      pause();
+      held = next;
+      state = next.game;
+      selected = target = cursor = null;
+      aiError = "";
+      announced = !!state.outcome;
+      view?.render(state.board, null, false);
+      update();
+      schedule();
+    },
+    show(next) {
+      // A formation chosen lays the board anew; a move is played on it.
+      const laid = choosing(held);
+      held = next;
+      if (!laid) return accept(next.game);
+      state = next.game;
+      view?.render(state.board, null, false);
+      update();
+      schedule();
+    },
+    resting: () => !!view && !view.animating,
+    table: () => !!document.getElementById("jg-result"),
+    update: () => update(),
+    resume: () => schedule(),
+    back: () => nav.back(),
+  });
   const who = (side: Side) =>
-    mode === "local"
+    wifi
+      ? net.who(seatOf(side))
+      : mode === "local"
       ? `플레이어 ${side === "cho" ? 1 : 2}`
       : side === human
         ? "나"
@@ -122,14 +179,18 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     aiError = "";
   }
   function setup(host = nav.setupHost) {
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi && net.playing && host !== nav.setupHost) return net.newGame(host);
     if (host === nav.setupHost) stop();
     const option = (value: string, label: string, current: string) =>
       `<option value="${value}" ${value === current ? "selected" : ""}>${label}</option>`;
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><h2>장기 <span>Janggi</span></h2><p>초와 한, 아홉 줄 열 칸의 전장.<br>궁을 지키고 상대의 궁을 외통으로 몰아넣으세요.</p><div class="game-meta">2인 · 9×10 · 기물 32개</div><div class="mode-select"><label><input type="radio" name="jg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="jg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options"><label><span id="jg-formation-label">상차림</span><select id="jg-formation" aria-labelledby="jg-formation-label">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.formation)).join("")}</select></label><label id="jg-rival">한(2P) 상차림<select id="jg-formation-2">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.rivalFormation)).join("")}</select></label><label id="jg-level">AI 난이도<select id="jg-difficulty">${difficulties.map((d) => option(d, profiles[d].label, preferences.difficulty)).join("")}</select></label><label id="jg-side">내 진영<select id="jg-color">${option("black", "초 (선공)", preferences.color)}${option("white", "한 (후공)", preferences.color)}${option("random", "무작위", preferences.color)}</select></label><small>상차림은 궁 양옆의 마와 상 순서이며 각자 자기 쪽에서 본 왼쪽부터입니다. 선택한 설정은 새 대국부터 적용됩니다.</small></div><button id="jg-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art janggi-art" role="img" aria-label="장기판 미리보기"><div class="jg-mini">${["車", "馬", "象", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="han">${g}</b>` : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="han big">漢</b>' : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="cho big">楚</b>' : ""}</i>`).join("")}${["車", "象", "馬", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="cho">${g}</b>` : ""}</i>`).join("")}</div><span>CHO AND HAN, ACROSS THE BOARD</span></div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><h2>장기 <span>Janggi</span></h2><p>초와 한, 아홉 줄 열 칸의 전장.<br>궁을 지키고 상대의 궁을 외통으로 몰아넣으세요.</p><div class="game-meta">2인 · 9×10 · 기물 32개</div><div class="mode-select"><label><input type="radio" name="jg-mode" value="local"> 로컬 2인</label><label><input type="radio" name="jg-mode" value="ai"> 컴퓨터 대전</label><label><input type="radio" name="jg-mode" value="net"> 와이파이 여럿이</label></div><div class="ai-options"><label><span id="jg-formation-label">상차림</span><select id="jg-formation" aria-labelledby="jg-formation-label">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.formation)).join("")}</select></label><label id="jg-rival">한(2P) 상차림<select id="jg-formation-2">${FORMATIONS.map((f) => option(f, FORMATION_NAME[f], preferences.rivalFormation)).join("")}</select></label><label id="jg-level">AI 난이도<select id="jg-difficulty">${difficulties.map((d) => option(d, profiles[d].label, preferences.difficulty)).join("")}</select></label><label id="jg-side">내 진영<select id="jg-color">${option("black", "초 (선공)", preferences.color)}${option("white", "한 (후공)", preferences.color)}${option("random", "무작위", preferences.color)}</select></label><small>상차림은 궁 양옆의 마와 상 순서이며 각자 자기 쪽에서 본 왼쪽부터입니다. 선택한 설정은 새 대국부터 적용됩니다.</small></div><button id="jg-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art janggi-art" role="img" aria-label="장기판 미리보기"><div class="jg-mini">${["車", "馬", "象", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="han">${g}</b>` : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="han big">漢</b>' : ""}</i>`).join("")}${Array.from({ length: 9 }, (_, i) => `<i>${i === 4 ? '<b class="cho big">楚</b>' : ""}</i>`).join("")}${["車", "象", "馬", "士", "", "士", "象", "馬", "車"].map((g) => `<i>${g ? `<b class="cho">${g}</b>` : ""}</i>`).join("")}</div><span>CHO AND HAN, ACROSS THE BOARD</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=jg-mode]");
     const remember = () => {
+      const chosen = [...radios].find((r) => r.checked)!.value;
+      wantWifi = chosen === "net";
       preferences = {
-        mode: [...radios].find((r) => r.checked)!.value as Mode,
+        mode: wantWifi ? preferences.mode : (chosen as Mode),
         difficulty: $<HTMLSelectElement>("jg-difficulty").value as Difficulty,
         color: $<HTMLSelectElement>("jg-color").value as ColorChoice,
         formation: $<HTMLSelectElement>("jg-formation").value as Formation,
@@ -139,23 +200,29 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
       nav.remember({ ...preferences });
     };
     // Two local players each pick a formation; against the computer only mine is asked.
+    // Over Wi-Fi each device chooses its own side's formation, and the host the computer's level for a seat it gives
+    // the computer; the sides are taken in the room.
     const arrange = () => {
-      const local = preferences.mode !== "ai";
-      $("jg-level").hidden = $("jg-side").hidden = local;
+      const local = !wantWifi && preferences.mode !== "ai";
+      $("jg-level").hidden = local;
+      $("jg-side").hidden = local || wantWifi;
       $("jg-rival").hidden = !local;
       $("jg-formation-label").textContent = local ? "초(1P) 상차림" : "내 상차림";
     };
     radios.forEach((r) => {
-      r.checked = r.value === preferences.mode;
+      r.checked = r.value === (wantWifi ? "net" : preferences.mode);
       r.onchange = remember;
     });
     arrange();
     for (const id of ["jg-difficulty", "jg-color", "jg-formation", "jg-formation-2"])
       $(id).onchange = remember;
-    $("jg-start").onclick = start;
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    $("jg-start").onclick = () => (wantWifi ? net.open() : start());
   }
   function start() {
     stop();
+    net.leave();
+    wifi = false;
     mode = preferences.mode;
     difficulty = preferences.difficulty;
     human =
@@ -188,6 +255,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
     dress(setup, [".assist"]);
+    if (wifi) net.dress();
     $("camera").onclick = () => {
       top = !top;
       clearSelection();
@@ -255,6 +323,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
       !view.animating &&
       !state.outcome &&
       !aiTurn() &&
+      (!wifi || (net.mine(held) && !choosing(held))) &&
       !document.querySelector("dialog[open]")
     );
   }
@@ -263,6 +332,8 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     update();
   }
   function select(index: number | null, commit: boolean) {
+    // Over Wi-Fi a tap out of my turn is told why.
+    if (wifi && index !== null && commit && view && !view.animating && !state.outcome && !net.mine(held)) return net.warn(held);
     if (!canPlay()) return;
     if (index === null) {
       clearSelection();
@@ -294,6 +365,13 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     const next = play(state, move);
     if (!next) return;
     sound.unlock();
+    // Over Wi-Fi the move goes to the room; it is shown when the room tells it (at once on the host's device).
+    if (wifi) {
+      selected = target = cursor = null;
+      net.commit(janggiMove(move));
+      update();
+      return;
+    }
     accept(next);
   }
   function accept(next: State) {
@@ -310,12 +388,14 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
   }
   /** Two players at one screen: the board turns to whoever is to move. */
   function faceMover(delay = 0) {
-    if (mode !== "local" || state.outcome || !view || state.turn === facing) return;
+    // Over Wi-Fi each device keeps its own side toward it.
+    if (mode !== "local" || wifi || state.outcome || !view || state.turn === facing) return;
     facing = state.turn;
     view.setCamera(facing, top, delay);
   }
   /** How many moves one press of 무르기 takes back; 0 when it is unavailable. */
   function undoCount() {
+    if (wifi) return net.canUndo() ? 1 : 0;
     if (state.outcome || !state.moves.length) return 0;
     if (mode === "local" || aiTurn()) return 1;
     // Against the computer, return to the person's own previous turn.
@@ -324,6 +404,8 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
   function takeBack() {
     const count = undoCount();
     if (!count || !view || view.animating || document.querySelector("dialog[open]")) return;
+    // Over Wi-Fi an undo is a request the other accepts; the room then rebuilds the game on both devices.
+    if (wifi) return net.undo();
     const previous = undo(state, count);
     if (!previous) return;
     // Drop searches and pending replies for the abandoned position.
@@ -337,7 +419,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     schedule();
   }
   const canHint = () =>
-    !!view && !state.outcome && !aiTurn() && !document.querySelector("dialog[open]");
+    !!view && !state.outcome && !aiTurn() && (!wifi || (net.mine(held) && !choosing(held))) && !document.querySelector("dialog[open]");
   async function showHint() {
     if (!canHint() || hinting) return;
     const position = state,
@@ -360,7 +442,18 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
       update();
     }
   }
+  /** Over Wi-Fi, the formation of the side to choose: mine from my setup, or the host's computer's at random. */
+  function chooseFormation() {
+    if (!view || !choosing(held)) return;
+    const position = held;
+    later(() => {
+      if (held !== position || !choosing(held)) return;
+      if (net.mine(held)) net.commit(formationMove(preferences.formation));
+      else if (net.computer(held)) net.commit(formationMove(FORMATIONS[Math.floor(Math.random() * FORMATIONS.length)]), held.picks.length);
+    }, 300);
+  }
   function schedule() {
+    if (wifi && choosing(held)) return chooseFormation();
     if (!view || !aiTurn() || aiError) return;
     const current = generation,
       position = state;
@@ -383,7 +476,14 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
             return;
           }
           const next = play(state, r.pass ? null : r.move);
-          if (next) accept(next);
+          // Over Wi-Fi the host's computer moves through the room, which tells both devices.
+          if (next && wifi) {
+            const refused = net.commit(janggiMove(r.pass ? null : r.move), seatOf(state.turn));
+            if (refused) {
+              aiError = refused;
+              update();
+            }
+          } else if (next) accept(next);
           else {
             aiError = "컴퓨터가 유효한 수를 반환하지 못했습니다.";
             update();
@@ -419,7 +519,11 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     turn.textContent = state.outcome
       ? `${state.outcome.winner ? `${SIDE[state.outcome.winner]} 승리` : "무승부"} · ${state.outcome.reason}`
       : aiError ||
-        (aiTurn()
+        (wifi
+          ? choosing(held)
+            ? "상차림을 고르는 중…"
+            : (net.line(held) ?? `${net.who(seatOf(state.turn))} 차례입니다${check ? " · 장군" : ""}${state.bikjang ? " · 빅장" : ""}`)
+          : aiTurn()
           ? "컴퓨터가 생각 중…"
           : `${SIDE[state.turn]}의 차례${check ? " · 장군" : ""}${state.bikjang ? " · 빅장" : ""}`);
     if (aiError && !state.outcome) {
@@ -446,21 +550,23 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     $<HTMLButtonElement>("jg-pass").disabled = !playable || !canPass(state);
     $<HTMLButtonElement>("jg-clear").disabled = selected === null && cursor === null;
     $<HTMLButtonElement>("undo").disabled = !undoCount() || !!view?.animating;
-    $<HTMLButtonElement>("hint").disabled = hinting || !!state.outcome || aiTurn() || !view;
+    $<HTMLButtonElement>("hint").disabled = hinting || !canHint();
     $("hint").textContent = hinting ? "힌트 계산 중…" : "힌트";
     // History: one line per pair of moves, replayed for the piece names.
-    $("jg-result").dataset.outcome = !state.outcome?.winner ? "draw" : mode === "ai" && state.outcome.winner === other(human) ? "lose" : "win";
+    $("jg-result").dataset.outcome = wifi ? net.outcome(held) : !state.outcome?.winner ? "draw" : mode === "ai" && state.outcome.winner === other(human) ? "lose" : "win";
     $("jg-result").hidden = !state.outcome;
     if (state.outcome) {
-      $("jg-final").textContent = state.outcome.winner
-        ? `${SIDE[state.outcome.winner]}(${who(state.outcome.winner)}) 승리 — ${state.outcome.reason}`
-        : `무승부 — ${state.outcome.reason}`;
+      $("jg-final").textContent = wifi
+        ? `${net.verdict(held)} ${state.outcome.reason}`
+        : state.outcome.winner
+          ? `${SIDE[state.outcome.winner]}(${who(state.outcome.winner)}) 승리 — ${state.outcome.reason}`
+          : `무승부 — ${state.outcome.reason}`;
       if (!announced && !view?.animating) {
         announced = true;
         // The beaten general falls over on the board.
         const loser = state.outcome.winner && other(state.outcome.winner);
         if (loser) view?.topple(state.board.indexOf(loser === "cho" ? "K" : "k"));
-        if (mode === "ai" && state.outcome.winner === other(human)) sound.lose();
+        if (wifi ? net.outcome(held) === "lose" : mode === "ai" && state.outcome.winner === other(human)) sound.lose();
         else sound.win();
       }
     }
@@ -514,6 +620,7 @@ export function mountJanggi(root: HTMLElement, nav: Navigation): JanggiControlle
     rules,
     dispose() {
       disposed = true;
+      net.dispose();
       stop();
       sound.dispose();
       document.removeEventListener("close", dialogClosed, true);

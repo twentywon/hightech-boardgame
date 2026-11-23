@@ -50,7 +50,8 @@ const PING = 5000,
   SILENT = 45000;
 /** Whether this page's own clock ran late since `last` (or the page is hidden): no one is judged silent then. */
 const late = (last: number, now: number) => now - last > PING * 2.5 || (typeof document !== "undefined" && document.hidden);
-const KIND_WORD: Record<Request, string> = { undo: "무르기", new: "새 게임" };
+/** The request's name with its object particle (무르기를, 새 게임을). */
+const KIND_WORD: Record<Request, string> = { undo: "무르기를", new: "새 게임을" };
 /** An id for this page's person, kept in memory only, so a device that drops can come back to its seat. */
 export function personId(): string {
   const bytes = new Uint8Array(9);
@@ -380,7 +381,7 @@ export class HostRoom<S> extends Room<S> {
     this.broadcast({ t: "request", ...ask });
     if (waiting.includes(this.me)) this.events.asked?.(ask);
     const who = this.person(from)!;
-    this.events.notice?.(from === this.me ? `${KIND_WORD[kind]}을 요청했습니다. 대답을 기다립니다.` : `${who.name} 님이 ${KIND_WORD[kind]}을 요청했습니다.`);
+    this.events.notice?.(from === this.me ? `${KIND_WORD[kind]} 요청했습니다. 대답을 기다립니다.` : `${who.name} 님이 ${KIND_WORD[kind]} 요청했습니다.`);
     return null;
   }
   /** My own answer to the request in hand. */
@@ -391,7 +392,7 @@ export class HostRoom<S> extends Room<S> {
     const ask = this.pending;
     if (!ask || ask.id !== id || !ask.waiting.includes(from)) return;
     this.broadcast({ t: "answer", id, yes, from });
-    if (!yes) return this.dropRequest(`${this.person(from)?.name ?? ""} 님이 ${KIND_WORD[ask.kind]}을 거절했습니다.`);
+    if (!yes) return this.dropRequest(`${this.person(from)?.name ?? ""} 님이 ${KIND_WORD[ask.kind]} 거절했습니다.`);
     ask.waiting = ask.waiting.filter((w) => w !== from);
     if (!ask.waiting.length) {
       this.pending = null;
@@ -557,8 +558,8 @@ export class GuestRoom<S> extends Room<S> {
         const waiting = this.seats.filter((s) => s.kind === "person" && s.person !== m.from && this.person(s.person)?.connected).map((s) => s.person!);
         this.pending = { id: m.id, kind: m.kind, from: m.from, waiting };
         if (waiting.includes(this.me)) this.events.asked?.(m);
-        else if (m.from !== this.me) this.events.notice?.(`${this.person(m.from)?.name ?? ""} 님이 ${KIND_WORD[m.kind]}을 요청했습니다.`);
-        else this.events.notice?.(`${KIND_WORD[m.kind]}을 요청했습니다. 대답을 기다립니다.`);
+        else if (m.from !== this.me) this.events.notice?.(`${this.person(m.from)?.name ?? ""} 님이 ${KIND_WORD[m.kind]} 요청했습니다.`);
+        else this.events.notice?.(`${KIND_WORD[m.kind]} 요청했습니다. 대답을 기다립니다.`);
         return;
       }
       case "answer":

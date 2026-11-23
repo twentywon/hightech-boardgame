@@ -1221,7 +1221,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (room.pending) {
       const kind = room.pending.kind === "undo" ? "무르기" : "새 게임";
       if (room.mustAnswer) return `${kind} 요청 — 수락이나 거절을 누르세요.`;
-      if (room.pending.from === room.me) return `${kind}를 요청했습니다. 대답을 기다리는 중…`;
+      if (room.pending.from === room.me) return `${kind === "무르기" ? "무르기를" : "새 게임을"} 요청했습니다. 대답을 기다리는 중…`;
     }
     if (sending) return "보내는 중…";
     const to = netRules().toMove(s);
@@ -1338,7 +1338,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const line = document.createElement("p"),
       yes = document.createElement("button"),
       no = document.createElement("button");
-    line.textContent = `${room.person(ask.from)?.name ?? ""} 님이 ${ask.kind === "undo" ? "무르기" : "새 게임"}를 요청했습니다.`;
+    line.textContent = `${room.person(ask.from)?.name ?? ""} 님이 ${ask.kind === "undo" ? "무르기를" : "새 게임을"} 요청했습니다.`;
     yes.className = "net-yes primary";
     yes.textContent = "수락";
     no.className = "net-no";

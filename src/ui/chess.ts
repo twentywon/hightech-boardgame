@@ -30,6 +30,8 @@ import { TURN_DELAY_MS } from "../engine/camera";
 import { ChessView } from "../games/chess/view";
 import { Sound } from "../engine/sound";
 import { modal, setupDialog } from "./dialog";
+import { NetTable } from "./net-table";
+import { chessAction, chessMove, chessNet } from "../net/boards";
 interface Navigation {
   header: () => string;
   bindHeader: () => void;
@@ -82,7 +84,11 @@ export function mountChess(
     aiError = "",
     computing = false,
     promoting = false,
-    lastSearchMs: number | null = null;
+    lastSearchMs: number | null = null,
+    // A game over Wi-Fi (와이파이 여럿이): the room's game is on the table, played as at one screen but one side each.
+    wifi = false,
+    // The mode chosen in the setup is Wi-Fi: its start opens the room's window.
+    wantWifi = false;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   let ownDialog: HTMLDialogElement | null = null;
   const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
@@ -124,7 +130,50 @@ export function mountChess(
     return cached;
   }
   const engine = () => snapshot().game,
-    aiTurn = () => mode === "ai" && engine().turn() !== human;
+    aiTurn = () => (wifi ? net.computer(state) : mode === "ai" && engine().turn() !== human);
+  /** My side over Wi-Fi (white while only watching). */
+  const mySide = (): Color => (net.seat === 1 ? "b" : "w");
+  const sideName = (c: Color) => (c === "w" ? "백" : "흑");
+  const net: NetTable<State> = new NetTable<State>({
+    net: chessNet,
+    title: "체스",
+    options: () => ({}),
+    begin(next, fresh) {
+      if (fresh) {
+        stop();
+        wifi = true;
+        mode = "local";
+        difficulty = preferences.difficulty;
+        facing = mySide();
+        top = false;
+        state = next;
+        lastSearchMs = null;
+        sound.enabled = settings.sound;
+        sound.unlock();
+        screen();
+        return;
+      }
+      // Rebuilt from the room's list (an undo, a return): shown at once.
+      pause();
+      state = next;
+      selected = target = cursor = null;
+      promoting = false;
+      aiError = "";
+      resultPending = false;
+      view?.render(engine());
+      update();
+      schedule();
+    },
+    show(next, move) {
+      if (chessAction(move.move)?.claim) claimed(next);
+      else accept(next);
+    },
+    resting: () => !!view && !view.animating,
+    table: () => !!document.getElementById("chess-captured"),
+    update: () => update(),
+    resume: () => schedule(),
+    back: () => nav.back(),
+  });
   const availableMoves = (square?: Square) =>
     square
       ? snapshot().legal.filter((m) => m.from === square)
@@ -177,34 +226,48 @@ export function mountChess(
     nav.remember({ ...preferences });
   }
   function setup(host = nav.setupHost) {
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 03 — THINK AHEAD</span><h2>체스 <span>Chess</span></h2><p>한 수 앞에서, 더 먼 가능성으로.<br>여섯 가지 기물로 나만의 전략을 펼쳐보세요.</p><div class="game-meta">2인 · 8×8 보드 · 백 선공</div><div class="mode-select"><label><input type="radio" name="chess-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="chess-mode" value="ai"> 컴퓨터 대전</label></div><div id="chess-options" hidden>${optionsForm("chess")}</div><button id="chess-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art chess-art" role="img" aria-label="체스판 미리보기"><div class="chess-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 ? "♞︎" : i === 35 ? "♔︎" : i === 44 ? "♟︎" : ""}</i>`).join("")}</div><span>EVERY MOVE OPENS A WORLD</span></div></section>`;
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi && net.playing && host !== nav.setupHost) return net.newGame(host);
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 03 — THINK AHEAD</span><h2>체스 <span>Chess</span></h2><p>한 수 앞에서, 더 먼 가능성으로.<br>여섯 가지 기물로 나만의 전략을 펼쳐보세요.</p><div class="game-meta">2인 · 8×8 보드 · 백 선공</div><div class="mode-select"><label><input type="radio" name="chess-mode" value="local" checked> 로컬 2인</label><label><input type="radio" name="chess-mode" value="ai"> 컴퓨터 대전</label><label><input type="radio" name="chess-mode" value="net"> 와이파이 여럿이</label></div><div id="chess-options" hidden>${optionsForm("chess")}</div><button id="chess-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art chess-art" role="img" aria-label="체스판 미리보기"><div class="chess-mini">${Array.from({ length: 64 }, (_, i) => `<i>${i === 27 ? "♞︎" : i === 35 ? "♔︎" : i === 44 ? "♟︎" : ""}</i>`).join("")}</div><span>EVERY MOVE OPENS A WORLD</span></div></section>`;
+    // Over Wi-Fi only the computer's level is asked (for a seat the host gives the computer); sides are taken in the room.
+    const arrange = (chosen: string) => {
+      $("chess-options").hidden = chosen === "local";
+      $("chess-color").closest("label")!.hidden = chosen === "net";
+    };
     document
       .querySelectorAll<HTMLInputElement>("input[name=chess-mode]")
       .forEach(
         (input) =>
-          (input.onchange = () => {
-            $("chess-options").hidden =
+          (input.onchange = () =>
+            arrange(
               document.querySelector<HTMLInputElement>(
                 "input[name=chess-mode]:checked",
-              )!.value !== "ai";
-          }),
+              )!.value,
+            )),
       );
     $("chess-difficulty").onchange = () => remember("chess");
     $("chess-color").onchange = () => remember("chess");
     // From the table, the panel opens on the mode being played.
+    const opened = wantWifi ? "net" : nextMode;
     document.querySelectorAll<HTMLInputElement>("input[name=chess-mode]").forEach((input) => {
-      input.checked = input.value === nextMode;
+      input.checked = input.value === opened;
     });
-    $("chess-options").hidden = nextMode !== "ai";
+    arrange(opened);
     $("chess-start").onclick = () => {
-      nextMode = document.querySelector<HTMLInputElement>(
+      const chosen = document.querySelector<HTMLInputElement>(
         "input[name=chess-mode]:checked",
-      )!.value as Mode;
+      )!.value;
+      wantWifi = chosen === "net";
+      // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+      if (wantWifi) return net.open();
+      nextMode = chosen as Mode;
       start();
     };
   }
   function start() {
     stop();
+    net.leave();
+    wifi = false;
     mode = nextMode;
     difficulty = preferences.difficulty;
     human =
@@ -239,11 +302,12 @@ export function mountChess(
     resultPending = false;
     root.innerHTML =
       nav.header() +
-      `<main class="game-layout chess-game"><div class="game-top"><div><button id="back" class="text-button">← 컬렉션</button><h1>체스 <small>CHESS</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="chess-flip">보드 방향 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE CHESS TABLE</span><span>8 × 8 · 백 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div id="turn" role="status" aria-live="polite"></div>${(["w", "b"] as const).map((c) => `<div class="player"><i class="chess-glyph">${glyphs[c].k}</i><span>${c === "w" ? "백" : "흑"}<small>${mode === "local" ? `플레이어 ${c === "w" ? 1 : 2}` : human === c ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span></div>`).join("")}<div id="chess-captured" class="chess-captured"></div><div class="chess-confirm-slot sr-only"><button id="confirm" class="primary" disabled>기물을 선택하세요</button></div><div class="assist"><button id="undo">무르기</button></div><button id="chess-claim" disabled>무승부 청구</button><p id="chess-claim-info" class="input-help"></p><p class="input-help">마우스: 기물 선택 후 도착 칸 클릭<br>터치: 기물을 누른 뒤 도착 칸을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소<br>예정 수 청구: 기물 선택 후 방향키로 도착 칸 미리보기</p></aside></div></main>`;
+      `<main class="game-layout chess-game"><div class="game-top"><div><button id="back" class="text-button">← 컬렉션</button><h1>체스 <small>CHESS</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="camera" aria-pressed="false">시점 전환</button><button id="chess-flip">보드 방향 전환</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE CHESS TABLE</span><span>8 × 8 · 백 선공</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar"><div id="turn" role="status" aria-live="polite"></div>${(["w", "b"] as const).map((c) => `<div class="player"><i class="chess-glyph">${glyphs[c].k}</i><span>${c === "w" ? "백" : "흑"}<small>${wifi ? net.who(c === "w" ? 0 : 1) : mode === "local" ? `플레이어 ${c === "w" ? 1 : 2}` : human === c ? "나" : `컴퓨터 · ${difficultyLabels[difficulty]}`}</small></span></div>`).join("")}<div id="chess-captured" class="chess-captured"></div><div class="chess-confirm-slot sr-only"><button id="confirm" class="primary" disabled>기물을 선택하세요</button></div><div class="assist"><button id="undo">무르기</button></div><button id="chess-claim" disabled>무승부 청구</button><p id="chess-claim-info" class="input-help"></p><p class="input-help">마우스: 기물 선택 후 도착 칸 클릭<br>터치: 기물을 누른 뒤 도착 칸을 누르면 이동<br>키보드: 방향키·Enter, Escape 취소<br>예정 수 청구: 기물 선택 후 방향키로 도착 칸 미리보기</p></aside></div></main>`;
     nav.bindHeader();
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
     dress(setup, [".assist", "#chess-claim"]);
+    if (wifi) net.dress();
     $("camera").onclick = () => {
       top = !top;
       clearSelection();
@@ -319,6 +383,7 @@ export function mountChess(
       !view.animating &&
       !state.outcome &&
       !aiTurn() &&
+      (!wifi || net.mine(state)) &&
       !promoting &&
       !document.querySelector("dialog[open]") &&
       !hidden
@@ -336,6 +401,8 @@ export function mountChess(
       : [];
   }
   function select(square: Square | null, commit: boolean) {
+    // Over Wi-Fi a tap out of my turn is told why.
+    if (wifi && square && commit && view && !view.animating && !state.outcome && !net.mine(state)) return net.warn(state);
     if (!canPlay()) return;
     if (!square) {
       clearSelection();
@@ -407,6 +474,13 @@ export function mountChess(
   }
   function submit(m: Action) {
     if (!canPlay()) return;
+    // Over Wi-Fi the move goes to the room; it is shown when the room tells it (at once on the host's device).
+    if (wifi) {
+      selected = target = cursor = null;
+      if (play(state, m) && !net.commit(chessMove(m))) sound.unlock();
+      update();
+      return;
+    }
     const next = play(state, m);
     if (next) {
       sound.unlock();
@@ -415,6 +489,7 @@ export function mountChess(
   }
   /** How many moves one press of 무르기 takes back; 0 when it is unavailable. */
   function undoCount() {
+    if (wifi) return net.canUndo() ? 1 : 0;
     if (state.outcome || !state.moves.length) return 0;
     if (mode === "local" || aiTurn()) return 1;
     // Against the computer, return to the person's own previous turn.
@@ -431,6 +506,8 @@ export function mountChess(
       document.querySelector("dialog[open]")
     )
       return;
+    // Over Wi-Fi an undo is a request the other accepts; the room then rebuilds the game on both devices.
+    if (wifi) return net.undo();
     const previous = undo(state, count);
     if (!previous) return;
     // Drop searches and pending replies for the abandoned position.
@@ -445,7 +522,8 @@ export function mountChess(
   }
   /** Two players at one screen: the table turns to whoever is to move. */
   function faceMover(delay = 0) {
-    if (mode !== "local" || state.outcome || !view) return;
+    // Over Wi-Fi each device keeps its own side toward it.
+    if (mode !== "local" || wifi || state.outcome || !view) return;
     const mover = engine().turn();
     if (mover === facing) return;
     facing = mover;
@@ -472,13 +550,20 @@ export function mountChess(
       : candidateMoves()
           .map(action)
           .find((m) => claims(m).length);
-    const next = claimDraw(state, intended);
-    if (next) {
-      state = next;
+    if (wifi) {
+      if (claimDraw(state, intended)) net.commit(chessMove(intended ?? null, true));
       clearSelection();
-      resultPending = true;
-      later(result, 100);
+      return;
     }
+    const next = claimDraw(state, intended);
+    if (next) claimed(next);
+  }
+  /** A draw claimed: the game ends where it stands. */
+  function claimed(next: State) {
+    state = next;
+    clearSelection();
+    resultPending = true;
+    later(result, 100);
   }
   function update() {
     // The status is read on the table itself: the panel's copy is not shown.
@@ -502,11 +587,15 @@ export function mountChess(
     $("board").dataset.facing = facing;
     $("board").dataset.top = String(top);
     $("turn").textContent = state.outcome
-      ? `${state.outcome.winner ? `${state.outcome.winner === "w" ? "백" : "흑"} 승리` : "무승부"} · ${state.outcome.reason}`
+      ? wifi
+        ? `${net.verdict(state)} ${state.outcome.reason}`
+        : `${state.outcome.winner ? `${state.outcome.winner === "w" ? "백" : "흑"} 승리` : "무승부"} · ${state.outcome.reason}`
       : aiError ||
-        (aiTurn()
-          ? "컴퓨터가 생각 중..."
-          : `${game.turn() === "w" ? "백" : "흑"}의 차례${check ? " · 체크" : ""}`);
+        (wifi
+          ? (net.line(state) ?? `${net.who(game.turn() === "w" ? 0 : 1)} 차례입니다${check ? " · 체크" : ""}`)
+          : aiTurn()
+            ? "컴퓨터가 생각 중..."
+            : `${game.turn() === "w" ? "백" : "흑"}의 차례${check ? " · 체크" : ""}`);
     $("turn").dataset.phase = aiTurn()
       ? computing
         ? "search"
@@ -538,6 +627,7 @@ export function mountChess(
         : "기물을 선택하세요";
     // Enabled again by onSettled once the pieces stop moving.
     $<HTMLButtonElement>("undo").disabled = !undoCount() || !!view?.animating;
+    // Over Wi-Fi a claim is for my own side, in my own turn.
     const currentClaim = claims(),
       planned = currentClaim.length
         ? []
@@ -612,6 +702,15 @@ export function mountChess(
             : r.move
               ? play(state, r.move)
               : null;
+          // Over Wi-Fi the host's computer moves through the room, which tells both devices.
+          if (wifi && next) {
+            const refused = net.commit(chessMove(r.move ?? null, !!r.claim), chessNet.toMove(state));
+            if (refused) {
+              aiError = refused;
+              update();
+            }
+            return;
+          }
           if (!next) {
             aiError = "컴퓨터가 유효한 수를 반환하지 못했습니다.";
             update();
@@ -643,7 +742,7 @@ export function mountChess(
     resultPending = false;
     // No window at the end for now (the user asked): the result's word comes up in the middle of the table.
     if (!RESULT_WINDOWS) {
-      finale(!state.outcome.winner ? "draw" : mode === "ai" && state.outcome.winner !== human ? "lose" : "win", setup);
+      finale(wifi ? net.outcome(state) : !state.outcome.winner ? "draw" : mode === "ai" && state.outcome.winner !== human ? "lose" : "win", setup);
       return;
     }
     dialog(
@@ -688,6 +787,7 @@ export function mountChess(
     rules,
     dispose() {
       disposed = true;
+      net.dispose();
       stop();
       sound.dispose();
       window.removeEventListener("pagehide", hide);
