@@ -20,6 +20,12 @@ import type { GameOptions, Move } from "../games/points/types";
  *  notice   host → all: a line for the status (someone left, a request declined).
  *  bye      leaving, or a refusal to let in, with the words why.
  *  ping     both ways every few seconds (`echo` answers one), so a device that went quiet is noticed.
+ *
+ *  Shot games (`NetRules.settled`, `src/net/settled.ts`): the host's `move` and `resync` also carry `settled`, its own
+ *  state after the move (after the last, for a resync), which every other device takes over the state its own play
+ *  of the move gave. `live`, both ways: the shot the seat to move is making now, not yet a move (a curling stone on
+ *  its way, its sweeping so far), sent by the shooter to the host and by the host to everyone else, so that they see
+ *  it as it goes; it is kept nowhere, and the move it ends in comes as any other.
  */
 export const PROTOCOL = 1;
 /** Bumped whenever a rule or a move changes meaning, so that devices of different builds do not play together. */
@@ -67,11 +73,12 @@ export type Message =
   | { t: "seats"; seats: SeatInfo[]; people: PersonInfo[] }
   | { t: "sit"; seat: number | null }
   | { t: "start"; start: StartInfo }
-  | { t: "move"; round: number; ply: number; move: Move; seat: number; salt?: number }
+  | { t: "move"; round: number; ply: number; move: Move; seat: number; salt?: number; settled?: object }
   | { t: "refuse"; round: number; ply: number; text: string }
   | { t: "request"; id: number; kind: Request; from: string }
   | { t: "answer"; id: number; yes: boolean; from: string }
-  | { t: "resync"; start: StartInfo; moves: NetMove[] }
+  | { t: "resync"; start: StartInfo; moves: NetMove[]; settled?: object }
+  | { t: "live"; round: number; ply: number; move: Move; seat: number }
   | { t: "notice"; text: string }
   /** `closed`: the host left and the room is gone for everyone. */
   | { t: "bye"; reason: string; closed?: boolean }
@@ -96,6 +103,8 @@ const isTaken = (x: unknown): x is Taken => {
   const t = x as Taken;
   return !!t && (t.kind === "person" || t.kind === "computer" || t.kind === "closed") && (t.person === null || isStr(t.person, 64));
 };
+/** A state the host settled (`settled.ts`): an object, or none. */
+const isSettled = (x: unknown) => x === undefined || (!!x && typeof x === "object" && !Array.isArray(x));
 const isStart = (x: unknown): x is StartInfo => {
   const s = x as StartInfo;
   return !!s && isInt(s.round) && isStr(s.variant, 200) && isOptions(s.options) && isInt(s.seed) && Array.isArray(s.seats) && s.seats.length <= 8 && s.seats.every(isTaken);
@@ -134,7 +143,9 @@ function checked(whole: Record<string, unknown>): Message | null {
     case "start":
       return isStart(m.start) ? (m as Message) : null;
     case "move":
-      return isInt(m.round) && isInt(m.ply) && m.ply >= 0 && isMove(m.move) && isInt(m.seat) && isSalt(m.salt) ? (m as Message) : null;
+      return isInt(m.round) && isInt(m.ply) && m.ply >= 0 && isMove(m.move) && isInt(m.seat) && isSalt(m.salt) && isSettled(m.settled) ? (m as Message) : null;
+    case "live":
+      return isInt(m.round) && isInt(m.ply) && m.ply >= 0 && isMove(m.move) && isInt(m.seat) ? (m as Message) : null;
     case "refuse":
       return isInt(m.round) && isInt(m.ply) && isStr(m.text, 400) ? (m as Message) : null;
     case "request":
@@ -142,7 +153,7 @@ function checked(whole: Record<string, unknown>): Message | null {
     case "answer":
       return isInt(m.id) && typeof m.yes === "boolean" && isStr(m.from, 64) ? (m as Message) : null;
     case "resync":
-      return isStart(m.start) && Array.isArray(m.moves) && m.moves.length <= 20000 && m.moves.every((x: NetMove) => x && isMove(x.move) && isInt(x.seat) && isSalt(x.salt)) ? (m as Message) : null;
+      return isStart(m.start) && Array.isArray(m.moves) && m.moves.length <= 20000 && m.moves.every((x: NetMove) => x && isMove(x.move) && isInt(x.seat) && isSalt(x.salt)) && isSettled(m.settled) ? (m as Message) : null;
     case "notice":
       return isStr(m.text, 400) ? (m as Message) : null;
     case "bye":

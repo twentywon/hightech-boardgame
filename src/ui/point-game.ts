@@ -9,6 +9,7 @@ import { Sound } from "../engine/sound";
 import type { Settings } from "../core/storage";
 import { HOST_ONLY, type NetRules } from "../net/match";
 import { pointRules, type NetSpec } from "../net/points";
+import { digest } from "../net/settled";
 import type { SeatInfo, SeatKind } from "../net/protocol";
 import type { GuestRoom, HostRoom } from "../net/room";
 import { openLobby, roomGone, type AnyRoom, type Lobby } from "./net-lobby";
@@ -62,6 +63,15 @@ export interface PointView<S> {
   /** A move of mine the screen refused (at once, or when its turn in a `queueMoves` queue came), for a view that shows it (a shake). */
   refused?: (move: Move) => void;
   sync(state: S, animate?: boolean): void;
+  /**
+   * Over Wi-Fi (shot games): a shot of mine as it is being made, before it is a move (a curling stone on its way,
+   * swept so far), for the room to show the others (`live`); and another device's shot so told, shown as it goes.
+   * The move it ends in comes through `sync` as any other.
+   */
+  onLiveShot?: ((move: Move) => void) | null;
+  liveShot?(move: Move): void;
+  /** Over Wi-Fi: the side this device plays (null: it watches) and the sides' names as the room has them (나 for mine). */
+  netSeat?(side: number | null, names: [string, string]): void;
   setMarks(marks: Marks): void;
   setQuality(quality: "high" | "low"): void;
   dispose(): void;
@@ -629,6 +639,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       view.onSettled = present;
       view.onPick = pick;
       view.onMove = (move) => commit(move);
+      if (net) {
+        view.onLiveShot = (move) => {
+          if (net && netMine()) net.room.preview(move);
+        };
+        seatView();
+      }
       const canvas = view.renderer.domElement;
       canvas.tabIndex = 0;
       canvas.setAttribute("aria-label", `${config.name} 판`);
@@ -930,6 +946,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       next = done || bot || waiting || (net && !netMine(s)) ? null : stage();
     $("board").dataset.animating = String(!!view?.animating || state !== shown || thinking);
     $("board").dataset.turn = String(turn);
+    // A shot game over Wi-Fi: a digest of the state shown, the same on every device that shows the same (as data-dice).
+    if (net && rules?.settled) $("board").dataset.state = digest(s);
     $("move-count").textContent = `${game.ply(s)}수`;
     $("turn").dataset.player = String(turn);
     $("board").dataset.paused = String(paused && !done);
@@ -1045,10 +1063,16 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       list = config.net!.seats?.(v) ?? [0, 1].map((p) => ({ label: names[p], color: colors[p], kinds: ["computer"] as SeatKind[] }));
     return list.map((seat) => ({ ...seat, kind: "open" as SeatKind, person: null }));
   }
+  /** Tells the view which side this device plays and who sits where (a view that names the sides or faces one). */
+  function seatView() {
+    const room = net?.room;
+    if (!room || !view?.netSeat) return;
+    view.netSeat(room.mySeat, [0, 1].map((p) => room.nameOf(config.net!.seatOf?.(shown, p) ?? p) || "빈자리") as [string, string]);
+  }
   /** The room's window: the lobby before a game (a room is made or joined there), the room as it stands during one. */
   function openRoom() {
     if (lobby || !rules) return;
-    const v = preferences.variant;
+    const v = config.net!.variant?.(preferences.variant) ?? preferences.variant;
     lobby = openLobby({
       game: document.documentElement.dataset.game ?? config.english,
       title: config.name,
@@ -1080,7 +1104,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     room.events = {
       changed: () => {
         lobby?.refresh();
-        if (table()) update();
+        if (table()) {
+          seatView();
+          update();
+          // Someone dropped on their own turn (aiming a shot): the host's computer takes the seat at once.
+          if (room.host && !busy()) computer();
+        }
       },
       started: () => {
         lobby?.close();
@@ -1093,6 +1122,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         if (table()) drain();
       },
       synced: resyncNet,
+      // Another device's shot on its way: shown as it goes, while this table shows the state it is made from.
+      previewed: (move) => {
+        if (table() && !inbox.length && state === shown) view?.liveShot?.(move);
+      },
       asked: () => renderAsk(),
       settled: () => {
         renderAsk();

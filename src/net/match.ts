@@ -2,6 +2,7 @@ import type { Random } from "../core/random";
 import type { Move } from "../games/points/types";
 import type { NetMove, StartInfo } from "./protocol";
 import { streamFor } from "./random";
+import { adopt } from "./settled";
 
 /** The seat to move is the host's device alone (hex conquest's map and start), or nobody (the game is over). */
 export const HOST_ONLY = -1,
@@ -19,6 +20,11 @@ export interface NetRules<S> {
   allow?(state: S, move: Move): string | null;
   /** A move never taken back by an undo (janggi's formation, chosen before the first move). */
   firm?(move: Move): boolean;
+  /**
+   * The host's state after each move goes with it and every other device takes it over its own (`settled.ts`): for
+   * a shot game, whose `play` runs floating-point physics that two engines might end a hair apart.
+   */
+  settled?: boolean;
 }
 
 /**
@@ -62,9 +68,14 @@ export class Match<S> {
   private stream(salt: number) {
     return streamFor(this.start.seed, this.ply + 1, salt);
   }
-  /** Plays `move` for `seat` whoever's turn it is (the host has checked it), its chance under `salt`: the new state, or null if illegal. */
-  push(move: Move, seat: number, salt = 0): S | null {
-    const next = this.rules.play(this.state, move, this.stream(salt));
+  /**
+   * Plays `move` for `seat` whoever's turn it is (the host has checked it), its chance under `salt`: the new state, or
+   * null if illegal. `settled`: the host's state after it, for a game whose rules are `settled`, taken over this
+   * device's own (and played even where this device's own play refused the move).
+   */
+  push(move: Move, seat: number, salt = 0, settled?: unknown): S | null {
+    const played = this.rules.play(this.state, move, this.stream(salt)),
+      next = this.rules.settled && settled !== undefined ? adopt(played, settled, this.state) : played;
     if (!next) return null;
     this.states.push(next);
     this.moves.push(salt ? { move, seat, salt } : { move, seat });
@@ -75,10 +86,21 @@ export class Match<S> {
     this.states.length = Math.max(0, length) + 1;
     this.moves.length = Math.max(0, length);
   }
-  /** Plays a whole list after the start; false when one of it does not play (the match then holds what did). */
-  replay(moves: readonly NetMove[]): boolean {
+  /**
+   * Plays a whole list after the start; false when one of it does not play (the match then holds what did).
+   * `settled`: the host's state after the last, for a `settled` game; a move of it this device's own play refuses
+   * (its numbers had parted from the host's) then keeps the list going, and the host's state ends it.
+   */
+  replay(moves: readonly NetMove[], settled?: unknown): boolean {
     this.truncate(0);
-    for (const m of moves) if (!this.push(m.move, m.seat, m.salt ?? 0)) return false;
+    const carried = !!this.rules.settled && settled !== undefined;
+    for (const m of moves)
+      if (!this.push(m.move, m.seat, m.salt ?? 0)) {
+        if (!carried) return false;
+        this.states.push(this.state);
+        this.moves.push(m.salt ? { move: m.move, seat: m.seat, salt: m.salt } : { move: m.move, seat: m.seat });
+      }
+    if (carried) this.states[this.states.length - 1] = adopt(this.state, settled, this.state) ?? this.state;
     return true;
   }
   /** How long the list is once the last move of `seat`, and everything after it, is taken back; null if it made none. */

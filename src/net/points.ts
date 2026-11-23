@@ -25,6 +25,13 @@ export interface NetSpec<S> {
   standIn?: boolean;
   /** The fewest people seated (2). */
   least?: number;
+  /**
+   * A shot game: the host's state after each move goes with it and every device takes it (`NetRules.settled`,
+   * `settled.ts`), so floating-point physics that two engines end a hair apart cannot part the devices.
+   */
+  settled?: boolean;
+  /** The variant a room plays for the one chosen in the setup (a variant played alone becomes the one for two). */
+  variant?: (variant: string) => string;
 }
 /** A point game as a room plays it: laid from the room's start and seed, the seat to move, what a room refuses. */
 export function pointRules<S>(game: PointGame<S>, spec: NetSpec<S>): NetRules<S> {
@@ -36,5 +43,6 @@ export function pointRules<S>(game: PointGame<S>, spec: NetSpec<S>): NetRules<S>
     play: (s, move, random) => game.play(s, move, random),
     toMove: (s) => (game.winner(s) !== null ? NOBODY : (spec.toMove?.(s) ?? game.turn(s))),
     allow: spec.allow,
+    settled: spec.settled,
   };
 }

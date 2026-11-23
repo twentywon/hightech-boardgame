@@ -279,6 +279,25 @@ export abstract class TableView<S> implements PointView<S> {
     this.mark(marks);
     this.dirty = true;
   }
+  // ── Over Wi-Fi (와이파이 여럿이): the point-game screen tells the view whose device it is (`PointView.netSeat`). ──
+  /** The side this device plays (null: it watches); undefined at one screen. */
+  protected netSide: number | null | undefined = undefined;
+  /** The sides' names as the room has them (나 for this device's own), or null at one screen. */
+  protected netNames: [string, string] | null = null;
+  netSeat(side: number | null, names: [string, string]) {
+    this.netSide = side;
+    this.netNames = names;
+    this.seated();
+    this.dirty = true;
+  }
+  /** Called once `netSide` and `netNames` are told: a view that names the sides or faces one repaints. */
+  protected seated() {}
+  /** Turns the table to be seen from `orbit` (half round: from the far side), at once, if it is not already. */
+  protected faceFrom(orbit: number) {
+    if (this.orbit === orbit) return;
+    this.orbit = orbit;
+    this.resize();
+  }
   private step(now: number) {
     if (!this.tweens.length) return false;
     const running = this.tweens,

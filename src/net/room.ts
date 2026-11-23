@@ -39,6 +39,8 @@ export interface RoomEvents<S> {
   refused?(text: string): void;
   /** The host is gone (a guest's room) or a version or game did not match, with the words. */
   lost?(reason: string): void;
+  /** Another device's shot as it is being made, not yet a move (`live`: a curling stone on its way, swept so far). */
+  previewed?(move: Move, seat: number): void;
 }
 export const MOST_PEOPLE = 8;
 /**
@@ -226,6 +228,13 @@ export class HostRoom<S> extends Room<S> {
         if ("text" in tried) return this.send(link, { t: "refuse", round: m.round, ply: m.ply, text: tried.text });
         return this.record(m.move, seat!, salt);
       }
+      case "live": {
+        // A shot on its way, from the seat to move only: passed on to everyone else, kept nowhere.
+        const seat = this.seatOf(id);
+        if (!this.match || !this.start || m.round !== this.start.round || m.ply !== this.match.ply || seat === null || seat !== this.match.toMove) return;
+        this.broadcast({ t: "live", round: m.round, ply: m.ply, move: m.move, seat }, link);
+        return this.events.previewed?.(m.move, seat);
+      }
       case "request": {
         const text = this.request(m.kind, id);
         if (text) this.send(link, { t: "notice", text });
@@ -282,7 +291,17 @@ export class HostRoom<S> extends Room<S> {
     this.changed();
   }
   private resync(link: Link) {
-    if (this.match && this.start) this.send(link, { t: "resync", start: this.start, moves: this.match.moves });
+    // A shot game's state goes with it: the guest takes the host's numbers over its own replay (`settled.ts`).
+    if (this.match && this.start) this.send(link, { t: "resync", start: this.start, moves: this.match.moves, ...this.settledState() });
+  }
+  /** The host's state for a game whose rules are `settled`, as a message carries it. */
+  private settledState(): { settled?: object } {
+    return this.rules.settled && this.match ? { settled: this.match.state as object } : {};
+  }
+  /** My shot as it is being made (`live`), for everyone else to watch; it is a move only once `play` makes it. */
+  preview(move: Move) {
+    if (!this.match || !this.start || this.match.toMove !== this.mySeat) return;
+    this.broadcast({ t: "live", round: this.start.round, ply: this.match.ply, move, seat: this.mySeat! });
   }
   /** A line for every status but the one of `skip` (a returning person is not told of their own return). */
   private tell(text: string, skip?: Link) {
@@ -391,7 +410,7 @@ export class HostRoom<S> extends Room<S> {
       ply = match.ply,
       state = match.push(move, seat, salt);
     if (!state) return;
-    this.broadcast({ t: "move", round: this.start!.round, ply, move, seat, salt });
+    this.broadcast({ t: "move", round: this.start!.round, ply, move, seat, salt, ...this.settledState() });
     this.events.moved?.(state, match.moves[ply], ply);
   }
   /** An undo or a new game asked (by me, or by a guest): granted at once when nobody else is to answer. */
@@ -575,7 +594,7 @@ export class GuestRoom<S> extends Room<S> {
         const fresh = !this.start || this.start.round !== m.start.round || this.start.seed !== m.start.seed;
         this.start = m.start;
         const match = fresh || !this.match ? new Match(this.rules, m.start) : this.match;
-        match.replay(m.moves);
+        match.replay(m.moves, m.settled);
         this.match = match;
         return fresh ? this.events.started?.() : this.events.synced?.();
       }
@@ -583,12 +602,15 @@ export class GuestRoom<S> extends Room<S> {
         if (!this.match || !this.start || m.round !== this.start.round || m.ply < this.match.ply) return;
         // A move missed: the host is asked for the whole list again.
         if (m.ply > this.match.ply) return this.greet();
-        const state = this.match.push(m.move, m.seat, m.salt ?? 0);
+        const state = this.match.push(m.move, m.seat, m.salt ?? 0, m.settled);
         if (!state) return this.greet();
         return this.events.moved?.(state, this.match.moves[m.ply], m.ply);
       }
       case "refuse":
         return this.events.refused?.(m.text);
+      case "live":
+        if (!this.match || !this.start || m.round !== this.start.round || m.ply !== this.match.ply) return;
+        return this.events.previewed?.(m.move, m.seat);
       case "request": {
         const waiting = this.seats.filter((s) => s.kind === "person" && s.person !== m.from && this.person(s.person)?.connected).map((s) => s.person!);
         this.pending = { id: m.id, kind: m.kind, from: m.from, waiting };
@@ -650,6 +672,11 @@ export class GuestRoom<S> extends Room<S> {
     if ("text" in tried) return tried.text;
     this.say({ t: "move", round: this.start.round, ply: this.match.ply, move, seat });
     return null;
+  }
+  /** My shot as it is being made (`live`), sent to the host for everyone else to watch. */
+  preview(move: Move) {
+    if (!this.online || !this.match || !this.start || this.match.toMove !== this.mySeat) return;
+    this.say({ t: "live", round: this.start.round, ply: this.match.ply, move, seat: this.mySeat! });
   }
   request(kind: Request): string | null {
     if (!this.online) return "방장과 연결되어 있지 않습니다.";
