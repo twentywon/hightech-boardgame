@@ -40,6 +40,11 @@ export interface NetSpec<S> {
   movers?: (state: S) => number[];
   /** What each seat's device shows: the state as that seat sees it, and its moves put back in the room's terms. */
   hidden?: HiddenView<S>;
+  /**
+   * How the game ended for `seat`, where no one seat wins it (old maid: the thief loses, every other seat is safe);
+   * left out, the seat `winnerSeat` names won and the others lost. With it `winnerSeat` may give null.
+   */
+  outcome?: (state: S, seat: number) => "win" | "lose" | "draw";
 }
 /** A point game as a room plays it: laid from the room's start and seed, the seat to move, what a room refuses. */
 export function pointRules<S>(game: PointGame<S>, spec: NetSpec<S>): NetRules<S> {
