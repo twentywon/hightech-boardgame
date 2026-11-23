@@ -6,6 +6,7 @@
  * computer). Lines and shapes drawn in `currentColor` follow the button's ink, so a pressed button turns them white.
  */
 import { layoutPicture } from "../games/push/art";
+import { coursePicture } from "../games/slotcar/art";
 export interface ChoiceIcon {
   svg: string;
   only: boolean;
@@ -162,6 +163,10 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "pg-set-tier" && game === "shooting" && TIER_COINS[value]) return { svg: TIER_COINS[value], only: false };
   // 구슬 밀기's starting set-ups: the hexagon with the two sides' marbles where they begin.
   if (select === "pg-variant" && game === "marble-push") return { svg: layoutPicture(value), only: false };
+  // 슬롯 카: each course's line seen from above, its bridge drawn over; how many people and computers race.
+  if (select === "pg-variant" && game === "slot-car") return { svg: coursePicture(value), only: false };
+  if (select === "pg-set-people" && game === "slot-car") return { svg: people(Number(value)), only: true };
+  if (select === "pg-set-computers" && game === "slot-car" && Number(value) > 0) return { svg: computers(Number(value)), only: true };
   // Who moves first against the computer: me, the computer, or a throw of a die.
   if (select === "pg-set-first") return value === "me" ? { svg: svg(26, 26, person(13, 14)), only: false } : value === "computer" ? { svg: svg(26, 26, computer(13, 14)), only: false } : value === "random" ? { svg: die, only: false } : null;
   return null;

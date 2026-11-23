@@ -32,6 +32,33 @@ function crackling(context: BaseAudioContext) {
   }
   return buffer;
 }
+/**
+ * 슬롯 카: one second of a small electric motor made by the page, to be looped (and pitched by its playback rate): a
+ * bright buzz of the armature at 220 Hz with its overtones, the commutator's ripple over it and the hiss of the
+ * brushes. Whole cycles fill the stretch that loops, so that it joins without a click.
+ */
+function whining(context: BaseAudioContext) {
+  const rate = context.sampleRate,
+    length = rate,
+    buffer = context.createBuffer(1, length, rate),
+    data = buffer.getChannelData(0);
+  let seed = 3,
+    hiss = 0,
+    peak = 0;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < length; i++) {
+    const w = (2 * Math.PI * 220 * i) / rate;
+    let v = 0;
+    for (let h = 1; h <= 9; h++) v += Math.sin(h * w + h * 0.7) / h ** 0.85;
+    // The commutator's ripple, three times a turn, and the brushes' hiss.
+    v *= 0.75 + 0.25 * Math.sin(3 * w);
+    hiss += (random() * 2 - 1 - hiss) * 0.35;
+    data[i] = v + hiss * 0.5;
+    peak = Math.max(peak, Math.abs(data[i]));
+  }
+  for (let i = 0; i < length; i++) data[i] *= 0.8 / peak;
+  return buffer;
+}
 function decode(context: AudioContext) {
   if (decoding) return;
   decoding = true;
@@ -801,5 +828,49 @@ export class Sound {
     const key = [1, 0.944, 1.059][Math.floor(Math.random() * 3)];
     [392, 349.23, 293.66].forEach((f, i) => this.bell(f * key, i * 0.2, i === 2 ? 1.0 : 0.45, 0.05));
     this.tone("sine", 146.83 * key, 146.83 * key, 0.4, 1.0, 0.03);
+  }
+  // ─────────────── 슬롯 카 ───────────────
+  /** The two motor loops (the people's cars and the computer's pack) share one buffer made by the page. */
+  private motorLoops() {
+    const c = this.context;
+    if (c && !samples.has("whine-0")) {
+      const buffer = whining(c);
+      samples.set("whine-0", buffer);
+      samples.set("whine-1", buffer);
+    }
+  }
+  /** A person's car's motor (`level` 0 to 1, its speed; 0 is silence): louder and brighter while `pulling` (the pedal held), as long as it is asked for. */
+  slotMotor(level: number, pulling: boolean) {
+    this.motorLoops();
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("whine-0", l > 0.02 ? (pulling ? 0.06 + 0.12 * l : 0.03 + 0.05 * l) : 0, 0.42 + 1.55 * l + (pulling ? 0.08 : 0));
+  }
+  /** The computer's cars as one quieter motor (`level` 0 to 1, the fastest of them), as long as it is asked for. */
+  slotPack(level: number) {
+    this.motorLoops();
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("whine-1", l > 0.02 ? 0.02 + 0.045 * l : 0, 0.47 + 1.45 * l);
+  }
+  /** A slot car flying off (`strength` 0 to 1, how fast): the tyres' skid, a knock on the table and the plastic body clattering over. */
+  deslot(strength = 0.7) {
+    const s = Math.max(0.25, Math.min(1, strength));
+    this.noise(0, 0.3, 0.12 * s, 2800, "bandpass", 900);
+    this.tone("sine", 190, 70, 0.22, 0.16, 0.16 * s);
+    for (let k = 0; k < 5; k++) {
+      const at = 0.24 + k * 0.09 + Math.random() * 0.05,
+        v = (0.16 - k * 0.025) * s;
+      this.noise(at, 0.03, v, 3600 + Math.random() * 1400, "bandpass", 2600);
+      this.tone("square", 1700 + Math.random() * 600, 1200, at, 0.03, v * 0.2);
+    }
+  }
+  /** The start lights: a short low beep for each red lamp, a long high one for green. */
+  startLight(go: boolean) {
+    if (go) this.tone("square", 1318.5, 1318.5, 0, 0.55, 0.045);
+    else this.tone("square", 659.25, 659.25, 0, 0.22, 0.04);
+  }
+  /** A lap counted: the lap counter's two quick blips. */
+  lapBeep() {
+    this.tone("triangle", 1568, 1568, 0, 0.07, 0.05);
+    this.tone("triangle", 2093, 2093, 0.08, 0.1, 0.05);
   }
 }
