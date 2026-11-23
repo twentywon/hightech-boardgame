@@ -3,6 +3,7 @@ package kr.worldtable.student;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -135,12 +136,28 @@ public class MainActivity extends Activity {
         if (focused) hideBars();
     }
 
-    /** The phone's back key does what the browser's does: a table goes back to the collection (the page's own history). */
+    /** The window asking whether to leave, while it is up. */
+    private AlertDialog leaving;
+
+    /**
+     * The phone's back key does what the browser's does: a table goes back to the collection (the page's own history).
+     * At the collection it asks before the app closes (the user asked), instead of closing at once.
+     */
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if (web != null && web.canGoBack()) web.goBack();
-        else super.onBackPressed();
+        if (web != null && web.canGoBack()) {
+            web.goBack();
+            return;
+        }
+        if (leaving != null && leaving.isShowing()) return;
+        leaving = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Light_Dialog_Alert)
+                .setTitle("앱 종료")
+                .setMessage("앱을 종료할까요?")
+                .setPositiveButton("종료", (dialog, which) -> finish())
+                .setNegativeButton("취소", null)
+                .create();
+        leaving.show();
     }
 
     @Override

@@ -35,6 +35,22 @@ export function getSettings(): Settings {
     return { ...defaults };
   }
 }
+/** The name a person last typed for Wi-Fi rooms, kept on this device for every game's room (the user asked). */
+const NAME_KEY = "wtg.name.v1";
+export function getPlayerName(): string {
+  try {
+    return (localStorage.getItem(NAME_KEY) ?? "").slice(0, 12);
+  } catch {
+    return "";
+  }
+}
+export function setPlayerName(name: string) {
+  try {
+    localStorage.setItem(NAME_KEY, name);
+  } catch {
+    /* Storage may be disabled: the name is then asked each time. */
+  }
+}
 export function setSettings(s: Settings) {
   try {
     localStorage.setItem("wtg.settings.v1", JSON.stringify(s));

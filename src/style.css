@@ -3642,3 +3642,4 @@ dialog.net-join .net-join-pair { margin-top:4px; }
   dialog.net-join .net-name-field input { padding:6px 12px; }
   dialog.net-join .net-join-pair { grid-template-columns:minmax(0, 1fr); }
 }
+dialog.net-lobby:focus { outline:none; }

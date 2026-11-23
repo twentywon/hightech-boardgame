@@ -6,7 +6,7 @@ import { APP_VERSION } from "../net/protocol";
 import { appLan, readRoomCode, typedAddress, LAN_PORT, type RoomAd } from "../net/lan";
 import { routeRoom, routeText, type Playable } from "../net/route";
 import { EDITION } from "../core/catalog";
-import { typedName, type JoinPlan } from "./net-lobby";
+import { keepName, openQuietly, typedName, type JoinPlan } from "./net-lobby";
 
 /**
  * The collection's 참가하기 (the user asked: "메인화면에 참가하기 버튼을 만들어서 게임에 관계없이 방장이 생성한 qr을 찍으면 그
@@ -54,6 +54,7 @@ export function openJoin(o: JoinWindow) {
       : "'방장 QR 찍기'로 방장의 기기에 나온 초대 QR 코드를 찍거나 초대 코드를 붙여 넣으면, 방장이 고른 게임으로 바로 들어갑니다."
   }</p><div class="dialog-body net-body"></div><div class="dialog-actions"><button id="net-cancel">← 뒤로</button></div>`;
   const body = d.querySelector<HTMLElement>(".net-body")!;
+  keepName(body);
   document.body.append(d);
   // The rooms on the Wi-Fi are looked for while the window is open; the list is drawn again as they come and go.
   const stopFind = lan?.find() ?? null,
@@ -247,6 +248,6 @@ export function openJoin(o: JoinWindow) {
     }
   }
   render();
-  d.showModal();
+  openQuietly(d);
   return { dialog: d, close: finish };
 }

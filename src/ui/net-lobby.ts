@@ -9,6 +9,7 @@ import { appLan, joinProblem, readRoomCode, roomCode, typedAddress, LAN_PORT, ty
 import { allGames, EDITION } from "../core/catalog";
 import { idOf } from "../net/route";
 import type { GameOptions } from "../games/points/types";
+import { getPlayerName, setPlayerName } from "../core/storage";
 
 /**
  * The window of a room played over one Wi-Fi (와이파이 여럿이): who is in, who sits where, and the pairing of a new
@@ -46,9 +47,27 @@ export interface Lobby {
   refresh(): void;
   close(): void;
 }
-/** The name typed last, for this page only (nothing is stored); the collection's 참가하기 window shares it. */
-let lastName = "";
-export const typedName = () => lastName;
+/** The name typed last; it is kept on the device (`getPlayerName`), so every game's room and the collection's
+ * 참가하기 window start with it (the user asked). */
+let lastName = getPlayerName();
+export const typedName = () => getPlayerName() || lastName;
+/** Keeps what is typed in the name field (#net-name) as it is typed, so a name set once comes back in every room. */
+export function keepName(body: HTMLElement) {
+  body.addEventListener("input", (e) => {
+    const field = e.target as HTMLInputElement;
+    if (field.id === "net-name") setPlayerName(cleanName(field.value, "").trim());
+  });
+}
+/**
+ * The window opens with nothing focused: a name field focused at once would bring the phone's keyboard up over the
+ * window (the user asked). The dialog itself takes the focus, so the keyboard keys still work from there.
+ */
+export function openQuietly(d: HTMLDialogElement) {
+  d.tabIndex = -1;
+  d.showModal();
+  if (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) document.activeElement.blur();
+  d.focus({ preventScroll: true });
+}
 /**
  * A room the collection's 참가하기 chose (`src/ui/net-join.ts`): the next room window of that game opens as a guest
  * with this name and joins at once, at the app's `address` or by the host's two-way `offer`, with no 참가하기 to press.
@@ -115,6 +134,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
   d.querySelector("h2")!.textContent = o.title;
   const body = d.querySelector<HTMLElement>(".net-body")!,
     cancel = d.querySelector<HTMLButtonElement>("#net-cancel")!;
+  keepName(body);
   document.body.append(d);
   const started = () => !!room?.match;
   const host = () => (room?.host ? (room as HostRoom<S>) : null);
@@ -219,7 +239,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
       finding = false;
     if (!room) {
       html = net
-        ? `<label class="net-name-field">내 이름<input id="net-name" maxlength="12" value="${escape(lastName)}" placeholder="플레이어" autocomplete="nickname"></label><div class="net-roles"><button id="net-host" class="net-role"><b>방 만들기</b><small>${lan ? "이 기기가 방장이 됩니다. 같은 와이파이의 기기들이 방 목록에서 바로 들어옵니다." : "이 기기가 방장이 됩니다. 다른 기기를 한 대씩 연결하고 시작합니다."}</small></button><button id="net-join" class="net-role"><b>참가하기</b><small>${lan ? "같은 와이파이에 열린 방 목록에서 골라 들어갑니다. 같은 게임을 고른 뒤 누르세요." : "방장의 기기에 나온 QR 코드를 읽어 들어갑니다. 같은 게임을 고른 뒤 누르세요."}</small></button></div>`
+        ? `<label class="net-name-field">내 이름<input id="net-name" maxlength="12" value="${escape(typedName())}" placeholder="플레이어" autocomplete="nickname"></label><div class="net-roles"><button id="net-host" class="net-role"><b>방 만들기</b><small>${lan ? "이 기기가 방장이 됩니다. 같은 와이파이의 기기들이 방 목록에서 바로 들어옵니다." : "이 기기가 방장이 됩니다. 다른 기기를 한 대씩 연결하고 시작합니다."}</small></button><button id="net-join" class="net-role"><b>참가하기</b><small>${lan ? "같은 와이파이에 열린 방 목록에서 골라 들어갑니다. 같은 게임을 고른 뒤 누르세요." : "방장의 기기에 나온 QR 코드를 읽어 들어갑니다. 같은 게임을 고른 뒤 누르세요."}</small></button></div>`
         : `<p class="net-problem">이 브라우저에서는 기기끼리 바로 연결(WebRTC)을 쓸 수 없습니다. 최신 Chrome에서 열어 주세요.</p>`;
     } else if (room.host) {
       const h = room as HostRoom<S>,
@@ -579,8 +599,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     if (plan.offer) qr = true;
   }
   render();
-  d.showModal();
-  if (!room) d.querySelector<HTMLInputElement>("#net-name")?.focus();
+  openQuietly(d);
   if (plan?.offer) void takeOffer(plan.offer);
   else if (plan?.address) join(plan.address);
   return {
