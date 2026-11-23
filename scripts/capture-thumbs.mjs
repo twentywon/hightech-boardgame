@@ -11,7 +11,8 @@ import { games } from "../src/core/catalog.ts";
 const { chromium } = createRequire(import.meta.url)("playwright");
 const out = process.argv[2] ?? ".";
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, deviceScaleFactor: 2 });
+// THUMB_WIDTH widens the window for a table beside a wide side panel (a puzzle's), so that the canvas itself is 4:3.
+const page = await browser.newPage({ viewport: { width: Number(process.env.THUMB_WIDTH) || 1280, height: 1000 }, deviceScaleFactor: 2 });
 const wait = (ms) => page.waitForTimeout(ms);
 const keys = async (list, pause = 110) => {
   await page.locator("canvas").focus();
