@@ -1,6 +1,6 @@
 import { seededRandom } from "../../core/ai";
 import { options, pot } from "../cards/betting";
-import { NAMES, type BettingGame, type Tone } from "../cards/game";
+import { NAMES, wonAt, type BettingGame, type Tone } from "../cards/game";
 import { wager } from "../cards/judgement";
 import {
   PAIRS,
@@ -8,6 +8,7 @@ import {
   bestPair,
   choices,
   choose,
+  chooser,
   createDeck,
   createSession,
   handOf,
@@ -91,7 +92,7 @@ export const seotda: BettingGame<State> = {
   turn: (s) => (s.phase === "betting" ? s.betting.turn : -1),
   options: (s) => (s.phase === "betting" ? options(s.betting) : null),
   round: (s) => s.round,
-  won: (s) => s.won,
+  won: (s, seat = 0) => (s.people ? wonAt(s.phase === "sessionOver", s.betting.seats[seat]?.chips) : s.won),
   stage: (s) =>
     s.phase !== "betting"
       ? ""
@@ -102,10 +103,10 @@ export const seotda: BettingGame<State> = {
         : s.betting.high > 0
           ? "베팅 중"
           : "베팅 시작",
-  prompt(s) {
+  prompt(s, seat = 0) {
     const kind = choices(s);
-    if (!kind) return null;
-    const cards = s.hands[0];
+    if (!kind || chooser(s) !== seat) return null;
+    const cards = s.hands[seat];
     return kind === "show"
       ? {
           title: "상대에게 공개할 패를 고르세요",
@@ -120,9 +121,11 @@ export const seotda: BettingGame<State> = {
           })),
         };
   },
-  view(s) {
+  view(s, me = 0, names = NAMES) {
     const over = s.phase === "handOver" || s.phase === "sessionOver",
-      settled = over && !s.result?.rematch;
+      settled = over && !s.result?.rematch,
+      // Over Wi-Fi the cards the others show are turned up once everyone has chosen.
+      choosing = !!s.people && choices(s) === "show";
     return {
       // Once the pot has been paid it is no longer on the table.
       pot: settled ? 0 : pot(s.betting),
@@ -134,7 +137,7 @@ export const seotda: BettingGame<State> = {
           tone: Tone = settled ? (net > 0 ? "win" : net < 0 ? "lose" : "push") : "neutral",
           decided = s.variant === "two" || !!s.picks[i];
         return {
-          name: NAMES[i],
+          name: names[i] ?? "",
           chips: seat.chips,
           bet: seat.total,
           active: s.phase === "betting" && s.betting.turn === i,
@@ -143,9 +146,9 @@ export const seotda: BettingGame<State> = {
           tone,
           note: seat.folded
             ? "다이"
-            : (i === 0 || revealed) && cards.length >= 2 && decided
+            : (i === me || revealed) && cards.length >= 2 && decided
               ? rank(handOf(s, i)).name
-              : i === 0 && cards.length >= 2
+              : i === me && cards.length >= 2
                 ? // Not chosen yet: the best hand my cards can make so far.
                   rank(cards.length > 2 ? bestOf(cards) : cards).name
               : seat.allIn && cards.length
@@ -153,30 +156,30 @@ export const seotda: BettingGame<State> = {
                 : "",
           cards: cards.map((c, k) => {
             // A folded hand lies face down, mine included.
-            const open = !seat.folded && (i === 0 || revealed || (s.variant === "three" && s.open[i] === k));
+            const open = !seat.folded && (i === me || revealed || (s.variant === "three" && s.open[i] === k && !choosing));
             return {
               id: c.id,
               face: open ? faceOf(c) : null,
               text: open ? cardText(c) : "",
-              secret: i === 0 && !seat.folded && !over && s.variant === "three" && s.open[0] !== null && s.open[0] !== k,
-              peek: i === 0 && k === 2 && !seat.folded && !over,
+              secret: i === me && !seat.folded && !over && s.variant === "three" && s.open[me] !== null && s.open[me] !== k,
+              peek: i === me && k === 2 && !seat.folded && !over,
             };
           }),
         };
       }),
     };
   },
-  result(s) {
+  result(s, names = NAMES) {
     const r = s.result;
     if (!r) return null;
     return {
       rematch: !!r.rematch,
       headline: r.rematch
         ? `${r.reason}: 판돈 ${pot(s.betting).toLocaleString("ko-KR")}을 두고 다시 겨룹니다.`
-        : `${r.winners.map((i) => NAMES[i]).join(", ")} 승리 — ${r.reason}`,
+        : `${r.winners.map((i) => names[i]).join(", ")} 승리 — ${r.reason}`,
       rows: s.betting.seats.flatMap((seat, i) =>
         seat.total > 0 || r.net[i] !== 0
-          ? [{ name: NAMES[i], hand: r.shown[i] ?? (seat.folded ? "다이" : "—"), net: r.net[i] }]
+          ? [{ name: names[i] ?? "", hand: r.shown[i] ?? (seat.folded ? "다이" : "—"), net: r.net[i] }]
           : [],
       ),
     };

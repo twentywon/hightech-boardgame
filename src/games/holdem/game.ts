@@ -1,5 +1,5 @@
 import { pot } from "../cards/betting";
-import type { BettingGame, Decision, Sizing, Tone } from "../cards/game";
+import { wonAt, type BettingGame, type Decision, type Sizing, type Tone } from "../cards/game";
 import { decide } from "./ai";
 import {
   act,
@@ -53,9 +53,9 @@ export const holdem: BettingGame<State, Decision> = {
   options: (s) => (s.phase === "betting" ? options(s.table) : null),
   sizing: raiseSizes,
   round: (s) => s.round,
-  won: (s) => s.won,
+  won: (s, seat = 0) => (s.people ? wonAt(s.phase === "sessionOver", s.table.seats[seat]?.chips) : s.won),
   stage: (s) => (s.phase === "betting" ? `${STREETS[s.street]} · 블라인드 ${chips(s.table.blinds[0])}/${chips(s.table.blinds[1])}` : ""),
-  view(s) {
+  view(s, me = 0, names = NAMES) {
     const over = s.phase === "handOver" || s.phase === "sessionOver",
       t = s.table;
     return {
@@ -70,9 +70,9 @@ export const holdem: BettingGame<State, Decision> = {
           net = s.result?.net[i] ?? 0,
           tone: Tone = over ? (net > 0 ? "win" : net < 0 ? "lose" : "push") : "neutral",
           // A folded hand lies face down, mine included.
-          open = !seat.folded && (i === 0 || revealed);
+          open = !seat.folded && (i === me || revealed);
         return {
-          name: NAMES[i],
+          name: names[i] ?? "",
           chips: seat.chips,
           bet: seat.total,
           active: s.phase === "betting" && t.turn === i,
@@ -91,16 +91,16 @@ export const holdem: BettingGame<State, Decision> = {
             face: open ? faceOf(c) : null,
             text: open ? cardText(c) : "",
             // My two cards are mine alone until a showdown.
-            secret: i === 0 && open && !over,
+            secret: i === me && open && !over,
           })),
         };
       }),
     };
   },
-  result(s) {
+  result(s, seated = NAMES) {
     const r = s.result;
     if (!r) return null;
-    const names = r.winners.map((i) => NAMES[i]).join(", "),
+    const names = r.winners.map((i) => seated[i]).join(", "),
       split = r.showdown && r.pots[0] && r.pots[0].winners.length > 1,
       best = r.showdown ? r.shown[r.winners[0]] : null;
     return {
@@ -110,7 +110,7 @@ export const holdem: BettingGame<State, Decision> = {
         : `${names} 승리 — ${best ?? "모두 폴드"}`,
       rows: s.table.seats.flatMap((seat, i) =>
         seat.total > 0 || r.net[i] !== 0
-          ? [{ name: NAMES[i], hand: r.shown[i] ?? (seat.folded ? "폴드" : "—"), net: r.net[i] }]
+          ? [{ name: seated[i] ?? "", hand: r.shown[i] ?? (seat.folded ? "폴드" : "—"), net: r.net[i] }]
           : [],
       ),
     };

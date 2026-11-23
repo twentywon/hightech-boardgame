@@ -1,9 +1,9 @@
 import { seededRandom } from "../../core/ai";
 import { createDeck } from "../blackjack/shoe";
 import { options, pot } from "../cards/betting";
-import { NAMES, type BettingGame, type Tone } from "../cards/game";
+import { NAMES, wonAt, type BettingGame, type Tone } from "../cards/game";
 import { wager } from "../cards/judgement";
-import { act, choose, createSession, evaluate, start, type Card, type State } from "./rules";
+import { act, choose, chooser, createSession, evaluate, start, type Card, type State } from "./rules";
 
 const SUIT = { S: "♠", H: "♥", D: "♦", C: "♣" } as const;
 export const faceOf = (c: Card) => `${c.rank}${c.suit}`;
@@ -50,21 +50,23 @@ export const poker: BettingGame<State> = {
   start,
   act,
   choose,
-  prompt: (s) =>
-    s.phase === "choosing"
+  prompt: (s, seat = 0) =>
+    s.phase === "choosing" && chooser(s) === seat
       ? {
           title: "상대에게 공개할 카드를 고르세요",
-          options: s.hands[0].map((c, i) => ({ label: `${cardText(c)} 공개`, value: i, cards: [c.id] })),
+          options: s.hands[seat].map((c, i) => ({ label: `${cardText(c)} 공개`, value: i, cards: [c.id] })),
         }
       : null,
   phase: (s) => s.phase,
   turn: (s) => (s.phase === "betting" ? s.betting.turn : -1),
   options: (s) => (s.phase === "betting" ? options(s.betting) : null),
   round: (s) => s.round,
-  won: (s) => s.won,
+  won: (s, seat = 0) => (s.people ? wonAt(s.phase === "sessionOver", s.betting.seats[seat]?.chips) : s.won),
   stage: (s) => (s.phase === "betting" ? `${s.street}번째 카드 베팅` : ""),
-  view(s) {
-    const over = s.phase === "handOver" || s.phase === "sessionOver";
+  view(s, me = 0, names = NAMES) {
+    const over = s.phase === "handOver" || s.phase === "sessionOver",
+      // Over Wi-Fi the cards the others turn up are shown once everyone has chosen.
+      choosing = !!s.people && s.phase === "choosing";
     return {
       // Once the pot has been paid it is no longer on the table.
       pot: over ? 0 : pot(s.betting),
@@ -75,7 +77,7 @@ export const poker: BettingGame<State> = {
           net = s.result?.net[i] ?? 0,
           tone: Tone = over ? (net > 0 ? "win" : net < 0 ? "lose" : "push") : "neutral";
         return {
-          name: NAMES[i],
+          name: names[i] ?? "",
           chips: seat.chips,
           bet: seat.total,
           active: s.phase === "betting" && s.betting.turn === i,
@@ -84,36 +86,36 @@ export const poker: BettingGame<State> = {
           tone,
           note: seat.folded
             ? "다이"
-            : (i === 0 || revealed) && cards.length
+            : (i === me || revealed) && cards.length
               ? evaluate(cards).detail
               : seat.allIn && cards.length
                 ? "올인"
                 : "",
           cards: cards.map((c, k) => {
             // A folded hand lies face down, mine included.
-            const open = !seat.folded && (c.up || i === 0 || revealed);
+            const open = !seat.folded && ((c.up && !choosing) || i === me || revealed);
             return {
               id: c.id,
               face: open ? faceOf(c) : null,
               text: open ? cardText(c) : "",
-              secret: i === 0 && !seat.folded && !c.up && !over && s.phase !== "choosing",
+              secret: i === me && !seat.folded && !c.up && !over && s.phase !== "choosing",
               // The seventh card arrives face down for the person to uncover.
-              peek: i === 0 && k === 6 && !seat.folded && !over,
+              peek: i === me && k === 6 && !seat.folded && !over,
             };
           }),
         };
       }),
     };
   },
-  result(s) {
+  result(s, names = NAMES) {
     const r = s.result;
     if (!r) return null;
     return {
       rematch: false,
-      headline: `${r.winners.map((i) => NAMES[i]).join(", ")} 승리 — ${r.reason}`,
+      headline: `${r.winners.map((i) => names[i]).join(", ")} 승리 — ${r.reason}`,
       rows: s.betting.seats.flatMap((seat, i) =>
         seat.total > 0 || r.net[i] !== 0
-          ? [{ name: NAMES[i], hand: r.shown[i] ?? (seat.folded ? "다이" : "—"), net: r.net[i] }]
+          ? [{ name: names[i] ?? "", hand: r.shown[i] ?? (seat.folded ? "다이" : "—"), net: r.net[i] }]
           : [],
       ),
     };

@@ -36,7 +36,11 @@ describe("routing a room to its game", () => {
   test("a room's QR code of every Wi-Fi game routes to that game with its address, in either edition", () => {
     for (const game of [...OWN_WIFI, ...netPoints]) {
       expect(routeText(roomCode(ADDRESS, full, game), full, playable())).toEqual({ kind: "room", game, address: ADDRESS });
-      expect(routeText(roomCode(ADDRESS, student, game), student, playable(STUDENT_OUT))).toEqual({ kind: "room", game, address: ADDRESS });
+      // The betting games have Wi-Fi play in the full edition only: the student app has no such game.
+      const out = STUDENT_OUT.includes(allGames.find((g) => idOf(g.en) === game)!.en);
+      expect(routeText(roomCode(ADDRESS, student, game), student, playable(STUDENT_OUT))).toEqual(
+        out ? { kind: "problem", problem: expect.stringContaining("학생용 앱에는 없는 게임") } : { kind: "room", game, address: ADDRESS },
+      );
     }
   });
   test("an announced room routes the same way, read from its attributes", () => {

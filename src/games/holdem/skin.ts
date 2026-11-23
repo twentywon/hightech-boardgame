@@ -2,6 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { CardSkin } from "../cards/table-view";
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import type { BettingConfig } from "../../ui/betting-game";
+import { holdemNet } from "../../net/betting";
 import { holdem } from "./game";
 import { HOLDEM_LONG, HOLDEM_SQUARE, HOLDEM_WIDE, shapeOf } from "./layout";
 import { pokerRoom } from "./room";
@@ -21,6 +22,7 @@ export const holdemSkin: CardSkin = {
 const chips = (n: number) => n.toLocaleString("ko-KR");
 export const holdemConfig: BettingConfig<State> = {
   game: holdem,
+  net: holdemNet,
   skin: holdemSkin,
   name: "텍사스 홀덤",
   english: "Texas Hold'em",

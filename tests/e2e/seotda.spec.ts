@@ -30,8 +30,10 @@ test("seotda opens inline; a hand is dealt, bet and shown down with hidden cards
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
+  // The page's own origin (whatever port the preview server has), inlined data and blobs; nothing else.
+  const own = `${new URL(test.info().project.use.baseURL!).origin}/`;
   page.on("request", (r) => {
-    if (!/^(http:\/\/127\.0\.0\.1:4174|data:|blob:)/.test(r.url())) foreign.push(r.url());
+    if (!r.url().startsWith(own) && !/^(data:|blob:)/.test(r.url())) foreign.push(r.url());
   });
   // Hand 1: I hold 38광땡, the computer 장땡. Hand 2: I hold 망통, the computer 9땡.
   await loadShuffles(page, [...deal(["3광", "10열", "8광", "10"]), ...deal(["9열", "2열", "9", "8열"])]);
