@@ -20,8 +20,13 @@ export interface State {
   course: string;
   laps: number;
   cars: number;
-  /** How many of the cars people drive (the first ones): 1 against the computer. */
+  /** How many of the cars people drive (the first ones): 1 against the computer; over Wi-Fi every car (the room says who drives). */
   people: number;
+  /**
+   * Over Wi-Fi (와이파이 여럿이) the room's seat of each car, lane by lane (the seats nobody closed, in order); its colour,
+   * number and name are the seat's. Left out elsewhere: car k is seat k.
+   */
+  seats?: number[];
   done: number[];
   offs: number[];
   /** The cars home, in order. */
@@ -55,6 +60,13 @@ export function createFromOptions(course: string, options: GameOptions = {}) {
   }
   return createGame(course, laps, 1 + (Number(options.computers) || 3), 1);
 }
+/** Over Wi-Fi: a car for every seat a person or the computer took, one to a lane in seat order (`seated` by seat). */
+export function createNet(course: string, options: GameOptions, seated: boolean[]): State {
+  const seats = seated.map((on, k) => (on ? k : -1)).filter((k) => k >= 0).slice(0, 4);
+  return { ...createGame(course, Number(options.laps) || DEFAULT_LAPS, seats.length, seats.length), seats };
+}
+/** The seat (colour, number) of a car: over Wi-Fi the room's, elsewhere its lane's. */
+export const seatOfCar = (state: State, car: number) => state.seats?.[car] ?? car;
 /** Packs a finishing order into an `END` move's `extra`, and reads it back. */
 export const packRanking = (ranking: number[]) => ranking.reduceRight((n, car) => n * 5 + car + 1, 0);
 export function unpackRanking(extra: number) {
@@ -91,8 +103,12 @@ export function play(state: State, move: Move): State | null {
   done[car]++;
   return { ...state, done, order: done[car] >= state.laps ? [...state.order, car] : state.order, ply: state.ply + 1 };
 }
-/** What a car is called: against the computer 나 and 컴퓨터 1, 2, 3; at one screen each person by number and colour. */
-export const carName = (state: State, car: number) => (state.people > 1 ? `${car + 1}번 ${COLOR_NAMES[car]}` : car === 0 ? "나" : `컴퓨터 ${car}`);
+/**
+ * What a car is called: against the computer 나 and 컴퓨터 1, 2, 3; at one screen each person by number and colour; over
+ * Wi-Fi by its seat's colour alone (the same words on every device; each view names its own car 나 on its board).
+ */
+export const carName = (state: State, car: number) =>
+  state.seats ? COLOR_NAMES[seatOfCar(state, car)] : state.people > 1 ? `${car + 1}번 ${COLOR_NAMES[car]}` : car === 0 ? "나" : `컴퓨터 ${car}`;
 /** The place a car stands in now: home in order, then by laps done (the view knows more and tells it on its board). */
 export function standing(state: State) {
   const cars = Array.from({ length: state.cars }, (_, k) => k);

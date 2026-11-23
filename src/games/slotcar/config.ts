@@ -1,6 +1,7 @@
+import { HOST_ONLY } from "../../net/match";
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { COLOR_NAMES, DEFAULT_LAPS, LAP_CHOICES, carName, slotCar, type State } from "./rules";
+import { COLORS, COLOR_NAMES, DEFAULT_LAPS, LAP_CHOICES, carName, createNet, seatOfCar, slotCar, type State } from "./rules";
 import { COUNTDOWN, FLY, MARSHAL, WAIT } from "./sim";
 import { COURSES } from "./track";
 import { SLOT_COLORS, SlotCarView } from "./view";
@@ -18,7 +19,21 @@ export const slotCarConfig: PointConfig<State> = {
   noUndo: true,
   // The board of laps and places stands over the table (the view's own); the panel stays in the page for readers.
   noPanel: true,
-  view: (host, quality, variant, mode, level) => new SlotCarView(host, quality, variant, level, mode === "local"),
+  view: (host, quality, variant, mode, level, _net, live) => new SlotCarView(host, quality, variant, level, mode === "local" && !live, live),
+  // Over Wi-Fi (와이파이 여럿이) up to four devices drive a car each, one to a lane; a seat nobody takes is the host's
+  // computer's or closed (no car in the race). The race is run by the host's view (`src/net/live.ts`, `net.ts`): each
+  // guest sends its pedal, the host tells every car; laps, flights off and the end are the host's moves alone. A
+  // dropped person's car is driven by the host's computer until they come back. Course and laps are the host's.
+  net: {
+    seats: () => COLOR_NAMES.map((label, k) => ({ label, color: COLORS[k], kinds: ["computer", "closed"] })),
+    create: (variant, options, seated) => createNet(variant, options, seated),
+    toMove: () => HOST_ONLY,
+    winnerSeat: (s) => (s.ranking ? seatOfCar(s, s.ranking[0]) : null),
+    hint: (s, seat) => {
+      const car = seat === null ? -1 : (s.seats ?? []).indexOf(seat);
+      return car < 0 ? "구경하는 중입니다." : `내 차는 ${COLOR_NAMES[seat!]}입니다. 가속 페달을 누르고 있으면 빨라지고, 코너에 너무 빨리 들어가면 튕겨 나갑니다.`;
+    },
+  },
   colors: SLOT_COLORS,
   sides: ["빨강", "파랑"],
   // At one screen the result names the person whose car came home first.
@@ -27,7 +42,7 @@ export const slotCarConfig: PointConfig<State> = {
   // Over the table: a person's car flying off, the leader on the last lap, and the first car home.
   cheer: (before, state, mode) => {
     const off = offCar(before, state);
-    if (off !== null) return mode === "local" ? `${COLOR_NAMES[off]} 이탈!` : "코스 이탈!";
+    if (off !== null) return mode === "local" ? `${COLOR_NAMES[seatOfCar(state, off)]} 이탈!` : "코스 이탈!";
     if (state.order.length && !before.order.length) {
       const first = state.order[0];
       return mode === "local" ? `${carName(state, first)} 1위!` : first === 0 ? "1위로 골인!" : `${carName(state, first)} 골인`;
@@ -87,7 +102,7 @@ export const slotCarConfig: PointConfig<State> = {
   english: "Slot Car",
   number: "NO. 103 — FOUR LANES",
   intro: `<p>다락방 취미실의 커다란 테이블에 깔린 슬롯카 트랙.<br>가속 페달을 누르고 있으면 차가 빨라집니다. 코너에서 너무 빠르면 튕겨 나가니, 코너 앞에서 페달을 떼고 정해진 바퀴를 먼저 도세요.</p>`,
-  meta: "컴퓨터 대전 · 로컬 2–4인 · 레인 최대 4개 · 실시간",
+  meta: "컴퓨터 대전 · 로컬 2–4인 · 와이파이 여럿이 · 레인 최대 4개 · 실시간",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FOUR LANES</span>`,
   artClass: "foosball-art",
   artLabel: "슬롯카 트랙 미리보기",
@@ -122,6 +137,10 @@ export const slotCarConfig: PointConfig<State> = {
       table(
         ["컴퓨터 대전", "나는 빨간 1번 차를 몰고, 컴퓨터 차 1~3대와 겨룹니다. 1위로 들어와야 이깁니다."],
         ["로컬 2–4인", "한 화면에서 2~4명이 각자 자기 차를 몹니다. 페달은 화면 모서리에 하나씩, 앉은 쪽을 향해 놓이고, 여러 손가락으로 동시에 눌러도 됩니다."],
+        [
+          "와이파이 여럿이",
+          "같은 와이파이의 기기 2~4대가 레인 하나씩, 자기 차를 몹니다. 아무도 앉지 않은 레인은 방장이 <b>컴퓨터</b> 차로 두거나 빼 둡니다. 코스와 바퀴 수는 방장이 고른 대로입니다. 모든 기기에 코스 전체가 보이고, 내 차 위에는 <b>나</b> 표시가 뜨며, 화면에는 내 차의 페달 하나만 있습니다. 한 사람이 일시정지하면 모두 멈춥니다. 연결이 끊긴 사람의 차는 다시 들어올 때까지 방장 기기의 컴퓨터가 몹니다.",
+        ],
       ),
     ) +
     part(
