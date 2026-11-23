@@ -379,7 +379,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         .join("");
     modal(
       `${safe[player]}의 땅 증서`,
-      `<p>가진 돈 ${won(state.players[player].money)} · 증서 ${owned.length}장</p>${owned.length ? `<ul class="deed-list">${rows}</ul>` : "<p>가진 땅이 없습니다.</p>"}${(wifi ? human(player) : player === 0) ? `<p class="credit">${selling ? "팔면 들인 돈의 절반을 은행에서 돌려받습니다." : "내 차례에, 턴 종료를 누르기 전까지 팔 수 있습니다."}</p>` : ""}`,
+      `<p>가진 돈 ${won(state.players[player].money)} · 증서 ${owned.length}장</p>${owned.length ? `<ul class="deed-list">${rows}</ul>` : "<p>가진 땅이 없습니다.</p>"}${human(player) ? `<p class="credit">${selling ? "팔면 들인 돈의 절반을 은행에서 돌려받습니다." : "내 차례에, 턴 종료를 누르기 전까지 팔 수 있습니다."}</p>` : ""}`,
       [{ text: "닫기", action: () => later(ask, 0) }],
     );
     document.querySelectorAll<HTMLButtonElement>("dialog [data-sell]").forEach((button) => {
@@ -395,7 +395,8 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
           net.commit(tourMove("sell", Number(button.dataset.sell)));
           return update();
         }
-        const next = sell(state, 0, Number(button.dataset.sell));
+        // The traveller whose deeds are open (at a shared table any person, in their own turn).
+        const next = sell(state, player, Number(button.dataset.sell));
         if (!next) return;
         sound.unlock();
         sound.cash();
@@ -404,7 +405,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         state = shown = next;
         if (view) view.sync(state, false);
         update();
-        deeds(0);
+        deeds(player);
       };
     });
   }
