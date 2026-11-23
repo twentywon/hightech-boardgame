@@ -205,6 +205,8 @@ export class KnightView extends TableView<State> {
         disc = new T.Mesh(this.disc, this.number(i + 1));
       disc.position.set(p.x, TOP + 0.006, p.z);
       disc.receiveShadow = true;
+      // Turned so that its number reads upright from where I sit (the cap's picture lies a quarter turn round).
+      disc.rotation.y = Math.PI / 2;
       this.steps.add(disc);
     });
     if (state.winner === null && upTo === state.path.length)
