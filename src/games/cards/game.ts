@@ -65,6 +65,10 @@ export interface Sizing {
 /**
  * What the shared table screen needs from a betting card game. Seat 0 is the
  * person; the other seats are played by `decide`.
+ *
+ * Over Wi-Fi (와이파이 여럿이) every device holds the whole state and sees it from its own seat: `view`, `prompt` and
+ * `won` take that seat (-1 for a device only watching, which sees no hidden card), and `view` and `result` the
+ * room's names. Left out, the seat is 0 and the names are `NAMES`.
  */
 export interface BettingGame<S, D extends Action | Decision = Action> {
   create(opponents: number, variant?: string): S;
@@ -72,22 +76,27 @@ export interface BettingGame<S, D extends Action | Decision = Action> {
   /** `amount` is what a raise puts in now, for games with `sizing`; others leave it out. */
   act(state: S, action: Action, amount?: number): S | null;
   phase(state: S): Phase;
-  /** The choice seat 0 has to make now, when the phase is "choosing". */
-  prompt(state: S): Prompt | null;
+  /** The choice `seat` (0) has to make now, when the phase is "choosing"; null while another seat chooses. */
+  prompt(state: S, seat?: number): Prompt | null;
   choose(state: S, value: number): S | null;
   /** Seat to act, or -1. */
   turn(state: S): number;
   options(state: S): { fold: boolean; call: number; raise: number | null; allIn: number | null } | null;
-  /** The table as seat 0 may see it; hidden cards carry no face or text. */
-  view(state: S): TableView;
+  /** The table as `seat` (0) may see it, in seat order; hidden cards carry no face or text. */
+  view(state: S, seat?: number, names?: readonly string[]): TableView;
   /** Short description of the current step, such as the betting round. */
   stage(state: S): string;
-  result(state: S): ResultView | null;
-  /** True when seat 0 took every chip, false when it lost them, else null. */
-  won(state: S): boolean | null;
+  result(state: S, names?: readonly string[]): ResultView | null;
+  /** True when `seat` (0) took every chip, false when it lost them, else null. */
+  won(state: S, seat?: number): boolean | null;
   round(state: S): number;
   decide(state: S, difficulty: Difficulty, seed: number): D;
   /** No-limit games: the sizes seat 0 may raise by now, or null when it may not raise. */
   sizing?(state: S): Sizing | null;
 }
 export const NAMES = ["나", "컴퓨터 1", "컴퓨터 2", "컴퓨터 3"];
+/**
+ * Over Wi-Fi, whether `seat` won the session that ended: the session ends there when fewer than two seats hold chips
+ * or no person's does, so a seat still holding chips holds them all. Null before the end and for a device watching.
+ */
+export const wonAt = (over: boolean, chips: number | undefined) => (!over || chips === undefined ? null : chips > 0);

@@ -85,6 +85,11 @@ export interface State {
   result: Result | null;
   /** True when seat 0 took every chip, false when it lost them. */
   won: boolean | null;
+  /**
+   * Over Wi-Fi (와이파이 여럿이): the seats played by people. Left out, the session ends when seat 0 or every other
+   * seat runs out of chips; given, it ends when fewer than two seats hold chips or no person's seat does.
+   */
+  people?: number[];
 }
 
 export const blindsOf = (round: number): [number, number] => {
@@ -93,9 +98,10 @@ export const blindsOf = (round: number): [number, number] => {
 };
 const player = (chips: number): Player => ({ ...createSeat(chips), capped: false, last: "", raised: [0, 0] });
 
-export function createSession(opponents = 1): State {
+export function createSession(opponents = 1, people?: number[]): State {
   const seats = Math.max(1, Math.min(MAX_OPPONENTS, Math.floor(opponents))) + 1;
   return {
+    ...(people ? { people: people.slice() } : {}),
     phase: "idle",
     table: {
       seats: Array.from({ length: seats }, () => player(START_CHIPS)),
@@ -303,7 +309,9 @@ function finish(s: State) {
     pots,
   };
   for (const seat of t.seats) seat.out = seat.chips <= 0;
-  if (t.seats[0].out) {
+  if (s.people) {
+    if (t.seats.filter((seat) => !seat.out).length < 2 || s.people.every((i) => t.seats[i]?.out ?? true)) s.phase = "sessionOver";
+  } else if (t.seats[0].out) {
     s.phase = "sessionOver";
     s.won = false;
   } else if (t.seats.slice(1).every((seat) => seat.out)) {

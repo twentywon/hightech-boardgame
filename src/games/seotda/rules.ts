@@ -159,9 +159,17 @@ export interface State {
   result: Result | null;
   /** Seat 0 lost every chip, or every computer did. */
   won: boolean | null;
+  /**
+   * Over Wi-Fi (와이파이 여럿이): the seats played by people, each making its own choices (which card to show, which
+   * pair to play) in seat order; the others choose by the rules' own judgement. Left out, seat 0 alone chooses and
+   * the session ends when seat 0 or every other seat runs out of chips; given, it ends when fewer than two seats
+   * hold chips or no person's seat does.
+   */
+  people?: number[];
 }
-export function createSession(opponents = 2, variant: Variant = "two"): State {
+export function createSession(opponents = 2, variant: Variant = "two", people?: number[]): State {
   return {
+    ...(people ? { people: people.slice() } : {}),
     phase: "idle",
     variant,
     open: Array(opponents + 1).fill(null),
@@ -209,8 +217,11 @@ export function bestPair(cards: readonly Card[]): [number, number] {
   }
   return best;
 }
+/** The seats that choose by hand: seat 0 at one screen, the people's seats over Wi-Fi. */
+export const choosers = (s: State) => s.people ?? [0];
+const choosesByHand = (s: State, seat: number) => choosers(s).includes(seat);
 /** Which of two cards a computer seat shows: it keeps its picture card hidden. */
-const shown = (cards: readonly Card[]) =>
+export const shown = (cards: readonly Card[]) =>
   cards[0].kind === "plain" && cards[1].kind !== "plain"
     ? 0
     : cards[1].kind === "plain" && cards[0].kind !== "plain"
@@ -266,7 +277,9 @@ function finish(s: State) {
     };
   }
   for (const seat of b.seats) seat.out = seat.chips <= 0;
-  if (b.seats[0].out) {
+  if (s.people) {
+    if (b.seats.filter((seat) => !seat.out).length < 2 || s.people.every((i) => b.seats[i]?.out ?? true)) s.phase = "sessionOver";
+  } else if (b.seats[0].out) {
     s.phase = "sessionOver";
     s.won = false;
   } else if (b.seats.slice(1).every((seat) => seat.out)) {
@@ -298,9 +311,9 @@ export function start(state: State, random: Random = cryptoRandom): State | null
   s.picks = s.picks.map(() => null);
   s.second = false;
   if (s.variant === "three") {
-    for (const seat of contenders(b)) if (seat !== 0) s.open[seat] = shown(s.hands[seat]);
-    // Seat 0 chooses which card to show before the first bet.
-    if (contenders(b).includes(0)) {
+    for (const seat of contenders(b)) if (!choosesByHand(s, seat)) s.open[seat] = shown(s.hands[seat]);
+    // Seat 0 (over Wi-Fi each person, in seat order) chooses which card to show before the first bet.
+    if (contenders(b).some((seat) => choosesByHand(s, seat))) {
       s.phase = "choosing";
       return s;
     }
@@ -315,7 +328,7 @@ export function start(state: State, random: Random = cryptoRandom): State | null
  */
 function conclude(s: State) {
   const live = contenders(s.betting);
-  if (s.variant === "three" && live.length > 1 && live.includes(0) && s.hands[0].length === 3 && !s.picks[0]) {
+  if (s.variant === "three" && live.length > 1 && live.some((seat) => choosesByHand(s, seat) && s.hands[seat].length === 3 && !s.picks[seat])) {
     s.phase = "choosing";
     return;
   }
@@ -331,29 +344,44 @@ function afterStreet(s: State) {
   s.second = true;
   for (const seat of contenders(b)) {
     s.hands[seat].push({ ...s.deck.pop()!, id: s.nextId++ });
-    if (seat !== 0) s.picks[seat] = bestPair(s.hands[seat]);
+    if (!choosesByHand(s, seat)) s.picks[seat] = bestPair(s.hands[seat]);
   }
   // Everyone bets on three cards; seat 0 picks its two only at the very end.
   openStreet(b, s.first);
   if (b.turn === -1) conclude(s);
 }
-/** What seat 0 has to choose now, in the three-card game. */
-export function choices(state: State): "show" | "pick" | null {
-  if (state.phase !== "choosing") return null;
-  return state.hands[0].length === 2 ? "show" : "pick";
+/**
+ * The seat that chooses now, in the three-card game: seat 0 at one screen; over Wi-Fi the first person's seat still
+ * in the hand that has not chosen yet. -1 when nobody chooses.
+ */
+export function chooser(state: State): number {
+  if (state.phase !== "choosing") return -1;
+  const live = contenders(state.betting);
+  for (const seat of choosers(state))
+    if (live.includes(seat) && (state.hands[seat].length === 2 ? state.open[seat] === null : !state.picks[seat])) return seat;
+  return -1;
 }
-/** Seat 0 shows a card (index 0–1) or picks a pair (index into PAIRS). */
+/** What the seat choosing (`chooser`) has to choose now, in the three-card game. */
+export function choices(state: State): "show" | "pick" | null {
+  const seat = chooser(state);
+  if (seat < 0) return null;
+  return state.hands[seat].length === 2 ? "show" : "pick";
+}
+/** The seat choosing (seat 0 at one screen) shows a card (index 0–1) or picks a pair (index into PAIRS). */
 export function choose(state: State, value: number): State | null {
-  const kind = choices(state);
+  const kind = choices(state),
+    seat = chooser(state);
   if (!kind || !Number.isInteger(value) || value < 0 || value > (kind === "show" ? 1 : 2))
     return null;
   const s = clone(state);
   if (kind === "pick") {
-    s.picks[0] = PAIRS[value];
-    finish(s);
+    s.picks[seat] = PAIRS[value];
+    // Over Wi-Fi the next person still to pick picks before the hands are shown.
+    if (chooser(s) < 0) finish(s);
     return s;
   }
-  s.open[0] = value;
+  s.open[seat] = value;
+  if (chooser(s) >= 0) return s;
   s.phase = "betting";
   openStreet(s.betting, s.first);
   if (s.betting.turn === -1) afterStreet(s);
