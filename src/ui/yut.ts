@@ -20,8 +20,12 @@ import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
 import { modal, setupDialog } from "./dialog";
 import type { Settings } from "../core/storage";
+import { NetTable } from "./net-table";
+import { yutMove, yutNet, yutThrow, type Seated } from "../net/screens";
+import type { Move as NetMove } from "../games/points/types";
 
-export type YutMode = "local" | "ai";
+/** "net": several devices on one Wi-Fi (와이파이 여럿이), two to four, each throwing for its own colour. */
+export type YutMode = "local" | "ai" | "net";
 export interface YutOptions {
   mode: YutMode;
   /** People at a shared table (two to four) and the names they gave. Against the computer it is one against one. */
@@ -79,7 +83,9 @@ export function mountYut(
     announced = false,
     // Station whose pieces the person picked up on the board.
     selected: number | null = null,
-    thinking = false;
+    thinking = false,
+    // Over Wi-Fi: the room's game as this table shows it (`state` is its yard).
+    played: Seated<State> | null = null;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as E;
@@ -90,12 +96,54 @@ export function mountYut(
     }, ms);
     timers.add(timer);
   };
-  const computerTurn = (s: State = state) => mode === "ai" && s.turn === 1 && s.winner === null;
+  const wifi = () => mode === "net" && !!played;
+  /** Over Wi-Fi: whether this device throws now (its seat's turn, nothing on the way). */
+  const mineNow = () => !!played && net.mine(played);
+  const computerTurn = (s: State = state) => (wifi() ? s.winner === null && !mineNow() : mode === "ai" && s.turn === 1 && s.winner === null);
+  /** The player this device throws for over Wi-Fi, or -1. */
+  const myPlayer = () => (played && net.seat !== null ? played.seats.indexOf(net.seat) : -1);
+  const net: NetTable<Seated<State>> = new NetTable<Seated<State>>({
+    net: yutNet,
+    title: "윷놀이",
+    options: () => ({}),
+    begin(next, fresh) {
+      mode = "net";
+      played = next;
+      state = shown = next.game;
+      selected = null;
+      lockedUntil = 0;
+      if (fresh) {
+        announced = false;
+        sound.enabled = settings.sound;
+        sound.unlock();
+        screen();
+        return;
+      }
+      // Rebuilt from the room's list (a return): laid at once.
+      generation++;
+      thinking = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+      if (view) view.sync(model(state), false);
+      present();
+    },
+    show: (next) => {
+      played = next;
+      apply(next.game);
+    },
+    resting: () => !view?.animating && state === shown,
+    table: () => !!document.getElementById("yut-throw"),
+    update: () => update(),
+    resume: () => computer(),
+    back: () => nav.back(),
+  });
   /** How many sit at a shared table, by the form. */
   const seats = () => Math.max(2, Math.min(MAX_PLAYERS, preferences.players ?? 2));
   let names: string[] = [];
   const who = (player: number) =>
-    mode === "local" ? (names[player] ? `${names[player]} (${SIDES[player]})` : `${SIDES[player]} (플레이어 ${player + 1})`) : player === 0 ? "나 (청)" : "컴퓨터 (홍)";
+    wifi()
+      ? `${net.room?.nameOf(played!.seats[player]) || "빈자리"} (${SIDES[player]})`
+      : mode === "local" ? (names[player] ? `${names[player]} (${SIDES[player]})` : `${SIDES[player]} (플레이어 ${player + 1})`) : player === 0 ? "나 (청)" : "컴퓨터 (홍)";
   function stop() {
     generation++;
     thinking = false;
@@ -105,11 +153,13 @@ export function mountYut(
     view = null;
   }
   function setup(host = nav.setupHost) {
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi() && net.playing && host !== nav.setupHost) return net.newGame(host);
     if (host === nav.setupHost) stop();
     setupForm(host);
   }
   function setupForm(host: HTMLElement) {
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 09 — FOUR STICKS</span><h2>윷놀이 <span>Yut Nori</span></h2><p>마당에 멍석을 깔고 윷가락 네 개를 던집니다.<br>말 네 개를 먼저 모두 내면 이깁니다.</p><div class="game-meta">2–4인 · 말 4개 · 윷가락 4개</div><div class="mode-select"><label><input type="radio" name="yut-mode" value="local"> 로컬 2–4인</label><label><input type="radio" name="yut-mode" value="ai"> 컴퓨터 대전</label></div><small id="yut-options" class="session-note" hidden>컴퓨터 대전에서는 내가 청으로 먼저 던집니다.</small><div id="yut-people" hidden><div class="ai-options"><label>인원<select id="yut-players">${[2, 3, 4].map((n) => `<option value="${n}" ${seats() === n ? "selected" : ""}>${n}명</option>`).join("")}</select></label></div><div class="tour-names" role="group" aria-label="플레이어 이름">${Array.from({ length: seats() }, (_, i) => `<label>${SIDES[i]} 이름<input class="yut-name" maxlength="8" autocomplete="off" placeholder="플레이어 ${i + 1}" value="${escape(preferences.names?.[i] ?? "")}"></label>`).join("")}</div></div><button id="yut-start" class="primary">마당에 앉기 <span>↗</span></button></div><div class="feature-art yut-art" role="img" aria-label="윷놀이 마당 미리보기"><div class="yut-mini">${[0, 1, 2, 3].map((i) => `<i class="yut-mini-stick s${i}"></i>`).join("")}</div><span>FOUR STICKS, ONE YARD</span></div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 09 — FOUR STICKS</span><h2>윷놀이 <span>Yut Nori</span></h2><p>마당에 멍석을 깔고 윷가락 네 개를 던집니다.<br>말 네 개를 먼저 모두 내면 이깁니다.</p><div class="game-meta">2–4인 · 말 4개 · 윷가락 4개</div><div class="mode-select"><label><input type="radio" name="yut-mode" value="local"> 로컬 2–4인</label><label><input type="radio" name="yut-mode" value="ai"> 컴퓨터 대전</label><label><input type="radio" name="yut-mode" value="net"> 와이파이 여럿이</label></div><small id="yut-options" class="session-note" hidden>컴퓨터 대전에서는 내가 청으로 먼저 던집니다.</small><small id="yut-net" class="session-note" hidden>같은 와이파이의 기기 2–4대가 한 마당에서 각자 자기 말을 둡니다. 자리와 이름은 방에서 정합니다.</small><div id="yut-people" hidden><div class="ai-options"><label>인원<select id="yut-players">${[2, 3, 4].map((n) => `<option value="${n}" ${seats() === n ? "selected" : ""}>${n}명</option>`).join("")}</select></label></div><div class="tour-names" role="group" aria-label="플레이어 이름">${Array.from({ length: seats() }, (_, i) => `<label>${SIDES[i]} 이름<input class="yut-name" maxlength="8" autocomplete="off" placeholder="플레이어 ${i + 1}" value="${escape(preferences.names?.[i] ?? "")}"></label>`).join("")}</div></div><button id="yut-start" class="primary">마당에 앉기 <span>↗</span></button></div><div class="feature-art yut-art" role="img" aria-label="윷놀이 마당 미리보기"><div class="yut-mini">${[0, 1, 2, 3].map((i) => `<i class="yut-mini-stick s${i}"></i>`).join("")}</div><span>FOUR STICKS, ONE YARD</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=yut-mode]");
     const remember = () => {
       const typed = [...host.querySelectorAll<HTMLInputElement>(".yut-name")].map((input) => input.value);
@@ -120,6 +170,7 @@ export function mountYut(
       };
       $("yut-options").hidden = preferences.mode !== "ai";
       $("yut-people").hidden = preferences.mode !== "local";
+      $("yut-net").hidden = preferences.mode !== "net";
       nav.remember({ ...preferences });
     };
     host.querySelectorAll<HTMLInputElement>(".yut-name").forEach((input) => (input.oninput = remember));
@@ -137,9 +188,14 @@ export function mountYut(
     });
     $("yut-options").hidden = preferences.mode !== "ai";
     $("yut-people").hidden = preferences.mode !== "local";
+    $("yut-net").hidden = preferences.mode !== "net";
     $("yut-start").onclick = start;
   }
   function start() {
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    if (preferences.mode === "net") return net.open();
+    net.leave();
+    played = null;
     mode = preferences.mode;
     const count = mode === "local" ? seats() : 2;
     // A name is kept as typed; it is escaped where it enters markup.
@@ -170,7 +226,8 @@ export function mountYut(
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
     dress(setup, ["#yut-moves"]);
-    $("yut-throw").onclick = () => act((s) => throwSticks(s, random));
+    if (wifi()) net.dress();
+    $("yut-throw").onclick = () => act((s) => throwSticks(s, random), yutThrow());
     $("yut-again").onclick = () => setupDialog(setup);
     $("yut-moves").onclick = (e) => {
       const button = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-piece]");
@@ -182,7 +239,7 @@ export function mountYut(
       view.onContact = (stick, strength = 1) => (stick ? sound.stick(0.12 + 0.24 * strength) : sound.soft());
       view.onSettled = present;
       view.onPick = pick;
-      view.onThrow = () => act((s) => throwSticks(s, random));
+      view.onThrow = () => act((s) => throwSticks(s, random), yutThrow());
       view.sync(model(state), false);
     } catch {
       view?.dispose();
@@ -199,9 +256,11 @@ export function mountYut(
     !!document.querySelector("dialog[open]");
   function apply(next: State) {
     if (next.throwId !== state.throwId) sound.sticks();
-    // A piece sent home is worth a cheer.
+    // A piece sent home is worth a cheer; over Wi-Fi 잡혔다! where it was one of mine.
+    const me = myPlayer(),
+      lost = wifi() && me >= 0 && next.last?.player !== me && state.pieces[me].some((p, i) => p !== WAITING && p !== FINISHED && next.pieces[me][i] === WAITING);
     if (next.last && next.last !== state.last && next.last.captured)
-      cheer(mode === "ai" && next.last.player === 1 ? "잡혔다!" : "잡았다!");
+      cheer((mode === "ai" && next.last.player === 1) || lost ? "잡혔다!" : "잡았다!");
     state = next;
     selected = null;
     if (view) view.sync(model(state));
@@ -212,7 +271,15 @@ export function mountYut(
    * A throw or a move. Input stays locked until the sticks and pieces have
    * come to rest, so a double click cannot throw or move twice.
    */
-  function act(change: (s: State) => State | null) {
+  function act(change: (s: State) => State | null, sent: NetMove) {
+    if (wifi()) {
+      // Over Wi-Fi the move goes to the room; the table shows it when the room tells it back.
+      if (busy()) return;
+      if (!mineNow()) return net.warn(played!);
+      sound.unlock();
+      net.commit(sent);
+      return update();
+    }
     if (busy() || computerTurn()) return;
     const next = change(state);
     if (!next) return;
@@ -221,7 +288,7 @@ export function mountYut(
     later(update, 240);
     apply(next);
   }
-  const play = (piece: number, result: number) => act((s) => move(s, piece, result as Move["result"]));
+  const play = (piece: number, result: number) => act((s) => move(s, piece, result as Move["result"]), yutMove(piece, result as Move["result"]));
   /** The moves that begin at `station`; several results may finish, the smallest is offered. */
   function from(station: number) {
     const seen = new Map<number, Move>();
@@ -234,6 +301,7 @@ export function mountYut(
   }
   /** A tap in the yard: pick up pieces first, then tap where they should go. */
   function pick(station: number) {
+    if (wifi() && !busy() && state.winner === null && !mineNow()) return net.warn(played!);
     if (busy() || computerTurn() || state.winner !== null) return;
     if (selected !== null) {
       const chosen = from(selected).find((m) => m.to === station);
@@ -245,20 +313,27 @@ export function mountYut(
     selected = from(station).length && station !== selected ? station : null;
     update();
   }
+  /** Whether the computer plays the player to move: this screen's, or over Wi-Fi the host's for a seat. */
+  const computerToMove = () => (wifi() ? net.computer(played!) : computerTurn());
   /** The computer plays one visible step at a time. */
   function computer() {
-    if (thinking || !computerTurn()) return;
+    if (thinking || !computerToMove()) return;
     thinking = true;
     const current = generation;
     later(() => {
       thinking = false;
-      if (current !== generation || !computerTurn()) return;
+      if (current !== generation || !computerToMove()) return;
       if (busy()) {
         computer();
         return;
       }
-      const chosen = state.throwsLeft > 0 ? null : (choose(state) ?? moves(state)[0]),
-        next = chosen ? move(state, chosen.piece, chosen.result) : throwSticks(state, random);
+      const chosen = state.throwsLeft > 0 ? null : (choose(state) ?? moves(state)[0]);
+      if (wifi()) {
+        // The host's computer moves for its seat through the room.
+        net.commit(chosen ? yutMove(chosen.piece, chosen.result) : yutThrow(), yutNet.toMove(played!));
+        return;
+      }
+      const next = chosen ? move(state, chosen.piece, chosen.result) : throwSticks(state, random);
       if (next) apply(next);
       computer();
     }, 620);
@@ -272,7 +347,7 @@ export function mountYut(
     update();
     if (state.winner !== null && !announced) {
       announced = true;
-      if (mode === "ai" && state.winner === 1) sound.lose();
+      if ((mode === "ai" && state.winner === 1) || (wifi() && net.outcome(played!) === "lose")) sound.lose();
       else sound.win();
     }
     if (hadFocus && focused && (focused.offsetParent === null || (focused as HTMLButtonElement).disabled || !focused.isConnected))
@@ -299,11 +374,15 @@ export function mountYut(
     const turn = $("turn");
     turn.dataset.player = String(s.turn);
     const thrown = s.thrown ? `${RESULT_NAMES[s.thrown]}!` : "";
+    const others = wifi() && !over && state === shown && !mineNow() ? (net.line(played!) ?? `${name} 차례…`) : null,
+      gaveUp = s.forfeited.length ? `${s.forfeited.map((r) => RESULT_NAMES[r]).join("·")}는 쓸 말이 없어 넘어갑니다. ` : "";
     turn.textContent = over
       ? "판이 끝났습니다."
       : state !== shown
         ? "윷과 말이 움직이는 중…"
-        : s.forfeited.length
+        : others !== null
+          ? `${gaveUp}${others}`
+          : s.forfeited.length
           ? `${s.forfeited.map((r) => RESULT_NAMES[r]).join("·")}는 쓸 말이 없어 넘어갑니다. ${name} 차례 — 윷가락을 눌러 던지세요.`
           : bot
             ? `${name}가 ${s.throwsLeft > 0 ? "윷을 던지는 중" : "말을 고르는 중"}…`
@@ -366,11 +445,14 @@ export function mountYut(
     },
     );
 
-    $("yut-result").dataset.outcome = mode === "ai" && s.winner === 1 ? "lose" : "win";
+    $("yut-result").dataset.outcome = wifi() ? net.outcome(played!) : mode === "ai" && s.winner === 1 ? "lose" : "win";
     $("yut-result").hidden = !over;
     if (over)
-      $("yut-final").textContent =
-        mode === "ai" ? (s.winner === 0 ? "말 네 개를 모두 냈습니다. 이겼습니다!" : "컴퓨터가 먼저 말을 모두 냈습니다.") : `${who(s.winner!)} 승리!`;
+      $("yut-final").textContent = wifi()
+        ? s.winner === myPlayer()
+          ? "이겼습니다! 말 네 개를 모두 냈습니다."
+          : `${who(s.winner!)} 승리! 말 네 개를 먼저 모두 냈습니다.`
+        : mode === "ai" ? (s.winner === 0 ? "말 네 개를 모두 냈습니다. 이겼습니다!" : "컴퓨터가 먼저 말을 모두 냈습니다.") : `${who(s.winner!)} 승리!`;
   }
   function rules() {
     modal(
@@ -415,6 +497,7 @@ export function mountYut(
     rules,
     dispose() {
       disposed = true;
+      net.dispose();
       stop();
       sound.dispose();
       document.removeEventListener("close", dialogClosed, true);

@@ -34,6 +34,16 @@ import {
 import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
 import type { Settings } from "../core/storage";
+import { NetTable } from "./net-table";
+import { tourMove, tourNet, type Seated } from "../net/screens";
+import type { Move as NetMove } from "../games/points/types";
+/** The particle after a word: the first after a final consonant, the second after a vowel (a digit as it is read). */
+const josa = (word: string, after: string, otherwise: string) => {
+  const last = word.trim().slice(-1);
+  if (/\d/.test(last)) return "013678".includes(last) ? after : otherwise;
+  const code = last.charCodeAt(0) - 0xac00;
+  return code >= 0 && code < 11172 && code % 28 ? after : otherwise;
+};
 
 export interface TourOptions {
   /** Computers at the table. */
@@ -41,6 +51,8 @@ export interface TourOptions {
   /** People at the table (one to four, taking turns on this screen), and the names they gave. */
   humans?: number;
   names?: string[];
+  /** Played over one Wi-Fi (와이파이 여럿이): each device moves its own traveller, seats and names from the room. */
+  wifi?: boolean;
 }
 interface Navigation {
   header: () => string;
@@ -96,7 +108,10 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     // A golden key is turning over; the state whose choice has already been put to me.
     revealing = false,
     asked: State | null = null,
-    lockedUntil = 0;
+    lockedUntil = 0,
+    // Over Wi-Fi: the room's game as this table shows it (`state` is its board).
+    wifi = false,
+    played: Seated<State> | null = null;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
   const later = (fn: () => void, ms: number) => {
@@ -116,19 +131,77 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
   }
   /** How many people sit down, by the form. */
   const people = () => Math.max(1, Math.min(SEATS, preferences.humans ?? 1));
-  /** Whether a seat is a person's. */
-  const human = (seat: number) => seat < humans;
+  /** Whether a seat is a person's at this screen; over Wi-Fi, whether it is this device's. */
+  const human = (seat: number) => (wifi ? !!played && net.seat !== null && played.seats[seat] === net.seat : seat < humans);
+  /** The traveller this device moves over Wi-Fi, or -1. */
+  const myPlayer = () => (played && net.seat !== null ? played.seats.indexOf(net.seat) : -1);
+  /** Over Wi-Fi: whether this device moves now (its traveller's turn, nothing on the way). */
+  const mineNow = () => !!played && net.mine(played);
+  const net: NetTable<Seated<State>> = new NetTable<Seated<State>>({
+    net: tourNet,
+    title: "세계 일주",
+    options: () => ({}),
+    begin(next, fresh) {
+      wifi = true;
+      played = next;
+      // The names are the room's: a person's own, the host's computers numbered.
+      let computers = 0;
+      names = next.seats.map((seat) => (net.room?.seats[seat]?.kind === "computer" ? `컴퓨터 ${++computers}` : net.room?.nameOf(seat) || "빈자리"));
+      safe = names.map(escape);
+      humans = next.seats.filter((seat) => net.room?.seats[seat]?.kind === "person").length;
+      state = shown = next.game;
+      asked = null;
+      revealing = false;
+      lockedUntil = 0;
+      if (fresh) {
+        announced = false;
+        stamped = new Set();
+        toldOf = "";
+        sound.enabled = settings.sound;
+        sound.unlock();
+        screen();
+        return;
+      }
+      // Rebuilt from the room's list (a return): laid at once.
+      generation++;
+      thinking = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+      if (view) view.sync(state, false);
+      present();
+    },
+    show(next) {
+      const before = state;
+      played = next;
+      // A golden key drawn turns over on every table; only its drawer is asked to carry it out.
+      if (next.game.phase === "card" && before.phase === "key") return reveal(next.game);
+      apply(next.game);
+    },
+    resting: () => !view?.animating && state === shown && !revealing,
+    table: () => !!document.getElementById("tour-roll"),
+    update: () => update(),
+    resume: () => computer(),
+    back: () => nav.back(),
+  });
   function setup(host = nav.setupHost) {
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi && net.playing && host !== nav.setupHost) return net.newGame(host);
     if (host === nav.setupHost) stop();
     setupForm(host);
   }
   function setupForm(host: HTMLElement) {
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 19 — AROUND THE WORLD</span><h2>세계 일주 <span>World Tour</span></h2><p>주사위를 굴려 세계의 도시를 돌며 땅을 사고 건물을 올립니다.<br>내 도시에 묵는 여행자에게서 숙박료를 받으세요.</p><div class="game-meta">2–4명 (사람 1–4명, 나머지는 컴퓨터) · ${SPACES.length}칸 · 시작 자금 ${won(START_MONEY)}</div><div class="ai-options"><label>사람 수<select id="tour-humans">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${people() === n ? "selected" : ""}>${n}명</option>`).join("")}</select></label><label>컴퓨터 수<select id="tour-opponents">${Array.from({ length: SEATS - people() - (people() === 1 ? 1 : 0) + 1 }, (_, k) => k + (people() === 1 ? 1 : 0)).map((n) => `<option value="${n}" ${Math.max(people() === 1 ? 1 : 0, Math.min(SEATS - people(), preferences.opponents)) === n ? "selected" : ""}>${n ? `컴퓨터 ${n}명` : "없음"}</option>`).join("")}</select></label></div><div class="tour-names" role="group" aria-label="여행자 이름">${Array.from({ length: people() }, (_, i) => `<label>${people() === 1 ? "내 이름" : `플레이어 ${i + 1} 이름`}<input class="tour-name" data-seat="${i}" maxlength="8" autocomplete="off" placeholder="${people() === 1 ? "나" : `플레이어 ${i + 1}`}" value="${escape(preferences.names?.[i] ?? "")}"></label>`).join("")}</div><button id="tour-start" class="primary">여행 떠나기 <span>↗</span></button></div><div class="feature-art tour-art" role="img" aria-label="세계 일주 판 미리보기"><div class="pg-mini tour"><i></i><i></i><i></i></div><span>BUY, BUILD, COLLECT</span></div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 19 — AROUND THE WORLD</span><h2>세계 일주 <span>World Tour</span></h2><p>주사위를 굴려 세계의 도시를 돌며 땅을 사고 건물을 올립니다.<br>내 도시에 묵는 여행자에게서 숙박료를 받으세요.</p><div class="game-meta">2–4명 (사람 1–4명, 나머지는 컴퓨터) · ${SPACES.length}칸 · 시작 자금 ${won(START_MONEY)}</div><div class="mode-select"><label><input type="radio" name="tour-mode" value="local" ${preferences.wifi ? "" : "checked"}> 한 화면에서</label><label><input type="radio" name="tour-mode" value="net" ${preferences.wifi ? "checked" : ""}> 와이파이 여럿이</label></div><small id="tour-net" class="session-note" ${preferences.wifi ? "" : "hidden"}>같은 와이파이의 기기 2–4대가 각자 자기 여행자를 움직입니다. 자리와 이름, 컴퓨터는 방에서 정합니다.</small><div class="ai-options" id="tour-here" ${preferences.wifi ? "hidden" : ""}><label>사람 수<select id="tour-humans">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${people() === n ? "selected" : ""}>${n}명</option>`).join("")}</select></label><label>컴퓨터 수<select id="tour-opponents">${Array.from({ length: SEATS - people() - (people() === 1 ? 1 : 0) + 1 }, (_, k) => k + (people() === 1 ? 1 : 0)).map((n) => `<option value="${n}" ${Math.max(people() === 1 ? 1 : 0, Math.min(SEATS - people(), preferences.opponents)) === n ? "selected" : ""}>${n ? `컴퓨터 ${n}명` : "없음"}</option>`).join("")}</select></label></div><div class="tour-names" role="group" aria-label="여행자 이름" ${preferences.wifi ? "hidden" : ""}>${Array.from({ length: people() }, (_, i) => `<label>${people() === 1 ? "내 이름" : `플레이어 ${i + 1} 이름`}<input class="tour-name" data-seat="${i}" maxlength="8" autocomplete="off" placeholder="${people() === 1 ? "나" : `플레이어 ${i + 1}`}" value="${escape(preferences.names?.[i] ?? "")}"></label>`).join("")}</div><button id="tour-start" class="primary">여행 떠나기 <span>↗</span></button></div><div class="feature-art tour-art" role="img" aria-label="세계 일주 판 미리보기"><div class="pg-mini tour"><i></i><i></i><i></i></div><span>BUY, BUILD, COLLECT</span></div></section>`;
     const read = () => {
       const names = [...host.querySelectorAll<HTMLInputElement>(".tour-name")].map((input) => input.value);
-      preferences = { opponents: Number($<HTMLSelectElement>("tour-opponents").value), humans: Number($<HTMLSelectElement>("tour-humans").value), names: [...names, ...(preferences.names ?? []).slice(names.length)] };
+      const net = host.querySelector<HTMLInputElement>("input[name=tour-mode][value=net]")?.checked ?? false;
+      preferences = { opponents: Number($<HTMLSelectElement>("tour-opponents").value), humans: Number($<HTMLSelectElement>("tour-humans").value), names: [...names, ...(preferences.names ?? []).slice(names.length)], wifi: net };
       nav.remember({ ...preferences });
+      // Over Wi-Fi the seats are taken in the room: the people, computers and names are not asked here.
+      $("tour-net").hidden = !net;
+      $("tour-here").hidden = net;
+      host.querySelector<HTMLElement>(".tour-names")!.hidden = net;
     };
+    host.querySelectorAll<HTMLInputElement>("input[name=tour-mode]").forEach((input) => (input.onchange = read));
     $("tour-opponents").onchange = read;
     host.querySelectorAll<HTMLInputElement>(".tour-name").forEach((input) => (input.oninput = read));
     // More or fewer people: the form is drawn again with a name field for each.
@@ -142,6 +215,11 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $("tour-start").onclick = start;
   }
   function start() {
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    if (preferences.wifi) return net.open();
+    net.leave();
+    wifi = false;
+    played = null;
     humans = people();
     const computers = Math.max(humans === 1 ? 1 : 0, Math.min(SEATS - humans, preferences.opponents));
     // People sit first, in the order they gave their names; computers after them.
@@ -168,23 +246,24 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
     dress(setup, ["#tour-offer"]);
+    if (wifi) net.dress();
     $("tour-again").onclick = () => setupDialog(setup);
     $("tour-players").onclick = (e) => {
       const button = (e.target as HTMLElement).closest<HTMLElement>(".tour-deeds");
       if (button) deeds(Number(button.dataset.player));
     };
-    $("tour-roll").onclick = () => act((s) => roll(s, random));
+    $("tour-roll").onclick = () => act((s) => roll(s, random), tourMove("roll"));
     // If the card was closed without its button, it is carried out from here.
     $("tour-key").onclick = () => {
-      if (state.phase === "card") act((s) => follow(s));
+      if (state.phase === "card") act((s) => follow(s), tourMove("follow"));
       else if (state.phase === "travel") {
         asked = null;
         ask();
       } else drawKey();
     };
-    $("tour-end").onclick = () => act((s) => endTurn(s));
-    $("tour-yes").onclick = () => act((s) => decide(s, true));
-    $("tour-no").onclick = () => act((s) => decide(s, false));
+    $("tour-end").onclick = () => act((s) => endTurn(s), tourMove("end"));
+    $("tour-yes").onclick = () => act((s) => decide(s, true), tourMove("decide", 1));
+    $("tour-no").onclick = () => act((s) => decide(s, false), tourMove("decide", 0));
     try {
       view = new TourView($("board"), settings.quality, state.players.length);
       view.onContact = () => sound.wood(3);
@@ -230,8 +309,15 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     else present();
     update();
   }
-  /** A step of mine; input stays locked until the board has come to rest. */
-  function act(change: (s: State) => State | null) {
+  /** A step of mine; input stays locked until the board has come to rest. Over Wi-Fi it goes to the room as `sent`. */
+  function act(change: (s: State) => State | null, sent: NetMove) {
+    if (wifi) {
+      if (busy() || state.phase === "over") return;
+      if (!mineNow()) return net.warn(played!);
+      sound.unlock();
+      net.commit(sent);
+      return update();
+    }
     if (busy() || !human(state.turn) || state.phase === "over") return;
     const next = change(state);
     if (!next) return;
@@ -242,6 +328,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
   }
   /** I draw the golden key: the card is shown, and takes effect when it has been read. */
   function drawKey() {
+    if (wifi) return state.phase === "key" ? act((s) => draw(s, random), tourMove("draw")) : undefined;
     if (busy() || !human(state.turn) || state.phase !== "key") return;
     const drawn = draw(state, random);
     if (!drawn) return;
@@ -252,9 +339,28 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     update();
     const open = () => {
       revealing = false;
-      modal("황금열쇠", `<p class="key-card">${LUCK[drawn.card].text}</p>`, [{ text: "확인", action: () => act((s) => follow(s)) }]);
+      modal("황금열쇠", `<p class="key-card">${LUCK[drawn.card].text}</p>`, [{ text: "확인", action: () => act((s) => follow(s), tourMove("follow")) }]);
     };
     // The card turns over on the board before its text is shown.
+    if (view) view.revealCard(open);
+    else open();
+  }
+  /**
+   * Over Wi-Fi a golden key the room told is turned over on the board of every device; its drawer reads it in a
+   * window and carries it out, the others read it in the status line (the host's computer after a moment).
+   */
+  function reveal(drawn: State) {
+    sound.card();
+    view?.hideCard();
+    state = shown = drawn;
+    revealing = true;
+    update();
+    const open = () => {
+      revealing = false;
+      if (human(drawn.turn)) modal("황금열쇠", `<p class="key-card">${LUCK[drawn.card].text}</p>`, [{ text: "확인", action: () => act((s) => follow(s), tourMove("follow")) }]);
+      update();
+      computer();
+    };
     if (view) view.revealCard(open);
     else open();
   }
@@ -262,7 +368,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
   function deeds(player: number) {
     if (document.querySelector("dialog[open]") || state !== shown) return;
     const owned = state.owners.flatMap((owner, i) => (owner === player ? [i] : [])),
-      selling = player === state.turn && human(state.turn) && state.phase !== "over" && !busy(),
+      selling = player === state.turn && human(state.turn) && state.phase !== "over" && !busy() && (!wifi || mineNow()),
       rows = owned
         .map((i) => {
           const space = SPACES[i],
@@ -273,7 +379,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         .join("");
     modal(
       `${safe[player]}의 땅 증서`,
-      `<p>가진 돈 ${won(state.players[player].money)} · 증서 ${owned.length}장</p>${owned.length ? `<ul class="deed-list">${rows}</ul>` : "<p>가진 땅이 없습니다.</p>"}${player === 0 ? `<p class="credit">${selling ? "팔면 들인 돈의 절반을 은행에서 돌려받습니다." : "내 차례에, 턴 종료를 누르기 전까지 팔 수 있습니다."}</p>` : ""}`,
+      `<p>가진 돈 ${won(state.players[player].money)} · 증서 ${owned.length}장</p>${owned.length ? `<ul class="deed-list">${rows}</ul>` : "<p>가진 땅이 없습니다.</p>"}${(wifi ? human(player) : player === 0) ? `<p class="credit">${selling ? "팔면 들인 돈의 절반을 은행에서 돌려받습니다." : "내 차례에, 턴 종료를 누르기 전까지 팔 수 있습니다."}</p>` : ""}`,
       [{ text: "닫기", action: () => later(ask, 0) }],
     );
     document.querySelectorAll<HTMLButtonElement>("dialog [data-sell]").forEach((button) => {
@@ -281,6 +387,14 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         const dialog = button.closest("dialog")!;
         dialog.close();
         dialog.remove();
+        if (wifi) {
+          // The sale is a move of the room's; the offer on the table, if any, is put again once it is told.
+          asked = null;
+          sound.unlock();
+          sound.cash();
+          net.commit(tourMove("sell", Number(button.dataset.sell)));
+          return update();
+        }
         const next = sell(state, 0, Number(button.dataset.sell));
         if (!next) return;
         sound.unlock();
@@ -311,11 +425,11 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
             ? `<p>다른 여행자가 이 칸에 서면 통행료 ${won(SHIP_TOLL)}, 우주여행을 떠날 때마다 ${won(TRAVEL_FEE)}을 받습니다.</p>`
             : `<dl class="piece-moves">${[0, 1, 2, 3].map((l) => `<dt>${LEVELS[l]}${l === (building ? level : 0) ? " ◀" : ""}</dt><dd>숙박료 ${won(feeOf(space, l))}</dd>`).join("")}</dl>`;
       modal(
-        building ? `${space.name}에 ${LEVELS[level]}을(를) 지을까요?` : `${space.name}을(를) 살까요?`,
+        building ? `${space.name}에 ${LEVELS[level]}${josa(LEVELS[level], "을", "를")} 지을까요?` : `${space.name}${josa(space.name, "을", "를")} 살까요?`,
         `<p><b>${building ? "짓는 값" : "값"} ${won(cost)}</b> · 가진 돈 ${won(me.money)}</p>${short ? `<p class="tour-short">돈이 ${won(cost - me.money)} 모자랍니다. ${holdings ? "가진 땅을 팔아 마련할 수 있습니다." : "팔 땅도 없어 지나쳐야 합니다."}</p>` : ""}${detail}`,
         short
           ? [
-              { text: "지나치기", action: () => act((s) => decide(s, false)) },
+              { text: "지나치기", action: () => act((s) => decide(s, false), tourMove("decide", 0)) },
               ...(holdings
                 ? [
                     {
@@ -330,8 +444,8 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
                 : []),
             ]
           : [
-              { text: "지나치기", action: () => act((s) => decide(s, false)) },
-              { text: building ? `짓기 (${won(cost)})` : `사기 (${won(cost)})`, action: () => act((s) => decide(s, true)) },
+              { text: "지나치기", action: () => act((s) => decide(s, false), tourMove("decide", 0)) },
+              { text: building ? `짓기 (${won(cost)})` : `사기 (${won(cost)})`, action: () => act((s) => decide(s, true), tourMove("decide", 1)) },
             ],
       );
     } else if (state.phase === "travel") {
@@ -345,7 +459,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       modal(
         "우주여행 — 어디로 갈까요?",
         `<p>앞으로 어느 칸이든 갈 수 있습니다. 출발을 지나면 월급을 받습니다. ${fee}</p><label class="setting">도착할 칸<select id="tour-dest">${ahead.map((i) => `<option value="${i}">${SPACES[i].name}${SPACES[i].kind === "city" || SPACES[i].kind === "ship" ? (state.owners[i] === -1 ? ` · ${won(SPACES[i].price)}` : ` · ${names[state.owners[i]]}`) : ""}${i < me.at ? " (월급)" : ""}</option>`).join("")}</select></label>`,
-        [{ text: "떠나기", action: () => act((s) => travel(s, to)) }],
+        [{ text: "떠나기", action: () => act((s) => travel(s, to), tourMove("travel", to)) }],
       );
       const select = document.getElementById("tour-dest") as HTMLSelectElement | null;
       if (select) select.onchange = () => (to = Number(select.value));
@@ -353,6 +467,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
   }
   /** The computers roll and decide one visible step at a time. */
   function computer() {
+    if (wifi) return netComputer();
     if (thinking || human(state.turn) || state.phase === "over" || state !== shown) return;
     thinking = true;
     const current = generation;
@@ -394,6 +509,34 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       if (next) apply(next);
     }, state.phase === "end" ? 350 : 700);
   }
+  /** Over Wi-Fi the host's computer takes the steps of its seats (and of a person whose device dropped) through the room. */
+  function netComputer() {
+    if (thinking || !played || !net.computer(played) || state !== shown || revealing) return;
+    thinking = true;
+    const current = generation,
+      s = state;
+    update();
+    // A card it drew is left a moment on every table to be read.
+    later(() => {
+      thinking = false;
+      if (current !== generation || state !== s || !played || !net.computer(played)) return update();
+      const sent =
+        s.phase === "roll"
+          ? tourMove("roll")
+          : s.phase === "key"
+            ? tourMove("draw")
+            : s.phase === "travel"
+              ? tourMove("travel", destination(s))
+              : s.phase === "card"
+                ? tourMove("follow")
+                : s.phase === "end"
+                  ? tourMove("end")
+                  : tourMove("decide", wants(s) ? 1 : 0);
+      // A purchase it cannot pay for is passed by.
+      if (net.commit(sent, tourNet.toMove(played)) && sent.from === 4) net.commit(tourMove("decide", 0), tourNet.toMove(played));
+      update();
+    }, s.phase === "card" ? 2600 : s.phase === "end" ? 350 : 700);
+  }
   /** What the step just shown sounded like: money paid, and the special spaces reached. */
   function effects(before: State, now: State) {
     const mover = now.actor,
@@ -412,7 +555,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     update();
     if (state.phase === "over" && !announced) {
       announced = true;
-      if (state.winners.includes(0)) sound.win();
+      if (state.winners.includes(wifi ? myPlayer() : 0)) sound.win();
       else sound.lose();
     }
     computer();
@@ -429,7 +572,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       ship = space.kind === "ship";
     modal(
       `${safe[paid.to]}의 ${space.name}`,
-      `<p><b>${ship ? "통행료" : "숙박료"} ${won(paid.amount)}</b>을 ${safe[paid.to]}에게 냈습니다.</p><p>${ship ? "" : `${LEVELS[state.levels[paid.place]]}이(가) 있는 곳입니다. `}남은 돈 ${won(state.players[paid.by].money)}${state.players[paid.by].out ? " — 파산했습니다." : ""}</p>`,
+      `<p><b>${ship ? "통행료" : "숙박료"} ${won(paid.amount)}</b>을 ${safe[paid.to]}에게 냈습니다.</p><p>${ship ? "" : `${LEVELS[state.levels[paid.place]]}${josa(LEVELS[state.levels[paid.place]], "이", "가")} 있는 곳입니다. `}남은 돈 ${won(state.players[paid.by].money)}${state.players[paid.by].out ? " — 파산했습니다." : ""}</p>`,
       [{ text: "확인", action: () => later(present, 50) }],
     );
   }
@@ -438,9 +581,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     mirrorStatus();
     const s = shown,
       waiting = busy(),
-      mine = human(s.turn) && s.phase !== "over",
+      mine = (wifi ? mineNow() : human(s.turn)) && s.phase !== "over",
       // With several people at the table the line says whose turn it is by name.
-      whose = humans > 1 ? `${names[s.turn]} 차례` : "내 차례",
+      whose = humans > 1 && !wifi ? `${names[s.turn]} 차례` : "내 차례",
       me = s.players[s.turn],
       space = SPACES[me.at],
       over = s.phase === "over";
@@ -449,9 +592,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $("move-count").textContent = `${Math.min(s.round, ROUNDS)} / ${ROUNDS} 바퀴`;
     const offer =
       s.phase === "buy"
-        ? `${space.name}을(를) ${won(space.price)}에 살 수 있습니다.`
+        ? `${space.name}${josa(space.name, "을", "를")} ${won(space.price)}에 살 수 있습니다.`
         : s.phase === "build"
-          ? `${space.name}에 ${LEVELS[s.levels[me.at] + 1]}을(를) ${won(buildCost(space, s.levels[me.at] + 1))}에 지을 수 있습니다.`
+          ? `${space.name}에 ${LEVELS[s.levels[me.at] + 1]}${josa(LEVELS[s.levels[me.at] + 1], "을", "를")} ${won(buildCost(space, s.levels[me.at] + 1))}에 지을 수 있습니다.`
           : "";
     $("turn").textContent = over
       ? "여행이 끝났습니다."
@@ -473,7 +616,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
                   : s.phase === "end"
                     ? "할 일을 마쳤으면 턴 종료를 누르세요. 그 전에 땅을 팔 수 있습니다."
                     : `${whose} — ${offer}`
-          : s.phase === "roll" && s.doubles > 0
+          : wifi
+            ? others(s)
+            : s.phase === "roll" && s.doubles > 0
             ? `${names[s.turn]} 더블! 한 번 더 굴립니다…`
             : `${names[s.turn]} 차례…`;
     s.players.forEach((player, i) => {
@@ -486,7 +631,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       if (player.out && !stamped.has(i)) {
         stamped.add(i);
         // Alone against computers my own ruin fills the table; with several people it is marked on the row of whoever it befell.
-        bankrupt(i === 0 && humans === 1 ? undefined : $(`tour-player-${i}`));
+        bankrupt((wifi ? i === myPlayer() : i === 0 && humans === 1) ? undefined : $(`tour-player-${i}`));
       }
     });
     $<HTMLButtonElement>("tour-roll").hidden = s.phase !== "roll" && !over;
@@ -502,10 +647,33 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $<HTMLButtonElement>("tour-yes").disabled =
       waiting || me.money < (s.phase === "buy" ? space.price : s.phase === "build" ? buildCost(space, s.levels[me.at] + 1) : 0);
     $("tour-note").textContent = s.note ? `${names[s.actor]}: ${s.note}` : "";
-    $("tour-result").dataset.outcome = humans === 1 && !s.winners.includes(0) ? "lose" : "win";
+    const seat = wifi ? myPlayer() : 0;
+    $("tour-result").dataset.outcome = (wifi ? seat >= 0 : humans === 1) && !s.winners.includes(seat) ? "lose" : "win";
     $("tour-result").hidden = !over;
     if (over)
-      $("tour-final").textContent = `${s.winners.map((i) => names[i]).join(", ")} 승리 — ${s.players.map((_, i) => `${names[i]} ${won(worth(s, i))}`).join(" · ")}`;
+      $("tour-final").textContent = `${
+        wifi && seat >= 0
+          ? s.winners.includes(seat)
+            ? s.winners.length > 1
+              ? `공동 승리! ${s.winners.map((i) => names[i]).join(", ")} —`
+              : "이겼습니다!"
+            : `졌습니다. ${s.winners.map((i) => names[i]).join(", ")} 승리 —`
+          : `${s.winners.map((i) => names[i]).join(", ")} 승리 —`
+      } ${s.players.map((_, i) => `${names[i]} ${won(worth(s, i))}`).join(" · ")}`;
+  }
+  /** Over Wi-Fi, the status line while another traveller moves: the room's words, else what that traveller is about. */
+  function others(s: State) {
+    const line = played ? net.line(played) : null,
+      to = played ? tourNet.toMove(played) : -1,
+      at = SPACES[s.players[s.turn].at];
+    // The room's own words (a drop, a request, a move being sent) come first; its plain "whose turn" is said here in full.
+    if (line && line !== `${net.who(to)} 차례입니다.`) return line;
+    if (s.phase === "card") return `${names[s.turn]}의 황금열쇠 — ${LUCK[s.card]?.text ?? ""}`;
+    if (s.phase === "buy") return `${names[s.turn]} 차례 — ${at.name}${josa(at.name, "을", "를")} 살지 고르는 중…`;
+    if (s.phase === "build") return `${names[s.turn]} 차례 — ${at.name}에 지을지 고르는 중…`;
+    if (s.phase === "travel") return `${names[s.turn]} 차례 — 우주여행 갈 곳을 고르는 중…`;
+    if (s.phase === "roll" && s.doubles > 0) return `${names[s.turn]} 더블! 한 번 더 굴립니다…`;
+    return `${names[s.turn]} 차례…`;
   }
   function rules() {
     const example = SPACES.find((space) => space.name === "파리")!;
@@ -551,6 +719,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     rules,
     dispose() {
       disposed = true;
+      net.dispose();
       stop();
       sound.dispose();
       document.removeEventListener("close", dialogClosed, true);

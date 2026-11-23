@@ -40,6 +40,8 @@ import {
 } from "../games/conquest/rules";
 import { LEVELS, decide, type Level } from "../games/conquest/ai";
 import { COLOR_NAMES, ConquestView, seatColor, type Selection } from "../games/conquest/view";
+import { NetTable } from "./net-table";
+import { conquestMove, conquestNet, type Seated } from "../net/screens";
 
 export type MapChoice = "world" | "random";
 export interface ConquestOptions {
@@ -56,6 +58,8 @@ export interface ConquestOptions {
   mode: Mode;
   rounds: number;
   level: Level;
+  /** Played over one Wi-Fi (와이파이 여럿이): each device plays its own colour, seats and names from the room. */
+  wifi?: boolean;
 }
 export const CONQUEST_DEFAULTS: ConquestOptions = { humans: 1, opponents: 2, names: [], map: "world", size: "small", start: "claim", move: "adjacent", mode: "conquest", rounds: ROUND_CHOICES[1], level: "normal" };
 const MAPS: Record<MapChoice, string> = { world: "세계 지도", random: "무작위 지도" };
@@ -126,7 +130,10 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     // The computer's step being shown before it is made.
     showing: Selection | null = null,
     handFor = "",
-    told = 0;
+    told = 0,
+    // Over Wi-Fi: the room's game as this table shows it (`state` is its world).
+    wifi = false,
+    played: Seated<State> | null = null;
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
   const later = (fn: () => void, ms: number) => {
@@ -144,21 +151,75 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     view?.dispose();
     view = null;
   }
-  const human = (seat: number) => seat < humans;
+  /** Whether a seat is a person's at this screen; over Wi-Fi, whether it is this device's. */
+  const human = (seat: number) => (wifi ? !!played && net.seat !== null && played.seats[seat] === net.seat : seat < humans);
+  /** The player this device plays over Wi-Fi, or -1. */
+  const myPlayer = () => (played && net.seat !== null ? played.seats.indexOf(net.seat) : -1);
+  const net: NetTable<Seated<State>> = new NetTable<Seated<State>>({
+    net: conquestNet,
+    title: "주사위 대륙 쟁탈전",
+    // The host's own choices; secret missions are hidden information and wait for a later stage.
+    options: () => ({ map: preferences.map, size: preferences.size, start: preferences.start, move: preferences.move, mode: preferences.mode === "missions" ? "conquest" : preferences.mode, rounds: preferences.rounds, level: preferences.level }),
+    begin(next, fresh) {
+      wifi = true;
+      played = next;
+      const room = net.room,
+        options = room?.start?.options ?? {};
+      let computers = 0;
+      names = next.seats.map((seat) => (room?.seats[seat]?.kind === "computer" ? `컴퓨터 ${++computers}` : room?.nameOf(seat) || "빈자리"));
+      if (next.game.neutral >= 0) names[next.game.neutral] = "중립";
+      safe = names.map(escape);
+      humans = next.seats.filter((seat) => room?.seats[seat]?.kind === "person").length;
+      level = (Object.keys(LEVELS) as Level[]).includes(options.level as Level) ? (options.level as Level) : "normal";
+      state = shown = next.game;
+      autoSetup = false;
+      selected = target = cursor = -1;
+      context = handFor = "";
+      showing = null;
+      lockedUntil = 0;
+      if (fresh) {
+        announced = false;
+        told = 0;
+        sound.enabled = settings.sound;
+        sound.unlock();
+        screen();
+        return;
+      }
+      // Rebuilt from the room's list (a return): laid at once.
+      generation++;
+      thinking = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+      view?.sync(state, false);
+      present();
+    },
+    show(next) {
+      played = next;
+      apply(next.game);
+    },
+    resting: () => !view?.animating && state === shown,
+    table: () => !!document.getElementById("cq-controls"),
+    update: () => update(),
+    resume: () => computer(),
+    back: () => nav.back(),
+  });
   const people = () => Math.max(1, Math.min(SEATS, preferences.humans));
   const computersFor = (h: number, wanted: number) => Math.max(h === 1 ? 1 : 0, Math.min(SEATS - h, wanted));
   function setup(host = nav.setupHost) {
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi && net.playing && host !== nav.setupHost) return net.newGame(host);
     if (host === nav.setupHost) stop();
     setupForm(host);
   }
   function setupForm(host: HTMLElement) {
-    const h = people(),
+    const room = !!preferences.wifi,
+      h = people(),
       computers = computersFor(h, preferences.opponents),
       players = h + computers,
       number = "86",
       option = (value: string | number, label: string, chosen: boolean) => `<option value="${value}" ${chosen ? "selected" : ""}>${label}</option>`,
       armies = `처음 병력 ${players}명이면 각자 ${CLASSIC_ARMIES[Math.max(2, players)]}${preferences.map === "random" ? " (지도 크기에 맞게 조절)" : ""}`;
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. ${number} — WORLD CONQUEST</span><h2>주사위 대륙 쟁탈전 <span>Continent Conquest</span></h2><p>실제 세계를 우리 방식으로 나눈 지도에서 영토를 고르고, 병력을 늘리고, 주사위로 싸워 대륙을 차지하세요.<br>보드게임 ‘리스크’의 고전 규칙을 따르는 세계 정복 게임입니다.${players === 2 ? "<br>두 명이 하면 회색 중립군이 영토를 나눠 갖고 지키기만 합니다." : ""}</p><div class="game-meta">2–6명 (사람 1–6명, 나머지는 컴퓨터) · ${armies}${players === 2 ? " · 중립군과 함께" : ""}</div><div class="ai-options"><label>사람 수<select id="cq-humans">${[1, 2, 3, 4, 5, 6].map((n) => option(n, `${n}명`, n === h)).join("")}</select></label><label>컴퓨터 수<select id="cq-opponents">${Array.from({ length: SEATS - h - (h === 1 ? 1 : 0) + 1 }, (_, k) => k + (h === 1 ? 1 : 0)).map((n) => option(n, n ? `컴퓨터 ${n}명` : "없음", n === computers)).join("")}</select></label><label>지도<select id="cq-map">${(Object.keys(MAPS) as MapChoice[]).map((m) => option(m, MAPS[m], m === preferences.map)).join("")}</select></label>${preferences.map === "random" ? `<label>지도 크기<select id="cq-size">${(Object.keys(SIZES) as Size[]).map((s) => option(s, `${SIZES[s].label} (영토 약 ${SIZES[s].territories})`, s === preferences.size)).join("")}</select></label>` : ""}<label>시작<select id="cq-setup">${(Object.keys(STARTS) as Start[]).map((s) => option(s, STARTS[s], s === preferences.start)).join("")}</select></label><label>이동 규칙<select id="cq-move">${(Object.keys(MOVE_RULES) as MoveRule[]).map((m) => option(m, MOVE_RULES[m], m === preferences.move)).join("")}</select></label><label>승리 조건<select id="cq-mode">${(Object.keys(MODES) as Mode[]).map((m) => option(m, MODES[m], m === preferences.mode)).join("")}</select></label>${preferences.mode === "turns" ? `<label>라운드 수<select id="cq-rounds">${ROUND_CHOICES.map((r) => option(r, `${r}라운드`, r === preferences.rounds)).join("")}</select></label>` : ""}${computers ? `<label>컴퓨터 난이도<select id="cq-difficulty">${(Object.keys(LEVELS) as Level[]).map((l) => option(l, LEVELS[l].label, l === preferences.level)).join("")}</select></label>` : ""}</div><div class="tour-names" role="group" aria-label="플레이어 이름">${Array.from({ length: h }, (_, i) => `<label>${h === 1 ? "내 이름" : `플레이어 ${i + 1} 이름`}<input class="cq-name" data-seat="${i}" maxlength="8" autocomplete="off" placeholder="${h === 1 ? "나" : `플레이어 ${i + 1}`}" value="${escape(preferences.names[i] ?? "")}"></label>`).join("")}</div><button id="cq-start" class="primary">작전 시작 <span>↗</span></button></div><div class="feature-art cq-art" role="img" aria-label="대륙 쟁탈전 지도 미리보기"><div class="cq-mini"><i></i><i></i><i></i><i></i></div><span>CLAIM, REINFORCE, ATTACK, MOVE</span></div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. ${number} — WORLD CONQUEST</span><h2>주사위 대륙 쟁탈전 <span>Continent Conquest</span></h2><p>실제 세계를 우리 방식으로 나눈 지도에서 영토를 고르고, 병력을 늘리고, 주사위로 싸워 대륙을 차지하세요.<br>보드게임 ‘리스크’의 고전 규칙을 따르는 세계 정복 게임입니다.${players === 2 ? "<br>두 명이 하면 회색 중립군이 영토를 나눠 갖고 지키기만 합니다." : ""}</p><div class="game-meta">2–6명 (사람 1–6명, 나머지는 컴퓨터) · ${armies}${players === 2 ? " · 중립군과 함께" : ""}</div><div class="mode-select"><label><input type="radio" name="cq-way" value="local" ${room ? "" : "checked"}> 한 화면에서</label><label><input type="radio" name="cq-way" value="net" ${room ? "checked" : ""}> 와이파이 여럿이</label></div>${room ? `<small id="cq-net" class="session-note">같은 와이파이의 기기 2–6대가 각자 자기 색으로 싸웁니다. 자리와 이름, 컴퓨터는 방에서 정합니다. 비밀 임무는 아직 와이파이로 할 수 없습니다.</small>` : ""}<div class="ai-options">${room ? "" : `<label>사람 수<select id="cq-humans">${[1, 2, 3, 4, 5, 6].map((n) => option(n, `${n}명`, n === h)).join("")}</select></label><label>컴퓨터 수<select id="cq-opponents">${Array.from({ length: SEATS - h - (h === 1 ? 1 : 0) + 1 }, (_, k) => k + (h === 1 ? 1 : 0)).map((n) => option(n, n ? `컴퓨터 ${n}명` : "없음", n === computers)).join("")}</select></label>`}<label>지도<select id="cq-map">${(Object.keys(MAPS) as MapChoice[]).map((m) => option(m, MAPS[m], m === preferences.map)).join("")}</select></label>${preferences.map === "random" ? `<label>지도 크기<select id="cq-size">${(Object.keys(SIZES) as Size[]).map((s) => option(s, `${SIZES[s].label} (영토 약 ${SIZES[s].territories})`, s === preferences.size)).join("")}</select></label>` : ""}<label>시작<select id="cq-setup">${(Object.keys(STARTS) as Start[]).map((s) => option(s, STARTS[s], s === preferences.start)).join("")}</select></label><label>이동 규칙<select id="cq-move">${(Object.keys(MOVE_RULES) as MoveRule[]).map((m) => option(m, MOVE_RULES[m], m === preferences.move)).join("")}</select></label><label>승리 조건<select id="cq-mode">${(Object.keys(MODES) as Mode[]).filter((m) => !room || m !== "missions").map((m) => option(m, MODES[m], m === preferences.mode)).join("")}</select></label>${preferences.mode === "turns" ? `<label>라운드 수<select id="cq-rounds">${ROUND_CHOICES.map((r) => option(r, `${r}라운드`, r === preferences.rounds)).join("")}</select></label>` : ""}${computers || room ? `<label>컴퓨터 난이도<select id="cq-difficulty">${(Object.keys(LEVELS) as Level[]).map((l) => option(l, LEVELS[l].label, l === preferences.level)).join("")}</select></label>` : ""}</div><div class="tour-names" role="group" aria-label="플레이어 이름" ${room ? "hidden" : ""}>${Array.from({ length: h }, (_, i) => `<label>${h === 1 ? "내 이름" : `플레이어 ${i + 1} 이름`}<input class="cq-name" data-seat="${i}" maxlength="8" autocomplete="off" placeholder="${h === 1 ? "나" : `플레이어 ${i + 1}`}" value="${escape(preferences.names[i] ?? "")}"></label>`).join("")}</div><button id="cq-start" class="primary">작전 시작 <span>↗</span></button></div><div class="feature-art cq-art" role="img" aria-label="대륙 쟁탈전 지도 미리보기"><div class="cq-mini"><i></i><i></i><i></i><i></i></div><span>CLAIM, REINFORCE, ATTACK, MOVE</span></div></section>`;
     const field = <E extends HTMLElement>(id: string) => host.querySelector<E>(`#${id}`);
     const read = () => {
       const typed = [...host.querySelectorAll<HTMLInputElement>(".cq-name")].map((input) => input.value);
@@ -173,7 +234,10 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
         mode: (field<HTMLSelectElement>("cq-mode")?.value ?? preferences.mode) as Mode,
         rounds: Number(field<HTMLSelectElement>("cq-rounds")?.value ?? preferences.rounds),
         level: (field<HTMLSelectElement>("cq-difficulty")?.value ?? preferences.level) as Level,
+        wifi: host.querySelector<HTMLInputElement>("input[name=cq-way][value=net]")?.checked ?? !!preferences.wifi,
       };
+      // Secret missions are not played over Wi-Fi yet.
+      if (preferences.wifi && preferences.mode === "missions") preferences.mode = "conquest";
       nav.remember({ ...preferences, names: [...preferences.names] });
     };
     // A change that changes the form (people, computers, the map, the kind of game) draws it again.
@@ -188,6 +252,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
       const select = field<HTMLSelectElement>(id);
       if (select) select.onchange = redraw;
     }
+    host.querySelectorAll<HTMLInputElement>("input[name=cq-way]").forEach((input) => (input.onchange = redraw));
     for (const id of ["cq-size", "cq-setup", "cq-move", "cq-rounds", "cq-difficulty"]) {
       const select = field<HTMLSelectElement>(id);
       if (select) select.onchange = read;
@@ -199,6 +264,11 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     };
   }
   function start() {
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    if (preferences.wifi) return net.open();
+    net.leave();
+    wifi = false;
+    played = null;
     humans = people();
     const computers = computersFor(humans, preferences.opponents);
     level = computers ? preferences.level : "normal";
@@ -246,6 +316,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
     dress(setup, ["#cq-controls"]);
+    if (wifi) net.dress();
     $("cq-again").onclick = () => setupDialog(setup);
     $("cq-fit").onclick = () => view?.fit();
     $("cq-hand").onclick = () => hand(true);
@@ -253,6 +324,8 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     $("cq-auto").onclick = () => {
       if (!state || !settingUp(state) || !mine()) return;
       autoSetup = true;
+      // Over Wi-Fi each placement is still a move of the room's, made one after another.
+      if (wifi) return computer();
       fastSetup();
     };
     $("cq-place").onclick = () => {
@@ -309,11 +382,20 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     else if (e.key === "0") view.fit();
   }
   const busy = () => !!view?.animating || state !== shown || thinking || performance.now() < lockedUntil || !!document.querySelector("dialog[open]");
-  /** Whether a person at this screen is to move (and has not left the setting up to the computer). */
-  const mine = () => !!state && state.phase !== "over" && human(state.turn);
+  /** Whether a person at this screen is to move (and has not left the setting up to the computer); over Wi-Fi, this device. */
+  const mine = () => !!state && state.phase !== "over" && (wifi ? !!played && net.mine(played) : human(state.turn));
   const playing = () => mine() && !(autoSetup && settingUp(state!));
   /** A change of mine, through the rules; input waits until the table has come to rest. */
   function act(action: Action) {
+    if (wifi) {
+      // The move goes to the room; the table shows it when the room tells it back.
+      if (!state || busy()) return false;
+      if (!playing()) return (net.warn(played!), false);
+      sound.unlock();
+      const refused = net.commit(conquestMove(action));
+      update();
+      return !refused;
+    }
     if (!state || busy() || !playing()) return false;
     const next = play(state, action, random);
     if (!next) return false;
@@ -359,6 +441,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
   /** A tap on the map (or Enter on the keyboard's territory). */
   function tap(t: number) {
     const s = state;
+    if (wifi && s && t >= 0 && !busy() && played && !net.mine(played)) return net.warn(played);
     if (!s || t < 0 || busy() || !playing()) return;
     cursor = t;
     told = s.ply;
@@ -464,6 +547,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
   }
   /** The computer plays one visible step at a time (quickly while setting up); an attack is shown by its arrow first. */
   function computer() {
+    if (wifi) return netComputer();
     const s = state;
     if (!s || thinking || s.phase === "over" || s !== shown || (human(s.turn) && !(autoSetup && settingUp(s)))) return;
     thinking = true;
@@ -490,16 +574,50 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
       quick ? 45 : s.phase === "reinforce" ? 420 : 300,
     );
   }
+  /**
+   * Over Wi-Fi the host's computer plays its seats (and a person's whose device dropped) through the room, as it would
+   * at one screen; a device whose person chose 자동 배치 places its own armies the same way, one move at a time.
+   */
+  function netComputer() {
+    const s = state;
+    if (!s || !played || thinking || s.phase === "over" || s !== shown) return;
+    const auto = autoSetup && settingUp(s) && net.mine(played);
+    if (!auto && !net.computer(played)) return;
+    thinking = true;
+    const current = generation,
+      seat = conquestNet.toMove(played),
+      quick = settingUp(s);
+    update();
+    later(
+      () => {
+        if (current !== generation || state !== s) return (thinking = false), undefined;
+        const action = decide(s, auto ? "normal" : level, random);
+        const make = () => {
+          thinking = false;
+          showing = null;
+          if (current !== generation || state !== s) return;
+          net.commit(conquestMove(action), auto ? undefined : seat);
+          update();
+        };
+        if (action.type === "attack" || action.type === "fortify") {
+          showing = { selected: action.from, targets: [action.to], kind: action.type === "attack" ? "attack" : "move", open: [], cursor: -1, arrow: [action.from, action.to] };
+          update();
+          later(make, 520);
+        } else make();
+      },
+      quick ? 45 : s.phase === "reinforce" ? 420 : 300,
+    );
+  }
   /** What the step just shown sounded like and called out. */
   function effects(before: State, now: State) {
     const last = now.last;
     if (last?.kind === "battle" && last.conquered) {
-      if (human(last.player) && humans === 1) cheer("점령!");
+      if (human(last.player) && (humans === 1 || wifi)) cheer("점령!");
       if (last.eliminated) later(() => cheer(`${names[last.defender]} 탈락!`), 700);
     }
     if (last?.kind === "turn" && last.drew && human(last.previous)) sound.card();
     if (settingUp(before) && !settingUp(now) && now.phase !== "over") later(() => cheer("작전 개시!"), 200);
-    if (now.phase === "over" && before.phase !== "over") sound[humans === 1 && !now.winners.includes(0) ? "lose" : "win"]();
+    if (now.phase === "over" && before.phase !== "over") sound[alone() && !now.winners.includes(myself()) ? "lose" : "win"]();
   }
   function present() {
     if (disposed || !state) return;
@@ -516,10 +634,18 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
       later(() => hand(false), 250);
     }
   }
-  /** Who sees the cards and the mission in the corner: the person to move, or me while a computer plays. */
+  /** The person the result is told to as "승리" or "패배": me alone against computers, or this device over Wi-Fi. */
+  const alone = () => (wifi ? myPlayer() >= 0 : humans === 1);
+  const myself = () => (wifi ? myPlayer() : 0);
+  /**
+   * Who sees the cards and the mission in the corner: the person to move, or me while a computer plays. Over Wi-Fi a
+   * device shows only its own player's cards (the state holding everyone's is on every device all the same, until the
+   * stage that hides information).
+   */
   const viewer = () => {
     const s = state;
     if (!s || s.phase === "over") return -1;
+    if (wifi) return myPlayer() >= 0 && s.seats[myPlayer()]?.alive ? myPlayer() : -1;
     return mine() ? s.turn : humans === 1 && s.seats[0].alive ? 0 : -1;
   };
   /** The cards of the player to move (a person's), with the sets they make, to be traded while reinforcing. */
@@ -554,8 +680,8 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     if (!asked && !forced) return;
     const kindsOf = (ids: number[]) => ids.map((id) => CARD_NAMES[cards.find((c) => c.id === id)!.kind]).join(" · ");
     modal(
-      `${humans > 1 ? `${safe[seat]}의 ` : "내 "}카드`,
-      `${cards.length ? `<ul class="cq-cards">${cards.map(face).join("")}</ul>` : "<p>카드가 없습니다. 영토를 하나라도 차지한 차례가 끝나면 한 장을 받습니다.</p>"}<p class="cq-hand-note">${forced ? `<b>카드가 ${MUST_TRADE}장 이상입니다. ${s.resume ? `${MUST_TRADE - 1}장 이하가 될 때까지 ` : ""}병력을 놓기 전에 세트를 바꿔야 합니다.</b> ` : ""}다음 세트는 병력 <b>+${value}</b>입니다. 바꾸는 카드에 적힌 영토가 내 것이면 그곳에 병력 ${CARD_BONUS}이 더 놓입니다(한 곳만).${s.phase === "reinforce" && s.turn === seat ? "" : " 세트는 증원 단계에 바꿀 수 있습니다."}</p>${offers.length ? `<div class="cq-trades">${offers.map((o) => `<button class="primary" data-trade="${o.cards.join(",")}" data-bonus="${o.bonus}">${kindsOf(o.cards)} 바꾸기 (+${value}${o.bonus >= 0 ? ` · ${escape(t(o.bonus))} +${CARD_BONUS}` : ""})</button>`).join("")}</div>` : ""}`,
+      `${humans > 1 && !wifi ? `${safe[seat]}의 ` : "내 "}카드`,
+      `${cards.length ? `<ul class="cq-cards">${cards.map(face).join("")}</ul>` : "<p>카드가 없습니다. 영토를 하나라도 차지한 차례가 끝나면 한 장을 받습니다.</p>"}<p class="cq-hand-note">${forced ? `<b>카드가 ${MUST_TRADE}장 이상입니다. ${s.resume ? `${MUST_TRADE - 1}장 이하가 될 때까지 ` : ""}병력을 놓기 전에 세트를 바꿔야 합니다.</b> ` : ""}다음 세트는 병력 <b>+${value}</b>입니다. 바꾸는 카드에 적힌 영토가 내 것이면 그곳에 병력 ${CARD_BONUS}이 더 놓입니다(한 곳만).${s.phase === "reinforce" && s.turn === seat ? "" : " 세트는 증원 단계에 바꿀 수 있습니다."}${wifi ? " 카드는 내 화면에만 보입니다." : ""}</p>${offers.length ? `<div class="cq-trades">${offers.map((o) => `<button class="primary" data-trade="${o.cards.join(",")}" data-bonus="${o.bonus}">${kindsOf(o.cards)} 바꾸기 (+${value}${o.bonus >= 0 ? ` · ${escape(t(o.bonus))} +${CARD_BONUS}` : ""})</button>`).join("")}</div>` : ""}`,
       [{ text: "닫기", action: () => later(update, 0) }],
     );
     document.querySelectorAll<HTMLButtonElement>("dialog [data-trade]").forEach((button) => {
@@ -641,7 +767,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
       me = playing(),
       setting = settingUp(s),
       waiting = busy(),
-      whose = humans > 1 ? `${names[s.turn]} 차례 — ` : "",
+      whose = humans > 1 && !wifi ? `${names[s.turn]} 차례 — ` : "",
       t = (id: number) => s.map.territories[id].name;
     $("board").dataset.animating = String(!!view?.animating || state !== shown || thinking || performance.now() < lockedUntil);
     $("board").dataset.phase = s.phase;
@@ -654,6 +780,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     const left = s.pool[s.turn] ?? 0;
     if (over) line = "";
     else if (setting && human(s.turn) && autoSetup) line = `${whose}자동 배치 중… (남은 병력 ${left})`;
+    else if (!me && wifi && roomWords()) line = roomWords()!;
     else if (!me) line = `${names[s.turn]} 차례 — ${setting ? (s.phase === "claim" ? "영토 고르는" : "배치") : s.phase === "reinforce" ? "증원" : s.phase === "attack" || s.phase === "occupy" ? "공격" : "이동"} 중…`;
     else if (s.phase === "claim") line = `${whose}영토 고르기 — 빈 영토를 누르면 병력 1로 차지합니다. (남은 병력 ${left})`;
     else if (s.phase === "deploy")
@@ -674,7 +801,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
           ? `${whose}공격 — 병력이 2 이상인 내 영토를 누르세요. 끝내려면 다음 단계.`
           : target < 0
             ? `${whose}공격 — 빨간 이웃을 누르면 주사위를 굴립니다.`
-            : `${whose}${t(target)}을(를) 다시 누르면 또 굴립니다.`;
+            : `${whose}${t(target)}${josa(t(target), "을", "를")} 다시 누르면 또 굴립니다.`;
     else if (s.phase === "occupy") line = `${whose}${t(s.pending!.to)}(으)로 더 옮길 병력을 고르세요.`;
     else
       line =
@@ -747,7 +874,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     if (seat >= 0) {
       const n = s.seats[seat].cards.length;
       $("cq-hand-count").textContent = String(n);
-      handButton.setAttribute("aria-label", `${humans > 1 ? `${names[seat]}의 ` : "내 "}카드 ${n}장 보기`);
+      handButton.setAttribute("aria-label", `${humans > 1 && !wifi ? `${names[seat]}의 ` : "내 "}카드 ${n}장 보기`);
       handButton.classList.toggle("ready", me && s.phase === "reinforce" && mayTrade(s));
       missionButton.setAttribute("aria-label", `${humans > 1 ? `${names[seat]}의 ` : "내 "}비밀 임무 보기`);
     }
@@ -777,15 +904,20 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     }
     // The end.
     const result = $("cq-result");
-    result.dataset.outcome = humans === 1 && !s.winners.includes(0) ? "lose" : "win";
+    result.dataset.outcome = alone() && !s.winners.includes(myself()) ? "lose" : "win";
     if (over) $("cq-final").textContent = verdict(s);
     result.hidden = !over;
+  }
+  /** Over Wi-Fi, the room's own words while another plays (a drop, a request, a move being sent), or null. */
+  function roomWords() {
+    const line = played ? net.line(played) : null;
+    return line && line !== `${net.who(conquestNet.toMove(played!))} 차례입니다.` ? line : null;
   }
   /** The result, its first sentence the outcome. */
   function verdict(s: State) {
     const winners = s.winners.map((p) => names[p]).join(", "),
-      won = humans === 1 ? (s.winners.includes(0) ? "승리!" : "패배.") : `${winners} 승리!`,
-      by = humans === 1 && !s.winners.includes(0) ? `${winners}이(가) ` : "";
+      won = alone() ? (s.winners.includes(myself()) ? "승리!" : "패배.") : `${winners} 승리!`,
+      by = alone() && !s.winners.includes(myself()) ? `${winners}${josa(winners, "이", "가")} ` : "";
     switch (s.end) {
       case "conquest":
         return `${won} ${by}온 세계를 차지했습니다.`;
@@ -918,6 +1050,7 @@ export function mountConquest(root: HTMLElement, nav: Navigation, random: Random
     rules,
     dispose() {
       disposed = true;
+      net.dispose();
       stop();
       sound.dispose();
       document.removeEventListener("close", dialogClosed, true);

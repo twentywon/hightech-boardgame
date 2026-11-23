@@ -24,8 +24,12 @@ import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
 import { modal, setupDialog } from "./dialog";
 import type { Settings } from "../core/storage";
+import { NetTable } from "./net-table";
+import { yachtHold, yachtNet, yachtRoll, yachtScore } from "../net/screens";
+import type { Move as NetMove } from "../games/points/types";
 
-export type YachtMode = "solo" | "local" | "ai";
+/** "net": two devices on one Wi-Fi (와이파이 여럿이), each rolling for its own sheet. */
+export type YachtMode = "solo" | "local" | "ai" | "net";
 export interface YachtOptions {
   mode: YachtMode;
 }
@@ -94,9 +98,45 @@ export function mountYacht(
     }, ms);
     timers.add(timer);
   };
-  const computerTurn = (s: State = state) => mode === "ai" && s.turn === 1 && !s.over;
+  /** Over Wi-Fi the room's game is `state` itself; `wifi` says a room's game is on the table. */
+  let wifi = false;
+  const mineNow = () => net.mine(state);
+  const computerTurn = (s: State = state) => (wifi ? !s.over && !mineNow() : mode === "ai" && s.turn === 1 && !s.over);
+  const net: NetTable<State> = new NetTable<State>({
+    net: yachtNet,
+    title: "요트 다이스",
+    options: () => ({}),
+    begin(next, fresh) {
+      wifi = true;
+      mode = "net";
+      state = shown = next;
+      lockedUntil = 0;
+      if (fresh) {
+        announced = false;
+        sound.enabled = settings.sound;
+        sound.unlock();
+        screen();
+        return;
+      }
+      // Rebuilt from the room's list (a return): laid at once.
+      generation++;
+      thinking = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+      if (view) view.sync(state, false);
+      present();
+    },
+    show: (next) => apply(next),
+    resting: () => !view?.animating && state === shown,
+    table: () => !!document.getElementById("yd-roll"),
+    update: () => update(),
+    resume: () => computer(),
+    back: () => nav.back(),
+  });
   const who = (player: number) =>
-    mode === "solo"
+    wifi
+      ? net.room?.nameOf(player) || "빈자리"
+      : mode === "solo"
       ? "나"
       : mode === "local"
         ? `플레이어 ${player + 1}`
@@ -112,12 +152,15 @@ export function mountYacht(
     view = null;
   }
   function setup(host = nav.setupHost) {
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi && net.playing && host !== nav.setupHost) return net.newGame(host);
     if (host === nav.setupHost) stop();
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 05 — FIVE DICE</span><h2>요트 다이스 <span>Yacht Dice</span></h2><p>주사위 다섯 개, 세 번의 기회.<br>남길 눈을 골라 열두 칸의 족보를 채우세요.</p><div class="game-meta">1–2인 · 12라운드 · 주사위 5개</div><div class="mode-select"><label><input type="radio" name="yd-mode" value="solo"> 혼자 하기</label><label><input type="radio" name="yd-mode" value="local"> 로컬 2인</label><label><input type="radio" name="yd-mode" value="ai"> 컴퓨터 대전</label></div><small id="yd-options" class="session-note" hidden>컴퓨터 대전에서는 내가 먼저 굴립니다.</small><button id="yd-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art yacht-art" role="img" aria-label="요트 다이스 테이블 미리보기"><div class="yd-mini">${[5, 5, 5, 2, 2].map((n, i) => `<i class="yd-mini-die d${i}">${PIPS[n]}</i>`).join("")}</div><span>FIVE DICE, THREE ROLLS</span></div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 05 — FIVE DICE</span><h2>요트 다이스 <span>Yacht Dice</span></h2><p>주사위 다섯 개, 세 번의 기회.<br>남길 눈을 골라 열두 칸의 족보를 채우세요.</p><div class="game-meta">1–2인 · 12라운드 · 주사위 5개</div><div class="mode-select"><label><input type="radio" name="yd-mode" value="solo"> 혼자 하기</label><label><input type="radio" name="yd-mode" value="local"> 로컬 2인</label><label><input type="radio" name="yd-mode" value="ai"> 컴퓨터 대전</label><label><input type="radio" name="yd-mode" value="net"> 와이파이 여럿이</label></div><small id="yd-options" class="session-note" hidden>컴퓨터 대전에서는 내가 먼저 굴립니다.</small><small id="yd-net" class="session-note" hidden>같은 와이파이의 두 기기가 각자 자기 점수표를 채웁니다. 상대가 굴리는 주사위도 내 화면에서 봅니다.</small><button id="yd-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art yacht-art" role="img" aria-label="요트 다이스 테이블 미리보기"><div class="yd-mini">${[5, 5, 5, 2, 2].map((n, i) => `<i class="yd-mini-die d${i}">${PIPS[n]}</i>`).join("")}</div><span>FIVE DICE, THREE ROLLS</span></div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=yd-mode]");
     const remember = () => {
       preferences = { mode: [...radios].find((r) => r.checked)!.value as YachtMode };
       $("yd-options").hidden = preferences.mode !== "ai";
+      $("yd-net").hidden = preferences.mode !== "net";
       nav.remember({ ...preferences });
     };
     radios.forEach((r) => {
@@ -125,9 +168,14 @@ export function mountYacht(
       r.onchange = remember;
     });
     $("yd-options").hidden = preferences.mode !== "ai";
+    $("yd-net").hidden = preferences.mode !== "net";
     $("yd-start").onclick = start;
   }
   function start() {
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    if (preferences.mode === "net") return net.open();
+    net.leave();
+    wifi = false;
     mode = preferences.mode;
     state = shown = createGame(mode === "solo" ? 1 : 2);
     announced = false;
@@ -149,12 +197,13 @@ export function mountYacht(
     $("back").onclick = nav.back;
     $("rules").onclick = rules;
     dress(setup, ["#yd-roll"]);
-    $("yd-roll").onclick = () => act((s) => roll(s, random));
+    if (wifi) net.dress();
+    $("yd-roll").onclick = () => act((s) => roll(s, random), yachtRoll());
     $("yd-again").onclick = () => setupDialog(setup);
     for (let i = 0; i < DICE; i++) $(`yd-die-${i}`).onclick = () => hold(i);
     root.querySelector<HTMLElement>(".yd-sheet")!.onclick = (e) => {
       const button = (e.target as HTMLElement).closest<HTMLButtonElement>(".yd-pick");
-      if (button) act((s) => score(s, button.dataset.category as Category));
+      if (button) act((s) => score(s, button.dataset.category as Category), yachtScore(button.dataset.category as Category));
     };
     try {
       view = new YachtView($("board"), settings.quality);
@@ -191,6 +240,8 @@ export function mountYacht(
   }
   /** Setting a die aside is instant and may be repeated; the rules validate it. */
   function hold(index: number) {
+    // Over Wi-Fi a die set aside is a move too, so that the other device sees it.
+    if (wifi) return act((s) => toggleHold(s, index), yachtHold(index));
     if (busy() || computerTurn()) return;
     const next = toggleHold(state, index);
     if (next) apply(next);
@@ -199,7 +250,15 @@ export function mountYacht(
    * A roll or a score. Input stays locked until the dice have come to rest,
    * so a double click cannot roll or write twice.
    */
-  function act(change: (s: State) => State | null) {
+  function act(change: (s: State) => State | null, sent: NetMove) {
+    if (wifi) {
+      // The move goes to the room; the table shows it when the room tells it back.
+      if (busy()) return;
+      if (!mineNow()) return net.warn(state);
+      sound.unlock();
+      net.commit(sent);
+      return update();
+    }
     if (busy() || computerTurn()) return;
     const next = change(state);
     if (!next) return;
@@ -208,18 +267,21 @@ export function mountYacht(
     later(update, 240);
     apply(next);
   }
+  /** Whether the computer plays the player to move: this screen's, or over Wi-Fi the host's for a seat. */
+  const computerToMove = () => (wifi ? net.computer(state) : computerTurn());
   /** The computer plays its turn one visible step at a time. */
   function computer() {
-    if (thinking || !computerTurn()) return;
+    if (thinking || !computerToMove()) return;
     thinking = true;
     const current = generation;
     later(() => {
       thinking = false;
-      if (current !== generation || !computerTurn()) return;
+      if (current !== generation || !computerToMove()) return;
       if (busy()) {
         computer();
         return;
       }
+      if (wifi) return netComputer();
       let next: State | null;
       if (!hasRolled(state)) next = roll(state, random);
       else {
@@ -239,6 +301,22 @@ export function mountYacht(
       computer();
     }, hasRolled(state) && state === shown ? 520 : 320);
   }
+  /** The host's computer takes one step for the seat to move, through the room, as it would at this screen. */
+  function netComputer() {
+    const seat = state.turn;
+    let sent: NetMove;
+    if (!hasRolled(state)) sent = yachtRoll();
+    else {
+      const advice = advise(state, "normal", 1 + state.rollId);
+      if (advice.category) sent = yachtScore(advice.category);
+      else {
+        const differs = advice.hold!.findIndex((keep, i) => keep !== state.held[i]);
+        sent = differs >= 0 ? yachtHold(differs) : yachtRoll();
+      }
+    }
+    // An unusable step would stall the turn: any open category instead.
+    if (net.commit(sent, seat)) net.commit(yachtScore(CATEGORIES.find((c) => state.cards[seat][c] === null)!), seat);
+  }
   /** The dice have come to rest: describe the current state. */
   function present() {
     if (disposed) return;
@@ -248,7 +326,7 @@ export function mountYacht(
     update();
     if (state.over && !announced) {
       announced = true;
-      if (mode === "ai" && winner(state) === 1) sound.lose();
+      if ((mode === "ai" && winner(state) === 1) || (wifi && net.outcome(state) === "lose")) sound.lose();
       else sound.win();
     }
     if (hadFocus && focused && (focused.offsetParent === null || (focused as HTMLButtonElement).disabled || !focused.isConnected))
@@ -271,7 +349,9 @@ export function mountYacht(
       ? "게임이 끝났습니다."
       : state !== shown
         ? `${name}주사위가 구르는 중…`
-        : bot
+        : wifi && bot
+          ? (net.line(state) ?? `${who(s.turn)} 차례…`)
+          : bot
           ? `${who(1)}가 ${rolledOnce ? "고르는 중" : "굴리는 중"}…`
           : !rolledOnce
             ? `${name}주사위를 굴리세요.`
@@ -327,7 +407,7 @@ export function mountYacht(
         .querySelectorAll<HTMLElement>(`.yd-sheet tr > :nth-child(${s.turn + 2})`)
         .forEach((cell) => cell.classList.add("current"));
     // Result, in the page rather than a dialog.
-    $("yd-result").dataset.outcome = winner(s) === "draw" ? "draw" : mode === "ai" && winner(s) === 1 ? "lose" : "win";
+    $("yd-result").dataset.outcome = wifi ? net.outcome(s) : winner(s) === "draw" ? "draw" : mode === "ai" && winner(s) === 1 ? "lose" : "win";
     $("yd-result").hidden = !s.over;
     if (s.over) {
       const [a, b] = s.cards.map((card) => totals(card).total),
@@ -335,7 +415,13 @@ export function mountYacht(
       $("yd-final").textContent =
         s.cards.length === 1
           ? `총점 ${a}점으로 열두 칸을 모두 채웠습니다.`
-          : won === "draw"
+          : wifi
+            ? won === "draw"
+              ? `비겼습니다. ${a} : ${b}.`
+              : won === net.seat
+                ? `이겼습니다! ${a} : ${b}.`
+                : `${net.seat === null ? `${who(won as number)} 승리!` : "졌습니다."} ${who(won as number)} ${s.cards.map((card) => totals(card).total)[won as number]}점, ${a} : ${b}.`
+            : won === "draw"
             ? `${a} : ${b} — 비겼습니다.`
             : mode === "ai"
               ? `${a} : ${b} — ${won === 0 ? "이겼습니다!" : "컴퓨터가 이겼습니다."}`
@@ -384,6 +470,7 @@ export function mountYacht(
     rules,
     dispose() {
       disposed = true;
+      net.dispose();
       stop();
       sound.dispose();
       document.removeEventListener("close", dialogClosed, true);
