@@ -154,7 +154,10 @@ public class MainActivity extends Activity {
         leaving = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Light_Dialog_Alert)
                 .setTitle("앱 종료")
                 .setMessage("앱을 종료할까요?")
-                .setPositiveButton("종료", (dialog, which) -> finish())
+                // The page leaves its Wi-Fi room first (a host's room ends for everyone, a guest's seat goes to the
+                // host's computer); the word is given a moment to go out before the app closes.
+                .setPositiveButton("종료", (dialog, which) -> web.evaluateJavascript(
+                        "dispatchEvent(new Event('wtg-exit'))", done -> web.postDelayed(this::finish, 300)))
                 .setNegativeButton("취소", null)
                 .create();
         leaving.show();

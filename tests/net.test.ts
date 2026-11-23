@@ -134,6 +134,7 @@ describe("messages", () => {
       { t: "resync", start: { round: 2, variant: "9", options: {}, seed: 1, seats: [] }, moves: [{ move: { from: -1, to: 4, extra: -1 }, seat: -1 }] },
       { t: "notice", text: "민수 님이 들어왔습니다." },
       { t: "bye", reason: "방장이 방을 닫았습니다." },
+      { t: "bye", reason: "방장이 방을 나가 방이 없어졌습니다.", closed: true },
       { t: "ping", at: 123.5, echo: true },
     ];
     for (const m of messages) expect(decode(encode(m))).toEqual(m);
@@ -355,8 +356,31 @@ describe("a room", () => {
     await settle();
     host.leave();
     await settle();
-    expect(lost).toEqual(["방장이 방을 닫았습니다."]);
+    expect(lost).toEqual(["방장이 방을 나가 방이 없어졌습니다."]);
     expect(guests[0].room.dismissed).toBe(true);
+    // The room is gone for good (the user asked), not a channel to come back to.
+    expect(guests[0].room.hostLeft).toBe(true);
+  });
+
+  test("a guest leaving gives its seat to the host's computer; a refused guest is not told the room is gone", async () => {
+    const { host, guests } = await room(tttRules, SEATS, ["민수"]);
+    host.begin();
+    await settle();
+    guests[0].room.leave();
+    await settle();
+    expect(host.away(1)).toBe(true);
+    // The host's computer plays the seat now: the host's device may move for seat 1.
+    expect(host.play(at(4), 0)).toBeNull();
+    await settle();
+    expect(host.match!.toMove).toBe(1);
+    expect(host.play(at(0), 1)).toBeNull();
+    // A channel that only fails leaves the guest waiting to come back.
+    const { host: other, guests: more } = await room(tttRules, SEATS, ["지아"]);
+    other.begin();
+    await settle();
+    more[0].link.onclose?.();
+    await settle();
+    expect(more[0].room.hostLeft).toBe(false);
   });
 });
 

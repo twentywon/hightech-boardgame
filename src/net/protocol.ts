@@ -23,7 +23,7 @@ import type { GameOptions, Move } from "../games/points/types";
  */
 export const PROTOCOL = 1;
 /** Bumped whenever a rule or a move changes meaning, so that devices of different builds do not play together. */
-export const APP_VERSION = "2026.11-net3";
+export const APP_VERSION = "2026.11-net4";
 
 /** A seat: waiting for a person, taken by a person, played by the host's computer, or left out (an empty corner). */
 export type SeatKind = "open" | "person" | "computer" | "closed";
@@ -73,7 +73,8 @@ export type Message =
   | { t: "answer"; id: number; yes: boolean; from: string }
   | { t: "resync"; start: StartInfo; moves: NetMove[] }
   | { t: "notice"; text: string }
-  | { t: "bye"; reason: string }
+  /** `closed`: the host left and the room is gone for everyone. */
+  | { t: "bye"; reason: string; closed?: boolean }
   | { t: "ping"; at: number; echo: boolean };
 
 export function encode(message: Message): string {

@@ -61,6 +61,15 @@ export function personId(): string {
 /** A name as it may be shown: trimmed, at most 12 letters, never empty. */
 export const cleanName = (name: string, fallback = "플레이어") => [...(name.replace(/\s+/g, " ").trim() || fallback)].slice(0, 12).join("");
 
+/**
+ * The rooms open on this page. A page that goes away (closed, reloaded, or the app quitting through its back key's
+ * 종료, which sends `wtg-exit` first) leaves them, so the others are told at once: a guest's seat goes to the host's
+ * computer, and a host's room is gone for everyone (the user asked).
+ */
+const OPEN = new Set<{ leave(): void }>();
+if (typeof addEventListener === "function")
+  for (const event of ["pagehide", "wtg-exit"]) addEventListener(event, () => [...OPEN].forEach((room) => room.leave()));
+
 abstract class Room<S> {
   people: PersonInfo[] = [];
   seats: SeatInfo[] = [];
@@ -73,7 +82,9 @@ abstract class Room<S> {
   constructor(
     readonly me: string,
     readonly rules: NetRules<S>,
-  ) {}
+  ) {
+    OPEN.add(this);
+  }
   /** The seat a person sits on, or null. */
   seatOf(id: string): number | null {
     const i = this.seats.findIndex((s) => s.kind === "person" && s.person === id);
@@ -436,9 +447,11 @@ export class HostRoom<S> extends Room<S> {
     this.tell(`${this.person(ask.from)?.name ?? ""} 님의 수를 물렀습니다.`);
   }
   leave() {
+    OPEN.delete(this);
     if (this.closed) return;
     this.closed = true;
-    this.broadcast({ t: "bye", reason: "방장이 방을 닫았습니다." });
+    // The host leaving ends the room for everyone: no guest waits for it to come back.
+    this.broadcast({ t: "bye", reason: "방장이 방을 나가 방이 없어졌습니다.", closed: true });
     for (const link of this.links.keys()) {
       link.onclose = null;
       link.onmessage = null;
@@ -468,6 +481,8 @@ export class GuestRoom<S> extends Room<S> {
   private link: Link | null = null;
   private heard = 0;
   private left = false;
+  /** The host left, and the room with it (rather than refusing this device or the channel failing). */
+  private ended = false;
   connected = false;
   /** Why the host was lost, in words ("" while connected). */
   reason = "";
@@ -600,6 +615,7 @@ export class GuestRoom<S> extends Room<S> {
         return this.events.notice?.(m.text);
       case "bye":
         this.left = true;
+        this.ended = !!m.closed;
         return this.lose(m.reason);
       case "ping":
         if (!m.echo) this.say({ t: "ping", at: m.at, echo: true });
@@ -613,6 +629,10 @@ export class GuestRoom<S> extends Room<S> {
   /** The host closed the room (rather than the channel failing). */
   get dismissed() {
     return this.left;
+  }
+  /** The host left and the room is gone: there is nothing to come back to (the user asked). */
+  get hostLeft() {
+    return this.ended;
   }
   sit(seat: number | null) {
     this.say({ t: "sit", seat });
@@ -645,6 +665,7 @@ export class GuestRoom<S> extends Room<S> {
     if (!yes) this.pending = null;
   }
   leave() {
+    OPEN.delete(this);
     if (this.link) {
       this.say({ t: "bye", reason: `${this.name} 님이 나갔습니다.` });
       this.link.onclose = null;

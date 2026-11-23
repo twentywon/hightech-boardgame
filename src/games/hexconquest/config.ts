@@ -80,7 +80,7 @@ export const hexConquestConfig: PointConfig<State> = {
   // Over Wi-Fi each device is one nation (the user asked): the seats are the four nations in the order of play, a
   // seat nobody takes is a corner left empty as at one screen. The map is laid from the room's seed and every
   // nation seated is picked at once, in the order of play (players 1, 2, … as at one screen); in setup only the host
-  // draws another map and starts. No computer stands in for a nation whose device dropped: it waits.
+  // draws another map and starts. A nation whose device left or dropped is played by the host's computer (the user asked).
   net: {
     seats: () => ORDER.map((n) => ({ label: NAMES[n], color: COLORS[n], kinds: ["closed"] })),
     create: (_variant, _options, seated, random) => {
@@ -93,7 +93,6 @@ export const hexConquestConfig: PointConfig<State> = {
     seatOf: (s) => (s.phase === "setup" ? -1 : ORDER.indexOf(s.seat)),
     allow: (s, m) => (s.phase === "setup" && m.to !== NEW_MAP && m.to !== START ? "나라는 방에서 정했습니다. 방장이 다른 맵이나 시작을 누릅니다." : null),
     winnerSeat: (s) => (s.winner === 0 ? ORDER.indexOf(victor(s)) : null),
-    standIn: false,
   },
   settings: [
     {

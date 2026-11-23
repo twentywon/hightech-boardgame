@@ -196,6 +196,38 @@ test("in a browser: the guest pastes the host's invite on the main screen and la
   await guest.locator("main.game-layout #back").click();
   await expect(guest.locator("#join-room")).toBeVisible();
   await expect(host.locator("#turn")).toContainText("민수 님이 나갔습니다", { timeout: 15000 });
+  // The seat of the guest who left is played by the host's computer (the user asked).
+  await tap(host, 8);
+  await agree([host], 4);
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});
+
+test("in the app: the host leaving ends the room for everyone, and the guest is taken back to the collection", async ({ browser }, info) => {
+  const wifi = new FakeWifi();
+  const a = await device(browser, info, wifi, "192.168.0.12"),
+    b = await device(browser, info, wifi, "192.168.0.23"),
+    host = a.page,
+    guest = b.page;
+  await hostRoom(host, "틱택토");
+  await joinWindow(guest, "민수");
+  const room = guest.locator("dialog.net-join .net-room:not(.other)", { hasText: "틱택토" });
+  await expect(room).toContainText("방장의 방 · 1/2명");
+  await room.click();
+  await expect(guest.locator("dialog.net-lobby:not(.net-join) .net-seats")).toBeVisible({ timeout: 20000 });
+  await host.locator("#net-start").click();
+  for (const page of [host, guest]) await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 30000 });
+  await tap(host, 4);
+  await agree([host, guest], 1);
+  await host.locator("main.game-layout #back").click();
+  const gone = guest.locator("dialog[open]", { hasText: "방이 없어졌습니다" });
+  await expect(gone).toBeVisible({ timeout: 15000 });
+  await expect(gone).toContainText("방장이 방을 나가서 이 방은 끝났습니다");
+  await gone.getByRole("button", { name: "확인" }).click();
+  await expect(guest.locator("#join-room")).toBeVisible();
+  // The room is gone from the list too.
+  await joinWindow(guest, "민수");
+  await expect(guest.locator("dialog.net-join .net-room:not(.other)")).toHaveCount(0);
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });

@@ -11,7 +11,7 @@ import { HOST_ONLY, type NetRules } from "../net/match";
 import { pointRules, type NetSpec } from "../net/points";
 import type { SeatInfo, SeatKind } from "../net/protocol";
 import type { GuestRoom, HostRoom } from "../net/room";
-import { openLobby, type AnyRoom, type Lobby } from "./net-lobby";
+import { openLobby, roomGone, type AnyRoom, type Lobby } from "./net-lobby";
 
 export interface PointOptions {
   /** "net": several devices on one Wi-Fi (와이파이 여럿이), for a game with `net`; the game itself is then played as "local". */
@@ -1104,6 +1104,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         netNotice(text);
       },
       lost: (reason) => {
+        if ((room as GuestRoom<S>).hostLeft) {
+          leaveRoom();
+          return roomGone();
+        }
         lost = reason;
         sending = false;
         lobby?.refresh();

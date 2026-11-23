@@ -3,7 +3,7 @@ import type { BoardNet } from "../net/boards";
 import type { NetMove, SeatInfo } from "../net/protocol";
 import type { GuestRoom, HostRoom } from "../net/room";
 import type { GameOptions, Move } from "../games/points/types";
-import { openLobby, type AnyRoom, type Lobby } from "./net-lobby";
+import { openLobby, roomGone, type AnyRoom, type Lobby } from "./net-lobby";
 
 /**
  * 와이파이 여럿이 for a screen of its own (chess, gomoku, Reversi, janggi), as the point-game screen plays it: the
@@ -131,6 +131,10 @@ export class NetTable<S> {
         this.notice(text);
       },
       lost: (reason) => {
+        if ((room as GuestRoom<S>).hostLeft) {
+          this.leave();
+          return roomGone();
+        }
         this.lost = reason;
         this.sending = false;
         this.lobby?.refresh();

@@ -10,6 +10,7 @@ import { allGames, EDITION } from "../core/catalog";
 import { idOf } from "../net/route";
 import type { GameOptions } from "../games/points/types";
 import { getPlayerName, setPlayerName } from "../core/storage";
+import { modal } from "./dialog";
 
 /**
  * The window of a room played over one Wi-Fi (와이파이 여럿이): who is in, who sits where, and the pairing of a new
@@ -57,6 +58,19 @@ export function keepName(body: HTMLElement) {
     const field = e.target as HTMLInputElement;
     if (field.id === "net-name") setPlayerName(cleanName(field.value, "").trim());
   });
+}
+/**
+ * The host left, and the room with it (the user asked: "방장이 방을 나가면 방이 폭파"): the guest's room has been left
+ * by the caller; the guest is told, and 확인 takes it back to the collection.
+ */
+export function roomGone() {
+  document.querySelectorAll<HTMLDialogElement>("dialog.net-lobby").forEach((d) => {
+    d.close();
+    d.remove();
+  });
+  modal("방이 없어졌습니다", "<p>방장이 방을 나가서 이 방은 끝났습니다. 컬렉션으로 돌아갑니다.</p>", [
+    { text: "확인", action: () => document.querySelector<HTMLButtonElement>("#back")?.click() },
+  ]);
 }
 /**
  * The window opens with nothing focused: a name field focused at once would bring the phone's keyboard up over the
