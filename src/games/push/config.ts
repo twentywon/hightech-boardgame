@@ -13,6 +13,8 @@ export const marblePushConfig: PointConfig<State> = {
   noPanel: true,
   view: (host, quality, _variant, mode) => new PushView(host, quality, mode),
   colors: PUSH_COLORS,
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   keyPoints: () => CELLS.map((_, i) => cellAt(i)),
   keyStart: (state) => {
     // The marble of the side to move nearest the middle.

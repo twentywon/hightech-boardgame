@@ -13,6 +13,8 @@ export const gonuConfig: PointConfig<State> = {
   // The board's points and pictures; the table is a stone in the yard (the user asked for the older tables upgraded).
   board: gonuBoard,
   view: (host, quality, variant) => new GonuView(host, quality, variant),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "고누",
   english: "Gonu",
   number: "NO. 12 — ON THE GROUND",

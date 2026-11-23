@@ -12,6 +12,8 @@ export const starHopConfig: PointConfig<State> = {
   keyPoints: () => HOLES.map((_, i) => holeAt(i)),
   keyStart: (state) => state.cells.findIndex((owner) => owner === state.turn),
   showMovable: false,
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "차이니즈 체커",
   english: "Chinese Checkers",
   number: "NO. 30 — HOP ACROSS",

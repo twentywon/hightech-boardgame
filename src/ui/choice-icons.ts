@@ -36,6 +36,9 @@ const person = (x: number, y: number, s = 1) =>
 /** A computer: a screen on a stand, in the button's ink. */
 const computer = (x: number, y: number, s = 1) =>
   `<rect x="${x - 6 * s}" y="${y - 7 * s}" width="${12 * s}" height="${8.5 * s}" rx="${1.4 * s}" fill="none" stroke="currentColor" stroke-width="${1.8 * s}"/><path d="M${x - 2 * s} ${y + 3.2 * s}h${4 * s}M${x} ${y + 1.6 * s}v${1.6 * s}" stroke="currentColor" stroke-width="${1.8 * s}" stroke-linecap="round"/><circle cx="${x}" cy="${y - 2.8 * s}" r="${1.3 * s}" fill="currentColor"/>`;
+/** A phone standing up, in the button's ink. */
+const phone = (x: number, y: number) =>
+  `<rect x="${x - 4.6}" y="${y - 8.5}" width="9.2" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M${x - 1.4} ${y + 5.6}h2.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>`;
 /** `n` of something side by side, centred in a picture `w` wide. */
 const row = (n: number, w: number, gap: number, draw: (x: number) => string) => Array.from({ length: n }, (_, k) => draw(w / 2 + (k - (n - 1) / 2) * gap)).join("");
 const people = (n: number) => svg(48, 26, row(n, 48, n > 4 ? 8 : n > 3 ? 10.5 : 12, (x) => person(x, 15, n > 4 ? 0.68 : n > 3 ? 0.85 : 1)));
@@ -170,6 +173,8 @@ export function choiceIcon(select: string, value: string, label: string, game = 
 export function modeIcon(value: string, label: string): string | null {
   if (value === "solo") return svg(48, 26, person(24, 15));
   if (value === "local") return /2[–-]4/.test(label) ? people(3) : people(2);
+  // Several devices on one Wi-Fi: two phones and the waves between them.
+  if (value === "net") return svg(48, 26, phone(9, 13) + phone(39, 13) + `<path d="M19.5 9.2a6.4 6.4 0 0 1 9 0M21.6 12.1a3.4 3.4 0 0 1 4.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="24" cy="15.4" r="1.4" fill="currentColor"/>`);
   if (value === "ai") return svg(48, 26, person(16, 15) + `<path d="M19.6 11.6 L21.6 17 L23.6 11.6 M29 12.4 C28.4 11.5 25.6 11.4 25.5 12.9 C25.4 14.3 29 14.1 28.9 15.7 C28.8 17.3 25.8 17.2 25.2 16.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>` + computer(34, 14));
   return null;
 }

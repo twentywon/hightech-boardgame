@@ -14,6 +14,8 @@ export const twistConfig: PointConfig<State> = {
   keyPoints: twistPoints,
   keyStart: () => 14,
   extraHint: "돌릴 판과 방향을 고르세요.",
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "돌림 오목",
   english: "Twist Five",
   number: "NO. 22 — PLACE AND TURN",

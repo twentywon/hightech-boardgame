@@ -38,6 +38,8 @@ export const laserChessConfig: PointConfig<State> = {
   // Metal set down on stone; the laser hums, a blocked beam clinks, a piece taken shatters.
   contact: (sound) => sound.tile(5),
   knock: (sound, kind) => sound.laser(kind === "disc" ? "fire" : kind === "pocket" ? "burst" : "block"),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "레이저 체스",
   english: "Laser Chess",
   number: "NO. 83 — BEND THE BEAM",

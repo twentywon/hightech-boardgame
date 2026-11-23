@@ -13,6 +13,8 @@ export const checkersConfig: PointConfig<State> = {
   // The board's points; the table itself is a porch of its own (the user asked for the older tables upgraded).
   board: checkersBoard,
   view: (host, quality) => new CheckersView(host, quality),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "체커",
   english: "Checkers",
   number: "NO. 13 — JUMP",

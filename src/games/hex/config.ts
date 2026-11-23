@@ -89,6 +89,8 @@ export const hexConfig: PointConfig<State> = {
   view: (host, quality) => new PaperView(host, quality, paper),
   colors: PENCILS as [string, string],
   keyPoints: (s) => hexLayout(s.size).points,
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "헥스",
   english: "Hex",
   number: "NO. 15 — CONNECT",

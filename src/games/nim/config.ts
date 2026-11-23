@@ -61,6 +61,8 @@ export const nimConfig: PointConfig<State> = {
   // Wooden rings knocking as they slide off and land in a tray; a soft plop for each scoop.
   contact: (sound, state) => (state.mode === "ice" ? sound.soft(2) : sound.wood(4)),
   knock: (sound) => sound.knock(2),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "님 게임",
   english: "Nim",
   number: "NO. 81 — DON'T TAKE THE LAST",

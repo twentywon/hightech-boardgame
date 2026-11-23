@@ -20,6 +20,8 @@ export const goConfig: PointConfig<State> = {
     { label: "한 수 쉬기", point: PASS },
     { label: "기권", point: RESIGN },
   ],
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "바둑",
   english: "Go",
   number: "NO. 74 — SURROUND THE LAND",

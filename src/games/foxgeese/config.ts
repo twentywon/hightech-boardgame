@@ -25,6 +25,8 @@ export const foxGeeseConfig: PointConfig<State> = {
   cheer: (before, state, mode) => (state.last && state.last !== before.last && state.last.taken !== null ? (mode === "ai" && state.herd === 0 ? "잡혔다!" : "잡았다!") : null),
   // After a jump the fox may stop instead of jumping on.
   tools: [{ label: "그만 뛰기", point: STAY }],
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "여우와 거위",
   english: "Fox and Geese",
   number: "NO. 54 — THE FOX IN THE YARD",

@@ -10,6 +10,8 @@ export const mancalaConfig: PointConfig<State> = {
   view: (host, quality) => new MancalaView(host, quality),
   colors: ["#c99a66", "#8e2f2a"],
   keyPoints: () => Array.from({ length: 14 }, (_, pit) => pitAt(pit)),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "만칼라",
   english: "Mancala",
   number: "NO. 16 — SOW AND REAP",

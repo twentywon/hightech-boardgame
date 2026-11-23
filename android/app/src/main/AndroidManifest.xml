@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Everything is inside the app: no network, no storage permission. -->
+    <!-- Everything is inside the app: no storage permission, and the page fetches nothing. The network permissions are
+         for 와이파이 여럿이 only: WebRTC opens its sockets to other devices on the same Wi-Fi (Android allows no socket
+         without INTERNET), and mDNS (.local names of the other devices) needs multicast. The camera reads the pairing
+         QR code; it is asked for at the moment it is first used. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"

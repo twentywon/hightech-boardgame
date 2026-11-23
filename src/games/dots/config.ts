@@ -94,6 +94,8 @@ export const dotsConfig: PointConfig<State> = {
   view: (host, quality) => new PaperView(host, quality, paper),
   colors: PENCILS as [string, string],
   keyPoints: (s) => dotsPoints(s.size),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "닷츠 앤 박시스",
   english: "Dots and Boxes",
   number: "NO. 14 — PENCIL LINES",

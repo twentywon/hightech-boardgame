@@ -14,6 +14,8 @@ export const fourRowConfig: PointConfig<State> = {
   // The keyboard walks along the tops of the columns.
   keyPoints: () => Array.from({ length: COLS }, (_, col) => ({ x: cellAt(col).x, z: 0 })),
   keyStart: () => 3,
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "사목",
   english: "Four in a Row",
   number: "NO. 21 — DROP FOUR",

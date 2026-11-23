@@ -1,0 +1,355 @@
+import { GuestRoom, HostRoom, cleanName, type Link } from "../net/room";
+import { answerInvite, invite, webrtcAvailable, type PeerLink } from "../net/peer";
+import { qrSvg } from "../net/qr";
+import { codeProblem, PREFIX } from "../net/sdp";
+import { cameraProblem, scan } from "../net/scan";
+import type { NetRules } from "../net/match";
+import type { SeatInfo, SeatKind } from "../net/protocol";
+import type { GameOptions } from "../games/points/types";
+
+/**
+ * The window of a room played over one Wi-Fi (와이파이 여럿이): who is in, who sits where, and the pairing of a new
+ * device by QR codes both ways (the host shows an offer, the guest reads it and shows its answer, the host reads
+ * that). Every code is also shown as text with a copy button and taken pasted (no camera: a page opened from a file,
+ * a browser test). Before a game it is the lobby; during one, the 방 button over the table opens it again (people
+ * and their connection, the host's 다음 사람 연결 for someone coming back, a guest's 다시 참가).
+ */
+export type AnyRoom<S> = HostRoom<S> | GuestRoom<S>;
+export interface LobbyOptions<S> {
+  game: string;
+  title: string;
+  variant: string;
+  options: GameOptions;
+  seats: SeatInfo[];
+  /** The fewest people seated before the host may start. */
+  least: number;
+  rules: NetRules<S>;
+  /** A room already made (the 방 button during a game). */
+  room?: AnyRoom<S>;
+  /** A room was made: the screen listens to it from now on. */
+  opened(room: AnyRoom<S>): void;
+  /** The window was closed while no game of its room had begun. */
+  cancelled(room: AnyRoom<S> | null): void;
+}
+export interface Lobby {
+  readonly dialog: HTMLDialogElement;
+  refresh(): void;
+  close(): void;
+}
+/** The name typed last, for this page only (nothing is stored). */
+let lastName = "";
+const escape = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const KIND_WORD: Partial<Record<SeatKind, string>> = { open: "비어 있음", computer: "컴퓨터", closed: "닫힘" };
+
+async function copy(text: string, field: HTMLTextAreaElement | null) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Without the clipboard (a page opened from a file): the text is selected for the person's own copy.
+    field?.focus();
+    field?.select();
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    }
+  }
+}
+
+export function openLobby<S>(o: LobbyOptions<S>): Lobby {
+  let room: AnyRoom<S> | null = o.room ?? null,
+    stopScan: (() => void) | null = null,
+    closed = false,
+    // The pairing in hand: the host's invite for the next guest, or a guest's answer.
+    pairing: { link: PeerLink; accept?: (answer: string) => Promise<string | null>; code: string } | null = null,
+    pairNote = "",
+    busy = false;
+  const d = document.createElement("dialog");
+  d.className = "setup-dialog net-lobby";
+  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES · 와이파이 여럿이</div><h2></h2><p class="setup-note">같은 와이파이에 있는 기기끼리 QR 코드로 바로 연결합니다. 인터넷도 서버도 쓰지 않습니다.</p><div class="dialog-body net-body"></div><div class="dialog-actions"><button id="net-cancel">← 뒤로</button></div>`;
+  d.querySelector("h2")!.textContent = o.title;
+  const body = d.querySelector<HTMLElement>(".net-body")!,
+    cancel = d.querySelector<HTMLButtonElement>("#net-cancel")!;
+  document.body.append(d);
+  const started = () => !!room?.match;
+  const host = () => (room?.host ? (room as HostRoom<S>) : null);
+  const guest = () => (room && !room.host ? (room as GuestRoom<S>) : null);
+  const finish = () => {
+    if (closed) return;
+    closed = true;
+    stopScan?.();
+    // A pairing never finished is let go (a link that opened belongs to the room by now).
+    if (pairing && !(pairing.link as PeerLink).open) pairing.link.close();
+    pairing = null;
+    if (d.open) d.close();
+    d.remove();
+    if (!started()) o.cancelled(room);
+  };
+  cancel.onclick = finish;
+  d.addEventListener("close", finish);
+  d.addEventListener("cancel", (e) => {
+    e.preventDefault();
+    finish();
+  });
+
+  /** Who is in the room. */
+  const peopleList = () =>
+    room
+      ? `<ul class="net-people" aria-label="방에 있는 사람">${room.people
+          .map((p) => `<li class="${p.connected ? "" : "away"}"><b>${escape(p.name)}</b>${p.id === room!.me ? " <small>(나)</small>" : ""}${p.host ? " <small>방장</small>" : ""}${p.connected ? "" : " <small>연결 끊김</small>"}</li>`)
+          .join("")}</ul>`
+      : "";
+  /** Who sits where; the host may make a seat a computer's or closed, anyone may take an open one. */
+  const seatList = () => {
+    if (!room) return "";
+    const fixed = started();
+    return `<ul class="net-seats" aria-label="자리">${room.seats
+      .map((s, i) => {
+        const who = s.kind === "person" ? (s.person === room!.me ? "나" : escape(room!.person(s.person)?.name ?? "")) : KIND_WORD[s.kind];
+        const sit = !fixed && (s.kind === "open" || (room!.host && s.kind !== "person")) && room!.mySeat !== i ? `<button class="net-sit" data-seat="${i}">앉기</button>` : "";
+        const stand = !fixed && room!.mySeat === i ? `<button class="net-stand" data-seat="${i}">일어나기</button>` : "";
+        const kinds =
+          !fixed && room!.host && s.kind !== "person"
+            ? [...s.kinds, "open" as SeatKind]
+                .filter((k) => k !== s.kind)
+                .map((k) => `<button class="net-kind" data-seat="${i}" data-kind="${k}">${k === "open" ? "비우기" : KIND_WORD[k]}</button>`)
+                .join("")
+            : "";
+        return `<li class="net-seat ${s.kind}" data-seat="${i}"><i class="net-dot" style="background:${escape(s.color)}"></i><b>${escape(s.label)}</b><span class="net-who">${who}${room!.away(i) ? " (연결 끊김)" : ""}</span><span class="net-seat-actions">${sit}${stand}${kinds}</span></li>`;
+      })
+      .join("")}</ul>`;
+  };
+  /** A code shown as a QR picture, as text and with a copy button. */
+  const codeBlock = (code: string, id: string, what: string) =>
+    `<div class="net-code"><div class="net-qr-box">${qrSvg(code, `${what} QR 코드`)}</div><label class="net-text">${what} (글자로)<textarea id="${id}" readonly rows="3" spellcheck="false">${escape(code)}</textarea></label><button class="net-copy" data-copy="${id}">코드 복사</button></div>`;
+  /** A field to paste a code into, with the camera beside it. */
+  const pasteBlock = (id: string, what: string, go: string, goId: string) =>
+    `<div class="net-paste"><label>${what}<textarea id="${id}" rows="2" spellcheck="false" autocapitalize="characters" placeholder="${PREFIX}…"></textarea></label><div class="net-paste-actions"><button class="net-scan-start" data-for="${id}">카메라로 읽기</button><button id="${goId}" class="net-go">${go}</button></div><div class="net-scan" hidden><video playsinline muted></video><button class="net-scan-stop">그만 읽기</button></div></div>`;
+
+  function render() {
+    if (closed) return;
+    stopScan?.();
+    stopScan = null;
+    const net = webrtcAvailable();
+    let html = "";
+    if (!room) {
+      html = net
+        ? `<label class="net-name-field">내 이름<input id="net-name" maxlength="12" value="${escape(lastName)}" placeholder="플레이어" autocomplete="nickname"></label><div class="net-roles"><button id="net-host" class="net-role"><b>방 만들기</b><small>이 기기가 방장이 됩니다. 다른 기기를 한 대씩 연결하고 시작합니다.</small></button><button id="net-join" class="net-role"><b>참가하기</b><small>방장의 기기에 나온 QR 코드를 읽어 들어갑니다. 같은 게임을 고른 뒤 누르세요.</small></button></div>`
+        : `<p class="net-problem">이 브라우저에서는 기기끼리 바로 연결(WebRTC)을 쓸 수 없습니다. 최신 Chrome에서 열어 주세요.</p>`;
+    } else if (room.host) {
+      const h = room as HostRoom<S>,
+        problem = h.startProblem(o.least);
+      // While a device is being paired its codes come first (the QR code must be in view to be read).
+      const status = started()
+          ? `<p class="net-status">게임 중입니다. 연결이 끊긴 사람은 다음 사람 연결로 다시 들어올 수 있습니다.</p>`
+          : `<p class="net-status">방을 열었습니다. 다음 사람 연결을 눌러 기기를 한 대씩 연결하세요.</p>`,
+        room_ = `<h3>자리</h3>${seatList()}<h3>사람 <small>${room.people.length}/8</small></h3>${peopleList()}`,
+        pair = pairing
+          ? `<section class="net-pair"><h3>다음 사람 연결</h3><ol class="net-steps"><li>참가할 기기에서 같은 게임 → 와이파이 여럿이 → 참가하기를 누르고 이 QR 코드를 읽습니다.</li><li>그 기기에 나온 답 QR 코드를 이 기기로 읽거나, 답 코드를 붙여 넣고 연결을 누릅니다.</li></ol>${codeBlock(pairing.code, "net-offer", "초대 코드")}${pasteBlock("net-answer-in", "참가하는 기기의 답 코드", "연결", "net-connect")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
+          : `<button id="net-invite" class="net-invite" ${busy || room.people.length >= 8 ? "disabled" : ""}>${busy ? "초대 코드를 만드는 중…" : "다음 사람 연결"}</button>${pairNote ? `<p class="net-pair-note" role="status">${escape(pairNote)}</p>` : ""}`,
+        begin = started() ? "" : `<p class="net-problem" ${problem ? "" : "hidden"}>${escape(problem ?? "")}</p><button id="net-start" class="primary" ${problem ? "disabled" : ""}>시작</button>`;
+      html = pairing ? pair + room_ + begin : status + room_ + pair + begin;
+    } else {
+      const g = room as GuestRoom<S>;
+      const status = g.online
+        ? started()
+          ? "게임 중입니다."
+          : `${escape(g.hostName)} 님의 방에 들어왔습니다. 자리를 고르고 방장이 시작하기를 기다리세요.`
+        : pairing
+          ? "아래 답 QR 코드를 방장의 기기로 읽게 하거나, 답 코드를 복사해 방장에게 보내세요. 연결되면 자리가 나옵니다."
+          : g.match
+            ? `${escape(g.reason || "방장과의 연결이 끊겼습니다.")} 방장이 다음 사람 연결을 누르면 새 초대 코드로 다시 참가하세요.`
+            : g.reason
+              ? `${escape(g.reason)} 다시 하려면 새 초대 코드를 넣으세요.`
+              : "방장의 기기에 나온 초대 QR 코드를 읽거나, 초대 코드를 붙여 넣으세요.";
+      html =
+        `<p class="net-status" role="status">${status}</p>` +
+        (g.online
+          ? `<h3>자리</h3>${seatList()}<h3>사람</h3>${peopleList()}`
+          : pairing
+            ? `<section class="net-pair">${codeBlock(pairing.code, "net-answer", "답 코드")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
+            : `<section class="net-pair">${pasteBlock("net-offer-in", "방장의 초대 코드", "다음", "net-accept")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`);
+    }
+    body.innerHTML = html;
+    cancel.textContent = started() ? "닫기" : "← 뒤로";
+    bind();
+  }
+
+  const onPress = (selector: string, fn: () => void) => {
+    const button = body.querySelector<HTMLButtonElement>(selector);
+    if (button) button.onclick = fn;
+  };
+  function bind() {
+    onPress("#net-host", () => {
+      lastName = cleanName(body.querySelector<HTMLInputElement>("#net-name")!.value);
+      room = new HostRoom({ game: o.game, title: o.title, name: lastName, variant: o.variant, options: o.options, seats: o.seats }, o.rules);
+      o.opened(room);
+      render();
+    });
+    onPress("#net-join", () => {
+      lastName = cleanName(body.querySelector<HTMLInputElement>("#net-name")!.value);
+      room = new GuestRoom({ game: o.game, title: o.title, name: lastName }, o.rules);
+      o.opened(room);
+      render();
+    });
+    onPress("#net-invite", startInvite);
+    onPress("#net-connect", () => takeAnswer(body.querySelector<HTMLTextAreaElement>("#net-answer-in")!.value));
+    onPress("#net-accept", () => takeOffer(body.querySelector<HTMLTextAreaElement>("#net-offer-in")!.value));
+    onPress("#net-start", () => host()?.begin());
+    body.querySelectorAll<HTMLButtonElement>(".net-sit").forEach((b) => (b.onclick = () => sit(Number(b.dataset.seat))));
+    body.querySelectorAll<HTMLButtonElement>(".net-stand").forEach((b) => (b.onclick = () => sit(null)));
+    body.querySelectorAll<HTMLButtonElement>(".net-kind").forEach((b) => (b.onclick = () => host()?.setKind(Number(b.dataset.seat), b.dataset.kind as SeatKind)));
+    body.querySelectorAll<HTMLButtonElement>(".net-copy").forEach(
+      (b) =>
+        (b.onclick = async () => {
+          const field = body.querySelector<HTMLTextAreaElement>(`#${b.dataset.copy}`);
+          const done = await copy(field?.value ?? "", field);
+          b.textContent = done ? "복사했습니다" : "글자를 길게 눌러 복사하세요";
+        }),
+    );
+    body.querySelectorAll<HTMLButtonElement>(".net-scan-start").forEach((b) => {
+      const problem = cameraProblem();
+      if (problem) {
+        b.disabled = true;
+        b.title = problem;
+      }
+      b.onclick = () => {
+        const box = b.closest(".net-paste")!,
+          view = box.querySelector<HTMLElement>(".net-scan")!,
+          video = view.querySelector("video")!,
+          field = box.querySelector<HTMLTextAreaElement>("textarea")!;
+        view.hidden = false;
+        stopScan?.();
+        stopScan = scan(
+          video,
+          (text) => !codeProblem(text),
+          (text) => {
+            view.hidden = true;
+            field.value = text;
+            box.querySelector<HTMLButtonElement>(".net-go")?.click();
+          },
+          (words) => {
+            view.hidden = true;
+            note(words);
+          },
+        );
+        view.querySelector<HTMLButtonElement>(".net-scan-stop")!.onclick = () => {
+          stopScan?.();
+          view.hidden = true;
+        };
+      };
+    });
+  }
+  const note = (text: string) => {
+    pairNote = text;
+    const line = body.querySelector(".net-pair-note");
+    if (line) line.textContent = text;
+    else render();
+  };
+  function sit(seat: number | null) {
+    if (room?.host) (room as HostRoom<S>).sit(seat);
+    else (room as GuestRoom<S>)?.sit(seat);
+  }
+  /** The host makes an offer for the next guest. */
+  async function startInvite() {
+    const h = host();
+    if (!h || busy) return;
+    busy = true;
+    pairNote = "";
+    render();
+    try {
+      const made = await invite();
+      if (closed) return made.link.close();
+      pairing = made;
+      made.link.opened.then(
+        () => {
+          if (pairing?.link === made.link) pairing = null;
+          h.connect(made.link as Link);
+          pairNote = "연결되었습니다. 다음 사람이 있으면 다시 누르세요.";
+          render();
+        },
+        () => {
+          if (pairing?.link !== made.link) return;
+          pairing = null;
+          pairNote = "연결하지 못했습니다. 두 기기가 같은 와이파이에 있는지 확인하고 다시 해 보세요.";
+          render();
+        },
+      );
+    } catch {
+      pairNote = "초대 코드를 만들지 못했습니다.";
+    }
+    busy = false;
+    render();
+  }
+  async function takeAnswer(code: string) {
+    const h = host(),
+      p = pairing;
+    if (!h || !p?.accept) return;
+    const problem = codeProblem(code);
+    if (problem) return note(problem);
+    note("연결하는 중…");
+    const refused = await p.accept(code.trim());
+    if (refused) return note(refused);
+    // On one Wi-Fi it opens within a second or two; if it never does the two devices cannot see each other.
+    setTimeout(() => {
+      if (pairing?.link === p.link && !p.link.open) note("아직 연결되지 않았습니다. 두 기기가 같은 와이파이에 있는지, 학교·회사 와이파이가 기기끼리의 연결을 막지 않는지 확인하세요.");
+    }, 12000);
+  }
+  async function takeOffer(code: string) {
+    const g = guest();
+    if (!g || busy) return;
+    const problem = codeProblem(code);
+    if (problem) return note(problem);
+    busy = true;
+    note("답 코드를 만드는 중…");
+    const made = await answerInvite(code.trim());
+    busy = false;
+    if (typeof made === "string") return note(made);
+    if (closed) return made.link.close();
+    pairing = made;
+    pairNote = "";
+    made.link.opened.then(
+      () => {
+        pairing = null;
+        pairNote = "";
+        g.connect(made.link as Link);
+        render();
+      },
+      () => {
+        if (pairing?.link !== made.link) return;
+        pairing = null;
+        pairNote = "연결하지 못했습니다. 방장에게 새 초대 코드를 받아 다시 해 보세요.";
+        render();
+      },
+    );
+    render();
+  }
+
+  render();
+  d.showModal();
+  if (!room) d.querySelector<HTMLInputElement>("#net-name")?.focus();
+  return {
+    dialog: d,
+    refresh() {
+      // Typing in a field is not interrupted: only what the room shows is drawn again.
+      if (closed) return;
+      const typing = body.querySelector<HTMLTextAreaElement>("#net-answer-in, #net-offer-in");
+      if (typing?.value && !room?.match) {
+        const seats = body.querySelector(".net-seats"),
+          people = body.querySelector(".net-people");
+        if (seats) seats.outerHTML = seatList();
+        if (people) people.outerHTML = peopleList();
+        bind();
+        return;
+      }
+      render();
+    },
+    close() {
+      closed = true;
+      stopScan?.();
+      if (d.open) d.close();
+      d.remove();
+    },
+  };
+}

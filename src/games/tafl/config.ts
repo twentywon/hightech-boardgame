@@ -23,6 +23,8 @@ export const taflConfig: PointConfig<State> = {
     // 잡혔다! when the computer has taken mine.
     return mode === "ai" && state.turn === 0 ? "잡혔다!" : "잡았다!";
   },
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "바이킹 체스",
   english: "Hnefatafl",
   number: "NO. 55 — THE KING'S TABLE",

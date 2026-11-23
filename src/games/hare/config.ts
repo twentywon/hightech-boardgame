@@ -20,6 +20,8 @@ export const hareConfig: PointConfig<State> = {
   firstNote: "사냥개가 먼저 둡니다. 토끼를 고르면 컴퓨터가 먼저 움직입니다.",
   // The dogs bark as they set off; the hare patters.
   contact: (sound, state) => (state.last && state.hare === state.last.to ? sound.hop() : sound.bark()),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "토끼와 사냥개",
   english: "Hare and Hounds",
   number: "NO. 23 — THE CHASE",

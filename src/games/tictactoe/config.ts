@@ -17,6 +17,8 @@ export const tictactoeConfig: PointConfig<State> = {
   // The keyboard walks the cells (in the cube, layer by layer as they are set back).
   keyPoints: (state) => state.cells.map((_, cell) => ({ x: cellPos(state.mode, cell).x, z: cellPos(state.mode, cell).z - cellPos(state.mode, cell).y * 0.4 })),
   keyStart: (state) => (state.mode === "ultimate" ? 40 : state.mode === "cube" ? 21 : 4),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "틱택토",
   english: "Tic-Tac-Toe",
   number: "NO. 68 — THREE IN A ROW",

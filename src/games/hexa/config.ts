@@ -13,6 +13,8 @@ export const hexaConfig: PointConfig<State> = {
   // A copy pops off its parent with a squelch, a jump whooshes and splats down, and germs won over gurgle.
   contact: (sound) =>
     germCue.kind === "clone" ? sound.squish(0.3) : germCue.kind === "jump" ? sound.whoosh(germCue.land) : germCue.kind === "convert" ? sound.gurgle(germCue.count) : sound.plunk(0.5, 0.3),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "헥사 세균전",
   english: "Hexa Germ War",
   number: "NO. 10 — SPREAD",

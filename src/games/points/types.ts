@@ -24,8 +24,12 @@ export interface Effect {
   removed: number[];
 }
 export interface PointGame<S> {
-  /** A new game of `variant`; `options` are the numbers and rules set in the setup window, for a game that offers them. */
-  create(variant: string, options?: GameOptions): S;
+  /**
+   * A new game of `variant`; `options` are the numbers and rules set in the setup window, for a game that offers them.
+   * A game that draws anything at random as it is laid (a map) draws it from `random` when it is given (a game over
+   * Wi-Fi passes the room's shared stream, so every device lays the same).
+   */
+  create(variant: string, options?: GameOptions, random?: () => number): S;
   /** Every legal move of the player to move; empty once the game is over. */
   moves(state: S): Move[];
   /**

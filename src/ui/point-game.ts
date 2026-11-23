@@ -7,9 +7,15 @@ import { INK, PointBoardView, type BoardSpec, type Marks } from "../games/points
 import { cryptoRandom } from "../core/random";
 import { Sound } from "../engine/sound";
 import type { Settings } from "../core/storage";
+import { HOST_ONLY, type NetRules } from "../net/match";
+import { pointRules, type NetSpec } from "../net/points";
+import type { SeatInfo, SeatKind } from "../net/protocol";
+import type { GuestRoom, HostRoom } from "../net/room";
+import { openLobby, type AnyRoom, type Lobby } from "./net-lobby";
 
 export interface PointOptions {
-  mode: "local" | "ai";
+  /** "net": several devices on one Wi-Fi (와이파이 여럿이), for a game with `net`; the game itself is then played as "local". */
+  mode: "local" | "ai" | "net";
   variant: string;
   level: Level;
   /** What was set for a game's own `settings`, by id (kept for this page only, like the rest). */
@@ -28,6 +34,8 @@ export type PointSetting = {
   note?: string;
   ai?: boolean;
   local?: boolean;
+  /** False: a `local` setting not offered over Wi-Fi either (the room's seats say it: hex conquest's 사람 수). */
+  net?: boolean;
   fixed?: string[];
 } & (
   | { kind: "number"; value: number; min: number; max: number }
@@ -161,6 +169,8 @@ export interface PointConfig<S> {
   localLabel?: string;
   /** Who moves first against the computer, when it is not simply side 0. */
   firstNote?: string;
+  /** Play over one Wi-Fi (와이파이 여럿이): offered as a third mode for a game that sets it. */
+  net?: NetSpec<S>;
   /** What a piece coming to rest sounds like, instead of a tap. */
   contact?: (sound: Sound, state: S) => void;
   /** How the strikes of a shot sound, where a disc, a cushion and a pocket each have their own. */
@@ -224,7 +234,8 @@ export interface PointController {
 const QUEUE_LIMIT = 24;
 /** How long a failure stands on the table before a `restartOnFail` puzzle begins again. */
 const RESTART_AFTER = 1600;
-const offered = (setting: PointSetting, variant: string, mode: PointOptions["mode"]) => !setting.fixed?.includes(variant) && (!setting.ai || mode === "ai") && (!setting.local || mode === "local");
+const offered = (setting: PointSetting, variant: string, mode: PointOptions["mode"]) =>
+  !setting.fixed?.includes(variant) && (!setting.ai || mode === "ai") && (!setting.local || mode === "local" || (mode === "net" && setting.net !== false));
 /** A setting's value as it may be used: a whole number within its bounds, a rule on or off, one of its choices; else its own. */
 function settled(setting: PointSetting, value: unknown): number | boolean | string {
   if (setting.kind === "number") {
@@ -257,7 +268,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   sound.enabled = nav.settings.sound;
   let settings = nav.settings,
     preferences = { ...nav.preferences },
-    mode = preferences.mode,
+    // The game is played as for people at one screen over Wi-Fi as well; `net` tells the room apart.
+    mode: "local" | "ai" = preferences.mode === "ai" ? "ai" : "local",
     variant = preferences.variant,
     level = preferences.level,
     // The numbers and rules the game now on the table was set up with (none for most games).
@@ -286,6 +298,16 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     chosen: { from?: number; to?: number } = {},
     cursor: number | null = null;
   const timers = new Set<ReturnType<typeof setTimeout>>();
+  /** Over Wi-Fi the computer's strength matters only where it may take a seat or stand in for someone who dropped. */
+  const netLevel = !!config.net && (config.net.standIn !== false || !config.net.seats || config.net.seats(preferences.variant).some((seat) => seat.kinds.includes("computer")));
+  // A game over Wi-Fi: its room (null at one screen or against the computer), the room's window while it is open,
+  // the states the room has told and the table has still to show (each in turn, once the table rests), a move of
+  // mine sent to the host and not yet answered, and why the host is gone.
+  let net: { room: AnyRoom<S> } | null = null,
+    lobby: Lobby | null = null,
+    inbox: S[] = [],
+    sending = false,
+    lost = "";
   const $ = <E extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as E;
   const later = (fn: () => void, ms: number) => {
     const timer = setTimeout(() => {
@@ -297,11 +319,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   const over = (s: S = state) => game.winner(s) !== null;
   const solo = !!config.solo,
     alone = solo || !!config.computerOnly;
-  const computerTurn = (s: S = state) => mode === "ai" && !solo && game.turn(s) === 1 && !over(s);
+  const computerTurn = (s: S = state) => (net ? netComputer(s) : mode === "ai" && !solo && game.turn(s) === 1 && !over(s));
   const sides = () => config.sidesOf?.(variant, shown) ?? config.sides;
   /** Played alone: the game is for one, or this variant of it is. */
   const lone = () => solo || !!config.soloOf?.(variant);
   const who = (player: number) =>
+    (net ? netWho(player) : null) ??
     config.whoOf?.(shown, player, mode) ??
     (lone() ? "나" : mode === "local" ? `${sides()[player]} (플레이어 ${player + 1})` : player === 0 ? `나 (${sides()[0]})` : `컴퓨터 · ${LEVELS[level].label} (${sides()[1]})`);
   function stop() {
@@ -315,7 +338,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
     else if (config.stages) return stagePicker(host);
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> ${config.localLabel ?? "로컬 2인"}</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label></div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    else if (net) return netNewGame(host);
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> ${config.localLabel ?? "로컬 2인"}</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label>${config.net ? `<label><input type="radio" name="pg-mode" value="net"> 와이파이 여럿이</label>` : ""}</div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
     /** The game's own settings as the form has them, each shown only where it is offered. */
     const readSettings = () => {
@@ -333,7 +357,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
           field.querySelector<HTMLButtonElement>('[data-step="-1"]')!.disabled = now <= setting.min;
           field.querySelector<HTMLButtonElement>('[data-step="1"]')!.disabled = now >= setting.max;
         }
-        field.hidden = !offered(setting, document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant, [...radios].find((r) => r.checked)?.value === "ai" || alone ? "ai" : "local");
+        const checked = [...radios].find((r) => r.checked)?.value as PointOptions["mode"] | undefined;
+        field.hidden = !offered(setting, document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant, alone || checked === "ai" ? "ai" : checked === "net" ? "net" : "local");
       }
       return out;
     };
@@ -344,7 +369,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         level: $<HTMLSelectElement>("pg-level").value as Level,
         ...(config.settings ? { settings: readSettings() } : preferences.settings ? { settings: preferences.settings } : {}),
       };
-      $("pg-options").hidden = $("pg-level-field").hidden = solo || preferences.mode !== "ai";
+      $("pg-options").hidden = solo || preferences.mode !== "ai";
+      // Over Wi-Fi the host's computer may take a seat: its strength is chosen here too.
+      $("pg-level-field").hidden = solo || preferences.mode === "local" || (preferences.mode === "net" && !netLevel);
       nav.remember({ ...preferences });
     };
     if (alone) preferences = { ...preferences, mode: "ai" };
@@ -360,7 +387,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         if (art) option.dataset.icon = art;
       }
     $("pg-level").onchange = remember;
-    $("pg-options").hidden = $("pg-level-field").hidden = solo || preferences.mode !== "ai";
+    $("pg-options").hidden = solo || preferences.mode !== "ai";
+    $("pg-level-field").hidden = solo || preferences.mode === "local" || (preferences.mode === "net" && !netLevel);
     // A game's own numbers: − and + step within bounds, a typed number counts once it is whole and in bounds (and is
     // brought within them when the field is left); rules and choices are remembered as they change.
     for (const setting of config.settings ?? []) {
@@ -469,7 +497,10 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     );
   }
   function start(pick = !!config.stages && !!config.stagesFirst) {
-    mode = alone ? "ai" : preferences.mode;
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    if (!alone && config.net && preferences.mode === "net") return openRoom();
+    leaveRoom();
+    mode = alone || preferences.mode === "ai" ? "ai" : "local";
     variant = preferences.variant;
     level = preferences.level;
     options = optionsOf(config.settings, preferences, mode);
@@ -499,6 +530,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       nav.header() +
       `<main class="game-layout yacht-game point-game${config.shape ? ` board-${config.shape}` : ""}${config.noPanel ? " no-panel" : ""}${solo ? " solo" : ""}${config.toolsLayout ? ` tools-${config.toolsLayout}` : ""}${config.panel ? ` panel-${config.panel}` : ""}"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>${config.name} <small>${config.english.toUpperCase()}</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button>${config.turnable ? `<button id="camera">시점 전환</button>` : ""}<button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>${config.tableLabel}</span><span>${config.tableNote(variant, options)}</span></div><div id="board"></div><div class="pg-tools">${(config.tools ?? []).map((tool, i) => `<button id="pg-tool-${i}" class="pg-tool${tool.onBoard ? " sr-only" : ""}"${tool.area ? ` style="grid-area:${tool.area}"` : ""}${tool.name ? ` aria-label="${tool.name}"` : ""} hidden>${tool.label}</button>`).join("")}</div>${config.pausable ? `<div class="board-pause"><button id="pg-pause" class="board-icon pause-icon" aria-label="일시정지"><i aria-hidden="true"></i></button></div>` : ""}<div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar pg-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${side(0)}${side(1)}</ul>${config.puzzle ? `<div class="puzzle-panel"><p class="puzzle-stage" id="pz-stage"></p><div class="puzzle-levels" role="group" aria-label="난이도">${(config.stages ?? []).map((stage) => `<button class="puzzle-level" data-stage="${stage.value}" aria-pressed="${stage.value === variant}"><b>${stage.name}</b><small>${stage.note}</small></button>`).join("")}</div><div class="puzzle-actions"><button id="pz-hint">힌트</button><button id="pg-undo">무르기</button><button id="pz-restart">처음부터</button><button id="pz-new">다른 퍼즐</button></div><button id="pz-next" class="primary" hidden>다음 스테이지 →</button></div>` : ""}<div class="yd-controls">${config.action ? `<button id="pg-action" class="primary">${config.action}</button>` : ""}${config.puzzle ? "" : `<button id="pg-undo" ${config.action || config.noUndo ? "hidden" : ""}>무르기</button>`}<p id="pg-note" class="input-help"></p><p class="input-help">${config.help ?? "마우스·터치: 말을 누른 뒤 갈 곳을 누릅니다<br>키보드: 판을 선택하고 방향키·Enter, Escape로 취소"}</p></div><div id="pg-result" class="yd-result" hidden><p id="pg-final"></p><button id="pg-again" class="primary">다시 플레이</button></div></aside></div></main>`;
     nav.bindHeader();
+    if (net) dressNet();
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
     // A puzzle keeps its buttons in the panel; any other game has them moved onto the table.
@@ -657,6 +689,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   /** A tap on a point (or -1): the choice it completes is played at once. */
   function pick(point: number) {
     if (busy() || computerTurn() || over()) return;
+    if (net && !netMine()) return netWarn();
     hinted = null;
     // A move that needs no piece (a tool, a draw) is played from wherever the choice stands.
     const direct = game.moves(state).filter((m) => m.from === -1 && m.to === point && m.extra === -1);
@@ -696,6 +729,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   /** Plays a move of mine; false when it was refused (or could not be played now). `ahead` is a move kept in the queue whose turn has come. */
   function commit(move: Move, ahead = false): boolean {
+    if (net) return netCommit(move);
     if (config.queueMoves && !paused && !over() && ((busy() && state !== shown) || (!ahead && config.queueMoves === "all" && queued.length))) {
       // Still moving: kept and played the moment the table rests (after those given before it, with "all").
       if (config.queueMoves === "all") {
@@ -790,6 +824,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     commit(made);
   }
   function undo() {
+    if (net) return netUndo();
     queued = [];
     if (busy() || !past.length) return;
     // Against the computer, go back to my own last turn.
@@ -820,6 +855,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       thinking = false;
       if (current !== generation || !next) {
         update();
+        return;
+      }
+      // Over Wi-Fi the host's computer moves through the room, which tells every device (this one included).
+      if (net) {
+        if ((net.room as HostRoom<S>).play(move!, netRules().toMove(state))) update();
         return;
       }
       past.push(state);
@@ -853,6 +893,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       waitingSet = null;
     }
     update();
+    // Over Wi-Fi a move the room told while the table was moving is shown now.
+    if (drain()) return;
     if (queued.length) {
       // The next move given ahead; with "all", a refused one drops those after it, and none is played after the end.
       const move = queued.shift()!;
@@ -871,7 +913,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (over() && !announced) {
       announced = true;
       if (config.bankrupt?.(state)) bankrupt();
-      if (mode === "ai" && game.winner(state) === 1) sound.lose();
+      if ((mode === "ai" && !net && game.winner(state) === 1) || (net && netOutcome(state) === "lose")) sound.lose();
       else sound.win();
     }
     computer();
@@ -884,7 +926,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       bot = computerTurn(s),
       done = over(s),
       turn = game.turn(s),
-      next = done || bot || waiting ? null : stage();
+      // Over Wi-Fi nothing is offered on another seat's turn.
+      next = done || bot || waiting || (net && !netMine(s)) ? null : stage();
     $("board").dataset.animating = String(!!view?.animating || state !== shown || thinking);
     $("board").dataset.turn = String(turn);
     $("move-count").textContent = `${game.ply(s)}수`;
@@ -917,10 +960,12 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         : game.hint(s)
       : done
       ? "대국이 끝났습니다."
+      : net && netLine(s)
+      ? netLine(s)!
       : state !== shown
         ? (config.movingText ?? "말이 움직이는 중…")
         : bot
-          ? (config.thinkingText?.(s) ?? `${who(1)}가 생각하는 중…`)
+          ? (config.thinkingText?.(s) ?? `${who(net ? turn : 1)}가 생각하는 중…`)
           : next?.field === "extra"
             ? `${who(turn)} 차례 — ${config.extraHint ?? "떼어낼 상대 말을 고르세요."}`
             : next?.field === "to" && chosen.from !== undefined
@@ -936,7 +981,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       else $(`pg-count-${p}`).textContent = tally[p];
       $(`pg-side-${p}`).classList.toggle("active", !done && turn === p);
     }
-    $<HTMLButtonElement>("pg-undo").disabled = waiting || !past.length;
+    $<HTMLButtonElement>("pg-undo").disabled = waiting || (net ? !netCanUndo() : !past.length);
     if (config.action) $<HTMLButtonElement>("pg-action").disabled = waiting || bot || done;
     // A tool is offered only while the move it stands for is legal.
     (config.tools ?? []).forEach((tool, i) => {
@@ -945,7 +990,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       const kept = !done && !legal && !!tool.keep?.(s);
       button.hidden = done || !(tool.show ? tool.show(s) : legal || kept);
       button.style.visibility = kept ? "hidden" : "";
-      button.disabled = waiting || bot || !legal;
+      button.disabled = waiting || bot || !legal || (!!net && !netMine(s));
       if (tool.text) button.textContent = tool.text(s);
     });
     $("pg-note").textContent = notice;
@@ -975,7 +1020,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     view?.setMarks(capturing() ? { movable: [], selected: null, targets: [], removable: [], cursor: null } : marks);
 
     // Whether the person at the screen won, lost or drew: two at one screen always have a winner to cheer.
-    $("pg-result").dataset.outcome = game.winner(s) === "draw" ? "draw" : mode === "ai" && game.winner(s) === 1 ? "lose" : "win";
+    $("pg-result").dataset.outcome = net ? netOutcome(s) : game.winner(s) === "draw" ? "draw" : mode === "ai" && game.winner(s) === 1 ? "lose" : "win";
     // A puzzle tells its end in the panel and the status line; no window comes up.
     $("pg-result").hidden = !done || !!config.puzzle;
     if (done) {
@@ -984,8 +1029,330 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         ? game.reason(s)
         : winner === "draw"
           ? `비겼습니다. ${game.reason(s)}`
-          : `${mode === "ai" ? (winner === 0 ? "이겼습니다!" : "컴퓨터가 이겼습니다.") : `${who(winner as number)} 승리!`} ${game.reason(s)}`;
+          : net
+            ? `${netOutcome(s) === "win" ? "이겼습니다!" : `${netWinner(s)} 승리!`} ${game.reason(s)}`
+            : `${mode === "ai" ? (winner === 0 ? "이겼습니다!" : "컴퓨터가 이겼습니다.") : `${who(winner as number)} 승리!`} ${game.reason(s)}`;
     }
+  }
+  // ─────────────── Over Wi-Fi (와이파이 여럿이) ───────────────
+  /** The game as a room plays it: laid from the room's start and seed, the seat to move, what a room refuses. */
+  const rules: NetRules<S> | null = config.net ? pointRules(game, config.net) : null;
+  const netRules = () => rules!;
+  /** The seats a new room offers: the game's own, or its two sides (either may be the host's computer). */
+  function netSeats(v: string): SeatInfo[] {
+    const colors = config.board?.(v)?.colors ?? config.colorsOf?.(v) ?? config.colors ?? ["#16181a", "#efe7d6"],
+      names = config.sidesOf?.(v) ?? config.sides,
+      list = config.net!.seats?.(v) ?? [0, 1].map((p) => ({ label: names[p], color: colors[p], kinds: ["computer"] as SeatKind[] }));
+    return list.map((seat) => ({ ...seat, kind: "open" as SeatKind, person: null }));
+  }
+  /** The room's window: the lobby before a game (a room is made or joined there), the room as it stands during one. */
+  function openRoom() {
+    if (lobby || !rules) return;
+    const v = preferences.variant;
+    lobby = openLobby({
+      game: document.documentElement.dataset.game ?? config.english,
+      title: config.name,
+      variant: v,
+      options: optionsOf(config.settings, preferences, "net"),
+      seats: netSeats(v),
+      least: config.net!.least ?? 2,
+      rules,
+      room: net?.room,
+      opened: listen,
+      cancelled: () => {
+        lobby = null;
+        // Closed before a game began: the room goes, and without a table behind it is back to the collection.
+        leaveRoom();
+        if (!document.getElementById("pg-undo")) nav.back();
+        else update();
+      },
+    });
+    lobby.dialog.addEventListener("close", () => {
+      lobby = null;
+      later(update, 0);
+    });
+  }
+  /** The screen follows its room from now on. */
+  function listen(room: AnyRoom<S>) {
+    net = { room };
+    lost = "";
+    const table = () => !!document.getElementById("pg-undo") && net?.room === room;
+    room.events = {
+      changed: () => {
+        lobby?.refresh();
+        if (table()) update();
+      },
+      started: () => {
+        lobby?.close();
+        lobby = null;
+        seatNet();
+      },
+      moved: (next) => {
+        sending = false;
+        inbox.push(next);
+        if (table()) drain();
+      },
+      synced: resyncNet,
+      asked: () => renderAsk(),
+      settled: () => {
+        renderAsk();
+        if (table()) update();
+      },
+      notice: (text) => netNotice(text),
+      refused: (text) => {
+        sending = false;
+        netNotice(text);
+      },
+      lost: (reason) => {
+        lost = reason;
+        sending = false;
+        lobby?.refresh();
+        renderAsk();
+        if (table()) update();
+      },
+    };
+  }
+  /** Leaves the room (if any): the others are told. */
+  function leaveRoom() {
+    lobby?.close();
+    lobby = null;
+    if (!net) return;
+    net.room.events = {};
+    net.room.leave();
+    net = null;
+    inbox = [];
+    sending = false;
+    lost = "";
+  }
+  /** A game of the room begins (or begins anew, or is joined): the table is laid from the room's match. */
+  function seatNet() {
+    const match = net?.room.match;
+    if (!match || disposed) return;
+    mode = "local";
+    variant = match.start.variant;
+    options = match.start.options;
+    level = preferences.level;
+    state = shown = match.state;
+    spec = config.board?.(variant) ?? null;
+    past = [];
+    inbox = [];
+    sending = false;
+    chosen = {};
+    cursor = null;
+    hinted = null;
+    notice = "";
+    warned = null;
+    announced = false;
+    lockedUntil = 0;
+    queued = [];
+    sound.enabled = settings.sound;
+    sound.unlock();
+    screen();
+  }
+  /** The room rebuilt its match from a move list (an undo, a reconnection): the table shows it at once. */
+  function resyncNet() {
+    const match = net?.room.match;
+    if (!match || disposed || !document.getElementById("pg-undo")) return;
+    generation++;
+    thinking = false;
+    inbox = [];
+    sending = false;
+    state = shown = match.state;
+    past = [];
+    chosen = {};
+    hinted = null;
+    warned = null;
+    announced = false;
+    if (view) view.sync(state, false);
+    else present();
+  }
+  /** Shows the next state the room told, once the table rests; true when one was shown. */
+  function drain(): boolean {
+    if (!net || !inbox.length || disposed || view?.animating || state !== shown || !document.getElementById("pg-undo")) return false;
+    const next = inbox.shift()!;
+    past.push(state);
+    apply(next);
+    return true;
+  }
+  /** Whether this device may move now (its seat's turn, or the host's alone). */
+  function netMine(s: S = shown) {
+    if (!net) return true;
+    const room = net.room,
+      to = netRules().toMove(s);
+    if (sending || (!room.host && !(room as GuestRoom<S>).online) || inbox.length) return false;
+    return to === HOST_ONLY ? room.host : to >= 0 && to === room.mySeat;
+  }
+  /** The host's computer plays the seat to move: a computer's seat, or one whose device dropped where it may stand in. */
+  function netComputer(s: S) {
+    const room = net!.room,
+      to = netRules().toMove(s);
+    if (!room.host || to < 0 || over(s)) return false;
+    return room.seats[to]?.kind === "computer" || (room.away(to) && config.net!.standIn !== false);
+  }
+  /** A side as the status line names it over Wi-Fi: who sits there, and the side. */
+  function netWho(player: number): string | null {
+    const room = net!.room,
+      label = config.whoOf?.(shown, player, "local") ?? sides()[player];
+    if (label === "") return "";
+    const seat = config.net!.seatOf?.(shown, player) ?? player;
+    return seat < 0 ? label : `${room.nameOf(seat) || "빈자리"} (${label})`;
+  }
+  /** The seat that won (null for a draw or no end yet). */
+  function winnerSeatOf(s: S): number | null {
+    const winner = game.winner(s);
+    if (winner === null || winner === "draw") return null;
+    return config.net!.winnerSeat ? config.net!.winnerSeat(s) : winner;
+  }
+  function netOutcome(s: S): "win" | "lose" | "draw" {
+    const seat = winnerSeatOf(s),
+      mine = net!.room.mySeat;
+    if (seat === null || mine === null) return "draw";
+    return seat === mine ? "win" : "lose";
+  }
+  function netWinner(s: S) {
+    const seat = winnerSeatOf(s),
+      room = net!.room;
+    return seat === null ? "" : `${room.nameOf(seat) || "빈자리"} (${room.seats[seat]?.label ?? ""})`;
+  }
+  /** The status line over Wi-Fi while this device does not move (null: the usual words). */
+  function netLine(s: S): string | null {
+    const room = net!.room;
+    if (!room.host && !(room as GuestRoom<S>).online) return `${lost || "방장과 연결되어 있지 않습니다."} 방 버튼으로 다시 참가할 수 있습니다.`;
+    if (room.pending) {
+      const kind = room.pending.kind === "undo" ? "무르기" : "새 게임";
+      if (room.mustAnswer) return `${kind} 요청 — 수락이나 거절을 누르세요.`;
+      if (room.pending.from === room.me) return `${kind}를 요청했습니다. 대답을 기다리는 중…`;
+    }
+    if (sending) return "보내는 중…";
+    const to = netRules().toMove(s);
+    if (to === HOST_ONLY) return room.host ? null : "방장이 지도를 보고 시작합니다. 기다려 주세요.";
+    if (to < 0 || netMine(s) || (room.host && netComputer(s))) return null;
+    if (warned && warned.state === s) return warned.text;
+    if (room.away(to)) return `${room.person(room.seats[to].person)?.name ?? ""} 님의 연결이 끊겼습니다. 다시 들어오기를 기다립니다.`;
+    return `${who(game.turn(s))} 차례입니다.`;
+  }
+  /** A line of the room's (someone came or went, a request declined) said in the status line until the next move. */
+  function netNotice(text: string) {
+    warned = { state: shown, text };
+    if (document.getElementById("pg-undo")) update();
+  }
+  /** A tap while this device may not move: the status line says why. */
+  function netWarn() {
+    const room = net!.room,
+      to = netRules().toMove(shown);
+    netNotice(
+      !room.host && !(room as GuestRoom<S>).online
+        ? "방장과 연결되어 있지 않습니다."
+        : sending
+          ? "보내는 중입니다."
+          : room.mySeat === null && to !== HOST_ONLY
+            ? "구경하는 중입니다."
+            : to === HOST_ONLY
+              ? "방장이 고르는 차례입니다."
+              : "상대 차례입니다.",
+    );
+  }
+  /** A move of mine over Wi-Fi: the host plays it through the room, a guest sends it (shown when the host relays it). */
+  function netCommit(move: Move): boolean {
+    if (paused || busy() || over()) return false;
+    if (!netMine()) {
+      netWarn();
+      return false;
+    }
+    const room = net!.room,
+      text = room.host ? (room as HostRoom<S>).play(move, room.mySeat ?? HOST_ONLY) : (room as GuestRoom<S>).play(move);
+    if (text) {
+      warned = { state, text: (text === "둘 수 없는 수입니다." && config.refusal?.(state, move)) || text };
+      hinted = null;
+      view?.refused?.(move);
+      update();
+      return false;
+    }
+    sound.unlock();
+    if (!room.host) {
+      sending = true;
+      chosen = {};
+      update();
+    }
+    return true;
+  }
+  /** Undo over Wi-Fi is a request the others accept. */
+  function netUndo() {
+    if (busy()) return;
+    const text = net!.room.request("undo");
+    if (text) warned = { state: shown, text };
+    update();
+  }
+  function netCanUndo() {
+    const room = net!.room,
+      seat = room.mySeat;
+    return !config.noUndo && seat !== null && !!room.match && room.match.undoFor(seat) !== null && !room.pending && (room.host || (room as GuestRoom<S>).online);
+  }
+  /** 새 게임 over Wi-Fi: a request to begin again with the same seats, or leaving the room. */
+  function netNewGame(host: HTMLElement) {
+    const dialog = host.closest("dialog");
+    host.innerHTML = `<div class="net-new"><p>다른 사람이 모두 수락하면 같은 자리로 새 게임을 시작합니다.</p><button id="net-new" class="primary">새 게임 요청</button><button id="net-leave" class="net-leave">방에서 나가기</button></div>`;
+    const ask = host.querySelector<HTMLButtonElement>("#net-new")!;
+    ask.onclick = () => {
+      const text = net?.room.request("new");
+      if (text) warned = { state: shown, text };
+      update();
+    };
+    host.querySelector<HTMLButtonElement>("#net-leave")!.onclick = () => {
+      dialog?.close();
+      dialog?.remove();
+      document.getElementById("back")?.click();
+    };
+    // The window names its start 새 게임 시작 once it is filled; here the start is a request.
+    queueMicrotask(() => {
+      ask.textContent = "새 게임 요청";
+      const note = dialog?.querySelector(".setup-note");
+      if (note) note.textContent = "와이파이로 함께 하는 중입니다. 새 게임은 모두가 수락해야 시작합니다.";
+    });
+  }
+  /** The table's own controls over Wi-Fi: the room's button over the table, and the place where a request is answered. */
+  function dressNet() {
+    const button = document.createElement("button");
+    button.id = "net-room";
+    button.textContent = "방";
+    button.onclick = () => openRoom();
+    root.querySelector(".game-actions")?.insertBefore(button, root.querySelector("#restart"));
+    const ask = document.createElement("div");
+    ask.id = "net-ask";
+    ask.className = "net-ask";
+    ask.hidden = true;
+    root.querySelector(".board-area")?.append(ask);
+    renderAsk();
+  }
+  /** A request this device must answer, over the table with 수락 and 거절. */
+  function renderAsk() {
+    const box = document.getElementById("net-ask");
+    if (!box || !net) return;
+    const room = net.room,
+      ask = room.pending;
+    if (!ask || !room.mustAnswer) {
+      box.hidden = true;
+      box.replaceChildren();
+      return;
+    }
+    const line = document.createElement("p"),
+      yes = document.createElement("button"),
+      no = document.createElement("button");
+    line.textContent = `${room.person(ask.from)?.name ?? ""} 님이 ${ask.kind === "undo" ? "무르기" : "새 게임"}를 요청했습니다.`;
+    yes.className = "net-yes primary";
+    yes.textContent = "수락";
+    no.className = "net-no";
+    no.textContent = "거절";
+    const answer = (agree: boolean) => {
+      room.answer(ask.id, agree);
+      box.hidden = true;
+      box.replaceChildren();
+      update();
+    };
+    yes.onclick = () => answer(true);
+    no.onclick = () => answer(false);
+    box.replaceChildren(line, yes, no);
+    box.hidden = false;
   }
   const hide = (e: PageTransitionEvent) => {
     generation++;
@@ -1026,6 +1393,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     rules: () => modal(config.rulesTitle, config.rules),
     dispose() {
       disposed = true;
+      leaveRoom();
       stop();
       sound.dispose();
       document.removeEventListener("keydown", pageKey);

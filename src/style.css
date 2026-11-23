@@ -3482,3 +3482,79 @@ html[data-game="hex-conquest"] .board-area .board-controls .pg-tool.sr-only { po
   .sh-card i { width:7px;height:7px; }
 }
 html[data-capture] .sh-hud { display:none !important; }
+
+/* Wi-Fi rooms (와이파이 여럿이): the room's window, the request over the table ----------------------------- */
+dialog.setup-dialog.net-lobby { width:min(94vw, 600px);max-height:min(94vh, 900px); }
+dialog.net-lobby .net-body { display:block; }
+dialog.net-lobby h3 { display:flex;align-items:baseline;gap:6px;margin:14px 0 6px;font-size:13px;color:var(--ink, #16181a); }
+dialog.net-lobby h3 small { font-weight:500;color:var(--ink-faint, #8a8780); }
+dialog.net-lobby .net-status { margin:0 0 4px;color:var(--ink, #16181a);font-weight:600; }
+dialog.net-lobby .net-problem { margin:8px 0 0;color:#a33a22;font-size:13px; }
+dialog.net-lobby .net-name-field { display:grid;gap:6px;margin:4px 0 12px;font-size:12px;font-weight:600;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby input, dialog.net-lobby textarea { width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid var(--line, #d9d3c4);border-radius:12px;background:#fff;color:var(--ink, #16181a);font:inherit;font-size:15px; }
+dialog.net-lobby textarea { font-family:var(--mono, ui-monospace, monospace);font-size:12px;line-height:1.45;resize:vertical;word-break:break-all; }
+dialog.net-lobby .net-roles { display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px; }
+dialog.net-lobby .net-role { display:grid;gap:4px;padding:14px;border:1.5px solid var(--line, #d9d3c4);border-radius:14px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;text-align:left;cursor:pointer; }
+dialog.net-lobby .net-role b { font-size:16px; }
+dialog.net-lobby .net-role small { font-size:12px;line-height:1.5;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-role:hover { border-color:#16181a; }
+dialog.net-lobby .net-seats, dialog.net-lobby .net-people { margin:0;padding:0;list-style:none; }
+dialog.net-lobby .net-seat { display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0;padding:8px 2px;border-bottom:1px solid var(--line, #d9d3c4); }
+dialog.net-lobby .net-seat b { min-width:56px; }
+dialog.net-lobby .net-seat .net-who { flex:1;color:var(--ink, #16181a); }
+dialog.net-lobby .net-seat.open .net-who, dialog.net-lobby .net-seat.closed .net-who { color:var(--ink-faint, #8a8780); }
+dialog.net-lobby .net-dot { width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1.5px #0004; }
+dialog.net-lobby .net-seat-actions { display:flex;gap:6px; }
+dialog.net-lobby .net-seat-actions button, dialog.net-lobby .net-copy, dialog.net-lobby .net-paste-actions button, dialog.net-lobby .net-scan-stop { min-height:34px;padding:0 12px;border:1.5px solid var(--line, #d9d3c4);border-radius:999px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-size:13px;font-weight:600;cursor:pointer; }
+dialog.net-lobby .net-seat-actions .net-sit, dialog.net-lobby .net-go { border-color:#16181a;background:#16181a;color:#fff; }
+dialog.net-lobby button:disabled { opacity:.45;cursor:default; }
+dialog.net-lobby .net-body button { white-space:nowrap; }
+dialog.net-lobby .net-people { display:flex;flex-wrap:wrap;gap:6px; }
+dialog.net-lobby .net-people li { margin:0;padding:4px 12px;border-radius:999px;background:#efe9dc;color:var(--ink, #16181a);font-size:13px; }
+dialog.net-lobby .net-people li.away { opacity:.55; }
+dialog.net-lobby .net-people small { color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-invite { width:100%;min-height:46px;margin-top:14px;border:1.5px solid #16181a;border-radius:999px;background:#fffdf7;color:#16181a;font:inherit;font-size:15px;font-weight:700;cursor:pointer; }
+dialog.net-lobby .net-pair { margin-top:12px;padding:12px;border:1.5px dashed var(--line, #d9d3c4);border-radius:16px; }
+dialog.net-lobby .net-pair h3 { margin-top:0; }
+dialog.net-lobby .net-steps { margin:0 0 10px;padding-left:20px;font-size:12.5px;line-height:1.55; }
+dialog.net-lobby .net-steps li { margin:2px 0; }
+dialog.net-lobby .net-code { display:grid;grid-template-columns:auto minmax(0, 1fr);grid-template-rows:1fr auto;gap:8px 12px;align-items:start; }
+dialog.net-lobby .net-qr-box { grid-row:1 / span 2;width:min(46vw, 220px);aspect-ratio:1;padding:0;border-radius:10px;background:#fff;box-shadow:0 0 0 1px var(--line, #d9d3c4); }
+dialog.net-lobby .net-qr { display:block;width:100%;height:100%; }
+dialog.net-lobby .net-text { display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-copy { justify-self:start; }
+dialog.net-lobby .net-paste { display:grid;gap:8px;margin-top:12px; }
+dialog.net-lobby .net-paste > label { display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--ink-soft, #5c5a55); }
+dialog.net-lobby .net-paste-actions { display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end; }
+dialog.net-lobby .net-scan { display:grid;gap:6px;justify-items:center; }
+dialog.net-lobby .net-scan[hidden] { display:none; }
+dialog.net-lobby .net-scan video { width:min(100%, 320px);aspect-ratio:4 / 3;border-radius:12px;background:#16181a;object-fit:cover; }
+dialog.net-lobby .net-pair-note { margin:8px 0 0;font-size:13px;color:var(--ink, #16181a); }
+dialog.net-lobby .net-pair-note:empty { display:none; }
+dialog.net-lobby #net-start { width:100%;margin-top:14px;justify-content:center; }
+dialog.setup-dialog .net-new { display:grid;gap:10px; }
+dialog.setup-dialog .net-new p { margin:0; }
+dialog.setup-dialog .net-new .net-leave { min-height:44px;border:1.5px solid var(--line, #d9d3c4);border-radius:999px;background:#fffdf7;color:var(--ink, #16181a);font:inherit;font-weight:600;cursor:pointer; }
+.game-layout .net-ask { position:absolute;left:50%;top:56px;z-index:6;transform:translateX(-50%);display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 10px;max-width:min(92%, 520px);padding:12px 16px;border-radius:16px;background:rgba(22,24,26,.9);color:#fff;box-shadow:0 12px 30px #0006;font-size:14px;font-weight:600; }
+.game-layout .net-ask[hidden] { display:none; }
+.game-layout .net-ask p { margin:0;flex:1 1 100%;text-align:center; }
+.game-layout .net-ask button { min-height:38px;padding:0 20px;border:1.5px solid #fff;border-radius:999px;background:transparent;color:#fff;font:inherit;font-weight:700;cursor:pointer; }
+.game-layout .net-ask button.primary { background:#fff;color:#16181a; }
+@media (max-height: 500px) {
+  dialog.setup-dialog.net-lobby { width:min(96vw, 860px);padding:16px 20px; }
+  dialog.net-lobby h2 { margin:4px 0 4px;font-size:19px; }
+  dialog.net-lobby .setup-note { display:none; }
+  dialog.net-lobby .net-qr-box { width:min(40vh, 160px); }
+  /* A phone on its side: the codes and the paste field stand side by side, the QR code whole in view. */
+  dialog.net-lobby .net-pair { display:grid;grid-template-columns:minmax(0, 1.25fr) minmax(0, 1fr);gap:6px 12px;align-items:start;margin-top:6px;padding:8px 10px; }
+  dialog.net-lobby .net-pair > h3, dialog.net-lobby .net-pair > .net-steps, dialog.net-lobby .net-pair > .net-pair-note { grid-column:1 / -1; }
+  dialog.net-lobby .net-pair > h3 { margin:0; }
+  dialog.net-lobby .net-steps { display:none; }
+  dialog.net-lobby .net-pair .net-paste { margin-top:0; }
+  dialog.net-lobby .net-pair:not(:has(.net-paste)) { grid-template-columns:1fr; }
+  dialog.net-lobby .net-code textarea { font-size:11px; }
+  dialog.net-lobby .dialog-actions { margin-top:10px; }
+  dialog.net-lobby .dialog-actions button { min-height:38px; }
+  .game-layout .net-ask { top:40px;padding:8px 12px; }
+}
+html[data-capture] .game-layout .net-ask { display:none !important; }

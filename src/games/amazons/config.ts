@@ -12,6 +12,8 @@ export const amazonsConfig: PointConfig<State> = {
   keyPoints: () => Array.from({ length: N * N }, (_, s) => squareAt(s)),
   showMovable: false,
   extraHint: "화살을 쏠 칸을 고르세요. 아마존이 내려선 칸에서 퀸처럼 쏩니다.",
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "아마존스",
   english: "Game of the Amazons",
   number: "NO. 59 — MOVE, THEN SHOOT",

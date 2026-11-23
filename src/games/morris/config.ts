@@ -13,6 +13,8 @@ export const morrisConfig: PointConfig<State> = {
   // The board's points and pictures; the table itself is a tavern of its own (the user asked for the older tables upgraded).
   board: morrisBoard,
   view: (host, quality) => new MorrisView(host, quality),
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "나인 멘스 모리스",
   english: "Nine Men's Morris",
   number: "NO. 11 — MILLS",

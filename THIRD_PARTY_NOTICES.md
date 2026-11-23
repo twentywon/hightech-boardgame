@@ -27,3 +27,7 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 ```
+
+# qrcode-generator 2.0.4, jsQR 1.4.0
+
+와이파이 여럿이에서 기기를 짝지을 QR 코드를 페이지 안에서 만들고(qrcode-generator, Kazuhiko Arase, MIT) 카메라로 읽습니다(브라우저에 `BarcodeDetector`가 없을 때 jsQR, Cosmo Wolfe, Apache-2.0). 둘 다 빌드에 묶여 들어가며 아무것도 내려받지 않습니다. 전문은 `public/qr-license.txt`에 있고, 내보낸 HTML 한 파일에도 함께 들어갑니다.

@@ -12,6 +12,8 @@ export const wallRaceConfig: PointConfig<State> = {
   colors: PAWN_COLORS,
   keyPoints: racePoints,
   keyStart: (state) => state.pawns[state.turn],
+  // Over one Wi-Fi each device plays one side (nothing is hidden and nothing left to chance).
+  net: {},
   name: "길막기",
   english: "Wall Race",
   number: "NO. 27 — RACE AND BLOCK",

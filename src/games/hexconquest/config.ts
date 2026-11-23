@@ -30,6 +30,7 @@ import {
   PEOPLE_MAX,
   PEOPLE_MIN,
   allied,
+  createLocal,
   hexConquest,
   human,
   movable,
@@ -39,6 +40,7 @@ import {
   type State,
 } from "./rules";
 import { HexConquestView } from "./view";
+import { HOST_ONLY, NOBODY } from "../../net/match";
 
 /** The little marks of the nations allied with `nation`, each in its colour. */
 function allyTag(s: State, nation: number) {
@@ -75,6 +77,24 @@ export const hexConquestConfig: PointConfig<State> = {
   // At one screen the status line names the nation to move (`청국 차례`), and in setup the player to choose says it all.
   whoOf: (s) => (!s.people ? null : s.phase === "setup" ? "" : s.winner === 0 ? NAMES[victor(s)] : NAMES[s.seat]),
   localLabel: `로컬 ${PEOPLE_MIN}–${PEOPLE_MAX}인`,
+  // Over Wi-Fi each device is one nation (the user asked): the seats are the four nations in the order of play, a
+  // seat nobody takes is a corner left empty as at one screen. The map is laid from the room's seed and every
+  // nation seated is picked at once, in the order of play (players 1, 2, … as at one screen); in setup only the host
+  // draws another map and starts. No computer stands in for a nation whose device dropped: it waits.
+  net: {
+    seats: () => ORDER.map((n) => ({ label: NAMES[n], color: COLORS[n], kinds: ["closed"] })),
+    create: (_variant, _options, seated, random) => {
+      const nations = ORDER.filter((_, i) => seated[i]);
+      let s = createLocal(Math.max(PEOPLE_MIN, nations.length), random);
+      for (const n of nations) s = hexConquest.play(s, tool(NATION + n)) ?? s;
+      return s;
+    },
+    toMove: (s) => (s.winner !== null ? NOBODY : s.phase === "setup" ? HOST_ONLY : ORDER.indexOf(s.seat)),
+    seatOf: (s) => (s.phase === "setup" ? -1 : ORDER.indexOf(s.seat)),
+    allow: (s, m) => (s.phase === "setup" && m.to !== NEW_MAP && m.to !== START ? "나라는 방에서 정했습니다. 방장이 다른 맵이나 시작을 누릅니다." : null),
+    winnerSeat: (s) => (s.winner === 0 ? ORDER.indexOf(victor(s)) : null),
+    standIn: false,
+  },
   settings: [
     {
       id: "computers",
@@ -94,6 +114,8 @@ export const hexConquestConfig: PointConfig<State> = {
       label: "사람 수",
       value: String(PEOPLE_MIN),
       local: true,
+      // Over Wi-Fi the seats taken in the room say how many.
+      net: false,
       options: Array.from({ length: PEOPLE_MAX - PEOPLE_MIN + 1 }, (_, i) => ({ value: String(PEOPLE_MIN + i), label: `${PEOPLE_MIN + i}명` })),
     },
   ],
@@ -184,7 +206,7 @@ export const hexConquestConfig: PointConfig<State> = {
   english: "Hex Conquest",
   number: "NO. 93 — TAKE THE CAPITALS",
   intro: `<p>육각형 칸으로 나뉜 세계 지도 위에서 네 나라가 맞섭니다. 지도와 나라를 골라 시작하고, 군대를 움직여 땅과 마을·도시를 넓히고, 동맹과 연설로 기회를 잡아 다른 나라의 수도를 차지하세요.<br>옛 플래시 게임 '헥스 엠파이어'와 같은 종류의 게임입니다. 지도는 판마다 새로 만들어집니다.</p>`,
-  meta: `컴퓨터 대전 1~3국 · 로컬 ${PEOPLE_MIN}~${PEOPLE_MAX}인 · 20×11 헥스 · 무작위 지도`,
+  meta: `컴퓨터 대전 1~3국 · 로컬 ${PEOPLE_MIN}~${PEOPLE_MAX}인 · 와이파이 ${PEOPLE_MIN}~${PEOPLE_MAX}인 · 20×11 헥스 · 무작위 지도`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>TAKE THE CAPITALS</span>`,
   artClass: "morris-art",
   artLabel: "헥스 정복전 미리보기",
@@ -209,6 +231,7 @@ export const hexConquestConfig: PointConfig<State> = {
       table(
         ["컴퓨터 대전", "내 나라 하나와 컴퓨터 나라 1~3개가 겨룹니다. 컴퓨터의 실력은 난이도로 고릅니다."],
         [`로컬 ${PEOPLE_MIN}–${PEOPLE_MAX}인`, `${PEOPLE_MIN}~${PEOPLE_MAX}명이 한 화면에서 차례로 합니다. 1번 플레이어부터 차례로 수도를 눌러 나라를 고르고, 이미 고른 수도를 다시 누르면 그 사람부터 다시 고릅니다. 다 고르기 전에 <b>시작</b>을 누르면 남은 사람은 서로 먼 귀퉁이에 앉습니다.`],
+        ["와이파이 여럿이", `같은 와이파이에 있는 기기 ${PEOPLE_MIN}~${PEOPLE_MAX}대가 한 나라씩 맡습니다. 방장이 방을 만들고 QR 코드로 한 대씩 연결하면, 저마다 방에서 나라를 고릅니다. 아무도 고르지 않은 나라는 빈 땅이 됩니다. 지도는 방장이 <b>다른 맵</b>으로 바꾸고 <b>시작</b>을 누릅니다. 자기 나라 차례에만 움직이고, 동맹 제안은 받은 사람의 기기에 나옵니다.`],
         ["차례", `플레이어 번호와 상관없이 ${ORDER.map((n) => NAMES[n]).join(" → ")} 순서로 돕니다. 상태 줄에 지금 움직일 나라가 나옵니다(예: 청국 차례).`],
         ["동맹 제안", "사람에게 한 제안은 그 사람의 다음 차례가 시작될 때 수락이나 거절을 고릅니다. 세 나라 이상 남아 있어야 제안할 수 있습니다."],
         ["승리", "마지막까지 남은 나라가 이깁니다. 멸망한 나라도 그 수도를 차지한 나라가 멸망하면 다시 돌아옵니다(부활)."],

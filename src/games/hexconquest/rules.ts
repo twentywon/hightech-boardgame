@@ -709,8 +709,8 @@ export function createLocal(people = 2, random: Random = cryptoRandom): State {
   return localState(generateMap(seeded(random())), people, [], 0, 0);
 }
 /** People at one screen when the setup window gave `people` (offered only then), else me against the computers. */
-export const create = (_variant: string, options: GameOptions = {}) =>
-  options.people !== undefined ? createLocal(Number(options.people) || PEOPLE_MIN) : createGame(Number(options.computers) || 3);
+export const create = (_variant: string, options: GameOptions = {}, random: Random = cryptoRandom) =>
+  options.people !== undefined ? createLocal(Number(options.people) || PEOPLE_MIN, random) : createGame(Number(options.computers) || 3, random);
 /** Every legal move of the nation to move (in setup, mine). */
 export function moves(s: State): Move[] {
   if (s.winner !== null) return [];
