@@ -51,7 +51,7 @@ export function openJoin(o: JoinWindow) {
   d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES · 와이파이 여럿이</div><h2>참가하기</h2><p class="setup-note">${
     lan
       ? "방장이 고른 게임으로 바로 들어갑니다. 방장의 기기에 나온 QR 코드를 찍거나, 같은 와이파이의 방을 누르세요."
-      : "방장의 기기에 나온 초대 QR 코드를 읽거나 초대 코드를 붙여 넣으면, 방장이 고른 게임으로 바로 들어갑니다."
+      : "'방장 QR 찍기'로 방장의 기기에 나온 초대 QR 코드를 찍거나 초대 코드를 붙여 넣으면, 방장이 고른 게임으로 바로 들어갑니다."
   }</p><div class="dialog-body net-body"></div><div class="dialog-actions"><button id="net-cancel">← 뒤로</button></div>`;
   const body = d.querySelector<HTMLElement>(".net-body")!;
   document.body.append(d);
@@ -140,10 +140,10 @@ export function openJoin(o: JoinWindow) {
     if (lan) {
       const camera = scanning
         ? `<div class="net-scan net-room-scan"><video playsinline muted></video><p>방장의 기기에 나온 QR 코드를 화면에 비추세요.</p><button id="net-scan-stop" class="net-scan-stop">그만 찍기</button></div>`
-        : `<button id="net-scan-room" class="net-scan-room net-scan-big">${QR_MARK}<span><b>QR 찍기</b><small>방장의 기기에 나온 QR 코드를 찍으면 그 게임의 방으로 바로 들어갑니다</small></span></button>`;
+        : `<button id="net-scan-room" class="net-scan-room net-scan-big">${QR_MARK}<span><b>방장 QR 찍기</b><small>방장의 기기에 나온 QR 코드를 찍으면 그 게임의 방으로 바로 들어갑니다</small></span></button>`;
       body.innerHTML = `${nameField}<section class="net-find net-join-find"><div class="net-join-camera">${camera}</div><div class="net-join-rooms"><div class="net-find-head"><h3>같은 와이파이의 방</h3><span class="net-find-tools"><button id="net-refind" class="net-link">다시 찾기</button></span></div>${roomList()}<div class="net-dial"><label for="net-address-in">주소 입력</label><input id="net-address-in" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.0.12:${LAN_PORT}"><button id="net-dial" class="net-go">연결</button></div>${noteLine}</div></section>`;
     } else {
-      body.innerHTML = `${nameField}<section class="net-pair net-join-pair"><ol class="net-steps"><li>방장: 게임을 고르고 와이파이 여럿이 → 방 만들기 → 다음 사람 연결을 누릅니다.</li><li>여기서 방장의 기기에 나온 초대 QR 코드를 읽거나, 초대 코드를 붙여 넣고 들어가기를 누릅니다.</li><li>그 게임의 방이 열리고 답 QR 코드가 나옵니다. 방장의 기기로 읽게 하면 연결됩니다.</li></ol><div class="net-paste"><label>방장의 초대 코드<textarea id="net-offer-in" rows="2" spellcheck="false" autocapitalize="characters" placeholder="WTGG:…/${PREFIX}…"></textarea></label><div class="net-paste-actions"><button class="net-scan-start">카메라로 읽기</button><button id="net-accept" class="net-go">들어가기</button></div><div class="net-scan" hidden><video playsinline muted></video><button class="net-scan-stop">그만 읽기</button></div></div>${noteLine}</section>`;
+      body.innerHTML = `${nameField}<section class="net-pair net-join-pair"><ol class="net-steps"><li>방장: 게임을 고르고 와이파이 여럿이 → 방 만들기 → 다음 사람 연결을 누릅니다.</li><li>여기서 '방장 QR 찍기'로 방장의 기기에 나온 초대 QR 코드를 찍거나, 초대 코드를 붙여 넣고 들어가기를 누릅니다.</li><li>그 게임의 방이 열리고 답 QR 코드가 나옵니다. 방장이 '참가자 QR 찍기'로 찍으면 연결됩니다.</li></ol><div class="net-paste"><label>방장의 초대 코드<textarea id="net-offer-in" rows="2" spellcheck="false" autocapitalize="characters" placeholder="WTGG:…/${PREFIX}…"></textarea></label><div class="net-paste-actions"><button class="net-scan-start">방장 QR 찍기</button><button id="net-accept" class="net-go">들어가기</button></div><div class="net-scan" hidden><video playsinline muted></video><button class="net-scan-stop">그만 찍기</button></div></div>${noteLine}</section>`;
     }
     const field = body.querySelector<HTMLInputElement>("#net-address-in");
     if (field) field.value = address;

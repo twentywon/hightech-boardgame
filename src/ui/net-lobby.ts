@@ -169,9 +169,9 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
   /** A code shown as a QR picture, as text and with a copy button. */
   const codeBlock = (code: string, id: string, what: string) =>
     `<div class="net-code"><div class="net-qr-box">${qrSvg(code, `${what} QR 코드`)}</div><label class="net-text">${what} (글자로)<textarea id="${id}" readonly rows="3" spellcheck="false">${escape(code)}</textarea></label><button class="net-copy" data-copy="${id}">코드 복사</button></div>`;
-  /** A field to paste a code into, with the camera beside it. */
-  const pasteBlock = (id: string, what: string, go: string, goId: string) =>
-    `<div class="net-paste"><label>${what}<textarea id="${id}" rows="2" spellcheck="false" autocapitalize="characters" placeholder="${PREFIX}…"></textarea></label><div class="net-paste-actions"><button class="net-scan-start" data-for="${id}">카메라로 읽기</button><button id="${goId}" class="net-go">${go}</button></div><div class="net-scan" hidden><video playsinline muted></video><button class="net-scan-stop">그만 읽기</button></div></div>`;
+  /** A field to paste a code into, with the camera beside it; the camera button names whose QR it reads (the user asked). */
+  const pasteBlock = (id: string, what: string, go: string, goId: string, scan: string) =>
+    `<div class="net-paste"><label>${what}<textarea id="${id}" rows="2" spellcheck="false" autocapitalize="characters" placeholder="${PREFIX}…"></textarea></label><div class="net-paste-actions"><button class="net-scan-start" data-for="${id}">${scan}</button><button id="${goId}" class="net-go">${go}</button></div><div class="net-scan" hidden><video playsinline muted></video><button class="net-scan-stop">그만 찍기</button></div></div>`;
 
   /**
    * The host's address (inside the app): as a QR code for a guest's QR 찍기, as text for typing, with the way to the
@@ -181,7 +181,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     if (!lan) return "";
     const code = lan.address ? roomCode(lan.address, lan.self, o.game) : "",
       picture = code ? `<div id="net-room-code" class="net-room-code" data-code="${escape(code)}">${qrSvg(code, "방 주소 QR 코드")}</div>` : "";
-    return `<div class="net-address${code ? " coded" : ""}">${picture}<div class="net-address-text">${code ? `<p class="net-room-code-line">참가자 앱에서 'QR 찍기'로 찍으면 바로 들어옵니다.</p>` : ""}<span>목록에 안 보이면 참가하는 기기의 주소 입력에:</span><b id="net-address">${escape(lan.address || (lan.problem ? "주소 없음" : "주소를 여는 중…"))}</b>${qr ? "" : `<button id="net-qr" class="net-link">QR로 연결</button>`}</div></div>${lan.problem ? `<p class="net-problem net-lan-problem">${escape(lan.problem)}</p>` : ""}`;
+    return `<div class="net-address${code ? " coded" : ""}">${picture}<div class="net-address-text">${code ? `<p class="net-room-code-line">참가자 앱에서 '방장 QR 찍기'로 찍으면 바로 들어옵니다.</p>` : ""}<span>목록에 안 보이면 참가하는 기기의 주소 입력에:</span><b id="net-address">${escape(lan.address || (lan.problem ? "주소 없음" : "주소를 여는 중…"))}</b>${qr ? "" : `<button id="net-qr" class="net-link">QR로 연결</button>`}</div></div>${lan.problem ? `<p class="net-problem net-lan-problem">${escape(lan.problem)}</p>` : ""}`;
   };
   /** The person id of the host this guest was with (its room in the list is marked). */
   const myHost = () => room?.people.find((p) => p.host)?.id ?? "";
@@ -206,7 +206,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
       : "";
   /** The rooms on the Wi-Fi, the camera for the host's room code, a field for a typed address, and the way to the QR codes. */
   const findBlock = () =>
-    `<section class="net-find${roomScan ? " scanning" : ""}"><div class="net-find-head"><h3>같은 와이파이의 방</h3><span class="net-find-tools"><button id="net-refind" class="net-link">다시 찾기</button><button id="net-scan-room" class="net-scan-room" ${busy || roomScan ? "disabled" : ""}>QR 찍기</button></span></div>${roomScanBlock()}${roomList()}<div class="net-dial"><label for="net-address-in">주소 입력</label><input id="net-address-in" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.0.12:${LAN_PORT}"><button id="net-dial" class="net-go" ${busy ? "disabled" : ""}>연결</button></div><p class="net-pair-note" role="status">${escape(pairNote)}</p><button id="net-qr" class="net-link">QR로 연결</button></section>`;
+    `<section class="net-find${roomScan ? " scanning" : ""}"><div class="net-find-head"><h3>같은 와이파이의 방</h3><span class="net-find-tools"><button id="net-refind" class="net-link">다시 찾기</button><button id="net-scan-room" class="net-scan-room" ${busy || roomScan ? "disabled" : ""}>방장 QR 찍기</button></span></div>${roomScanBlock()}${roomList()}<div class="net-dial"><label for="net-address-in">주소 입력</label><input id="net-address-in" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="192.168.0.12:${LAN_PORT}"><button id="net-dial" class="net-go" ${busy ? "disabled" : ""}>연결</button></div><p class="net-pair-note" role="status">${escape(pairNote)}</p><button id="net-qr" class="net-link">QR로 연결</button></section>`;
 
   function render() {
     if (closed) return;
@@ -230,7 +230,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
           : `<p class="net-status">${lan ? "방을 열었습니다. 같은 와이파이의 기기에서 이 게임의 참가하기를 누르면 이 방이 보입니다." : "방을 열었습니다. 다음 사람 연결을 눌러 기기를 한 대씩 연결하세요."}</p>`,
         room_ = `<h3>자리</h3>${seatList()}<h3>사람 <small>${room.people.length}/8</small></h3>${peopleList()}`,
         pair = pairing
-          ? `<section class="net-pair"><h3>다음 사람 연결</h3><ol class="net-steps"><li>참가할 기기에서 같은 게임 → 와이파이 여럿이 → 참가하기를 누르고 이 QR 코드를 읽습니다.</li><li>그 기기에 나온 답 QR 코드를 이 기기로 읽거나, 답 코드를 붙여 넣고 연결을 누릅니다.</li></ol>${codeBlock(pairing.code, "net-offer", "초대 코드")}${pasteBlock("net-answer-in", "참가하는 기기의 답 코드", "연결", "net-connect")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
+          ? `<section class="net-pair"><h3>다음 사람 연결</h3><ol class="net-steps"><li>참가할 기기에서 같은 게임 → 와이파이 여럿이 → 참가하기를 누르고 '방장 QR 찍기'로 이 QR 코드를 찍습니다.</li><li>그 기기에 나온 답 QR 코드를 '참가자 QR 찍기'로 찍거나, 답 코드를 붙여 넣고 연결을 누릅니다.</li></ol>${codeBlock(pairing.code, "net-offer", "초대 코드")}${pasteBlock("net-answer-in", "참가하는 기기의 답 코드", "연결", "net-connect", "참가자 QR 찍기")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
           : qr
             ? `<button id="net-invite" class="net-invite" ${busy || room.people.length >= 8 ? "disabled" : ""}>${busy ? "초대 코드를 만드는 중…" : "다음 사람 연결"}</button>${pairNote ? `<p class="net-pair-note" role="status">${escape(pairNote)}</p>` : ""}`
             : pairNote
@@ -246,18 +246,18 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
           ? "게임 중입니다."
           : `${escape(g.hostName)} 님의 방에 들어왔습니다. 자리를 고르고 방장이 시작하기를 기다리세요.`
         : pairing
-          ? "아래 답 QR 코드를 방장의 기기로 읽게 하거나, 답 코드를 복사해 방장에게 보내세요. 연결되면 자리가 나옵니다."
+          ? "방장이 '참가자 QR 찍기'로 아래 답 QR 코드를 찍게 하거나, 답 코드를 복사해 방장에게 보내세요. 연결되면 자리가 나옵니다."
           : finding
             ? g.match
               ? `${escape(g.reason || "방장과의 연결이 끊겼습니다.")} 목록에서 방을 다시 누르면 같은 자리로 돌아갑니다.`
               : g.reason
                 ? `${escape(g.reason)} 목록에서 방을 다시 골라 주세요.`
-                : "같은 와이파이에 열린 방입니다. 들어갈 방을 누르거나, 방장의 기기에 나온 QR 코드를 QR 찍기로 찍으세요."
+                : "같은 와이파이에 열린 방입니다. 들어갈 방을 누르거나, 방장의 기기에 나온 QR 코드를 방장 QR 찍기로 찍으세요."
             : g.match
               ? `${escape(g.reason || "방장과의 연결이 끊겼습니다.")} 방장이 다음 사람 연결을 누르면 새 초대 코드로 다시 참가하세요.`
               : g.reason
                 ? `${escape(g.reason)} 다시 하려면 새 초대 코드를 넣으세요.`
-                : "방장의 기기에 나온 초대 QR 코드를 읽거나, 초대 코드를 붙여 넣으세요.";
+                : "'방장 QR 찍기'로 방장의 기기에 나온 초대 QR 코드를 찍거나, 초대 코드를 붙여 넣으세요.";
       html =
         `<p class="net-status" role="status">${status}</p>` +
         (g.online
@@ -266,7 +266,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
             ? `<section class="net-pair">${codeBlock(pairing.code, "net-answer", "답 코드")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
             : finding
               ? findBlock()
-              : `<section class="net-pair">${pasteBlock("net-offer-in", "방장의 초대 코드", "다음", "net-accept")}<p class="net-pair-note" role="status">${escape(pairNote)}</p>${lan ? `<button id="net-list" class="net-link">방 목록으로</button>` : ""}</section>`);
+              : `<section class="net-pair">${pasteBlock("net-offer-in", "방장의 초대 코드", "다음", "net-accept", "방장 QR 찍기")}<p class="net-pair-note" role="status">${escape(pairNote)}</p>${lan ? `<button id="net-list" class="net-link">방 목록으로</button>` : ""}</section>`);
     }
     // The app looks for rooms only while their list is shown.
     if (!finding) roomScan = false;

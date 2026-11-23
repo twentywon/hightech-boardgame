@@ -171,7 +171,7 @@ test("QR 찍기: the guest reads the host's room code once and is in; a refused 
   const code = host.locator("#net-room-code");
   await expect(code.locator("svg")).toBeVisible();
   await expect(code).toHaveAttribute("data-code", roomCode(`192.168.0.12:${FAKE_PORT}`, { app: APP_VERSION, edition: "full" }, "tic-tac-toe"));
-  await expect(host.locator(".net-room-code-line")).toContainText("'QR 찍기'로 찍으면 바로 들어옵니다");
+  await expect(host.locator(".net-room-code-line")).toContainText("'방장 QR 찍기'로 찍으면 바로 들어옵니다");
   const picture = await code.locator("svg").screenshot();
 
   await lobby(guest, "틱택토", "민수");
