@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import { seededRandom } from "../src/core/ai";
 import * as hanoi from "../src/games/hanoi/rules";
 import * as pour from "../src/games/pour/rules";
+import * as queens from "../src/games/queens/rules";
+import * as tour from "../src/games/knight/rules";
 
 describe("water pouring, upgraded", () => {
   test("four vessels: every puzzle drawn can be solved in the fewest pours it names, within its stage's band", () => {
@@ -42,6 +44,101 @@ describe("water pouring, upgraded", () => {
     expect(pour.pouring.reason(end)).toMatch(/^성공!/);
     // The old stages are untouched: three vessels.
     expect(pour.createGame(3, seededRandom(5)).caps).toHaveLength(3);
+  });
+});
+
+describe("queens on the board, upgraded", () => {
+  test("4×4, 9×9 and 10×10 have their known numbers of answers, and their puzzles finish in one way", () => {
+    expect([4, 9, 10].map((n) => queens.answers(n).length)).toEqual([2, 352, 724]);
+    for (const stage of [6, 7, 8])
+      for (let seed = 1; seed <= 6; seed++) {
+        const state = queens.createGame(stage, seededRandom(seed * 17 + stage)),
+          { size, given } = queens.STAGES[stage - 1];
+        expect([state.size, state.fixed.filter(Boolean).length, queens.clashing(state)]).toEqual([size, given, []]);
+        const ways = queens.answers(size).filter((cols) => state.fixed.every((f, i) => !f || cols[Math.floor(i / size)] === i % size));
+        expect(ways).toHaveLength(1);
+      }
+  });
+  test("a repair board has every queen set, some misplaced in their rows; the hint mends it", () => {
+    for (const [k, { size, wrong }] of queens.REPAIRS.entries())
+      for (let seed = 1; seed <= 8; seed++) {
+        const value = queens.STAGES.length + k + 1;
+        let state = queens.createGame(value, seededRandom(seed * 5 + k));
+        expect(queens.repairOf(value)).toEqual({ size, wrong });
+        expect([state.size, state.queens.filter(Boolean).length, state.fixed.some(Boolean)]).toEqual([size, size, false]);
+        // One queen a row, and at least as many in another's way as were misplaced.
+        for (let r = 0; r < size; r++) expect(state.queens.slice(r * size, r * size + size).filter(Boolean)).toHaveLength(1);
+        expect(queens.clashing(state).length).toBeGreaterThanOrEqual(wrong);
+        expect(queens.queens.hint(state)).toContain("빨간 퀸을 옮겨");
+        // A full board refuses another queen: one must be taken off or carried.
+        const empty = state.queens.findIndex((q) => !q);
+        expect(queens.play(state, { from: -1, to: empty, extra: -1 })).toBeNull();
+        for (let step = 0; step < 4 * size && state.winner === null; step++) state = queens.play(state, queens.hint(state)!)!;
+        expect(state.winner).toBe(0);
+      }
+  });
+  test("a queen of mine is carried to an empty square in one move; a given one, or onto another, is refused", () => {
+    const state = queens.createGame(1, seededRandom(3)),
+      given = state.fixed.findIndex(Boolean),
+      empty = (from: number) => state.queens.findIndex((q, i) => !q && i !== from);
+    expect(queens.play(state, { from: given, to: empty(given), extra: -1 })).toBeNull();
+    const set = queens.play(state, { from: -1, to: empty(-1), extra: -1 })!,
+      mine = set.last!,
+      to = set.queens.findIndex((q) => !q),
+      moved = queens.play(set, { from: mine, to, extra: -1 })!;
+    expect([moved.queens[mine], moved.queens[to], moved.last, moved.ply]).toEqual([false, true, to, 2]);
+    expect(queens.play(set, { from: mine, to: given, extra: -1 })).toBeNull();
+    // Lines of the clash: a pair for every two queens in each other's way.
+    const pairs = queens.clashPairs({ size: 4, queens: [true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true] });
+    expect(pairs).toEqual([[0, 1], [0, 15]]);
+  });
+});
+
+describe("knight tour, upgraded", () => {
+  test("7×7 and 8×8 boards are laid and can be travelled", () => {
+    for (const stage of [6, 7])
+      for (let seed = 1; seed <= 6; seed++) {
+        const state = tour.createGame(stage, seededRandom(seed * 19 + stage)),
+          { cols, rows, fill } = tour.STAGES[stage - 1];
+        expect(state.open.filter(Boolean).length).toBeGreaterThanOrEqual(Math.ceil(cols * rows * fill));
+        expect(state.closed).toBeUndefined();
+        const way = tour.solve(state)!;
+        expect(way).toHaveLength(state.open.filter(Boolean).length - 1);
+      }
+  });
+  test("a closed journey covers its share, can be travelled round, and ends with the jump home", () => {
+    for (const [k, stage] of tour.CLOSED.entries())
+      for (let seed = 1; seed <= 8; seed++) {
+        const value = tour.STAGES.length + k + 1;
+        let state = tour.createGame(value, seededRandom(seed * 23 + k));
+        const total = state.open.filter(Boolean).length,
+          start = state.path[0];
+        expect(state.closed).toBe(true);
+        expect(total).toBeGreaterThanOrEqual(Math.ceil(stage.cols * stage.rows * stage.fill));
+        // Following the hint: every square once, and then back onto the first.
+        while (state.winner === null) state = tour.play(state, tour.hint(state)!)!;
+        expect(state.winner).toBe(0);
+        expect(state.path).toHaveLength(total + 1);
+        expect(state.path[total]).toBe(start);
+        expect(new Set(state.path).size).toBe(total);
+        expect(tour.knight.reason(state)).toBe("성공! 모든 칸을 밟고 출발점으로 돌아왔습니다.");
+      }
+  });
+  test("closed: the first square is refused until every other is trodden; trodden all but far from home is a failure", () => {
+    // Three squares of a 3×4 board, laid by hand: a1 (0), b3 (7) and c1 (2). From a1 the knight reaches b3, from b3
+    // both a1 and c1; c1 is no knight's move from a1, so this board cannot be closed.
+    const cols = 3,
+      rows = 4,
+      open = Array.from({ length: cols * rows }, (_, i) => [0, 7, 2].includes(i)),
+      start: tour.State = { cols, rows, open, path: [0], closed: true, last: null, winner: null, ply: 0 };
+    let state = tour.play(start, { from: -1, to: 7, extra: -1 })!;
+    // Back to a1 is not offered while c1 is left.
+    expect(tour.nextSquares(state)).toEqual([2]);
+    expect(tour.play(state, { from: -1, to: 0, extra: -1 })).toBeNull();
+    state = tour.play(state, { from: -1, to: 2, extra: -1 })!;
+    expect(state.winner).toBe(1);
+    expect(tour.knight.reason(state)).toBe("실패! 출발점으로 돌아갈 수 없습니다.");
+    expect(tour.hint(start)).toBeNull();
   });
 });
 

@@ -750,8 +750,8 @@ test("meat grill: pieces are laid, turned, eaten and wrapped; nothing happens wh
 test("queens on the board: a puzzle laid at random is finished by setting the missing queens", async ({ page }) => {
   const random = await seeded(page, 47),
     errors = await sit(page, "체스판의 퀸");
-  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
-  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "6×6" }).click();
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(10);
+  await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "6×6 · 보통" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);
   // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
@@ -780,7 +780,7 @@ test("queens on the board: a puzzle laid at random is finished by setting the mi
 test("knight tour: a board laid at random is travelled square by square, and a wrong square is refused", async ({ page }) => {
   const random = await seeded(page, 53),
     errors = await sit(page, "나이트의 여행");
-  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(10);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "4×4" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await rest(page);

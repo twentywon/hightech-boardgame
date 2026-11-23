@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
+import { PerspectiveCamera, Vector3 } from "three";
+import { FOV, cameraDistance } from "../../src/engine/camera";
 import * as tower from "../../src/games/hanoi/rules";
 import * as jugs from "../../src/games/pour/rules";
+import * as queenRules from "../../src/games/queens/rules";
+import * as tourRules from "../../src/games/knight/rules";
+import { QUEEN_TOP, cellAt as queenAt, queensSubject } from "../../src/games/queens/view";
 import { selectGame } from "./library";
 
 /**
@@ -98,6 +103,95 @@ test("water pouring: four vessels are poured among to the goal, the hint shows t
   }
   await expect(page.locator("#turn")).toContainText("성공!");
   await expect(panel.locator("#pz-next")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("queens on the board: a repair board is mended by carrying the misplaced queens along their rows", async ({ page }) => {
+  test.setTimeout(240000);
+  const random = await seeded(page, 61),
+    errors = await sit(page, "체스판의 퀸", "8×8 · 고쳐 놓기", 10);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
+  queenRules.createGame(1, random);
+  const value = queenRules.STAGES.length + 2,
+    state = queenRules.createGame(value, random),
+    size = state.size,
+    // The answer that keeps the most of the queens as they stand; the others are carried to it within their rows.
+    near = queenRules.answers(size).reduce((a, b) => (state.queens.filter((q, i) => q && b[Math.floor(i / size)] === i % size).length > state.queens.filter((q, i) => q && a[Math.floor(i / size)] === i % size).length ? b : a)),
+    wrong = state.queens.flatMap((q, i) => (q && near[Math.floor(i / size)] !== i % size ? [i] : []));
+  expect(size).toBe(8);
+  expect(wrong.length).toBeGreaterThan(0);
+  await expect(page.locator("#turn")).toContainText("빨간 퀸을 옮겨");
+  const box = (await page.locator("#board canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    subject = queensSubject(size, aspect),
+    d = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+  camera.position.set(0, Math.sin(subject.tilt) * d, Math.cos(subject.tilt) * d);
+  camera.lookAt(0, subject.lookY, 0);
+  camera.updateMatrixWorld();
+  const square = (cell: number) => {
+      const p = queenAt(size, cell),
+        v = new Vector3(p.x, QUEEN_TOP, p.z).project(camera);
+      return { x: box.x + ((v.x + 1) * box.width) / 2, y: box.y + ((1 - v.y) * box.height) / 2 };
+    },
+    drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i++) await page.mouse.move(from.x + ((to.x - from.x) * i) / 8, from.y + ((to.y - from.y) * i) / 8);
+      await page.mouse.up();
+    };
+  // A board full of queens takes no more: a tap on an empty square sets nothing.
+  const empty = state.queens.findIndex((q) => !q);
+  await page.mouse.click(square(empty).x, square(empty).y);
+  await page.waitForTimeout(300);
+  await expect(count(page)).toHaveText("0수");
+  for (const [n, cell] of wrong.entries()) {
+    const row = Math.floor(cell / size);
+    await drag(square(cell), square(row * size + near[row]));
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+  }
+  await expect(page.locator("#turn")).toContainText("성공!");
+  // Taken back, the last queen stands where it was again, and is carried once more.
+  const panel = page.locator(".puzzle-panel");
+  await panel.getByRole("button", { name: "무르기", exact: true }).click();
+  await expect(count(page)).toHaveText(`${wrong.length - 1}수`);
+  await rest(page);
+  const last = wrong[wrong.length - 1],
+    row = Math.floor(last / size);
+  await drag(square(last), square(row * size + near[row]));
+  await expect(count(page)).toHaveText(`${wrong.length}수`, { timeout: 20000 });
+  await expect(page.locator("#turn")).toContainText("성공!");
+  expect(errors).toEqual([]);
+});
+
+test("knight tour: a closed journey is travelled square by square, home is refused until the end, and the last jump goes home", async ({ page }) => {
+  test.setTimeout(200000);
+  const random = await seeded(page, 29),
+    errors = await sit(page, "나이트의 여행", "5×6 · 돌아오기", 10);
+  // A board was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
+  tourRules.createGame(1, random);
+  const state = tourRules.createGame(tourRules.STAGES.length + 1, random),
+    way = tourRules.solve(state)!,
+    board = walker(page, state.cols, state.rows),
+    start = state.path[0];
+  expect(state.closed).toBe(true);
+  expect(way[way.length - 1]).toBe(start);
+  await expect(page.locator("#turn")).toContainText("출발점으로 돌아오세요");
+  await board.home();
+  for (const [n, cell] of way.entries()) {
+    // Once the knight stands a jump from home with squares still to tread, home is refused.
+    if (n < way.length - 1 && n > 0 && tourRules.jumps(state.cols, state.rows, way[n - 1]).includes(start)) {
+      await board.go(start);
+      await page.waitForTimeout(250);
+      await expect(count(page)).toHaveText(`${n}수`);
+    }
+    await board.go(cell);
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+  }
+  await expect(page.locator("#turn")).toContainText("성공! 모든 칸을 밟고 출발점으로 돌아왔습니다.");
+  await expect(page.locator(".puzzle-panel #pz-next")).toBeVisible();
   expect(errors).toEqual([]);
 });
 

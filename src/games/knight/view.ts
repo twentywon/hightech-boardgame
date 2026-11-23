@@ -1,8 +1,9 @@
 import * as T from "three";
-import { wood, planks, veneer, glossy, block, hop, travel } from "../../engine/scene-utils";
+import { wood, veneer, glossy, block, hop, travel, capable } from "../../engine/scene-utils";
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
-import { nextSquares, type State } from "./rules";
+import { nextSquares, stageOf, type State } from "./rules";
+import { hall, type Hall } from "./hall";
 
 export const KNIGHT_COLORS: [string, string] = ["#ecdcb4", "#2f6b4a"];
 /** A square's side and the height of its top. */
@@ -33,19 +34,48 @@ export class KnightView extends TableView<State> {
   private dotPaint: T.Material;
   private cursor: T.Mesh;
   private hintRing: T.Mesh;
-  constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#65452f");
-    this.daylight("#fff2d7", "#283c35", "#fff5df", 7, 2.4);
-    this.add(new T.BoxGeometry(60, 0.2, 60), this.standard(planks(10, (r) => this.own(r))), 0, -0.35, 0).castShadow = false;
+  /** The way trodden, as a gold line from square to square; the square to come home to on a closed journey. */
+  private way = new T.Group();
+  private strip: T.BufferGeometry;
+  private wayPaint: T.MeshBasicMaterial;
+  private litPaint: T.MeshBasicMaterial;
+  private home: T.Mesh;
+  /** Which way the knight faces, as a turn round the upright: it turns toward each leap. */
+  private yaw = -0.55;
+  private room: Hall;
+  private clock = 0;
+  onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
+  constructor(host: HTMLElement, quality: "high" | "low", variant = "1") {
+    super(host, quality, "#3b2a1c");
+    this.daylight("#fff2d7", "#283c35", "#fff5df", 8, 2.4);
+    const own = <R extends { dispose(): void }>(r: R) => this.own(r),
+      { cols, rows } = stageOf(Number(variant) || 1);
+    // A castle hall's oak table round the board (`hall.ts`).
+    this.room = hall(this.scene, own, (options) => this.standard(options), cols * CELL * 0.5 + 0.25, rows * CELL * 0.5 + 0.25, -0.175);
     this.disc = this.own(new T.CylinderGeometry(0.3, 0.3, 0.012, 36));
     this.dot = this.own(new T.CircleGeometry(0.09, 24).rotateX(-Math.PI / 2));
     this.dotPaint = this.own(new T.MeshBasicMaterial({ color: "#3fae5c", transparent: true, opacity: 0.85, depthWrite: false }));
+    this.strip = this.own(new T.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0));
+    this.wayPaint = this.own(new T.MeshBasicMaterial({ color: "#c9952e", transparent: true, opacity: 0.8, depthWrite: false }));
+    this.litPaint = this.own(new T.MeshBasicMaterial({ color: "#ffe27a", transparent: true, opacity: 1, depthWrite: false }));
     this.buildKnight();
-    const own = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.cursor = ringMesh(own, 0.31, 0.35, "#fff2c6");
     this.hintRing = ringMesh(own, 0.3, 0.37, "#ffb21f");
-    this.scene.add(this.board, this.steps, this.dots, this.knight, this.cursor, this.hintRing);
+    this.home = ringMesh(own, 0.33, 0.38, "#e9b83a");
+    this.scene.add(this.board, this.way, this.steps, this.dots, this.knight, this.cursor, this.hintRing, this.home);
     this.begin();
+    if (capable() && !this.reducedMotion) this.clock = requestAnimationFrame(this.idle);
+  }
+  private idle = (now: number) => {
+    if (this.disposed) return;
+    const t = now / 1000;
+    this.room.flames.forEach((flame, i) => flame.scale.set(1, 1 + 0.14 * Math.sin(t * 10 + i * 2) * Math.sin(t * 6.1 + i), 1));
+    this.redraw();
+    this.clock = requestAnimationFrame(this.idle);
+  };
+  dispose() {
+    cancelAnimationFrame(this.clock);
+    super.dispose();
   }
   /** A boxwood knight: the turned foot and stem of a Staunton piece and a horse's head with a mane. */
   private buildKnight() {
@@ -152,6 +182,24 @@ export class KnightView extends TableView<State> {
   private trail(state: State, upTo = state.path.length) {
     this.steps.clear();
     this.dots.clear();
+    // The way trodden: a gold line from each square to the next, under the discs, as a knight's tour is drawn.
+    this.way.clear();
+    for (let i = 1; i < upTo; i++) {
+      const a = squareAt(state.cols, state.rows, state.path[i - 1]),
+        b = squareAt(state.cols, state.rows, state.path[i]),
+        line = new T.Mesh(this.strip, state.winner === 0 && !this.animating ? this.litPaint : this.wayPaint);
+      line.position.set(a.x, TOP + 0.004, a.z);
+      line.rotation.y = -Math.atan2(b.z - a.z, b.x - a.x);
+      line.scale.set(Math.hypot(b.x - a.x, b.z - a.z), 1, 0.05);
+      line.renderOrder = 4;
+      this.way.add(line);
+    }
+    // A closed journey's first square keeps a gold ring until the knight is home.
+    this.home.visible = !!state.closed && state.winner !== 0;
+    if (this.home.visible) {
+      const p = squareAt(state.cols, state.rows, state.path[0]);
+      this.home.position.set(p.x, TOP + 0.016, p.z);
+    }
     state.path.slice(0, upTo - 1).forEach((cell, i) => {
       const p = squareAt(state.cols, state.rows, cell),
         disc = new T.Mesh(this.disc, this.number(i + 1));
@@ -172,23 +220,58 @@ export class KnightView extends TableView<State> {
     this.trail(state);
     const p = squareAt(state.cols, state.rows, state.path[state.path.length - 1]);
     this.knight.position.set(p.x, TOP, p.z);
+    this.knight.rotation.set(0, this.yaw, 0);
   }
   protected animate(before: State, state: State) {
     if (state.last === null || state.ply !== before.ply + 1 || state.path.length !== before.path.length + 1) return false;
     this.lay(state);
     this.trail(state, state.path.length - 1);
     const from = squareAt(state.cols, state.rows, before.path[before.path.length - 1]),
-      to = squareAt(state.cols, state.rows, state.last);
-    // A leap in an arc over whatever lies between, then the step behind it is numbered.
-    this.tween(0, 420, (p) => {
+      to = squareAt(state.cols, state.rows, state.last),
+      // It turns toward the leap (its head is drawn facing +x), the shorter way round.
+      aim = -Math.atan2(to.z - from.z, to.x - from.x),
+      turn = Math.atan2(Math.sin(aim - this.yaw), Math.cos(aim - this.yaw)),
+      first = this.yaw;
+    this.yaw = first + turn;
+    // A turn, then a leap in an arc over whatever lies between, leaning back as it rises and forward as it lands;
+    // the line of the way runs out behind it, and the step it left is numbered.
+    this.tween(0, 140, (p) => this.knight.rotation.set(0, first + turn * p * p * (3 - 2 * p), 0));
+    const line = new T.Mesh(this.strip, this.wayPaint),
+      length = Math.hypot(to.x - from.x, to.z - from.z);
+    line.position.set(from.x, TOP + 0.004, from.z);
+    line.rotation.y = aim;
+    line.scale.set(0.001, 1, 0.05);
+    line.renderOrder = 4;
+    this.way.add(line);
+    this.tween(140, 420, (p) => {
       const t = travel(p);
       this.knight.position.set(from.x + (to.x - from.x) * t, TOP + hop(p) * 0.8, from.z + (to.z - from.z) * t);
+      this.knight.rotation.set(0, this.yaw, Math.sin(Math.PI * Math.min(1, p / 0.84)) * 0.35 * (p < 0.42 ? 1 : -0.6));
+      line.scale.x = Math.max(0.001, length * t);
       if (p === 1) {
         this.onContact();
         this.trail(state);
       }
     });
+    if (state.winner === 0) this.cheer(state, 600);
     return true;
+  }
+  /** The journey done: the gold line lights up square by square along the way, the knight rears twice, and a chime rings. */
+  private cheer(state: State, delay: number) {
+    const lines = this.way.children as T.Mesh[],
+      each = Math.min(60, 1400 / Math.max(1, state.path.length));
+    this.tween(delay, 10, () => this.onKnock?.("pocket", 1));
+    lines.forEach((line, i) => {
+      this.tween(delay + i * each, 10, () => {
+        const lit = this.way.children[i] as T.Mesh | undefined;
+        if (lit) lit.material = this.litPaint;
+      });
+    });
+    this.tween(delay, 900, (p) => {
+      const rear = Math.max(0, Math.sin(p * Math.PI * 2));
+      this.knight.rotation.set(0, this.yaw, rear * 0.45);
+      this.knight.position.y = TOP + rear * 0.12;
+    });
   }
   protected mark(marks: Marks) {
     const state = this.state;
