@@ -1,11 +1,13 @@
 import * as T from "three";
 import { glossy } from "../../engine/scene-utils";
+import type { LiveGuest, LiveHost, LiveSession } from "../../net/live";
 import { shout } from "../../ui/banner";
 import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { attic } from "./attic";
 import { DROP, MARGIN, SURFACE, scenePoint, slotSubject } from "./layout";
-import { COLORS, COLOR_NAMES, END, LAP, OFF, carName, packRanking, type State } from "./rules";
+import { follow, hostThrottles, inputOf, readSnap, snapOf } from "./net";
+import { COLORS, COLOR_NAMES, END, LAP, OFF, carName, packRanking, seatOfCar, type State } from "./rules";
 import { CAR_LENGTH, COUNTDOWN, DT, FLY, VMAX, autopilot, createWorld, poseOf, progress, ranking, step, ticks, type RaceEvent, type World } from "./sim";
 import { buildTrack, laneAt, type Segment, type Track } from "./track";
 
@@ -100,17 +102,27 @@ export class SlotCarView extends TableView<State> {
   private paused = false;
   private ticker = 0;
   private boardText = "";
+  /**
+   * Over Wi-Fi: the car of the seat this device plays (null: watching), its "나" tag over the track, and what of the
+   * host's race a guest has drawn so far (to sound and light what changed since).
+   */
+  private mine: number | null = null;
+  private tag: T.Sprite | null = null;
+  private heard: { tick: number; laps: number[]; offs: number[]; phases: string[] } | null = null;
+  private letGoTimer = 0;
   /** A sound heard: the motors (`whine` or `coast` for the people's cars, `pack` for the computer's), a car flying off, the lights, a lap. */
   onKnock: ((kind: string, strength: number) => void) | null = null;
   private readonly keyDown = (e: KeyboardEvent) => this.key(e, true);
   private readonly keyUp = (e: KeyboardEvent) => this.key(e, false);
   private readonly blurred = () => this.letGo();
+  private readonly hidden = () => document.hidden && this.letGo();
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
     private course: string,
     private level: Level,
     private local: boolean,
+    private live: LiveSession | null = null,
   ) {
     super(host, quality, "#2a2018");
     // Until the race is known (how many lanes), the camera frames the course as laid for four.
@@ -144,6 +156,7 @@ export class SlotCarView extends TableView<State> {
     document.addEventListener("keydown", this.keyDown);
     document.addEventListener("keyup", this.keyUp);
     window.addEventListener("blur", this.blurred);
+    document.addEventListener("visibilitychange", this.hidden);
     this.begin();
     const tick = () => {
       if (this.disposed) return;
@@ -164,19 +177,36 @@ export class SlotCarView extends TableView<State> {
   private letGo() {
     this.keysHeld.forEach((keys) => keys.clear());
     this.tableHolds.clear();
+    // A guest tells the host at once (its page may stop drawing now: hidden, or a window over it).
+    const live = this.live;
+    if (live && !live.host && this.mine !== null) {
+      clearTimeout(this.letGoTimer);
+      this.letGoTimer = window.setTimeout(() => (live as LiveGuest).tick(() => inputOf(false)), 40);
+    }
   }
   private running() {
-    return !!this.world && !!this.state && this.state.ranking === null && this.world.closed === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
+    // Over Wi-Fi a window open on one device does not stop the race for the others (a pause does, for all).
+    return (
+      !!this.world && !!this.state && this.state.ranking === null && this.world.closed === null && !this.paused && !document.hidden && (!!this.live || !document.querySelector("dialog[open]"))
+    );
+  }
+  /** The car a press on the table and Space hold: mine against the computer (car 0), and over Wi-Fi my seat's. */
+  private get first() {
+    return this.live ? this.mine : 0;
+  }
+  /** Whether a car is driven at this screen (its motor is heard as the people's, its laps beep). */
+  private isMine(k: number) {
+    return this.live ? k === this.mine : k < this.people;
   }
   private held(k: number) {
-    return this.pointers[k].size > 0 || this.keysHeld[k].size > 0 || (k === 0 && this.tableHolds.size > 0);
+    return this.pointers[k].size > 0 || this.keysHeld[k].size > 0 || (k === this.first && this.tableHolds.size > 0);
   }
   /** A key for a pedal, from anywhere on the page but a field or another button. */
   private key(e: KeyboardEvent, down: boolean) {
     const k = KEYS[e.code];
     if (k === undefined || e.ctrlKey || e.metaKey || e.altKey) return;
-    const seat = this.local ? k : 0;
-    if (seat >= this.people) return;
+    const seat = this.local ? k : this.first;
+    if (seat === null || seat >= this.people) return;
     const target = e.target as HTMLElement | null;
     if (target && target !== this.renderer.domElement && target.closest("input, select, textarea, dialog, button:not(.sc-pedal)")) return;
     if (down && document.querySelector("dialog[open]")) return;
@@ -189,17 +219,21 @@ export class SlotCarView extends TableView<State> {
   private makePedals() {
     this.pedalBox.replaceChildren();
     this.pedals = [];
-    const places = PEDAL_PLACES[this.people] ?? PEDAL_PLACES[1];
-    for (let k = 0; k < this.people; k++) {
-      const button = document.createElement("button");
+    const places = PEDAL_PLACES[this.people] ?? PEDAL_PLACES[1],
+      // Over Wi-Fi each device has one pedal, its own car's, at the lower right (none while watching).
+      own = this.live ? (this.mine === null ? [] : [this.mine]) : Array.from({ length: this.people }, (_, k) => k),
+      alone = own.length === 1 && !this.local;
+    for (const k of own) {
+      const color = COLORS[this.state ? seatOfCar(this.state, k) : k],
+        button = document.createElement("button");
       button.type = "button";
       button.className = "sc-pedal";
       button.tabIndex = -1;
-      button.dataset.at = places[k];
+      button.dataset.at = alone ? "br" : places[k];
       button.dataset.seat = String(k);
-      button.style.setProperty("--car", COLORS[k]);
-      button.setAttribute("aria-label", this.people > 1 ? `${k + 1}번 ${COLOR_NAMES[k]} 가속 페달` : "가속 페달");
-      button.innerHTML = `<span class="sc-pedal-plate" aria-hidden="true">${this.people > 1 ? `<b>${k + 1}</b>` : ""}<em>가속</em></span>`;
+      button.style.setProperty("--car", color);
+      button.setAttribute("aria-label", alone ? "가속 페달" : `${k + 1}번 ${COLOR_NAMES[k]} 가속 페달`);
+      button.innerHTML = `<span class="sc-pedal-plate" aria-hidden="true">${alone ? "" : `<b>${k + 1}</b>`}<em>가속</em></span>`;
       const lift = (e: PointerEvent) => {
         this.pointers[k].delete(e.pointerId);
         this.markPedals();
@@ -225,8 +259,8 @@ export class SlotCarView extends TableView<State> {
     }
   }
   private markPedals() {
-    this.pedals.forEach((button, k) => {
-      const on = this.held(k);
+    this.pedals.forEach((button) => {
+      const on = this.held(Number(button.dataset.seat));
       if (button.classList.contains("on") !== on) button.classList.toggle("on", on);
       button.dataset.held = String(on);
     });
@@ -235,6 +269,10 @@ export class SlotCarView extends TableView<State> {
   private build(state: State) {
     this.built = true;
     this.people = state.people;
+    if (this.live) {
+      const car = this.live.seat === null ? -1 : (state.seats ?? []).indexOf(this.live.seat);
+      this.mine = car >= 0 ? car : null;
+    }
     this.track = buildTrack(state.course, state.cars);
     this.world = createWorld(state.course, state.cars, state.laps, this.level, Math.floor(Math.random() * 2 ** 31));
     const own: Own = (r) => this.own(r),
@@ -256,7 +294,8 @@ export class SlotCarView extends TableView<State> {
     attic(this.scene, own, half, depth, DROP);
     this.layTrack(own);
     this.gantry(own);
-    for (let k = 0; k < state.cars; k++) this.cars.push(this.makeCar(own, k));
+    for (let k = 0; k < state.cars; k++) this.cars.push(this.makeCar(own, k, seatOfCar(state, k)));
+    if (this.mine !== null) this.tag = this.makeTag(own, COLORS[seatOfCar(state, this.mine)]);
     this.makePedals();
     this.markPedals();
     // The camera frames the track as it now is.
@@ -416,9 +455,9 @@ export class SlotCarView extends TableView<State> {
    * two struts, its number on the roof, four wheels with silver hubs, headlamps, and under the nose the guide blade
    * with its two copper braids, down in the slot.
    */
-  private makeCar(own: Own, k: number): CarMesh {
+  private makeCar(own: Own, k: number, seat = k): CarMesh {
     const group = new T.Group(),
-      color = COLORS[k],
+      color = COLORS[seat],
       paint = own(glossy({ color, roughness: 0.32 }, 0.8)),
       dark = this.standard({ color: "#121316", roughness: 0.6 }),
       side = new T.Shape();
@@ -443,7 +482,7 @@ export class SlotCarView extends TableView<State> {
     this.add(new T.BoxGeometry(0.07, 0.012, 0.3), paint, -0.285, 0.15, 0, group);
     for (const z of [-0.08, 0.08]) this.add(new T.BoxGeometry(0.03, 0.05, 0.012), dark, -0.28, 0.125, z, group);
     // Its number on the roof.
-    const number = new T.Mesh(own(new T.CircleGeometry(0.052, 24)), this.standard({ map: roundel(own, k + 1), roughness: 0.5 }));
+    const number = new T.Mesh(own(new T.CircleGeometry(0.052, 24)), this.standard({ map: roundel(own, seat + 1), roughness: 0.5 }));
     number.rotation.x = -Math.PI / 2;
     number.position.set(0.12, 0.0935, 0);
     group.add(number);
@@ -469,16 +508,56 @@ export class SlotCarView extends TableView<State> {
     this.scene.add(group);
     return { group, wheels, rolled: 0 };
   }
+  /**
+   * My car's "나" over the track over Wi-Fi (every device sees the whole course, so it says which car is its own): a
+   * tag in my car's colour that floats over it wherever it goes, seen through the bridge.
+   */
+  private makeTag(own: Own, color: string) {
+    const c = document.createElement("canvas");
+    c.width = 128;
+    c.height = 96;
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.roundRect(8, 6, 112, 64, 18);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(48, 68);
+    ctx.lineTo(64, 90);
+    ctx.lineTo(80, 68);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = '900 44px "Pretendard", "Noto Sans KR", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("나", 64, 40);
+    const map = own(new T.CanvasTexture(c));
+    map.colorSpace = T.SRGBColorSpace;
+    const tag = new T.Sprite(own(new T.SpriteMaterial({ map, depthTest: false, transparent: true })));
+    tag.scale.set(0.88, 0.66, 1);
+    tag.renderOrder = 10;
+    this.scene.add(tag);
+    return tag;
+  }
   /** Runs the race for the time that has passed since the last frame. */
   private advance(now: number) {
     const real = Math.min(0.5, (now - this.last) / 1000);
     this.last = now;
-    const world = this.world;
-    if (world && this.running()) {
+    const world = this.world,
+      live = this.live;
+    if (live && !live.host) this.follow(now);
+    else if (world && this.running()) {
       this.left += real;
       while (this.left >= DT && this.running()) {
         this.left -= DT;
-        const throttles = world.cars.map((_, k) => (k < this.people ? this.held(k) : autopilot(world, k, this.level)));
+        // Over Wi-Fi the host's race takes each car's pedal from whoever drives it: my hand, a guest's, the computer.
+        const throttles = live
+          ? hostThrottles(world, this.state!.seats ?? [], (seat) => live.control(seat), (seat) => (live as LiveHost).latest(seat), this.mine !== null && this.held(this.mine), this.level)
+          : world.cars.map((_, k) => (k < this.people ? this.held(k) : autopilot(world, k, this.level)));
         for (const event of step(world, throttles, this.level)) this.tell(event);
       }
       this.sound();
@@ -486,15 +565,50 @@ export class SlotCarView extends TableView<State> {
       this.left = 0;
       this.hush();
     }
+    // The host tells its race to the guests (paused or not, so that one coming back sees it).
+    if (live?.host && world && this.state) live.tick(() => snapOf(world), now);
     if (world) {
       world.cars.forEach((car, k) => (this.cars[k].rolled += car.v * real));
       this.pose();
     }
     this.redraw();
   }
+  /**
+   * A guest's frame: my pedal is sent to the host, and the host's race is drawn a moment behind (`LiveGuest.frame`);
+   * the lights, the laps of my car, flights off and cars set back are heard and seen here as their counts change.
+   * The moves (laps, flights off, the end) come from the room, made by the host.
+   */
+  private follow(now: number) {
+    const live = this.live as LiveGuest,
+      world = this.world;
+    if (!world) return;
+    const playing = this.mine !== null && this.running() && !live.paused;
+    live.tick(() => (this.mine === null ? null : inputOf(playing && this.held(this.mine))), now);
+    const frame = live.frame(now),
+      a = frame && readSnap(frame.a.data),
+      b = frame && readSnap(frame.b.data);
+    if (!frame || !a || !b) return;
+    follow(world, a, b, frame.t);
+    const heard = this.heard,
+      start = ticks(COUNTDOWN);
+    // Come in late (or back from a drop): the lights as they stand.
+    if (!heard) this.light(world.tick >= start ? 0 : Math.min(3, Math.floor(world.tick / ticks(1)) + 1), world.tick >= start);
+    else {
+      for (const n of [1, 2, 3]) if (heard.tick <= ticks(n - 1) && world.tick > ticks(n - 1) && world.tick < start) this.tell({ kind: "light", n });
+      if (heard.tick < start && world.tick >= start) this.tell({ kind: "go" });
+      world.cars.forEach((car, k) => {
+        if (car.laps > heard.laps[k] && this.isMine(k)) this.onKnock?.("lap", 1);
+        if (car.offs > heard.offs[k]) this.onKnock?.("crash", Math.min(1, b.cars[k].v / VMAX + 0.4) * (this.isMine(k) ? 1 : 0.6));
+        if (heard.phases[k] === "off" && car.phase === "slot") this.tell({ kind: "back", car: k });
+      });
+    }
+    this.heard = { tick: world.tick, laps: world.cars.map((c) => c.laps), offs: world.cars.map((c) => c.offs), phases: world.cars.map((c) => c.phase) };
+    if (world.closed === null && !live.paused && !document.hidden) this.sound();
+    else this.hush();
+  }
   /** What a slice of the race did, told to the screen (moves) and the ear. */
   private tell(event: RaceEvent) {
-    const mine = (car: number) => car < this.people;
+    const mine = (car: number) => this.isMine(car);
     if (event.kind === "light") {
       this.light(event.n);
       shout(String(4 - event.n));
@@ -523,7 +637,7 @@ export class SlotCarView extends TableView<State> {
       pack = 0;
     world.cars.forEach((car, k) => {
       const level = car.phase === "off" ? 0 : car.v / VMAX;
-      if (k < this.people) {
+      if (this.isMine(k)) {
         if (level >= mine) {
           mine = level;
           pedal = car.throttle;
@@ -563,6 +677,10 @@ export class SlotCarView extends TableView<State> {
       // Set back by the marshal: it blinks in its slot until the penalty is over.
       g.visible = car.phase !== "off" || blink;
     });
+    if (this.tag && this.mine !== null) {
+      const g = this.cars[this.mine].group;
+      this.tag.position.set(g.position.x, Math.max(g.position.y, 0) + 0.8, g.position.z);
+    }
     this.describe();
   }
   /** The board of laps and places over the table, and what browser tests read off the canvas. */
@@ -577,7 +695,8 @@ export class SlotCarView extends TableView<State> {
         .map((k, i) => {
           const car = world.cars[k],
             status = car.place !== null ? "완주" : car.phase === "off" ? "이탈" : `${Math.min(world.laps, car.laps + 1)}/${world.laps}`;
-          return `<li class="${k < this.people && this.people === 1 ? "me" : ""}${car.phase === "off" ? " out" : ""}"><b>${i + 1}</b><i style="background:${COLORS[k]}"></i><span>${carName(state, k)}</span><em>${status}</em></li>`;
+          const me = this.live ? k === this.mine : k < this.people && this.people === 1;
+          return `<li class="${me ? "me" : ""}${car.phase === "off" ? " out" : ""}"><b>${i + 1}</b><i style="background:${COLORS[seatOfCar(state, k)]}"></i><span>${this.live && me ? "나" : carName(state, k)}</span><em>${status}</em></li>`;
         })
         .join(""),
       text = `<div class="sc-head">${closed ? "<b>결승 순위</b>" : world.tick < ticks(COUNTDOWN) ? "<b>출발 준비</b>" : `<b>LAP ${lap}/${world.laps}</b>`}</div><ol>${rows}</ol>`;
@@ -592,6 +711,7 @@ export class SlotCarView extends TableView<State> {
     data.laps = world.cars.map((car) => car.laps).join(",");
     data.offs = world.cars.map((car) => car.offs).join(",");
     data.lanes = String(world.track.lanes);
+    data.mine = this.mine === null ? "" : String(this.mine);
   }
   protected subject(aspect: number): TableSubject {
     return slotSubject(this.track, aspect);
@@ -609,9 +729,11 @@ export class SlotCarView extends TableView<State> {
   protected mark() {}
   dispose() {
     cancelAnimationFrame(this.ticker);
+    clearTimeout(this.letGoTimer);
     document.removeEventListener("keydown", this.keyDown);
     document.removeEventListener("keyup", this.keyUp);
     window.removeEventListener("blur", this.blurred);
+    document.removeEventListener("visibilitychange", this.hidden);
     this.hud.remove();
     this.pedalBox.remove();
     super.dispose();
