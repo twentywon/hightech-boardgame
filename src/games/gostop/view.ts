@@ -6,6 +6,7 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { BONUS2, CARDS, FLIP, bundles, capturing, choicesOf, danger, isBonus, kindOf, monthOf, pictureOf, piValue, points, sure, type State } from "./rules";
 import { GOSTOP_LAYOUT as L } from "./layout";
+import { BLIND, unveil } from "../deck/blind";
 
 // The forty-eight pictures, inlined so that the game makes no network request (CC BY-SA 4.0, see public/hwatu-license.txt).
 const sources = import.meta.glob<string>("./cards/*.webp", { query: "?inline", import: "default", eager: true });
@@ -52,8 +53,11 @@ export class GostopView extends TableView<State> {
   private landed = 0;
   /** A tablet lying by the pile for each side, with its score painted on it (there is no panel beside the table). */
   private plates: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; said: string }[] = [];
-  constructor(host: HTMLElement, quality: "high" | "low") {
+  /** Over Wi-Fi: the other is 상대, and the cards out of my sight are blind ones (`deck/blind.ts`). */
+  private net: boolean;
+  constructor(host: HTMLElement, quality: "high" | "low", net = false) {
     super(host, quality, "#3a2a1c");
+    this.net = net;
     this.daylight("#fff1dc", "#8a6236", "#ffe8c6", 7, 2.1);
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
     // An ondol room (the user asked), and on its floor an olive wool blanket with a darker band round its edge.
@@ -74,6 +78,15 @@ export class GostopView extends TableView<State> {
       this.cards.push(mesh);
       this.scene.add(mesh);
     }
+    // Over Wi-Fi a blind card for each card, backed on both faces, numbered from `BLIND`.
+    if (net)
+      for (let k = 0; k < CARDS; k++) {
+        const mesh = new T.Mesh(geometry, [edge, edge, back, back, edge, edge]);
+        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.visible = false;
+        this.cards[BLIND + k] = mesh;
+        this.scene.add(mesh);
+      }
     // A frame round a card: white where the keyboard is, gold round the floor cards to choose between.
     const frame = this.own(new T.PlaneGeometry(L.CW + 0.14, L.CH + 0.14)),
       paint = (color: string) => this.own(new T.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false })),
@@ -555,6 +568,7 @@ export class GostopView extends TableView<State> {
     return { x: (right ? L.FLOOR_RIGHT : L.FLOOR_LEFT) + col * L.FLOOR_STEP + n * 0.13, y: 0.04 + n * 0.02, z: (row ? L.FLOOR_Z : -L.FLOOR_Z) + n * 0.1 };
   }
   private put(mesh: T.Mesh, pose: Pose, lift = 0, flip = pose.up ? 0 : Math.PI) {
+    mesh.visible = true;
     mesh.position.set(pose.x, pose.y + lift, pose.z);
     mesh.rotation.set(0, 0, flip);
     mesh.scale.setScalar(pose.s);
@@ -574,9 +588,14 @@ export class GostopView extends TableView<State> {
   }
   protected place(state: State) {
     this.poses = this.arrange(state);
-    this.cards.forEach((mesh, id) => this.put(mesh, this.poses.get(id)!));
+    // Over Wi-Fi a card out of my sight is not itself on the table: its blind card is.
+    this.cards.forEach((mesh, id) => {
+      const pose = this.poses.get(id);
+      if (pose) this.put(mesh, pose);
+      else mesh.visible = false;
+    });
     this.say(0, "나", points(state, 0).total, state.gos[0], state.shakes[0], state.bombs[0]);
-    this.say(1, "컴퓨터", points(state, 1).total, state.gos[1], state.shakes[1], state.bombs[1]);
+    this.say(1, this.net ? "상대" : "컴퓨터", points(state, 1).total, state.gos[1], state.shakes[1], state.bombs[1]);
     this.overlay(state);
     this.mark(this.marks);
   }
@@ -626,6 +645,7 @@ export class GostopView extends TableView<State> {
     // Everything starts in the pile, face down.
     const order = [...state.hands[0], ...state.hands[1], ...laid, ...swaps.map(([, r]) => r), ...state.pile.filter((id) => !swaps.some(([, r]) => r === id))];
     const stack = (i: number): Pose => ({ x: L.PILE_X, y: 0.04 + (order.length - 1 - i) * 0.019, z: 0, up: false, s: 1 });
+    for (const mesh of this.cards) if (mesh) mesh.visible = false;
     order.forEach((id, i) => this.put(this.cards[id], stack(i)));
     const step = 75,
       flight = 300;
@@ -657,6 +677,8 @@ export class GostopView extends TableView<State> {
       to = this.arrange(state),
       last = state.last,
       turned = !!last && last !== before.last && state.ply === before.ply + 1 && (before.last?.played !== last.played || last.played === -1) && !last.events.includes("보너스");
+    // Over Wi-Fi a card that comes into my sight (or goes out of it) starts where its blind card was.
+    unveil(from, to, before.blinds, state.blinds);
     this.poses = to;
     this.hide();
     this.landed = 0;
@@ -697,8 +719,9 @@ export class GostopView extends TableView<State> {
       lead = Math.max(lead, flipAt - L.FLIP_AT);
     }
     const moved = this.cards.map((_, id) => id).filter((id) => {
-      const a = from.get(id)!,
-        b = to.get(id)!;
+      const a = from.get(id),
+        b = to.get(id);
+      if (!a || !b) return a !== b;
       return plan.has(id) || Math.abs(a.x - b.x) + Math.abs(a.z - b.z) + Math.abs(a.y - b.y) > 0.005 || a.up !== b.up || a.s !== b.s;
     });
     if (!moved.length) return false;
@@ -706,10 +729,19 @@ export class GostopView extends TableView<State> {
       steal = gather + 380;
     this.bubble.hidden = true;
     for (const id of moved) {
-      const a = from.get(id)!,
-        b = to.get(id)!,
+      const a = from.get(id),
+        b = to.get(id),
         step = plan.get(id),
         stolen = !!last?.stolen.includes(id);
+      // Over Wi-Fi: a card gone out of my sight (its blind card took its place) is put away; one come into it is laid.
+      if (!b) {
+        this.cards[id].visible = false;
+        continue;
+      }
+      if (!a) {
+        this.put(this.cards[id], b);
+        continue;
+      }
       if (step?.via) {
         this.fly(id, a, step.via, step.delay, 380, true);
         // It stays on the floor until the gathering, or there for good.

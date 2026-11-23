@@ -50,8 +50,9 @@ export class OldMaidView extends DeckView<State> {
   private grips: T.Group[] = [];
   private arms: { seat: number; side: number; shoulder: T.Vector3; upper: T.Mesh; fore: T.Mesh; elbow: T.Mesh }[] = [];
   private held: Grip[] = [];
-  constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, 53, false);
+  /** `net`: over Wi-Fi, where the cards out of my sight are blind ones (`deck/blind.ts`). */
+  constructor(host: HTMLElement, quality: "high" | "low", net = false) {
+    super(host, quality, 53, false, net);
     this.renderer.setClearColor("#ece6d6");
     // Daylight from the windows at the left, and the room's even light from above.
     this.scene.add(new T.HemisphereLight("#fffaf0", "#8a7660", 1.7));
@@ -302,6 +303,8 @@ export class OldMaidView extends DeckView<State> {
     const from = this.arrange(before),
       to = this.arrange(s),
       { card, laid, seat } = s.last;
+    // Over Wi-Fi a card that comes into my sight (or goes out of it) starts where its blind card was.
+    this.unveil(before, s, from, to);
     this.poses = to;
     const a = from.get(card),
       b = to.get(card);
@@ -322,6 +325,9 @@ export class OldMaidView extends DeckView<State> {
       if (id === card || laid.includes(id)) return;
       const p = from.get(id),
         q = to.get(id);
+      // A card gone out of sight (its blind card took its place) is put away; one come into it is laid.
+      if (!q) this.cards[id].visible = false;
+      else if (!p) this.put(this.cards[id], q);
       if (!p || !q) return;
       const moved = Math.abs(p.x - q.x) + Math.abs(p.y - q.y) + Math.abs(p.z - q.z) > 0.004 || (p.q && q.q && p.q.angleTo(q.q) > 0.01);
       if (moved) this.fly(id, p, q, later, 420, false);

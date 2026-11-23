@@ -46,6 +46,10 @@ export interface State {
   champion: number | null;
   winner: Winner;
   ply: number;
+  /** Over Wi-Fi (`net.ts`): the blind number of each card (`deck/blind.ts`); a device's view leaves it out. */
+  net?: { masks: number[] };
+  /** A view over Wi-Fi: the blind card each card in sight stands for when out of sight (`deck/blind.ts`). */
+  blinds?: Record<number, number>;
 }
 /** How many cards an attack card makes the other side draw (0 for a card that does not attack). */
 export function power(id: number) {
@@ -120,7 +124,7 @@ function draw(s: State, side: number, n: number, random: Random) {
   return { ...s, pile, discard, hands, drew };
 }
 /** A hand of twenty: mine loses the game; a computer's cards go back under the pile and it leaves the table. */
-function bankrupt(s: State, side: number): State {
+export function bankrupt(s: State, side: number): State {
   if (side === 0) return { ...s, winner: 1 };
   const out = s.out.map((o, i) => o || i === side),
     hands = s.hands.map((h, i) => (i === side ? [] : h)),
@@ -129,7 +133,8 @@ function bankrupt(s: State, side: number): State {
   if (out.slice(1).every(Boolean)) return { ...next, winner: 0 };
   return next.seat === side ? { ...next, seat: onward(next, side) } : next;
 }
-export function play(s: State, move: Move, random: Random = cryptoRandom): State | null {
+/** `bust` is what a hand of twenty does (over Wi-Fi any seat only leaves the table: `net.ts`). */
+export function play(s: State, move: Move, random: Random = cryptoRandom, bust: (s: State, side: number) => State = bankrupt): State | null {
   if (s.winner !== null || move.extra !== -1 || move.from !== -1) return null;
   const side = s.seat;
   if (s.phase === "suit") {
@@ -142,7 +147,7 @@ export function play(s: State, move: Move, random: Random = cryptoRandom): State
       drawn = draw(s, side, n, random),
       { drew, ...rest } = drawn,
       next: State = { ...rest, attack: 0, seat: onward(s, side), ply: s.ply + 1, last: { seat: side, played: null, drew, events: s.attack ? [`${drew.length}장 받기`] : [] } };
-    return next.hands[side].length >= BUST ? bankrupt(next, side) : next;
+    return next.hands[side].length >= BUST ? bust(next, side) : next;
   }
   const id = move.to;
   if (!s.hands[side].includes(id) || !playable(s, id)) return null;

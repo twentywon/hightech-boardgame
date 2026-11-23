@@ -2,6 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { READY, ANTE, DECIDE, DOWN, FOLD, NEXT, START_CHIPS, TEN_PENALTY, UP, indian, wagerText, type State } from "./rules";
 import { CHIP_COLORS, IndianView } from "./view";
+import { indianNet } from "./net";
 
 export const indianConfig: PointConfig<State> = {
   game: indian,
@@ -16,6 +17,8 @@ export const indianConfig: PointConfig<State> = {
   // Each sees only the other's card: one screen cannot serve two.
   computerOnly: true,
   noUndo: true,
+  // Over Wi-Fi each device sees the other's card and never its own (`net.ts`).
+  net: indianNet(CHIP_COLORS),
   bankrupt: (state) => state.chips[0] === 0,
   // The computer sometimes takes its time, as someone weighing a bet does.
   ponder: (state) => (state.phase === "bet" && Math.random() < 0.5 ? 600 + Math.random() * 1900 : 0),
