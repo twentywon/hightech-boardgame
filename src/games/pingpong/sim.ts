@@ -220,6 +220,15 @@ export interface World {
   /** Lets served in a row on the point being played (the second loses it). */
   lets: number;
   seed: number;
+  /**
+   * Whether a person's hand plays each side (`[true, false]`: me against the computer). Over Wi-Fi both may be, or
+   * the computer may stand in on either side for someone whose device dropped: a person's side has my reach and
+   * my strokes (`swingShot`), its paddle goes where the hand is, and the computer does not think for it. Only side 0
+   * has the line of sight, the late sweep and the step aside (the view of a person on side 1 aims along its own sight).
+   */
+  people: [boolean, boolean];
+  /** The computer's hand on side 0, kept apart from side 1's (`ai`), when it stands in there. */
+  nearAi: World["ai"];
 }
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 /** The world's own sequence, so that a game played the same way comes out the same. */
@@ -262,6 +271,8 @@ export function createWorld(seed = 1): World {
     lean: 1,
     lets: 0,
     seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
+    people: [true, false],
+    nearAi: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0 },
   };
   world.paddles.forEach((pad, side) => retrace(world, side as 0 | 1, pad));
   return world;
@@ -332,6 +343,7 @@ export function serve(world: World, server: 0 | 1) {
   world.ai.wait = SERVE_PAUSE;
   world.ai.plan = null;
   world.ai.holdX = (rand(world) - 0.5) * 0.7;
+  if (!world.people[0]) Object.assign(world.nearAi, { wait: SERVE_PAUSE, plan: null, holdX: (rand(world) - 0.5) * 0.7 });
   world.stanceGoal = 0;
   world.passed = -1;
   hold(world);
@@ -619,9 +631,9 @@ function meeting(world: World, side: 0 | 1, zAt: (y: number) => number, sighted 
   }
   return nearest;
 }
-/** A blade's height kept within its reach: not into the table over it, and no higher than its side's top. */
-function heightWithin(side: 0 | 1, y: number, z: number) {
-  return clamp(y, Math.abs(z) < HALF_L + 0.02 ? 0.06 : -0.3, side === 0 ? REACH_TOP : THEIR_TOP);
+/** A blade's height kept within its reach: not into the table over it, and no higher than its side's top (a person's, or the computer's). */
+function heightWithin(side: 0 | 1, y: number, z: number, person = side === 0) {
+  return clamp(y, Math.abs(z) < HALF_L + 0.02 ? 0.06 : -0.3, person ? REACH_TOP : THEIR_TOP);
 }
 /** Where `side`'s blade stands across and along with its height at `y`: where the hand is, or on the line of sight through it (mine, while a pointer holds it). */
 function bladeAt(world: World, side: 0 | 1, y: number) {
@@ -644,7 +656,7 @@ function reachHeight(world: World, side: 0 | 1, zAt: (y: number) => number) {
     const k = meeting(world, side, zAt, side === 0 && !!world.sight);
     if (k >= 0) y = world.path[k * 4 + 1];
   }
-  return heightWithin(side, y, zAt(y));
+  return heightWithin(side, y, zAt(y), world.people[side]);
 }
 /**
  * Where my blade will meet the ball now coming to me (the view's contact marker), by the same reading of the path
@@ -725,7 +737,7 @@ function movePaddles(world: World, level: Level) {
         dx = at.x - pad.x,
         dz = at.z - pad.z,
         far = Math.hypot(dx, dz),
-        most = side === 0 ? Infinity : LEVELS[level].speed * DT,
+        most = world.people[side] ? Infinity : LEVELS[level].speed * DT,
         share = far > most ? most / far : 1;
       x = pad.x + dx * share;
       z = pad.z + dz * share;
@@ -825,11 +837,11 @@ function lands(world: World, side: 0 | 1, shot: Shot) {
  * quick by its level, smashed when the ball sits up high, pushed with backspin now and then when it is low; its aim
  * strays a little, and (as often as its level checks) a stroke that would not clear the net is played softer.
  */
-export function computerShot(world: World, level: Level): Shot {
+export function computerShot(world: World, level: Level, side: 0 | 1 = 1): Shot {
   const L = LEVELS[level],
     b = world.ball,
     r = () => rand(world),
-    mine = world.paddles[0];
+    mine = world.paddles[1 - side];
   const aim =
     level === "hard" && r() < 0.7
       ? -Math.sign(mine.x || r() - 0.5) * HALF_W * (0.45 + 0.35 * r())
@@ -849,13 +861,13 @@ export function computerShot(world: World, level: Level): Shot {
   // At the hardest level a ball that sits up is smashed (most of the time), and now and then one that does not.
   if (level === "hard" && !low && r() < (b.y > SMASH_HIGH ? 0.65 : 0.12)) {
     const smash: Shot = { tx: shot.tx, depth: 0.78 + 0.12 * r(), pace: THEIR_SMASH[0] + r() * (THEIR_SMASH[1] - THEIR_SMASH[0]), top: 170 + 50 * r(), side: shot.side * 0.5, smash: true };
-    for (let k = 0; k < 4 && !lands(world, 1, smash); k++) [smash.pace, smash.depth] = [smash.pace * 0.92, Math.max(0.6, smash.depth - 0.05)];
-    if (lands(world, 1, smash)) return smash;
+    for (let k = 0; k < 4 && !lands(world, side, smash); k++) [smash.pace, smash.depth] = [smash.pace * 0.92, Math.max(0.6, smash.depth - 0.05)];
+    if (lands(world, side, smash)) return smash;
   }
   // Now and then a stroke is misjudged: hit long or flat into the net, without a second look.
   if (r() < L.blunder * (1 + Math.max(0, Math.abs(b.vz) - 4) * 0.25)) return r() < 0.5 ? { ...shot, depth: shot.depth + 0.55 } : { ...shot, pace: shot.pace * 1.35, depth: 0.3, top: 0 };
   if (r() < L.check)
-    for (let k = 0; k < 5 && !lands(world, 1, shot); k++) shot = { ...shot, pace: shot.pace * 0.85, depth: Math.min(0.85, shot.depth + 0.05), tx: shot.tx * 0.85, top: Math.abs(shot.top) };
+    for (let k = 0; k < 5 && !lands(world, side, shot); k++) shot = { ...shot, pace: shot.pace * 0.85, depth: Math.min(0.85, shot.depth + 0.05), tx: shot.tx * 0.85, top: Math.abs(shot.top) };
   return shot;
 }
 /** The computer's serve: short and slow at the easiest level, quicker and wider with spin at the hardest. */
@@ -874,7 +886,7 @@ export function computerServe(world: World, level: Level): Shot {
 /** The ball struck by `side` with `shot`: the rally goes on from here. */
 export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   const b = world.ball,
-    sent = serving ? served(b, side, shot, side === 1) : aimed(b, side, shot, side === 0);
+    sent = serving ? served(b, side, shot, !world.people[side]) : aimed(b, side, shot, world.people[side]);
   Object.assign(b, sent);
   world.phase = "rally";
   world.hitter = side;
@@ -886,7 +898,7 @@ export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   world.passed = -1;
   predict(world);
   // A ball sent to me: I step toward where it will come.
-  if (side === 1) world.stanceGoal = leanFor(arrival(world));
+  if (side === 1 && world.people[0]) world.stanceGoal = leanFor(arrival(world));
 }
 function point(world: World, to: 0 | 1, why: number): Happening {
   world.lets = 0;
@@ -979,9 +991,11 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
     bz = before.z + (pad.z - before.z) * t + f * gap;
     const ox = bx - (before.x + (pad.x - before.x) * t);
     oy = by - (before.y + (pad.y - before.y) * t);
-    if (side === 1) {
+    if (!world.people[side]) {
       if ((ox / THEIR_REACH) ** 2 + (oy / THEIR_REACH_Y) ** 2 > 1) return;
     } else if ((ox / REACH) ** 2 + (oy / REACH_Y) ** 2 > 1) {
+      // Only side 0 keeps the way its blade swept (a person on side 1 is judged by the face alone).
+      if (side !== 0) return;
       const near = sweptFrom(world, bx, by);
       if (near.d > 1) {
         world.passed = world.ticks;
@@ -991,7 +1005,7 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
     }
   } else {
     // Gone past my face unstruck a moment ago, and not far: a sweep across it now still strikes it, set back on the face.
-    if (side !== 0 || world.passed < 0 || world.ticks - world.passed > SWING_SLICES || r1 > gap || r1 < gap - LATE_DEPTH) return;
+    if (side !== 0 || !world.people[0] || world.passed < 0 || world.ticks - world.passed > SWING_SLICES || r1 > gap || r1 < gap - LATE_DEPTH) return;
     const near = sweptFrom(world, b.x, b.y, 1);
     if (near.d > 1) return;
     [bx, by, bz, oy] = [b.x, b.y, pad.z + f * gap, near.oy];
@@ -1000,60 +1014,68 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
   b.x = bx;
   b.y = by;
   b.z = bz;
-  const shot = side === 0 ? swingShot(world, side, pad, 0, oy, serving) : computerShot(world, level);
+  const shot = world.people[side] ? swingShot(world, side, pad, 0, oy, serving) : computerShot(world, level, side);
   launch(world, side, shot, serving);
   out.push(shot.smash ? { kind: "hit", side, strength: 1, smash: true } : { kind: "hit", side, strength: clamp(shot.pace / 9, 0.2, 1) });
 }
-/** The computer's reading of a ball I have struck: where, after its bounce, it comes to the top of its rise (within reach). */
-function intercept(world: World, level: Level) {
-  const L = LEVELS[level];
+/**
+ * The computer's reading of a ball the other side has struck: where, after its bounce, it comes to the top of its
+ * rise (within reach). `side` is the computer's (1, or 0 where it stands in over Wi-Fi); `end` is its end's sign.
+ */
+function intercept(world: World, level: Level, side: 0 | 1 = 1) {
+  const L = LEVELS[level],
+    end = side === 1 ? -1 : 1,
+    back = side === 1 ? FAR_BACK : BACK;
   let chosen = -1;
   for (let k = Math.max(0, world.pathAt + 1); k < world.pathLen; k++) {
-    const mine = bouncesOn(world, k, 0),
-      theirs = bouncesOn(world, k, 1);
-    // A ball of mine that comes down on my own side first needs no return (a serve must, once).
+    const mine = bouncesOn(world, k, (1 - side) as 0 | 1),
+      theirs = bouncesOn(world, k, side);
+    // A ball that comes down on its striker's own side first needs no return (a serve must, once).
     if (theirs === 0 && mine > (world.served ? 1 : 0)) return null;
     if (theirs >= 2) break;
     if (theirs === 1) {
-      if (world.path[k * 4 + 2] < -HALF_L - FAR_BACK + 0.08) break;
+      if (world.path[k * 4 + 2] * end > HALF_L + back - 0.08) break;
       chosen = k;
       if (k + 1 < world.pathLen && world.path[(k + 1) * 4 + 1] < world.path[k * 4 + 1]) break;
     }
   }
   if (chosen < 0) return null;
-  return { x: world.path[chosen * 4] + (rand(world) - 0.5) * 2 * L.stray, z: world.path[chosen * 4 + 2] - (BALL + FACE) };
+  return { x: world.path[chosen * 4] + (rand(world) - 0.5) * 2 * L.stray, z: world.path[chosen * 4 + 2] + end * (BALL + FACE) };
 }
 /**
- * The computer's hand: it serves after its pause (tossing and striking the ball as it falls), reads a ball I have
- * struck only after its reaction time and goes to meet it, and otherwise waits behind the middle of its end.
+ * The computer's hand: it serves after its pause (tossing and striking the ball as it falls), reads a ball the other
+ * side has struck only after its reaction time and goes to meet it, and otherwise waits behind the middle of its
+ * end. `side` is the computer's: 1, or 0 where it stands in over Wi-Fi (with a hand of its own, `nearAi`).
  */
-function think(world: World, level: Level, out: Happening[]) {
-  const ai = world.ai,
+function think(world: World, level: Level, out: Happening[], side: 0 | 1 = 1) {
+  const ai = side === 1 ? world.ai : world.nearAi,
+    other = (1 - side) as 0 | 1,
+    end = side === 1 ? -1 : 1,
     L = LEVELS[level],
     b = world.ball,
-    home = { x: clamp(b.x * 0.3, -0.4, 0.4), z: -HALF_L - 0.45 };
+    home = { x: clamp(b.x * 0.3, -0.4, 0.4), z: end * (HALF_L + 0.45) };
   let hand = home;
-  if (world.phase === "ready" && world.server === 1) {
-    hand = { x: ai.holdX, z: -HALF_L - 0.3 };
+  if (world.phase === "ready" && world.server === side) {
+    hand = { x: ai.holdX, z: end * (HALF_L + 0.3) };
     ai.wait -= DT;
-    if (ai.wait <= 0 && toss(world, 1)) ai.strikeY = 0.18 + rand(world) * 0.12;
-  } else if (world.phase === "toss" && world.server === 1) {
-    hand = { x: b.x, z: b.z - 0.12 };
+    if (ai.wait <= 0 && toss(world, side)) ai.strikeY = 0.18 + rand(world) * 0.12;
+  } else if (world.phase === "toss" && world.server === side) {
+    hand = { x: b.x, z: b.z + end * 0.12 };
     if (b.vy < 0 && b.y <= ai.strikeY) {
-      launch(world, 1, computerServe(world, level), true);
-      out.push({ kind: "hit", side: 1, strength: 0.4 });
+      launch(world, side, computerServe(world, level), true);
+      out.push({ kind: "hit", side, strength: 0.4 });
     }
-  } else if (world.phase === "rally" && world.hitter === 0) {
-    if (world.struck[0] !== ai.seen) {
-      ai.seen = world.struck[0];
+  } else if (world.phase === "rally" && world.hitter === other) {
+    if (world.struck[other] !== ai.seen) {
+      ai.seen = world.struck[other];
       ai.delay = L.react * (0.75 + 0.5 * rand(world));
       ai.plan = null;
     }
     if (ai.delay > 0) ai.delay -= DT;
-    else if (!ai.plan) ai.plan = intercept(world, level);
-    hand = ai.plan ?? world.hands[1];
+    else if (!ai.plan) ai.plan = intercept(world, level, side);
+    hand = ai.plan ?? world.hands[side];
   }
-  world.hands[1] = hand;
+  world.hands[side] = hand;
 }
 /**
  * One slice of time: the computer's hand, both paddles, the ball and what it meets, and the strokes. Returns what
@@ -1064,7 +1086,7 @@ export function step(world: World, level: Level): Happening[] {
   const out: Happening[] = [];
   world.time += DT;
   stepAside(world);
-  think(world, level, out);
+  for (const side of [1, 0] as const) if (!world.people[side]) think(world, level, out, side);
   const before = world.paddles.map((p) => ({ x: p.x, y: p.y, z: p.z }));
   movePaddles(world, level);
   const b = world.ball;
@@ -1080,6 +1102,7 @@ export function step(world: World, level: Level): Happening[] {
     if (world.phase === "toss" && b.y < TOSS_LOW) {
       world.phase = "ready";
       world.ai.wait = 0.5;
+      world.nearAi.wait = 0.5;
       hold(world);
     }
     return out;

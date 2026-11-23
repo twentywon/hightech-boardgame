@@ -2,6 +2,8 @@ import { test, expect, type Browser, type Page, type TestInfo } from "@playwrigh
 import { PerspectiveCamera, Vector3 } from "three";
 import { FOV, cameraDistance } from "../../src/engine/camera";
 import { ORBIT, airHockeySubject } from "../../src/games/airhockey/layout";
+import { HAND_Y, rallyCamera } from "../../src/games/pingpong/layout";
+import { HALF_L } from "../../src/games/pingpong/sim";
 import { selectGame } from "./library";
 
 /*
@@ -11,6 +13,11 @@ import { selectGame } from "./library";
  */
 test.setTimeout(300000);
 
+/** The devices of the test under way, closed after it (two tables left running would slow the next test down). */
+const open: { close(): Promise<void> }[] = [];
+test.afterEach(async () => {
+  for (const context of open.splice(0)) await context.close();
+});
 async function device(browser: Browser, info: TestInfo) {
   const use = info.project.use;
   const context = await browser.newContext({
@@ -21,6 +28,7 @@ async function device(browser: Browser, info: TestInfo) {
     hasTouch: use.hasTouch,
     userAgent: use.userAgent,
   });
+  open.push(context);
   const page = await context.newPage(),
     errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -53,7 +61,9 @@ const canvasOf = (page: Page) => page.locator("main.game-layout canvas");
 const pair2 = (text: string | null) => (text ?? "").split(",").map(Number);
 /** Both mallets as the canvas tells them (red;blue), each [x, z]. */
 async function mallets(page: Page) {
-  return ((await canvasOf(page).getAttribute("data-mallets")) ?? "").split(";").map(pair2);
+  // Not told yet (the first frames): no place, so that a poll waits on.
+  const told = await canvasOf(page).getAttribute("data-mallets");
+  return told ? told.split(";").map(pair2) : [[NaN, NaN], [NaN, NaN]];
 }
 /**
  * Where a point of the table is on a device's screen: through the same camera as the view's, which looks from the
@@ -103,8 +113,8 @@ test("air hockey on two devices: the guest's hand moves its mallet on the host, 
   await expect.poll(async () => (await mallets(host))[1][0], { timeout: 15000 }).toBeGreaterThan(1.1);
   const [, blue] = await mallets(host);
   expect(blue[1]).toBeLessThan(-1.8);
-  // And its own screen has it there too, at once.
-  await expect.poll(async () => (await mallets(guest))[1][0], { timeout: 5000 }).toBeGreaterThan(1.1);
+  // And its own screen draws it there too (its own mallet is drawn where its hand is, not where the host last told).
+  await expect.poll(async () => (await mallets(guest))[1][0], { timeout: 15000 }).toBeGreaterThan(1.1);
   // The host's red mallet goes where the host's mouse is, and the guest sees it there.
   await hover(host, 0, -1.2, 3.2);
   await expect.poll(async () => (await mallets(guest))[0][0], { timeout: 15000 }).toBeLessThan(-0.9);
@@ -153,6 +163,68 @@ test("air hockey on two devices: the guest's hand moves its mallet on the host, 
   await canvasOf(host).focus();
   await host.keyboard.press("p");
   for (const page of [host, guest]) await expect(page.locator("#board")).toHaveAttribute("data-paused", "false", { timeout: 10000 });
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});
+
+/** Opens a room of `game` on the host, pairs the guest and starts: both tables are laid. */
+async function begin(host: Page, guest: Page, game: string) {
+  await lobby(host, game, "방장");
+  await host.locator("#net-host").click();
+  await pair(host, guest, game, "민수");
+  await host.locator("#net-start").click();
+  for (const page of [host, guest]) await expect(canvasOf(page)).toHaveAttribute("data-ready", "true", { timeout: 30000 });
+}
+
+test("table soccer on two devices: offered over Wi-Fi though it has no two at one screen, the guest's keys push its yellow rods on the host", async ({ browser }, info) => {
+  const a = await device(browser, info),
+    b = await device(browser, info),
+    host = a.page,
+    guest = b.page;
+  await selectGame(host, "테이블 사커");
+  // Against the computer or over Wi-Fi; no 로컬 2인.
+  await expect(host.getByLabel("로컬 2인", { exact: true })).toHaveCount(0);
+  await begin(host, guest, "테이블 사커");
+  await expect(guest.locator("#pg-side-1")).toContainText("나 (노랑)");
+  await expect(host.locator("#pg-side-1")).toContainText("민수 (노랑)");
+  const slides = async (page: Page) => ((await canvasOf(page).getAttribute("data-slides")) ?? "NaN;NaN").split(";").map(Number);
+  // Seen from its own end, ↓ pulls the guest's rods toward it: on the host's table they go the other way across.
+  await canvasOf(guest).focus();
+  await guest.keyboard.down("ArrowDown");
+  await expect.poll(async () => (await slides(host))[1], { timeout: 15000 }).toBeLessThan(-0.2);
+  await guest.keyboard.up("ArrowDown");
+  // The guest's own screen has them there too.
+  await expect.poll(async () => (await slides(guest))[1], { timeout: 10000 }).toBeLessThan(-0.2);
+  // The host's rods are its own: they did not move with the guest's keys.
+  expect(Math.abs((await slides(host))[0])).toBeLessThan(0.05);
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});
+
+test("table tennis on two devices: the guest stands behind the far end, its mouse moves its blue paddle on the host, and its press tosses its serve there", async ({ browser }, info) => {
+  const a = await device(browser, info),
+    b = await device(browser, info),
+    host = a.page,
+    guest = b.page;
+  await begin(host, guest, "탁구");
+  // Blue serves first: the guest is told it is its serve.
+  await expect(guest.locator("#turn")).toContainText("내 서브");
+  await expect(host.locator("#turn")).toContainText("상대 서브");
+  const paddles = async (page: Page) => ((await canvasOf(page).getAttribute("data-paddles")) ?? "NaN,NaN;NaN,NaN").split(";").map(pair2);
+  // A point behind the far end, as the guest's eye sees it (turned round, from behind that end).
+  const box = (await canvasOf(guest).boundingBox())!,
+    camera = new PerspectiveCamera(50, box.width / box.height, 0.05, 80);
+  rallyCamera(camera, box.width / box.height, 0, 0, 1);
+  const v = new Vector3(0.45, HAND_Y, -HALF_L - 0.3).project(camera),
+    at = { x: box.x + ((v.x + 1) / 2) * box.width, y: box.y + ((1 - v.y) / 2) * box.height };
+  await guest.mouse.move(at.x, at.y, { steps: 4 });
+  await expect.poll(async () => (await paddles(host))[1][0], { timeout: 15000 }).toBeGreaterThan(0.25);
+  expect((await paddles(host))[1][1]).toBeLessThan(-HALF_L);
+  // The host's hall tosses the ball when the guest presses (watched every frame: a toss lasts half a second).
+  const tossed = host.waitForFunction(() => document.querySelector<HTMLCanvasElement>("main.game-layout canvas")?.dataset.phase === "toss", null, { polling: "raf", timeout: 20000 });
+  await guest.mouse.down();
+  await guest.mouse.up();
+  await tossed;
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });

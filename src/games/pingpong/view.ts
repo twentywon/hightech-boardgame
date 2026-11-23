@@ -6,11 +6,15 @@ import { TableView, type Spot, type TableSubject } from "../table/view";
 import { hall, paintFlip, tennisTable, type FlipBoard } from "./hall";
 import { HAND_Y, liftFor, rallyCamera } from "./layout";
 import { serverOf, type State } from "./rules";
-import { BALL, BLADE, DT, FLOOR, HALF_L, HALF_W, PACE, WHY, contact, createWorld, highest, keep, place as placePaddle, serve, step, toss, type Meeting, type Happening, type Level, type World } from "./sim";
+import { BALL, BLADE, DT, FLOOR, HALF_L, HALF_W, PACE, WHY, alongSight, contact, createWorld, highest, keep, place as placePaddle, serve, step, toss, type Meeting, type Happening, type Level, type World } from "./sim";
+import { blend, type LiveGuest, type LiveSession } from "../../net/live";
+import { noCounts, inputOf, readInput, readSnap, snapOf, takeToss, type Counts } from "./net";
 
 export const TABLE_TENNIS_COLORS: [string, string] = ["#e0402c", "#2a72e0"];
 /** How long, in the hall's time, the ball of an ended rally is left to fall before the next serve. */
 const DEAD_WAIT = 1.15;
+/** Where a side's hand waits at the start: behind its own end. */
+const homeOf = (side: 0 | 1) => ({ x: 0, z: side === 0 ? HALF_L + 0.35 : -HALF_L - 0.4 });
 const canvasTexture = (canvas: HTMLCanvasElement) => {
   const texture = new T.CanvasTexture(canvas);
   texture.colorSpace = T.SRGBColorSpace;
@@ -95,6 +99,14 @@ interface Word {
  * the computer's paddle at the far end (held in a gloved hand) and mine near me, an orange ball with its shadow, and
  * round the court the barriers, the other tables, the banners and the umpire's flip scoreboard. The view plays the
  * rally in real time (`sim.ts`) and reports each point as a move; my paddle goes exactly where the hand is.
+ *
+ * Over Wi-Fi (`live`) each device stands behind its own end (seat 1 behind the far one, `rallyCamera`'s `seat`).
+ * The host's view runs the one hall: a hand on each side that has a person (`World.people`), each guest's as the room
+ * feeds it (`LiveHost.input`, its tosses counted), the computer on a side whose person is away; it tells the hall to
+ * all (`snapOf`). A guest's view runs no hall: it draws the host's a moment behind, its own blade where its hand
+ * sends it, and sends its hand (`inputOf`). Only the host at seat 0 has the sim's line of sight, step aside, rising
+ * eye and contact marker; any other player (`simple`) aims its blade along its own line of sight through the pointer
+ * at the blade's height, from an eye that stays put.
  */
 export class TableTennisView extends TableView<State> {
   /** A knock to be heard: a paddle (`disc`), the table or the floor (`cushion`), the net (`pocket`). */
@@ -143,12 +155,28 @@ export class TableTennisView extends TableView<State> {
   private heard = 0;
   /** Whether the press under way is a finger's (or a pen's) rather than a mouse's. */
   private finger = false;
+  /** The side this device plays, and whether it aims its blade itself rather than through the sim's line of sight (see above). */
+  private mine: 0 | 1 = 0;
+  private simple = false;
+  /** What the hall has done that makes a sound or a word (told to guests), what a guest has heard of it, my tosses (a guest sends the count), each guest's the host has taken. */
+  private counts: Counts = noCounts();
+  private heard_: Counts | null = null;
+  private tosses = 0;
+  private taken = [0, 0];
+  /** Where each guest's blade was sent at the end of the last frame (the way to the next is swept over the slices). */
+  private remote: ({ x: number; z: number } | null)[] = [null, null];
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
     private level: Level,
+    private live: LiveSession | null = null,
   ) {
     super(host, quality, "#cfd6de");
+    if (live) {
+      this.mine = live.seat === 1 ? 1 : 0;
+      this.simple = !(live.host && live.seat === 0);
+      this.hand = this.sent = homeOf(this.mine);
+    }
     // Where the processor draws the picture alone, a real-time table keeps to one pixel a point, or it falls to a frame a second.
     if (!capable()) this.renderer.setPixelRatio(1);
     this.scene.add(new T.HemisphereLight("#f4f6ff", "#6b4a35", 1.35));
@@ -229,22 +257,24 @@ export class TableTennisView extends TableView<State> {
     // The arrows go as the table is seen: up away from me, toward the net. Space tosses my serve, or strikes.
     const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     el.addEventListener("keydown", (e) => {
-      const way = ARROWS[e.key];
+      const way = ARROWS[e.key],
+        turn = this.mine ? -1 : 1;
       if (way) {
         e.preventDefault();
         this.pointer = null;
-        if (way[0]) this.keys.x = way[0];
-        if (way[1]) this.keys.z = way[1];
+        if (way[0]) this.keys.x = way[0] * turn;
+        if (way[1]) this.keys.z = way[1] * turn;
       } else if ((e.key === " " || e.key === "Spacebar") && !e.repeat && this.running()) {
         e.preventDefault();
-        if (!toss(this.world, 0)) this.lunge = performance.now();
+        if (!this.tossMine()) this.lunge = performance.now();
       }
     });
     el.addEventListener("keyup", (e) => {
-      const way = ARROWS[e.key];
+      const way = ARROWS[e.key],
+        turn = this.mine ? -1 : 1;
       if (!way) return;
-      if (way[0] && this.keys.x === way[0]) this.keys.x = 0;
-      if (way[1] && this.keys.z === way[1]) this.keys.z = 0;
+      if (way[0] && this.keys.x === way[0] * turn) this.keys.x = 0;
+      if (way[1] && this.keys.z === way[1] * turn) this.keys.z = 0;
     });
     el.addEventListener("blur", () => (this.keys = { x: 0, z: 0 }));
     this.begin();
@@ -298,7 +328,26 @@ export class TableTennisView extends TableView<State> {
     this.keys = { x: 0, z: 0 };
   }
   private running() {
-    return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
+    // Over Wi-Fi a window open on one device does not stop the hall for the others (a pause does, for all).
+    return !!this.state && this.state.winner === null && !this.paused && !document.hidden && (!!this.live || !document.querySelector("dialog[open]"));
+  }
+  /** My serve tossed (a guest counts it for the host, which tosses it); false when it is not mine to toss now. */
+  private tossMine() {
+    const live = this.live;
+    if (live && live.seat !== 0 && live.seat !== 1) return false;
+    if (!live || live.host) return toss(this.world, this.mine);
+    if (this.world.phase !== "ready" || this.world.server !== this.mine) return false;
+    this.tosses++;
+    return true;
+  }
+  /**
+   * Where my blade is sent now, for a player who aims it itself (`simple`): on the line of sight from the eye through
+   * the point under the pointer, at the blade's height (so that it stands under the finger), or where the keys have it.
+   */
+  private target() {
+    const p = this.camera.position,
+      at = this.pointer ? alongSight({ x: p.x, y: p.y, z: p.z }, this.hand, this.world.paddles[this.mine].y) : this.hand;
+    return keep(this.mine, at.x, at.z);
   }
   /** A world of its own sequence; where the page asks for less motion I step aside only half as far. */
   private newWorld() {
@@ -312,7 +361,7 @@ export class TableTennisView extends TableView<State> {
    * sight through it (`World.sight`), wherever that line takes it.
    */
   private reach(x: number, z: number) {
-    this.hand = this.pointer ? { x: Math.max(-8, Math.min(8, x)), z: Math.max(-12, Math.min(12, z)) } : keep(0, x, z, undefined, this.world.stance);
+    this.hand = this.pointer ? { x: Math.max(-8, Math.min(8, x)), z: Math.max(-12, Math.min(12, z)) } : keep(this.mine, x, z, undefined, this.simple ? 0 : this.world.stance);
   }
   /**
    * The blade keeps to the line of sight through the pointer while one holds it; when it lets go (the keyboard, a
@@ -370,6 +419,16 @@ export class TableTennisView extends TableView<State> {
   protected dragStart(_point: number, at: { x: number; z: number }) {
     if (!this.running()) return false;
     this.reach(at.x, at.z);
+    if (this.simple) {
+      // A finger set down on the host's own hall puts the blade there at once; a guest's goes there with its next sending.
+      if (this.finger && this.live?.host) {
+        const to = this.target();
+        placePaddle(this.world, this.mine, to.x, to.z);
+        this.sent = to;
+      }
+      this.tossMine();
+      return true;
+    }
     this.sighting();
     if (this.finger) {
       placePaddle(this.world, 0, this.hand.x, this.hand.z);
@@ -394,36 +453,121 @@ export class TableTennisView extends TableView<State> {
   private advance(now: number) {
     // The hall keeps the wall clock's time down to five frames a second; slower than that it slows down with the screen.
     const real = Math.min(0.2, (now - this.last) / 1000),
-      running = this.running();
+      running = this.running(),
+      live = this.live;
     this.last = now;
+    if (live && !live.host) return this.followHost(now, real);
     if (running || (this.state && this.state.winner !== null && !this.paused)) {
-      this.follow(real);
-      this.sighting();
+      // Over Wi-Fi the host's hall has a person's hand on each side that has one (mine, a guest's), the computer on the others.
+      const by = [0, 1].map((side) => (live ? live.control(side) : side === 0 ? "me" : "computer"));
+      if (live) {
+        this.world.people = [by[0] === "me" || by[0] === "remote", by[1] === "me" || by[1] === "remote"];
+        // Only the host's own hand at seat 0 steps aside (the eye that steps with it is its own).
+        this.world.lean = by[0] === "me" && !this.simple ? (this.reducedMotion ? 0.5 : 1) : 0;
+      }
+      if (!this.simple) {
+        this.follow(real);
+        this.sighting();
+      }
       if (running && (this.keys.x || this.keys.z)) this.reach(this.hand.x + this.keys.x * 1.8 * real, this.hand.z + this.keys.z * 1.8 * real);
       this.left += real * PACE;
-      // The hand's way over this frame is spread over its slices, so that the paddle sweeps it at its true speed.
+      // The hand's way over this frame is spread over its slices, so that the paddle sweeps it at its true speed; a
+      // guest's from where it was sent last frame to where it is sent now (glided between its sendings).
       const slices = Math.floor(this.left / DT),
         from = this.sent,
-        lunge = this.lungeAt(now);
+        to = this.simple ? this.target() : this.hand,
+        lunge = this.lungeAt(now),
+        forward = this.mine ? 1 : -1,
+        sent = [0, 1].map((side) => {
+          if (!live?.host || by[side] !== "remote") return null;
+          const hand = readInput(live.input(side, now)),
+            tosses = readInput(live.latest(side))?.tosses ?? 0;
+          this.taken[side] = takeToss(this.world, side as 0 | 1, tosses, this.taken[side]);
+          const at = hand ? { x: hand.x, z: hand.z } : (this.remote[side] ?? { ...this.world.hands[side] });
+          return { from: this.remote[side] ?? at, to: at };
+        });
       for (let k = 1; k <= slices; k++) {
         this.left -= DT;
         const share = k / slices;
-        this.world.hands[0] = { x: from.x + (this.hand.x - from.x) * share, z: from.z + (this.hand.z - from.z) * share - (this.lungeSent + (lunge - this.lungeSent) * share) };
+        this.world.hands[this.mine] = { x: from.x + (to.x - from.x) * share, z: from.z + (to.z - from.z) * share + forward * (this.lungeSent + (lunge - this.lungeSent) * share) };
+        for (const side of [0, 1]) {
+          const way = sent[side];
+          if (way) this.world.hands[side] = { x: way.from.x + (way.to.x - way.from.x) * share, z: way.from.z + (way.to.z - way.from.z) * share };
+        }
         this.hear(step(this.world, this.level), now, running);
       }
       if (slices) {
-        this.sent = { ...this.hand };
+        this.sent = { ...to };
         this.lungeSent = lunge;
+        for (const side of [0, 1]) this.remote[side] = sent[side]?.to ?? null;
       }
       // The ball of an ended rally falls for a moment; then the next point is served by whoever the rules say.
       if (running && this.state && this.state.winner === null && this.world.phase === "dead" && this.world.dead > DEAD_WAIT) serve(this.world, serverOf(this.state));
     }
+    // The host tells its hall to the guests, paused or not (so that one coming back sees it).
+    if (live?.host && this.state) live.tick(() => snapOf(this.world, this.counts), now);
     this.pose(now, real);
     this.redraw();
+  }
+  /**
+   * A guest's frame: my hand (and my tosses) are sent to the host, and the host's hall is drawn a moment behind, my
+   * own blade where my hand sends it; the sounds and words follow the hall's counts.
+   */
+  private followHost(now: number, real: number) {
+    const live = this.live as LiveGuest,
+      mine = this.mine,
+      playing = (live.seat === 0 || live.seat === 1) && this.running() && !live.paused;
+    if (playing && (this.keys.x || this.keys.z)) this.reach(this.hand.x + this.keys.x * 1.8 * real, this.hand.z + this.keys.z * 1.8 * real);
+    const forward = mine ? 1 : -1,
+      aim = () => {
+        const to = this.target();
+        return { x: to.x, z: to.z + forward * this.lungeAt(now) };
+      };
+    live.tick(() => (playing ? inputOf(aim(), this.tosses) : null), now);
+    const frame = live.frame(now),
+      a = frame && readSnap(frame.a.data),
+      b = frame && readSnap(frame.b.data);
+    if (frame && a && b) {
+      const t = frame.t,
+        w = this.world,
+        [x, y, z] = blend([a.ball.x, a.ball.y, a.ball.z], [b.ball.x, b.ball.y, b.ball.z], t);
+      Object.assign(w.ball, { x, y, z, wx: b.ball.wx, wy: b.ball.wy, wz: b.ball.wz });
+      ([0, 1] as const).forEach((side) => {
+        const [px, py, pz, vz] = blend(Object.values(a.paddles[side]), Object.values(b.paddles[side]), t);
+        Object.assign(w.paddles[side], { x: px, y: py, z: pz, vz });
+      });
+      w.phase = b.phase;
+      w.server = b.server;
+      w.time = 1;
+      w.struck[1] = 1 - b.since;
+      if (playing) Object.assign(w.paddles[mine], aim());
+      this.heardFrom(b.counts, now);
+    }
+    this.pose(now, real);
+    this.redraw();
+  }
+  /** A guest hears and sees what the host's hall did since the last frame drawn here. */
+  private heardFrom(counts: Counts, now: number) {
+    const was = this.heard_;
+    this.heard_ = { ...counts, smashes: [...counts.smashes] as [number, number] };
+    if (!was) return;
+    if (counts.hits > was.hits) this.knock("disc", 0.6, now);
+    else if (counts.bounces > was.bounces) this.knock("cushion", 0.5, now);
+    else if (counts.floors > was.floors) this.knock("cushion", 0.3, now);
+    if (counts.nets > was.nets) this.knock("pocket", 0.5, now);
+    for (const side of [0, 1]) if (counts.smashes[side] > was.smashes[side]) this.say("스매싱!", side === 0 ? "#ff8a3a" : "#9fd0ff", now, Math.max(-0.5, Math.min(0.5, this.world.ball.x)));
+    if (counts.lets > was.lets) this.say("렛 · 다시 서브", "#ffffff", now);
   }
   /** What the table has done: its knocks are heard, and a point won is told to the screen with a word over the net. */
   private hear(events: Happening[], now: number, running: boolean) {
     for (const event of events) {
+      // Counted for the guests, who make their own sounds and words of them.
+      const c = this.counts;
+      if (event.kind === "hit") [c.hits, c.smashes[event.side]] = [c.hits + 1, c.smashes[event.side] + (event.smash ? 1 : 0)];
+      else if (event.kind === "bounce") c.bounces++;
+      else if (event.kind === "floor") c.floors++;
+      else if (event.kind === "net") c.nets++;
+      else if (event.kind === "let") c.lets++;
       if (event.kind === "hit") {
         this.knock("disc", event.strength, now);
         if (event.smash) this.say("스매싱!", event.side === 0 ? "#ff8a3a" : "#9fd0ff", now, Math.max(-0.5, Math.min(0.5, this.world.ball.x)));
@@ -463,7 +607,8 @@ export class TableTennisView extends TableView<State> {
     sprite.scale.set(0.9, 0.225, 1);
     sprite.renderOrder = 20;
     this.scene.add(sprite);
-    this.words.push({ sprite, at: now, x, y: 0.42, z: -0.2 });
+    // Over the net, a little toward the far side of whoever looks.
+    this.words.push({ sprite, at: now, x, y: 0.42, z: this.mine ? 0.2 : -0.2 });
   }
   /** Puts the ball, its shadow and the paddles where the table has them. */
   private pose(now: number, real: number) {
@@ -522,11 +667,13 @@ export class TableTennisView extends TableView<State> {
       return true;
     });
     this.markWay(real);
-    this.tip.hidden = !(this.running() && this.world.phase === "ready" && this.world.server === 0) || capturing();
+    this.tip.hidden = !(this.running() && this.world.phase === "ready" && this.world.server === this.mine && (!this.live || this.live.seat === this.mine)) || capturing();
     // For the browser tests: where the ball and my paddle are, and how the point stands.
     const data = this.renderer.domElement.dataset;
     data.ball = `${ball.x.toFixed(2)},${ball.y.toFixed(2)},${ball.z.toFixed(2)}`;
     data.paddle = `${paddles[0].x.toFixed(2)},${paddles[0].z.toFixed(2)}`;
+    // Both paddles (red;blue), for the Wi-Fi browser tests.
+    data.paddles = paddles.map((p) => `${p.x.toFixed(2)},${p.z.toFixed(2)}`).join(";");
     // My blade's height too: on the screen it stands under the pointer at that height (`alongSight`).
     data.blade = `${paddles[0].x.toFixed(3)},${paddles[0].y.toFixed(3)},${paddles[0].z.toFixed(3)}`;
     data.lift = this.lifted.toFixed(4);
@@ -542,7 +689,7 @@ export class TableTennisView extends TableView<State> {
    * It is decoration: left out while a picture is captured, and shown only at the easiest level (the user asked).
    */
   private markWay(real: number) {
-    const found = this.level === "easy" && this.running() && !capturing() ? contact(this.world) : null,
+    const found = this.level === "easy" && !this.simple && this.running() && !capturing() ? contact(this.world) : null,
       fade = 1 - Math.exp(-(real || 0) / 0.09);
     if (found) this.marked = found;
     this.markShown += ((found ? 1 : 0) - this.markShown) * (real > 0 ? fade : 0);
@@ -594,7 +741,7 @@ export class TableTennisView extends TableView<State> {
   }
   protected resize() {
     super.resize();
-    rallyCamera(this.camera, this.camera.aspect, this.eye, this.lifted);
+    rallyCamera(this.camera, this.camera.aspect, this.eye, this.lifted, this.mine);
     this.redraw();
   }
   protected spots(): Spot[] {
@@ -606,9 +753,11 @@ export class TableTennisView extends TableView<State> {
     if (anew || !this.begun) {
       if (anew) this.world = this.newWorld();
       this.begun = true;
-      this.hand = this.sent = { x: 0, z: HALF_L + 0.35 };
+      this.hand = this.sent = homeOf(this.mine);
       serve(this.world, serverOf(state));
     }
+    // A guest's hall ends no rally itself: the point the host told is said over the net here.
+    if (this.live && !this.live.host && state.ply > this.shown && state.last !== null && state.why >= 0) this.say(WHY[state.why], state.last === 0 ? "#ffd34a" : "#9fd0ff", performance.now());
     this.shown = state.ply;
     const said = `${state.score.join(":")}/${state.games.join(":")}`;
     if (said !== this.flipped) {

@@ -8,6 +8,10 @@ import { airHockey, type State as HockeyState } from "../src/games/airhockey/rul
 import { airHockeyConfig } from "../src/games/airhockey/config";
 import { DT, createWorld, freshMind, type World } from "../src/games/airhockey/sim";
 import { hostSlice, inputOf, readInput, readSnap, snapOf, type Tally } from "../src/games/airhockey/net";
+import * as soccer from "../src/games/foosball/net";
+import { MAX_SLIDE as PITCH_MOST, createWorld as createPitch } from "../src/games/foosball/sim";
+import * as tennis from "../src/games/pingpong/net";
+import * as tt from "../src/games/pingpong/sim";
 
 /** Lets every queued message be delivered (each hop is a microtask). */
 const settle = async () => {
@@ -256,3 +260,77 @@ describe("a real-time table over Wi-Fi", () => {
   });
 });
 const rulesToMove = (room: HostRoom<HockeyState>) => room.rules.toMove(room.match!.state);
+
+describe("table soccer over Wi-Fi", () => {
+  test("a guest's push and kicks are numbers the host plays on its rods; a side without a hand is the computer's", () => {
+    expect(soccer.readInput(soccer.inputOf(9, 3))).toEqual({ target: PITCH_MOST, kicks: 3 });
+    expect(soccer.readInput([0.5])).toBeNull();
+    const world = createPitch(0, 0),
+      snap = soccer.readSnap(soccer.snapOf(world, 7))!;
+    expect(snap.swing).toEqual([-1, -1]);
+    expect(snap.hits).toBe(7);
+    expect(soccer.readSnap([1, 2])).toBeNull();
+    // Red is a hand pushing its rods across and kicking once; yellow is the computer, which follows the ball.
+    soccer.hostSlice(world, "hard", [{ target: 0.6, kick: true }, null], () => 0.5);
+    expect(world.slide[0]).toBeCloseTo(0.6, 5);
+    expect(world.swing[0]).toBeGreaterThanOrEqual(0);
+    world.ball.x = 1.2;
+    for (let k = 0; k < 120; k++) soccer.hostSlice(world, "hard", [{ target: 0.6, kick: false }, null], () => 0.5);
+    expect(Math.abs(world.slide[1])).toBeGreaterThan(0.05);
+  });
+});
+
+describe("table tennis over Wi-Fi", () => {
+  test("the hall and a guest's hand go as numbers and come back", () => {
+    const world = tt.createWorld(3);
+    tt.serve(world, 1);
+    const counts = { ...tennis.noCounts(), hits: 5, smashes: [1, 2] as [number, number] },
+      snap = tennis.readSnap(tennis.snapOf(world, counts))!;
+    expect(snap.phase).toBe("ready");
+    expect(snap.server).toBe(1);
+    expect(snap.ball.z).toBeCloseTo(world.ball.z, 3);
+    expect(snap.paddles[1].z).toBeCloseTo(world.paddles[1].z, 3);
+    expect(snap.counts).toEqual(counts);
+    expect(tennis.readSnap(tennis.snapOf(world, counts).slice(1))).toBeNull();
+    expect(tennis.readInput(tennis.inputOf({ x: 0.3, z: -1.7 }, 2))).toEqual({ x: 0.3, z: -1.7, tosses: 2 });
+    expect(tennis.readInput([1, 2])).toBeNull();
+    // A guest's toss is taken once: its side tosses on its serve, and the same count again does nothing.
+    expect(tennis.takeToss(world, 1, 1, 0)).toBe(1);
+    expect(world.phase).toBe("toss");
+    expect(tennis.takeToss(world, 1, 1, 1)).toBe(1);
+  });
+
+  test("a person on the far side strikes the ball with a stroke of their swing; the computer can stand in on either side", () => {
+    const hits = (world: ReturnType<typeof tt.createWorld>, seconds: number, each?: () => void) => {
+      const by = [0, 0];
+      for (let k = 0; k < seconds / tt.DT; k++) {
+        each?.();
+        for (const e of tt.step(world, "normal")) if (e.kind === "hit") by[e.side]++;
+        if (world.phase === "dead" && world.dead > 1) tt.serve(world, world.server);
+      }
+      return by;
+    };
+    // Two computers, the near one standing in for a person: both serve and return.
+    const both = tt.createWorld(11);
+    both.people = [false, false];
+    tt.serve(both, 0);
+    const rally = hits(both, 20);
+    expect(rally[0]).toBeGreaterThan(2);
+    expect(rally[1]).toBeGreaterThan(2);
+    // The computer serves from the near side; a person on the far side holds the blade behind its end, where the ball
+    // comes, and moves it toward the net as it comes: the ball goes back over the net, struck by the far side.
+    const duel = tt.createWorld(5);
+    duel.people = [false, true];
+    tt.serve(duel, 0);
+    let back = false;
+    hits(duel, 3, () => {
+      const b = duel.ball;
+      if (back) return;
+      duel.hands[1] = { x: b.x, z: tt.canHit(duel, 1) && b.z < -tt.HALF_L - 0.05 ? -tt.HALF_L + 0.1 : -tt.HALF_L - 0.35 };
+      back = duel.hitter === 1 && duel.phase === "rally" && duel.ball.vz > 0;
+    });
+    expect(back).toBe(true);
+    // Its hand is its own: the computer never moved it (it stayed where the test held it).
+    expect(Math.abs(duel.hands[1].z)).toBeGreaterThan(tt.HALF_L - 0.2);
+  });
+});

@@ -29,15 +29,16 @@ export const liftFor = (peak: number) => Math.max(0, peak + LIFT_GAP - EYE.y);
 /**
  * Puts the eye where the player stands, `side` metres across from behind the middle (the view's `data-eye`: I step
  * aside for a wide ball), raised by `lift` for a high ball (`data-lift`); a narrow screen steps back and up so that
- * the table's sides stay in sight.
+ * the table's sides stay in sight. `seat` 1 (the far end's player over Wi-Fi) stands behind the other end, turned round.
  */
-export function rallyCamera(camera: T.PerspectiveCamera, aspect: number, side = 0, lift = 0) {
-  const back = aspect < 1.35 ? (1.35 - aspect) * 1.6 : 0;
+export function rallyCamera(camera: T.PerspectiveCamera, aspect: number, side = 0, lift = 0, seat: 0 | 1 = 0) {
+  const back = aspect < 1.35 ? (1.35 - aspect) * 1.6 : 0,
+    turn = seat ? -1 : 1;
   // A wide screen sees enough across: it looks a little closer, so that the far end is not too small.
   camera.fov = aspect > 1.6 ? Math.max(42, RALLY_FOV - (aspect - 1.6) * 9) : RALLY_FOV;
   camera.aspect = aspect;
   camera.updateProjectionMatrix();
-  camera.position.set(side, EYE.y + back * 0.3 + lift, EYE.z + back + lift * LIFT_BACK);
-  camera.lookAt(side * LOOK_SHARE, LOOK.y + lift * LIFT_LOOK, LOOK.z);
+  camera.position.set(side * turn, EYE.y + back * 0.3 + lift, (EYE.z + back + lift * LIFT_BACK) * turn);
+  camera.lookAt(side * LOOK_SHARE * turn, LOOK.y + lift * LIFT_LOOK, LOOK.z * turn);
   camera.updateMatrixWorld();
 }

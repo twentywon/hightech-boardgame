@@ -13,8 +13,11 @@ import { hostSlice, inputOf, readInput, readSnap, snapOf, type Tally } from "./n
 export const AIRHOCKEY_COLORS: [string, string] = ["#e0322a", "#2a6fe0"];
 /** Where a side's mallet stands at a face-off, before its goal. */
 const home = (side: 0 | 1) => ({ x: 0, z: side === 0 ? HALF_Z - 0.9 : -HALF_Z + 0.9 });
-/** The playing surface: white with a field of tiny air holes, the red centre line, blue circles and the creases before the goals. */
-function surface() {
+/**
+ * The playing surface: white with a field of tiny air holes, the red centre line, blue circles and the creases before
+ * the goals; its name reads along the table for whoever looks (`turned`: from the other long side, seat 1 over Wi-Fi).
+ */
+function surface(turned = false) {
   const W = 512,
     H = Math.round((W * HALF_Z) / HALF_X),
     c = document.createElement("canvas");
@@ -56,7 +59,7 @@ function surface() {
   // The name reads along the table, as the table is seen from its long side.
   ctx.save();
   ctx.translate(px(0), pz(0));
-  ctx.rotate(-Math.PI / 2);
+  ctx.rotate(turned ? Math.PI / 2 : -Math.PI / 2);
   ctx.font = `900 ${Math.round(unit * 0.32)}px "Inter", Arial, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -142,7 +145,7 @@ export class AirHockeyView extends TableView<State> {
     pub(room, keep_, HALF_Z + 0.9, DROP);
     const GROUND = -DROP;
     // The table: the white surface, padded rails with the goal slots, a blue body on four legs.
-    const field = this.add(new T.PlaneGeometry(HALF_X * 2, HALF_Z * 2).rotateX(-Math.PI / 2), this.standard({ map: keep_(surface()), roughness: 0.25 }), 0, 0, 0);
+    const field = this.add(new T.PlaneGeometry(HALF_X * 2, HALF_Z * 2).rotateX(-Math.PI / 2), this.standard({ map: keep_(surface(this.mine === 1)), roughness: 0.25 }), 0, 0, 0);
     field.castShadow = false;
     const rail = keep_(glossy({ color: "#1f4fae", roughness: 0.35 }, 0.5)),
       pad = this.standard({ color: "#14171c", roughness: 0.6 }),

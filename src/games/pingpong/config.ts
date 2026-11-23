@@ -1,11 +1,12 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
+import { HOST_ONLY } from "../../net/match";
 import { POINTS, SHORT, deuce, gameNumber, need, serverOf, tableTennis, type State } from "./rules";
 import { TABLE_TENNIS_COLORS, TableTennisView } from "./view";
 import { gameResult } from "./result";
 
 /** The game scores: a column for each game (finished ones with their score, the one being played with its points so far). */
-function gameTable(state: State) {
+function gameTable(state: State, names: [string, string] = ["나", "컴퓨터"]) {
   const now = state.winner === null ? state.done.length : -1,
     cell = (k: number, p: 0 | 1) => {
       const score = k < state.done.length ? state.done[k] : k === now ? state.score : null;
@@ -14,7 +15,7 @@ function gameTable(state: State) {
       return `<i class="tt-cell${k === now ? " now" : ""}${won ? " won" : ""}">${score[p]}</i>`;
     },
     row = (p: 0 | 1, name: string) => `<span class="tt-row tt-side-${p}"><b>${name}</b>${Array.from({ length: state.best }, (_, k) => cell(k, p)).join("")}<em>${state.games[p]}</em></span>`;
-  return `<span class="tt-table" aria-hidden="true" style="--games:${state.best}"><span class="tt-row tt-head"><b></b>${Array.from({ length: state.best }, (_, k) => `<i class="tt-cell${k === now ? " now" : ""}">${k + 1}</i>`).join("")}<em>게임</em></span>${row(0, "나")}${row(1, "컴퓨터")}</span>`;
+  return `<span class="tt-table" aria-hidden="true" style="--games:${state.best}"><span class="tt-row tt-head"><b></b>${Array.from({ length: state.best }, (_, k) => `<i class="tt-cell${k === now ? " now" : ""}">${k + 1}</i>`).join("")}<em>게임</em></span>${row(0, names[0])}${row(1, names[1])}</span>`;
 }
 export const tableTennisConfig: PointConfig<State> = {
   game: tableTennis,
@@ -27,15 +28,32 @@ export const tableTennisConfig: PointConfig<State> = {
   // The first deuce (10 all, or 6 all in a game to 7) is called across the table.
   cheer: (before, state) => (state.ply <= before.ply || state.winner !== null ? null : deuce(state) && !deuce(before) ? "듀스" : null),
   // A game won or lost is told over the table with its score (the match's end has its own word).
-  setResult: (before, state) => gameResult(before, state),
+  setResult: (before, state, _mode, seat) => gameResult(before, state, seat === undefined ? 0 : seat),
   // The board: the game being played over the middle, each side's points in it with a ball by the server's, and
   // beside it every game's score in its column with the games won at the end.
-  tallyHtml: (state) =>
+  tallyHtml: (state, _mode, seat) =>
     [0, 1].map(
       (p) =>
-        `${p === 0 ? `<span class="tt-game">GAME ${gameNumber(state)}</span>${gameTable(state)}` : ""}<span class="tt-points">${state.score[p]}</span><i class="tt-serve${state.winner === null && serverOf(state) === p ? " on" : ""}" aria-hidden="true"></i>`,
+        `${p === 0 ? `<span class="tt-game">GAME ${gameNumber(state)}</span>${gameTable(state, seat === undefined ? undefined : ["빨강", "파랑"])}` : ""}<span class="tt-points">${state.score[p]}</span><i class="tt-serve${state.winner === null && serverOf(state) === p ? " on" : ""}" aria-hidden="true"></i>`,
     ) as [string, string],
-  view: (host, quality, _variant, _mode, level) => new TableTennisView(host, quality, level),
+  view: (host, quality, _variant, _mode, level, live) => new TableTennisView(host, quality, level, live),
+  // Over Wi-Fi (와이파이 여럿이) two devices hold a paddle each, the hall run by the host's (`src/net/live.ts`); a point
+  // is the host's move alone. A dropped player's paddle is the host's computer's until they come back.
+  net: {
+    seats: () => (["빨강", "파랑"] as const).map((label, p) => ({ label, color: TABLE_TENNIS_COLORS[p], kinds: ["computer"] })),
+    toMove: () => HOST_ONLY,
+    hint: (s, seat) => {
+      const line = s.best === 1 ? `${s.score[0]} 대 ${s.score[1]}` : `${gameNumber(s)}게임 ${s.score[0]} 대 ${s.score[1]} (게임 ${s.games[0]} 대 ${s.games[1]})`;
+      if (seat !== 0 && seat !== 1) return `${line}. 구경하는 중입니다.`;
+      return serverOf(s) === seat
+        ? `${line}. 내 서브: 화면을 눌러 공을 띄우고, 떨어질 때 라켓을 위로 휘둘러 치세요.`
+        : `${line}. 상대 서브: 공이 내 쪽에 한 번 튀면 라켓을 대어 넘기세요.`;
+    },
+    reason: (s) =>
+      s.best === 1
+        ? `${s.done[0][0]} 대 ${s.done[0][1]}로 끝났습니다. ${s.points}점 단판 승부입니다.`
+        : `게임 스코어 ${s.games[0]} 대 ${s.games[1]}로 끝났습니다 (${s.done.map(([a, b]) => `${a}:${b}`).join(", ")}). ${s.best}게임 가운데 ${need(s)}게임을 먼저 땄습니다.`,
+  },
   colors: TABLE_TENNIS_COLORS,
   // The paddle's wooden knock, the ball's light tap on the table or the floor, the soft net.
   knock: (sound, kind) => (kind === "disc" ? sound.knock(4) : kind === "cushion" ? sound.tap() : sound.soft(1)),
@@ -48,7 +66,7 @@ export const tableTennisConfig: PointConfig<State> = {
   english: "Table Tennis",
   number: "NO. 75 — FIRST TO ELEVEN",
   intro: `<p>탁구 클럽의 경기장, 내 쪽 끝에서 탁구대를 내려다봅니다.<br>라켓을 휘둘러 컴퓨터와 랠리를 주고받으세요. ${POINTS}점 단판 승부 또는 ${SHORT}점 3게임 경기입니다.</p>`,
-  meta: `컴퓨터 대전 · ${POINTS}점 단판 또는 ${SHORT}점 3게임 · 실시간`,
+  meta: `컴퓨터 대전 · 와이파이 여럿이 · ${POINTS}점 단판 또는 ${SHORT}점 3게임 · 실시간`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FIRST TO ${POINTS}</span>`,
   artClass: "foosball-art",
   artLabel: "탁구대 미리보기",
@@ -91,6 +109,7 @@ export const tableTennisConfig: PointConfig<State> = {
         ["낮은 공", "네트보다 낮은 공을 세게 치면 네트에 걸리기 쉽습니다. 공이 튀어 오른 꼭대기에서 치는 것이 좋습니다."],
       ),
     ) +
+    part("와이파이 여럿이", table(["함께 하기", "같은 와이파이의 두 기기가 라켓을 하나씩 잡습니다. 방장이 빨강, 들어온 사람이 파랑이고, 저마다 자기 쪽 끝 뒤에서 탁구대를 봅니다. 첫 게임은 파랑이 먼저 서브합니다."], ["일시정지", "한 사람이 멈추면 두 기기 모두 멈추고, 누구든 다시 누르면 이어집니다."], ["연결이 끊기면", "끊긴 사람의 라켓은 다시 들어올 때까지 방장 기기의 컴퓨터가 잡습니다."], ["시점", "방장이 빨강을 잡으면 혼자 할 때처럼 시점이 옆으로 따라가고 높은 공에 올라갑니다. 다른 자리에서는 시점이 제자리에 있고, 타점 표시는 나오지 않습니다."])) +
     part("레벨", table(["쉬움", "컴퓨터가 느리게 움직이고 자주 놓치며, 공을 천천히 가운데로 넘깁니다. 타점 표시가 보입니다."], ["보통", "알맞은 빠르기로 받아 넘기고, 좌우로 나눠 칩니다."], ["어려움", "빠르게 읽고 따라가며, 내 라켓에서 먼 쪽으로 세게 칩니다. 공이 조금만 떠도 <b>스매싱</b>을 날립니다."])) +
     part("처음이라면", notes("공이 내 코트에 튄 뒤 올라올 때, 공의 바로 뒤에 라켓을 갖다 대기만 해도 넘어갑니다.", "익숙해지면 공이 맞는 순간 라켓을 앞으로 살짝 밀어 쳐 보세요.", "치고 나면 라켓을 탁구대 가운데 뒤쪽으로 되돌려 다음 공을 기다립니다.")),
   help: "마우스: 탁구대 위로 움직이면 라켓이 그대로 따라옵니다<br>터치: 끌어서 움직입니다<br>키보드: 방향키, 스페이스로 서브 띄우기·치기",

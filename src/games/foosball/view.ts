@@ -3,8 +3,10 @@ import { aim, wood } from "../../engine/scene-utils";
 import { pub } from "../../engine/scenery";
 import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { BALL_R, DT, GOAL, HALF_X, HALF_Z, MAX_SLIDE, RODS, createWorld, foot, offset, steer, step, type World } from "./sim";
+import { BALL_R, DT, GOAL, HALF_X, HALF_Z, MAX_SLIDE, RODS, SWING, createWorld, foot, offset, type Input, type World } from "./sim";
 import { GOALS, type State } from "./rules";
+import { blend, type LiveGuest, type LiveSession } from "../../net/live";
+import { hostSlice, inputOf, readInput, readSnap, snapOf } from "./net";
 
 export const FOOSBALL_COLORS: [string, string] = ["#c8321f", "#e7b416"];
 /** How high the rods run over the pitch, and how tall the walls stand. */
@@ -42,7 +44,15 @@ function pitch() {
   t.anisotropy = 4;
   return t;
 }
-/** The rod football table: the view plays the table in real time and reports each goal as a move. */
+/**
+ * The rod football table: the view plays the table in real time and reports each goal as a move.
+ *
+ * Over Wi-Fi (`live`) each device stands at its own end of the table, its own goal at the left (seat 1 has the table
+ * turned round), and its hand pushes and kicks its own four rods. The host's view runs the one table with each
+ * guest's hand as the room feeds it (`LiveHost.input`, kicks counted) and the computer for a seat whose person is
+ * away, and tells the table to all (`snapOf`); a guest's view draws the host's table a moment behind, its own rods
+ * where its own hand has them, and sends its hand (`inputOf`).
+ */
 export class FoosballView extends TableView<State> {
   private root = new T.Group();
   private world: World = createWorld(0, (Math.random() - 0.5) * 0.6);
@@ -61,12 +71,24 @@ export class FoosballView extends TableView<State> {
   private clicked = 0;
   private ticker = 0;
   private own_ = <R extends { dispose(): void }>(r: R) => this.own(r);
+  /** The side this device plays (seat 1 over Wi-Fi has the table turned round), and which way a push across the screen goes for it. */
+  private mine: 0 | 1 = 0;
+  private way = 1;
+  /** Hard knocks so far (told to guests for their sound), my kicks so far (a guest sends the count), each guest's kicks the host has taken. */
+  private hits = 0;
+  private kicks = 0;
+  private taken = [0, 0];
+  /** A guest's own swing, begun at its kick (drawn at once, before the host's table tells it), and the knocks it has heard. */
+  private mySwing = -1;
+  private heardHits: number | null = null;
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
     private level: Level,
+    private live: LiveSession | null = null,
   ) {
     super(host, quality, "#16110d");
+    if (live?.seat === 1) [this.mine, this.way] = [1, -1];
     this.scene.add(new T.HemisphereLight("#d8cdb8", "#221a14", 1.6));
     const lamp = new T.SpotLight("#fff0cf", 3.4, 0, 0.9, 0.5, 0);
     lamp.position.set(0, 12, 0.5);
@@ -79,7 +101,7 @@ export class FoosballView extends TableView<State> {
     // The table lies across the screen, as one stands at it: my goal at the left, the other at the right,
     // and the rods running toward me. Everything of the table is built lengthwise and turned as one.
     const root = this.root;
-    root.rotation.y = -Math.PI / 2;
+    root.rotation.y = this.mine ? Math.PI / 2 : -Math.PI / 2;
     this.scene.add(root);
     const put = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x = 0, y = 0, z = 0) => this.add(geometry, material, x, y, z, root);
     const timber = this.standard({ map: this.own(wood(true)), roughness: 0.5 }),
@@ -174,16 +196,16 @@ export class FoosballView extends TableView<State> {
       aim(ray, e, el, this.camera);
       if (!ray.ray.intersectPlane(this.floor, hit)) return;
       // A mouse needs no button held: wherever it goes (toward me or away), the rods go as far.
-      if (this.grip !== null && e.buttons === 0) this.push(hit.z - this.grip);
+      if (this.grip !== null && e.buttons === 0) this.push((hit.z - this.grip) * this.way);
       if (e.buttons === 0) this.grip = hit.z;
     });
     el.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowUp") this.held = -1;
-      else if (e.key === "ArrowDown") this.held = 1;
+      if (e.key === "ArrowUp") this.held = -this.way;
+      else if (e.key === "ArrowDown") this.held = this.way;
       else if (e.key === " " || e.key === "Enter") this.kick = true;
     });
     el.addEventListener("keyup", (e) => {
-      if ((e.key === "ArrowUp" && this.held < 0) || (e.key === "ArrowDown" && this.held > 0)) this.held = 0;
+      if ((e.key === "ArrowUp" && this.held === -this.way) || (e.key === "ArrowDown" && this.held === this.way)) this.held = 0;
     });
     el.addEventListener("blur", () => (this.held = 0));
     el.addEventListener("pointerleave", (e) => {
@@ -218,7 +240,7 @@ export class FoosballView extends TableView<State> {
     return true;
   }
   protected dragMove(at: { x: number; z: number }) {
-    if (this.grip !== null) this.push(at.z - this.grip);
+    if (this.grip !== null) this.push((at.z - this.grip) * this.way);
     this.grip = at.z;
   }
   protected dragEnd() {
@@ -230,7 +252,12 @@ export class FoosballView extends TableView<State> {
     const real = Math.min(0.3, (now - this.last) / 1000),
       passed = Math.min(0.05, real);
     this.last = now;
-    if (!this.state || this.state.winner !== null || this.paused || document.hidden || document.querySelector("dialog[open]")) {
+    const live = this.live;
+    if (live && !live.host) return this.follow(now, real);
+    // The host tells its table to the guests, paused or not (so that one coming back sees it).
+    if (live?.host && this.state) live.tick(() => snapOf(this.world, this.hits), now);
+    // Over Wi-Fi a window open on one device does not stop the table for the others (a pause does, for all).
+    if (!this.state || this.state.winner !== null || this.paused || document.hidden || (!live && document.querySelector("dialog[open]"))) {
       // Nothing pressed while the table stands still is kept for later.
       this.kick = false;
       return;
@@ -244,11 +271,12 @@ export class FoosballView extends TableView<State> {
     this.left += passed;
     while (this.left >= DT) {
       this.left -= DT;
-      const scorer = step(this.world, [{ target: this.target, kick: this.kick }, steer(this.world, 1, this.level)]);
+      const scorer = hostSlice(this.world, this.level, this.hands(now));
       this.kick = false;
       if (scorer !== null) {
         this.left = 0;
         this.wait = 1;
+        if (live?.host) live.jump();
         // The side that let it in gets the ball.
         this.world = createWorld(scorer === 0 ? 1 : 0, (Math.random() - 0.5) * 0.6);
         this.onMove({ from: -1, to: scorer, extra: -1 });
@@ -257,10 +285,64 @@ export class FoosballView extends TableView<State> {
     }
     if (this.world.hit) {
       this.world.hit = false;
+      this.hits++;
       if (now - this.clicked > 70) {
         this.clicked = now;
         this.onContact();
       }
+    }
+    this.pose();
+    this.redraw();
+  }
+  /** What drives each side's rods in a slice: my hand, a guest's (its newest kick taken once), or null for the computer. */
+  private hands(now: number): (Input | null)[] {
+    const live = this.live;
+    if (!live?.host) return [{ target: this.target, kick: this.kick }, null];
+    return ([0, 1] as const).map((side) => {
+      const control = live.control(side);
+      if (control === "me") return { target: this.target, kick: this.kick };
+      if (control !== "remote") return null;
+      const hand = readInput(live.input(side, now)),
+        kicks = readInput(live.latest(side))?.kicks ?? 0,
+        kick = kicks > this.taken[side];
+      this.taken[side] = Math.max(this.taken[side], kicks);
+      return { target: hand?.target ?? this.world.slide[side], kick };
+    });
+  }
+  /**
+   * A guest's frame: my push and my kicks are sent to the host, and the host's table is drawn a moment behind, my own
+   * rods where my hand has them (they go there at once on the host too, a moment later).
+   */
+  private follow(now: number, real: number) {
+    const live = this.live as LiveGuest,
+      mine = this.mine,
+      playing = (live.seat === 0 || live.seat === 1) && !!this.state && this.state.winner === null && !this.paused && !live.paused && !document.hidden;
+    if (playing && this.held) this.push(this.held * 4.5 * real);
+    if (playing && this.kick && this.mySwing < 0) {
+      this.kicks++;
+      this.mySwing = 0;
+    }
+    this.kick = false;
+    if (this.mySwing >= 0 && (this.mySwing += real) >= SWING) this.mySwing = -1;
+    live.tick(() => (playing ? inputOf(this.target, this.kicks) : null), now);
+    const frame = live.frame(now),
+      a = frame && readSnap(frame.a.data),
+      b = frame && readSnap(frame.b.data);
+    if (frame && a && b) {
+      const [x, z, s0, s1] = blend([a.ball.x, a.ball.z, a.slide[0], a.slide[1]], [b.ball.x, b.ball.z, b.slide[0], b.slide[1]], frame.t),
+        { world } = this;
+      Object.assign(world.ball, { x, z });
+      world.slide = [s0, s1];
+      world.swing = [b.swing[0], b.swing[1]];
+      if (playing) {
+        world.slide[mine] = this.target;
+        world.swing[mine] = this.mySwing;
+      }
+      if (this.heardHits !== null && b.hits > this.heardHits && now - this.clicked > 70) {
+        this.clicked = now;
+        this.onContact();
+      }
+      this.heardHits = b.hits;
     }
     this.pose();
     this.redraw();
@@ -279,6 +361,8 @@ export class FoosballView extends TableView<State> {
       const data = this.renderer.domElement.dataset;
       data.ball = `${world.ball.x.toFixed(2)},${world.ball.z.toFixed(2)}`;
       data.slide = (world.slide[0] / MAX_SLIDE).toFixed(2);
+      // Both sides' push (red;yellow), for the Wi-Fi browser tests.
+      data.slides = world.slide.map((v) => (v / MAX_SLIDE).toFixed(2)).join(";");
     }
   }
   protected subject(aspect: number): TableSubject {
