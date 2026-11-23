@@ -4,6 +4,9 @@ import * as hanoi from "../src/games/hanoi/rules";
 import * as pour from "../src/games/pour/rules";
 import * as queens from "../src/games/queens/rules";
 import * as tour from "../src/games/knight/rules";
+import * as amz from "../src/games/amazons/rules";
+import { amazonsConfig } from "../src/games/amazons/config";
+import { pointRules } from "../src/net/points";
 
 describe("water pouring, upgraded", () => {
   test("four vessels: every puzzle drawn can be solved in the fewest pours it names, within its stage's band", () => {
@@ -140,6 +143,53 @@ describe("knight tour, upgraded", () => {
     expect(tour.knight.reason(state)).toBe("실패! 출발점으로 돌아갈 수 없습니다.");
     expect(tour.hint(start)).toBeNull();
   });
+});
+
+describe("game of the Amazons, upgraded", () => {
+  test("the board is chosen by variant: 10×10 as always, 8×8 and 6×6, four amazons a side, mirrored", () => {
+    for (const [variant, size] of [["", 10], ["10", 10], ["8", 8], ["6", 6], ["7", 10]] as const) {
+      const s = amz.amazons.create(variant);
+      expect([amz.sizeOf(s.board), s.board.filter((p) => p === 0).length, s.board.filter((p) => p === 1).length]).toEqual([size, 4, 4]);
+      // Black stands where white does, across the middle.
+      s.board.forEach((p, i) => p === 0 && expect(s.board[(size - 1 - Math.floor(i / size)) * size + (i % size)]).toBe(1));
+    }
+    // A move on the small board lands like a queen within its edges and burns a square.
+    const small = amz.createGame(6),
+      m = amz.moves(small)[0],
+      next = amz.play(small, m)!;
+    expect([next.board[m.to], next.board[m.extra], next.turn]).toEqual([0, amz.BURNT, 1]);
+    expect(amz.moves(small).every((x) => x.to >= 0 && x.to < 36 && x.extra >= 0 && x.extra < 36)).toBe(true);
+    // A queen's reach stops at the board's edge: from a corner of an empty 8×8 board, 21 squares.
+    expect(amz.reach(new Array(64).fill(amz.EMPTY), 0)).toHaveLength(21);
+  });
+  test("over Wi-Fi the room lays the board the host chose, and a move is played the same way", () => {
+    const rules = pointRules(amz.amazons, amazonsConfig.net!),
+      seats = [{ kind: "person" }, { kind: "person" }],
+      laid = rules.create({ variant: "8", options: {}, seats } as unknown as Parameters<typeof rules.create>[0], seededRandom(1));
+    expect(amz.sizeOf(laid.board)).toBe(8);
+    expect(rules.toMove(laid)).toBe(0);
+    const move = amz.moves(laid)[3],
+      after = rules.play(laid, move, seededRandom(2))!;
+    expect([after.board[move.to], after.board[move.extra], rules.toMove(after)]).toEqual([0, amz.BURNT, 1]);
+    // The classic board is still what a room without a choice lays.
+    expect(amz.sizeOf(rules.create({ variant: "", options: {}, seats } as unknown as Parameters<typeof rules.create>[0], seededRandom(1)).board)).toBe(10);
+  });
+  test("the hard computer plays legal moves to the end and beats the normal one from either side", () => {
+    let wins = 0;
+    for (let g = 0; g < 4; g++) {
+      const random = seededRandom(g + 1),
+        hardSide = g % 2;
+      let s = amz.createGame(8);
+      while (s.winner === null) {
+        const m = amz.chooseMove(s, s.turn === hardSide ? "hard" : "normal", random)!;
+        s = amz.play(s, m)!;
+        expect(s).not.toBeNull();
+      }
+      expect(amz.canMove(s.board, s.turn)).toBe(false);
+      if (s.winner === hardSide) wins++;
+    }
+    expect(wins).toBeGreaterThanOrEqual(3);
+  }, 60000);
 });
 
 describe("tower of Hanoi, upgraded", () => {

@@ -5,6 +5,8 @@ import * as tower from "../../src/games/hanoi/rules";
 import * as jugs from "../../src/games/pour/rules";
 import * as queenRules from "../../src/games/queens/rules";
 import * as tourRules from "../../src/games/knight/rules";
+import * as amazonRules from "../../src/games/amazons/rules";
+import { amazonSubject, squareAt as amazonAt } from "../../src/games/amazons/view";
 import { QUEEN_TOP, cellAt as queenAt, queensSubject } from "../../src/games/queens/view";
 import { selectGame } from "./library";
 
@@ -192,6 +194,46 @@ test("knight tour: a closed journey is travelled square by square, home is refus
   }
   await expect(page.locator("#turn")).toContainText("성공! 모든 칸을 밟고 출발점으로 돌아왔습니다.");
   await expect(page.locator(".puzzle-panel #pz-next")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("game of the Amazons: on the 6×6 board an amazon moves and shoots, and the hard computer answers", async ({ page }, info) => {
+  test.setTimeout(150000);
+  const mobile = info.project.name === "mobile",
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "아마존스");
+  await page.locator("#pg-variant").selectOption("6");
+  await page.locator("#pg-level").selectOption("hard");
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await rest(page);
+  const box = (await page.locator("#board canvas").boundingBox())!,
+    aspect = box.width / box.height,
+    subject = amazonSubject(6),
+    d = cameraDistance(aspect, false, subject),
+    camera = new PerspectiveCamera(FOV, aspect, 0.1, 120);
+  camera.position.set(0, Math.sin(subject.tilt) * d, Math.cos(subject.tilt) * d);
+  camera.lookAt(0, subject.lookY, 0);
+  camera.updateMatrixWorld();
+  const tap = async (s: number) => {
+    const p = amazonAt(s, 6),
+      v = new Vector3(p.x, 0.05, p.z).project(camera),
+      x = box.x + ((v.x + 1) * box.width) / 2,
+      y = box.y + ((1 - v.y) * box.height) / 2;
+    if (mobile) await page.touchscreen.tap(x, y);
+    else await page.mouse.click(x, y);
+    await page.waitForTimeout(150);
+  };
+  // The white amazon at a2 (column 0, fifth row from the far side) steps up to a3 and shoots back onto a2.
+  const start = amazonRules.createGame(6),
+    from = 4 * 6,
+    to = 3 * 6;
+  expect(start.board[from]).toBe(0);
+  for (const s of [from, to, from]) await tap(s);
+  await expect(count(page)).toHaveText("2수", { timeout: 40000 });
+  await rest(page);
   expect(errors).toEqual([]);
 });
 
