@@ -25,6 +25,10 @@ export interface NetSpec<S> {
   standIn?: boolean;
   /** The fewest people seated (2). */
   least?: number;
+  /** The status line for this device's seat (null: watching), for a real-time table, which has no turns to name. */
+  hint?: (state: S, seat: number | null) => string;
+  /** How the match ended, told alike on every device (the game's own `reason` may speak for side 0). */
+  reason?: (state: S) => string;
 }
 /** A point game as a room plays it: laid from the room's start and seed, the seat to move, what a room refuses. */
 export function pointRules<S>(game: PointGame<S>, spec: NetSpec<S>): NetRules<S> {

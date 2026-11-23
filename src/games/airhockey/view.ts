@@ -5,8 +5,10 @@ import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import type { State } from "./rules";
 import { shout } from "../../ui/banner";
-import { DT, GOAL, HALF_X, HALF_Z, MALLET, MAX_PUCK, PUCK, createWorld, keep, step, think, type World } from "./sim";
+import { DT, GOAL, HALF_X, HALF_Z, MALLET, MAX_PUCK, PUCK, createWorld, freshMind, keep, type World } from "./sim";
 import { DROP, ORBIT, RAIL, airHockeySubject } from "./layout";
+import { blend, type LiveGuest, type LiveSession } from "../../net/live";
+import { hostSlice, inputOf, readInput, readSnap, snapOf, type Tally } from "./net";
 
 export const AIRHOCKEY_COLORS: [string, string] = ["#e0322a", "#2a6fe0"];
 /** Where a side's mallet stands at a face-off, before its goal. */
@@ -74,6 +76,12 @@ function surface() {
  * reports each goal as a move; my mallet goes exactly where the hand is. With `two` (two at one screen) both mallets
  * are hands: every pointer that goes down takes the mallet of the half it is on and drives it, by its own id, until it
  * lifts, so that two fingers play at once (the view follows pointers itself; `TableView` follows only one).
+ *
+ * Over Wi-Fi (`live`) each device sees the table from its own side, its own goal at the left (seat 1 looks from the
+ * other long side), and its hand drives its own mallet. The host's view runs the one table: its own hand, each
+ * guest's hand as the room feeds it (`LiveHost.input`), the computer for a seat whose person is away; it tells the
+ * table to all (`snapOf`). A guest's view runs no table: it draws the host's, a moment behind, and its own mallet
+ * where its hand is (`readSnap`, `LiveGuest.frame`), and sends its hand (`inputOf`).
  */
 export class AirHockeyView extends TableView<State> {
   private world: World = createWorld(0, 0);
@@ -100,13 +108,24 @@ export class AirHockeyView extends TableView<State> {
   onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
   private ticker = 0;
   private shown = 0;
+  /** The side this device plays (seat 1 over Wi-Fi sees the table from the other long side), and the computer's thoughts for each side. */
+  private mine: 0 | 1 = 0;
+  private minds = [freshMind(), freshMind()] as [ReturnType<typeof freshMind>, ReturnType<typeof freshMind>];
+  /** Counts of strikes, rail knocks and time-outs (told to guests, who make their own sounds), and what a guest has heard of them. */
+  private tally: Tally = { hits: 0, walls: 0, timeouts: 0 };
+  private heardTally: Tally | null = null;
+  private heardCut = 0;
+  private wasHanded: [boolean, boolean] = [true, true];
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
     private level: Level,
     private two = false,
+    private live: LiveSession | null = null,
   ) {
     super(host, quality, "#16110d");
+    if (live) this.mine = live.seat === 1 ? 1 : 0;
+    this.orbit = ORBIT + (this.mine ? Math.PI : 0);
     this.scene.add(new T.HemisphereLight("#d8cdb8", "#221a14", 1.6));
     const lamp = new T.SpotLight("#fff0cf", 3.6, 0, 0.95, 0.5, 0);
     lamp.position.set(0, 11, 0.5);
@@ -118,7 +137,7 @@ export class AirHockeyView extends TableView<State> {
     const keep_ = <R extends { dispose(): void }>(r: R) => this.own(r);
     // The pub round it, turned with the eye so that its wall stays behind the table.
     const room = new T.Group();
-    room.rotation.y = ORBIT;
+    room.rotation.y = this.orbit;
     this.scene.add(room);
     pub(room, keep_, HALF_Z + 0.9, DROP);
     const GROUND = -DROP;
@@ -175,7 +194,7 @@ export class AirHockeyView extends TableView<State> {
         aim(ray, e, el, this.camera);
         return ray.ray.intersectPlane(this.floor, hit) ? { x: hit.x, z: hit.z } : null;
       },
-      halfOf = (z: number): 0 | 1 => (!this.two || z >= 0 ? 0 : 1),
+      halfOf = (z: number): 0 | 1 => (!this.two ? this.mine : z >= 0 ? 0 : 1),
       letGo = (e: PointerEvent) => this.holds.delete(e.pointerId);
     el.addEventListener("pointerdown", (e) => {
       if ((e.pointerType === "mouse" && e.button !== 0) || this.disposed || !this.running()) return;
@@ -212,21 +231,23 @@ export class AirHockeyView extends TableView<State> {
     // Keys go as the table is seen: right toward the far goal (-z), up away from me (-x). Against the computer the arrows
     // and W A S D both move my mallet; for two, W A S D move the left mallet and the arrows the right one.
     const WAYS: Record<string, [number, number]> = { ArrowLeft: [0, 1], ArrowRight: [0, -1], ArrowUp: [-1, 0], ArrowDown: [1, 0], KeyA: [0, 1], KeyD: [0, -1], KeyW: [-1, 0], KeyS: [1, 0] },
-      sideOf = (code: string): 0 | 1 => (this.two && code.startsWith("Arrow") ? 1 : 0);
+      sideOf = (code: string): 0 | 1 => (this.two && code.startsWith("Arrow") ? 1 : this.mine),
+      // Seen from the other long side (seat 1 over Wi-Fi), every way is turned round.
+      turn = this.mine ? -1 : 1;
     el.addEventListener("keydown", (e) => {
       const way = WAYS[e.code];
       if (!way || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       const keys = this.keys[sideOf(e.code)];
-      if (way[0]) keys.x = way[0];
-      if (way[1]) keys.z = way[1];
+      if (way[0]) keys.x = way[0] * turn;
+      if (way[1]) keys.z = way[1] * turn;
     });
     el.addEventListener("keyup", (e) => {
       const way = WAYS[e.code];
       if (!way) return;
       const keys = this.keys[sideOf(e.code)];
-      if (way[0] && keys.x === way[0]) keys.x = 0;
-      if (way[1] && keys.z === way[1]) keys.z = 0;
+      if (way[0] && keys.x === way[0] * turn) keys.x = 0;
+      if (way[1] && keys.z === way[1] * turn) keys.z = 0;
     });
     el.addEventListener("blur", () => this.stopKeys());
     this.pose();
@@ -253,7 +274,15 @@ export class AirHockeyView extends TableView<State> {
     ];
   }
   private running() {
-    return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
+    // Over Wi-Fi a window open on one device does not stop the table for the others (a pause does, for all).
+    return !!this.state && this.state.winner === null && !this.paused && !document.hidden && (!!this.live || !document.querySelector("dialog[open]"));
+  }
+  /** Which sides a hand drives here (mine, two at one screen, or a guest's on the host), the others the computer's. */
+  private handed(): [boolean, boolean] {
+    const live = this.live;
+    if (!live || !live.host) return this.two ? [true, true] : [true, false];
+    const by = (side: number) => live.control(side) === "me" || live.control(side) === "remote";
+    return [by(0), by(1)];
   }
   /** A hand over the table: that side's mallet goes there (kept to its half), at no speed limit. */
   private reach(side: 0 | 1, x: number, z: number) {
@@ -268,9 +297,25 @@ export class AirHockeyView extends TableView<State> {
   private advance(now: number) {
     const real = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
+    if (this.live && !this.live.host) return this.follow(now, real);
     if (this.running()) {
-      const hands: (0 | 1)[] = this.two ? [0, 1] : [0];
+      const handed = this.handed(),
+        hands = ([0, 1] as const).filter((side) => handed[side]),
+        live = this.live;
+      // A side taken over by a hand (a guest back from a drop) starts its sweep from where its mallet stands.
+      for (const side of hands)
+        if (!this.wasHanded[side]) {
+          const m = this.world.mallets[side];
+          this.hands[side] = this.sent[side] = { x: m.x, z: m.z };
+        }
+      this.wasHanded = handed;
+      // Keys move the mallets of this screen's hands; a guest's hand is where the room says it is.
       for (const side of hands) {
+        if (live?.control(side) === "remote") {
+          const got = readInput(side, live.host ? live.input(side, now) : null);
+          if (got) this.hands[side] = got;
+          continue;
+        }
         const keys = this.keys[side];
         if (keys.x || keys.z) this.reach(side, this.hands[side].x + keys.x * 7 * real, this.hands[side].z + keys.z * 7 * real);
       }
@@ -281,23 +326,29 @@ export class AirHockeyView extends TableView<State> {
         from = this.sent.map((p) => ({ ...p }));
       for (let k = 1; k <= slices; k++) {
         this.left -= DT;
-        for (const side of hands)
-          this.world.targets[side] = { x: from[side].x + ((this.hands[side].x - from[side].x) * k) / slices, z: from[side].z + ((this.hands[side].z - from[side].z) * k) / slices };
-        if (this.two) this.wait = 0;
+        const at = ([0, 1] as const).map((side) =>
+          handed[side] ? { x: from[side].x + ((this.hands[side].x - from[side].x) * k) / slices, z: from[side].z + ((this.hands[side].z - from[side].z) * k) / slices } : null,
+        );
+        const computer = !handed[0] || !handed[1];
+        if (!computer) this.wait = 0;
         else if (this.wait > 0) this.wait -= DT;
-        else think(this.world, this.level);
-        const scorer = step(this.world, this.level, this.two);
+        const [hit, wall] = [this.world.hit, this.world.wall],
+          scorer = hostSlice(this.world, this.level, at, this.minds, this.wait > 0);
+        if (this.world.hit > hit) this.tally.hits++;
+        if (this.world.wall > wall) this.tally.walls++;
         if (this.world.served !== null) {
           // Kept too long in one half: the other side has it, laid still in their half.
           const to = this.world.served;
           this.world.served = null;
-          if (!this.two && to === 1) this.wait = 0.6;
+          if (computer && !handed[to]) this.wait = 0.6;
+          this.tally.timeouts++;
           shout("시간 초과");
           this.onKnock?.("cushion", 0.4);
         }
         if (scorer !== null) {
           this.left = 0;
-          this.wait = this.two ? 0 : 1.1;
+          this.wait = computer ? 1.1 : 0;
+          live?.host && live.jump();
           // The side that let it in has the puck; a hand's mallet stays where the hand is.
           const kept = this.world.mallets.map((m) => ({ x: m.x, z: m.z }));
           this.world = createWorld(scorer === 0 ? 1 : 0, (Math.random() - 0.5) * 0.8);
@@ -324,6 +375,51 @@ export class AirHockeyView extends TableView<State> {
         this.onKnock?.("cushion", strength);
       }
       this.world.hit = this.world.wall = 0;
+    }
+    // The host tells its table to the guests (paused or not, so that one coming back sees it).
+    if (this.live?.host && this.state) this.live.tick(() => snapOf(this.world, this.tally), now);
+    this.pose();
+    this.redraw();
+  }
+  /**
+   * A guest's frame: my hand is sent to the host, and the host's table is drawn a moment behind, my own mallet where
+   * my hand is (it goes there at once on the host too, a moment later); the sounds and words follow its counts.
+   */
+  private follow(now: number, real: number) {
+    const live = this.live as LiveGuest,
+      mine = this.mine,
+      seated = live.seat === 0 || live.seat === 1,
+      playing = seated && this.running() && !live.paused;
+    if (playing) {
+      const keys = this.keys[mine];
+      if (keys.x || keys.z) this.reach(mine, this.hands[mine].x + keys.x * 7 * real, this.hands[mine].z + keys.z * 7 * real);
+    }
+    live.tick(() => (playing ? inputOf(this.hands[mine]) : null), now);
+    const frame = live.frame(now),
+      a = frame && readSnap(frame.a.data),
+      b = frame && readSnap(frame.b.data);
+    if (frame && a && b) {
+      const t = frame.t,
+        [px, pz, vx, vz, ax, az, bx, bz] = blend(frame.a.data.slice(0, 8), frame.b.data.slice(0, 8), t),
+        { puck, mallets } = this.world;
+      Object.assign(puck, { x: px, z: pz, vx, vz });
+      Object.assign(mallets[0], { x: ax, z: az });
+      Object.assign(mallets[1], { x: bx, z: bz });
+      if (playing) Object.assign(mallets[mine], this.hands[mine]);
+      // What the host's table did since the last frame drawn here: knocks, a time-out, a goal (a cut).
+      const heard = this.heardTally,
+        strength = Math.min(1, Math.hypot(vx, vz) / (MAX_PUCK * 0.75));
+      if (heard) {
+        if (b.hits > heard.hits && strength > 0.03) this.onKnock?.("disc", strength);
+        if (b.walls > heard.walls && strength > 0.03) this.onKnock?.("cushion", strength);
+        if (b.timeouts > heard.timeouts) {
+          shout("시간 초과");
+          this.onKnock?.("cushion", 0.4);
+        }
+        if (frame.b.cut > this.heardCut) this.onKnock?.("pocket", 1);
+      }
+      this.heardTally = { hits: b.hits, walls: b.walls, timeouts: b.timeouts };
+      this.heardCut = frame.b.cut;
     }
     this.pose();
     this.redraw();

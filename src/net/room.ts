@@ -1,6 +1,6 @@
 import type { GameOptions, Move } from "../games/points/types";
 import { HOST_ONLY, Match, type NetRules } from "./match";
-import { APP_VERSION, PROTOCOL, decode, encode, type Message, type NetMove, type PersonInfo, type Request, type SeatInfo, type SeatKind, type StartInfo } from "./protocol";
+import { APP_VERSION, PROTOCOL, decode, encode, type LiveMessage, type Message, type NetMove, type PersonInfo, type Request, type SeatInfo, type SeatKind, type StartInfo } from "./protocol";
 import { newSeed } from "./random";
 
 /**
@@ -77,6 +77,8 @@ abstract class Room<S> {
   /** The request waiting for answers, and who has still to answer. */
   pending: (Ask & { waiting: string[] }) | null = null;
   events: RoomEvents<S> = {};
+  /** A real-time table's messages (`live`, `input`, `hold`), for its session (`live.ts`); `from` is the guest's id on the host. */
+  onlive: ((message: LiveMessage, from: string | null) => void) | null = null;
   protected timer: ReturnType<typeof setInterval> | null = null;
   abstract readonly host: boolean;
   constructor(
@@ -236,6 +238,10 @@ export class HostRoom<S> extends Room<S> {
       case "ping":
         if (!m.echo) this.send(link, { t: "ping", at: m.at, echo: true });
         return;
+      // A real-time table's controls and pauses go to its session (`live.ts`), outside the move list.
+      case "input":
+      case "hold":
+        return this.onlive?.(m, id);
       case "bye":
         this.links.delete(link);
         link.onclose = null;
@@ -384,6 +390,10 @@ export class HostRoom<S> extends Room<S> {
     if (!mine) return "상대 차례입니다.";
     this.record(move, to === HOST_ONLY ? HOST_ONLY : seat, salt);
     return null;
+  }
+  /** A real-time table's message to every guest (`live.ts`). */
+  sendLive(message: LiveMessage) {
+    this.broadcast(message);
   }
   /** Adds a move taken, its chance under `salt`, and tells everyone (the salt with it). */
   private record(move: Move, seat: number, salt: number) {
@@ -620,7 +630,15 @@ export class GuestRoom<S> extends Room<S> {
       case "ping":
         if (!m.echo) this.say({ t: "ping", at: m.at, echo: true });
         return;
+      // A real-time table's state and pauses go to its session (`live.ts`).
+      case "live":
+      case "hold":
+        return this.onlive?.(m, null);
     }
+  }
+  /** A real-time table's message to the host (`live.ts`). */
+  sendLive(message: LiveMessage) {
+    if (this.online) this.say(message);
   }
   /** Whether a channel to the host is open. */
   get online() {

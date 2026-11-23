@@ -20,6 +20,12 @@ import type { GameOptions, Move } from "../games/points/types";
  *  notice   host → all: a line for the status (someone left, a request declined).
  *  bye      leaving, or a refusal to let in, with the words why.
  *  ping     both ways every few seconds (`echo` answers one), so a device that went quiet is noticed.
+ *
+ * A table that runs in real time (`live.ts`: air hockey, table soccer, table tennis) adds three, outside the move list:
+ *  live     host → all, many times a second: the table as it stands (`data`, numbers the game packs), the host's
+ *           clock `at` (ms), `cut` (bumped when the table jumps, so a guest never slides across it), `paused`.
+ *  input    guest → host, many times a second: my controls as numbers (where my mallet is sent, a kick counted).
+ *  hold     a pause asked (guest → host) or told (host → all), by `from`.
  */
 export const PROTOCOL = 1;
 /** Bumped whenever a rule or a move changes meaning, so that devices of different builds do not play together. */
@@ -75,7 +81,16 @@ export type Message =
   | { t: "notice"; text: string }
   /** `closed`: the host left and the room is gone for everyone. */
   | { t: "bye"; reason: string; closed?: boolean }
-  | { t: "ping"; at: number; echo: boolean };
+  | { t: "ping"; at: number; echo: boolean }
+  | LiveMessage;
+/** The messages of a real-time table (`live.ts`), each of one game (`round`). */
+export type LiveMessage =
+  | { t: "live"; round: number; seq: number; at: number; cut: number; paused: boolean; data: number[] }
+  | { t: "input"; round: number; seq: number; data: number[] }
+  | { t: "hold"; round: number; paused: boolean; from: string };
+/** The most numbers a table's state (`live`) and a hand's controls (`input`) may carry. */
+export const LIVE_MOST = 256,
+  INPUT_MOST = 16;
 
 export function encode(message: Message): string {
   return JSON.stringify(message.t === "hello" ? message : { v: PROTOCOL, ...message });
@@ -100,6 +115,11 @@ const isStart = (x: unknown): x is StartInfo => {
   const s = x as StartInfo;
   return !!s && isInt(s.round) && isStr(s.variant, 200) && isOptions(s.options) && isInt(s.seed) && Array.isArray(s.seats) && s.seats.length <= 8 && s.seats.every(isTaken);
 };
+
+const isNum = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+const isCount = (x: unknown): x is number => isInt(x) && x >= 0;
+/** A list of at most `most` finite numbers (a live table's state or a hand's controls). */
+const isNums = (x: unknown, most: number): x is number[] => Array.isArray(x) && x.length <= most && x.every(isNum);
 
 /** A message read back, checked field by field; null for anything else (a message of another version but hello). */
 export function decode(text: string): Message | null {
@@ -149,6 +169,13 @@ function checked(whole: Record<string, unknown>): Message | null {
       return isStr(m.reason, 400) ? (m as Message) : null;
     case "ping":
       return typeof m.at === "number" && typeof m.echo === "boolean" ? (m as Message) : null;
+    // A real-time table's messages (`live.ts`).
+    case "live":
+      return isInt(m.round) && isCount(m.seq) && isNum(m.at) && isCount(m.cut) && typeof m.paused === "boolean" && isNums(m.data, LIVE_MOST) ? (m as Message) : null;
+    case "input":
+      return isInt(m.round) && isCount(m.seq) && isNums(m.data, INPUT_MOST) ? (m as Message) : null;
+    case "hold":
+      return isInt(m.round) && typeof m.paused === "boolean" && isStr(m.from, 64) ? (m as Message) : null;
   }
   return null;
 }

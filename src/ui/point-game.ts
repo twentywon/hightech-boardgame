@@ -11,6 +11,7 @@ import { HOST_ONLY, type NetRules } from "../net/match";
 import { pointRules, type NetSpec } from "../net/points";
 import type { SeatInfo, SeatKind } from "../net/protocol";
 import type { GuestRoom, HostRoom } from "../net/room";
+import { LiveGuest, LiveHost, type LiveSession } from "../net/live";
 import { openLobby, roomGone, type AnyRoom, type Lobby } from "./net-lobby";
 
 export interface PointOptions {
@@ -74,8 +75,8 @@ export interface PointConfig<S> {
   /** Colours of the two sides and the points the keyboard walks, for a game with its own `view`. */
   colors?: [string, string];
   keyPoints?: (state: S) => { x: number; z: number }[];
-  /** A board drawn its own way instead of as pieces on points. */
-  view?: (host: HTMLElement, quality: "high" | "low", variant: string, mode: "local" | "ai", level: Level) => PointView<S>;
+  /** A board drawn its own way instead of as pieces on points; a `live` table over Wi-Fi is given its room's session (`src/net/live.ts`). */
+  view?: (host: HTMLElement, quality: "high" | "low", variant: string, mode: "local" | "ai", level: Level, live?: LiveSession | null) => PointView<S>;
   /** What the further choice of a move is, when it is not a piece to take off. */
   extraHint?: string;
   /** What the status line says while the computer thinks, for a game where several computer sides take turns (which of them moves); the default names the computer. */
@@ -95,8 +96,8 @@ export interface PointConfig<S> {
   noPanel?: boolean;
   /** How the panel shows the two tallies: "big" writes them large at the right of each side; "scoreboard" sets the two sides against each other like a stadium board. */
   panel?: "big" | "scoreboard";
-  /** The two tallies as markup, for a game that draws them; it must tell no more than `tally` does. `mode` names the sides. */
-  tallyHtml?: (state: S, mode: "local" | "ai") => [string, string];
+  /** The two tallies as markup, for a game that draws them; it must tell no more than `tally` does. `mode` names the sides; `seat` is this device's over Wi-Fi (null watching, left out elsewhere). */
+  tallyHtml?: (state: S, mode: "local" | "ai", seat?: number | null) => [string, string];
   /** True when the game has ended with side 0 out of money: the 파산 stamp is shown. */
   bankrupt?: (state: S) => boolean;
   /** A line to flash over the table for what a move has just done (a piece taken), or null. */
@@ -109,7 +110,8 @@ export interface PointConfig<S> {
    * `interlude`; null otherwise. It is not asked for when the move ends the match (`finale` tells that alone), and
    * it waits for the table to rest like the cheer when `cheerOnRest` is set.
    */
-  setResult?: (before: S, state: S, mode: "local" | "ai") => SetResult | null;
+  /** Over Wi-Fi `seat` is this device's (null watching), so that the set is told as its win or loss; left out elsewhere. */
+  setResult?: (before: S, state: S, mode: "local" | "ai", seat?: number | null) => SetResult | null;
   /** No table for two: one side's pieces are hidden from the other. */
   computerOnly?: boolean;
   /** A game for one: no other side, no computer, no level. `winner` 0 is a game won and 1 a game lost; the result is told by `reason` alone. */
@@ -304,6 +306,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   // the states the room has told and the table has still to show (each in turn, once the table rests), a move of
   // mine sent to the host and not yet answered, and why the host is gone.
   let net: { room: AnyRoom<S> } | null = null,
+    // A real-time table's stream over Wi-Fi (`live.ts`), one a game of the room; null otherwise.
+    live: LiveSession | null = null,
     lobby: Lobby | null = null,
     inbox: S[] = [],
     sending = false,
@@ -318,7 +322,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   };
   const over = (s: S = state) => game.winner(s) !== null;
   const solo = !!config.solo,
-    alone = solo || !!config.computerOnly;
+    alone = solo || !!config.computerOnly,
+    // A game with no two at one screen that is still played by two over Wi-Fi (table soccer, table tennis).
+    netAlone = !solo && !!config.computerOnly && !!config.net;
   const computerTurn = (s: S = state) => (net ? netComputer(s) : mode === "ai" && !solo && game.turn(s) === 1 && !over(s));
   const sides = () => config.sidesOf?.(variant, shown) ?? config.sides;
   /** Played alone: the game is for one, or this variant of it is. */
@@ -339,7 +345,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (host === nav.setupHost) stop();
     else if (config.stages) return stagePicker(host);
     else if (net) return netNewGame(host);
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone ? "hidden" : ""}><label><input type="radio" name="pg-mode" value="local"> ${config.localLabel ?? "로컬 2인"}</label><label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label>${config.net ? `<label><input type="radio" name="pg-mode" value="net"> 와이파이 여럿이</label>` : ""}</div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone && !netAlone ? "hidden" : ""}>${alone ? "" : `<label><input type="radio" name="pg-mode" value="local"> ${config.localLabel ?? "로컬 2인"}</label>`}<label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label>${config.net ? `<label><input type="radio" name="pg-mode" value="net"> 와이파이 여럿이</label>` : ""}</div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
     /** The game's own settings as the form has them, each shown only where it is offered. */
     const readSettings = () => {
@@ -358,7 +364,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
           field.querySelector<HTMLButtonElement>('[data-step="1"]')!.disabled = now >= setting.max;
         }
         const checked = [...radios].find((r) => r.checked)?.value as PointOptions["mode"] | undefined;
-        field.hidden = !offered(setting, document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant, alone || checked === "ai" ? "ai" : checked === "net" ? "net" : "local");
+        field.hidden = !offered(setting, document.getElementById("pg-variant") ? $<HTMLSelectElement>("pg-variant").value : preferences.variant, checked === "net" ? "net" : alone || checked === "ai" ? "ai" : "local");
       }
       return out;
     };
@@ -374,7 +380,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       $("pg-level-field").hidden = solo || preferences.mode === "local" || (preferences.mode === "net" && !netLevel);
       nav.remember({ ...preferences });
     };
-    if (alone) preferences = { ...preferences, mode: "ai" };
+    // A game for no two at one screen is played against the computer, or over Wi-Fi where it offers that.
+    if (alone && !(netAlone && preferences.mode === "net")) preferences = { ...preferences, mode: "ai" };
     radios.forEach((r) => {
       r.checked = r.value === preferences.mode;
       r.onchange = remember;
@@ -498,7 +505,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   function start(pick = !!config.stages && !!config.stagesFirst) {
     // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
-    if (!alone && config.net && preferences.mode === "net") return openRoom();
+    if ((!alone || netAlone) && config.net && preferences.mode === "net") return openRoom();
     leaveRoom();
     mode = alone || preferences.mode === "ai" ? "ai" : "local";
     variant = preferences.variant;
@@ -600,7 +607,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (config.turnable) $("camera").onclick = () => view?.resetView?.();
     if (config.newGameLabel) $("restart").textContent = config.newGameLabel;
     try {
-      if (config.view) view = config.view($("board"), settings.quality, variant, mode, level);
+      if (config.view) view = config.view($("board"), settings.quality, variant, mode, level, live);
       else {
         const board = new PointBoardView($("board"), settings.quality, spec!);
         view = {
@@ -662,7 +669,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const shout = config.cheer?.(state, next, mode);
     if (shout && config.cheerOnRest && view) waitingCheer = shout;
     else if (shout) cheer(shout);
-    const set = game.winner(next) === null ? config.setResult?.(state, next, mode) : null;
+    const set = game.winner(next) === null ? config.setResult?.(state, next, mode, net ? net.room.mySeat : undefined) : null;
     if (set && config.cheerOnRest && view) waitingSet = set;
     else if (set) interlude(set.outcome, set.word, set.detail);
     if (cursor !== null && config.rehome?.(state, next)) cursor = config.keyStart?.(next) ?? cursor;
@@ -721,6 +728,11 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   /** Stops the table's clock, or lets it run again. */
   function togglePause() {
     if (!config.pausable || over()) return;
+    // Over Wi-Fi a pause is the room's: anyone seated pauses (or lets run) the table for everyone.
+    if (live) {
+      if (live.seat !== null) live.pause(!paused);
+      return;
+    }
     paused = !paused;
     view?.setPaused?.(paused);
     update();
@@ -976,7 +988,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     const tally = game.tally(s);
     for (const p of [0, 1]) {
       // A game may draw its tally (a fleet) instead of writing it.
-      const drawn = config.tallyHtml?.(s, mode);
+      const drawn = config.tallyHtml?.(s, mode, net ? net.room.mySeat : undefined);
       if (drawn) $(`pg-count-${p}`).innerHTML = drawn[p];
       else $(`pg-count-${p}`).textContent = tally[p];
       $(`pg-side-${p}`).classList.toggle("active", !done && turn === p);
@@ -1030,7 +1042,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         : winner === "draw"
           ? `비겼습니다. ${game.reason(s)}`
           : net
-            ? `${netOutcome(s) === "win" ? "이겼습니다!" : `${netWinner(s)} 승리!`} ${game.reason(s)}`
+            ? `${netOutcome(s) === "win" ? "이겼습니다!" : `${netWinner(s)} 승리!`} ${config.net!.reason?.(s) ?? game.reason(s)}`
             : `${mode === "ai" ? (winner === 0 ? "이겼습니다!" : "컴퓨터가 이겼습니다.") : `${who(winner as number)} 승리!`} ${game.reason(s)}`;
     }
   }
@@ -1120,6 +1132,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   function leaveRoom() {
     lobby?.close();
     lobby = null;
+    closeLive();
     if (!net) return;
     net.room.events = {};
     net.room.leave();
@@ -1151,7 +1164,31 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     queued = [];
     sound.enabled = settings.sound;
     sound.unlock();
+    openLive();
     screen();
+  }
+  /**
+   * A real-time table's stream for the game the room has begun (`live.ts`): the host runs the one table and tells it,
+   * a guest draws it and sends its hand; a pause is everyone's. The view is handed it when the table is laid.
+   */
+  function openLive() {
+    closeLive();
+    const room = net?.room,
+      match = room?.match;
+    if (!config.live || !room || !match) return;
+    const session = room.host ? new LiveHost(room as HostRoom<S>, match.start.round) : new LiveGuest(room as GuestRoom<S>, match.start.round);
+    session.onpause = (on) => {
+      if (live !== session || paused === on) return;
+      paused = on;
+      view?.setPaused?.(on);
+      if (document.getElementById("pg-undo")) update();
+      if (!on) view?.renderer.domElement.focus({ preventScroll: true });
+    };
+    live = session;
+  }
+  function closeLive() {
+    live?.close();
+    live = null;
   }
   /** The room rebuilt its match from a move list (an undo, a reconnection): the table shows it at once. */
   function resyncNet() {
@@ -1196,7 +1233,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   /** A side as the status line names it over Wi-Fi: who sits there, and the side. */
   function netWho(player: number): string | null {
     const room = net!.room,
-      label = config.whoOf?.(shown, player, "local") ?? sides()[player];
+      // A real-time table's sides are named by their seats (each device sees the table from its own side, so 왼쪽 and 오른쪽 would differ).
+      label = config.live ? (room.seats[player]?.label ?? sides()[player]) : (config.whoOf?.(shown, player, "local") ?? sides()[player]);
     if (label === "") return "";
     const seat = config.net!.seatOf?.(shown, player) ?? player;
     return seat < 0 ? label : `${room.nameOf(seat) || "빈자리"} (${label})`;
@@ -1228,6 +1266,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       if (room.pending.from === room.me) return `${kind === "무르기" ? "무르기를" : "새 게임을"} 요청했습니다. 대답을 기다리는 중…`;
     }
     if (sending) return "보내는 중…";
+    // A real-time table has no turns: the status line says how the match stands, for my seat.
+    if (config.live) return config.net!.hint?.(s, room.mySeat) ?? game.hint(s);
     const to = netRules().toMove(s);
     if (to === HOST_ONLY) return room.host ? null : "방장이 지도를 보고 시작합니다. 기다려 주세요.";
     if (to < 0 || netMine(s) || (room.host && netComputer(s))) return null;
@@ -1258,7 +1298,8 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   /** A move of mine over Wi-Fi: the host plays it through the room, a guest sends it (shown when the host relays it). */
   function netCommit(move: Move): boolean {
-    if (paused || busy() || over()) return false;
+    // A real-time table reports what happened (a goal) whatever else is going on, as at one screen.
+    if (paused || (!config.live && busy()) || over()) return false;
     if (!netMine()) {
       netWarn();
       return false;
