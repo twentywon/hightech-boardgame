@@ -25,9 +25,11 @@ async function places(canvas: Locator) {
 }
 /** A tap (a touch on the phone) on a tile where the view says it can be struck. */
 async function tapTile(page: Page, canvas: Locator, tile: number, mobile: boolean) {
+  // The view writes the places as it draws; right after a pair has flown (or under a slow software frame) a tile's
+  // place may come a frame later, so it is waited for rather than read once.
+  await expect.poll(async () => (await places(canvas)).has(tile), { message: `a place for tile ${tile}`, timeout: 8000 }).toBe(true);
   const box = (await canvas.boundingBox())!,
     at = (await places(canvas)).get(tile);
-  expect(at, `a place for tile ${tile}`).toBeTruthy();
   const x = box.x + at![0],
     y = box.y + at![1];
   if (mobile) await page.touchscreen.tap(x, y);
