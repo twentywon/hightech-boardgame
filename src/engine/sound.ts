@@ -763,6 +763,11 @@ export class Sound {
     this.tone("square", 1760, 1760, 0.07, 0.14, 0.03);
     if (strength > 0.9) this.tone("square", 2637, 2637, 0.14, 0.2, 0.026);
   }
+  /** A soft chime: two bell notes a fifth apart, struck lightly and left to ring (a pair matched in mahjong solitaire). */
+  chime() {
+    this.bell(1046.5, 0, 0.7, 0.03);
+    this.bell(1568, 0.06, 0.9, 0.024);
+  }
   /** The trap machine throwing a clay: its arm's thump and the spring's twang. */
   trap() {
     this.tone("sine", 160, 70, 0, 0.12, 0.18);

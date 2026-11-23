@@ -71,6 +71,7 @@ import { trapCatConfig } from "../games/trapcat/config";
 import { bulbLinkConfig } from "../games/bulblink/config";
 import { telescopeConfig } from "../games/telescope/config";
 import { lightCableConfig } from "../games/lightcable/config";
+import { mahjongConfig } from "../games/mahjong/config";
 import { minesConfig } from "../games/mines/config";
 import { fruitConfig } from "../games/fruit/config";
 import { grillConfig } from "../games/grill/config";
@@ -89,6 +90,7 @@ import { archeryConfig } from "../games/archery/config";
 import { tuhoConfig } from "../games/tuho/config";
 import { coinPusherConfig } from "../games/coinpusher/config";
 import { shootingConfig } from "../games/shooting/config";
+import { marblePushConfig } from "../games/push/config";
 import { hexConquestConfig } from "../games/hexconquest/config";
 import type { PointConfig } from "./point-game";
 import { thumb } from "./thumbs";
@@ -251,6 +253,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "bulb-link": { config: bulbLinkConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "telescope-push": { config: telescopeConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "light-cable": { config: lightCableConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "mahjong-solitaire": { config: mahjongConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   minesweeper: { config: minesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fruit-merge": { config: fruitConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "meat-grill": { config: grillConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -270,6 +273,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   tuho: { config: tuhoConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "coin-pusher": { config: coinPusherConfig, options: { mode: "ai", variant: "30", level: "normal" } },
   shooting: { config: shootingConfig, options: { mode: "ai", variant: "bb", level: "normal" } },
+  "marble-push": { config: marblePushConfig, options: { mode: "ai", variant: "standard", level: "normal" } },
   // 헥스 정복전 is a territory game like 대륙 쟁탈전, played on the point-game screen.
   "hex-conquest": { config: hexConquestConfig, options: { mode: "ai", variant: "", level: "normal" } },
 };
@@ -444,6 +448,7 @@ type GameSelection =
   | "bulb-link"
   | "telescope-push"
   | "light-cable"
+  | "mahjong-solitaire"
   | "minesweeper"
   | "fruit-merge"
   | "meat-grill"
@@ -463,6 +468,7 @@ type GameSelection =
   | "tuho"
   | "coin-pusher"
   | "shooting"
+  | "marble-push"
   | null;
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" ${mode === "local" ? "checked" : ""}> 로컬 2인</label><label><input type="radio" name="mode" value="ai" ${mode === "ai" ? "checked" : ""}> 컴퓨터 대전</label></div>${aiForm()}<label class="rule-option"><input type="checkbox" id="allow-33" ${allowDoubleThree ? "checked" : ""}> 삼삼(3-3) 허용<small>끄면 열린 삼을 한 번에 두 개 만드는 수를 둘 수 없습니다.</small></label><button class="primary" id="start">테이블에 앉기 <span>↗</span></button></div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;

@@ -369,6 +369,16 @@ const play = {
     await wait(1200);
   },
   // A 어려움 board (8×8) after three presses of the hint's way (H plays it while capturing): tubes drawn out, the ball moved.
+  // The 거북 탑 (the whole set of 144) after five pairs of the hint's way (H plays it while capturing), drifted into the tray.
+  "mahjong-solitaire": async () => {
+    await stage(4);
+    await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
+    await wait(800);
+    for (let k = 0; k < 5; k++) {
+      await keys(["h"], 100);
+      await wait(1300);
+    }
+  },
   "telescope-push": async () => {
     await stage(2);
     await page.evaluate(() => (document.documentElement.dataset.capture = "1"));
@@ -403,6 +413,33 @@ const play = {
       await keys([...aim, "Enter"], 80);
       // The arrow flies, rattles down and settles (about two and a half seconds), then the computer does the same.
       await wait(8000);
+    }
+  },
+  // 구슬 밀기: three rows of three of mine moved forward against the computer, each chosen by a tap on its two ends
+  // (`data-places`, canvas pixels by cell) and moved by a tap on an arrow (`data-arrow-places`, by direction; north-east
+  // or north-west if open, else any open one), the computer answering each, so that the lines have met in the middle.
+  "marble-push": async () => {
+    const canvas = page.locator("#board canvas");
+    const tap = async ([x, y]) => {
+      const box = await canvas.boundingBox();
+      await page.mouse.click(box.x + x, box.y + y);
+      await wait(400);
+    };
+    for (const [a, b] of [[45, 47], [38, 40], [52, 54]]) {
+      await page.waitForFunction(() => document.querySelector("#board")?.dataset.animating === "false" && document.querySelector("#board")?.dataset.turn === "0", null, { timeout: 30000 }).catch(() => {});
+      const places = JSON.parse((await canvas.getAttribute("data-places")) || "[]");
+      if (!places.length) break;
+      await tap(places[a]);
+      await tap(places[b]);
+      const open = ((await canvas.getAttribute("data-arrows")) || "").split(",").filter(Boolean).map(Number),
+        arrows = JSON.parse((await canvas.getAttribute("data-arrow-places")) || "[]"),
+        dir = [1, 2].find((d) => open.includes(d)) ?? open[0];
+      if (dir === undefined || !arrows[dir]) {
+        await page.keyboard.press("Escape");
+        continue;
+      }
+      await tap(arrows[dir]);
+      await wait(3500);
     }
   },
   // A few stones on the 19×19 board, the computer answering each.

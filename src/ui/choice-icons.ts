@@ -5,6 +5,7 @@
  * words are kept for readers alone; `modeIcon` gives one for the mode buttons (alone, two at one screen, against the
  * computer). Lines and shapes drawn in `currentColor` follow the button's ink, so a pressed button turns them white.
  */
+import { layoutPicture } from "../games/push/art";
 export interface ChoiceIcon {
   svg: string;
   only: boolean;
@@ -156,6 +157,8 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "pg-variant" && game === "carom-billiards" && CAROM[value]) return { svg: CAROM[value], only: false };
   if (select === "pg-variant" && game === "shooting" && SHOOT[value]) return { svg: SHOOT[value], only: false };
   if (select === "pg-set-tier" && game === "shooting" && TIER_COINS[value]) return { svg: TIER_COINS[value], only: false };
+  // 구슬 밀기's starting set-ups: the hexagon with the two sides' marbles where they begin.
+  if (select === "pg-variant" && game === "marble-push") return { svg: layoutPicture(value), only: false };
   // Who moves first against the computer: me, the computer, or a throw of a die.
   if (select === "pg-set-first") return value === "me" ? { svg: svg(26, 26, person(13, 14)), only: false } : value === "computer" ? { svg: svg(26, 26, computer(13, 14)), only: false } : value === "random" ? { svg: die, only: false } : null;
   return null;

@@ -759,6 +759,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       e.preventDefault();
       const points = spec?.points ?? config.keyPoints?.(state) ?? [];
       if (!points.length) return;
+      // A game may give a point no place (NaN) where the keyboard may not stand (a mahjong tile not free): a cursor
+      // left on one (by an undo) starts again from `keyStart`. Other games' points are all placed.
+      if (cursor !== null && !Number.isFinite(points[cursor]?.x)) cursor = null;
       const start = config.keyStart?.(state) ?? 0,
         here = points[cursor ?? start],
         [dx, dz] = steps[e.key];

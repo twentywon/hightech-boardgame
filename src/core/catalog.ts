@@ -800,6 +800,22 @@ export const allGames = [
     icon: "🎯",
     available: true,
   },
+  {
+    name: "마작 솔리테어",
+    en: "MAHJONG SOLITAIRE",
+    category: "퍼즐게임",
+    players: "1인용",
+    icon: "🀄",
+    available: true,
+  },
+  {
+    name: "구슬 밀기",
+    en: "MARBLE PUSH",
+    category: "보드게임",
+    players: "2인용",
+    icon: "⬢",
+    available: true,
+  },
 ];
 
 /**
