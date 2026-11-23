@@ -816,6 +816,14 @@ export const allGames = [
     icon: "⬢",
     available: true,
   },
+  {
+    name: "슬롯 카",
+    en: "SLOT CAR",
+    category: "아케이드게임",
+    players: "2인용",
+    icon: "🏎",
+    available: true,
+  },
 ];
 
 /**

@@ -804,6 +804,17 @@ const play = {
     }
     await mine();
   },
+  // 슬롯 카: the lights go green, my pedal is held a little (Space) and the computer's cars spread round the eight;
+  // paused while they are strung out along the track.
+  "slot-car": async () => {
+    await page.waitForFunction(() => document.querySelector("#board canvas")?.dataset.phase === "race", null, { timeout: 60000 });
+    await page.locator("canvas").focus();
+    await page.keyboard.down("Space");
+    await wait(1400);
+    await page.keyboard.up("Space");
+    await wait(1600);
+    await page.keyboard.press("p");
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {
