@@ -277,6 +277,10 @@ describe("rooms announced on the Wi-Fi", () => {
       port: LAN_PORT,
       attrs: { wtg: String(PROTOCOL), app: APP_VERSION, ed: "full", g: "chess", t: "체스", n: "하늘", id: name, p: "1", s: "2", on: "0", ...attrs },
     });
+    // A room told while nothing looks is not kept (a late answer would stay in the list, never withdrawn).
+    lan.receive(found("late", {}));
+    expect(lan.list("chess")).toHaveLength(0);
+    lan.find();
     lan.receive(found("a", {}));
     lan.receive(found("b", { app: "2025.01-old" }));
     lan.receive(found("c", { ed: "student" }));

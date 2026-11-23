@@ -297,6 +297,9 @@ export class Lan {
         return this.links.get(event.peer)?.ended();
       }
       case "found": {
+        // A room told after looking stopped (the phone's discovery answers late) would stay in the list unseen and
+        // never be withdrawn: it is not kept. The next look starts from an empty list.
+        if (!this.finding) return;
         const ad = adOf(event);
         if (!ad) return;
         this.rooms.set(ad.name, ad);
@@ -349,6 +352,7 @@ export class Lan {
   /** Starts looking for rooms (each caller stops its own). */
   find(): () => void {
     if (this.finding++ === 0) {
+      this.rooms.clear();
       this.findProblem = "";
       this.bridge.discover();
     }
