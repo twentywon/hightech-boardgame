@@ -6,6 +6,8 @@ import { CAROM_COLORS, CaromView } from "./view";
 const KINDS: Record<string, string> = { four: "4구", three: "3쿠션" };
 export const caromConfig: PointConfig<State> = {
   game: carom,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  net: { settled: true },
   // The score stands on a lit board of its own over the table, and on the beads on the hall's wall.
   panel: "scoreboard",
   view: (host, quality, _variant, mode) => new CaromView(host, quality, mode),

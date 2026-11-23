@@ -5,6 +5,8 @@ import { POOL_COLORS, PoolView } from "./view";
 
 export const poolConfig: PointConfig<State> = {
   game: pool,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  net: { settled: true },
   noPanel: true,
   view: (host, quality) => new PoolView(host, quality),
   colors: POOL_COLORS,

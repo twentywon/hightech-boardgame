@@ -7,6 +7,9 @@ import { BOWLING_COLORS, BowlingView } from "./view";
 const SPIN_LABELS = ["회전 없음", "↶ 왼쪽 훅", "↷ 오른쪽 훅"];
 export const bowlingConfig: PointConfig<State> = {
   game: bowling,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  // A room is for two: the variant played alone is played as the one for two.
+  net: { settled: true, variant: () => "duel" },
   // The score screen over the lane tells everything; the panel stays in the page for readers.
   noPanel: true,
   // A ball rolled cannot be taken back.

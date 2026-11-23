@@ -5,6 +5,8 @@ import { AlkkagiView, PIECE_COLORS, STONE_COLORS } from "./view";
 
 export const alkkagiConfig: PointConfig<State> = {
   game: alkkagi,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  net: { settled: true },
   noPanel: true,
   view: (host, quality, variant) => new AlkkagiView(host, quality, variant === "janggi" ? "janggi" : "go"),
   colors: STONE_COLORS,

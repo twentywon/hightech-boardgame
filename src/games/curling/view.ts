@@ -2,6 +2,7 @@ import * as T from "three";
 import { block, glossy, stuff } from "../../engine/scene-utils";
 import { speckled } from "../../engine/scenery";
 import type { Marks } from "../points/view";
+import type { Move } from "../points/types";
 import { FlickView } from "../flick/view";
 import { copy, shotCode, shotOf, strike, type Disc } from "../flick/physics";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
@@ -101,6 +102,13 @@ function curlingStone(body: T.BufferGeometry, granite: T.Material, grip: T.Buffe
   g.add(b, h);
   return g;
 }
+/**
+ * Over Wi-Fi another device's stone is watched this long behind the thrower (ms): its sweeping is told a spell at a
+ * time as it is swept, and so comes before the watching device has slid the stone that far.
+ */
+const WATCH_LAG = 350;
+/** How long a stone watched may lie where it stopped before its throw is told; past that the ice is laid as the room has it. */
+const WATCH_WAIT = 2500;
 /** How long one tap keeps the brooms sweeping, in milliseconds: tapped three times a second or more, they never stop. */
 const TAP_SWEEP = 380;
 /** How far a stone turns for each unit it slides (about three turns down the sheet), clockwise seen from above for spin 1. */
@@ -133,6 +141,16 @@ export class CurlingView extends FlickView<State> {
    */
   private live: { ply: number; point: number; code: number; id: number; sweep: number } | null = null;
   private made = -1;
+  /**
+   * Over Wi-Fi: my stone as it goes is told to the room (`onLiveShot`: the throw with the sweeping so far, again at
+   * each spell swept), and another device's stone told so is watched (`liveShot`): slid a moment behind it, swept as
+   * the word comes. `watching` is that run (or the wait before it), `watched` the throw it showed: when the throw is
+   * told with the same sweeping, its stones are laid out as they stand, else the shot is run again from the start.
+   */
+  onLiveShot: ((move: Move) => void) | null = null;
+  private watching: { ply: number; code: number; token: number } | null = null;
+  private watched: { ply: number; code: number; sweep: number } | null = null;
+  private watchToken = 0;
   /**
    * Sweeping is done by quick taps (the user asked, instead of holding): each tap on the ice, the button or Space
    * keeps the brooms going until `sweepUntil`. Whether the stone is being swept, and the sweeping of a throw replayed.
@@ -458,8 +476,12 @@ export class CurlingView extends FlickView<State> {
     });
   }
   /** Paints the scoreboard: each side's points end by end and in all, the end being played, the hammer, the last end scored. */
+  /** Over Wi-Fi the scoreboard names the people. */
+  protected seated() {
+    if (this.state) this.score(this.state);
+  }
   private score(state: State) {
-    const names = this.mode === "ai" ? ["나", "컴퓨터"] : ["빨강", "노랑"],
+    const names = this.netNames ?? (this.mode === "ai" ? ["나", "컴퓨터"] : ["빨강", "노랑"]),
       said = `${names}|${state.ends}|${state.scores[0]}|${state.scores[1]}|${state.end}|${state.hammer}|${state.done}|${state.winner}`;
     if (said === this.face.said) return;
     this.face.said = said;
@@ -583,6 +605,13 @@ export class CurlingView extends FlickView<State> {
       this.stopReplay();
       this.endRun();
     }
+    // A stone being watched (or waited for) gives way to the state told.
+    if (this.watching) {
+      if (animate && state === this.state) return;
+      this.stopReplay();
+      this.endWatch();
+    }
+    this.watchToken++;
     // A state laid out without its shot (a new game, a test) is seen from the hack.
     if (!animate) {
       this.glide++;
@@ -622,7 +651,11 @@ export class CurlingView extends FlickView<State> {
     const going = stone.vx !== 0 || stone.vz !== 0;
     if (live && n % SWEEP_SLICES === 0) {
       const spell = n / SWEEP_SLICES;
-      if (spell < SWEEP_WINDOWS && performance.now() < this.sweepUntil && going) live.sweep += 2 ** spell;
+      if (spell < SWEEP_WINDOWS && performance.now() < this.sweepUntil && going) {
+        live.sweep += 2 ** spell;
+        // Over Wi-Fi the others are told at once, ahead of their watching of it.
+        this.onLiveShot?.({ from: live.point, to: live.code, extra: live.sweep });
+      }
     }
     stone.slick = swept(live ? live.sweep : this.replayed, n) || undefined;
     this.swept = !!stone.slick && going;
@@ -656,13 +689,17 @@ export class CurlingView extends FlickView<State> {
     return this.stones[id];
   }
   protected struck(before: State, state: State) {
-    const last = state.last;
+    const last = state.last,
+      watched = this.watched;
+    this.watched = null;
     if (!last || state.ply !== before.ply + 1) return null;
     // A throw of mine has been run already, as it was swept: its state is laid out as it stands.
     if (state.ply === this.made) {
       this.made = -1;
       return null;
     }
+    // So has another device's throw watched as it went (over Wi-Fi), if it was swept as it was watched.
+    if (watched && watched.ply === before.ply && watched.code === last.code && watched.sweep === last.sweep) return null;
     this.replayed = last.sweep;
     this.turning = last.spin;
     const shot = shotOf(last.code)!,
@@ -710,6 +747,7 @@ export class CurlingView extends FlickView<State> {
     for (const g of this.ready) g.visible = false;
     this.mesh(id).visible = true;
     this.sweepButton.hidden = false;
+    this.onLiveShot?.({ from: point, to: code, extra: -1 });
     this.replay(discs, ARENA, () => {
       const live = this.live;
       if (!live) return;
@@ -719,6 +757,68 @@ export class CurlingView extends FlickView<State> {
       this.settleNow();
       this.onMove({ from: live.point, to: live.code, extra: live.sweep > 0 ? live.sweep : -1 });
     });
+  }
+  /** A stone watched is over (or given up); the canvas says whether one is being watched (`data-watching`). */
+  private endWatch() {
+    this.watching = null;
+    this.swept = false;
+    for (const broom of this.brooms) broom.visible = false;
+    this.renderer.domElement.dataset.watching = "false";
+  }
+  /**
+   * Another device's stone on its way (over Wi-Fi): its throw as made so far (`extra`: the spells swept so far, or
+   * -1). The first word starts a run of it a moment later from the stones shown; each later word only sweeps it.
+   */
+  liveShot(move: Move) {
+    const state = this.state,
+      sweep = Math.max(0, move.extra),
+      shot = move.from === STONE ? shotOf(move.to) : null;
+    if (!state || state.winner !== null || !shot || this.live) return;
+    const watching = this.watching;
+    if (watching) {
+      // More of its sweeping: spells are only ever added.
+      if (watching.ply === state.ply && watching.code === move.to && sweep > this.replayed) this.replayed = sweep;
+      return;
+    }
+    // A table still moving (the last shot not yet over here) watches nothing: the throw is run whole once told.
+    if (this.animating) return;
+    const token = ++this.watchToken;
+    this.watching = { ply: state.ply, code: move.to, token };
+    this.replayed = sweep;
+    setTimeout(() => {
+      if (this.disposed || this.watching?.token !== token || this.state !== state) return;
+      const side = state.turn,
+        id = side * STONES + (state.done ? 0 : state.thrown[side]),
+        discs = copy(state.done ? [] : state.stones),
+        stone: Disc = { id, x: HACK.x, z: HACK.z, vx: 0, vz: 0, r: R, m: 1, on: true, curl: CURL[state.spin] || undefined };
+      strike(stone, shot.angle, speedOf(shot.power));
+      discs.push(stone);
+      this.turning = state.spin;
+      this.glide++;
+      this.shift = 0;
+      this.chasing = id;
+      this.look();
+      if (state.done) for (const g of this.stones) g.visible = false;
+      for (const g of this.ready) g.visible = false;
+      this.mesh(id).visible = true;
+      this.renderer.domElement.dataset.watching = "true";
+      this.replay(discs, ARENA, () => {
+        if (this.watching?.token !== token) return;
+        this.endWatch();
+        this.watched = { ply: state.ply, code: move.to, sweep: this.replayed };
+        this.settleNow();
+        this.onSettled();
+        this.redraw();
+        // A throw never told (refused by the host): the ice goes back to the room's.
+        setTimeout(() => {
+          if (!this.disposed && this.state === state && this.watched && !this.animating) {
+            this.watched = null;
+            this.place(state);
+            this.redraw();
+          }
+        }, WATCH_WAIT);
+      });
+    }, WATCH_LAG);
   }
   protected place(state: State) {
     super.place(state);

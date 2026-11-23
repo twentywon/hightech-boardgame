@@ -114,6 +114,10 @@ export class CarromView extends FlickView<State> {
   protected subject(): TableSubject {
     return { half: 5.9, halfZ: 5.9, height: 0.6, lookY: 0, tilt: 1.08 };
   }
+  /** Over Wi-Fi the black side's device sees the board from its own base line (the far side at one screen). */
+  protected seated() {
+    this.faceFrom(this.netSide === 1 ? Math.PI : 0);
+  }
   /** Whether the striker is mine to place and shoot now. */
   private mine() {
     return !!this.state && this.state.winner === null && this.marks.movable.includes(STRIKER);

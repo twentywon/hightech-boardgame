@@ -5,6 +5,8 @@ import { CarromView, MEN_COLORS } from "./view";
 
 export const carromConfig: PointConfig<State> = {
   game: carrom,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  net: { settled: true },
   noPanel: true,
   view: (host, quality) => new CarromView(host, quality),
   colors: MEN_COLORS,

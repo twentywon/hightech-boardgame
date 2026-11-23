@@ -403,7 +403,8 @@ export function chooseShot(state: State, level: "easy" | "normal" | "hard", rand
 export const shotsOf = (state: State, side: 0 | 1) => state.arrows.filter((a) => a.side === side);
 const effect = (): Effect | null => null;
 export const archery: PointGame<State> = {
-  create: (variant) => createGame(formatOf(variant)),
+  // Over Wi-Fi the winds of the first end come from the room's shared random, so every device lays the same.
+  create: (variant, _options, random) => createGame(formatOf(variant), random ?? cryptoRandom),
   moves,
   play,
   choose: (state, level, random) => chooseShot(state, level, random),

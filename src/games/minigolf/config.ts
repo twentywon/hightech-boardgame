@@ -6,6 +6,9 @@ import { GOLF_COLORS, MiniGolfView } from "./view";
 
 export const minigolfConfig: PointConfig<State> = {
   game: minigolf,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  // A room is for two: the variant played alone is played as the one for two.
+  net: { settled: true, variant: () => "duel" },
   // The score card over the table tells everything; the panel stays in the page for readers.
   noPanel: true,
   // A putt cannot be taken back.

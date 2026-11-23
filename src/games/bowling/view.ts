@@ -235,8 +235,12 @@ export class BowlingView extends TableView<State> {
     this.pole.scale.set(1, Math.max(0.01, rise), 1);
   }
   /** Paints the score screen: each side's frames with their marks and running scores, the frame being bowled lit. */
+  /** Over Wi-Fi the score screen names the people. */
+  protected seated() {
+    if (this.state) this.paint(this.state);
+  }
   private paint(state: State) {
-    const names = !state.two ? ["나"] : this.mode === "ai" ? ["나", "컴퓨터"] : ["플레이어 1", "플레이어 2"],
+    const names = !state.two ? ["나"] : (this.netNames ?? (this.mode === "ai" ? ["나", "컴퓨터"] : ["플레이어 1", "플레이어 2"])),
       said = JSON.stringify([names, state.frames, state.turn, state.frame, state.ball, state.winner, state.ply]);
     if (said === this.face.said) return;
     this.face.said = said;

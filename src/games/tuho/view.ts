@@ -419,8 +419,12 @@ export class TuhoView extends TableView<State> {
     return { canvas, texture, said: "" };
   }
   /** Writes the board: each side's total, its arrows left as strokes, the rounds' own scores, and who throws. */
+  /** Over Wi-Fi the board names the people. */
+  protected seated() {
+    if (this.state) this.writeBoard(this.state);
+  }
   private writeBoard(state: State) {
-    const said = `${state.ply}|${state.turn}|${state.winner}|${this.mode}`;
+    const said = `${state.ply}|${state.turn}|${state.winner}|${this.mode}|${this.netNames}`;
     if (said === this.board.said) return;
     this.board.said = said;
     const { canvas } = this.board,
@@ -445,7 +449,7 @@ export class TuhoView extends TableView<State> {
     font(28, 600);
     const round = Math.min(state.round, state.rounds);
     ctx.fillText(state.winner !== null ? "놀이 끝" : state.rounds > 1 ? `${round} / ${state.rounds}판` : "한 판", W / 2, 100);
-    const names = this.mode === "ai" ? ["나 · 홍", "컴퓨터 · 청"] : ["홍", "청"],
+    const names = this.netNames ? [`${this.netNames[0]} · 홍`, `${this.netNames[1]} · 청`] : this.mode === "ai" ? ["나 · 홍", "컴퓨터 · 청"] : ["홍", "청"],
       cols = [W * 0.27, W * 0.73];
     ctx.fillStyle = "rgba(60, 40, 20, 0.35)";
     ctx.fillRect(W / 2 - 1.5, 124, 3, H - 160);
@@ -484,7 +488,7 @@ export class TuhoView extends TableView<State> {
   /** Who may throw now by hand. */
   private canThrow() {
     const state = this.state;
-    return !!state && state.winner === null && !this.animating && (this.mode === "local" || state.turn === 0) && !document.hidden && !document.querySelector("dialog[open]");
+    return !!state && state.winner === null && !this.animating && (this.netSide === undefined ? this.mode === "local" || state.turn === 0 : this.marks.targets.length > 0) && !document.hidden && !document.querySelector("dialog[open]");
   }
   private listen() {
     const el = this.renderer.domElement;

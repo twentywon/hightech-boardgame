@@ -208,7 +208,8 @@ export const curling: PointGame<State> = {
   effect,
   ply: (s) => s.ply,
   evaluate: (s, p) => total(s, p) - total(s, 1 - p),
-  hint: (s) => (s.turn === 0 ? `${s.end}/${s.ends}엔드 · 스톤 ${(s.done ? 0 : s.thrown[0]) + 1}/${STONES} — 스톤을 당겼다 놓고, 가는 동안 연타하면 스위핑!` : `${s.end}/${s.ends}엔드 · 컴퓨터 차례`),
+  // Either side's stone is thrown by hand at one screen and over Wi-Fi (the computer's turn has its own words).
+  hint: (s) => `${s.end}/${s.ends}엔드 · 스톤 ${(s.done ? 0 : s.thrown[s.turn]) + 1}/${STONES} — 스톤을 당겼다 놓고, 가는 동안 연타하면 스위핑!`,
   tally: (s) => [0, 1].map((p) => `${total(s, p)}점`) as [string, string],
   reason: (s) => (s.winner === "draw" ? `${s.ends}엔드를 마치고 같은 점수입니다.` : `${s.ends}엔드를 마치고 ${total(s, 0)} 대 ${total(s, 1)}입니다.`),
 };

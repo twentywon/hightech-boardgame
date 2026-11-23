@@ -5,6 +5,8 @@ import { DART_COLORS, DartsView } from "./view";
 
 export const dartsConfig: PointConfig<State> = {
   game: darts,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  net: { settled: true },
   // Steel into sisal: a short, dull thud.
   contact: (sound) => sound.soft(4),
   // Something thrown cannot be taken back.

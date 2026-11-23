@@ -656,8 +656,12 @@ export class MiniGolfView extends TableView<State> {
     this.redraw();
   }
   /** The score card over the table: each hole's par and each side's strokes, the hole being played lit. */
+  /** Over Wi-Fi the card names the people. */
+  protected seated() {
+    if (this.state) this.paintCard(this.state);
+  }
   private paintCard(state: State) {
-    const names = !state.two ? ["나"] : this.mode === "ai" ? ["나", "컴퓨터"] : ["1P", "2P"],
+    const names = !state.two ? ["나"] : (this.netNames ?? (this.mode === "ai" ? ["나", "컴퓨터"] : ["1P", "2P"])),
       said = JSON.stringify([names, state.cards, state.hole, state.turn, state.strokes, state.winner]);
     if (said === this.painted) return;
     this.painted = said;

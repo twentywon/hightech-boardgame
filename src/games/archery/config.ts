@@ -6,6 +6,9 @@ import { setResult } from "./result";
 
 export const archeryConfig: PointConfig<State> = {
   game: archery,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  // A room is for two: the variant played alone is played as the one for two.
+  net: { settled: true, variant: () => "match" },
   // The scoreboard on the field, the inset and the score bug over the table tell everything; the panel stays for readers.
   noPanel: true,
   // An arrow shot cannot be taken back.

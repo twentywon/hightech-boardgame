@@ -393,7 +393,7 @@ export class DartsView extends TableView<State> {
   }
   /** Writes the scores in chalk: who is to throw, each visit's score and what is left (501) or the running total. */
   private writeChalk(state: State) {
-    const said = `${state.ply}|${state.turn}|${state.winner}|${this.mode}`;
+    const said = `${state.ply}|${state.turn}|${state.winner}|${this.mode}|${this.netNames}`;
     if (said === this.chalk.said) return;
     this.chalk.said = said;
     const { canvas } = this.chalk,
@@ -422,7 +422,7 @@ export class DartsView extends TableView<State> {
     const round = Math.min(state.visits[state.turn].length + 1, state.mode === "countup" ? ROUNDS : LIMIT);
     ctx.fillText(state.winner !== null ? "경기 끝" : state.mode === "countup" ? `${round} / ${ROUNDS} 라운드` : `${round}라운드`, W / 2, 86);
     line(30, 108, W - 30, 108, 3);
-    const names = this.mode === "ai" ? ["나", "컴퓨터"] : ["플레이어 1", "플레이어 2"],
+    const names = this.netNames ?? (this.mode === "ai" ? ["나", "컴퓨터"] : ["플레이어 1", "플레이어 2"]),
       cols = [W * 0.27, W * 0.73];
     line(W / 2, 120, W / 2, H - 120, 3);
     names.forEach((name, side) => {
@@ -488,7 +488,14 @@ export class DartsView extends TableView<State> {
   /** Who may throw now by hand. */
   private canThrow() {
     const state = this.state;
-    return !!state && state.winner === null && !this.animating && (this.mode === "local" || state.turn === 0) && !document.hidden && !document.querySelector("dialog[open]");
+    return !!state && state.winner === null && !this.animating && this.myTurn(state) && !document.hidden && !document.querySelector("dialog[open]");
+  }
+  /** My turn by hand: either side's at one screen, mine against the computer; over Wi-Fi when the screen offers a throw (my seat's turn). */
+  private myTurn(state: State) {
+    return this.netSide === undefined ? this.mode === "local" || state.turn === 0 : this.marks.targets.length > 0;
+  }
+  protected seated() {
+    if (this.state) this.writeChalk(this.state);
   }
   /** The hand: a swipe up throws; the arrows aim and Enter or Space throws. */
   private listen() {

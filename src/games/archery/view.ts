@@ -254,7 +254,7 @@ export class ArcheryView extends TableView<State> {
   /** Who may draw now by hand. */
   private canDraw() {
     const state = this.state;
-    return !!state && state.winner === null && !this.animating && (this.mode === "local" || state.turn === 0) && !document.hidden && !document.querySelector("dialog[open]");
+    return !!state && state.winner === null && !this.animating && (this.netSide === undefined ? this.mode === "local" || state.turn === 0 : this.marks.targets.length > 0) && !document.hidden && !document.querySelector("dialog[open]");
   }
   /** The hand: a press draws, a drag moves the pin, letting go shoots; Space or Enter held draws, the arrows move it. */
   private listen() {
@@ -623,10 +623,16 @@ export class ArcheryView extends TableView<State> {
     this.wake();
     return true;
   }
+  /** Over Wi-Fi the board and the score bug name the people. */
+  protected seated() {
+    if (!this.state) return;
+    this.writeBoard(this.state);
+    this.writeHud(this.state);
+  }
   /** The names of the two sides as the table calls them. */
   private names(state: State): [string, string] {
     if (state.format !== "match") return ["나", ""];
-    return this.mode === "ai" ? ["나", "컴퓨터"] : ["플레이어 1", "플레이어 2"];
+    return this.netNames ?? (this.mode === "ai" ? ["나", "컴퓨터"] : ["플레이어 1", "플레이어 2"]);
   }
   /** The inset's caption: who shot, that end's arrows, and the value just shot. */
   private writeInset(state: State, arrow: Arrow) {

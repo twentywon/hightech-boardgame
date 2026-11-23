@@ -16,6 +16,8 @@ function roundResult(before: State, state: State, mode: "local" | "ai"): SetResu
 }
 export const tuhoConfig: PointConfig<State> = {
   game: tuho,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  net: { settled: true },
   // The score is written on the wooden board in the court; the panel stays in the page for readers.
   noPanel: true,
   // A throw is a matter of the hand and cannot be taken back.

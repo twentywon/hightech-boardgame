@@ -80,6 +80,10 @@ export class AlkkagiView extends FlickView<State> {
     this.scene.add(this.sparks.points, this.dust.points);
     this.begin();
   }
+  /** Over Wi-Fi the second side's device sees the board from its own half (the far end at one screen). */
+  protected seated() {
+    this.faceFrom(this.netSide === 1 ? Math.PI : 0);
+  }
   protected subject(): TableSubject {
     return { half: 5.3, halfZ: 5.5, height: 0.8, lookY: 0, tilt: 1.05 };
   }
@@ -147,7 +151,8 @@ export class AlkkagiView extends FlickView<State> {
       shadow.renderOrder = 2;
       this.scene.add(holder, shadow);
       // Shell stones are laid each at its own turn, so that their bands differ; janggi pieces stand square.
-      this.pieces.push({ holder, tumbler, spinner, shadow, half, turn: state.mode === "go" ? ((id * 2.399) % (Math.PI * 2)) : 0 });
+      // Janggi pieces' letters face the one who sees the board: over Wi-Fi 한's device sees it from 한's end.
+      this.pieces.push({ holder, tumbler, spinner, shadow, half, turn: state.mode === "go" ? ((id * 2.399) % (Math.PI * 2)) : this.netSide === 1 ? Math.PI : 0 });
     }
   }
   protected mesh(id: number) {

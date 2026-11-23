@@ -6,6 +6,8 @@ import { CURLING_COLORS, CurlingView } from "./view";
 const TURNS = ["없음", "시계 방향 ↻", "반시계 방향 ↺"];
 export const curlingConfig: PointConfig<State> = {
   game: curling,
+  // 와이파이 여럿이: each device shoots its own side; the host's state after each shot goes with it (`settled`).
+  net: { settled: true },
   contact: (sound) => sound.stone(3),
   noPanel: true,
   view: (host, quality, _variant, mode) => new CurlingView(host, quality, mode),
