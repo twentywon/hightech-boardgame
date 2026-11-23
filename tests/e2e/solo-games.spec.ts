@@ -348,7 +348,7 @@ test("water pouring: the level is asked, pours are counted against the fewest, a
     return (seed * 2) / 4294967296;
   };
   const errors = await sit(page, "물 나누기");
-  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(3);
+  await expect(page.getByRole("dialog").locator(".stage-card")).toHaveCount(5);
   await page.getByRole("dialog").locator(".stage-card").filter({ hasText: "쉬움" }).click();
   await expect(page.locator("dialog[open]")).toHaveCount(0);
   await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });

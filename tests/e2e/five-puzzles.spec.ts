@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import * as tower from "../../src/games/hanoi/rules";
+import * as jugs from "../../src/games/pour/rules";
 import { selectGame } from "./library";
 
 /**
@@ -62,6 +63,43 @@ function walker(page: Page, cols: number, rows: number) {
     },
   };
 }
+
+test("water pouring: four vessels are poured among to the goal, the hint shows the way, and a pour is taken back", async ({ page }) => {
+  test.setTimeout(150000);
+  const random = await seeded(page, 91),
+    errors = await sit(page, "물 나누기", "그릇 4개 · 보통", 5);
+  // A puzzle was laid as the screen was set up; the card pressed in the window lays the second, the one chosen.
+  jugs.createGame(1, random);
+  const puzzle = jugs.createGame(4, random),
+    way = jugs.solve(puzzle)!,
+    panel = page.locator(".puzzle-panel");
+  expect(puzzle.caps).toHaveLength(4);
+  expect(way.length).toBe(puzzle.best);
+  await expect(panel.locator("#pz-stage")).toHaveText("그릇 4개 · 보통 · 스테이지 1");
+  await expect(page.locator("#turn")).toContainText("목표:");
+  await panel.getByRole("button", { name: "힌트", exact: true }).click();
+  await expect(page.locator("#turn")).toContainText("화살표");
+  const vessels = walker(page, 4, 0);
+  await vessels.home();
+  for (const [n, move] of way.entries()) {
+    await vessels.go(move.from);
+    await vessels.go(move.to);
+    await expect(count(page)).toHaveText(`${n + 1}수`, { timeout: 20000 });
+    await rest(page);
+    if (n === 0) {
+      await panel.getByRole("button", { name: "무르기", exact: true }).click();
+      await expect(count(page)).toHaveText("0수");
+      await vessels.home();
+      await vessels.go(move.from);
+      await vessels.go(move.to);
+      await expect(count(page)).toHaveText("1수", { timeout: 20000 });
+      await rest(page);
+    }
+  }
+  await expect(page.locator("#turn")).toContainText("성공!");
+  await expect(panel.locator("#pz-next")).toBeVisible();
+  expect(errors).toEqual([]);
+});
 
 test("tower of Hanoi: a tower on four pegs is moved in the fewest with the hint, and the next stage is offered", async ({ page }) => {
   test.setTimeout(150000);

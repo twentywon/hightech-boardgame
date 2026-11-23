@@ -152,7 +152,7 @@ function lanternSkin(keep: Keep) {
 }
 /**
  * Builds the hall round a stand `half` wide (from its middle to its end) into `scene`. `paint` makes a material the
- * view owns. The table top is at y 0 and reaches 4 toward the camera and 3.6 away from it.
+ * view owns. The table top is at y 0 and reaches 7.8 toward the camera (filling the foot of the view) and 3.6 away.
  */
 export function temple(scene: T.Scene, keep: Keep, paint: (options: T.MeshStandardMaterialParameters) => T.MeshStandardMaterial, half: number): Temple {
   const rich = capable(),
@@ -173,13 +173,14 @@ export function temple(scene: T.Scene, keep: Keep, paint: (options: T.MeshStanda
   const reach = half + 3.4,
     lacquerMap = keep(wood(true));
   lacquerMap.repeat.set(4, 1);
-  const lacquer = keep(glossy({ map: lacquerMap, color: "#a04a32", roughness: 0.32 })),
+  // Satin rather than glossy: a clear coat this wide threw the sun back as a white blot.
+  const lacquer = paint({ map: lacquerMap, color: "#a04a32", roughness: 0.55 }),
     gilt = paint({ color: "#d4a94a", roughness: 0.3, metalness: 0.85 }),
     dark = paint({ map: keep(wood(true)), color: "#6a3a26", roughness: 0.55 });
-  add(block(reach * 2, 0.3, 7.6, 0.08), lacquer, 0, -0.15, 0.2).castShadow = false;
-  add(new T.BoxGeometry(reach * 2 + 0.02, 0.04, 0.04), gilt, 0, -0.08, 4.02);
-  add(new T.BoxGeometry(reach * 2 - 0.6, 0.55, 0.12), dark, 0, -0.58, 3.78);
-  for (const x of [-reach + 0.5, reach - 0.5]) add(block(0.5, 2.3, 0.5, 0.06), dark, x, -1.45, 3.5);
+  add(block(reach * 2, 0.3, 11.4, 0.08), lacquer, 0, -0.15, 2.1).castShadow = false;
+  add(new T.BoxGeometry(reach * 2 + 0.02, 0.04, 0.04), gilt, 0, -0.08, 7.82);
+  add(new T.BoxGeometry(reach * 2 - 0.6, 0.55, 0.12), dark, 0, -0.58, 7.58);
+  for (const x of [-reach + 0.5, reach - 0.5]) add(block(0.5, 2.3, 0.5, 0.06), dark, x, -1.45, 7.3);
   // The stone floor of the hall, far below.
   const floor = add(new T.PlaneGeometry(80, 50).rotateX(-Math.PI / 2), paint({ ...stuff("stone", "#5e5850", 10, keep), roughness: 0.9 }), 0, -2.6, 0);
   floor.castShadow = false;
@@ -255,10 +256,10 @@ export function temple(scene: T.Scene, keep: Keep, paint: (options: T.MeshStanda
       glow.push(light);
     }
   }
-  // The censer: a bronze bowl on three feet with a pierced lid, before the left candles.
+  // The censer: a bronze bowl on three feet with a pierced lid, at the near left corner of the stand (low enough to hide nothing).
   const bronze = paint({ color: "#6b5634", roughness: 0.45, metalness: 0.7 }),
-    cx = -(half + 1.7),
-    cz = 2.9;
+    cx = -(half + 0.3),
+    cz = 3.7;
   add(lathe([[0, 0.12], [0.5, 0.14], [0.62, 0.34], [0.58, 0.56], [0.48, 0.6], [0, 0.6]]), bronze, cx, 0.1, cz, true);
   add(lathe([[0.5, 0], [0.4, 0.2], [0.18, 0.34], [0.08, 0.48], [0, 0.5]]), bronze, cx, 0.68, cz, true);
   for (let k = 0; k < 3; k++) {
