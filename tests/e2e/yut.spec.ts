@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { PerspectiveCamera, Vector3 } from "three";
-import { selectGame } from "./library";
+import { fastClock, selectGame } from "./library";
 import { loadShuffles } from "./betting-helpers";
 import { throwValues } from "../yut-fixtures";
 import { FOV, SUBJECTS, cameraDistance } from "../../src/engine/camera";
@@ -112,11 +112,12 @@ test("yut in the yard: tap a piece, then a gold ring; corners take the short roa
 });
 
 test("yut against the computer plays on to a result, and the screen fits", async ({ page }, info) => {
-  // A whole game against the computer: with three browsers at once one game took close to four minutes, and
-  // longer since the sticks are tossed with bounces (about 1.3 s a throw).
-  test.setTimeout(640000);
+  // A whole game against the computer takes about three minutes at play speed (the sticks bounce about 1.3 s a
+  // throw, the computer pauses 0.62 s a step), and over ten on a busy software-drawn page: the clock runs fast.
+  test.setTimeout(300000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await fastClock(page);
   await sit(page, "ai");
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(scroll).toBeLessThanOrEqual(1);
@@ -128,8 +129,8 @@ test("yut against the computer plays on to a result, and the screen fits", async
       first = moves(page).first();
     if (await toss.isEnabled()) await toss.click({ timeout: 1000 });
     else if ((await first.isVisible()) && (await first.isEnabled())) await first.click({ timeout: 1000 });
-    await expect(page.locator("#yut-result")).toBeVisible({ timeout: 700 });
-  }).toPass({ timeout: 600000, intervals: [100] });
+    await expect(page.locator("#yut-result")).toBeVisible({ timeout: 150 });
+  }).toPass({ timeout: 270000, intervals: [50] });
   await expect(page.locator("#yut-final")).toContainText(/이겼습니다|컴퓨터가 먼저/);
   // No window comes up at the end.
   await page.waitForTimeout(1600);

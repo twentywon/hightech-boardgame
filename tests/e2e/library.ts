@@ -24,3 +24,21 @@ export async function selectGame(page: Page, name: string = "오목") {
     return !!dialog && dialog.getAnimations({ subtree: true }).every((animation) => animation.playState === "finished");
   });
 }
+
+/**
+ * Test-only: the page's clock runs `factor` times faster (`performance.now` and the delays of `setTimeout` and
+ * `setInterval`), so a whole game's animations and the computer's pauses pass quickly without any change to the game.
+ * Use it for long play-throughs (a whole game against the computer); a software-drawn page otherwise needs many
+ * minutes, more when several browsers run at once. Call before `page.goto`.
+ */
+export async function fastClock(page: Page, factor = 6) {
+  await page.addInitScript((k) => {
+    const now = performance.now.bind(performance),
+      start = now();
+    performance.now = () => start + (now() - start) * k;
+    const timeout = window.setTimeout,
+      interval = window.setInterval;
+    window.setTimeout = ((fn: TimerHandler, ms?: number, ...rest: unknown[]) => timeout(fn, (ms ?? 0) / k, ...rest)) as typeof setTimeout;
+    window.setInterval = ((fn: TimerHandler, ms?: number, ...rest: unknown[]) => interval(fn, (ms ?? 0) / k, ...rest)) as typeof setInterval;
+  }, factor);
+}
