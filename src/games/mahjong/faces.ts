@@ -543,10 +543,11 @@ export function tileKit(own: Own) {
       m.emissiveIntensity = strength;
       return m;
     },
+    free = look("#ffffff"),
     looks: Record<Look, T.MeshStandardMaterial | T.MeshLambertMaterial> = {
-      // Blocked tiles a little dimmer than free ones, so that what can be taken stands out (the user's eye decides).
-      blocked: look("#cfc6b3"),
-      free: look("#ffffff"),
+      // Blocked tiles look as free ones do: no shade gives away what can be taken (the user asked to remove it).
+      blocked: free,
+      free,
       hover: look("#fff4d6", "#ffd98a", 0.18),
       picked: look("#fff1c4", "#ffc44a", 0.42),
       hint: look("#fff3cc", "#ffcf5a", 0.3),
