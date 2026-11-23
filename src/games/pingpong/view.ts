@@ -749,7 +749,8 @@ export class TableTennisView extends TableView<State> {
   }
   protected place(state: State) {
     // A new match, known by the count of moves going back to nothing; the first point of all is served at once.
-    const anew = state.ply === 0 && this.shown > 0;
+    const anew = state.ply === 0 && this.shown > 0,
+      first = !this.begun;
     if (anew || !this.begun) {
       if (anew) this.world = this.newWorld();
       this.begun = true;
@@ -757,7 +758,7 @@ export class TableTennisView extends TableView<State> {
       serve(this.world, serverOf(state));
     }
     // A guest's hall ends no rally itself: the point the host told is said over the net here.
-    if (this.live && !this.live.host && state.ply > this.shown && state.last !== null && state.why >= 0) this.say(WHY[state.why], state.last === 0 ? "#ffd34a" : "#9fd0ff", performance.now());
+    if (this.live && !this.live.host && !first && state.ply > this.shown && state.last !== null && state.why >= 0) this.say(WHY[state.why], state.last === 0 ? "#ffd34a" : "#9fd0ff", performance.now());
     this.shown = state.ply;
     const said = `${state.score.join(":")}/${state.games.join(":")}`;
     if (said !== this.flipped) {

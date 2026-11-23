@@ -88,6 +88,17 @@ async function hover(page: Page, seat: 0 | 1, x: number, z: number, steps = 1) {
   const at = await spot(page, seat, x, z);
   await page.mouse.move(at.x, at.y, { steps });
 }
+/** Waits for `n` animation frames of the page's own (each frame a table may draw and tell itself anew). */
+const frames = (page: Page, n: number) =>
+  page.evaluate(
+    (count) =>
+      new Promise<void>((done) => {
+        let k = 0;
+        const next = () => (++k >= count ? done() : requestAnimationFrame(next));
+        requestAnimationFrame(next);
+      }),
+    n,
+  );
 const goals = async (page: Page) => Number(/(\d+)/.exec(await page.locator("#move-count").innerText())?.[1] ?? 0);
 
 test("air hockey on two devices: the guest's hand moves its mallet on the host, each sees the table from its own side, and a goal shows on both", async ({ browser }, info) => {
@@ -142,23 +153,14 @@ test("air hockey on two devices: the guest's hand moves its mallet on the host, 
   await canvasOf(guest).focus();
   await guest.keyboard.press("p");
   for (const page of [host, guest]) await expect(page.locator("#board")).toHaveAttribute("data-paused", "true", { timeout: 10000 });
-  // The canvas tells the table every few frames (seconds apart on a slow emulated phone): once what it tells has
-  // stopped changing, the paused table stays so, and the guest's hand moves nothing on it.
+  // The canvas tells the table every 6 frames (seconds apart on a crowded machine): after 8 frames of the host's own,
+  // what it tells is the paused table, and it stays so while the guest's hand moves.
   const told = async () => `${await canvasOf(host).getAttribute("data-puck")}|${await canvasOf(host).getAttribute("data-mallets")}`;
-  let held = "";
-  await expect
-    .poll(
-      async () => {
-        const before = await told();
-        await host.waitForTimeout(1500);
-        held = await told();
-        return held === before;
-      },
-      { timeout: 30000 },
-    )
-    .toBe(true);
+  await frames(host, 8);
+  const held = await told();
   await hover(guest, 1, -1.2, -3);
-  await host.waitForTimeout(2500);
+  await host.waitForTimeout(1500);
+  await frames(host, 8);
   expect(await told()).toBe(held);
   await canvasOf(host).focus();
   await host.keyboard.press("p");
