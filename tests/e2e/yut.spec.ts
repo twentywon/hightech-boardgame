@@ -111,7 +111,7 @@ test("yut in the yard: tap a piece, then a gold ring; corners take the short roa
   expect(EXIT.x).toBeGreaterThan(stationAt(0).x);
 });
 
-test("yut against the computer plays on to a result, and the screen fits", async ({ page }, info) => {
+test("yut against the computer plays on to a result, and the screen fits @alone", async ({ page }, info) => {
   // A whole game against the computer takes about three minutes at play speed (the sticks bounce about 1.3 s a
   // throw, the computer pauses 0.62 s a step), and over ten on a busy software-drawn page: the clock runs fast.
   test.setTimeout(300000);

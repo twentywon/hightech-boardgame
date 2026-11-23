@@ -213,9 +213,17 @@ test("QR 찍기: the guest reads the host's room code once and is in; a refused 
   await guest.locator("#net-scan-room").click();
   await expect(guest.locator(".net-status")).toContainText("게임 중입니다", { timeout: 20000 });
   await guest.locator("#net-cancel").click();
-  await expect(guest.locator("#turn")).toContainText("나 (O) 차례");
-  await tap(guest, 0);
+  // While the guest was away, the host's computer played its O (a guest who drops is stood in for); X is to move.
   await agree([host, guest], 2);
+  await expect(guest.locator("#turn")).toContainText("방장 (X) 차례");
+  // The host moves on (into the first cell still open), and both boards agree with the returned guest.
+  for (const cell of [0, 1, 2, 3, 5, 6, 7, 8]) {
+    await tap(host, cell);
+    await host.waitForTimeout(400);
+    if ((await moves(host)) === 3) break;
+  }
+  await agree([host, guest], 3);
+  await expect(guest.locator("#turn")).toContainText("나 (O) 차례");
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });

@@ -61,7 +61,7 @@ const numbers = async (page: Page, name: string) => ((await canvasOf(page).getAt
 /** The board's rows, top to bottom: each car's place and name. */
 const board = (page: Page) => page.locator(".sc-board li span").allInnerTexts();
 
-test("slot car on two devices: the guest's pedal drives its car on both screens, each marks its own car, and the race ends alike on both", async ({ browser }, info) => {
+test("slot car on two devices: the guest's pedal drives its car on both screens, each marks its own car, and the race ends alike on both @alone", async ({ browser }, info) => {
   const a = await device(browser, info),
     b = await device(browser, info),
     host = a.page,
