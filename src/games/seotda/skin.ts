@@ -1,6 +1,7 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import { roundRect, type CardSkin } from "../cards/table-view";
 import type { BettingConfig } from "../../ui/betting-game";
+import { seotdaNet } from "../../net/betting";
 import { seotda } from "./game";
 import { ANTE, START_CHIPS, type State } from "./rules";
 import { seotdaRoom } from "./room";
@@ -103,6 +104,7 @@ export const seotdaSkin: CardSkin = {
 };
 export const seotdaConfig: BettingConfig<State> = {
   game: seotda,
+  net: seotdaNet,
   skin: seotdaSkin,
   name: "섯다",
   english: "Seotda",

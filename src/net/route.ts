@@ -16,7 +16,7 @@ export interface Playable {
   wifi: boolean;
 }
 /** The games with a screen of their own that have 와이파이 여럿이 (the point games say so by `PointConfig.net`). */
-export const OWN_WIFI = ["gomoku", "reversi", "chess", "janggi", "yut-nori", "yacht-dice", "world-tour", "continent-conquest"];
+export const OWN_WIFI = ["gomoku", "reversi", "chess", "janggi", "yut-nori", "yacht-dice", "world-tour", "continent-conquest", "seotda", "seven-poker", "texas-holdem"];
 export const idOf = (en: string) => en.toLowerCase().replaceAll(" ", "-");
 /** A game's Korean title from its id, in any edition (a room of a game this one lacks still has a name). */
 export const titleOf = (id: string) => allGames.find((g) => idOf(g.en) === id)?.name ?? id;

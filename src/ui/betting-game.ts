@@ -7,11 +7,18 @@ import { cryptoRandom, type Random } from "../core/random";
 import { Sound } from "../engine/sound";
 import { modal, setupDialog } from "./dialog";
 import type { Settings } from "../core/storage";
+import type { GameOptions, Move } from "../games/points/types";
+import { HOST_ONLY } from "../net/match";
+import { actMove, BET, chooseMove, dealMove, type BettingNet } from "../net/betting";
+import type { Seated } from "../net/screens";
+import { NetTable } from "./net-table";
 
 export interface BettingOptions {
   opponents: number;
   /** Which form of the game to play, when it has more than one. */
   variant?: string;
+  /** 와이파이 여럿이: the table is a room of devices on one Wi-Fi, each person at its own. */
+  wifi?: boolean;
 }
 /** Everything that differs between the betting card games. */
 export interface BettingConfig<S> {
@@ -40,6 +47,8 @@ export interface BettingConfig<S> {
   opponents?: number[];
   /** The game's own words for giving up and for its raise button; "다이" and "하프" when left out. */
   words?: { fold?: string; raise?: string };
+  /** 와이파이 여럿이: the game as a room plays it (`src/net/betting.ts`). */
+  net?: BettingNet<S>;
 }
 interface Navigation {
   header: () => string;
@@ -57,6 +66,8 @@ export interface BettingController {
   setSettings(settings: Settings): void;
 }
 const chips = (n: number) => n.toLocaleString("ko-KR");
+/** A name as it goes into markup: a person's name over Wi-Fi is what they typed. */
+const escape = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const signed = (n: number) => (n > 0 ? `+${chips(n)}` : n < 0 ? `−${chips(-n)}` : "±0");
 
 /**
@@ -92,9 +103,88 @@ export function mountBettingGame<S>(
     picked: number[] = [],
     // No-limit games: which of the offered raise sizes is chosen, and for which offer.
     size = 0,
-    sizeKey = "";
+    sizeKey = "",
+    // Over Wi-Fi: the room's game as this table shows it (`state` is its game), the player this device plays (-1
+    // while it only watches), the players' names as this device calls them, and whether my chips ran out.
+    wifi = false,
+    played: Seated<S> | null = null,
+    me = 0,
+    names: string[] | undefined,
+    stampedOut = false;
   const foldWord = config.words?.fold ?? "다이",
     raiseWord = config.words?.raise ?? "하프";
+  /**
+   * 와이파이 여럿이 (the user asked): each person plays their own seat on their own device. Every step is a room move
+   * (`src/net/betting.ts`) played on every device; this table sees the game from its own seat, which is laid at the
+   * near side, and shows no hidden card but its own before the showdown.
+   */
+  const netRules = config.net;
+  const net: NetTable<Seated<S>> | null = netRules
+    ? new NetTable<Seated<S>>({
+        net: netRules,
+        title: config.name,
+        // The form of the game is the host's choice (seotda's two or three cards).
+        options: (): GameOptions => (config.variants ? { variant: preferences.variant ?? config.variants[0].value } : {}),
+        begin(next, fresh) {
+          wifi = true;
+          played = next;
+          const room = net!.room;
+          me = net!.seat === null ? -1 : next.seats.indexOf(net!.seat);
+          // The names are the room's: mine 나, a person's own, the host's computers numbered.
+          let computers = 0;
+          names = next.seats.map((seat, p) =>
+            p === me ? "나" : room?.seats[seat]?.kind === "computer" ? `컴퓨터 ${++computers}` : room?.nameOf(seat) || "빈자리",
+          );
+          state = shown = next.game;
+          peeked.clear();
+          picked = [];
+          soundedRound = -1;
+          lockedUntil = 0;
+          if (fresh) {
+            stampedOver = false;
+            stampedOut = false;
+            sound.enabled = settings.sound;
+            sound.unlock();
+            screen();
+            return;
+          }
+          // Rebuilt from the room's list (a return): laid at once.
+          generation++;
+          thinking = false;
+          timers.forEach(clearTimeout);
+          timers.clear();
+          if (view) view.sync(table(state), false);
+          present();
+        },
+        show(next) {
+          played = next;
+          apply(next.game);
+        },
+        resting: () => !view?.animating && state === shown,
+        table: () => !!document.getElementById("bg-chips"),
+        update: () => update(),
+        resume: () => computer(),
+        back: () => nav.back(),
+      })
+    : null;
+  /** A game player's index as this table lays it: mine first, the others after it round the table. */
+  const turned = (i: number) => {
+    const n = played?.seats.length ?? 1;
+    return !wifi || me <= 0 || i < 0 ? i : (i - me + n) % n;
+  };
+  /** Whether this device acts now: seat 0's turn at one screen; over Wi-Fi my own seat's, nothing on the way. */
+  const mineAt = (s: S) => (wifi ? me >= 0 && game.turn(s) === me && !!played && net!.mine(played) : game.turn(s) === 0);
+  /** Over Wi-Fi: a step of mine for the room (the host's device deals between hands). */
+  function send(move: Move) {
+    if (!net || !played || busy()) return;
+    sound.unlock();
+    if (move.from === BET.deal) {
+      if (net.host) net.commit(move, HOST_ONLY);
+      else net.notice("방장이 패를 나눕니다.");
+    } else if (!net.mine(played)) net.warn(played);
+    else net.commit(move);
+    update();
+  }
   /** The chosen raise size among those offered now; a new offer starts at its own first size. */
   const sizeIndex = (s: S) => {
     const sizing = game.sizing?.(s);
@@ -111,7 +201,7 @@ export function mountBettingGame<S>(
     return sizing?.amounts.length ? sizing.amounts[sizeIndex(s)] : null;
   };
   function resize(step: number) {
-    if (busy() || game.turn(state) !== 0) return;
+    if (busy() || !mineAt(state)) return;
     sizeIndex(state);
     size += step;
     update();
@@ -136,21 +226,42 @@ export function mountBettingGame<S>(
   }
   function setup(host = nav.setupHost) {
     if (host === nav.setupHost) stop();
-    host.innerHTML = `<section class="featured"><div class="feature-copy"><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="ai-options"><label>상대 수<select id="bg-opponents">${(config.opponents ?? [1, 2, 3]).map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label>${config.variants ? `<label>방식<select id="bg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
+    // Over Wi-Fi the 새 게임 window asks the room instead.
+    if (wifi && net?.playing && host !== nav.setupHost) return net.newGame(host);
+    const most = netRules?.seats.length ?? 0,
+      modes = netRules
+        ? `<div class="mode-select"><label><input type="radio" name="bg-mode" value="ai" ${preferences.wifi ? "" : "checked"}> 컴퓨터 대전</label><label><input type="radio" name="bg-mode" value="net" ${preferences.wifi ? "checked" : ""}> 와이파이 여럿이</label></div><small id="bg-net" class="session-note" ${preferences.wifi ? "" : "hidden"}>같은 와이파이의 기기 2–${most}대가 각자 자기 자리에서 겨룹니다. 내 패는 내 화면에만 보입니다. 자리와 컴퓨터는 방에서 정합니다.</small>`
+        : "";
+    host.innerHTML = `<section class="featured"><div class="feature-copy"><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div>${modes}<div class="ai-options"><label id="bg-opponents-field" ${preferences.wifi && netRules ? "hidden" : ""}>상대 수<select id="bg-opponents">${(config.opponents ?? [1, 2, 3]).map((n) => `<option value="${n}" ${preferences.opponents === n ? "selected" : ""}>컴퓨터 ${n}명</option>`).join("")}</select></label>${config.variants ? `<label>방식<select id="bg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}<small>선택한 설정은 새 세션부터 적용됩니다.</small></div><button id="bg-start" class="primary">테이블에 앉기 <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const remember = () => {
+      const wanted = !!host.querySelector<HTMLInputElement>("input[name=bg-mode][value=net]")?.checked;
       preferences = {
         opponents: Number($<HTMLSelectElement>("bg-opponents").value),
         variant: document.getElementById("bg-variant")
           ? $<HTMLSelectElement>("bg-variant").value
           : preferences.variant,
+        ...(netRules ? { wifi: wanted } : {}),
       };
       nav.remember({ ...preferences });
+      // Over Wi-Fi the seats are taken in the room: how many computers is not asked here.
+      const field = host.querySelector<HTMLElement>("#bg-opponents-field"),
+        note = host.querySelector<HTMLElement>("#bg-net");
+      if (field) field.hidden = wanted;
+      if (note) note.hidden = !wanted;
     };
+    host.querySelectorAll<HTMLInputElement>("input[name=bg-mode]").forEach((input) => (input.onchange = remember));
     $("bg-opponents").onchange = remember;
     if (document.getElementById("bg-variant")) $("bg-variant").onchange = remember;
     $("bg-start").onclick = start;
   }
   function start() {
+    // Over Wi-Fi the room's window comes first; the game begins when the host starts it.
+    if (net && preferences.wifi) return net.open();
+    net?.leave();
+    wifi = false;
+    played = null;
+    me = 0;
+    names = undefined;
     variant = preferences.variant;
     state = shown = game.create(preferences.opponents, variant);
     peeked.clear();
@@ -169,14 +280,17 @@ export function mountBettingGame<S>(
     $("back").onclick = nav.back;
     $("rules").onclick = () => modal(config.rulesTitle, config.rules);
     dress(setup, ["#bg-peeking", "#bg-prompt", "#bg-after"]);
-    const play = (action: Action) => () => act((s) => game.act(s, action));
+    if (wifi) net?.dress();
+    const play = (action: Action) => () => (wifi ? send(actMove(action)) : act((s) => game.act(s, action)));
     $("bg-call").onclick = play("call");
     $("bg-fold").onclick = play("fold");
     $("bg-raise").onclick = game.sizing
       ? () => {
           // A raise of the size offered now; the game refuses a size that no longer fits.
           const amount = offeredSize(state);
-          if (amount !== null) act((s) => game.act(s, "raise", amount));
+          if (amount === null) return;
+          if (wifi) send(actMove("raise", amount));
+          else act((s) => game.act(s, "raise", amount));
         }
       : play("raise");
     if (game.sizing) {
@@ -184,12 +298,12 @@ export function mountBettingGame<S>(
       $("bg-more").onclick = () => resize(1);
     }
     $("bg-allin").onclick = play("allIn");
-    $("bg-deal").onclick = () => act((s) => game.start(s, random), true);
+    $("bg-deal").onclick = () => (wifi ? send(dealMove()) : act((s) => game.start(s, random), true));
     $("bg-rebuy").onclick = newSession;
     $("bg-peek").onclick = () => covered(state).forEach(peek);
     $("bg-prompt").onclick = (e) => {
       const chosen = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-value]");
-      if (chosen) act((s) => game.choose(s, Number(chosen.dataset.value)), true);
+      if (chosen) choose(Number(chosen.dataset.value));
     };
     try {
       view = new CardTableView($("board"), settings.quality, config.skin);
@@ -217,16 +331,28 @@ export function mountBettingGame<S>(
     !!document.querySelector("dialog[open]");
   /** Ids of seat 0's cards that are still under their cover. */
   const covered = (s: S) =>
-    game
-      .view(s)
+    seen(s)
       .seats[0].cards.filter((c) => c.peek && !peeked.has(c.id))
       .map((c) => c.id);
+  /**
+   * The table as this device sees it: at one screen seat 0's; over Wi-Fi my own seat's (none for a device that only
+   * watches), turned so that my seat is the first, at the near side, and the others follow round the table.
+   */
+  function seen(s: S): TableView {
+    const model = game.view(s, wifi ? me : 0, wifi ? names : undefined);
+    if (!wifi || me <= 0) return model;
+    return {
+      ...model,
+      seats: [...model.seats.slice(me), ...model.seats.slice(0, me)],
+      ...(model.dealer === undefined ? {} : { dealer: turned(model.dealer) }),
+    };
+  }
   /**
    * The table as the person may see it now: a card that has not been
    * uncovered yet carries no text, and the hand it would make is not named.
    */
   function table(s: S): TableView {
-    const model = game.view(s),
+    const model = seen(s),
       hidden = covered(s);
     if (!hidden.length) return model;
     const mine = model.seats[0];
@@ -255,7 +381,7 @@ export function mountBettingGame<S>(
   }
   /** A card tapped on the table: the option made of the tapped cards is taken. */
   function pick(id: number) {
-    const options = (game.phase(state) === "choosing" && !busy() && game.prompt(state)?.options) || [];
+    const options = (game.phase(state) === "choosing" && !busy() && ask(state)?.options) || [];
     if (!options.some((o) => o.cards?.includes(id))) return;
     picked = picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id];
     const size = Math.max(...options.map((o) => o.cards?.length ?? 0));
@@ -263,8 +389,13 @@ export function mountBettingGame<S>(
     const chosen = options.find(
       (o) => o.cards?.length === picked.length && o.cards.every((c) => picked.includes(c)),
     );
-    if (chosen) act((s) => game.choose(s, chosen.value), true);
+    if (chosen) choose(chosen.value);
     else update();
+  }
+  /** A choice of mine (the card shown, the pair played). */
+  function choose(value: number) {
+    if (wifi) send(chooseMove(value));
+    else act((s) => game.choose(s, value), true);
   }
   function apply(next: State) {
     picked = [];
@@ -289,6 +420,8 @@ export function mountBettingGame<S>(
     apply(next);
   }
   function newSession() {
+    // Over Wi-Fi a new session is the room's: a request every person accepts.
+    if (wifi) return setupDialog(setup);
     generation++;
     thinking = false;
     timers.forEach(clearTimeout);
@@ -301,8 +434,31 @@ export function mountBettingGame<S>(
     else present();
   }
   const shownSeats = () => game.view(state).seats.length - 1;
+  /** The choice this device is asked to make now (none while another seat chooses). */
+  const ask = (s: S) => game.prompt(s, wifi ? me : 0);
+  /**
+   * Over Wi-Fi the host's computer plays its seats and the seat of a person whose device dropped, through the room,
+   * after the same pause.
+   */
+  function netComputer() {
+    if (thinking || !net || !netRules || !played || !net.computer(played)) return;
+    thinking = true;
+    const current = generation;
+    later(() => {
+      thinking = false;
+      if (current !== generation || !played || !net.computer(played)) return;
+      if (busy()) {
+        computer();
+        return;
+      }
+      const move = netRules.standIn(played);
+      if (move) net.commit(move, netRules.toMove(played));
+      computer();
+    }, 750);
+  }
   /** The computer seats act one at a time, after a pause that can be followed. */
   function computer() {
+    if (wifi) return netComputer();
     if (thinking || game.phase(state) !== "betting" || game.turn(state) <= 0) return;
     thinking = true;
     const current = generation;
@@ -331,15 +487,25 @@ export function mountBettingGame<S>(
     shown = state;
     update();
     const phase = game.phase(state),
-      result = game.result(state);
+      result = game.result(state, wifi ? names : undefined),
+      won = () => game.won(state, wifi ? me : 0);
     // My chips are gone: the stamp comes down once for the session.
     if (phase === "sessionOver") {
       if (!stampedOver) {
-        if (!game.won(state)) bankrupt();
-        announce(() => (game.phase(state) === "sessionOver" ? (game.won(state) ? "상대의 칩을 모두 땄습니다!" : "칩을 모두 잃었습니다.") : ""), setup, () => (game.won(state) ? "win" : "lose"));
+        if (won() === false && !stampedOut) bankrupt();
+        announce(
+          () => (game.phase(state) === "sessionOver" ? (won() ? "상대의 칩을 모두 땄습니다!" : won() === false ? "칩을 모두 잃었습니다." : "세션이 끝났습니다.") : ""),
+          setup,
+          () => (won() ? "win" : won() === false ? "lose" : "draw"),
+        );
       }
       stampedOver = true;
     } else stampedOver = false;
+    // Over Wi-Fi the session goes on without me once my chips are gone: the stamp comes down once, and I watch.
+    if (wifi && me >= 0 && phase !== "sessionOver" && seen(state).seats[0]?.out && !stampedOut) {
+      stampedOut = true;
+      bankrupt();
+    }
     if ((phase === "handOver" || phase === "sessionOver") && result && !result.rematch && soundedRound !== game.round(state)) {
       soundedRound = game.round(state);
       const net = result.rows.find((row) => row.name === "나")?.net ?? 0;
@@ -353,7 +519,7 @@ export function mountBettingGame<S>(
         ? $("bg-peek")
         : phase === "choosing"
           ? $("bg-prompt").querySelector<HTMLElement>("button")
-          : phase === "betting" && game.turn(state) === 0
+          : phase === "betting" && mineAt(state)
         ? $("bg-call")
         : phase === "sessionOver"
           ? $("bg-rebuy")
@@ -361,20 +527,36 @@ export function mountBettingGame<S>(
       )?.focus({ preventScroll: true });
     computer();
   }
+  /**
+   * Over Wi-Fi, the room's line while this device does not act: the host lost, a request to answer or waited on, a
+   * move being sent, a notice, a person who dropped. Null for the table's own words (whose turn it is, my turn).
+   */
+  function netLine(): string | null {
+    if (!net || !played) return null;
+    const line = net.line(played),
+      to = netRules!.toMove(played);
+    // Its plain "whose turn" words are the table's own, with the names this table gives.
+    return !line || (to >= 0 && line === `${net.who(to)} 차례입니다.`) ? null : line;
+  }
   function update() {
     if (disposed || !document.getElementById("bg-chips")) return;
     mirrorStatus();
     const s = shown,
       seats = table(s),
       phase = game.phase(s),
-      turn = game.turn(s),
+      turn = turned(game.turn(s)),
       waiting = busy(),
       // Nothing can be decided before the covered card has been looked at.
       sealed = covered(s).length > 0,
-      mine = phase === "betting" && turn === 0,
+      mine = phase === "betting" && mineAt(s),
       choice = mine && !sealed ? game.options(s) : null,
-      prompt = phase === "choosing" && !sealed ? game.prompt(s) : null,
-      result = game.result(s);
+      prompt = phase === "choosing" && !sealed ? ask(s) : null,
+      result = game.result(s, wifi ? names : undefined),
+      won = game.won(s, wifi ? me : 0),
+      // Over Wi-Fi: the room's own line while this device does not act (a request, a drop, the host lost), and
+      // whether this device deals (the host's alone).
+      line = wifi ? netLine() : null,
+      dealer = !wifi || !!net?.host;
     $("board").dataset.animating = String(!!view?.animating || state !== shown);
     $("move-count").textContent = `${game.round(s)}판`;
     $("bg-chips").textContent = chips(seats.seats[0].chips);
@@ -385,25 +567,33 @@ export function mountBettingGame<S>(
     status.textContent =
       state !== shown
         ? "카드를 나누는 중…"
+        : line
+          ? line
         : phase === "idle"
-          ? "덱을 눌러 시작하세요."
+          ? dealer
+            ? "덱을 눌러 시작하세요."
+            : "방장이 패를 나누기를 기다리는 중…"
           : phase === "sessionOver"
-            ? game.won(s)
+            ? won
               ? "상대의 칩을 모두 땄습니다!"
-              : "칩을 모두 잃었습니다. 칩을 다시 받아 새로 시작하세요."
+              : won === null
+                ? "세션이 끝났습니다."
+                : wifi
+                  ? "칩을 모두 잃었습니다."
+                  : "칩을 모두 잃었습니다. 칩을 다시 받아 새로 시작하세요."
             : phase === "handOver"
               ? (result?.headline ?? "판이 끝났습니다.")
               : sealed
                 ? `${config.peekWord ?? "카드"}를 아래로 밀어 확인하세요.`
                 : phase === "choosing"
-                  ? (prompt?.title ?? "")
+                  ? (prompt?.title ?? `${seats.seats[turned(netRules?.chooser(s) ?? -1)]?.name ?? "상대"} 님이 공개할 패를 고르는 중…`)
                   : mine
                     ? `내 차례 — ${game.stage(s)}${choice && choice.call > 0 ? ` · 콜 ${chips(choice.call)}` : ""}`
                     : `${seats.seats[turn]?.name ?? "상대"} 차례…`;
     $("bg-seats").innerHTML = seats.seats
       .map(
         (seat) =>
-          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${seat.name}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? foldWord : seat.cards.length ? seat.cards.map((c) => (c.face && c.text ? `<span class="bj-card${c.secret ? " secret" : ""}"${c.secret ? ' title="상대에게 보이지 않는 카드"' : ""}>${c.text}</span>` : `<span class="bj-card hidden">${c.covered ? "확인 전" : "비공개"}</span>`)).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
+          `<li class="${seat.active ? "active" : ""}${seat.folded || seat.out ? " gone" : ""}"${seat.active ? ' aria-current="true"' : ""}><b>${escape(seat.name)}</b> <span class="bg-stack">칩 ${chips(seat.chips)}${seat.bet ? ` · 건 칩 ${chips(seat.bet)}` : ""}</span><span class="bg-hand">${seat.out ? "탈락" : seat.folded ? foldWord : seat.cards.length ? seat.cards.map((c) => (c.face && c.text ? `<span class="bj-card${c.secret ? " secret" : ""}"${c.secret ? ' title="상대에게 보이지 않는 카드"' : ""}>${c.text}</span>` : `<span class="bj-card hidden">${c.covered ? "확인 전" : "비공개"}</span>`)).join(" ") : "—"}${seat.note && !seat.folded && !seat.out ? ` <em>${seat.note}</em>` : ""}</span></li>`,
       )
       .join("");
     // The community cards in words, in games that have them.
@@ -438,7 +628,7 @@ export function mountBettingGame<S>(
     view?.setChoices(
       offered,
       picked,
-      !waiting && (phase === "idle" || phase === "handOver"),
+      !waiting && dealer && (phase === "idle" || phase === "handOver"),
     );
     // Lifting a picked card is an animation of its own.
     $("board").dataset.animating = String(!!view?.animating || state !== shown);
@@ -464,17 +654,22 @@ export function mountBettingGame<S>(
     $("bg-outcome").innerHTML = (result?.rows ?? [])
       .map(
         (row) =>
-          `<li><span>${row.name} · ${row.hand}</span><b class="${result!.rematch ? "push" : row.net > 0 ? "win" : row.net < 0 ? "lose" : "push"}">${result!.rematch ? "유지" : signed(row.net)}</b></li>`,
+          `<li><span>${escape(row.name)} · ${row.hand}</span><b class="${result!.rematch ? "push" : row.net > 0 ? "win" : row.net < 0 ? "lose" : "push"}">${result!.rematch ? "유지" : signed(row.net)}</b></li>`,
       )
       .join("");
-    $("bg-deal").hidden = phase === "sessionOver";
+    // Over Wi-Fi the host's device deals, and a new session is asked of the room.
+    $("bg-deal").hidden = phase === "sessionOver" || !dealer;
     $("bg-rebuy").hidden = phase !== "sessionOver";
     $("bg-deal").textContent = result?.rematch ? "재경기" : phase === "idle" ? config.dealWord : "다음 판";
-    $("bg-rebuy").textContent = game.won(s) ? "새 세션" : "칩 다시 받기";
+    $("bg-rebuy").textContent = wifi ? "새 게임" : won ? "새 세션" : "칩 다시 받기";
     off("bg-deal", waiting);
     off("bg-rebuy", waiting);
     $("bg-note").textContent = !mine || !choice
-      ? ""
+      ? wifi && me >= 0 && seats.seats[0]?.out && phase !== "sessionOver"
+        ? "칩을 모두 잃어 구경하는 중입니다."
+        : wifi && !dealer && phase === "handOver"
+          ? "방장이 다음 판을 나눕니다."
+          : ""
       : choice.raise === null && choice.allIn === null
         ? `더 올릴 수 없습니다. 콜하거나 ${foldWord}하세요.`
         : game.sizing
@@ -519,6 +714,7 @@ export function mountBettingGame<S>(
       disposed = true;
       stop();
       sound.dispose();
+      net?.dispose();
       document.removeEventListener("close", dialogClosed, true);
       document.removeEventListener("cancel", dialogClosed, true);
       document.removeEventListener("click", dialogClosed, true);

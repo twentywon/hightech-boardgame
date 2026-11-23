@@ -2,6 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { CardSkin } from "../cards/table-view";
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import type { BettingConfig } from "../../ui/betting-game";
+import { pokerNet } from "../../net/betting";
 import { poker } from "./game";
 import { ANTE, START_CHIPS, type State } from "./rules";
 import { studRoom } from "./room";
@@ -19,6 +20,7 @@ export const pokerSkin: CardSkin = {
 };
 export const pokerConfig: BettingConfig<State> = {
   game: poker,
+  net: pokerNet,
   skin: pokerSkin,
   name: "세븐 포커",
   english: "Seven-Card Stud",
