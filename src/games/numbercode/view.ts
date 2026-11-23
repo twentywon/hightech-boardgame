@@ -320,7 +320,7 @@ export class NumberCodeView extends TableView<State> {
   }
   /** The lettering over the table, for `s`: at rest it is all shown; while things move only the names. */
   private overlay(s: State, rest: boolean) {
-    const names = seatNames(s.seats),
+    const names = seatNames(s.seats, !!s.net),
       over = s.winner !== null;
     while (this.names.length < s.seats) {
       const tag = document.createElement("div");

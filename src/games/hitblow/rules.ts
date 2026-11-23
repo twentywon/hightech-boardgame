@@ -31,6 +31,11 @@ export interface State {
   turn: 0 | 1;
   winner: Winner;
   ply: number;
+  /**
+   * Over Wi-Fi (`net.ts`), the room's state: each seat's number (null until chosen) and what each has keyed in so
+   * far; `secrets` and `entry` above are then those of a seat's view.
+   */
+  net?: { secrets: [number[] | null, number[] | null]; entries: [number[], number[]] };
 }
 /** Every number of `size` different digits. */
 const numbers = new Map<string, number[][]>();
@@ -73,8 +78,8 @@ export function createGame(size = 3, random: Random = cryptoRandom, repeat = fal
   while (secret.length < size) secret.push(repeat ? Math.floor(random() * 10) : pool.splice(Math.floor(random() * pool.length), 1)[0]);
   return { size, repeat, phase: "secret", secrets: [null, secret], entry: [], guesses: [[], []], turn: 0, winner: null, ply: 0 };
 }
-const code = (digits: number[]) => GUESS_BASE + digits.reduce((n, d) => n * 10 + d, 0);
-const digitsOf = (point: number, size: number) => String(point - GUESS_BASE).padStart(size, "0").split("").map(Number);
+export const code = (digits: number[]) => GUESS_BASE + digits.reduce((n, d) => n * 10 + d, 0);
+export const digitsOf = (point: number, size: number) => String(point - GUESS_BASE).padStart(size, "0").split("").map(Number);
 export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
   const to = (point: number): Move => ({ from: -1, to: point, extra: -1 });

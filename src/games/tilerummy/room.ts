@@ -78,7 +78,7 @@ function picture(c: HTMLCanvasElement) {
   return t;
 }
 /** A score pad: ruled paper with a column for each of us and a few sums pencilled in. */
-function padPicture() {
+function padPicture(rival: string) {
   const { c, ctx } = canvas(256, 352);
   ctx.fillStyle = "#fbf8ee";
   ctx.fillRect(0, 0, 256, 352);
@@ -99,7 +99,7 @@ function padPicture() {
   ctx.font = "700 26px Arial, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("나", 70, 56);
-  ctx.fillText("컴퓨터", 190, 56);
+  ctx.fillText(rival, 190, 56);
   ctx.font = "italic 24px Georgia, serif";
   ctx.fillStyle = "#4b4f58";
   [
@@ -139,7 +139,8 @@ const lathe = (points: number[][], segments = 28) =>
     segments,
   );
 /** Builds the room into `scene`; returns the bag, whose fullness follows the tiles left in it. */
-export function livingRoom(scene: T.Object3D, own: Own, rich: boolean) {
+/** `rival` heads the other column of the score pad (컴퓨터, or 상대 over Wi-Fi). */
+export function livingRoom(scene: T.Object3D, own: Own, rich: boolean, rival = "컴퓨터") {
   const add = (geometry: T.BufferGeometry, material: T.Material | T.Material[], x: number, y: number, z: number, shadow = true, parent: T.Object3D = scene) => {
     const mesh = new T.Mesh(own(geometry), material);
     mesh.position.set(x, y, z);
@@ -203,7 +204,7 @@ export function livingRoom(scene: T.Object3D, own: Own, rich: boolean) {
     bowl.add(s);
   }
   // A score pad and a pencil at the near left.
-  const pad = add(block(2.2, 0.12, 3.0, 0.04), [own(new T.MeshStandardMaterial({ color: "#f3efe4" })), own(new T.MeshStandardMaterial({ color: "#f3efe4" })), own(new T.MeshStandardMaterial({ map: own(padPicture()), roughness: 0.9 })), own(new T.MeshStandardMaterial({ color: "#2b2f6a" })), own(new T.MeshStandardMaterial({ color: "#f3efe4" })), own(new T.MeshStandardMaterial({ color: "#f3efe4" }))], -9.45, 0.06, 4.3);
+  const pad = add(block(2.2, 0.12, 3.0, 0.04), [own(new T.MeshStandardMaterial({ color: "#f3efe4" })), own(new T.MeshStandardMaterial({ color: "#f3efe4" })), own(new T.MeshStandardMaterial({ map: own(padPicture(rival)), roughness: 0.9 })), own(new T.MeshStandardMaterial({ color: "#2b2f6a" })), own(new T.MeshStandardMaterial({ color: "#f3efe4" })), own(new T.MeshStandardMaterial({ color: "#f3efe4" }))], -9.45, 0.06, 4.3);
   pad.rotation.y = 0.12;
   const pencil = add(new T.CylinderGeometry(0.07, 0.07, 2.6, 6).rotateZ(Math.PI / 2), own(new T.MeshStandardMaterial({ color: "#e9b83a", roughness: 0.6 })), -9.0, 0.1, 6.2);
   pencil.rotation.y = 0.5;

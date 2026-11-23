@@ -217,13 +217,16 @@ export class HostRoom<S> extends Room<S> {
         return this.sit(m.seat, id);
       case "move": {
         if (!this.match || !this.start || m.round !== this.start.round) return this.send(link, { t: "refuse", round: m.round, ply: m.ply, text: "지난 게임의 수입니다." });
-        if (m.ply !== this.match.ply) {
+        const seat = this.seatOf(id);
+        // Where seats choose at once (`NetRules.movers`), the others' moves may have come in since this device sent
+        // its own: it is tried on the game as it stands now, as each seat's choice is its own.
+        const concurrent = !!this.rules.movers && m.ply < this.match.ply && seat !== null && this.match.movers.includes(seat);
+        if (m.ply !== this.match.ply && !concurrent) {
           this.send(link, { t: "refuse", round: m.round, ply: m.ply, text: "그 사이에 판이 바뀌었습니다. 다시 맞췄습니다." });
           return this.resync(link);
         }
         // The move's chance is drawn now, on its acceptance: nobody could have foreseen it (`random.ts`).
-        const seat = this.seatOf(id),
-          salt = newSeed(),
+        const salt = newSeed(),
           tried = seat === null ? { text: "자리에 앉지 않았습니다. 구경만 할 수 있습니다." } : this.match.try(m.move, seat, false, salt);
         if ("text" in tried) return this.send(link, { t: "refuse", round: m.round, ply: m.ply, text: tried.text });
         return this.record(m.move, seat!, salt);
@@ -395,13 +398,14 @@ export class HostRoom<S> extends Room<S> {
   /** A move made on the host's device: its own seat's, a host-only one, or a computer seat's. Null, or why not. */
   play(move: Move, seat: number): string | null {
     if (!this.match) return "게임이 시작되지 않았습니다.";
-    const to = this.match.toMove,
-      mine = to === HOST_ONLY || to === this.mySeat || this.seats[to]?.kind === "computer" || this.away(to),
+    // `seat` is the seat it is made for: one of `movers` (several may move at once in some games, `NetRules.movers`).
+    const as = this.match.toMove === HOST_ONLY ? HOST_ONLY : seat,
+      mine = as === HOST_ONLY || as === this.mySeat || this.seats[as]?.kind === "computer" || this.away(as),
       salt = newSeed();
-    const tried = this.match.try(move, to === HOST_ONLY ? HOST_ONLY : seat, true, salt);
+    const tried = this.match.try(move, as, true, salt);
     if ("text" in tried) return tried.text;
     if (!mine) return "상대 차례입니다.";
-    this.record(move, to === HOST_ONLY ? HOST_ONLY : seat, salt);
+    this.record(move, as, salt);
     return null;
   }
   /** Adds a move taken, its chance under `salt`, and tells everyone (the salt with it). */

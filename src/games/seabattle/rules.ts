@@ -40,6 +40,8 @@ export interface State {
   winner: Winner;
   last: { point: number; hit: boolean; sunk: string | null } | null;
   ply: number;
+  /** Over Wi-Fi (`net.ts`): both seats lay their fleets at once, each turning its next ship its own way. */
+  net?: { across: [boolean, boolean] };
 }
 /** A fleet laid out at random: no two ships share a square. */
 export function layFleet(random: Random, laid: Ship[] = []): Ship[] {

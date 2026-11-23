@@ -77,11 +77,11 @@ export class TileRummyView extends TableView<State> {
   private cursor: T.Mesh;
   private slotCursor: T.Mesh;
   private bag: T.Group;
-  constructor(host: HTMLElement, quality: "high" | "low") {
+  constructor(host: HTMLElement, quality: "high" | "low", rival = "컴퓨터") {
     super(host, quality, "#6f5a48");
     const rich = capable();
     this.daylight("#fff8ee", "#7a6450", "#fff1dc", 12, 2.0);
-    this.bag = livingRoom(this.scene, (r) => this.own(r), rich);
+    this.bag = livingRoom(this.scene, (r) => this.own(r), rich, rival);
     const kit = tileKit((r) => this.own(r));
     for (let tile = 0; tile < TILE_COUNT; tile++) {
       const mesh = new T.Mesh(kit.geometry(tile), kit.material);
