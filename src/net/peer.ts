@@ -1,5 +1,5 @@
 import type { Link } from "./room";
-import { packSignal, unpackSignal } from "./sdp";
+import { packSignal, tagInvite, unpackSignal } from "./sdp";
 
 /**
  * WebRTC data channels between two devices on one Wi-Fi, with no server of any kind: no ICE servers (`iceServers:
@@ -101,14 +101,14 @@ function gathered(pc: RTCPeerConnection) {
   });
 }
 
-/** The host's side of a new guest: the offer's code, and `accept` for the answer's code. */
-export async function invite(): Promise<{ code: string; link: PeerLink; accept: (answer: string) => Promise<string | null> }> {
+/** The host's side of a new guest: the offer's code (naming `game`, see `tagInvite`), and `accept` for the answer's code. */
+export async function invite(game = ""): Promise<{ code: string; link: PeerLink; accept: (answer: string) => Promise<string | null> }> {
   const pc = new RTCPeerConnection(CONFIG),
     link = new PeerLink(pc);
   link.bind(pc.createDataChannel("wtg", { ordered: true }));
   await pc.setLocalDescription(await pc.createOffer());
   await gathered(pc);
-  const code = await packSignal({ type: "offer", sdp: pc.localDescription!.sdp });
+  const code = tagInvite(await packSignal({ type: "offer", sdp: pc.localDescription!.sdp }), game);
   const accept = async (answer: string) => {
     const signal = await unpackSignal(answer);
     if (!signal) return "코드를 읽을 수 없습니다. 다시 복사하거나 다시 찍어 주세요.";

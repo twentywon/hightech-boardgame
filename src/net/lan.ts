@@ -143,7 +143,7 @@ export function typedAddress(text: string): { address: string } | { text: string
 
 /**
  * A room's address as the host's QR code carries it, for a guest's app to join with one scan (QR 찍기):
- * `WTGROOM://192.168.0.12:47297/TIC-TAC-TOE/FULL/1/2026.11-NET2` (address, game, edition, protocol, app version).
+ * `WTGROOM://192.168.0.12:47297/TIC-TAC-TOE/FULL/1/2026.11-NET3` (address, game, edition, protocol, app version).
  * All in capitals so that the code is written in the QR's compact alphanumeric mode (a game id with another
  * character, such as morris's apostrophe, falls back to bytes); the reader takes any case.
  */

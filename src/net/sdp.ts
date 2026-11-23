@@ -235,9 +235,28 @@ export async function packSignal(signal: Signal): Promise<string> {
   return PREFIX + toBase45(bytes) + END;
 }
 
+/**
+ * The host's invite names its game in front of the code (so that a guest may scan it from the collection's
+ * 참가하기 and land in that game): `WTGG:CHESS/WTG1…` (`gameTag`, the game id in capitals with only letters, digits
+ * and hyphens, for the QR's alphanumeric mode). An invite without it (an older device's) is the bare code; an answer
+ * never has one. Readers older than this see a code that does not start with `WTG1` and say the versions differ.
+ */
+export const TAG_PREFIX = "WTGG:";
+export const gameTag = (game: string) => game.toUpperCase().replace(/[^A-Z0-9-]/g, "");
+export const tagInvite = (code: string, game: string) => (gameTag(game) ? `${TAG_PREFIX}${gameTag(game)}/${code}` : code);
+/** The game an invite names (its `gameTag`, null for a bare code) and the code itself. */
+export function readInvite(text: string): { tag: string | null; code: string } {
+  const t = text.trim().replace(/[\r\n\t]/g, "");
+  if (t.slice(0, TAG_PREFIX.length).toUpperCase() !== TAG_PREFIX) return { tag: null, code: t };
+  const m = /^([A-Za-z0-9-]{1,48})\/(.*)$/.exec(t.slice(TAG_PREFIX.length));
+  return m ? { tag: m[1].toUpperCase(), code: m[2] } : { tag: "", code: "" };
+}
+
 /** Why a code cannot be read, in words; null when it can. */
 export function codeProblem(code: string): string | null {
-  const text = code.trim();
+  const tagged = readInvite(code);
+  const text = tagged.code;
+  if (tagged.tag !== null && !text.startsWith(PREFIX)) return PREFIX.startsWith(text) ? "코드가 끝까지 복사되지 않았습니다." : "코드가 손상되었습니다. 다시 복사해 주세요.";
   if (!text) return "코드를 붙여 넣거나 카메라로 읽어 주세요.";
   if (!text.startsWith(PREFIX)) return text.startsWith("WTG") ? "이 기기와 버전이 다른 코드입니다. 두 기기 모두 업데이트하세요." : "이 게임의 연결 코드가 아닙니다.";
   if (!text.endsWith(END)) return "코드가 끝까지 복사되지 않았습니다.";
@@ -246,7 +265,7 @@ export function codeProblem(code: string): string | null {
 
 /** A pairing code back as a description, or null when it is not one. */
 export async function unpackSignal(code: string): Promise<Signal | null> {
-  const text = code.trim().replace(/[\r\n\t]/g, "");
+  const text = readInvite(code).code;
   if (codeProblem(text)) return null;
   const bytes = fromBase45(text.slice(PREFIX.length, -END.length));
   if (!bytes?.length || bytes[0] >> 4 !== VERSION) return null;

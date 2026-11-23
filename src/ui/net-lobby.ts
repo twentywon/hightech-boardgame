@@ -1,12 +1,13 @@
 import { GuestRoom, HostRoom, cleanName, type Link } from "../net/room";
 import { answerInvite, invite, webrtcAvailable, type PeerLink } from "../net/peer";
 import { qrSvg } from "../net/qr";
-import { codeProblem, PREFIX } from "../net/sdp";
+import { codeProblem, gameTag, readInvite, PREFIX } from "../net/sdp";
 import { cameraProblem, scan, type CameraTrouble } from "../net/scan";
 import type { NetRules } from "../net/match";
 import { APP_VERSION, type SeatInfo, type SeatKind } from "../net/protocol";
 import { appLan, joinProblem, readRoomCode, roomCode, typedAddress, LAN_PORT, type RoomAd } from "../net/lan";
 import { allGames, EDITION } from "../core/catalog";
+import { idOf } from "../net/route";
 import type { GameOptions } from "../games/points/types";
 
 /**
@@ -45,12 +46,29 @@ export interface Lobby {
   refresh(): void;
   close(): void;
 }
-/** The name typed last, for this page only (nothing is stored). */
+/** The name typed last, for this page only (nothing is stored); the collection's 참가하기 window shares it. */
 let lastName = "";
+export const typedName = () => lastName;
+/**
+ * A room the collection's 참가하기 chose (`src/ui/net-join.ts`): the next room window of that game opens as a guest
+ * with this name and joins at once, at the app's `address` or by the host's two-way `offer`, with no 참가하기 to press.
+ */
+export interface JoinPlan {
+  game: string;
+  name: string;
+  address?: string;
+  offer?: string;
+}
+let planned: JoinPlan | null = null;
+export function planJoin(plan: JoinPlan | null) {
+  planned = plan;
+}
+/** Whether a plan is still waiting for its room window (none opened: the game has no Wi-Fi play after all). */
+export const joinPending = () => !!planned;
 const escape = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const KIND_WORD: Partial<Record<SeatKind, string>> = { open: "비어 있음", computer: "컴퓨터", closed: "닫힘" };
 /** A game's Korean title from its id (the catalog's English name in lower case, spaces as hyphens). */
-const titleOf = (id: string) => allGames.find((g) => g.en.toLowerCase().replaceAll(" ", "-") === id)?.name ?? id;
+const titleOf = (id: string) => allGames.find((g) => idOf(g.en) === id)?.name ?? id;
 /** Where a guest whose camera cannot read the room's code turns instead. */
 const ELSEWHERE = "위 방 목록에서 방을 누르거나, 방장의 기기에 나온 주소를 주소 입력에 넣어 주세요.";
 const CAMERA_WORDS: Record<CameraTrouble, string> = {
@@ -335,7 +353,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     if (problem) {
       pairNote = problem.startsWith("버전")
         ? `${problem}. 두 기기에 같은 버전의 같은 앱을 설치해 주세요.`
-        : `다른 게임의 방입니다: ${titleOf(code.game)}. 모음에서 그 게임을 고른 뒤 참가하기에서 다시 찍어 주세요.`;
+        : `다른 게임의 방입니다: ${titleOf(code.game)}. 첫 화면(게임 컬렉션)의 참가하기로 찍으면 그 게임으로 바로 들어갑니다.`;
       return render();
     }
     render();
@@ -478,7 +496,7 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     pairNote = "";
     render();
     try {
-      const made = await invite();
+      const made = await invite(o.game);
       if (closed) return made.link.close();
       pairing = made;
       made.link.opened.then(
@@ -520,6 +538,12 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     if (!g || busy) return;
     const problem = codeProblem(code);
     if (problem) return note(problem);
+    // An invite names its game: one of another game is not answered here.
+    const tag = readInvite(code).tag;
+    if (tag && tag !== gameTag(o.game)) {
+      const other = allGames.find((g) => gameTag(idOf(g.en)) === tag)?.name ?? tag;
+      return note(`다른 게임의 초대 코드입니다: ${other}. 첫 화면(게임 컬렉션)의 참가하기에서 넣으면 그 게임으로 바로 들어갑니다.`);
+    }
     busy = true;
     note("답 코드를 만드는 중…");
     const made = await answerInvite(code.trim());
@@ -545,9 +569,20 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     render();
   }
 
+  // Chosen in the collection's 참가하기: a guest at once, joining the room it chose.
+  const plan = !room && planned?.game === o.game ? planned : null;
+  planned = null;
+  if (plan) {
+    lastName = plan.name;
+    room = new GuestRoom({ game: o.game, title: o.title, name: lastName }, o.rules);
+    o.opened(room);
+    if (plan.offer) qr = true;
+  }
   render();
   d.showModal();
   if (!room) d.querySelector<HTMLInputElement>("#net-name")?.focus();
+  if (plan?.offer) void takeOffer(plan.offer);
+  else if (plan?.address) join(plan.address);
   return {
     dialog: d,
     refresh() {
