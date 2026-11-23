@@ -140,6 +140,11 @@ test("chess AI stays responsive, cancels old work and applies settings only to a
   await expect(page.locator(".player").first()).toContainText(
     "컴퓨터 · 전문가",
   );
+  // The table's first frame (its scene built, its shaders made) takes about a second under software drawing at
+  // desktop size, Worker or not (measured with the easy level too): the count starts once the table has drawn, while
+  // the expert still thinks (it moves about three seconds later).
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 30000 });
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
   const ticks = await page.evaluate(async () => {
     let running = true,
       last = performance.now();
@@ -160,6 +165,8 @@ test("chess AI stays responsive, cancels old work and applies settings only to a
   });
   expect(ticks.frames).toBeGreaterThan(5);
   expect(ticks.maxGap).toBeLessThan(1000);
+  // The count was taken while the Worker thought: the computer had not moved yet.
+  await expect(page.locator("#move-count")).toHaveText("0수");
   await page.getByRole("button", { name: "World Table Games 홈" }).click();
   await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();

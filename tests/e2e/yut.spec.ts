@@ -114,10 +114,11 @@ test("yut in the yard: tap a piece, then a gold ring; corners take the short roa
 test("yut against the computer plays on to a result, and the screen fits @alone", async ({ page }, info) => {
   // A whole game against the computer takes about three minutes at play speed (the sticks bounce about 1.3 s a
   // throw, the computer pauses 0.62 s a step), and over ten on a busy software-drawn page: the clock runs fast.
-  test.setTimeout(300000);
+  // A game runs 50 to 60 moves; on the big phone-shaped page it took up to five minutes even at 6×, so 12×.
+  test.setTimeout(420000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await fastClock(page);
+  await fastClock(page, 12);
   await sit(page, "ai");
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(scroll).toBeLessThanOrEqual(1);
@@ -130,7 +131,7 @@ test("yut against the computer plays on to a result, and the screen fits @alone"
     if (await toss.isEnabled()) await toss.click({ timeout: 1000 });
     else if ((await first.isVisible()) && (await first.isEnabled())) await first.click({ timeout: 1000 });
     await expect(page.locator("#yut-result")).toBeVisible({ timeout: 150 });
-  }).toPass({ timeout: 270000, intervals: [50] });
+  }).toPass({ timeout: 390000, intervals: [50] });
   await expect(page.locator("#yut-final")).toContainText(/이겼습니다|컴퓨터가 먼저/);
   // No window comes up at the end.
   await page.waitForTimeout(1600);
