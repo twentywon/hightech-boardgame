@@ -27,8 +27,10 @@ test("seven-card stud opens inline; a hand runs from the third card to the showd
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
+  // The page's own origin (whatever port the preview server has), inlined data and blobs; nothing else.
+  const own = `${new URL(test.info().project.use.baseURL!).origin}/`;
   page.on("request", (r) => {
-    if (!/^(http:\/\/127\.0\.0\.1:4174|data:|blob:)/.test(r.url())) foreign.push(r.url());
+    if (!r.url().startsWith(own) && !/^(data:|blob:)/.test(r.url())) foreign.push(r.url());
   });
   // I am dealt A♠ A♦ A♥ and show the last, then K♠ K♦ 2♣ 3♦: a full house.
   // The computer is dealt 2♠ 7♦ 9♣ and shows the 2, then 4♥ J♦ 8♣ 6♠: nothing.

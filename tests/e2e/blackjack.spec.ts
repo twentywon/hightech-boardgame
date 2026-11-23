@@ -52,8 +52,10 @@ test("blackjack opens inline, then bet → deal → hit → dealer → settlemen
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
+  // The page's own origin (whatever port the preview server has), inlined data and blobs; nothing else.
+  const own = `${new URL(test.info().project.use.baseURL!).origin}/`;
   page.on("request", (r) => {
-    if (!/^(http:\/\/127\.0\.0\.1:4174|data:|blob:)/.test(r.url())) foreign.push(r.url());
+    if (!r.url().startsWith(own) && !/^(data:|blob:)/.test(r.url())) foreign.push(r.url());
   });
   // Round 1: 5♠ 6♦ against 9♥ + hidden 7♣; hit 10♦ → 21; dealer 16 draws 2♠ → 18.
   // Round 2: 5♥ 6♣ against 10♠ + 8♦; double → 9♠ = 20 beats 18.

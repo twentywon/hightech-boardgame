@@ -19,8 +19,10 @@ test("texas hold'em heads-up: dealt, called through the flop to the showdown, th
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
+  // The page's own origin (whatever port the preview server has), inlined data and blobs; nothing else.
+  const own = `${new URL(test.info().project.use.baseURL!).origin}/`;
   page.on("request", (r) => {
-    if (!/^(http:\/\/127\.0\.0\.1:4174|data:|blob:)/.test(r.url())) foreign.push(r.url());
+    if (!r.url().startsWith(own) && !/^(data:|blob:)/.test(r.url())) foreign.push(r.url());
   });
   // I hold the button (the small blind): the computer is dealt 7♦ 2♣ and I A♠ A♥, then the board A♦ K♣ 9♥ 4♠ 3♣.
   await loadShuffles(page, deal("7D AS 2C AH AD KC 9H 4S 3C"));
