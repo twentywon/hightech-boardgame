@@ -11,14 +11,20 @@ export const HOST_ONLY = -1,
 export interface NetRules<S> {
   /** The game a `start` lays, its chance drawn from `random` (stream 0 of the shared seed). */
   create(start: StartInfo, random: Random): S;
-  /** The game's own `play`. */
-  play(state: S, move: Move, random: Random): S | null;
+  /** The game's own `play`; `seat` is the seat that moves (`HOST_ONLY` for the host's own), for games whose seats move at once. */
+  play(state: S, move: Move, random: Random, seat?: number): S | null;
   /** The seat to move: a seat's index, `HOST_ONLY` or `NOBODY`. */
   toMove(state: S): number;
   /** Words refusing a move the rules allow but a game over Wi-Fi does not; null lets it through. */
   allow?(state: S, move: Move): string | null;
   /** A move never taken back by an undo (janggi's formation, chosen before the first move). */
   firm?(move: Move): boolean;
+  /**
+   * The seats that may move now, for a game where several may at once (secrets each player chooses on their own
+   * device: 배틀십's fleets, 숫자야구's numbers); left out, only the one `toMove` names. `toMove` still names one of
+   * them (the one the status lines speak of), and nobody may move while it is `HOST_ONLY` or `NOBODY`.
+   */
+  movers?(state: S): number[];
 }
 
 /**
@@ -45,6 +51,11 @@ export class Match<S> {
   get toMove(): number {
     return this.rules.toMove(this.state);
   }
+  /** Every seat that may move now (`NetRules.movers`): the one to move, or several choosing at once; none when it is over or the host's alone. */
+  get movers(): number[] {
+    const to = this.toMove;
+    return to < 0 ? [] : (this.rules.movers?.(this.state) ?? [to]);
+  }
   /**
    * The state `move` by `seat` would lead to, or the words why it may not be made. `host`: asked by the host's device.
    * `salt`: the one the move will be played with (a guest checking its own move knows none yet: its chance may differ).
@@ -52,10 +63,10 @@ export class Match<S> {
   try(move: Move, seat: number, host: boolean, salt = 0): { state: S } | { text: string } {
     const to = this.toMove;
     if (to === NOBODY) return { text: "게임이 끝났습니다." };
-    if (to === HOST_ONLY ? !host : to !== seat) return { text: to === HOST_ONLY ? "방장이 고르는 차례입니다." : "상대 차례입니다." };
+    if (to === HOST_ONLY ? !host : !this.movers.includes(seat)) return { text: to === HOST_ONLY ? "방장이 고르는 차례입니다." : "상대 차례입니다." };
     const not = this.rules.allow?.(this.state, move);
     if (not) return { text: not };
-    const next = this.rules.play(this.state, move, this.stream(salt));
+    const next = this.rules.play(this.state, move, this.stream(salt), seat);
     return next ? { state: next } : { text: "둘 수 없는 수입니다." };
   }
   /** The chance of the next move under `salt`. */
@@ -64,7 +75,7 @@ export class Match<S> {
   }
   /** Plays `move` for `seat` whoever's turn it is (the host has checked it), its chance under `salt`: the new state, or null if illegal. */
   push(move: Move, seat: number, salt = 0): S | null {
-    const next = this.rules.play(this.state, move, this.stream(salt));
+    const next = this.rules.play(this.state, move, this.stream(salt), seat);
     if (!next) return null;
     this.states.push(next);
     this.moves.push(salt ? { move, seat, salt } : { move, seat });
