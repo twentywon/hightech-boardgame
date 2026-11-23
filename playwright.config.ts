@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
+/** The preview server's port: PW_PORT lets several checkouts test side by side (each its own build and server). */
+const PORT = Number(process.env.PW_PORT) || 4174;
 export default defineConfig({
   testDir: "./tests/e2e",
   // Software WebGL rendering in cloud can make the complete multi-step flow exceed 30s.
@@ -12,7 +14,7 @@ export default defineConfig({
   // Software WebGL under load can be late once; a real failure fails twice.
   retries: 1,
   use: {
-    baseURL: "http://127.0.0.1:4174",
+    baseURL: `http://127.0.0.1:${PORT}`,
     launchOptions: {
       executablePath: process.env.CHROMIUM_PATH || undefined,
       args: [
@@ -25,8 +27,8 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run build && npm run preview -- --port 4174",
-    url: "http://127.0.0.1:4174",
+    command: `npm run build && npm run preview -- --port ${PORT} --strictPort`,
+    url: `http://127.0.0.1:${PORT}`,
     // PW_REUSE=1 lets a second run (the watching window beside a plain run) share the server already up.
     reuseExistingServer: !!process.env.PW_REUSE,
   },
