@@ -84,7 +84,7 @@ test("Reversi actual WebGL mouse/touch flips, camera, new game and game selectio
   await open(page);
   await expect(page.getByRole("button", { name: /이어하기/ })).toHaveCount(0);
   // The window leads back to the collection, and another game is entered from there.
-  await page.getByRole("button", { name: "← 컬렉션으로" }).click();
+  await page.getByRole("button", { name: "← 다른 게임" }).click();
   await expect(page.getByRole("button", { name: "오목 살펴보기", exact: true })).toBeVisible();
   await selectGame(page);
   await page.getByRole("button", { name: "테이블에 앉기" }).click();

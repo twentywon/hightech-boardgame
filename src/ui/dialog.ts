@@ -162,14 +162,14 @@ export function setupDialog(fill: (host: HTMLElement) => void) {
  * settings come up over it in a window, instead of a panel in the collection). `content` is the game's setup as the
  * collection laid it, carried into the window with its handlers, under the game's `title`; the page behind shows the
  * game's own table. Its start (the setup's own, 테이블에 앉기 and the rest) sits down once, with what was chosen;
- * 컬렉션으로, Escape or the browser's back go back to the collection through `back`. Its panel carries `game-stage`
+ * 다른 게임 (it said 컬렉션으로 before the user asked), Escape or the browser's back go back to the collection through `back`. Its panel carries `game-stage`
  * and the old region name (`label`), so readers and tests find the setup where they did.
  */
 export function entryDialog(title: string, label: string, content: Node[], back: () => void, rules?: () => void) {
   document.querySelector("dialog")?.remove();
   const d = document.createElement("dialog");
   d.className = "setup-dialog entry";
-  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2></h2><p class="setup-note">설정을 고른 뒤 시작하세요.</p><div class="dialog-body setup-host game-stage" role="region"></div><div class="dialog-actions"><button id="setup-cancel">← 컬렉션으로</button></div>`;
+  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2></h2><p class="setup-note">설정을 고른 뒤 시작하세요.</p><div class="dialog-body setup-host game-stage" role="region"></div><div class="dialog-actions entry-actions"><button id="setup-cancel">← 다른 게임</button></div>`;
   d.querySelector("h2")!.textContent = title;
   // The game's 게임 방법 opens over this window and comes back to it when closed (the user asked for it here).
   if (rules) {
@@ -188,9 +188,28 @@ export function entryDialog(title: string, label: string, content: Node[], back:
   // its stage window has its start where that window's 계속하기 stood).
   const note = host.querySelector<HTMLElement>("[data-entry-note]")?.dataset.entryNote;
   if (note) d.querySelector(".setup-note")!.textContent = note;
-  host.querySelectorAll("[data-entry-action]").forEach((button) => d.querySelector(".dialog-actions")!.append(button));
+  const actions = d.querySelector<HTMLElement>(".dialog-actions")!;
+  host.querySelectorAll("[data-entry-action]").forEach((button) => actions.append(button));
   document.body.append(d);
   buttonize(host);
+  // The start (the setup's primary buttons: 테이블에 앉기, 킥오프 and the rest) is shown at the right end of the row of
+  // 다른 게임, which stays put under the setup however far it scrolls (the user asked). It stays where the setup put it,
+  // for setups find it there by their own panel: it is only drawn in the row (`.entry-start`, placed against the
+  // window), and nothing between it and the window may be its containing block. One a setup draws anew later (the
+  // tour's form when the number of people changes) is placed the same way.
+  const place = () => {
+    host.querySelectorAll<HTMLButtonElement>("button.primary").forEach((button) => {
+      if (!button.classList.contains("entry-start")) button.classList.add("entry-start");
+      for (let el = button.parentElement; el && el !== host; el = el.parentElement) {
+        const look = getComputedStyle(el);
+        if (look.position !== "static") el.style.position = "static";
+        if (look.transform !== "none") el.style.transform = "none";
+      }
+    });
+    d.classList.toggle("has-start", !!host.querySelector("button.primary"));
+  };
+  place();
+  new MutationObserver(place).observe(host, { childList: true, subtree: true });
   // The start (any primary button, also one a setup draws anew, as the tour's form when the number of people
   // changes) closes the window before its own handler runs: a table that starts under an open window holds its
   // buttons and its computer, as it does under any window. The window stays in the page while the handler runs,

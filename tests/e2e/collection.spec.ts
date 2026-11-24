@@ -38,7 +38,7 @@ test("a tile enters its game at once and asks its settings in a window, without 
   await expect(page.locator("main.entry-backdrop")).toHaveCount(1);
   await page.screenshot({ path: `test-results/${info.project.name}-entry-reversi.png` });
   // Back from the window is back to the collection, at the game's tile.
-  await window.getByRole("button", { name: "← 컬렉션으로" }).click();
+  await window.getByRole("button", { name: "← 다른 게임" }).click();
   await expect(page.locator("main.library")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "리버시 살펴보기" })).toBeFocused();
 

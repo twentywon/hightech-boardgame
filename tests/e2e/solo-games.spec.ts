@@ -86,7 +86,7 @@ test("peg solitaire: the stage is chosen from pictures in the window it is enter
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("하고 싶은 배치를 고르세요");
   await expect(dialog.locator(".dialog-actions").getByRole("button", { name: /판 앞에 앉기/ })).toBeVisible();
-  await expect(dialog.locator(".dialog-actions").getByRole("button", { name: "← 컬렉션으로" })).toBeVisible();
+  await expect(dialog.locator(".dialog-actions").getByRole("button", { name: "← 다른 게임" })).toBeVisible();
   // A card for each stage, with its picture, name and number of marbles.
   await expect(dialog.locator(".stage-card")).toHaveCount(6);
   await expect(dialog.locator(".stage-card svg")).toHaveCount(6);
