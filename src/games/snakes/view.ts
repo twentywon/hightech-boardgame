@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, realism, block, hop, travel, pawn, glossy, wood, woodPhoto, capable, weave } from "../../engine/scene-utils";
+import { afterGPUFrame, realism, block, hop, travel, pawn, glossy, wood, woodPhoto, capable, weave, fitCanvas } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { capturing } from "../../ui/banner";
 import type { PointView } from "../../ui/point-game";
@@ -414,7 +414,7 @@ export class SnakesView implements PointView<State> {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const distance = cameraDistance(this.camera.aspect, false, SNAKES_SUBJECT);

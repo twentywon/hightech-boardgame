@@ -120,8 +120,12 @@ function decode(context: AudioContext) {
   if (decoding) return;
   decoding = true;
   for (const [path, url] of Object.entries(recordings)) {
+    // A plain loop: `Uint8Array.from` with a callback over a megabyte of recordings held the first tap up for a
+    // tenth of a second and more.
     const name = path.slice(path.lastIndexOf("/") + 1, -4),
-      bytes = Uint8Array.from(atob(url.slice(url.indexOf(",") + 1)), (c) => c.charCodeAt(0));
+      text = atob(url.slice(url.indexOf(",") + 1)),
+      bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
     // A recording that cannot be decoded simply falls back to the synthesised sound.
     void context
       .decodeAudioData(bytes.buffer)

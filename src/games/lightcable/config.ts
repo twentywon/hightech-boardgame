@@ -25,6 +25,7 @@ import {
   type State,
 } from "./rules";
 import { CABLE_COLORS, LightCableView, keyboard } from "./view";
+import { withLazy } from "../../core/lazy";
 
 /** The colours of the pictures: the light of each cable colour, and the enamel of a coloured post. */
 const ART_LIGHT = ["#ffe2a8", "#ff6a56", "#62b0ff", "#6ae598"],
@@ -160,7 +161,8 @@ export const lightCableConfig: PointConfig<State> = {
     },
   },
   stagesFirst: true,
-  stages: STAGES.map((_, i) => ({ value: String(i + 1), name: NAMES[i], note: NOTES[i], art: workshopArt(i + 1) })),
+  // A card's picture lays its stage out: drawn when the cards are first shown, not as the page opens.
+  stages: STAGES.map((_, i) => withLazy({ value: String(i + 1), name: NAMES[i], note: NOTES[i] }, "art", () => workshopArt(i + 1))),
   tallyHtml: () => ["", ""],
   name: "빛 케이블",
   english: "Light Cable",

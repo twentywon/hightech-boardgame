@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, capable, disposeScene, realism, hop, travel } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, capable, disposeScene, realism, hop, travel, fitCanvas } from "../../engine/scene-utils";
 import {
   FOV,
   OVERHEAD,
@@ -290,7 +290,7 @@ export class JanggiView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.target();

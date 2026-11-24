@@ -1,6 +1,6 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { afterGPUFrame, aim, wood, realism, glossy, capable, block, fall, hop, travel } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, glossy, capable, block, fall, hop, travel, fitCanvas } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -484,7 +484,7 @@ export class MancalaView implements PointView<State> {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const distance = cameraDistance(this.camera.aspect, false, MANCALA_SUBJECT);

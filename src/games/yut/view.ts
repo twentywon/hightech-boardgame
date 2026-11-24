@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, block, glossy, hop, travel } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, block, glossy, hop, travel, fitCanvas } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import { hanokYard } from "../../engine/scenery";
 import { FINISHED, PIECES, WAITING } from "./rules";
@@ -486,7 +486,7 @@ export class YutView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const subject = SUBJECTS.yut,

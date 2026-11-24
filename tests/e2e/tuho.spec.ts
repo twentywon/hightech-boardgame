@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { selectGame } from "./library";
 import { pullFor } from "../../src/games/tuho/layout";
-import { IDEAL } from "../../src/games/tuho/rules";
+import { ideal } from "../../src/games/tuho/rules";
 
 const moves = async (page: Page) => Number(/(\d+)/.exec((await page.locator("#move-count").textContent()) ?? "")?.[1] ?? 0);
 /** A side's total, from its line in the (unseen) panel. */
@@ -53,7 +53,7 @@ test("tuho: a pull throws the arrow into the mouth for 10, the computer answers,
   await page.mouse.up();
   await page.waitForTimeout(400);
   expect(await moves(page)).toBe(0);
-  const middle = IDEAL[0];
+  const middle = ideal()[0];
   // A straight pull of the length that reaches the mouth: the hand trembles far less than the mouth is wide.
   await pull(page, middle.yaw, middle.speed);
   await expect.poll(() => moves(page), { timeout: 20000 }).toBe(1);

@@ -6,7 +6,7 @@ import type { State as ReversiState } from "../games/reversi/rules";
 import * as T from "three";
 import { SPACING, fromWorld, toWorld } from "../games/gomoku/coordinates";
 import type { Point, State } from "../games/gomoku/rules";
-import { disposeScene, afterGPUFrame, aim, realism, glossy, fall, hop } from "./scene-utils";
+import { disposeScene, afterGPUFrame, aim, realism, glossy, fall, hop, fitCanvas } from "./scene-utils";
 import { discGeometry, gomokuRoom, lensGeometry, reversiBoard, reversiStudy, shellMap, softSpot } from "./board-scenes";
 import {
   FOV,
@@ -511,7 +511,7 @@ export class BoardView {
     this.lastWidth = w;
     this.lastHeight = h;
     this.dirty = true;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.setTarget();

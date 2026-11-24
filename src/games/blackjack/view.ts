@@ -1,7 +1,7 @@
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { afterGPUFrame, aim, block, capable, glossy, wood, realism, weave } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, block, capable, glossy, wood, realism, weave, fitCanvas } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { Card } from "./shoe";
 import { zoomable } from "../../engine/zoom";
@@ -985,7 +985,7 @@ export class BlackjackView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const before = this.layout;

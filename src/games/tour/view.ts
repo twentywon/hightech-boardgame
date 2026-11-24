@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, planks, block, glossy, capable, hop, travel, fall } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, block, glossy, capable, hop, travel, fall, fitCanvas } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { SPACES, type State } from "./rules";
 import { ATLAS_COLS, ATLAS_ROWS, banknote, boardPrint, cardBack, cardEdges, cardFace, dieFace, spaceAtlas } from "./paint";
@@ -682,7 +682,7 @@ export class TourView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const distance = cameraDistance(this.camera.aspect, false, TOUR_SUBJECT);

@@ -1,5 +1,5 @@
 import * as T from "three";
-import { aim, block, glossy, hop, fall, planks, wood } from "../../engine/scene-utils";
+import { aim, block, glossy, hop, fall, planks, wood, fitCanvas } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
@@ -260,7 +260,7 @@ export class ConquestView extends TableView<State> {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.aimCamera();
   }
   private aimCamera() {

@@ -2,6 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { REPAIRS, STAGES, answers, hint, queens, repairOf, sizeOf, type State } from "./rules";
 import { QUEEN_COLORS, QueensView } from "./view";
+import { withLazy } from "../../core/lazy";
 
 /** A small picture of a stage: its board, with the given queens of one answer drawn dark (or, for a repair, every queen, the misplaced ones red). */
 function boardArt(size: number, given: number, wrong = 0) {
@@ -22,8 +23,9 @@ function boardArt(size: number, given: number, wrong = 0) {
 const NAMES = ["쉬움", "보통", "도전", "어려움", "고수", "입문", "달인", "명인"];
 /** The cards in the stage window: by size, the repairs last. */
 const CARDS = [
-  ...STAGES.map((stage, i) => ({ value: String(i + 1), name: `${stage.size}×${stage.size} · ${NAMES[i]}`, note: `주어진 퀸 ${stage.given}개`, art: boardArt(stage.size, stage.given), order: stage.size * 10 + (5 - stage.given) })),
-  ...REPAIRS.map((repair, k) => ({ value: String(STAGES.length + k + 1), name: `${repair.size}×${repair.size} · 고쳐 놓기`, note: `잘못 놓인 퀸 ${repair.wrong}개`, art: boardArt(repair.size, 0, repair.wrong), order: 1000 + k })),
+  // A card's picture needs the board's answers, which are found by search: it is drawn when the cards are first shown.
+  ...STAGES.map((stage, i) => withLazy({ value: String(i + 1), name: `${stage.size}×${stage.size} · ${NAMES[i]}`, note: `주어진 퀸 ${stage.given}개`, order: stage.size * 10 + (5 - stage.given) }, "art", () => boardArt(stage.size, stage.given))),
+  ...REPAIRS.map((repair, k) => withLazy({ value: String(STAGES.length + k + 1), name: `${repair.size}×${repair.size} · 고쳐 놓기`, note: `잘못 놓인 퀸 ${repair.wrong}개`, order: 1000 + k }, "art", () => boardArt(repair.size, 0, repair.wrong))),
 ].sort((a, b) => a.order - b.order);
 export const queensConfig: PointConfig<State> = {
   game: queens,
@@ -37,7 +39,7 @@ export const queensConfig: PointConfig<State> = {
   keyPoints: (state) => state.queens.map((_, i) => ({ x: i % state.size, z: Math.floor(i / state.size) })),
   puzzle: { hint, hintText: "힌트 — 금색 고리가 쳐진 칸을 누르세요. 퀸이 있으면 치우고, 없으면 놓습니다." },
   stagesFirst: true,
-  stages: CARDS.map(({ value, name, note, art }) => ({ value, name, note, art })),
+  stages: CARDS,
   tallyHtml: () => ["", ""],
   name: "체스판의 퀸",
   english: "Queens on the Board",

@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Chess, Color, Move, PieceSymbol, Square } from "chess.js";
-import { disposeScene, afterGPUFrame, aim, realism, capable, hop, travel } from "../../engine/scene-utils";
+import { disposeScene, afterGPUFrame, aim, realism, capable, hop, travel, fitCanvas } from "../../engine/scene-utils";
 import { toWorld, fromWorld } from "./coordinates";
 import { pieceGeometry, pieceMaterials } from "./pieces";
 import { chessBoard, clubRoom, TABLE_TOP, type Clock } from "./room";
@@ -600,7 +600,7 @@ export class ChessView {
     if (!w || !h || (!force && w === this.width && h === this.height)) return;
     this.width = w;
     this.height = h;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.target();

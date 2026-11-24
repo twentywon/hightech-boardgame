@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block, hop as arc, travel, draughtsman } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block, hop as arc, travel, draughtsman, fitCanvas } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
@@ -313,7 +313,7 @@ export class PointBoardView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const subject = this.spec.subject,

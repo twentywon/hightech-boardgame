@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, disposeScene, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, disposeScene, realism, fitCanvas } from "../../engine/scene-utils";
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import { roundRect } from "../cards/table-view";
 import { capturing } from "../../ui/banner";
@@ -306,7 +306,7 @@ export class PatienceView<S> {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     const camera = cameraFor(this.layout.subject, w / h);
     this.camera.copy(camera);
     this.camera.updateProjectionMatrix();

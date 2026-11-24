@@ -25,6 +25,17 @@ export function aim(ray: T.Raycaster, e: PointerEvent, canvas: HTMLCanvasElement
   );
   ray.setFromCamera(ndc, camera);
 }
+const sizeNow = new T.Vector2();
+/**
+ * Sizes a renderer's canvas to `width` by `height` (CSS pixels), unless it has that size already: giving a canvas
+ * its size again throws its picture away and makes a new drawing buffer, and a table is asked its size twice as it
+ * opens (by its own start and by the first word of its ResizeObserver). A change of pixel ratio sizes it by itself.
+ */
+export function fitCanvas(renderer: T.WebGLRenderer, width: number, height: number) {
+  renderer.getSize(sizeNow);
+  // (A canvas that has not been given its CSS size yet is sized whatever its numbers say.)
+  if (sizeNow.x !== width || sizeNow.y !== height || !renderer.domElement.style.width) renderer.setSize(width, height);
+}
 export function disposeScene(scene: T.Object3D) {
   const geometries = new Set<T.BufferGeometry>(),
     materials = new Set<T.Material>(),

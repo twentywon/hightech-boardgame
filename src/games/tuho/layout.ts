@@ -1,5 +1,5 @@
 import type * as T from "three";
-import { IDEAL } from "./rules";
+import { ideal } from "./rules";
 import { DISTANCE } from "./sim";
 
 /**
@@ -29,12 +29,12 @@ export function tuhoCamera(camera: T.PerspectiveCamera, aspect: number) {
  * the mouth); each share more or less adds or takes `GAIN` m/s. Shorter than `LEAST` it throws nothing.
  */
 export const CENTRE = 0.3,
-  CENTRE_SPEED = IDEAL[0].speed,
   GAIN = 2.4,
   LEAST = 0.05;
+const CENTRE_SPEED = () => ideal()[0].speed;
 /** How far the turn follows the slant of the gesture, and the turn a straight gesture throws with (at the mouth from the hand). */
-export const YAW_PER_SLANT = 0.25,
-  STRAIGHT = IDEAL[0].yaw;
+export const YAW_PER_SLANT = 0.25;
+const STRAIGHT = () => ideal()[0].yaw;
 /**
  * The throw of a gesture of `dx`, `dy` pixels on a canvas `height` pixels tall (y grows downward): pulled back
  * (down) like a sling, it throws the opposite way; pushed up, it throws that way. Null if it throws nothing.
@@ -45,12 +45,12 @@ export function gesture(dx: number, dy: number, height: number) {
   // The way the arrow goes: up the screen and to the side.
   const side = dy > 0 ? -dx : dx,
     up = Math.abs(dy);
-  return { yaw: STRAIGHT + Math.atan2(side, up) * YAW_PER_SLANT, speed: CENTRE_SPEED + (length - CENTRE) * GAIN };
+  return { yaw: STRAIGHT() + Math.atan2(side, up) * YAW_PER_SLANT, speed: CENTRE_SPEED() + (length - CENTRE) * GAIN };
 }
 /** The pull (in pixels, downward) that throws with `yaw` and `speed` on a canvas `height` pixels tall. */
 export function pullFor(yaw: number, speed: number, height: number) {
-  const length = (CENTRE + (speed - CENTRE_SPEED) / GAIN) * height,
-    slant = (yaw - STRAIGHT) / YAW_PER_SLANT;
+  const length = (CENTRE + (speed - CENTRE_SPEED()) / GAIN) * height,
+    slant = (yaw - STRAIGHT()) / YAW_PER_SLANT;
   return { dx: -Math.sin(slant) * length, dy: Math.cos(slant) * length };
 }
 /**

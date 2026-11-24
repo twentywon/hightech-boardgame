@@ -93,7 +93,19 @@ function sampler(field: Float32Array, w: number, h: number, step: number) {
     return (field[k] * (1 - fx) + field[k + 1] * fx) * (1 - fy) + (field[k + w] * (1 - fx) + field[k + w + 1] * fx) * fy;
   };
 }
-export function paintWorld(map: WorldMap): { canvas: HTMLCanvasElement; overlay: Overlay; plates: Plate[] } {
+type Painted = { canvas: HTMLCanvasElement; overlay: Overlay; plates: Plate[] };
+/**
+ * The world's picture, kept once painted: the world map is one object for the whole page and never changes, its
+ * picture takes most of a second to paint (seconds on a phone), and every new game laid a new table that painted it
+ * again. Nothing that uses the picture changes it (the table draws it as a texture and reads its overlay).
+ */
+const painted = new WeakMap<WorldMap, Painted>();
+export function paintWorld(map: WorldMap): Painted {
+  let kept = painted.get(map);
+  if (!kept) painted.set(map, (kept = paint(map)));
+  return kept;
+}
+function paint(map: WorldMap): Painted {
   const W = PAINT_W,
     H = PAINT_H,
     ppc = W / map.cols,

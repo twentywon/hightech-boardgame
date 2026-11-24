@@ -6,7 +6,7 @@ import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { SCALE, gesture, tremor, tuhoCamera } from "./layout";
-import { ARROWS, IDEAL, lying, throwCode, type State } from "./rules";
+import { ARROWS, ideal, lying, throwCode, type State } from "./rules";
 import { ARROW_LENGTH, DISTANCE, EAR_BOTTOM, HOLES, PROFILE, RELEASE, SAMPLE, airPath, fly, type Knock, type Pose, type V3 } from "./sim";
 
 /** The feathers of each side's arrows: 홍 (red) and 청 (blue). */
@@ -525,7 +525,7 @@ export class TuhoView extends TableView<State> {
         e.preventDefault();
         if (!this.canThrow()) return;
         const fine = e.shiftKey ? 0.25 : 1,
-          from = this.keyAim ?? { ...IDEAL[0] };
+          from = this.keyAim ?? { ...ideal()[0] };
         this.keyAim = {
           yaw: Math.max(-0.3, Math.min(0.3, from.yaw + steps[e.key][0] * 0.004 * fine)),
           speed: Math.max(2.5, Math.min(7, from.speed + steps[e.key][1] * 0.02 * fine)),
@@ -534,7 +534,7 @@ export class TuhoView extends TableView<State> {
       } else if ((e.key === "Enter" || e.key === " ") && !e.repeat) {
         e.preventDefault();
         if (!this.canThrow()) return;
-        const aim = this.keyAim ?? IDEAL[0],
+        const aim = this.keyAim ?? ideal()[0],
           hand = this.trembled();
         this.throwWith(aim.yaw + hand.yaw, aim.speed + hand.speed);
       }
@@ -642,7 +642,7 @@ export class TuhoView extends TableView<State> {
   private handPose() {
     const state = this.state,
       side = state?.turn ?? 0,
-      aim = this.aimed() ?? IDEAL[0];
+      aim = this.aimed() ?? ideal()[0];
     this.hands.forEach((hand, k) => {
       hand.visible = k === side && this.canThrow() && !capturing();
       if (!hand.visible) return;

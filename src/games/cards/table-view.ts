@@ -1,7 +1,7 @@
 import { capturing } from "../../ui/banner";
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { afterGPUFrame, aim, capable, glossy, realism, weave } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, capable, glossy, realism, weave, fitCanvas } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, TILT, cameraDistance, type Subject } from "../../engine/camera";
 import type { TableView, Tone } from "./game";
 import { zoomable } from "../../engine/zoom";
@@ -732,7 +732,7 @@ export class CardTableView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const square = w / h < 1.25;

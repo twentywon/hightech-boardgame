@@ -24,7 +24,8 @@ interface Zoom {
   render: (scene: T.Object3D, camera: T.Camera) => void;
   scene?: T.Object3D;
   camera?: T.Camera;
-  drawn: number;
+  /** The zoom has changed since the picture was last drawn. */
+  stale: boolean;
   /** The glide back after the fingers let go. */
   back?: { from: { z: number; x: number; y: number }; start: number };
 }
@@ -32,7 +33,13 @@ const MAX = 4,
   WHEEL_MIN = 0.75,
   PINCH_MIN = 0.8,
   BACK_MS = 320;
-const zooms = new Map<HTMLCanvasElement, Zoom>();
+/**
+ * Held weakly: a table that is left must be let go whole (its canvas, renderer and scene), and a strong map here kept
+ * every table ever opened, with all its pictures, for as long as the page lived.
+ */
+const zooms = new WeakMap<HTMLCanvasElement, Zoom>();
+/** The canvases whose zoom changed and must be drawn again; emptied as soon as they have been. */
+const moving = new Set<HTMLCanvasElement>();
 const offset = new WeakSet<T.Camera>();
 let ticking = false;
 
@@ -78,16 +85,18 @@ function apply(zoom: Zoom, camera: T.Camera) {
 }
 
 /** Draws again a view that only draws when something moved, so that the zoom is seen at once. */
-function tick() {
+function tick(canvas: HTMLCanvasElement) {
+  moving.add(canvas);
+  const changed = zooms.get(canvas);
+  if (changed) changed.stale = true;
   if (ticking) return;
   ticking = true;
   requestAnimationFrame(function frame(now) {
     let more = false;
-    for (const [canvas, zoom] of zooms) {
-      if (!canvas.isConnected) {
-        zooms.delete(canvas);
-        continue;
-      }
+    for (const canvas of [...moving]) {
+      const zoom = zooms.get(canvas);
+      moving.delete(canvas);
+      if (!zoom || !canvas.isConnected) continue;
       if (zoom.back) {
         const t = Math.min(1, (now - zoom.back.start) / BACK_MS),
           ease = 1 - (1 - t) ** 3,
@@ -101,10 +110,14 @@ function tick() {
           zoom.z = 1;
           zoom.x = zoom.y = 0;
           zoom.back = undefined;
-        } else more = true;
+        } else {
+          more = true;
+          moving.add(canvas);
+        }
+        zoom.stale = true;
       }
-      if (zoom.scene && zoom.camera && now - zoom.drawn > 24 && zoom.renderer.getRenderTarget() === null)
-        zoom.renderer.render(zoom.scene, zoom.camera);
+      // A view that draws every frame has drawn the new zoom already; one that draws only when something moved is drawn here.
+      if (zoom.stale && zoom.scene && zoom.camera && zoom.renderer.getRenderTarget() === null) zoom.renderer.render(zoom.scene, zoom.camera);
     }
     if (more) requestAnimationFrame(frame);
     else ticking = false;
@@ -115,13 +128,13 @@ function tick() {
 export function zoomable(renderer: T.WebGLRenderer) {
   const canvas = renderer.domElement,
     render = renderer.render.bind(renderer);
-  const zoom: Zoom = { z: 1, x: 0, y: 0, renderer, render, drawn: 0 };
+  const zoom: Zoom = { z: 1, x: 0, y: 0, renderer, render, stale: false };
   zooms.set(canvas, zoom);
   renderer.render = (scene, camera) => {
     if (renderer.getRenderTarget() === null) {
       zoom.scene = scene;
       zoom.camera = camera;
-      zoom.drawn = performance.now();
+      zoom.stale = false;
       apply(zoom, camera);
     }
     render(scene, camera);
@@ -140,7 +153,7 @@ export function zoomable(renderer: T.WebGLRenderer) {
         zoom.z = 1;
         zoom.x = zoom.y = 0;
       }
-      tick();
+      tick(canvas);
     },
     { passive: false },
   );
@@ -236,7 +249,7 @@ function listen() {
       zoom.x = pinch.px - u * s;
       zoom.y = pinch.py - v * s;
       hold(zoom);
-      tick();
+      tick(pinch.canvas);
     },
     true,
   );
@@ -248,11 +261,12 @@ function listen() {
     swallowed.delete(e.pointerId);
     quietUntil = performance.now() + 450;
     if (pinch && pinch.ids.includes(e.pointerId)) {
-      const zoom = pinch.zoom;
+      const zoom = pinch.zoom,
+        canvas = pinch.canvas;
       pinch = null;
       // Let go: back to the usual view, smoothly.
       zoom.back = { from: { z: zoom.z, x: zoom.x, y: zoom.y }, start: performance.now() };
-      tick();
+      tick(canvas);
     }
   };
   window.addEventListener("pointerup", up, true);

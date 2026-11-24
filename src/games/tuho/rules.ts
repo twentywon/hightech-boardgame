@@ -1,6 +1,7 @@
 import type { Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import { HOLES, aimAt, fly, type Flight, type Outcome, type Pose } from "./sim";
+import { once } from "../../core/lazy";
 
 /**
  * 투호 (tuho), the Korean game of throwing arrows into a pot, simplified from the old court game as follows.
@@ -91,13 +92,16 @@ export function throwOf(code: number) {
 export function createGame(rounds = 1): State {
   return { rounds, round: 1, starter: 0, thrown: [0, 0], scores: [0, 0], history: [], arrows: [], last: null, cleared: false, turn: 0, winner: null, ply: 0 };
 }
-/** The throws that come down through the middle of the mouth and of each ear, as a person would let them go. */
-export const IDEAL = HOLES.map((hole) => aimAt(hole));
+/**
+ * The throws that come down through the middle of the mouth and of each ear, as a person would let them go. They are
+ * found by trying throws, so they are worked out when first asked for, not as the page opens.
+ */
+export const ideal = once(() => HOLES.map((hole) => aimAt(hole)));
 /** A few throws that stand for all of them (any turn and speed may be thrown): at the mouth and the ears, and short and long of the mouth. */
 export function moves(state: State): Move[] {
   if (state.winner !== null) return [];
-  const m = IDEAL[0];
-  return [...IDEAL.map((a) => throwCode(a.yaw, a.speed)), throwCode(m.yaw, m.speed - 0.3), throwCode(m.yaw, m.speed + 0.3)].map((to) => ({ from: -1, to, extra: 0 }));
+  const m = ideal()[0];
+  return [...ideal().map((a) => throwCode(a.yaw, a.speed)), throwCode(m.yaw, m.speed - 0.3), throwCode(m.yaw, m.speed + 0.3)].map((to) => ({ from: -1, to, extra: 0 }));
 }
 /** A number drawn from the normal distribution (two draws from `random`). */
 function gauss(random: Random) {
@@ -195,8 +199,8 @@ export function chooseThrow(state: State, level: "easy" | "normal" | "hard"): Mo
   if (state.winner !== null) return null;
   const spread = LEVELS[level]?.spread ?? LEVELS.normal.spread,
     others = lying(state);
-  let best = { yaw: IDEAL[0].yaw, speed: IDEAL[0].speed, value: -1 };
-  IDEAL.forEach((ideal, i) => {
+  let best = { yaw: ideal()[0].yaw, speed: ideal()[0].speed, value: -1 };
+  ideal().forEach((ideal, i) => {
     for (const [dy, ds] of i === 0 ? AROUND : [[0, 0]]) {
       const yaw = ideal.yaw + dy,
         speed = ideal.speed + ds,

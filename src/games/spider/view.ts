@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, capable, hop, realism, travel } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, capable, hop, realism, travel, fitCanvas } from "../../engine/scene-utils";
 import { FOV, cameraDistance } from "../../engine/camera";
 import { CARD, drawBack, drawFace } from "../cards/faces";
 import { faceOf, targets, type Card, type State } from "./rules";
@@ -328,7 +328,7 @@ export class SpiderView {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     const distance = cameraDistance(this.camera.aspect, false, SPIDER_SUBJECT);

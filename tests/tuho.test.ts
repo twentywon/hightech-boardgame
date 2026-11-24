@@ -5,7 +5,7 @@ import { ARROW_LENGTH, ARROW_R, BALANCE, HOLES, LEAN_MAX, MASS, POINT_MASS, SAMP
 import { CENTRE, LEAST, TREMOR, gesture, pullFor, tremor } from "../src/games/tuho/layout";
 
 const throwOf = (yaw: number, speed: number) => ({ from: -1, to: R.throwCode(yaw, speed), extra: 0 });
-const mouth = R.IDEAL[0];
+const mouth = R.ideal()[0];
 const lean = (pose: Pose) => Math.acos(-pose.dir.y);
 /** Every throw on a grid round the mouth's, as a move would name it. */
 function* grid(ds = 0.006, dy = 0.004) {
@@ -82,7 +82,7 @@ describe("tuho", () => {
     expect([inMouth.last!.outcome, inMouth.last!.points, inMouth.scores]).toEqual(["mouth", R.POINTS.mouth, [10, 0]]);
     expect(R.POINTS.ear).toBeGreaterThan(R.POINTS.mouth);
     for (const k of [1, 2]) {
-      const ear = R.play(R.createGame(), throwOf(R.IDEAL[k].yaw, R.IDEAL[k].speed))!;
+      const ear = R.play(R.createGame(), throwOf(R.ideal()[k].yaw, R.ideal()[k].speed))!;
       expect([ear.last!.outcome, ear.last!.hole, ear.last!.points]).toEqual(["ear", k, 20]);
       // It stands in its ear: the point on the ear's bottom, inside the tube.
       const tip = ear.last!.rest.tip,
@@ -232,7 +232,7 @@ describe("tuho", () => {
     // Pushed up the same length, the same throw.
     expect(gesture(0, -CENTRE * height, height)).toEqual(straight);
     expect(gesture(0, (LEAST / 2) * height, height)).toBeNull();
-    for (const [yaw, speed] of [[mouth.yaw, mouth.speed], [R.IDEAL[1].yaw, R.IDEAL[1].speed], [0.04, 4.6]]) {
+    for (const [yaw, speed] of [[mouth.yaw, mouth.speed], [R.ideal()[1].yaw, R.ideal()[1].speed], [0.04, 4.6]]) {
       const pull = pullFor(yaw, speed, height),
         back = gesture(pull.dx, pull.dy, height)!;
       expect(back.yaw).toBeCloseTo(yaw, 6);

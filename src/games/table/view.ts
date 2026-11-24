@@ -1,5 +1,5 @@
 import * as T from "three";
-import { afterGPUFrame, aim, realism } from "../../engine/scene-utils";
+import { afterGPUFrame, aim, realism, fitCanvas } from "../../engine/scene-utils";
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
@@ -245,7 +245,7 @@ export abstract class TableView<S> implements PointView<S> {
     const w = this.host.clientWidth,
       h = this.host.clientHeight;
     if (!w || !h) return;
-    this.renderer.setSize(w, h);
+    fitCanvas(this.renderer, w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.layout(this.camera.aspect);
