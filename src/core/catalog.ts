@@ -825,6 +825,14 @@ export const allGames = [
     available: true,
   },
   {
+    name: "배드민턴",
+    en: "BADMINTON",
+    category: "스포츠게임",
+    players: "2인용",
+    icon: "🏸",
+    available: true,
+  },
+  {
     name: "축구",
     en: "SOCCER",
     category: "아케이드게임",

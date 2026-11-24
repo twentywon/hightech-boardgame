@@ -731,6 +731,18 @@ const play = {
     await canvas.focus();
     await page.keyboard.press("p");
   },
+  // My long serve high over the net, and the hall paused while the shuttle is in the air.
+  badminton: async () => {
+    const canvas = page.locator("canvas");
+    await canvas.focus();
+    await page.keyboard.press("ArrowUp");
+    for (let k = 0; k < 200; k++) {
+      const at = ((await canvas.getAttribute("data-shuttle")) ?? "").split(",").map(Number);
+      if ((await canvas.getAttribute("data-phase")) === "flying" && at[2] < -0.5) break;
+      await wait(30);
+    }
+    await page.keyboard.press("p");
+  },
   // A ball thrown up the lane, and the machine paused while it comes down toward the hoop.
   basketball: async () => {
     const box = await page.locator("canvas").boundingBox(),

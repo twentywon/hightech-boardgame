@@ -1,0 +1,602 @@
+/**
+ * The badminton court's insides, free of Three.js and the page: a shuttlecock under gravity and its heavy air drag,
+ * the net, two players who run to the shuttle by themselves, and their strokes. The view steps it in fixed slices
+ * (`DT`) and reports each point won as a move.
+ *
+ * Metres, seconds. The net stands over z = 0; my half (side 0) is z > 0, the computer's (side 1) z < 0; x runs across,
+ * +x to my right. Only the singles court counts: its side lines at |x| = `HALF_W` and its back lines at |z| = `HALF_L`
+ * (lines are in). A serve goes from the server's service court to the receiver's, diagonally across, and must land past
+ * the short service line (|z| ≥ `SHORT`).
+ *
+ * How a stroke is played (the user asked): a swipe of the finger (or the mouse) swings the racket. The faster the swipe,
+ * the harder and the further the shuttle goes (`speedOf`): a slow one drops it over the net, a quick one clears it to
+ * the back line, and one quicker still sends it out. Its sideways lean aims it left or right. A smash is played only
+ * from a jump: the jump button first, then the swipe while in the air (`jump`, `swing`).
+ */
+export const DT = 1 / 120;
+export const G = 9.81,
+  /** The shuttle's terminal speed: how fast it falls once its air drag has caught up with gravity. */
+  TERMINAL = 6.8,
+  DRAG = G / (TERMINAL * TERMINAL);
+/** The singles court: half its width, half its length, and the short service line's distance from the net. */
+export const HALF_W = 2.59,
+  HALF_L = 6.7,
+  SHORT = 1.98,
+  /** The doubles side lines and long service line, only drawn. */
+  DOUBLES_W = 3.05,
+  DOUBLES_LONG = 5.94,
+  /** The net's height at its middle, and its posts (on the doubles side lines). */
+  NET_H = 1.53,
+  POST = 3.05,
+  /** The shuttle's skirt is about this long; it is drawn cork first along its way. */
+  SHUTTLE = 0.085;
+/** A player's reach: how far across from where it stands, and the heights its racket meets (standing, and jumping above where it is). */
+export const REACH = 1.25,
+  LOW = 0.12,
+  TOP = 2.6,
+  AIR_LOW = 1.25,
+  AIR_TOP = 2.8,
+  /** A jump: its speed upward (about two thirds of a second in the air, half a metre high). */
+  JUMP = 3.3,
+  /** How long a swing looks for the shuttle once it has begun (a swipe a moment early still meets it). */
+  SWING = 0.24,
+  /** Where a player waits between strokes, from the net. */
+  BASE = 3.7,
+  /** Where a server stands, from the net, and how far from the centre line. */
+  SERVE_Z = 2.5,
+  SERVE_X = 0.95;
+/** How fast my own player runs to the shuttle (the computer's is its level's). */
+export const MY_SPEED = 4.6;
+/** The slowest and the fastest a stroke sends the shuttle off, for a swipe of power 0 and of power 1. */
+export const SLOWEST = 9,
+  FASTEST = 58,
+  /** The most a swipe's power counts for: beyond 1 the shuttle goes harder than any player would hit it, and long. */
+  MOST = 1.35;
+/** How fast a stroke of power `p` sends the shuttle: each step up in power multiplies the speed (its way grows steadily with it). */
+export const speedOf = (p: number) => SLOWEST * (FASTEST / SLOWEST) ** Math.max(0, Math.min(MOST, p));
+/** A smash's speed and how far past the net it is aimed, by the swipe's power. */
+export const smashSpeed = (p: number) => 34 + 38 * Math.max(0, Math.min(MOST, p)),
+  smashDepth = (p: number) => 1.3 + 5.1 * Math.max(0, Math.min(MOST, p));
+
+export const LEVELS = {
+  easy: { speed: 3.3, react: 0.34, error: 0.85, blunder: 0.12, whiff: 0.1, smash: 0.12, judge: 0, pace: 0.8 },
+  normal: { speed: 4.3, react: 0.22, error: 0.5, blunder: 0.05, whiff: 0.04, smash: 0.45, judge: 0.35, pace: 1 },
+  hard: { speed: 5.4, react: 0.13, error: 0.24, blunder: 0.018, whiff: 0.012, smash: 0.85, judge: 0.12, pace: 1.12 },
+};
+export type Level = keyof typeof LEVELS;
+/** Why a point ended (a move's `extra`). */
+export const WON = 0,
+  OUT = 1,
+  NET = 2,
+  FAULT = 3,
+  SMASHED = 4;
+export const WHY = ["득점", "아웃", "네트", "서브 실수", "스매싱 득점"];
+
+export interface Shuttle {
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+}
+export interface Player {
+  x: number;
+  z: number;
+  /** Height off the floor (a jump), and its upward speed. */
+  y: number;
+  vy: number;
+  /** Its running speed now (for the legs), and where it is running to. */
+  vx: number;
+  vz: number;
+  goal: { x: number; z: number };
+  /** A swing under way: when it began, how hard and which way, and whether it is a smash. */
+  swing: { at: number; power: number; yaw: number; smash: boolean } | null;
+  /** When it last struck the shuttle (the view's follow-through), and whether that was overhead. */
+  struck: number;
+  high: boolean;
+}
+export type Phase = "ready" | "flying" | "dead";
+export interface World {
+  time: number;
+  phase: Phase;
+  server: 0 | 1;
+  /** The serve's court: whether the server's score is even (served from the right court). */
+  even: boolean;
+  /** Whether the shuttle in the air is the serve, not yet returned. */
+  served: boolean;
+  /** Who struck last, whether that was a smash, and whether the shuttle has met the net since. */
+  hitter: 0 | 1;
+  smash: boolean;
+  netted: boolean;
+  shuttle: Shuttle;
+  players: [Player, Player];
+  /** Seconds since the point ended, and until the computer serves. */
+  dead: number;
+  wait: number;
+  /** The computer's plan for the shuttle coming to it: when it starts to run, whether it lets the shuttle go, and its stroke. */
+  plan: { from: number; leave: boolean; smash: boolean; miss: boolean } | null;
+  /** Where the shuttle came down last (for the view's mark). */
+  landed: { x: number; z: number; in: boolean } | null;
+  /** When the players last chose where to run (they look again a few times a second, and at once after a stroke). */
+  steered: number;
+  seed: number;
+}
+export type Happening =
+  | { kind: "hit"; side: 0 | 1; smash: boolean; strength: number }
+  | { kind: "serve"; side: 0 | 1 }
+  | { kind: "whiff"; side: 0 | 1 }
+  | { kind: "jump"; side: 0 | 1 }
+  | { kind: "net" }
+  | { kind: "land"; in: boolean; strength: number }
+  | { kind: "point"; to: 0 | 1; why: number };
+
+/** A draw in [0, 1) from the world's own sequence (so that a seeded world plays the same every time). */
+export function draw(world: World) {
+  world.seed = (world.seed * 16807) % 2147483647;
+  return (world.seed - 1) / 2147483646;
+}
+const gauss = (world: World) => (draw(world) + draw(world) + draw(world) - 1.5) * 1.41;
+const forward = (side: 0 | 1) => (side === 0 ? -1 : 1);
+/** Which half a place across the court is on. */
+export const sideOf = (z: number): 0 | 1 => (z >= 0 ? 0 : 1);
+const player = (side: 0 | 1): Player => {
+  const z = side === 0 ? BASE : -BASE;
+  return { x: 0, z, y: 0, vy: 0, vx: 0, vz: 0, goal: { x: 0, z }, swing: null, struck: -9, high: false };
+};
+export function createWorld(seed = 1): World {
+  return {
+    time: 0,
+    phase: "dead",
+    server: 0,
+    even: true,
+    served: false,
+    hitter: 0,
+    smash: false,
+    netted: false,
+    shuttle: { x: 0, y: 1, z: BASE, vx: 0, vy: 0, vz: 0 },
+    players: [player(0), player(1)],
+    dead: 0,
+    wait: 0,
+    plan: null,
+    landed: null,
+    steered: -9,
+    seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
+  };
+}
+/** The x of a side's service court: its right one when `even`, as that side faces the net. */
+export const courtX = (side: 0 | 1, even: boolean) => (side === 0 ? 1 : -1) * (even ? 1 : -1) * SERVE_X;
+/** Where a server's shuttle is held, under its racket: a little in front of it and to its right. */
+export function held(world: World): Shuttle {
+  const p = world.players[world.server],
+    f = forward(world.server);
+  return { x: p.x - f * 0.28, y: 0.95, z: p.z + f * 0.42, vx: 0, vy: 0, vz: 0 };
+}
+/**
+ * The next point is served by `server` from its right court when `even` (its score is even), its left one otherwise:
+ * both players stand in their service courts, diagonally across, and the shuttle waits in the server's hand.
+ */
+export function serve(world: World, server: 0 | 1, even: boolean) {
+  world.phase = "ready";
+  world.server = server;
+  world.even = even;
+  world.served = false;
+  world.smash = false;
+  world.netted = false;
+  world.plan = null;
+  world.landed = null;
+  world.dead = 0;
+  world.wait = 1.1 + draw(world) * 0.6;
+  for (const side of [0, 1] as const) {
+    const p = world.players[side],
+      x = courtX(side, even),
+      z = (side === server ? SERVE_Z : SERVE_Z + 0.9) * (side === 0 ? 1 : -1);
+    Object.assign(p, { x, z, y: 0, vy: 0, vx: 0, vz: 0, goal: { x, z }, swing: null });
+  }
+  world.shuttle = held(world);
+}
+
+/** One slice of the shuttle's flight under gravity and its drag. */
+function fly(s: Shuttle, dt: number) {
+  const speed = Math.hypot(s.vx, s.vy, s.vz),
+    k = DRAG * speed;
+  s.vx -= k * s.vx * dt;
+  s.vy -= (G + k * s.vy) * dt;
+  s.vz -= k * s.vz * dt;
+  s.x += s.vx * dt;
+  s.y += s.vy * dt;
+  s.z += s.vz * dt;
+}
+/** Where a shuttle sent off as `s` comes down, and whether it meets the net on its way. */
+export function landing(from: Shuttle, dt = DT * 2): { x: number; z: number; t: number; net: boolean } {
+  const s = { ...from };
+  let t = 0;
+  while (s.y > 0 && t < 8) {
+    const z0 = s.z,
+      y0 = s.y;
+    fly(s, dt);
+    t += dt;
+    if (z0 * s.z < 0) {
+      const share = z0 / (z0 - s.z),
+        y = y0 + (s.y - y0) * share;
+      if (y < NET_H && Math.abs(s.x) < POST) return { x: s.x, z: 0, t, net: true };
+    }
+  }
+  return { x: s.x, z: s.z, t, net: false };
+}
+/** The way the shuttle in the air will go from here: a point every `every` seconds until it comes down. */
+export function path(world: World, every = DT * 3) {
+  const s = { ...world.shuttle },
+    points: { t: number; x: number; y: number; z: number }[] = [];
+  let t = 0;
+  while (s.y > 0 && t < 6) {
+    const z0 = s.z,
+      y0 = s.y;
+    fly(s, every);
+    t += every;
+    if (z0 * s.z < 0 && Math.abs(s.x) < POST) {
+      const y = y0 + ((s.y - y0) * z0) / (z0 - s.z);
+      if (y < NET_H) break;
+    }
+    points.push({ t, x: s.x, y: Math.max(0, s.y), z: s.z });
+  }
+  return points;
+}
+/** A shuttle sent from `at` with `speed` at `elevation` (radians up) toward the heading `dir` (a unit vector across the floor). */
+const launch = (at: Shuttle, speed: number, elevation: number, dir: { x: number; z: number }): Shuttle => ({
+  x: at.x,
+  y: at.y,
+  z: at.z,
+  vx: speed * Math.cos(elevation) * dir.x,
+  vy: speed * Math.sin(elevation),
+  vz: speed * Math.cos(elevation) * dir.z,
+});
+/** How far along the floor a shuttle sent off as `s` comes down from where it is (the net counts as where it stops). */
+const reachOf = (s: Shuttle) => {
+  const end = landing(s);
+  return Math.hypot(end.x - s.x, end.z - s.z);
+};
+/** The speed (at a fixed elevation) that lands the shuttle `distance` away, between `low` and `high`. */
+function speedFor(at: Shuttle, elevation: number, dir: { x: number; z: number }, distance: number, low = 4, high = 120) {
+  for (let k = 0; k < 26; k++) {
+    const mid = (low + high) / 2;
+    if (reachOf(launch(at, mid, elevation, dir)) < distance) low = mid;
+    else high = mid;
+  }
+  return (low + high) / 2;
+}
+/** The elevation (at a fixed speed) that lands the shuttle `distance` away: a smash, aimed downward over the net. */
+function elevationFor(at: Shuttle, speed: number, dir: { x: number; z: number }, distance: number) {
+  let low = -1.1,
+    high = 0.25;
+  for (let k = 0; k < 26; k++) {
+    const mid = (low + high) / 2;
+    if (reachOf(launch(at, speed, mid, dir)) < distance) low = mid;
+    else high = mid;
+  }
+  return (low + high) / 2;
+}
+/** How high a stroke sends the shuttle up from where it is met: a low shuttle is lifted, a high one hit flatter. */
+export const elevationOf = (height: number) => (Math.max(18, Math.min(56, 30 + (1.7 - height) * 20)) * Math.PI) / 180;
+const heading = (side: 0 | 1, yaw: number) => ({ x: Math.sin(yaw), z: forward(side) * Math.cos(yaw) });
+
+/** Whether the shuttle is where `side`'s racket can meet it now (on its own half, within reach, at a height its stance allows). */
+export function inReach(world: World, side: 0 | 1) {
+  const p = world.players[side],
+    s = world.shuttle;
+  if (world.phase !== "flying" || world.hitter === side || sideOf(s.z) !== side || world.netted) return false;
+  const across = Math.hypot(s.x - p.x, s.z - p.z),
+    air = p.y > 0.04,
+    low = air ? p.y + AIR_LOW : LOW,
+    top = air ? p.y + AIR_TOP : TOP;
+  return across <= REACH && s.y >= low && s.y <= top;
+}
+/** Whether `side` is in the air now. */
+export const airborne = (world: World, side: 0 | 1) => world.players[side].y > 0.04 || world.players[side].vy > 0;
+
+/** A swing by `side` (a swipe of mine): `power` from its speed, `yaw` its lean across (radians, toward +x: my right). */
+export function swing(world: World, side: 0 | 1, power: number, yaw: number) {
+  if (world.phase === "ready") {
+    if (world.server !== side) return false;
+    serveStroke(world, side, power, yaw);
+    return true;
+  }
+  if (world.phase !== "flying") return false;
+  world.players[side].swing = { at: world.time, power, yaw, smash: airborne(world, side) };
+  return true;
+}
+/** A jump by `side` (the jump button), from the floor during a rally: in the air, a swing is a smash. */
+export function jump(world: World, side: 0 | 1) {
+  const p = world.players[side];
+  if (world.phase !== "flying" || airborne(world, side)) return false;
+  p.vy = JUMP;
+  return true;
+}
+/** The serve: an underarm stroke from the server's hand, diagonally across into the receiver's service court. */
+function serveStroke(world: World, side: 0 | 1, power: number, yaw: number) {
+  const p = Math.max(0, Math.min(MOST, power)),
+    at = held(world),
+    box = { x: -Math.sign(courtX(side, world.even)) * 1.3, z: (forward(side) * (SHORT + HALF_L)) / 2 },
+    base = Math.atan2(box.x - at.x, Math.abs(box.z - at.z)),
+    elevation = ((20 + 32 * Math.min(1, p)) * Math.PI) / 180;
+  world.shuttle = launch(at, speedOf(p * 0.86), elevation, heading(side, base + yaw * 0.6));
+  begin(world, side, false, true);
+}
+/** The shuttle has just been struck by `side`. */
+function begin(world: World, side: 0 | 1, smash: boolean, served = false) {
+  world.phase = "flying";
+  world.hitter = side;
+  world.smash = smash;
+  world.served = served;
+  world.netted = false;
+  const p = world.players[side];
+  p.swing = null;
+  p.struck = world.time;
+  p.high = world.shuttle.y > 1.6;
+  world.plan = null;
+}
+/** `side` meets the shuttle with the swing it has under way. */
+function strike(world: World, side: 0 | 1, power: number, yaw: number, smash: boolean) {
+  const s = world.shuttle,
+    p = Math.max(0, Math.min(MOST, power)),
+    dir = heading(side, yaw);
+  if (smash) {
+    // Aimed down over the net, as far past it as the swipe was quick.
+    const distance = Math.abs(s.z) + smashDepth(p),
+      speed = smashSpeed(p);
+    world.shuttle = launch(s, speed, elevationFor(s, speed, dir, distance / Math.cos(yaw)), dir);
+  } else world.shuttle = launch(s, speedOf(p), elevationOf(s.y), dir);
+  begin(world, side, smash);
+}
+
+/**
+ * The computer's stroke at the shuttle it meets: a smash when it is high enough and the level dares, else a clear to
+ * my back line, a drop over the net or a drive between, aimed away from where I stand; with its level's error, and now
+ * and then a blunder.
+ */
+function computerStroke(world: World, level: Level) {
+  const L = LEVELS[level],
+    s = world.shuttle,
+    me = world.players[0],
+    smash = !!world.plan?.smash && s.y > 1.9;
+  let tx = -Math.sign(me.x || draw(world) - 0.5) * (0.7 + draw(world) * 1.55),
+    tz: number;
+  if (smash) tz = 2.4 + draw(world) * 3.2;
+  else {
+    const r = draw(world),
+      deep = me.z > 4.2,
+      near = me.z < 3;
+    tz = r < (deep ? 0.55 : near ? 0.15 : 0.3) ? 2.1 + draw(world) * 1.1 : r < 0.82 ? 5.3 + draw(world) * 1.1 : 3.6 + draw(world) * 1.4;
+  }
+  tx += gauss(world) * L.error;
+  tz += gauss(world) * L.error;
+  if (draw(world) < L.blunder) {
+    // A blunder: long, wide, or short into the net.
+    const r = draw(world);
+    if (r < 0.4) tz = HALF_L + 0.4 + draw(world);
+    else if (r < 0.7) tx = Math.sign(tx || 1) * (HALF_W + 0.3 + draw(world) * 0.6);
+    else tz = 0.4;
+  }
+  const dx = tx - s.x,
+    dz = tz - s.z,
+    distance = Math.hypot(dx, dz),
+    dir = { x: dx / distance, z: dz / distance };
+  if (smash) {
+    const speed = (34 + 18 * draw(world)) * L.pace;
+    world.shuttle = launch(s, speed, elevationFor(s, speed, dir, distance), dir);
+  } else {
+    // A drop goes up gently and falls short; a clear goes high; a drive flat. Raised if it would meet the net.
+    let elevation = tz < 3.3 ? 0.42 : tz > 5 ? 0.72 : 0.28;
+    if (s.y < 1.2) elevation += 0.3;
+    for (let k = 0; k < 4; k++) {
+      const speed = speedFor(s, elevation, dir, distance),
+        next = launch(s, speed, elevation, dir);
+      if (!landing(next).net || k === 3) {
+        world.shuttle = next;
+        break;
+      }
+      elevation += 0.14;
+    }
+  }
+  begin(world, 1, smash);
+}
+/** The computer serves: mostly short over the net into my service court, sometimes long to its back. */
+function computerServe(world: World, level: Level) {
+  const L = LEVELS[level],
+    at = held(world),
+    long = draw(world) < 0.4,
+    tx = -Math.sign(courtX(1, world.even)) * (0.8 + draw(world) * 1.1) + gauss(world) * L.error * 0.35,
+    tz = (long ? 6.0 + draw(world) * 0.5 : SHORT + 0.35 + draw(world) * 0.5) + gauss(world) * L.error * 0.3,
+    dx = tx - at.x,
+    dz = tz - at.z,
+    distance = Math.hypot(dx, dz),
+    dir = { x: dx / distance, z: dz / distance },
+    elevation = long ? 0.92 : 0.36;
+  world.shuttle = launch(at, speedFor(at, elevation, dir, distance), elevation, dir);
+  begin(world, 1, false, true);
+}
+
+/**
+ * Where `side` runs to meet the shuttle coming to it: the first place on its way, low enough to reach, that it can get to
+ * in time (a little behind the shuttle, so that it comes down in front of the racket); where it will come down if there
+ * is none. For a smash (`high`) the place where it passes the jump's reach instead.
+ */
+export function meeting(world: World, side: 0 | 1, speed: number, high = false) {
+  const p = world.players[side],
+    way = path(world).filter((q) => sideOf(q.z) === side && Math.abs(q.z) > 0.35),
+    behind = (q: { x: number; z: number }) => ({ x: q.x, z: q.z - forward(side) * 0.3 });
+  for (const q of way) {
+    if (q.y > (high ? TOP + 0.35 : TOP - 0.3)) continue;
+    const to = behind(q),
+      far = Math.max(0, Math.hypot(to.x - p.x, to.z - p.z) - REACH * 0.45);
+    if (far / speed <= q.t) return to;
+  }
+  const last = way[way.length - 1];
+  return last ? behind(last) : null;
+}
+/** Keeps a player on its own half, off the net. */
+function keepIn(side: 0 | 1, at: { x: number; z: number }) {
+  const z = side === 0 ? Math.max(0.5, Math.min(HALF_L + 1.4, at.z)) : Math.min(-0.5, Math.max(-HALF_L - 1.4, at.z));
+  return { x: Math.max(-HALF_W - 1, Math.min(HALF_W + 1, at.x)), z };
+}
+/** Runs a player toward its goal: quick to start, at most `most` metres a second. */
+function run(p: Player, most: number, dt: number) {
+  const dx = p.goal.x - p.x,
+    dz = p.goal.z - p.z,
+    far = Math.hypot(dx, dz),
+    want = Math.min(most, far * 6),
+    wx = far > 1e-4 ? (dx / far) * want : 0,
+    wz = far > 1e-4 ? (dz / far) * want : 0,
+    a = 22 * dt;
+  p.vx += Math.max(-a, Math.min(a, wx - p.vx));
+  p.vz += Math.max(-a, Math.min(a, wz - p.vz));
+  p.x += p.vx * dt;
+  p.z += p.vz * dt;
+  if (p.y > 0 || p.vy > 0) {
+    p.y += p.vy * dt;
+    p.vy -= G * dt;
+    if (p.y <= 0) p.y = p.vy = 0;
+  }
+}
+/** Where each player is running to now: to meet a shuttle coming to it, else back to its waiting place. */
+function steer(world: World, level: Level) {
+  const L = LEVELS[level],
+    look = world.time - world.steered >= 0.05 || world.time - Math.max(world.players[0].struck, world.players[1].struck) < DT * 1.5;
+  if (look) world.steered = world.time;
+  for (const side of [0, 1] as const) {
+    const p = world.players[side],
+      coming = world.phase === "flying" && world.hitter !== side && !world.netted;
+    if (world.phase === "ready") continue;
+    if (!coming) {
+      // After its stroke a player goes back to the middle of its half.
+      if (world.time - p.struck > 0.15) p.goal = { x: p.x * 0.3, z: side === 0 ? BASE : -BASE };
+      continue;
+    }
+    if (side === 1) {
+      if (!world.plan) {
+        // The computer reads the stroke: it lets a shuttle go that it judges out, and decides whether to smash it.
+        const end = landing(world.shuttle),
+          out = Math.abs(end.x) - HALF_W > L.judge || Math.abs(end.z) - HALF_L > L.judge,
+          high = path(world).some((q) => q.y > 3.2 && sideOf(q.z) === 1);
+        world.plan = { from: world.time + L.react, leave: L.judge > 0 && out && !end.net, smash: high && draw(world) < L.smash, miss: draw(world) < L.whiff };
+      }
+      if (world.time < world.plan.from) continue;
+      if (world.plan.leave) {
+        p.goal = { x: p.x, z: p.z };
+        continue;
+      }
+    }
+    if (!look) continue;
+    const to = meeting(world, side, side === 0 ? MY_SPEED : L.speed, side === 1 && !!world.plan?.smash);
+    if (to) p.goal = keepIn(side, to);
+  }
+}
+
+/** The point is over: `to` wins it, for `why`. */
+function end(world: World, to: 0 | 1, why: number, out: Happening[]) {
+  world.phase = "dead";
+  world.dead = 0;
+  for (const p of world.players) p.swing = null;
+  out.push({ kind: "point", to, why });
+}
+/** Whether a serve came down in the receiver's service court (diagonally across from the server's). */
+export function goodServe(world: World, x: number, z: number) {
+  const receiver = (1 - world.server) as 0 | 1,
+    across = -Math.sign(courtX(world.server, world.even)),
+    depth = receiver === 0 ? z : -z;
+  return depth >= SHORT - 0.02 && depth <= HALF_L + 0.02 && Math.abs(x) <= HALF_W + 0.02 && x * across >= -0.02;
+}
+
+/** One slice of the court's time. */
+export function step(world: World, level: Level): Happening[] {
+  const out: Happening[] = [],
+    L = LEVELS[level];
+  world.time += DT;
+  if (world.phase === "dead") {
+    world.dead += DT;
+    if (world.shuttle.y > 0) {
+      fly(world.shuttle, DT);
+      if (world.shuttle.y <= 0) world.shuttle.y = 0;
+    }
+  }
+  if (world.phase === "ready") {
+    world.shuttle = held(world);
+    if (world.server === 1) {
+      world.wait -= DT;
+      if (world.wait <= 0) {
+        computerServe(world, level);
+        out.push({ kind: "serve", side: 1 }, { kind: "hit", side: 1, smash: false, strength: 0.35 });
+      }
+    }
+  }
+  steer(world, level);
+  for (const side of [0, 1] as const) run(world.players[side], side === 0 ? MY_SPEED : L.speed, DT);
+  if (world.phase !== "flying") return out;
+  const s = world.shuttle,
+    z0 = s.z,
+    y0 = s.y;
+  fly(s, DT);
+  // Through the plane of the net: below its top (and between its posts) it is caught there and falls on the striker's side.
+  if (z0 * s.z < 0 && !world.netted) {
+    const share = z0 / (z0 - s.z),
+      y = y0 + (s.y - y0) * share;
+    if (y < NET_H && Math.abs(s.x) < POST) {
+      world.netted = true;
+      s.z = Math.sign(z0) * 0.04;
+      s.vx *= 0.1;
+      s.vz = 0;
+      s.vy = Math.min(0, s.vy) * 0.2;
+      out.push({ kind: "net" });
+    }
+  }
+  if (s.y <= 0) {
+    s.y = 0;
+    const inside = Math.abs(s.x) <= HALF_W + 0.02 && Math.abs(s.z) <= HALF_L + 0.02,
+      hitter = world.hitter,
+      other = (1 - hitter) as 0 | 1;
+    world.landed = { x: s.x, z: s.z, in: inside };
+    out.push({ kind: "land", in: inside, strength: Math.min(1, Math.hypot(s.vx, s.vy, s.vz) / 8) });
+    if (world.netted) end(world, other, world.served ? FAULT : NET, out);
+    else if (world.served) end(world, goodServe(world, s.x, s.z) ? hitter : other, goodServe(world, s.x, s.z) ? WON : FAULT, out);
+    else if (sideOf(s.z) === hitter) end(world, other, NET, out);
+    else if (inside) end(world, hitter, world.smash ? SMASHED : WON, out);
+    else end(world, other, OUT, out);
+    return out;
+  }
+  // The rackets: my swing meets the shuttle if it comes within reach before the swing is over; the computer swings by itself.
+  const me = world.players[0];
+  if (me.swing) {
+    if (inReach(world, 0)) {
+      const { power, yaw, smash } = me.swing;
+      strike(world, 0, power, yaw, smash);
+      out.push({ kind: "hit", side: 0, smash, strength: Math.min(1, Math.hypot(world.shuttle.vx, world.shuttle.vy, world.shuttle.vz) / 60) });
+    } else if (world.time - me.swing.at > SWING && !(me.swing.smash && airborne(world, 0))) {
+      // (A swing begun in the air waits for the shuttle until the jump comes down: the jump, then the swipe, then the smash.)
+      me.swing = null;
+      out.push({ kind: "whiff", side: 0 });
+    }
+  }
+  const them = world.players[1],
+    plan = world.plan;
+  if (world.phase === "flying" && world.hitter === 0 && plan && !plan.leave && world.time >= plan.from) {
+    // A smash is played from a jump, begun as the shuttle comes down toward the jump's reach above the computer.
+    if (plan.smash && !airborne(world, 1) && s.vy < 0 && s.y < TOP + 1.3 && s.y > TOP && Math.hypot(s.x - them.x, s.z - them.z) < REACH) {
+      them.vy = JUMP;
+      out.push({ kind: "jump", side: 1 });
+    }
+    const wanted = plan.smash && airborne(world, 1) ? true : s.y < TOP - 0.25 || s.vy < 0;
+    if (inReach(world, 1) && wanted) {
+      if (plan.miss) {
+        // A misjudged stroke: the racket goes through, the shuttle on past it.
+        world.plan = { ...plan, leave: true };
+        them.struck = world.time;
+        out.push({ kind: "whiff", side: 1 });
+      } else {
+        if (!airborne(world, 1)) world.plan = { ...plan, smash: false };
+        computerStroke(world, level);
+        out.push({ kind: "hit", side: 1, smash: world.smash, strength: Math.min(1, Math.hypot(world.shuttle.vx, world.shuttle.vy, world.shuttle.vz) / 60) });
+      }
+    }
+  }
+  return out;
+}

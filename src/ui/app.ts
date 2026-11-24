@@ -49,6 +49,7 @@ import { whackConfig } from "../games/whack/config";
 import { tictactoeConfig } from "../games/tictactoe/config";
 import { airHockeyConfig } from "../games/airhockey/config";
 import { tableTennisConfig } from "../games/pingpong/config";
+import { badmintonConfig } from "../games/badminton/config";
 import { basketballConfig } from "../games/basketball/config";
 import { clawConfig } from "../games/claw/config";
 import { foxGeeseConfig } from "../games/foxgeese/config";
@@ -239,6 +240,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "tic-tac-toe": { config: tictactoeConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   "air-hockey": { config: airHockeyConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "table-tennis": { config: tableTennisConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  badminton: { config: badmintonConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   basketball: { config: basketballConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "claw-machine": { config: clawConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "fox-and-geese": { config: foxGeeseConfig, options: { mode: "ai", variant: "geese", level: "normal" } },
@@ -481,6 +483,7 @@ type GameSelection =
   | "tic-tac-toe"
   | "air-hockey"
   | "table-tennis"
+  | "badminton"
   | "basketball"
   | "claw-machine"
   | "fox-and-geese"
