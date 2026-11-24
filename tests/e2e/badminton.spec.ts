@@ -41,7 +41,8 @@ test("badminton: a swipe serves, the keys strike, the jump button jumps, and the
         await page.locator(".bd-jump").dispatchEvent("pointerdown");
         await expect.poll(async () => Number(((await canvas.getAttribute("data-me")) ?? "0,0").split(",")[1]), { timeout: 3000 }).toBeGreaterThan(0);
         jumped = true;
-      } else if (Math.hypot(s[0] - me[0], s[2] - me[2]) < 2.2) await page.keyboard.press("ArrowUp");
+      // Once a stroke is proved, the shuttle is left to fall, so that the points come (a rally of the slow shuttle is long).
+      } else if (!struck && Math.hypot(s[0] - me[0], s[2] - me[2]) < 2.2) await page.keyboard.press("ArrowUp");
     }
     if (d.hitter === "0" && d.phase === "flying" && Number(await canvas.getAttribute("data-swung")) > 1) struck = true;
     await page.waitForTimeout(40);

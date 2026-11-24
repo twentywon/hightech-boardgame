@@ -73,7 +73,7 @@ describe("badminton court", () => {
     for (const from of [{ x: 0, y: 2, z: 3.7 }, { x: -2, y: 0.6, z: 1.5 }, { x: 2.2, y: 2.4, z: 6.2 }]) {
       let last = 0,
         lastSpeed = 0;
-      for (const p of [0, 0.3, 0.6, 0.85, 1.1, 1.3]) {
+      for (const p of [0, 0.3, 0.6, 0.85, 1.1, 1.3, 1.55]) {
         const { end, speed } = stroke(p, 0, from);
         expect(end.net).toBe(false);
         expect(end.z).toBeLessThan(last);
@@ -84,7 +84,9 @@ describe("badminton court", () => {
         lastSpeed = speed;
       }
       // Far too hard: long over the back line.
-      expect(stroke(1.6, 0, from).end.z).toBeLessThan(-S.HALF_L);
+      // Even a very hard swipe stays inside the back line; only the hardest of all goes long.
+      expect(stroke(1.5, 0, from).end.z).toBeGreaterThanOrEqual(-S.HALF_L);
+      expect(stroke(S.MOST, 0, from).end.z).toBeLessThan(-S.HALF_L);
       // A moderate lean stays in; the most lean goes out wide.
       expect(Math.abs(stroke(0.7, 0.3, from).end.x)).toBeLessThan(S.HALF_W);
       expect(stroke(0.7, 0.3, from).end.x).toBeGreaterThan(0.5);
@@ -127,12 +129,16 @@ describe("badminton court", () => {
     w.players[0].x = 0;
     w.players[0].z = 3;
     w.plan = null;
-    w.shuttle = { x: 0.1, y: 4.5, z: 3.05, vx: 0, vy: -1, vz: 0 };
+    w.shuttle = { x: 0.1, y: 6.5, z: 3.05, vx: 0, vy: -1, vz: 0 };
     expect(S.airborne(w, 0)).toBe(false);
+    // The jump button says when: not yet while the shuttle is far above, then a jump begun now meets it.
+    expect(S.jumpNow(w)).toBe(false);
+    run(w, 3, (w) => S.jumpNow(w));
+    expect(S.jumpNow(w)).toBe(true);
     expect(S.jump(w, 0)).toBe(true);
     expect(S.airborne(w, 0)).toBe(true);
     // In the air, the swing is a smash.
-    run(w, 0.15);
+    run(w, 0.1);
     S.swing(w, 0, 0.8, 0);
     expect(w.players[0].swing?.smash).toBe(true);
     const h = run(w, 1.2, (w) => w.hitter === 0);

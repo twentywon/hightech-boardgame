@@ -5,10 +5,10 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { noZoom } from "../../engine/zoom";
 import { featherPicture, hall } from "./court";
-import { figure, pose, type Figure } from "./figure";
-import { courtCamera, liftFor, powerOf, yawOf } from "./layout";
+import { SHOULDER, aimArm, figure, pose, type Figure } from "./figure";
+import { courtCamera, dipFor, liftFor, powerOf, yawOf } from "./layout";
 import { fromRight, serverOf, type State } from "./rules";
-import { DT, HALF_L, HALF_W, MOST, SWING, WHY, airborne, createWorld, inReach, jump, path, serve, smashable, step, swing, type Happening, type Level, type World } from "./sim";
+import { DT, HALF_L, HALF_W, MOST, SWING, WHY, airborne, createWorld, inReach, jump, jumpNow, path, serve, smashable, step, swing, type Happening, type Level, type World } from "./sim";
 
 export const BADMINTON_COLORS: [string, string] = ["#e0402c", "#2a72e0"];
 /** How long the shuttle of an ended rally is left on the floor before the next serve. */
@@ -84,6 +84,8 @@ export class BadmintonView extends TableView<State> {
   private lift = 0;
   private shook = -1;
   private reachShown = 0;
+  /** Where each racket was aimed when it struck, held through the follow-through (the shuttle has gone by then). */
+  private lastAim: (T.Vector3 | null)[] = [null, null];
   /** The glow round the shuttle while my racket can reach it. */
   private halo: T.Sprite;
   /** The last power a swipe had (for the browser tests), and how many swipes swung. */
@@ -375,6 +377,24 @@ export class BadmintonView extends TableView<State> {
         high = s.y > 1.5 || airborne(w, side as 0 | 1);
       } else if (since >= 0 && since < 0.4) phase = 0.34 + (since / 0.4) * 0.66;
       pose(f, { speed: Math.hypot(p.vx, p.vz), air: p.y, swing: phase, high, dt: real, serve: serving || (since < 0.4 && w.served && w.hitter === side), lean: (side === 0 ? 1 : -1) * Math.max(-1, Math.min(1, p.vx / 4)) });
+      // The racket turns toward the shuttle as it comes near this player (low, to the side, high), and swings through
+      // that way: up from below for a low one, down from above for a high one. A serve keeps its own underarm pose.
+      if (serving) return;
+      const turned = side === 0 ? -1 : 1,
+        shoulder = new T.Vector3(p.x + turned * SHOULDER.x, p.y + SHOULDER.y, p.z),
+        coming = flying && w.hitter !== side && !w.netted,
+        near = Math.hypot(s.x - p.x, s.z - p.z),
+        weight = coming ? Math.max(0, Math.min(1, (3.6 - near) / 2.2)) : swingAt >= 0 || (since >= 0 && since < 0.4) ? 1 : 0,
+        to = new T.Vector3(s.x - shoulder.x, s.y - shoulder.y, s.z - shoulder.z);
+      // Into the body's own frame (it faces +z; mine is turned round to face the net).
+      to.set(to.x * turned, to.y, to.z * turned);
+      if (to.lengthSq() < 1e-4) to.set(0, 1, 0.3);
+      to.normalize();
+      const toward = weight > 0 ? new T.Vector3(-0.3, 0.78, 0.55).normalize().lerp(to, weight).normalize() : null;
+      // The swing: wound up while it waits for the shuttle (to about 0.4), through the shuttle at the stroke, followed through after.
+      const stroke = swingAt >= 0 ? Math.min(0.4, (swingAt / SWING) * 0.4) : since >= 0 && since < 0.4 ? 0.45 + (since / 0.4) * 0.55 : null;
+      aimArm(f, stroke !== null && since >= 0 && since < 0.4 && swingAt < 0 ? this.lastAim[side] ?? toward : toward, stroke, stroke !== null && swingAt < 0 ? p.high : s.y > 1.55 || airborne(w, side as 0 | 1));
+      if (stroke === null || swingAt >= 0) this.lastAim[side] = toward?.clone() ?? null;
     });
     // My reach: a glow round the shuttle while my racket can meet it; at the easiest level, where it will come down.
     const me = w.players[0],
@@ -402,7 +422,7 @@ export class BadmintonView extends TableView<State> {
     this.eye.x += (me.x - this.eye.x) * ease;
     this.eye.z += (me.z - this.eye.z) * ease;
     this.eye.y += (me.y - this.eye.y) * (real > 0 ? 1 - Math.exp(-real * 20) : 1);
-    const toward = flying && w.hitter === 1 && s.z > -1 ? liftFor(s.y) : 0;
+    const toward = flying && w.hitter === 1 && s.z > -1 ? (s.y >= 1.5 ? liftFor(s.y) : dipFor(s.y, Math.hypot(s.x - me.x, s.z - me.z))) : 0;
     this.lift += (toward - this.lift) * (real > 0 ? 1 - Math.exp(-real * 4) : 1);
     const since = (now - this.shook) / 1000,
       shake = this.shook >= 0 && since < 0.3 ? (1 - since / 0.3) * 0.05 : 0;
@@ -422,10 +442,12 @@ export class BadmintonView extends TableView<State> {
     // The word over the court: my serve; or, for a shuttle coming high over me, the jump that smashes it.
     const mine = w.phase === "ready" && w.server === 0,
       high = this.running() && smashable(w) && !airborne(w, 0);
-    this.tip.textContent = mine ? "화면을 위로 밀어 서브하세요 · 빠를수록 멀리 갑니다" : "높이 떴습니다! 점프하고 밀면 스매싱";
+    // The jump button pulses only when a jump begun now meets the shuttle in the air (the moment for the smash).
+    const now_ = high && jumpNow(w);
+    this.tip.textContent = mine ? "화면을 위로 밀어 서브하세요 · 빠를수록 멀리 갑니다" : now_ ? "지금 점프! 그리고 밀면 스매싱" : "높이 떴습니다! 점프 버튼이 깜박이면 뛰세요";
     this.tip.hidden = !(this.running() && (mine || high)) || capturing();
     const canJump = this.running() && flying && !airborne(w, 0);
-    this.jumpButton.classList.toggle("hint", high && !capturing());
+    this.jumpButton.classList.toggle("hint", now_ && !capturing());
     this.jumpButton.classList.toggle("on", airborne(w, 0));
     this.jumpButton.classList.toggle("off", !canJump && !airborne(w, 0));
     this.jumpButton.hidden = capturing() || !this.state || this.state.winner !== null;
@@ -438,6 +460,7 @@ export class BadmintonView extends TableView<State> {
     data.hitter = String(w.hitter);
     data.reach = can ? "1" : "0";
     data.smashable = high ? "1" : "0";
+    data.jumpnow = now_ ? "1" : "0";
     data.swung = String(this.swung);
     data.power = this.lastPower.toFixed(2);
   }

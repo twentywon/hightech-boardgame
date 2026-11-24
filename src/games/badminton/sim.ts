@@ -10,7 +10,7 @@
  *
  * How a stroke is played (the user asked): a swipe of the finger (or the mouse) swings the racket. The faster the swipe,
  * the harder and the further the shuttle goes (`depthOf`): a slow one drops it over the net, a quick one clears it to
- * the back line; only one far too quick sends it out, and only one leaning far to the side goes out wide (`acrossOf`). A smash is played only
+ * the back line; only the most violent flick sends it out long, and only one leaning far to the side goes out wide (`acrossOf`). A smash is played only
  * from a jump: the jump button first, then the swipe while in the air (`jump`, `swing`).
  */
 export const DT = 1 / 120;
@@ -61,12 +61,13 @@ export const speedOf = (p: number) => SLOWEST * (FASTEST / SLOWEST) ** Math.max(
  * still lands in; only past that does it run long, out over the back line.
  */
 export const DEEP = 0.85,
-  SAFE = 1.3;
+  SAFE = 1.6;
 export function depthOf(p: number) {
   const q = Math.max(0, Math.min(MOST, p));
   if (q <= DEEP) return 1.3 + (HALF_L - 1.1 - 1.3) * (q / DEEP);
-  if (q <= SAFE) return HALF_L - 1.1 + 0.85 * ((q - DEEP) / (SAFE - DEEP));
-  return HALF_L - 0.25 + (q - SAFE) * 6;
+  // Then it levels off inside the back line (the user asked that a shot almost never go long), out only at the very top.
+  if (q <= SAFE) return HALF_L - 1.1 + 0.8 * ((q - DEEP) / (SAFE - DEEP));
+  return HALF_L - 0.3 + (q - SAFE) * 9;
 }
 /**
  * Where across the far court a stroke is aimed: a little toward the side it is struck from, and across as far as the
@@ -215,8 +216,14 @@ export function serve(world: World, server: 0 | 1, even: boolean) {
 }
 
 /** One slice of the shuttle's flight under gravity and its drag. */
-function fly(s: Shuttle, dt: number) {
-  const speed = Math.hypot(s.vx, s.vy, s.vz),
+/**
+ * How fast the shuttle's flight runs against the court's clock (the user asked for a slower shuttle): every flight keeps
+ * its shape and where it comes down, and takes 1 / `PACE` as long. Its speeds are kept in the flight's own time.
+ */
+export const PACE = 0.7;
+function fly(s: Shuttle, real: number) {
+  const dt = real * PACE,
+    speed = Math.hypot(s.vx, s.vy, s.vz),
     k = DRAG * speed;
   s.vx -= k * s.vx * dt;
   s.vy -= (G + k * s.vy) * dt;
@@ -336,7 +343,7 @@ function serveStroke(world: World, side: 0 | 1, power: number, yaw: number) {
   const p = Math.max(0, Math.min(MOST, power)),
     at = held(world),
     across = -Math.sign(courtX(side, world.even)),
-    depth = p <= SAFE ? SHORT + 0.35 + (HALF_L - 0.6 - SHORT - 0.35) * Math.min(1, p / DEEP) : HALF_L - 0.6 + (p - SAFE) * 6,
+    depth = p <= SAFE ? SHORT + 0.35 + (HALF_L - 0.6 - SHORT - 0.35) * Math.min(1, p / DEEP) : HALF_L - 0.6 + (p - SAFE) * 9,
     x = across * 1.3 + (yaw / 0.5) * 1.5,
     long = Math.min(1, p / DEEP);
   aimAt(world, at, x, forward(side) * depth, 0.34 + long * 0.6);
@@ -413,12 +420,13 @@ function computerStroke(world: World, level: Level) {
     tz = r < (deep ? 0.55 : near ? 0.15 : 0.3) ? 2.1 + draw(world) * 1.1 : r < 0.82 ? 5.3 + draw(world) * 1.1 : 3.6 + draw(world) * 1.4;
   }
   tx += gauss(world) * L.error;
-  tz += gauss(world) * L.error;
+  // Its error never carries a deep shot over the back line (the user asked for few long outs); it may fall short.
+  tz = Math.min(HALF_L - 0.25, tz + gauss(world) * L.error);
   if (draw(world) < L.blunder) {
     // A blunder: long, wide, or short into the net.
     const r = draw(world);
-    if (r < 0.4) tz = HALF_L + 0.4 + draw(world);
-    else if (r < 0.7) tx = Math.sign(tx || 1) * (HALF_W + 0.3 + draw(world) * 0.6);
+    if (r < 0.15) tz = HALF_L + 0.4 + draw(world);
+    else if (r < 0.6) tx = Math.sign(tx || 1) * (HALF_W + 0.3 + draw(world) * 0.6);
     else tz = 0.4;
   }
   const dx = tx - s.x,
@@ -482,6 +490,20 @@ export function meeting(world: World, side: 0 | 1, speed: number, high = false) 
 export function smashable(world: World) {
   if (world.phase !== "flying" || world.hitter !== 1 || world.netted) return false;
   return path(world, DT * 6).some((q) => q.z > 0.8 && q.y > 3.1);
+}
+/**
+ * Whether a jump begun now would meet the shuttle: it comes within reach of my racket in the air at the jump's height
+ * while I am up (the view pulses the jump button then, so that the jump is timed for the smash).
+ */
+export function jumpNow(world: World) {
+  if (!smashable(world) || airborne(world, 0)) return false;
+  const me = world.players[0],
+    up = (2 * JUMP) / G;
+  return path(world, DT * 2).some((q) => {
+    if (q.t < 0.12 || q.t > up * 0.85 || q.z < 0.3) return false;
+    const y = JUMP * q.t - (G * q.t * q.t) / 2;
+    return q.y >= y + AIR_LOW && q.y <= y + AIR_TOP && Math.hypot(q.x - me.x, q.z - me.z) <= REACH;
+  });
 }
 /** Keeps a player on its own half, off the net. */
 function keepIn(side: 0 | 1, at: { x: number; z: number }) {

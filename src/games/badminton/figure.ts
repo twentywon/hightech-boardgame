@@ -186,3 +186,46 @@ export function pose(f: Figure, o: { speed: number; air: number; swing: number; 
   arm.rotation.set(a, 0, turn);
   f.elbow.rotation.x = bend;
 }
+
+const DOWN = new T.Vector3(0, -1, 0),
+  FORWARD = new T.Vector3(0, 0, 1),
+  SIDE = new T.Vector3(1, 0, 0);
+/** Where the racket arm's shoulder is in the body's own frame (it faces +z; the right arm is at -x). */
+export const SHOULDER = new T.Vector3(-0.215, 1.5, 0);
+/** The racket held ready: up in front and a little out to the right. */
+const READY = new T.Vector3(-0.3, 0.78, 0.55).normalize();
+const aimed = new T.Quaternion(),
+  turn = new T.Quaternion(),
+  swingTurn = new T.Quaternion(),
+  n0 = new T.Vector3(),
+  n1 = new T.Vector3(),
+  axis = new T.Vector3(),
+  way = new T.Vector3();
+/**
+ * Points the racket arm (and the racket along it) the way `toward` (a direction in the body's frame from the shoulder),
+ * its face turned to the front, and swings it through that way (the user asked that the racket turn with where the
+ * shuttle is, and strike up from below a low one): `swing` from 0 (wound up) through about 0.45 (the racket on the
+ * shuttle) to 1 (followed through), over the top and down for a high shuttle, from below and up for a low one.
+ */
+export function aimArm(f: Figure, toward: T.Vector3 | null, swing: number | null, high: boolean) {
+  way.copy(toward ?? READY).normalize();
+  aimed.setFromUnitVectors(DOWN, way);
+  // The racket's face toward the front, turning it about its own length.
+  n0.copy(FORWARD).applyQuaternion(aimed);
+  n1.copy(FORWARD).addScaledVector(way, -FORWARD.dot(way));
+  if (n1.lengthSq() > 1e-4) {
+    n1.normalize();
+    const twist = Math.atan2(axis.crossVectors(n0, n1).dot(way), n0.dot(n1));
+    turn.setFromAxisAngle(way, twist);
+    aimed.premultiply(turn);
+  }
+  if (swing !== null) {
+    // About the shoulders' line: over the top it comes from behind and goes down in front; from below, the other way.
+    const p = Math.max(0, Math.min(1, swing)),
+      delta = high ? -0.9 + p * 2.1 : 0.9 - p * 2.1;
+    swingTurn.setFromAxisAngle(SIDE, delta);
+    aimed.premultiply(swingTurn);
+  }
+  f.arm.quaternion.copy(aimed);
+  f.elbow.rotation.set(-0.12, 0, 0);
+}
