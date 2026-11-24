@@ -31,8 +31,8 @@ function seatsOf<S>(config: PointConfig<S>): SeatInfo[] {
   const list = config.net!.seats?.("") ?? [0, 1].map((p) => ({ label: config.sides[p], color: config.colors![p], kinds: ["computer" as const] }));
   return list.map((s) => ({ ...s, kind: "open", person: null }));
 }
-async function room<S>(rules: NetRules<S>, seats: SeatInfo[], guests: string[], game: string) {
-  const host = new HostRoom({ game, title: game, name: "방장", variant: "", options: {}, seats, quiet: true }, rules, "host");
+async function room<S>(rules: NetRules<S>, seats: SeatInfo[], guests: string[], game: string, variant = "") {
+  const host = new HostRoom({ game, title: game, name: "방장", variant, options: {}, seats, quiet: true }, rules, "host");
   const others: { room: GuestRoom<S>; link: Link }[] = [];
   for (const [i, name] of guests.entries()) {
     const guest = new GuestRoom<S>({ game, title: game, name, quiet: true }, rules, `guest${i}`);
@@ -224,6 +224,27 @@ describe("the other games of dice over Wi-Fi", () => {
     const { plies } = await playOut<BgState>(host, [host, guests[0].room], (s, r) => bgMove(s, "normal", r), 3000);
     expect(plies).toBeGreaterThan(80);
     expect(host.match!.toMove).toBe(NOBODY);
+  });
+
+  test("backgammon with the doubling cube on two devices: the room's variant lays the cube, a double is answered on the other device", async () => {
+    const { host, guests } = await room(rulesOf(backgammonConfig), seatsOf(backgammonConfig), ["민수"], "backgammon", "cube");
+    host.begin();
+    await settle();
+    const guest = guests[0].room;
+    expect(host.match!.state.cube).toEqual({ value: 1, owner: null });
+    expect(guest.match!.state.cube).toEqual({ value: 1, owner: null });
+    // White (the host) offers to double: the turn is the guest's, who takes; then the game is played out.
+    expect(host.play({ from: -1, to: 27, extra: -1 }, 0)).toBeNull();
+    await settle();
+    expect(host.match!.toMove).toBe(1);
+    expect(host.play({ from: -1, to: 28, extra: -1 }, 0)).not.toBeNull();
+    expect(guest.play({ from: -1, to: 28, extra: -1 })).toBeNull();
+    await settle();
+    expect(guest.match!.state.cube).toEqual({ value: 2, owner: 1 });
+    const { plies } = await playOut<BgState>(host, [host, guest], (s, r) => bgMove(s, "normal", r), 3000);
+    expect(plies).toBeGreaterThan(40);
+    expect(host.match!.toMove).toBe(NOBODY);
+    expect(host.match!.state.stake % host.match!.state.cube!.value).toBe(0);
   });
 
   test("the Royal Game of Ur on two devices, the guest's seat played by the host's computer while it is away, then resynced", async () => {

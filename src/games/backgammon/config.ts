@@ -1,23 +1,37 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { BAR, OFF, ROLL, backgammon, type State } from "./rules";
+import { BAR, CUBE_VARIANT, DOUBLE, DROP, OFF, ROLL, TAKE, backgammon, type State } from "./rules";
 import { BG_COLORS, BackgammonView, DICE_AT, spotOf } from "./view";
 
 export const backgammonConfig: PointConfig<State> = {
   game: backgammon,
   contact: (sound) => sound.wood(3),
+  // A hit checker knocked to the bar, a checker dropped into the tray, the cube turned and set down.
+  knock: (sound, kind, strength) => (kind === "disc" ? sound.knock(strength > 0.6 ? 2 : 1) : kind === "pocket" ? sound.wood(strength > 0.6 ? 4 : 2) : sound.knock(3)),
   noPanel: true,
   view: (host, quality) => new BackgammonView(host, quality),
   // Over one Wi-Fi each device plays one side; the dice are thrown by the side to move and fall as the host draws them
-  // when it takes the throw (`src/net/random.ts`). There is no doubling cube to offer.
+  // when it takes the throw (`src/net/random.ts`). The room's variant says whether the cube is played; a double is
+  // answered on the device of the side offered it (its turn by `backgammon.turn`).
   net: {},
+  variants: [
+    { value: "", label: "기본 (큐브 없이)" },
+    { value: CUBE_VARIANT, label: "더블링 큐브" },
+  ],
+  variantLabel: "규칙",
   colors: BG_COLORS,
   keyPoints: (s) => [...Array.from({ length: 24 }, (_, p) => spotOf(p, 0)), spotOf(BAR, s.turn), spotOf(OFF, s.turn), DICE_AT],
   cheer: (before, state, mode) => (state.last && state.last !== before.last && state.last.hit ? (mode === "ai" && state.last.side === 1 ? "잡혔다!" : "잡았다!") : null),
   // A roll cannot be taken back.
   noUndo: true,
   // The dice themselves are tapped: the button is kept for the keyboard only.
-  tools: [{ label: "주사위 굴리기", point: ROLL, onBoard: true }],
+  // The cube's buttons come up only in the variant with the cube, while the move is legal (the cube can be tapped too).
+  tools: [
+    { label: "주사위 굴리기", point: ROLL, onBoard: true },
+    { label: "더블 제안", point: DOUBLE, text: (s) => `더블 제안 (×${(s.cube?.value ?? 1) * 2})` },
+    { label: "받기", point: TAKE, text: (s) => `받기 (큐브 ${(s.cube?.value ?? 1) * 2})` },
+    { label: "포기", point: DROP, text: (s) => `포기 (${s.cube?.value ?? 1}점)` },
+  ],
   name: "백개먼",
   english: "Backgammon",
   number: "NO. 60 — FIVE THOUSAND YEARS OF DICE",
@@ -27,7 +41,7 @@ export const backgammonConfig: PointConfig<State> = {
   artClass: "ludo-art",
   artLabel: "백개먼 판 미리보기",
   tableLabel: "THE BACKGAMMON CASE",
-  tableNote: () => "말 15개씩 · 흰색 선공",
+  tableNote: (variant) => (variant === CUBE_VARIANT ? "말 15개씩 · 흰색 선공 · 더블링 큐브" : "말 15개씩 · 흰색 선공"),
   rulesTitle: "먼저 열다섯 개를 내보내기",
   rules:
     part(
@@ -49,8 +63,17 @@ export const backgammonConfig: PointConfig<State> = {
       ),
     ) +
     part("승부", table(["이기기", "1배"], ["개먼", "진 쪽이 한 개도 못 내보냈으면 2배"], ["백개먼", "그런데 진 쪽 말이 바나 이긴 쪽 집에 남아 있으면 3배"])) +
+    part(
+      "더블링 큐브 (규칙에서 고를 때)",
+      table(
+        ["더블 제안", "주사위를 굴리기 전에 판의 값을 두 배로 올리자고 할 수 있습니다. 큐브가 가운데 있거나 내 것일 때만 됩니다."],
+        ["받기", "판은 두 배가 되고 큐브는 받은 쪽 것이 됩니다. 다음 더블은 그쪽만 제안할 수 있습니다."],
+        ["포기", "그 자리에서 지고 큐브의 지금 값만큼 내줍니다."],
+        ["점수", "이긴 판은 큐브 값 × 1, 2(개먼), 3(백개먼)점입니다."],
+      ),
+    ) +
     part("처음이라면", notes("혼자 선 말(블롯)은 상대 말 1~12칸 앞에 두지 않는 것이 좋습니다.", "내 집에 막힌 칸을 많이 만들수록 잡힌 상대 말이 돌아오기 어렵습니다.", "말이 앞서면 부딪치지 않게 빨리 달리고, 뒤지면 칸을 지키며 잡을 기회를 기다립니다.")),
-  help: "마우스·터치: 주사위를 누르고, 금색 고리가 뜬 말과 갈 칸을 차례로 누릅니다",
+  help: "마우스·터치: 주사위나 컵을 누르고, 금색으로 빛나는 말과 갈 칸을 차례로 누릅니다",
   sides: ["흰색", "빨간색"],
   startWord: "판 앞에 앉기",
 };

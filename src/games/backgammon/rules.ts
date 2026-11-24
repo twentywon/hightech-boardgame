@@ -3,7 +3,7 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
 
 /**
- * Backgammon for two, without the doubling cube. Each side brings fifteen
+ * Backgammon for two, played without the doubling cube as always, or with it (variant `"cube"`). Each side brings fifteen
  * checkers round the 24 points into its home board and bears them off. Two
  * dice say how far; doubles are played four times; as much of a roll as can
  * be played must be played (and the larger die when only one can). A lone
@@ -15,36 +15,60 @@ import type { Level } from "../points/ai";
  * Points are 0–23 for the board's points 1–24 as side 0 counts them: side 0
  * moves down toward 0 and its home is 0–5; side 1 moves up and its home is
  * 18–23. `BAR` and `OFF` are the points of the bar and of bearing off.
+ *
+ * With the cube (`State.cube`, absent in the plain game) the side to roll may first offer to double while the cube
+ * is in the middle or its own (`DOUBLE`); the other side then answers (phase `answer`, its turn by `backgammon.turn`):
+ * it takes (`TAKE`), owns the cube at twice the value and play goes on, or it drops (`DROP`) and loses the cube's
+ * value as it stood. A game won is worth the cube's value times 1, 2 or 3.
  */
 export const BAR = 24,
   OFF = 25,
   /** The point of the dice, tapped to throw. */
-  ROLL = 26;
+  ROLL = 26,
+  /** Offering to double, taking the cube, and dropping (giving the game up at the cube's value). */
+  DOUBLE = 27,
+  TAKE = 28,
+  DROP = 29;
+/** The variant played with the doubling cube; "" (and anything else) is the plain game. */
+export const CUBE_VARIANT = "cube";
+export interface Cube {
+  value: number;
+  /** Who may double next: the owner, or either side while it lies in the middle (null). */
+  owner: 0 | 1 | null;
+}
 export interface State {
   /** How many checkers each side has on each point. */
   points: [number[], number[]];
   bar: [number, number];
   off: [number, number];
   turn: 0 | 1;
-  phase: "roll" | "move";
+  /** `answer`: a double was offered by `turn`, and the other side is to take or drop it. */
+  phase: "roll" | "move" | "answer";
   /** The dice thrown, and those still to be played. */
   dice: number[];
   left: number[];
-  last: { side: 0 | 1; from: number; to: number; hit: boolean; rolled: boolean } | null;
+  last: { side: 0 | 1; from: number; to: number; hit: boolean; rolled: boolean; cube?: "double" | "take" | "drop" } | null;
   winner: Winner;
-  /** What the win is worth: 1, 2 for a gammon, 3 for a backgammon. */
+  /** What the win is worth: 1, 2 for a gammon, 3 for a backgammon (times the cube's value when there is one). */
   stake: number;
   ply: number;
+  /** The doubling cube, only in the variant that plays with it. */
+  cube?: Cube;
 }
-export function createGame(): State {
+export function createGame(variant = ""): State {
   const points: [number[], number[]] = [new Array(24).fill(0), new Array(24).fill(0)];
   // Side 0: two on its 24-point, five on its 13, three on its 8, five on its 6.
   for (const [p, n] of [[23, 2], [12, 5], [7, 3], [5, 5]]) {
     points[0][p] = n;
     points[1][23 - p] = n;
   }
-  return { points, bar: [0, 0], off: [0, 0], turn: 0, phase: "roll", dice: [], left: [], last: null, winner: null, stake: 1, ply: 0 };
+  const state: State = { points, bar: [0, 0], off: [0, 0], turn: 0, phase: "roll", dice: [], left: [], last: null, winner: null, stake: 1, ply: 0 };
+  return variant === CUBE_VARIANT ? { ...state, cube: { value: 1, owner: null } } : state;
 }
+/** Whether the side to roll may offer to double now. */
+export const canDouble = (s: State) => !!s.cube && s.phase === "roll" && s.winner === null && (s.cube.owner === null || s.cube.owner === s.turn) && s.cube.value < 64;
+/** The side whose move it is: the roller, or the side answering a double. */
+export const mover = (s: State): 0 | 1 => (s.phase === "answer" ? ((1 - s.turn) as 0 | 1) : s.turn);
 const dir = (side: number) => (side === 0 ? -1 : 1);
 /** How far a checker of `side` still has to go from point `p` (25 from the bar). */
 const distanceOf = (side: number, p: number) => (p === BAR ? 25 : side === 0 ? p + 1 : 24 - p);
@@ -122,7 +146,8 @@ export function plays(s: State): [number, number, number][][] {
 }
 export function moves(s: State): Move[] {
   if (s.winner !== null) return [];
-  if (s.phase === "roll") return [{ from: -1, to: ROLL, extra: -1 }];
+  if (s.phase === "answer") return [TAKE, DROP].map((to) => ({ from: -1, to, extra: -1 }));
+  if (s.phase === "roll") return canDouble(s) ? [{ from: -1, to: ROLL, extra: -1 }, { from: -1, to: DOUBLE, extra: -1 }] : [{ from: -1, to: ROLL, extra: -1 }];
   const seen = new Set<string>(),
     out: Move[] = [];
   for (const q of plays(s)) {
@@ -146,7 +171,16 @@ function endTurn(s: State): State {
 export function play(state: State, move: Move, random: Random = cryptoRandom): State | null {
   if (state.winner !== null || move.extra !== -1) return null;
   const side = state.turn;
+  if (state.phase === "answer") {
+    const cube = state.cube!,
+      answerer = (1 - side) as 0 | 1,
+      last = { side: answerer, from: -1, hit: false, rolled: false };
+    if (move.to === TAKE) return { ...state, phase: "roll", cube: { value: cube.value * 2, owner: answerer }, ply: state.ply + 1, last: { ...last, to: TAKE, cube: "take" } };
+    if (move.to === DROP) return { ...state, phase: "roll", winner: side, stake: cube.value, ply: state.ply + 1, last: { ...last, to: DROP, cube: "drop" } };
+    return null;
+  }
   if (state.phase === "roll") {
+    if (move.to === DOUBLE && canDouble(state)) return { ...state, phase: "answer", ply: state.ply + 1, last: { side, from: -1, to: DOUBLE, hit: false, rolled: false, cube: "double" } };
     if (move.to !== ROLL) return null;
     const a = 1 + (Math.floor(random() * 6) % 6),
       b = 1 + (Math.floor(random() * 6) % 6),
@@ -165,7 +199,7 @@ export function play(state: State, move: Move, random: Random = cryptoRandom): S
     const other = 1 - side,
       // The loser has borne nothing off: a gammon; and with a checker on the bar or in the winner's home, a backgammon.
       caught = next.bar[other] > 0 || next.points[other].some((n, p) => n > 0 && home(side, p)),
-      stake = next.off[other] > 0 ? 1 : caught ? 3 : 2;
+      stake = (next.off[other] > 0 ? 1 : caught ? 3 : 2) * (next.cube?.value ?? 1);
     return { ...next, winner: side, stake, phase: "roll", left: [] };
   }
   return left.length && plays(next).length ? next : endTurn(next);
@@ -195,9 +229,56 @@ export function judge(s: State, side: 0 | 1) {
   }
   return race * 0.12 + made * 1.4 + prime * 1.1 - blots * 1.8 + s.off[side] * 1.5 + s.bar[other] * 3 - s.bar[side] * 3;
 }
+/** Whether the two sides have passed each other: nothing can be hit any more and it is a pure race. */
+export function racing(s: State) {
+  let back = s.bar[0] ? 24 : -1,
+    front = s.bar[1] ? -1 : 24;
+  for (let p = 0; p < 24; p++) {
+    if (s.points[0][p]) back = Math.max(back, p);
+    if (s.points[1][p]) front = Math.min(front, p);
+  }
+  return back < front;
+}
+/**
+ * The chance that the side to roll (`s.turn`) wins, as the computer reckons it before throwing. Both curves were
+ * fitted to 1500 games of the computer against itself: in a race the lead in pips (with a few for being on roll)
+ * against the length of the race, otherwise the difference of `judge`.
+ */
+export function winChance(s: State) {
+  const side = s.turn,
+    other = (1 - side) as 0 | 1,
+    logistic = (x: number) => 1 / (1 + Math.exp(-x));
+  if (racing(s)) {
+    const mine = pips(s, side),
+      theirs = pips(s, other);
+    return logistic((1.43 * (theirs - mine + 4)) / Math.sqrt(mine + theirs) - 0.27);
+  }
+  return logistic(0.12 + 0.135 * (judge(s, side) - judge(s, other)));
+}
+/**
+ * The computer's answer to the cube: whether to offer a double now (as the side to roll), or to take one offered.
+ * It doubles once it is a clear favourite (a little more to redouble), but not when it is so far ahead in a fight that
+ * a gammon is likely (it plays on for it); it takes while it keeps about a quarter of the chances. The easy level
+ * judges loosely.
+ */
+export function cubeAction(s: State, level: Level, random: Random = Math.random): Move | null {
+  const loose = level === "easy" ? (random() - 0.5) * 0.24 : 0;
+  if (s.phase === "answer") {
+    const mine = 1 - winChance(s),
+      need = (racing(s) ? 0.22 : 0.25) + loose;
+    return { from: -1, to: mine >= need ? TAKE : DROP, extra: -1 };
+  }
+  if (!canDouble(s)) return null;
+  const p = winChance(s),
+    race = racing(s),
+    floor = (s.cube!.owner === null ? 0.68 : 0.72) + (race ? 0.01 : 0) + loose,
+    tooGood = race ? p > 0.985 && s.off[1 - s.turn] === 0 : p > 0.88;
+  return p >= floor && !tooGood ? { from: -1, to: DOUBLE, extra: -1 } : null;
+}
 /** The computer's next checker: the first step of the play of its whole roll that leaves the best position. */
 export function chooseMove(s: State, level: Level, random: Random = Math.random): Move | null {
-  if (s.phase === "roll") return { from: -1, to: ROLL, extra: -1 };
+  if (s.phase === "answer") return cubeAction(s, level, random);
+  if (s.phase === "roll") return (s.cube && cubeAction(s, level, random)) || { from: -1, to: ROLL, extra: -1 };
   const all = plays(s);
   if (!all.length) return null;
   let best = all[0],
@@ -213,24 +294,34 @@ export function chooseMove(s: State, level: Level, random: Random = Math.random)
   }
   return { from: best[0][0], to: best[0][1], extra: -1 };
 }
-const effect = (s: State): Effect | null => (s.last && !s.last.rolled ? { kind: "move", from: s.last.from, to: s.last.to, converted: [], removed: [] } : null);
+const effect = (s: State): Effect | null => (s.last && !s.last.rolled && !s.last.cube ? { kind: "move", from: s.last.from, to: s.last.to, converted: [], removed: [] } : null);
 export const backgammon: PointGame<State> = {
-  create: () => createGame(),
+  create: (variant) => createGame(variant),
   moves,
   play,
   choose: (s, level, random) => chooseMove(s, level, random),
-  turn: (s) => s.turn,
+  turn: mover,
   winner: (s) => s.winner,
   owners: () => [],
   effect,
   ply: (s) => s.ply,
   evaluate: (s, player) => judge(s, player),
   hint: (s) =>
-    s.phase === "roll"
-      ? "주사위를 굴리세요."
+    s.phase === "answer"
+      ? `더블 제안 — 받으면 큐브 ${s.cube!.value * 2}, 포기하면 ${s.cube!.value}점을 내주고 끝납니다.`
+      : s.phase === "roll"
+      ? canDouble(s) && s.ply > 0
+        ? "주사위를 굴리거나 더블을 제안하세요."
+        : "주사위를 굴리세요."
       : s.bar[s.turn]
         ? `${s.left.join(", ")} — 바에 있는 말부터 들여보내세요.`
         : `${s.left.join(", ")} — 움직일 말을 고르세요.`,
-  tally: (s) => [0, 1].map((p) => `남은 거리 ${pips(s, p)} · 나간 말 ${s.off[p]}`) as [string, string],
-  reason: (s) => (s.stake === 3 ? "백개먼! 세 배로 이겼습니다." : s.stake === 2 ? "개먼! 두 배로 이겼습니다." : "말 열다섯 개를 모두 내보냈습니다."),
+  tally: (s) => [0, 1].map((p) => `남은 거리 ${pips(s, p)} · 나간 말 ${s.off[p]}${s.cube?.owner === p ? ` · 큐브 ${s.cube.value}` : ""}`) as [string, string],
+  reason: (s) => {
+    if (!s.cube) return s.stake === 3 ? "백개먼! 세 배로 이겼습니다." : s.stake === 2 ? "개먼! 두 배로 이겼습니다." : "말 열다섯 개를 모두 내보냈습니다.";
+    if (s.last?.cube === "drop") return `더블을 받지 않아 ${s.stake}점으로 끝났습니다.`;
+    const times = s.stake / s.cube.value,
+      how = times === 3 ? "백개먼! " : times === 2 ? "개먼! " : "말 열다섯 개를 모두 내보냈습니다. ";
+    return `${how}큐브 ${s.cube.value}${times > 1 ? ` × ${times}` : ""} = ${s.stake}점.`;
+  },
 };
