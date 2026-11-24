@@ -142,7 +142,8 @@ export const numberCodeNet: NetSpec<State> = {
       const to = netMovers(s).find((x) => x !== seat);
       return to ?? record(s).seats[shift(Math.max(0, playerOf(s, seat)), 1, s.seats)];
     },
-    waiting: (s, seat) => (opening(s) && !record(s).waiting[playerOf(s, seat)]?.length ? "다른 사람이 받은 조커를 놓을 자리를 고르는 중입니다." : null),
+    // Who was dealt a joker is nobody else's to know (the user asked): the wait is not explained.
+    waiting: (s, seat) => (opening(s) && !record(s).waiting[playerOf(s, seat)]?.length ? "다른 사람이 준비하는 중입니다." : null),
     game: viewed,
   },
 };
