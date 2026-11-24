@@ -831,7 +831,9 @@ const only = process.argv[3];
 for (const game of games) {
   if (only && game.en.toLowerCase().replaceAll(" ", "-") !== only) continue;
   const id = game.en.toLowerCase().replaceAll(" ", "-");
-  await page.goto("http://localhost:4175/");
+  // THUMB_QUERY=?reflect=1 builds the table as a graphics card draws it (props and lacquer that are left out under
+  // software drawing, which `data-capture` set after sitting down comes too late to ask for).
+  await page.goto(`http://localhost:4175/${process.env.THUMB_QUERY ?? ""}`);
   await page.getByRole("button", { name: `${game.name} 살펴보기`, exact: true }).click();
   await page.locator("dialog.entry[open]").waitFor();
   await wait(800);

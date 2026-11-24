@@ -1,7 +1,7 @@
 import type { Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
-import { copy, settle, shotCode, shotOf, strike, type Arena, type Disc } from "../flick/physics";
+import { MAX_STEPS, copy, moving, settle, shotCode, shotOf, step, strike, type Arena, type Disc } from "../flick/physics";
 
 /**
  * Eight-ball pool for two: seven plain balls, seven striped, the black eight
@@ -9,6 +9,11 @@ import { copy, settle, shotCode, shotOf, strike, type Arena, type Disc } from ".
  * a ball takes that kind; pocketing one of one's own earns another shot.
  * With all seven down, the eight wins the game; down too early, or with the
  * cue ball, it loses it.
+ *
+ * Nine-ball (variant "nine", appended; "" is eight-ball as always): balls 1–9 in a diamond, the nine in its middle.
+ * The cue ball must strike the lowest ball on the table first; any ball down on a fair shot earns another shot, and
+ * the nine down on a fair shot wins, whenever it goes. A foul (the cue ball down, or the wrong ball or none struck
+ * first) gives the other side the cue ball in hand; a nine down on a foul comes back to the foot spot.
  */
 export const HALF_X = 2.6,
   HALF_Z = 5,
@@ -28,7 +33,10 @@ export const HALF_X = 2.6,
   CUE = 0,
   EIGHT = 8,
   /** Where the cue ball is put for the break and after it has gone down. */
-  HEAD = { x: 0, z: 2.9 };
+  HEAD = { x: 0, z: 2.9 },
+  /** The foot spot: the front of the rack, where a nine pocketed on a foul comes back. */
+  FOOT = { x: 0, z: -2 },
+  NINE = 9;
 /** How fast the cue ball leaves the cue for a strength of 1–20. */
 export const cueSpeed = (power: number) => 1.2 + power * 0.62;
 /** 0 plain (1–7), 1 striped (9–15); null for the cue ball and the eight. */
@@ -47,6 +55,13 @@ export interface State {
   /** The cue ball has been put down by hand in this turn. */
   placed: boolean;
   ply: number;
+  /** Nine-ball (left out in eight-ball, whose states are as they always were). */
+  nine?: true;
+  /** Nine-ball: the balls each side has pocketed. */
+  potted?: [number, number];
+  /** Nine-ball: the ball the cue ball struck first in the last shot (null: none), and whether the nine came back to the foot spot. */
+  first?: number | null;
+  spotted?: boolean;
 }
 /** A place for the cue ball, told in fiftieths of a unit from the far left corner. */
 export const PLACE_BASE = 1_000_000,
@@ -79,7 +94,10 @@ export function spotFor(state: State, x: number, z: number) {
   return null;
 }
 const ball = (id: number, x: number, z: number): Disc => ({ id, x, z, vx: 0, vz: 0, r: R, m: 1, on: true });
-export function createGame(): State {
+/** Whether a variant is nine-ball; every other value (the old "" among them) is eight-ball. */
+export const isNine = (variant: string) => variant === "nine";
+export function createGame(variant = ""): State {
+  if (isNine(variant)) return createNine();
   // The rack: five rows widening away from the breaker, the eight in the middle, a plain and a striped ball in the far corners.
   const order = [1, 9, 2, 10, 8, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15],
     discs: Disc[] = [ball(CUE, HEAD.x, HEAD.z)],
@@ -89,10 +107,22 @@ export function createGame(): State {
   discs.sort((a, b) => a.id - b.id);
   return { discs, turn: 0, groups: null, winner: null, last: null, sunk: [], foul: false, hand: false, placed: false, ply: 0 };
 }
+/** Nine-ball's rack: a diamond of rows 1, 2, 3, 2, 1 with the one at its front on the foot spot and the nine in its middle. */
+function createNine(): State {
+  const rows = [[1], [2, 3], [4, 9, 5], [6, 7], [8]],
+    discs: Disc[] = [ball(CUE, HEAD.x, HEAD.z)],
+    gap = R * 2 + 0.012;
+  rows.forEach((row, r) => row.forEach((id, k) => discs.push(ball(id, (k - (row.length - 1) / 2) * gap, FOOT.z - r * gap * 0.866))));
+  discs.sort((a, b) => a.id - b.id);
+  return { discs, turn: 0, groups: null, winner: null, last: null, sunk: [], foul: false, hand: false, placed: false, ply: 0, nine: true, potted: [0, 0], first: null, spotted: false };
+}
+/** Nine-ball: the lowest-numbered ball on the table, the one to strike first (0 when none is left). */
+export const lowest = (state: State) => state.discs.find((d) => d.id !== CUE && d.on)?.id ?? 0;
 /** The balls a side still has to pocket before the eight. */
 export const left = (state: State, side: number) => (state.groups ? state.discs.filter((d) => d.on && kind(d.id) === state.groups![side]).length : 7);
 /** The balls the mover may aim at now. */
 export function targets(state: State) {
+  if (state.nine) return state.discs.filter((d) => d.id === lowest(state));
   const mine = state.groups ? state.groups[state.turn] : null,
     own = state.discs.filter((d) => d.on && kind(d.id) !== null && (mine === null || kind(d.id) === mine));
   return own.length ? own : state.discs.filter((d) => d.id === EIGHT && d.on);
@@ -134,6 +164,7 @@ export function play(state: State, move: Move): State | null {
     return { ...state, discs, placed: true, last: null, sunk: [] };
   }
   if (!shot) return null;
+  if (state.nine) return playNine(state, move.to, shot.angle, cueSpeed(shot.power));
   const discs = copy(state.discs),
     from = { x: discs[CUE].x, z: discs[CUE].z },
     cleared = state.groups !== null && left(state, me) === 0;
@@ -146,16 +177,7 @@ export function play(state: State, move: Move): State | null {
   // The first ball down, cleanly, decides who plays which kind.
   if (!groups && balls.length && !foul) groups = kind(balls[0]) === 0 ? (me === 0 ? [0, 1] : [1, 0]) : me === 0 ? [1, 0] : [0, 1];
   const own = balls.filter((id) => groups && kind(id) === groups[me]).length;
-  if (foul) {
-    // The cue ball comes back at the head of the table, clear of the others.
-    const cue = discs[CUE];
-    cue.on = true;
-    for (let k = 0; k < 60; k++) {
-      cue.x = HEAD.x + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.1;
-      cue.z = HEAD.z;
-      if (discs.every((d) => d === cue || !d.on || Math.hypot(d.x - cue.x, d.z - cue.z) > R * 2 + 0.01)) break;
-    }
-  }
+  if (foul) backAtHead(discs);
   return {
     ...state,
     discs,
@@ -170,6 +192,103 @@ export function play(state: State, move: Move): State | null {
     placed: false,
     ply: state.ply + 1,
   };
+}
+/** The cue ball comes back at the head of the table, clear of the others. */
+function backAtHead(discs: Disc[]) {
+  const cue = discs[CUE];
+  cue.on = true;
+  for (let k = 0; k < 60; k++) {
+    cue.x = HEAD.x + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.1;
+    cue.z = HEAD.z;
+    if (discs.every((d) => d === cue || !d.on || Math.hypot(d.x - cue.x, d.z - cue.z) > R * 2 + 0.01)) break;
+  }
+}
+/**
+ * Runs a shot to rest as `settle` does (the very same slices) and tells which ball the cue ball struck first: the
+ * first ball to stir. Balls at rest move only when something strikes them, so the first to move was struck by the cue
+ * ball; should two stir in one slice, the nearer to the cue ball is taken.
+ */
+export function settleFirst(discs: Disc[], arena: Arena) {
+  const gone: number[] = [],
+    before = discs.map((d) => ({ x: d.x, z: d.z, on: d.on }));
+  let steps = 0,
+    first: number | null = null;
+  while (moving(discs) && steps < MAX_STEPS) {
+    if (first === null) discs.forEach((d, i) => Object.assign(before[i], { x: d.x, z: d.z, on: d.on }));
+    gone.push(...step(discs, arena));
+    steps++;
+    if (first !== null) continue;
+    const cue = discs[CUE];
+    let nearest = Infinity;
+    discs.forEach((d, i) => {
+      if (d.id === CUE || (d.x === before[i].x && d.z === before[i].z && d.on === before[i].on)) return;
+      const far = Math.hypot(d.x - cue.x, d.z - cue.z);
+      if (far < nearest) {
+        nearest = far;
+        first = d.id;
+      }
+    });
+  }
+  for (const d of discs) {
+    d.vx = d.vz = 0;
+    delete d.air;
+    delete d.flight;
+  }
+  return { gone, steps, first: first as number | null };
+}
+/** Nine-ball: puts the nine back on the foot spot, or as near it toward the foot rail as is clear. */
+function spotNine(discs: Disc[]) {
+  const nine = discs.find((d) => d.id === NINE)!;
+  nine.on = true;
+  for (let k = 0; k < 200; k++) {
+    // Back along the long string toward the foot rail first, then toward the head.
+    const z = k < 60 ? FOOT.z - k * 0.05 : FOOT.z + (k - 59) * 0.05;
+    nine.x = FOOT.x;
+    nine.z = z;
+    if (Math.abs(z) <= HALF_Z - R && discs.every((d) => d === nine || !d.on || Math.hypot(d.x - nine.x, d.z - nine.z) > R * 2 + 0.01)) return;
+  }
+}
+/** A nine-ball shot from `state` (the cue ball struck at `angle`, `speed`). */
+function playNine(state: State, code: number, angle: number, speed: number): State {
+  const me = state.turn,
+    other = (me ? 0 : 1) as 0 | 1,
+    aim = lowest(state),
+    discs = copy(state.discs),
+    from = { x: discs[CUE].x, z: discs[CUE].z };
+  strike(discs[CUE], angle, speed);
+  const { gone, first } = settleFirst(discs, ARENA),
+    scratch = gone.includes(CUE),
+    foul = scratch || first !== aim,
+    balls = gone.filter((id) => id !== CUE),
+    nine = balls.includes(NINE),
+    spotted = foul && nine;
+  if (scratch) backAtHead(discs);
+  if (spotted) spotNine(discs);
+  const potted = [...(state.potted ?? [0, 0])] as [number, number];
+  potted[me] += balls.length - (spotted ? 1 : 0);
+  return {
+    ...state,
+    discs,
+    turn: !foul && balls.length > 0 ? me : other,
+    winner: nine && !foul ? me : null,
+    last: { code, by: me, from },
+    sunk: gone,
+    foul,
+    hand: foul,
+    placed: false,
+    ply: state.ply + 1,
+    potted,
+    first,
+    spotted,
+  };
+}
+/** What a shot did for the side that made it, as the computer weighs it: balls down for it, fouls, the game. */
+function worth(state: State, next: State, me: number, ahead: boolean) {
+  const end = next.winner === me ? 100 : next.winner !== null ? -100 : 0;
+  if (state.nine) return (next.foul ? -15 : next.sunk.filter((id) => id !== CUE).length * 10) + end;
+  const mine = next.groups ? next.sunk.filter((id) => kind(id) === next.groups![me]).length : ahead ? next.sunk.filter((id) => kind(id) !== null).length : 0,
+    theirs = next.groups && !ahead ? next.sunk.filter((id) => kind(id) === next.groups![me ? 0 : 1]).length : 0;
+  return mine * 10 - theirs * 4 - (next.foul ? 15 : 0) + end;
 }
 /** Where the computer would put the cue ball by hand: the place from which a straight shot does most. */
 function handSpot(state: State) {
@@ -190,8 +309,7 @@ function handSpot(state: State) {
           degrees = (Math.atan2(-dz, -dx) * 180) / Math.PI,
           next = placed && play(placed, { from: CUE, to: shotCode(degrees, 9), extra: -1 });
         if (!next) continue;
-        const mine = next.groups ? next.sunk.filter((id) => kind(id) === next.groups![me]).length : next.sunk.filter((id) => kind(id) !== null).length,
-          score = mine * 10 - (next.foul ? 15 : 0) + (next.winner === me ? 100 : next.winner !== null ? -100 : 0) - d * 0.2;
+        const score = worth(state, next, me, true) - d * 0.2;
         if (score > top) {
           top = score;
           best = spot;
@@ -214,9 +332,7 @@ export function chooseShot(state: State, level: Level, random: Random = Math.ran
   for (const move of aimed(state)) {
     const next = play(state, move);
     if (!next) continue;
-    const mine = next.groups ? next.sunk.filter((id) => kind(id) === next.groups![me]).length : 0,
-      theirs = next.groups ? next.sunk.filter((id) => kind(id) === next.groups![me ? 0 : 1]).length : 0,
-      score = mine * 10 - theirs * 4 - (next.foul ? 15 : 0) + (next.winner === me ? 100 : next.winner !== null ? -100 : 0) + random() * (level === "easy" ? 12 : 1);
+    const score = worth(state, next, me, false) + random() * (level === "easy" ? 12 : 1);
     if (score > top) {
       top = score;
       best = move;
@@ -229,8 +345,25 @@ export function chooseShot(state: State, level: Level, random: Random = Math.ran
 }
 const effect = (state: State): Effect | null => (state.last ? { kind: "move", from: CUE, to: CUE, converted: [], removed: state.sunk } : null);
 const NAMES = ["단색 (1–7)", "줄무늬 (9–15)"];
+/** Nine-ball: why the last shot was a foul, in words. */
+function foulWord(s: State) {
+  if (s.sunk.includes(CUE)) return "흰 공이 빠졌습니다.";
+  const aim = s.last ? lowestBefore(s) : 0;
+  return s.first === null ? "흰 공이 아무 공도 맞히지 못했습니다." : `${aim ? `${aim}번` : "가장 낮은 공"}보다 ${s.first}번을 먼저 맞혔습니다.`;
+}
+/** Nine-ball: the ball that was lowest when the last shot was made (the balls it sank are counted back in). */
+function lowestBefore(s: State) {
+  const on = s.discs.filter((d) => d.id !== CUE && (d.on || s.sunk.includes(d.id))).map((d) => d.id);
+  return on.length ? Math.min(...on) : 0;
+}
+function nineHint(s: State) {
+  const aim = lowest(s),
+    hand = s.hand ? (s.placed ? "흰 공을 당겨서 치세요. 다른 곳을 누르면 다시 놓습니다. " : `반칙: ${foulWord(s)} 흰 공을 끌어 원하는 곳에 놓으세요. `) : "",
+    spotted = s.spotted ? "9번은 풋 스폿으로 돌아왔습니다. " : "";
+  return `${hand}${spotted}${aim === NINE ? "9번만 남았습니다. 넣으면 이깁니다." : `${aim}번을 먼저 맞히세요. 9번을 넣으면 이깁니다.`}`;
+}
 export const pool: PointGame<State> = {
-  create: () => createGame(),
+  create: (variant) => createGame(variant),
   moves,
   play: (state, move) => play(state, move),
   choose: chooseShot,
@@ -239,11 +372,14 @@ export const pool: PointGame<State> = {
   owners: (s) => s.discs.map((d) => (d.on && s.groups ? (kind(d.id) === null ? null : s.groups[0] === kind(d.id) ? 0 : 1) : null)),
   effect,
   ply: (s) => s.ply,
-  evaluate: (s, player) => left(s, player ? 0 : 1) - left(s, player),
+  evaluate: (s, player) => (s.nine ? s.potted![player] - s.potted![player ? 0 : 1] : left(s, player ? 0 : 1) - left(s, player)),
   hint: (s) =>
-    `${s.hand ? (s.placed ? "흰 공을 당겨서 치세요. 다른 곳을 누르면 다시 놓습니다. " : "흰 공이 빠졌습니다. 흰 공을 끌어 원하는 곳에 놓으세요. ") : ""}${!s.groups ? "아직 공이 정해지지 않았습니다. 아무 공이나 넣으세요." : left(s, s.turn) ? `내 공은 ${NAMES[s.groups[s.turn]]}입니다. 흰 공을 당겼다 놓아 치세요.` : "내 공을 다 넣었습니다. 검은 8번을 넣으면 이깁니다."}`,
-  tally: (s) => [0, 1].map((p) => (s.groups ? `${NAMES[s.groups[p]]} · 남은 공 ${left(s, p)}` : "공 미정")) as [string, string],
+    s.nine
+      ? nineHint(s)
+      : `${s.hand ? (s.placed ? "흰 공을 당겨서 치세요. 다른 곳을 누르면 다시 놓습니다. " : "흰 공이 빠졌습니다. 흰 공을 끌어 원하는 곳에 놓으세요. ") : ""}${!s.groups ? "아직 공이 정해지지 않았습니다. 아무 공이나 넣으세요." : left(s, s.turn) ? `내 공은 ${NAMES[s.groups[s.turn]]}입니다. 흰 공을 당겼다 놓아 치세요.` : "내 공을 다 넣었습니다. 검은 8번을 넣으면 이깁니다."}`,
+  tally: (s) => [0, 1].map((p) => (s.nine ? `넣은 공 ${s.potted![p]}개 · 다음 ${lowest(s) || 9}번` : s.groups ? `${NAMES[s.groups[p]]} · 남은 공 ${left(s, p)}` : "공 미정")) as [string, string],
   reason: (s) => {
+    if (s.nine) return "반칙 없이 9번을 넣었습니다.";
     const loser = s.winner === 0 ? 1 : 0;
     return s.last?.by === loser ? (s.foul ? "8번과 함께 흰 공이 빠졌습니다." : "자기 공을 다 넣기 전에 8번을 넣었습니다.") : "자기 공을 모두 넣고 8번을 넣었습니다.";
   },

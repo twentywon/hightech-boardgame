@@ -134,19 +134,23 @@ export abstract class FlickView<S> extends TableView<S> {
           } else {
             // Off the table: it drops out of sight (or wherever the table puts it).
             falling.set(disc.id, fell + 1);
-            this.sink(disc.id, mesh, fell);
+            this.sink(disc.id, mesh, fell, disc);
           }
         }
         this.redraw();
-        if (moving(live) || [...falling.values()].some((n) => n < this.sinkFrames)) this.ticker = requestAnimationFrame(run);
+        if (moving(live) || [...falling].some(([id, n]) => !this.gone(id, n))) this.ticker = requestAnimationFrame(run);
         else done();
       };
     this.ticker = requestAnimationFrame(run);
   }
   /** How many frames a disc that has left the table is followed after it went. */
   protected sinkFrames = 18;
-  /** Moves a disc that has left the table, `frame` frames after it went (from 0): by default it drops out of sight. */
-  protected sink(_id: number, mesh: T.Object3D, frame: number) {
+  /** Whether a disc that left the table `frames` frames ago has finished going (by default after `sinkFrames`). */
+  protected gone(_id: number, frames: number) {
+    return frames >= this.sinkFrames;
+  }
+  /** Moves a disc that has left the table, `frame` frames after it went (from 0): by default it drops out of sight. `disc` is where it went. */
+  protected sink(_id: number, mesh: T.Object3D, frame: number, _disc?: Disc) {
     mesh.position.y = this.top - frame * frame * 0.012;
     mesh.visible = frame < this.sinkFrames;
   }
