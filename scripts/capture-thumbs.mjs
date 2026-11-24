@@ -547,6 +547,36 @@ const play = {
     }
     await wait(150);
   },
+  // 낚시: the float cast to the middle; a steady hand in the page strikes at the bite and reels while the fish does
+  // not run (casting again after a miss), and the lake is paused as a fish (not junk) is held up out of the water.
+  fishing: async () => {
+    await page.locator("canvas").focus();
+    await page.evaluate(() => {
+      const board = document.querySelector("#board canvas");
+      let held = false;
+      const key = (type) => board.dispatchEvent(new KeyboardEvent(type, { key: " ", bubbles: true, cancelable: true }));
+      const loop = () => {
+        const d = board.dataset;
+        if (!board.isConnected) return;
+        const want = d.phase === "bite" || (d.phase === "fight" && d.surge !== "1" && Number(d.tension) < 0.8);
+        if (d.phase === "ready" && !held) {
+          key("keydown");
+          key("keyup");
+        } else if (want !== held) {
+          key(want ? "keydown" : "keyup");
+          held = want;
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    });
+    await page.waitForFunction(() => {
+      const d = document.querySelector("#board canvas")?.dataset;
+      return d?.phase === "land" && Number(d.landed) < 5;
+    }, null, { timeout: 85000, polling: 50 });
+    await wait(650);
+    await page.keyboard.press("p");
+  },
   // The claw run over the middle of the pit with the lever held, and let down: the picture is taken as it closes on a toy.
   "claw-machine": async () => {
     await page.locator("canvas").focus();

@@ -840,6 +840,14 @@ export const allGames = [
     icon: "⚽",
     available: true,
   },
+  {
+    name: "낚시",
+    en: "FISHING",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "🎣",
+    available: true,
+  },
 ];
 
 /**

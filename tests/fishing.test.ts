@@ -1,0 +1,193 @@
+import { describe, expect, test } from "vitest";
+import { seededRandom } from "../src/core/ai";
+import * as fr from "../src/games/fishing/rules";
+import * as fs from "../src/games/fishing/sim";
+
+const plain = (to: number) => ({ from: -1, to, extra: -1 });
+/** Steps the lake until `until` holds (or `limit` seconds pass), gathering what happened. */
+function run(world: fs.World, until: (world: fs.World, seen: fs.Happening[]) => boolean, limit = 30) {
+  const seen: fs.Happening[] = [];
+  for (let k = 0; k < limit / fs.DT && !until(world, seen); k++) seen.push(...fs.step(world));
+  return seen;
+}
+/** How many slices pass until `until` holds. */
+function count(world: fs.World, until: (world: fs.World, seen: fs.Happening[]) => boolean, limit = 30) {
+  const seen: fs.Happening[] = [];
+  let slices = 0;
+  for (; slices < limit / fs.DT && !until(world, seen); slices++) seen.push(...fs.step(world));
+  return { seen, slices };
+}
+/** A world with a fish of `kind` and `size` just biting at the middle of the lake. */
+function biting(kind: number, size: number, level = 2, seed = 5) {
+  const world = fs.createWorld(level, seededRandom(seed));
+  fs.cast(world, fs.CAST.middle.x, fs.CAST.middle.z);
+  run(world, (w) => w.phase === "wait");
+  world.fish = { kind, size, points: fs.pointsOf(kind, size) };
+  world.nibbles = 0;
+  world.nibbleIn = 0;
+  run(world, (w) => w.phase === "bite");
+  return world;
+}
+/** Plays the fight as a careful hand does: reels while the fish is not running and the line is not too tight. */
+function reelCarefully(world: fs.World, limit = 60) {
+  const seen: fs.Happening[] = [];
+  for (let k = 0; k < limit / fs.DT && world.phase === "fight"; k++) {
+    if (world.surge || world.tension > 0.85) fs.release(world);
+    else seen.push(...fs.press(world));
+    seen.push(...fs.step(world));
+  }
+  return seen;
+}
+
+describe("fishing", () => {
+  test("the clock runs the round out, and only what the lake reports changes the score", () => {
+    let s = fr.createGame(2);
+    expect(s.left).toBe(fr.ROUND);
+    s = fr.play(s, plain(fr.CAST))!;
+    s = fr.play(s, plain(fr.SCARED))!;
+    s = fr.play(s, plain(fr.SNAP))!;
+    s = fr.play(s, fr.catchMove(fs.CARP, 50))!;
+    expect([s.casts, s.lost, s.score, s.caught.length]).toEqual([1, 2, fs.pointsOf(fs.CARP, 50), 1]);
+    expect(s.landed).toEqual({ kind: fs.CARP, size: 50, points: 30 });
+    // A catch must name a kind and a size its points agree with.
+    expect(fr.play(s, { from: -1, to: fr.CATCH + 31, extra: fs.CARP * 1000 + 50 })).toBeNull();
+    expect(fr.play(s, { from: -1, to: fr.CATCH + 5, extra: fs.CARP * 1000 + 10 })).toBeNull();
+    expect(fr.play(s, { from: -1, to: fr.CATCH, extra: 99 * 1000 + 10 })).toBeNull();
+    expect(fr.play(s, { from: -1, to: fr.TICK, extra: 3 })).toBeNull();
+    // Junk is worth its flat points: a can nothing, a boot one.
+    expect(fr.play(s, fr.catchMove(fs.CAN, 12))!.score).toBe(s.score);
+    expect(fr.play(s, fr.catchMove(fs.BOOT, 28))!.score).toBe(s.score + 1);
+    for (let k = 0; k < fr.ROUND; k++) s = fr.play(s, plain(fr.TICK))!;
+    expect(s.left).toBe(0);
+    expect(s.winner).toBe(0);
+    expect(fr.play(s, plain(fr.TICK))).toBeNull();
+    expect(fr.fishing.reason(s)).toContain("잉어 50cm");
+  });
+  test("a cast lands within reach, fish nibble and then bite, and a press at the bite hooks the fish", () => {
+    const world = fs.createWorld(1, seededRandom(11));
+    expect(fs.cast(world, 40, -90)).toEqual([{ kind: "cast", ...fs.reach(40, -90) }]);
+    expect(world.target.z).toBe(-fs.CAST.far);
+    expect(Math.abs(world.target.x)).toBeLessThanOrEqual(fs.CAST.side);
+    // Nothing more can be cast while the float is out.
+    expect(fs.cast(world, 0, -10)).toEqual([]);
+    const seen = run(world, (w) => w.phase === "bite");
+    expect(seen.some((e) => e.kind === "splashdown")).toBe(true);
+    const fish = world.fish!;
+    if (!fs.KINDS[fish.kind].junk) expect(seen.some((e) => e.kind === "nibble")).toBe(true);
+    expect(seen.findIndex((e) => e.kind === "bite")).toBeGreaterThan(seen.findIndex((e) => e.kind === "splashdown"));
+    expect(fs.press(world)).toEqual([{ kind: "hook", x: world.float.x, z: world.float.z, fish }]);
+    expect(world.phase).toBe("fight");
+    expect(world.reeling).toBe(true);
+  });
+  test("a press before the bite scares the fish off; with no fish there, the line just comes in", () => {
+    const world = fs.createWorld(2, seededRandom(4));
+    fs.cast(world, 0, -12);
+    run(world, (w) => w.phase === "wait");
+    expect(fs.press(world)[0].kind).toBe("empty");
+    expect(world.phase).toBe("reel");
+    const back = run(world, (w) => w.phase === "ready");
+    expect(back.at(-1)).toEqual({ kind: "ready" });
+    fs.cast(world, 0, -12);
+    run(world, (_, seen) => seen.some((e) => e.kind === "nibble"));
+    expect(world.nibbling).toBe(true);
+    expect(fs.press(world)[0].kind).toBe("scared");
+    expect(world.fish).toBeNull();
+  });
+  test("the bite passes if nobody strikes in its window", () => {
+    for (const level of [1, 2, 3]) {
+      const world = biting(fs.CRUCIAN, 20, level),
+        { seen, slices } = count(world, (w) => w.phase !== "bite");
+      expect(seen.find((e) => e.kind === "late")).toBeTruthy();
+      // The window is the level's, to a slice.
+      expect(Math.abs(slices * fs.DT - fs.LEVELS[level - 1].bite)).toBeLessThan(2 * fs.DT + 1e-9);
+    }
+  });
+  test("a fish reeled with care is landed, and lifted out with its kind and size", () => {
+    const world = biting(fs.CARP, 55, 2, 8);
+    fs.press(world);
+    const seen = reelCarefully(world);
+    const caught = seen.find((e) => e.kind === "catch");
+    expect(caught).toMatchObject({ fish: { kind: fs.CARP, size: 55, points: fs.pointsOf(fs.CARP, 55) } });
+    expect(seen.some((e) => e.kind === "surge")).toBe(true);
+    expect(world.phase).toBe("land");
+    run(world, (w) => w.phase === "ready");
+    expect(world.landed).toBeNull();
+  });
+  test("reeling on through a surge snaps the line", () => {
+    const world = biting(fs.CATFISH, 80, 3, 2);
+    fs.press(world);
+    const seen = run(world, (w) => w.phase !== "fight", 60);
+    expect(seen.some((e) => e.kind === "surge")).toBe(true);
+    expect(seen.at(-1)?.kind).toBe("snap");
+    expect(world.phase).toBe("reel");
+  });
+  test("a line left slack too long lets the fish get off, but a surge's running line does not count", () => {
+    const world = biting(fs.TROUT, 40, 1, 3);
+    fs.press(world);
+    fs.release(world);
+    world.surgeIn = 100;
+    const { seen, slices } = count(world, (w) => w.phase !== "fight");
+    expect(seen.at(-1)?.kind).toBe("slip");
+    expect(slices * fs.DT).toBeGreaterThan(fs.SLACK);
+    expect(slices * fs.DT).toBeLessThan(fs.SLACK + 0.1);
+    // While it runs, line is paid out without slack piling up.
+    const other = biting(fs.TROUT, 40, 1, 3);
+    fs.press(other);
+    fs.release(other);
+    other.surgeIn = 0;
+    run(other, (w) => !!w.surge);
+    run(other, (w) => !w.surge);
+    expect(other.slack).toBeLessThanOrEqual(fs.DT + 1e-9);
+  });
+  test("junk does not fight: no surges, and slack does not lose it", () => {
+    const world = biting(fs.BOOT, 28, 3, 9);
+    fs.press(world);
+    fs.release(world);
+    run(world, () => false, 5);
+    expect(world.phase).toBe("fight");
+    fs.press(world);
+    const seen = run(world, (w) => w.phase !== "fight", 30);
+    expect(seen.some((e) => e.kind === "surge")).toBe(false);
+    expect(seen.at(-1)).toMatchObject({ kind: "catch", fish: { kind: fs.BOOT, points: 1 } });
+  });
+  test("when the round is over nothing more bites, seconds stop, and a line out comes in", () => {
+    const world = biting(fs.CRUCIAN, 20, 1, 6);
+    fs.press(world);
+    fs.retire(world);
+    const seen = run(world, (w) => w.phase === "ready");
+    expect(seen.every((e) => e.kind === "ready")).toBe(true);
+    expect(fs.cast(world, 0, -10)).toEqual([]);
+  });
+  test("the same seed and the same hand make the same lake", () => {
+    const play = () => {
+      const world = fs.createWorld(2, seededRandom(42)),
+        log: string[] = [];
+      for (let k = 0; k < 60 / fs.DT; k++) {
+        if (world.phase === "ready") fs.cast(world, -3, -16);
+        if (world.phase === "bite" && world.t > 0.2) fs.press(world);
+        if (world.phase === "fight") {
+          if (world.surge || world.tension > 0.85) fs.release(world);
+          else fs.press(world);
+        }
+        for (const e of fs.step(world)) if (e.kind !== "second") log.push(JSON.stringify(e));
+      }
+      return log;
+    };
+    const first = play();
+    expect(first.length).toBeGreaterThan(5);
+    expect(first.some((e) => e.includes('"catch"'))).toBe(true);
+    expect(play()).toEqual(first);
+  });
+  test("sizes and points stay within each kind's range", () => {
+    const world = fs.createWorld(3, seededRandom(1));
+    for (let k = 0; k < 500; k++) {
+      world.float = { x: 0, z: -(fs.CAST.near + (k % 18)) };
+      const fish = fs.draw(world),
+        kind = fs.KINDS[fish.kind];
+      expect(fish.size).toBeGreaterThanOrEqual(kind.min);
+      expect(fish.size).toBeLessThanOrEqual(kind.max);
+      expect(fish.points).toBe(fs.pointsOf(fish.kind, fish.size));
+      expect(fr.play(fr.createGame(3), fr.catchMove(fish.kind, fish.size))!.score).toBe(fish.points);
+    }
+  });
+});
