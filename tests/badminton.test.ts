@@ -55,7 +55,7 @@ describe("badminton rules", () => {
 });
 
 describe("badminton court", () => {
-  test("a quicker swipe sends the shuttle harder and further; it goes out only far too hard or far to the side", () => {
+  test("a quicker swipe sends the shuttle harder and further; it never goes long, only out wide when leaning far", () => {
     expect(powerOf(0.5)).toBe(0);
     expect(powerOf(4)).toBeLessThan(powerOf(7));
     // Struck from anywhere on my half, at any height: the same swipe lands at the same depth, deeper the quicker.
@@ -84,9 +84,10 @@ describe("badminton court", () => {
         lastSpeed = speed;
       }
       // Far too hard: long over the back line.
-      // Even a very hard swipe stays inside the back line; only the hardest of all goes long.
+      // No swipe, however hard, sends it long over the back line.
       expect(stroke(1.5, 0, from).end.z).toBeGreaterThanOrEqual(-S.HALF_L);
-      expect(stroke(S.MOST, 0, from).end.z).toBeLessThan(-S.HALF_L);
+      expect(stroke(S.MOST, 0, from).end.z).toBeGreaterThanOrEqual(-S.HALF_L);
+      expect(stroke(5, 0, from).end.z).toBeGreaterThanOrEqual(-S.HALF_L);
       // A moderate lean stays in; the most lean goes out wide.
       expect(Math.abs(stroke(0.7, 0.3, from).end.x)).toBeLessThan(S.HALF_W);
       expect(stroke(0.7, 0.3, from).end.x).toBeGreaterThan(0.5);

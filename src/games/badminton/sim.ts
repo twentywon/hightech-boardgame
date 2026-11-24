@@ -10,7 +10,7 @@
  *
  * How a stroke is played (the user asked): a swipe of the finger (or the mouse) swings the racket. The faster the swipe,
  * the harder and the further the shuttle goes (`depthOf`): a slow one drops it over the net, a quick one clears it to
- * the back line; only the most violent flick sends it out long, and only one leaning far to the side goes out wide (`acrossOf`). A smash is played only
+ * the back line, and no quicker swipe sends it long; and only one leaning far to the side goes out wide (`acrossOf`). A smash is played only
  * from a jump: the jump button first, then the swipe while in the air (`jump`, `swing`).
  */
 export const DT = 1 / 120;
@@ -47,27 +47,20 @@ export const REACH = 1.25,
   SERVE_X = 0.95;
 /** How fast my own player runs to the shuttle (the computer's is its level's). */
 export const MY_SPEED = 4.6;
-/** The slowest and the fastest a stroke sends the shuttle off, for a swipe of power 0 and of power 1. */
-export const SLOWEST = 9,
-  FASTEST = 58,
-  /** The most a swipe's power counts for: beyond 1 the shuttle goes harder than any player would hit it, and long. */
-  MOST = 1.7;
-/** How fast a stroke of power `p` sends the shuttle: each step up in power multiplies the speed (its way grows steadily with it). */
-export const speedOf = (p: number) => SLOWEST * (FASTEST / SLOWEST) ** Math.max(0, Math.min(MOST, p));
+/** The most a swipe's power counts for (a smash's speed grows up to it; a stroke's depth stops growing at `SAFE`). */
+export const MOST = 1.7;
 /**
- * How far past the net a stroke of power `p` is sent, whoever strikes it from wherever (the user asked that a shot go
- * out only when it is struck far too hard or far to the side): from a drop just over the net, steadily deeper to near
- * the back line at `DEEP`; then only a little deeper over a wide band of harder swipes (`SAFE`), so that a hard clear
- * still lands in; only past that does it run long, out over the back line.
+ * How far past the net a stroke of power `p` is sent, whoever strikes it from wherever: from a drop just over the net,
+ * steadily deeper to near the back line at `DEEP`, then a little deeper up to 0.3 m inside it at `SAFE`, and no further
+ * for any quicker swipe (the user asked: no long outs; only a stroke leaning far to the side goes out).
  */
 export const DEEP = 0.85,
   SAFE = 1.6;
 export function depthOf(p: number) {
   const q = Math.max(0, Math.min(MOST, p));
   if (q <= DEEP) return 1.3 + (HALF_L - 1.1 - 1.3) * (q / DEEP);
-  // Then it levels off inside the back line (the user asked that a shot almost never go long), out only at the very top.
-  if (q <= SAFE) return HALF_L - 1.1 + 0.8 * ((q - DEEP) / (SAFE - DEEP));
-  return HALF_L - 0.3 + (q - SAFE) * 9;
+  // Then it levels off inside the back line and stays there: no swipe sends it long (the user asked).
+  return HALF_L - 1.1 + 0.8 * Math.min(1, (q - DEEP) / (SAFE - DEEP));
 }
 /**
  * Where across the far court a stroke is aimed: a little toward the side it is struck from, and across as far as the
@@ -343,7 +336,7 @@ function serveStroke(world: World, side: 0 | 1, power: number, yaw: number) {
   const p = Math.max(0, Math.min(MOST, power)),
     at = held(world),
     across = -Math.sign(courtX(side, world.even)),
-    depth = p <= SAFE ? SHORT + 0.35 + (HALF_L - 0.6 - SHORT - 0.35) * Math.min(1, p / DEEP) : HALF_L - 0.6 + (p - SAFE) * 9,
+    depth = SHORT + 0.35 + (HALF_L - 0.6 - SHORT - 0.35) * Math.min(1, p / DEEP),
     x = across * 1.3 + (yaw / 0.5) * 1.5,
     long = Math.min(1, p / DEEP);
   aimAt(world, at, x, forward(side) * depth, 0.34 + long * 0.6);
@@ -425,8 +418,8 @@ function computerStroke(world: World, level: Level) {
   if (draw(world) < L.blunder) {
     // A blunder: long, wide, or short into the net.
     const r = draw(world);
-    if (r < 0.15) tz = HALF_L + 0.4 + draw(world);
-    else if (r < 0.6) tx = Math.sign(tx || 1) * (HALF_W + 0.3 + draw(world) * 0.6);
+    // (Never long over the back line: the user asked that there be no long outs.)
+    if (r < 0.55) tx = Math.sign(tx || 1) * (HALF_W + 0.3 + draw(world) * 0.6);
     else tz = 0.4;
   }
   const dx = tx - s.x,

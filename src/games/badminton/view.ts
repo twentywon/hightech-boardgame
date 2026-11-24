@@ -6,7 +6,7 @@ import { TableView, type Spot, type TableSubject } from "../table/view";
 import { noZoom } from "../../engine/zoom";
 import { featherPicture, hall } from "./court";
 import { SHOULDER, aimArm, figure, pose, type Figure } from "./figure";
-import { courtCamera, dipFor, liftFor, powerOf, yawOf } from "./layout";
+import { courtCamera, lookToward, powerOf, restingLook, yawOf } from "./layout";
 import { fromRight, serverOf, type State } from "./rules";
 import { DT, HALF_L, HALF_W, MOST, SWING, WHY, airborne, createWorld, inReach, jump, jumpNow, path, serve, smashable, step, swing, type Happening, type Level, type World } from "./sim";
 
@@ -81,7 +81,8 @@ export class BadmintonView extends TableView<State> {
   private heard = 0;
   /** Where the eye stands (it follows my player's head, eased), how far it looks up after a high shuttle, and a smash's shake. */
   private eye = { x: 0, y: 0, z: HALF_L };
-  private lift = 0;
+  /** Where the eye looks (eased toward the shuttle while it flies, back down the court between rallies). */
+  private look = { x: 0, y: 0.95, z: -6.1 };
   private shook = -1;
   private reachShown = 0;
   /** Where each racket was aimed when it struck, held through the follow-through (the shuttle has gone by then). */
@@ -422,11 +423,17 @@ export class BadmintonView extends TableView<State> {
     this.eye.x += (me.x - this.eye.x) * ease;
     this.eye.z += (me.z - this.eye.z) * ease;
     this.eye.y += (me.y - this.eye.y) * (real > 0 ? 1 - Math.exp(-real * 20) : 1);
-    const toward = flying && w.hitter === 1 && s.z > -1 ? (s.y >= 1.5 ? liftFor(s.y) : dipFor(s.y, Math.hypot(s.x - me.x, s.z - me.z))) : 0;
-    this.lift += (toward - this.lift) * (real > 0 ? 1 - Math.exp(-real * 4) : 1);
+    // The eye follows the shuttle while it flies, wherever it is (high, near the floor, far), and between rallies looks
+    // down the court; quickly enough to keep up with a smash, eased so that it does not jerk.
+    const aspect = this.camera.aspect,
+      goal = flying || (w.phase === "dead" && s.y > 0.05) ? lookToward(this.eye, s, aspect) : restingLook(this.eye),
+      follow = real > 0 ? 1 - Math.exp(-real * (flying ? 7 : 3)) : 1;
+    this.look.x += (goal.x - this.look.x) * follow;
+    this.look.y += (goal.y - this.look.y) * follow;
+    this.look.z += (goal.z - this.look.z) * follow;
     const since = (now - this.shook) / 1000,
       shake = this.shook >= 0 && since < 0.3 ? (1 - since / 0.3) * 0.05 : 0;
-    courtCamera(this.camera, this.camera.aspect, this.eye, this.lift, { x: shake * Math.sin(now * 0.09), y: shake * Math.cos(now * 0.11) });
+    courtCamera(this.camera, aspect, this.eye, this.look, { x: shake * Math.sin(now * 0.09), y: shake * Math.cos(now * 0.11) });
     this.words = this.words.filter((word) => {
       const p = (now - word.at) / 1300;
       if (p >= 1) {
@@ -469,7 +476,7 @@ export class BadmintonView extends TableView<State> {
   }
   protected resize() {
     super.resize();
-    courtCamera(this.camera, this.camera.aspect, this.eye, this.lift);
+    courtCamera(this.camera, this.camera.aspect, this.eye, this.look);
     this.redraw();
   }
   protected spots(): Spot[] {
@@ -484,6 +491,7 @@ export class BadmintonView extends TableView<State> {
       serve(this.world, serverOf(state), fromRight(state));
       const me = this.world.players[0];
       this.eye = { x: me.x, y: me.y, z: me.z };
+      this.look = restingLook(me);
     }
     this.shown = state.ply;
     this.pose(performance.now(), 0);
