@@ -3688,3 +3688,6 @@ html[data-game="slot-car"] .game-layout .board-area > .board-hint { display:none
   .sc-pedal-plate em { font-size:14px; }
 }
 html[data-capture] :is(.sc-hud, .sc-pedals) { display:none !important; }
+/* Backgammon: the throw is a hidden tool for the keyboard (the dice and cups are tapped); a pixel at the corner, so
+   that it never catches a press meant for the cube's buttons beside it. */
+html[data-game="backgammon"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;top:0;left:-16px;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important;pointer-events:none; }

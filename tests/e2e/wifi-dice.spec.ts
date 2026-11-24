@@ -261,7 +261,7 @@ test("backgammon in the app: white throws on the host's phone and the guest's ph
   await start(host, pages);
   await refusedAt(guest, BG_SUBJECT, DICE_AT);
   await roll(host, "주사위 굴리기");
-  await agree(pages, 1, ["dice"]);
+  await agree(pages, 1, ["dice", "pieces"]);
   expect((await canvas(guest).getAttribute("data-dice"))!).toMatch(/^[1-6],[1-6]$/);
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);

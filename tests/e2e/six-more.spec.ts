@@ -77,6 +77,30 @@ test("backgammon: the dice are thrown by a tap and a checker moves", async ({ pa
   expect(errors).toEqual([]);
 });
 
+test("backgammon with the cube: a double is offered by its button, the computer answers, and the cube and checkers are told on the canvas", async ({ page }, info) => {
+  const mobile = info.project.name === "mobile",
+    errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "백개먼");
+  await page.selectOption("#pg-variant", "cube");
+  await page.locator(".game-stage button.primary").click();
+  await ready(page);
+  const canvas = page.locator("canvas");
+  await expect(canvas).toHaveAttribute("data-cube", "1:-");
+  await expect(canvas).toHaveAttribute("data-pieces", /^0,0,0,0,0,5,0,3,/);
+  // At the opening the computer is no worse off than I am: it takes, and owns the cube at 2.
+  await page.getByRole("button", { name: /더블 제안/ }).click();
+  await expect(canvas).toHaveAttribute("data-cube", "2:1", { timeout: 20000 });
+  await settled(page);
+  await expect(page.getByRole("button", { name: /더블 제안/ })).toBeHidden();
+  // The dice are thrown by a tap as ever, and a checker moved.
+  await tap(page, BG_SUBJECT, DICE_AT.x, DICE_AT.z, mobile, 0.3);
+  await expect(moves(page)).toHaveText("3수", { timeout: 20000 });
+  await settled(page);
+  expect(errors).toEqual([]);
+});
+
 test("one card: a card is drawn from the pile and the computer answers", async ({ page }, info) => {
   const mobile = info.project.name === "mobile",
     errors = await sit(page, "원카드");
