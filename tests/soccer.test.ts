@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { CAP, DEFAULT_ROSTER, addComputer, homeTeam, moveRow, playMode, readRoster, rosterProblem, waiting, writeRoster, type Team } from "../src/games/soccer/roster";
-import { GOAL, TIME, createGame, soccer } from "../src/games/soccer/rules";
-import { BODY, FLAT, GOAL_PAUSE, GRAVITY, GRAVITY_PACE, IDLE, KICKOFF_WAIT, createWorld, step, think, type Input, type World } from "../src/games/soccer/sim";
+import { GOAL, NET_LEVEL, TIME, createGame, createNet, soccer } from "../src/games/soccer/rules";
+import { BODY, FLAT, GOAL_PAUSE, GRAVITY, GRAVITY_PACE, IDLE, KICKOFF_WAIT, LEVELS, createWorld, step, think, type Input, type Tune, type World } from "../src/games/soccer/sim";
 
 /** Runs `world` for `n` slices with each player's controls from `control` (the computer's `think` by default); the events seen. */
 function run(world: World, n: number, control: (k: number) => Input | null = (k) => think(world, k)) {
@@ -195,6 +195,23 @@ describe("soccer pitch", () => {
         expect(goals.length, `${mode} ${level}`).toBeGreaterThan(0);
         expect(goals.every((e) => e.kind === "goal" && e.team === 1)).toBe(true);
       }
+  });
+  test("어려움 plays the cleverer team game: three to a side it outscores the plain 어려움 it grew from", () => {
+    const plain: Tune = { ...LEVELS.hard, smart: false };
+    let clever = 0,
+      old = 0;
+    for (let seed = 1; seed <= 20; seed++)
+      for (const cleverRed of [true, false]) {
+        const w = createWorld("flat", [0, 1, 0, 1, 0, 1], "hard", seed * 7919);
+        for (let t = 0; t < 60 * 150; t++)
+          for (const e of step(w, w.men.map((m, k) => think(w, k, (m.team === 0) === cleverRed ? undefined : plain))))
+            if (e.kind === "goal") (e.team === 0) === cleverRed ? clever++ : old++;
+      }
+    expect(clever).toBeGreaterThan(old * 1.3);
+  });
+  test("over Wi-Fi the computer players always play 어려움, whatever level was last picked at one screen", () => {
+    expect(NET_LEVEL).toBe("hard");
+    expect(createNet("flat", { goals: "3", minutes: "0", level: "beginner" }, [true, true, true, false, false, false]).level).toBe("hard");
   });
   test("the clock runs except while a goal is celebrated, and its end is told once", () => {
     const w = createWorld("flat", [0, 1], "normal", 1, 120);

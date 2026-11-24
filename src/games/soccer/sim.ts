@@ -61,13 +61,25 @@ export const BODY = {
     most: 0.45 * GRAVITY_PACE,
   },
 } as const;
-/** The computer by level (the five of the shared picker): how often it looks again, how fast it goes, how far its aim strays, how square it must stand to shoot, how often it takes a chance. */
-export const LEVELS: Record<Difficulty, { look: number; pace: number; stray: number; square: number; take: number }> = {
+/**
+ * The computer by level (the five of the shared picker): how often it looks again, how fast it goes, how far its aim
+ * strays, how square it must stand to shoot, how often it takes a chance, and whether it plays the cleverer game
+ * (`smart`, see `think`).
+ */
+export interface Tune {
+  look: number;
+  pace: number;
+  stray: number;
+  square: number;
+  take: number;
+  smart?: boolean;
+}
+export const LEVELS: Record<Difficulty, Tune> = {
   beginner: { look: 22, pace: 0.55, stray: 0.95, square: 0.45, take: 0.12 },
   easy: { look: 15, pace: 0.7, stray: 0.7, square: 0.58, take: 0.3 },
   normal: { look: 9, pace: 0.84, stray: 0.45, square: 0.7, take: 0.6 },
-  hard: { look: 5, pace: 0.94, stray: 0.25, square: 0.78, take: 0.85 },
-  expert: { look: 3, pace: 1, stray: 0.1, square: 0.84, take: 1 },
+  hard: { look: 5, pace: 0.94, stray: 0.25, square: 0.78, take: 0.85, smart: true },
+  expert: { look: 3, pace: 1, stray: 0.1, square: 0.84, take: 1, smart: true },
 };
 export interface Disc {
   x: number;
@@ -120,6 +132,10 @@ export interface Mind {
   /** Where in the goal mouth it aims (−1 … 1), and whether it takes its chance this time. */
   aim: number;
   shoot: boolean;
+  /** The clever computer's: it went for the ball last slice (it keeps to it a little, so two do not swap back and forth). */
+  chasing?: boolean;
+  /** This player is the computer's (set as it thinks); the others are people. */
+  cpu?: boolean;
 }
 export interface Counts {
   kicks: number;
@@ -575,6 +591,34 @@ function chaser(world: World, team: Team) {
   }
   return best;
 }
+/**
+ * The clever computer's choice of who goes for the ball: whoever is nearest the place behind it (on its line to the far
+ * goal), a player already past the ball counting as further, the one already going a little nearer. A person on the
+ * team counts only while at the ball (then the computer's players play round them); one who stands off, or is away from
+ * the screen, is not waited for.
+ */
+function smartChaser(world: World, team: Team) {
+  const { ball } = world,
+    s = attack(team),
+    flat = world.mode === "flat",
+    gx = s * (flat ? FLAT.HX : GRAVITY.GL),
+    ax = gx - ball.x,
+    ay = flat ? -ball.y : 0,
+    al = Math.hypot(ax, ay) || 1;
+  let best = -1,
+    low = Infinity;
+  for (const { m, k } of teamOf(world, team)) {
+    if (!world.minds[k]?.cpu && Math.hypot(m.x - ball.x, flat ? m.y - ball.y : 0) - m.r - ball.r > 0.9) continue;
+    const px = ball.x - (ax / al) * (m.r + ball.r),
+      py = ball.y - (ay / al) * (m.r + ball.r),
+      cost = Math.hypot(m.x - px, flat ? m.y - py : 0) + (s * (m.x - ball.x) > 0.1 ? 0.9 : 0) - (world.minds[k]?.chasing ? 0.35 : 0);
+    if (cost < low - 1e-9) {
+      low = cost;
+      best = k;
+    }
+  }
+  return best;
+}
 /** The controls toward a place, slowing as it comes near; `pace` is the level's top speed. */
 function toward(m: Man, tx: number, ty: number, pace: number, flat: boolean): { x: number; y: number } {
   const dx = tx - m.x,
@@ -594,13 +638,14 @@ function toward(m: Man, tx: number, ty: number, pace: number, flat: boolean): { 
  * one of a team nearest the ball goes for it: round behind it, then on through it toward the far goal, shooting when
  * it stands square enough; the others keep between the ball and their own goal, the third a little ahead.
  */
-export function think(world: World, k: number): Input {
+export function think(world: World, k: number, tune?: Tune): Input {
   const m = world.men[k],
     mind = world.minds[k],
-    level = LEVELS[world.level],
+    level = tune ?? LEVELS[world.level],
     { ball, mode } = world,
     s = attack(m.team),
     flat = mode === "flat";
+  mind.cpu = true;
   if (world.phase === "over" || (world.phase === "goal" && world.done)) return IDLE;
   // Looking again now and then: a new aim in the goal mouth, by the level's stray. Between looks a player keeps going
   // where it last chose (a weaker computer reacts later); its kicks are judged every slice.
@@ -617,7 +662,10 @@ export function think(world: World, k: number): Input {
     mind.aim = (random(world) * 2 - 1) * level.stray;
   }
   const team = teamOf(world, m.team),
-    first = chaser(world, m.team) === k;
+    smart = !!level.smart,
+    lead0 = smart && flat ? smartChaser(world, m.team) : chaser(world, m.team),
+    first = lead0 === k;
+  if (smart) mind.chasing = first;
   // A kickoff: the team kicking off sends its nearest player after a short pause; the other waits at home.
   if (world.phase === "kickoff" && (world.kickoff !== m.team || world.timer < 40)) {
     const slot = team.findIndex((x) => x.k === k),
@@ -626,7 +674,8 @@ export function think(world: World, k: number): Input {
   }
   if (flat) {
     const goalX = s * FLAT.HX,
-      goalY = mind.aim * FLAT.GOAL * 0.75;
+      goalY = smart ? cornerOf(world, m.team) + mind.aim * FLAT.GOAL * 0.25 : mind.aim * FLAT.GOAL * 0.75;
+    if ((!first || world.phase === "goal") && smart) return support(world, k, lead0, go);
     if (!first || world.phase === "goal") {
       // Keep between the ball and our goal; a third player stands further up, wide of the ball.
       const slot = team.filter((x) => x.k !== chaser(world, m.team)).findIndex((x) => x.k === k),
@@ -678,7 +727,8 @@ export function think(world: World, k: number): Input {
     const cornered = Math.abs(px) > FLAT.BX - m.r || Math.abs(py) > FLAT.BY - m.r || Math.abs(ball.y) > FLAT.HY - reach;
     // Square to the goal it holds the kick ready as it comes in. In its own half, pressed against the ball, it clears
     // it forward from anywhere (else two players can hold a ball against each other, or in a corner, for ever).
-    if (fresh) mind.shoot = random(world) < level.take;
+    // The clever one takes every chance, except two to a side, where it played better choosing (measured against the plain one).
+    if (fresh) mind.shoot = (smart && team.length !== 2) || random(world) < level.take;
     const ready = mind.shoot && square > level.square && gap < 0.45,
       forward = gap < BODY.flat.reach * 0.9 && mind.shoot && ((tbx / tb) * s > 0.3 && s * ball.x < 1 || (cornered && (tbx / tb) * s > -0.2)),
       kick = ready || forward;
@@ -703,9 +753,62 @@ export function think(world: World, k: number): Input {
     head = above > 0.45 && Math.abs(dx) < 1.0 && ball.vy < 0.06,
     hop = !behind && above < 0.5 && Math.abs(dx) < 1.1 && m.ground,
     near = Math.hypot(dx, above) - m.r - ball.r < BODY.gravity.reach,
-    shoot = near && (behind || above > 0.3) && random(world) < level.take;
+    shoot = near && (behind || above > 0.3) && ((smart && team.length > 1) || random(world) < level.take);
   const jump = (head || hop) && random(world) < 0.4 + level.take * 0.6;
   return { ...go(tx, 0), y: 0, kick: shoot, kickPress: shoot, jump, jumpPress: jump };
+}
+/**
+ * Where in the far goal mouth the clever computer aims (平面): away from the player standing nearest that goal line
+ * (the keeper) when one is there, else at the post away from the ball's side.
+ */
+function cornerOf(world: World, team: Team) {
+  const s = attack(team),
+    { ball } = world;
+  let keeper: Man | null = null;
+  for (const m of world.men) if (m.team !== team && s * m.x > FLAT.HX - 2.6 && (!keeper || s * m.x > s * keeper.x)) keeper = m;
+  const side = keeper ? (keeper.y > 0.05 ? -1 : keeper.y < -0.05 ? 1 : ball.y > 0 ? 1 : -1) : ball.y > 0 ? -1 : 1;
+  return side * FLAT.GOAL * 0.55;
+}
+/**
+ * The clever computer's players who are not after the ball (平面). The first keeps on the line from its goal to the
+ * ball, nearer the goal while the other team has the ball, further out while its own team attacks; the third waits
+ * by the far post while its team attacks (for the rebound and the cross), wide in midfield otherwise. Either plays a
+ * ball that comes into its reach on, forward and away from its goal (a defender clears, a forward strikes first time).
+ */
+function support(world: World, k: number, lead: number, go: (tx: number, ty: number) => { x: number; y: number }): Input {
+  const m = world.men[k],
+    s = attack(m.team),
+    { ball } = world,
+    own = -s * FLAT.HX,
+    slot = teamOf(world, m.team)
+      .filter((x) => x.k !== lead)
+      .findIndex((x) => x.k === k),
+    leader = world.men[lead],
+    near = (who: Man) => Math.hypot(who.x - ball.x, who.y - ball.y),
+    theirs = world.men.filter((o) => o.team !== m.team).reduce((d, o) => Math.min(d, near(o)), Infinity),
+    attacking = !!leader && near(leader) < theirs + 0.3 && s * ball.x > -1;
+  let tx: number, ty: number;
+  if (slot === 0 || world.phase === "goal") {
+    const lx = ball.x - own,
+      ly = ball.y,
+      l = Math.hypot(lx, ly) || 1,
+      d = attacking ? Math.min(l * 0.3, 2.8) : clamp(l * 0.3, 0.75, 2.2);
+    tx = own + (lx / l) * d;
+    ty = (ly / l) * d;
+  } else if (attacking) {
+    tx = s * (FLAT.HX - 1.7);
+    ty = (ball.y > 0 ? -1 : 1) * 1.1;
+  } else {
+    tx = own + (ball.x - own) * 0.7;
+    ty = ball.y * 0.3 + (ball.y > 0 ? -1.4 : 1.4);
+    tx = s > 0 ? Math.min(tx, 2.5) : Math.max(tx, -2.5);
+  }
+  const dx = ball.x - m.x,
+    dy = ball.y - m.y,
+    dist = Math.hypot(dx, dy) || 1,
+    reach = dist - m.r - ball.r < BODY.flat.reach * 0.9,
+    kick = reach && world.phase !== "goal" && (s * dx) / dist > (slot === 0 ? 0.2 : 0.35);
+  return { ...go(tx, ty), kick, kickPress: kick && !m.held };
 }
 /** Seconds left on the clock (null without a limit). */
 export const timeLeft = (world: World) => (world.limit ? Math.max(0, (world.limit - world.clock) * DT) : null);

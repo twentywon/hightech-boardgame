@@ -53,6 +53,8 @@ function limits(options: GameOptions) {
     minutes = choice(options.minutes, MINUTE_CHOICES, DEFAULT_MINUTES);
   return { goals: goals || minutes ? goals : DEFAULT_GOALS, minutes };
 }
+/** The computer's level over Wi-Fi (와이파이 여럿이). */
+export const NET_LEVEL: Difficulty = "hard";
 export const levelOf = (value: unknown): Difficulty => (difficulties.includes(value as Difficulty) ? (value as Difficulty) : "normal");
 const base = (mode: Mode, players: Player[], options: GameOptions, home: Team): State => ({
   mode,
@@ -85,7 +87,8 @@ export function createNet(variant: string, options: GameOptions, seated: boolean
   });
   // Red first, then blue, each in its seats' order.
   players.sort((a, b) => a.team - b.team || a.seat - b.seat);
-  return { ...base(mode, players, options, 0), net: true };
+  // The room's computer players always play the 어려움 game (the user asked): the room has no level to pick.
+  return { ...base(mode, players, options, 0), level: NET_LEVEL, net: true };
 }
 /** Who stands for a player, in a word: 나, 2P, 컴퓨터, or over Wi-Fi its seat (레드 1). */
 export function playerName(state: State, k: number) {
