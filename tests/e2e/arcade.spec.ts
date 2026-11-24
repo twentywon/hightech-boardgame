@@ -21,12 +21,12 @@ async function sit(page: Page, name: string) {
 test("the arcade games have a kind of their own in the collection", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "아케이드게임", exact: true }).click();
-  for (const name of ["스네이크", "두더지 잡기", "인형뽑기", "블록 내리기", "벽돌깨기", "과일 게임", "고기 굽기", "테이블 사커", "에어하키", "농구", "코인 푸셔", "슬롯 카", "축구"])
+  for (const name of ["스네이크", "두더지 잡기", "인형뽑기", "블록 내리기", "벽돌깨기", "과일 게임", "고기 굽기", "테이블 사커", "에어하키", "농구", "코인 푸셔", "슬롯 카", "축구", "낚시"])
     await expect(page.getByRole("button", { name: `${name} 살펴보기`, exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "2048 살펴보기", exact: true })).toBeHidden();
   // Games of a real sport are 스포츠게임 now (the user asked), not arcade.
   await expect(page.getByRole("button", { name: "볼링 살펴보기", exact: true })).toBeHidden();
-  await expect(page.locator(".game-entry:not([hidden])")).toHaveCount(13);
+  await expect(page.locator(".game-entry:not([hidden])")).toHaveCount(14);
   await page.getByRole("button", { name: "스포츠게임", exact: true }).click();
   for (const name of ["컬링", "포켓볼", "다트", "탁구", "볼링"])
     await expect(page.getByRole("button", { name: `${name} 살펴보기`, exact: true })).toBeVisible();

@@ -3113,6 +3113,42 @@ html[data-game="carom-billiards"] .game-layout.hud.panel-scoreboard aside.game-s
   .ar-tv-tag { font-size:8.5px;padding:1px 5px; }
 }
 html[data-capture] .ar-hud { display:none !important; }
+/* 낚시: the score, the clock and the fish caught on a dark plate at the lower left, the line's tension as an upright
+   gauge at the right while a fish is on, and what to do now under the water's middle (decoration: the unseen panel
+   keeps the words for readers). No status line over the lake. */
+html[data-game="fishing"] .game-layout .board-area > .board-hint { display:none !important; }
+.fish-hud { position:absolute;inset:0;pointer-events:none;z-index:2;font-family:"Inter","Noto Sans KR",sans-serif;user-select:none;-webkit-user-select:none;color:#fff; }
+.fish-hud[hidden], .fish-hud [hidden] { display:none !important; }
+.fish-board { position:absolute;left:16px;bottom:42px;display:flex;gap:4px;padding:6px;border-radius:12px;background:rgba(14,30,36,.78);box-shadow:0 4px 14px rgba(0,0,0,.28); }
+.fish-board span { display:flex;flex-direction:column;align-items:center;min-width:64px;padding:2px 8px;line-height:1.15; }
+.fish-board span + span { border-left:1px solid rgba(255,255,255,.14); }
+.fish-board small { font-size:10.5px;font-weight:700;opacity:.72;letter-spacing:.02em; }
+.fish-board b { font-size:22px;font-weight:900;font-variant-numeric:tabular-nums; }
+.fish-board b.low { color:#ffd25a; }
+.fish-gauge { position:absolute;right:22px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 9px 8px;border-radius:14px;background:rgba(14,30,36,.78);box-shadow:0 4px 14px rgba(0,0,0,.28); }
+.fish-gauge small { font-size:11px;font-weight:800;opacity:.85; }
+.fish-gauge em { font-style:normal;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;color:#bfe8ff; }
+.fish-meter { position:relative;width:22px;height:clamp(110px, 30vh, 210px);border-radius:11px;background:linear-gradient(to top, rgba(255,255,255,.1) 75%, rgba(255,70,60,.28) 75%);box-shadow:inset 0 0 0 2px rgba(255,255,255,.35);overflow:hidden; }
+.fish-meter i { position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(to top, #4ed27a, #c9e84a 55%, #ffb03a 78%, #ff4a3a);background-size:100% clamp(110px, 30vh, 210px);background-position:bottom;transition:height .08s linear; }
+.fish-meter.danger { box-shadow:inset 0 0 0 2px #ff6a5a, 0 0 14px rgba(255,80,60,.7); }
+.fish-meter.surge { animation:fish-shake .18s linear infinite; }
+.fish-slack { width:42px;height:6px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden; }
+.fish-slack i { display:block;height:100%;width:0;background:#7fd6ff; }
+.fish-slack.warn i { background:#ffcf4a; }
+.fish-prompt { position:absolute;left:50%;bottom:44px;transform:translateX(-50%);margin:0;padding:7px 16px;border-radius:999px;background:rgba(14,30,36,.66);font-size:15px;font-weight:800;white-space:nowrap;max-width:calc(100% - 420px);overflow:hidden;text-overflow:ellipsis; }
+.fish-prompt.urgent { background:rgba(214,52,40,.88);animation:fish-pulse .5s ease-in-out infinite alternate; }
+@keyframes fish-shake { 0%, 100% { transform:translateX(0); } 25% { transform:translateX(-2px); } 75% { transform:translateX(2px); } }
+@keyframes fish-pulse { from { transform:translateX(-50%) scale(1); } to { transform:translateX(-50%) scale(1.06); } }
+@media (max-height: 500px) {
+  .fish-board { left:10px;bottom:30px;padding:4px; }
+  .fish-board span { min-width:50px;padding:1px 6px; }
+  .fish-board b { font-size:17px; }
+  .fish-board small { font-size:9.5px; }
+  .fish-gauge { right:12px;padding:7px 7px 6px; }
+  .fish-prompt { bottom:30px;font-size:12.5px;padding:5px 12px;max-width:calc(100% - 330px); }
+}
+@media (prefers-reduced-motion: reduce) { .fish-meter.surge, .fish-prompt.urgent { animation:none; } }
+html[data-capture] .fish-hud { display:none !important; }
 /* 레이저 체스: the board is widest at its near edge and its lasers stand in the corners, so the corner button
    stands in the upper right, as on the chess boards, with the status line kept to its left. */
 html[data-game="laser-chess"] .game-layout .board-area .board-controls { top:12px;bottom:auto;width:128px; }

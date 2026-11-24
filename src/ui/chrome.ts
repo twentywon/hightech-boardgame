@@ -123,6 +123,7 @@ const GEAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height
 const TIMED: Record<string, Partial<Record<Outcome, string>>> = {
   "meat-grill": { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
   "whack-a-mole": { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
+  fishing: { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
   basketball: { win: "성공", lose: "시간 종료" },
   // 사격 is a score: its end is the end of the round (pellets, clays, or the hunt's clock or cartridges).
   shooting: { win: "사격 종료", lose: "사격 종료", draw: "사격 종료" },

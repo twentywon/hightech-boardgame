@@ -389,6 +389,8 @@ const OWN: Record<string, Piece> = {
   carrom: INDIA,
   "peg-solitaire": INDIA,
   "whack-a-mole": ARCADE,
+  // The lake is calm: the gayageum and the daegeum, not the arcade's pop.
+  fishing: KOREA,
   "claw-machine": ARCADE,
   "coin-pusher": ARCADE,
   basketball: ARCADE,
