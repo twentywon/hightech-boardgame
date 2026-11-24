@@ -256,10 +256,8 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     // If the card was closed without its button, it is carried out from here.
     $("tour-key").onclick = () => {
       if (state.phase === "card") act((s) => follow(s), tourMove("follow"));
-      else if (state.phase === "travel") {
-        asked = null;
-        ask();
-      } else drawKey();
+      else if (state.phase === "travel") travelList();
+      else drawKey();
     };
     $("tour-end").onclick = () => act((s) => endTurn(s), tourMove("end"));
     $("tour-yes").onclick = () => act((s) => decide(s, true), tourMove("decide", 1));
@@ -273,6 +271,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       view.onTap = () => {
         if (state.phase === "roll") $("tour-roll").click();
       };
+      view.onSpace = travelTo;
       view.onDeck = () => {
         if (state.phase === "key") drawKey();
         else if (state.phase === "roll") $("tour-roll").click();
@@ -451,20 +450,62 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
       );
     } else if (state.phase === "travel") {
       asked = state;
-      let to = (me.at + 1) % SPACES.length;
-      const ship = SPACES.findIndex((s) => s.kind === "ship"),
-        owner = state.owners[ship],
-        fee = owner >= 0 && owner !== state.turn ? `${safe[owner]}의 ${SPACES[ship].name}를 타므로 ${won(TRAVEL_FEE)}을 냅니다.` : "지금은 요금이 없습니다.",
-        // Listed in the order they lie ahead.
-        ahead = SPACES.map((_, k) => (me.at + 1 + k) % SPACES.length).slice(0, -1);
-      modal(
-        "우주여행 — 어디로 갈까요?",
-        `<p>앞으로 어느 칸이든 갈 수 있습니다. 출발을 지나면 월급을 받습니다. ${fee}</p><label class="setting">도착할 칸<select id="tour-dest">${ahead.map((i) => `<option value="${i}">${SPACES[i].name}${SPACES[i].kind === "city" || SPACES[i].kind === "ship" ? (state.owners[i] === -1 ? ` · ${won(SPACES[i].price)}` : ` · ${names[state.owners[i]]}`) : ""}${i < me.at ? " (월급)" : ""}</option>`).join("")}</select></label>`,
-        [{ text: "떠나기", action: () => act((s) => travel(s, to), tourMove("travel", to)) }],
-      );
-      const select = document.getElementById("tour-dest") as HTMLSelectElement | null;
-      if (select) select.onchange = () => (to = Number(select.value));
+      // On the board: the spaces ahead light up and one is tapped (without a 3D table, the list).
+      if (view) view.offer(aheadOf(state));
+      else travelList();
     }
+  }
+  /** The spaces ahead of the traveller to move, in the order they lie (우주여행 may go to any of them). */
+  function aheadOf(s: State) {
+    const at = s.players[s.turn].at;
+    return SPACES.map((_, k) => (at + 1 + k) % SPACES.length).slice(0, -1);
+  }
+  /** What a trip costs now: the spacecraft's fare when another traveller owns it. */
+  function fareNote(s: State) {
+    const ship = SPACES.findIndex((space) => space.kind === "ship"),
+      owner = s.owners[ship];
+    return owner >= 0 && owner !== s.turn ? `${safe[owner]}의 ${SPACES[ship].name}를 타므로 ${won(TRAVEL_FEE)}을 냅니다.` : "지금은 요금이 없습니다.";
+  }
+  /** A space as a destination, in a few words: its price or owner, and the salary when the trip passes the start. */
+  function placeLine(s: State, i: number) {
+    const space = SPACES[i],
+      owned = space.kind === "city" || space.kind === "ship" ? (s.owners[i] === -1 ? ` · ${won(space.price)}` : ` · ${names[s.owners[i]]}`) : "";
+    return `${space.name}${owned}${i < s.players[s.turn].at ? " (월급)" : ""}`;
+  }
+  /** 우주여행 by a list, for the keyboard and readers (and where the board cannot be drawn). */
+  function travelList() {
+    const ahead = aheadOf(state);
+    let to = ahead[0];
+    modal(
+      "우주여행 — 어디로 갈까요?",
+      `<p>앞으로 어느 칸이든 갈 수 있습니다. 출발을 지나면 월급을 받습니다. ${fareNote(state)}</p><label class="setting">도착할 칸<select id="tour-dest">${ahead.map((i) => `<option value="${i}">${placeLine(state, i)}</option>`).join("")}</select></label>`,
+      [{ text: "떠나기", action: () => act((s) => travel(s, to), tourMove("travel", to)) }],
+    );
+    const select = document.getElementById("tour-dest") as HTMLSelectElement | null;
+    if (select) select.onchange = () => (to = Number(select.value));
+  }
+  /** 으로 after a final consonant, 로 after a vowel or ㄹ (서울로, 런던으로). */
+  function toward(word: string) {
+    const code = word.trim().slice(-1).charCodeAt(0) - 0xac00;
+    return code >= 0 && code < 11172 && code % 28 && code % 28 !== 8 ? "으로" : "로";
+  }
+  /** A space tapped on the board for 우주여행: shown chosen, and asked once more before the trip. */
+  function travelTo(i: number) {
+    if (state.phase !== "travel" || state !== shown || busy() || !(wifi ? mineNow() : human(state.turn)) || document.querySelector("dialog[open]")) return;
+    const ahead = aheadOf(state);
+    if (!ahead.includes(i)) return;
+    view?.offer(ahead, i);
+    const space = SPACES[i],
+      passes = i < state.players[state.turn].at,
+      owner = space.kind === "city" || space.kind === "ship" ? (state.owners[i] === -1 ? ` 아직 주인이 없는 땅입니다(${won(space.price)}).` : ` ${names[state.owners[i]]}의 땅입니다.`) : "";
+    modal(
+      `우주여행 — ${space.name}`,
+      `<p>${space.name}${toward(space.name)} 떠납니다.${owner} ${passes ? "출발을 지나므로 월급을 받습니다. " : ""}${fareNote(state)}</p>`,
+      [
+        { text: "다시 고르기", action: () => view?.offer(aheadOf(state)) },
+        { text: "떠나기", action: () => act((s) => travel(s, i), tourMove("travel", i)) },
+      ],
+    );
   }
   /** The computers roll and decide one visible step at a time. */
   function computer() {
@@ -607,7 +648,7 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
             : s.phase === "card"
               ? `황금열쇠 — ${LUCK[s.card]?.text ?? ""}`
               : s.phase === "travel"
-                ? "우주여행 — 갈 곳을 고르세요."
+                ? "우주여행 — 판에서 빛나는 칸 중 갈 곳을 누르세요."
                 : s.phase === "roll"
                   ? me.wait > 0
                     ? "무인도에 있습니다. 주사위를 굴려 더블이 나오면 탈출합니다."
@@ -640,7 +681,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
     $("tour-end").hidden = !(mine && s.phase === "end");
     $<HTMLButtonElement>("tour-end").disabled = waiting;
     $("tour-key").hidden = !(mine && (s.phase === "key" || s.phase === "card" || s.phase === "travel"));
-    $("tour-key").textContent = s.phase === "card" ? "카드대로 하기" : s.phase === "travel" ? "갈 곳 고르기" : "황금열쇠 뽑기";
+    // The destinations stay lit only while it is my 우주여행 to choose.
+    if (view && !(mine && s.phase === "travel" && state === shown)) view.offer(null);
+    $("tour-key").textContent = s.phase === "card" ? "카드대로 하기" : s.phase === "travel" ? "목록에서 갈 곳 고르기" : "황금열쇠 뽑기";
     $<HTMLButtonElement>("tour-key").disabled = waiting;
     $("tour-offer").hidden = !(mine && (s.phase === "buy" || s.phase === "build"));
     $("tour-yes").textContent = s.phase === "buy" ? `사기 (${won(space.price)})` : s.phase === "build" ? `짓기 (${won(buildCost(space, s.levels[me.at] + 1))})` : "";
@@ -684,9 +727,9 @@ export function mountTour(root: HTMLElement, nav: Navigation, random: Random = c
         part("주사위", table(["더블", "같은 눈 두 개가 나오면 알림과 효과음이 나오고 한 번 더 굴립니다."], ["세 번 연속 더블", "무인도로 갑니다."], ["무인도에서", "한 차례 쉽니다. 그 차례에 굴려 더블이 나오면 바로 탈출해 그만큼 갑니다."])) +
         part("돈", table(["시작 자금", `${won(START_MONEY)}`], ["월급", `출발 칸을 지나거나 설 때마다 ${won(SALARY)}`], ["숙박료", "그 도시에 <b>들인 돈(땅값 + 건물값)의 1.5배</b>. 일의 자리는 버립니다."], ["팔기", "내 차례에, 턴 종료를 누르기 전까지 내 땅을 들인 돈의 절반에 은행에 팔 수 있습니다."], ["돈이 모자랄 때", "살 돈이 모자라도 구매 창이 뜹니다. <b>땅 팔아 마련하기</b>로 다른 땅을 팔고 살 수 있습니다."], ["파산", "낼 돈이 모자라면 가진 도시를 값싼 것부터 반값에 팔아 메웁니다. 그래도 모자라면 탈락합니다."])) +
         `<h3>건물 (예: ${example.name}, 땅값 ${won(example.price)})</h3><dl class="piece-moves">${[0, 1, 2, 3].map((level) => `<dt>${LEVELS[level]}</dt><dd>${level ? `짓는 값 ${won(buildCost(example, level))} · ` : "깃발만 꽂힌 땅 · "}숙박료 ${won(feeOf(example, level))}</dd>`).join("")}</dl>` +
-        part("특별한 칸", `<dl class="piece-moves"><dt>출발</dt><dd>지나가거나 설 때마다 월급 ${won(SALARY)}을 받습니다.</dd><dt>황금열쇠</dt><dd>판 위의 황금열쇠 더미를 눌러 카드 한 장을 뽑고, 내용을 확인한 뒤 따릅니다.</dd><dt>무인도</dt><dd>한 차례 쉽니다. 다만 그 차례에 주사위를 굴려 같은 눈이 나오면 바로 탈출해 그만큼 갑니다.</dd><dt>우주여행</dt><dd>그 자리에서 앞으로 어느 칸이든 골라 갑니다. 출발을 지나면 월급을 받습니다. 콜롬비아호에 주인이 있으면 그 사람에게 ${won(TRAVEL_FEE)}을 냅니다.</dd><dt>콜롬비아호</dt><dd>${won(SPACES.find((space) => space.kind === "ship")!.price)}에 살 수 있는 우주선입니다. 건물은 지을 수 없고, 남이 이 칸에 서면 통행료 ${won(SHIP_TOLL)}, 남이 우주여행을 떠날 때마다 ${won(TRAVEL_FEE)}을 받습니다.</dd><dt>인류평화기금</dt><dd>이 칸에 서면 ${won(FUND_FEE)}을 기금으로 냅니다.</dd><dt>기금 수령</dt><dd>이 칸에 서면 그동안 모인 인류평화기금을 모두 받습니다.</dd></dl>`) +
+        part("특별한 칸", `<dl class="piece-moves"><dt>출발</dt><dd>지나가거나 설 때마다 월급 ${won(SALARY)}을 받습니다.</dd><dt>황금열쇠</dt><dd>판 위의 황금열쇠 더미를 눌러 카드 한 장을 뽑고, 내용을 확인한 뒤 따릅니다.</dd><dt>무인도</dt><dd>한 차례 쉽니다. 다만 그 차례에 주사위를 굴려 같은 눈이 나오면 바로 탈출해 그만큼 갑니다.</dd><dt>우주여행</dt><dd>그 자리에서 앞으로 어느 칸이든 판 위에서 눌러 골라 갑니다. 출발을 지나면 월급을 받습니다. 콜롬비아호에 주인이 있으면 그 사람에게 ${won(TRAVEL_FEE)}을 냅니다.</dd><dt>콜롬비아호</dt><dd>${won(SPACES.find((space) => space.kind === "ship")!.price)}에 살 수 있는 우주선입니다. 건물은 지을 수 없고, 남이 이 칸에 서면 통행료 ${won(SHIP_TOLL)}, 남이 우주여행을 떠날 때마다 ${won(TRAVEL_FEE)}을 받습니다.</dd><dt>인류평화기금</dt><dd>이 칸에 서면 ${won(FUND_FEE)}을 기금으로 냅니다.</dd><dt>기금 수령</dt><dd>이 칸에 서면 그동안 모인 인류평화기금을 모두 받습니다.</dd></dl>`) +
         part("황금열쇠", table(["상금·벌금", "돈을 받거나 냅니다."], ["이동", "출발·무인도·우주여행·서울·파리로 가거나, 몇 칸 앞뒤로 갑니다. 세계 일주 초대권은 한 바퀴 돌아 제자리로 오고 월급을 받습니다."], ["가진 땅", "건물 수리비(건물 한 단계마다), 재산세(땅 하나마다), 가장 비싼 땅의 반값 매각."], ["다른 여행자", "생일에는 모두에게서 받고, 한턱낼 때는 모두에게 줍니다."], ["기금", "인류평화기금에 기부하거나, 모인 기금을 모두 받습니다."], ["무인도 탈출권", "갖고 있다가 무인도에 갇힐 때 저절로 써서 바로 떠납니다."], ["우대권", "갖고 있다가 다음에 낼 숙박료나 통행료 한 번을 내지 않습니다."])) +
-        part("조작과 버튼", table(["주사위 굴리기", "버튼이나 판을 누릅니다."], ["황금열쇠", "판 위의 카드 더미를 누릅니다."], ["사기·짓기·우주여행", "창이 떠서 묻습니다."], ["턴 종료", "판 안 오른쪽 아래의 버튼입니다."], ["땅 증서", "옆 패널의 여행자를 누르면 그 사람이 가진 땅이 국기와 함께 나옵니다. 내 차례에는 내 땅을 팔 수 있습니다."], ["새 게임", "설정 창이 뜹니다. 상대 수를 고르고 새로 시작합니다."])) +
+        part("조작과 버튼", table(["주사위 굴리기", "버튼이나 판을 누릅니다."], ["황금열쇠", "판 위의 카드 더미를 누릅니다."], ["사기·짓기", "창이 떠서 묻습니다."], ["우주여행", "판에서 빛나는 칸을 눌러 갈 곳을 고르고, 창에서 떠나기를 누릅니다."], ["턴 종료", "판 안 오른쪽 아래의 버튼입니다."], ["땅 증서", "옆 패널의 여행자를 누르면 그 사람이 가진 땅이 국기와 함께 나옵니다. 내 차례에는 내 땅을 팔 수 있습니다."], ["새 게임", "설정 창이 뜹니다. 상대 수를 고르고 새로 시작합니다."])) +
         part("그 밖에", notes(`황금열쇠 카드는 모두 ${LUCK.length}가지입니다.`, "컴퓨터는 숙박료로 낼 돈을 남겨 두고 사고 짓습니다.", "저장과 무르기는 없습니다. 새로고침하면 처음으로 돌아갑니다.")),
     );
   }

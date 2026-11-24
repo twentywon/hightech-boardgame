@@ -31,6 +31,23 @@ export function spaceAt(index: number) {
     { x: REACH, z: -d },
   ][side];
 }
+/** The picture of a lit space (우주여행's choices): a light tint and a thick rounded frame, in white to be coloured. */
+function frameCanvas() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!,
+    round = (inset: number, r: number) => {
+      g.beginPath();
+      g.roundRect(inset, inset, 128 - inset * 2, 128 - inset * 2, r);
+    };
+  round(6, 16);
+  g.fillStyle = "rgba(255,255,255,0.32)";
+  g.fill();
+  g.lineWidth = 11;
+  g.strokeStyle = "#fff";
+  g.stroke();
+  return c;
+}
 /** Which way is toward the middle of the board from a side's spaces, and which way the road runs along it. */
 const INWARD = [
   [0, -1],
@@ -170,6 +187,82 @@ export class TourView {
   onBuilt: () => void = () => {};
   /** The board was tapped. */
   onTap: () => void = () => {};
+  /** A space offered by `offer` was tapped (우주여행: where to go). */
+  onSpace: (index: number) => void = () => {};
+  /** The spaces that may be tapped now, each with its glowing cover, and the one chosen. */
+  private offered = new Map<number, T.Mesh>();
+  private chosen = -1;
+  private hovered = -1;
+  private readonly floor = new T.Plane(new T.Vector3(0, 1, 0), -TOP);
+  /**
+   * Lights the spaces that may be tapped (우주여행's destinations), the `chosen` one brighter; none when `spaces` is
+   * null. Covers are laid just over the tiles and breathe while they wait.
+   */
+  offer(spaces: number[] | null, chosen = -1) {
+    if (this.disposed || (!spaces && !this.offered.size)) return;
+    const keep = new Set(spaces ?? []);
+    for (const [i, cover] of this.offered)
+      if (!keep.has(i)) {
+        this.scene.remove(cover);
+        this.offered.delete(i);
+      }
+    for (const i of keep)
+      if (!this.offered.has(i)) {
+        const p = spaceAt(i),
+          cover = new T.Mesh(this.coverShape, this.coverPaint.clone());
+        this.own(cover.material as T.Material);
+        cover.rotation.x = -Math.PI / 2;
+        cover.position.set(p.x, TOP + 0.006, p.z);
+        cover.renderOrder = 2;
+        this.offered.set(i, cover);
+        this.scene.add(cover);
+      }
+    this.chosen = keep.has(chosen) ? chosen : -1;
+    const canvas = this.renderer.domElement;
+    canvas.dataset.offered = [...keep].join(",");
+    // Where each offered space is on the canvas (CSS pixels), for the tests and readers' tools.
+    this.camera.updateMatrixWorld();
+    canvas.dataset.spots = JSON.stringify(
+      Object.fromEntries(
+        [...keep].map((i) => {
+          const p = spaceAt(i),
+            v = new T.Vector3(p.x, TOP, p.z).project(this.camera);
+          return [i, [Math.round(((v.x + 1) / 2) * canvas.clientWidth), Math.round(((1 - v.y) / 2) * canvas.clientHeight)]];
+        }),
+      ),
+    );
+    this.renderer.domElement.style.cursor = "";
+    this.paintOffer(performance.now());
+    this.dirty = true;
+  }
+  private readonly coverShape = this.own(new T.PlaneGeometry(STEP - 0.14, STEP - 0.14));
+  /** A lit space: a tint over the tile inside a bright rounded frame (white, coloured by the material). */
+  private readonly coverPaint = this.own(
+    new T.MeshBasicMaterial({ map: this.own(texture(frameCanvas())), color: "#39c6ff", transparent: true, depthWrite: false, toneMapped: false }),
+  );
+  private paintOffer(now: number) {
+    const breath = 0.5 + 0.5 * Math.sin(now / 260);
+    for (const [i, cover] of this.offered) {
+      const paint = cover.material as T.MeshBasicMaterial;
+      if (i === this.chosen) {
+        paint.color.set("#ffc21a");
+        paint.opacity = 1;
+      } else {
+        paint.color.set(i === this.hovered ? "#9be6ff" : "#39c6ff");
+        paint.opacity = i === this.hovered ? 1 : 0.6 + 0.4 * breath;
+      }
+    }
+  }
+  /** The space under a pointer, or -1. */
+  private spaceUnder(e: PointerEvent) {
+    aim(this.ray, e, this.renderer.domElement, this.camera);
+    const hit = new T.Vector3();
+    if (!this.ray.ray.intersectPlane(this.floor, hit)) return -1;
+    return SPACES.findIndex((_, i) => {
+      const p = spaceAt(i);
+      return Math.abs(hit.x - p.x) < STEP / 2 && Math.abs(hit.z - p.z) < STEP / 2;
+    });
+  }
   /**
    * Turns the top golden key card over: it lifts off the pile, flips and
    * comes forward. `done` is called when it has opened.
@@ -409,11 +502,23 @@ export class TourView {
     el.addEventListener("pointerdown", (e) => (down = e.pointerType === "mouse" && e.button !== 0 ? null : e.pointerId));
     el.addEventListener("pointerup", (e) => {
       if (down === e.pointerId && !this.disposed && !this.animating) {
+        const space = this.offered.size ? this.spaceUnder(e) : -1;
         aim(this.ray, e, el, this.camera);
-        if (this.ray.intersectObject(this.deck, false).length) this.onDeck();
+        if (this.offered.has(space)) this.onSpace(space);
+        else if (this.ray.intersectObject(this.deck, false).length) this.onDeck();
         else this.onTap();
       }
       down = null;
+    });
+    // A mouse over an offered space lights it and shows a hand.
+    el.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "mouse" || !this.offered.size || this.disposed) return;
+      const space = this.spaceUnder(e),
+        over = this.offered.has(space) ? space : -1;
+      if (over === this.hovered) return;
+      this.hovered = over;
+      el.style.cursor = over >= 0 ? "pointer" : "";
+      this.dirty = true;
     });
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
@@ -824,6 +929,10 @@ export class TourView {
   }
   private step(now: number) {
     let moved = false;
+    if (this.offered.size) {
+      this.paintOffer(now);
+      moved = true;
+    }
     if (this.tweens.length) {
       this.tweens = this.tweens.filter((t) => {
         const p = Math.min(1, (now - t.start) / t.duration);
