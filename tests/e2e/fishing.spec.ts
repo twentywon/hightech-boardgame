@@ -70,7 +70,7 @@ test("fishing: a press on the water casts, a strike at the bite hooks, reeling l
   expect(errors).toEqual([]);
 });
 
-test("fishing: the round runs out after its 90 seconds and says 시간 종료", async ({ page }) => {
+test("fishing: the round runs out after its 90 seconds and says 시간 종료 @alone", async ({ page }) => {
   test.setTimeout(200000);
   // The lake never moves on more than 0.3 s in one frame (so that a bite is never skipped on a slow device): under
   // software drawing (a few frames a second) the quicker clock gains little, so the round may still take its 90 s.
