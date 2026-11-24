@@ -117,8 +117,9 @@ export class BadmintonView extends TableView<State> {
     hall(this.scene, keep_);
     this.figures = [figure(keep_, "#d8322a", "#2a1d14", "#e23b2a"), figure(keep_, "#2363d0", "#121418", "#1f8adf")];
     for (const f of this.figures) this.scene.add(f.root);
-    // Semi first person: of my own player only the racket arm is drawn (the eye is just behind its head).
-    const arm = this.figures[0].arm;
+    // Semi first person: of my own player only the racket is drawn (the user asked: no arm), still moved by the
+    // unseen arm's swing; the eye is just behind its head.
+    const arm = this.figures[0].racket;
     this.figures[0].root.traverse((part) => {
       if (!(part instanceof T.Mesh)) return;
       let inArm = false;
@@ -361,7 +362,9 @@ export class BadmintonView extends TableView<State> {
       const f = this.figures[side],
         since = w.time - p.struck,
         swingAt = p.swing ? w.time - p.swing.at : -1,
-        serving = w.phase === "ready" && w.server === side;
+        // The computer waits to serve with its racket low; mine stays held up in front of me until I swing (low, it
+        // would look like a racket lying on the floor from my eye).
+        serving = w.phase === "ready" && w.server === side && side === 1;
       f.root.position.set(p.x, p.y, p.z);
       f.body.rotation.y = side === 0 ? Math.PI : 0;
       // A stroke: the swing's wind-up while it looks for the shuttle, then its follow-through once struck.

@@ -4,18 +4,6 @@ import { FULL_GAME, SHORT_GAME, badminton, capOf, deuce, gameNumber, serverOf, t
 import { BADMINTON_COLORS, BadmintonView } from "./view";
 import { gameResult } from "./result";
 
-/** The game scores: a column for each game (finished ones with their score, the one being played with its points so far). */
-function gameTable(state: State) {
-  const now = state.winner === null ? state.done.length : -1,
-    cell = (k: number, p: 0 | 1) => {
-      const score = k < state.done.length ? state.done[k] : k === now ? state.score : null;
-      if (!score) return `<i class="tt-cell">·</i>`;
-      const won = k < state.done.length && score[p] > score[1 - p];
-      return `<i class="tt-cell${k === now ? " now" : ""}${won ? " won" : ""}">${score[p]}</i>`;
-    },
-    row = (p: 0 | 1, name: string) => `<span class="tt-row tt-side-${p}"><b>${name}</b>${Array.from({ length: state.best }, (_, k) => cell(k, p)).join("")}<em>${state.games[p]}</em></span>`;
-  return `<span class="tt-table" aria-hidden="true" style="--games:${state.best}"><span class="tt-row tt-head"><b></b>${Array.from({ length: state.best }, (_, k) => `<i class="tt-cell${k === now ? " now" : ""}">${k + 1}</i>`).join("")}<em>게임</em></span>${row(0, "나")}${row(1, "컴퓨터")}</span>`;
-}
 export const badmintonConfig: PointConfig<State> = {
   game: badminton,
   panel: "scoreboard",
@@ -25,10 +13,11 @@ export const badmintonConfig: PointConfig<State> = {
   computerOnly: true,
   cheer: (before, state) => (state.ply <= before.ply || state.winner !== null ? null : deuce(state) && !deuce(before) ? "듀스" : null),
   setResult: (before, state) => gameResult(before, state, 0),
+  // The broadcast board in the corner: each player's serve dot, name, games won and points, a GAME tab over the first.
   tallyHtml: (state) =>
     [0, 1].map(
       (p) =>
-        `${p === 0 ? `<span class="tt-game">GAME ${gameNumber(state)}</span>${state.best > 1 ? gameTable(state) : ""}` : ""}<span class="tt-points">${state.score[p]}</span><i class="tt-serve${state.winner === null && serverOf(state) === p ? " on" : ""}" aria-hidden="true"></i>`,
+        `${p === 0 ? `<span class="bd-head">GAME ${gameNumber(state)}${state.done.length ? ` · ${state.done.map(([a, b]) => `${a}-${b}`).join(" ")}` : ""}</span>` : ""}<i class="bd-serve${state.winner === null && serverOf(state) === p ? " on" : ""}" aria-hidden="true"></i><span class="bd-name">${p === 0 ? "나" : "컴퓨터"}</span><em class="bd-games">${state.games[p]}</em><strong class="bd-points tt-points">${state.score[p]}</strong>`,
     ) as [string, string],
   view: (host, quality, _variant, _mode, level) => new BadmintonView(host, quality, level),
   colors: BADMINTON_COLORS,
@@ -66,7 +55,7 @@ export const badmintonConfig: PointConfig<State> = {
     part(
       "치기",
       table(
-        ["시점과 이동", "내 선수의 머리 바로 뒤에서 보는 세미 1인칭입니다. 내 몸은 보이지 않고 라켓을 든 팔만 보입니다. 선수는 셔틀콕이 오는 곳으로 <b>저절로 달려가고</b>, 시점도 함께 움직입니다. 셔틀콕이 높이 뜨면 시점이 따라 올라갑니다."],
+        ["시점과 이동", "내 선수의 머리 바로 뒤에서 보는 세미 1인칭입니다. 내 몸과 팔은 보이지 않고 라켓만 보입니다. 선수는 셔틀콕이 오는 곳으로 <b>저절로 달려가고</b>, 시점도 함께 움직입니다. 셔틀콕이 높이 뜨면 시점이 따라 올라갑니다."],
         ["밀기", "셔틀콕이 다가오면 화면 어디든 손가락(마우스는 누른 채)으로 <b>밀었다가 놓으면</b> 라켓을 휘두릅니다."],
         ["치는 때", "날아오는 셔틀콕에는 주황색 빛이 둘려 있고, 라켓이 닿는 거리에 들어오면 <b>연두색으로 밝게</b> 빛납니다. 그때 밀면 맞습니다. 빛나기 조금 전에 밀어도 휘두르는 동안 셔틀콕이 들어오면 맞습니다."],
         ["세기와 거리", "<b>빠르게 밀수록 셔틀콕이 세고 멀리</b> 나갑니다. 천천히 밀면 네트 바로 너머에 떨어지는 드롭, 빠르게 밀면 상대 코트 끝까지 가는 클리어가 됩니다. 내가 코트 어디에 있든 같은 빠르기면 같은 깊이로 갑니다. 셔틀콕은 늘 네트를 넘어가고, <b>아주 세게</b> 밀었을 때만 뒤로 나가 아웃이 됩니다."],
