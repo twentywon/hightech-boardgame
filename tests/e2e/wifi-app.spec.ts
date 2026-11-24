@@ -227,3 +227,27 @@ test("QR 찍기: the guest reads the host's room code once and is in; a refused 
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
+
+test("QR로 연결 in the app: its 방장 QR 찍기 reads the host's room code too", async ({ browser }, info) => {
+  const wifi = new FakeWifi();
+  const a = await phone(browser, info, wifi, "192.168.0.12"),
+    b = await phone(browser, info, wifi, "192.168.0.23", true),
+    host = a.page,
+    guest = b.page;
+  await lobby(host, "틱택토", "방장");
+  await host.locator("#net-host").click();
+  const code = host.locator("#net-room-code");
+  await expect(code.locator("svg")).toBeVisible();
+  const picture = await code.locator("svg").screenshot();
+  await lobby(guest, "틱택토", "민수");
+  await guest.locator("#net-join").click();
+  // The guest chose the QR way; the host still shows its room code. The camera there reads it and the guest is in.
+  await guest.locator("#net-qr").click();
+  await aimCamera(guest, picture);
+  await guest.locator(".net-scan-start").click();
+  await expect(guest.locator(".net-seats")).toBeVisible({ timeout: 20000 });
+  await expect(guest.locator(".net-seat").nth(1)).toContainText("나");
+  await expect(host.locator(".net-people li", { hasText: "민수" })).toBeVisible();
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});

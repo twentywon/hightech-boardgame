@@ -590,7 +590,9 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
         stopScan?.();
         stopScan = scan(
           video,
-          (text) => !codeProblem(text),
+          // Inside the app the host's room code (the QR code its window shows first) is read here too: both
+          // buttons are called 방장 QR 찍기, and this one used to look past that code for ever.
+          (text) => !codeProblem(text) || (!!lan && !!readRoomCode(text)),
           (text) => {
             view.hidden = true;
             field.value = text;
@@ -666,6 +668,8 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
   async function takeOffer(code: string) {
     const g = guest();
     if (!g || busy) return;
+    // Inside the app a room's code scanned or pasted here joins as it does from the list of rooms.
+    if (lan && readRoomCode(code)) return takeRoomCode(code);
     const problem = codeProblem(code);
     if (problem) return note(problem);
     // An invite names its game: one of another game is not answered here.
