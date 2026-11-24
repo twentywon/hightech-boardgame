@@ -197,9 +197,9 @@ test("expert Worker keeps animation frames alive; menu and a new game discard ol
   await page.waitForTimeout(3400);
   await expect(page.locator("#move-count")).toHaveText("0수");
   // The same when leaving for the collection in the middle of a search.
-  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await page.getByRole("button", { name: "나가기", exact: true }).click();
   await provoke(page);
-  await page.getByRole("button", { name: "컬렉션", exact: false }).click();
+  await page.getByRole("button", { name: "다른 게임", exact: false }).click();
   await selectGame(page);
   await page.getByLabel("로컬 2인", { exact: true }).check();
   await page.getByRole("button", { name: "테이블에 앉기" }).click();
