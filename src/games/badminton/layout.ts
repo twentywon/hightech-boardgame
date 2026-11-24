@@ -2,28 +2,31 @@ import type * as T from "three";
 import { HALF_L } from "./sim";
 
 /**
- * Where the eye stands, free of Vite-only imports (browser tests aim with it): behind my back line and above it, so
- * that my player is seen from behind in the lower middle and the whole far court beyond the net. It follows my player
- * across a little (`across`). A narrow screen steps back and up to keep the side lines in sight.
+ * The eye, free of Vite-only imports (browser tests aim with it). Semi first person (the user asked): the eye stands
+ * just behind and above my player's head and goes with it as it runs and jumps, so that my own body is not seen, only
+ * my racket arm coming into the lower right as it swings. It looks down the court toward the far back line, and up
+ * after a shuttle that comes high over me (`lift`). A narrow screen steps back a little to keep the side lines in sight.
  */
-export const EYE = { y: 5.3, z: HALF_L + 5.4 },
-  LOOK = { y: 0, z: -0.6 },
-  FOV = 46,
-  /** How far the eye follows my player across, and how far the point it looks at does. */
-  FOLLOW = 0.45,
-  LOOK_FOLLOW = 0.2;
-export function courtCamera(camera: T.PerspectiveCamera, aspect: number, across = 0) {
-  const back = aspect < 1.45 ? (1.45 - aspect) * 5 : 0;
-  camera.fov = aspect > 1.9 ? FOV - 4 : FOV;
+export const BEHIND = 1.55,
+  ABOVE = 2.25,
+  /** A little to the left of the head, so that the racket arm comes in at the lower right. */
+  ASIDE = -0.22,
+  LOOK = { y: 0.95, z: -HALF_L + 0.6 },
+  FOV = 60,
+  /** How far the point looked at follows my player across (the rest of the way the eye turns with it). */
+  LOOK_FOLLOW = 0.45;
+export function courtCamera(camera: T.PerspectiveCamera, aspect: number, me: { x: number; y: number; z: number }, lift = 0, shake = { x: 0, y: 0 }) {
+  const back = aspect < 1.45 ? (1.45 - aspect) * 1.6 : 0;
+  camera.fov = aspect > 1.9 ? FOV - 6 : aspect < 1.2 ? FOV + 8 : FOV;
   camera.aspect = aspect;
   camera.updateProjectionMatrix();
-  camera.position.set(across * FOLLOW, EYE.y + back * 0.45, EYE.z + back);
-  // A wide screen (a phone held sideways) looks a little higher, so that the far court comes down from under the scoreboard.
-  const wide = Math.max(0, Math.min(1, (aspect - 1.75) / 0.5));
-  camera.lookAt(across * LOOK_FOLLOW, LOOK.y + wide * 1.1, LOOK.z - wide * 0.6);
+  camera.position.set(me.x + ASIDE + shake.x, ABOVE + me.y + back * 0.4 + shake.y, me.z + BEHIND + back);
+  camera.lookAt(me.x * LOOK_FOLLOW, LOOK.y + lift, LOOK.z + lift * 2.2);
   camera.updateMatrixWorld();
 }
-/** How a swipe's speed (canvas heights a second) becomes the stroke's power (1: a clear from the middle to the back line). */
+/** How far the eye looks up after a shuttle `height` metres up coming down over me. */
+export const liftFor = (height: number) => Math.max(0, Math.min(2.2, (height - 2.2) * 0.45));
+/** How a swipe's speed (canvas heights a second) becomes the stroke's power (0.85: deep, near the back line; beyond 1.3: long). */
 export const powerOf = (speed: number) => Math.max(0, (speed - 0.6) / 5);
 /** A swipe's lean across: its angle from straight up the screen (radians, + to the right), held within a wide angle. */
 export const yawOf = (dx: number, dy: number) => Math.max(-0.5, Math.min(0.5, Math.atan2(dx, Math.max(1, Math.abs(dy))) * 0.7));

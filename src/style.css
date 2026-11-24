@@ -3017,6 +3017,10 @@ html[data-capture] .tt-tip { display:none !important; }
 .bd-jump svg { width:46%;height:46%;margin-bottom:-2px; }
 .bd-jump.on { transform:translateY(-6px) scale(1.06);filter:brightness(1.25);box-shadow:0 10px 26px rgba(255,120,60,.55), inset 0 -4px 10px rgba(0,0,0,.2); }
 .bd-jump.off { filter:saturate(.35) brightness(.85); }
+/* A shuttle coming high over me: the jump button pulses, inviting the smash. */
+.bd-jump.hint { animation:bd-jump-hint .7s ease-in-out infinite alternate;filter:none; }
+@keyframes bd-jump-hint { from { box-shadow:0 0 0 0 rgba(255,200,80,.85), 0 6px 18px rgba(0,0,0,.35); transform:scale(1); } to { box-shadow:0 0 0 14px rgba(255,200,80,0), 0 6px 18px rgba(0,0,0,.35); transform:scale(1.1); } }
+@media (prefers-reduced-motion: reduce) { .bd-jump.hint { animation:none;box-shadow:0 0 0 4px #ffc850; } }
 .bd-jump[hidden] { display:none; }
 html[data-capture] .bd-jump { display:none !important; }
 /* Texas hold'em: the table itself shows every seat's chips and the community cards, so the lettering over it keeps

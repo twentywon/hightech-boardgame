@@ -6,9 +6,9 @@ import { TableView, type Spot, type TableSubject } from "../table/view";
 import { noZoom } from "../../engine/zoom";
 import { featherPicture, hall } from "./court";
 import { figure, pose, type Figure } from "./figure";
-import { courtCamera, powerOf, yawOf } from "./layout";
+import { courtCamera, liftFor, powerOf, yawOf } from "./layout";
 import { fromRight, serverOf, type State } from "./rules";
-import { DT, HALF_L, HALF_W, MOST, SWING, WHY, airborne, createWorld, inReach, jump, path, serve, step, swing, type Happening, type Level, type World } from "./sim";
+import { DT, HALF_L, HALF_W, MOST, SWING, WHY, airborne, createWorld, inReach, jump, path, serve, smashable, step, swing, type Happening, type Level, type World } from "./sim";
 
 export const BADMINTON_COLORS: [string, string] = ["#e0402c", "#2a72e0"];
 /** How long the shuttle of an ended rally is left on the floor before the next serve. */
@@ -79,8 +79,13 @@ export class BadmintonView extends TableView<State> {
   private left = 0;
   private ticker = 0;
   private heard = 0;
-  private across = 0;
+  /** Where the eye stands (it follows my player's head, eased), how far it looks up after a high shuttle, and a smash's shake. */
+  private eye = { x: 0, y: 0, z: HALF_L };
+  private lift = 0;
+  private shook = -1;
   private reachShown = 0;
+  /** The glow round the shuttle while my racket can reach it. */
+  private halo: T.Sprite;
   /** The last power a swipe had (for the browser tests), and how many swipes swung. */
   private swung = 0;
   private lastPower = -1;
@@ -112,6 +117,15 @@ export class BadmintonView extends TableView<State> {
     hall(this.scene, keep_);
     this.figures = [figure(keep_, "#d8322a", "#2a1d14", "#e23b2a"), figure(keep_, "#2363d0", "#121418", "#1f8adf")];
     for (const f of this.figures) this.scene.add(f.root);
+    // Semi first person: of my own player only the racket arm is drawn (the eye is just behind its head).
+    const arm = this.figures[0].arm;
+    this.figures[0].root.traverse((part) => {
+      if (!(part instanceof T.Mesh)) return;
+      let inArm = false;
+      for (let at: T.Object3D | null = part; at; at = at.parent) if (at === arm) inArm = true;
+      part.visible = inArm;
+      part.castShadow = inArm;
+    });
     // The shuttle: a white cork at its nose and a skirt of feathers, made along -y (the nose) so that it can be turned along its way.
     this.shuttle = new T.Group();
     const cork = new T.Mesh(keep_(new T.SphereGeometry(0.014, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2)), this.standard({ color: "#f7f5ee", roughness: 0.55 })),
@@ -129,6 +143,11 @@ export class BadmintonView extends TableView<State> {
     this.shadow.renderOrder = 2;
     this.ring = new T.Mesh(keep_(new T.CircleGeometry(0.9, 40).rotateX(-Math.PI / 2)), keep_(new T.MeshBasicMaterial({ map: keep_(glow("#c8ff5c", true)), transparent: true, depthWrite: false, blending: T.AdditiveBlending })));
     this.ring.renderOrder = 3;
+    this.ring.visible = false;
+    this.halo = new T.Sprite(keep_(new T.SpriteMaterial({ map: keep_(glow("#ffffff", true)), transparent: true, depthTest: false, depthWrite: false, blending: T.AdditiveBlending })));
+    this.halo.renderOrder = 19;
+    this.halo.visible = false;
+    this.scene.add(this.halo);
     this.landMark = new T.Mesh(keep_(new T.CircleGeometry(0.32, 32).rotateX(-Math.PI / 2)), keep_(new T.MeshBasicMaterial({ map: keep_(glow("#ffe05a", true)), transparent: true, depthWrite: false, blending: T.AdditiveBlending })));
     this.landMark.renderOrder = 3;
     this.landMark.visible = false;
@@ -269,7 +288,11 @@ export class BadmintonView extends TableView<State> {
     for (const event of events) {
       if (event.kind === "hit") {
         this.knock("disc", Math.max(0.25, event.strength), now);
-        if (event.smash) this.say("스매싱!", event.side === 0 ? "#ff8a3a" : "#9fd0ff", now, this.world.shuttle.x, event.side);
+        if (event.smash) {
+          this.say("스매싱!", event.side === 0 ? "#ff8a3a" : "#9fd0ff", now, this.world.shuttle.x, event.side);
+          // My smash shakes the eye a moment.
+          if (event.side === 0 && !this.reducedMotion) this.shook = now;
+        }
       } else if (event.kind === "land") this.knock("cushion", 0.3 + event.strength * 0.5, now);
       else if (event.kind === "net") this.knock("pocket", 0.5, now);
       else if (event.kind === "point" && running && this.state?.winner === null) {
@@ -350,14 +373,19 @@ export class BadmintonView extends TableView<State> {
       } else if (since >= 0 && since < 0.4) phase = 0.34 + (since / 0.4) * 0.66;
       pose(f, { speed: Math.hypot(p.vx, p.vz), air: p.y, swing: phase, high, dt: real, serve: serving || (since < 0.4 && w.served && w.hitter === side), lean: (side === 0 ? 1 : -1) * Math.max(-1, Math.min(1, p.vx / 4)) });
     });
-    // My reach: a ring at my feet that lights up while the shuttle can be struck; at the easiest level, where it will come down.
+    // My reach: a glow round the shuttle while my racket can meet it; at the easiest level, where it will come down.
     const me = w.players[0],
       can = inReach(w, 0) && !capturing(),
       fade = 1 - Math.exp(-(real || 0) / 0.06);
-    this.reachShown += ((can ? 1 : 0.18) - this.reachShown) * (real > 0 ? fade : 1);
-    this.ring.position.set(me.x, 0.006, me.z);
-    this.ring.visible = !capturing() && w.phase !== "dead";
-    (this.ring.material as T.MeshBasicMaterial).opacity = this.reachShown;
+    this.reachShown += ((can ? 1 : 0) - this.reachShown) * (real > 0 ? fade : 1);
+    // In flight a soft orange glow keeps the white shuttle in sight against the light walls; lime and bright in reach.
+    const glowing = flying && !capturing(),
+      halo = this.halo.material as T.SpriteMaterial;
+    this.halo.visible = glowing || this.reachShown > 0.03;
+    this.halo.position.copy(this.shuttle.position);
+    this.halo.scale.setScalar((0.2 + 0.1 * this.reachShown) * grow);
+    halo.color.setRGB(1 - this.reachShown * 0.2, 0.55 + this.reachShown * 0.45, 0.25 + this.reachShown * 0.1);
+    halo.opacity = Math.max(glowing ? 0.55 : 0, this.reachShown);
     const coming = flying && w.hitter === 1 && this.level === "easy" && !capturing();
     if (coming) {
       const way = path(w),
@@ -365,10 +393,17 @@ export class BadmintonView extends TableView<State> {
       if (endAt && endAt.z > 0) this.landMark.position.set(endAt.x, 0.008, endAt.z);
       this.landMark.visible = !!endAt && endAt.z > 0;
     } else this.landMark.visible = false;
-    // The eye follows my player across a little.
-    const goal = Math.max(-HALF_W, Math.min(HALF_W, me.x));
-    this.across += (goal - this.across) * (real > 0 ? 1 - Math.exp(-real * 3) : 1);
-    courtCamera(this.camera, this.camera.aspect, this.across);
+    // The eye goes with my player's head (eased, so that a quick step does not jerk it) and up with its jump; it looks up
+    // after a shuttle coming high over me; a smash of mine shakes it a moment.
+    const ease = real > 0 ? 1 - Math.exp(-real * 9) : 1;
+    this.eye.x += (me.x - this.eye.x) * ease;
+    this.eye.z += (me.z - this.eye.z) * ease;
+    this.eye.y += (me.y - this.eye.y) * (real > 0 ? 1 - Math.exp(-real * 20) : 1);
+    const toward = flying && w.hitter === 1 && s.z > -1 ? liftFor(s.y) : 0;
+    this.lift += (toward - this.lift) * (real > 0 ? 1 - Math.exp(-real * 4) : 1);
+    const since = (now - this.shook) / 1000,
+      shake = this.shook >= 0 && since < 0.3 ? (1 - since / 0.3) * 0.05 : 0;
+    courtCamera(this.camera, this.camera.aspect, this.eye, this.lift, { x: shake * Math.sin(now * 0.09), y: shake * Math.cos(now * 0.11) });
     this.words = this.words.filter((word) => {
       const p = (now - word.at) / 1300;
       if (p >= 1) {
@@ -381,9 +416,13 @@ export class BadmintonView extends TableView<State> {
       (word.sprite.material as T.SpriteMaterial).opacity = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3;
       return true;
     });
-    const mine = w.phase === "ready" && w.server === 0;
-    this.tip.hidden = !(this.running() && mine) || capturing();
+    // The word over the court: my serve; or, for a shuttle coming high over me, the jump that smashes it.
+    const mine = w.phase === "ready" && w.server === 0,
+      high = this.running() && smashable(w) && !airborne(w, 0);
+    this.tip.textContent = mine ? "화면을 위로 밀어 서브하세요 · 빠를수록 멀리 갑니다" : "높이 떴습니다! 점프하고 밀면 스매싱";
+    this.tip.hidden = !(this.running() && (mine || high)) || capturing();
     const canJump = this.running() && flying && !airborne(w, 0);
+    this.jumpButton.classList.toggle("hint", high && !capturing());
     this.jumpButton.classList.toggle("on", airborne(w, 0));
     this.jumpButton.classList.toggle("off", !canJump && !airborne(w, 0));
     this.jumpButton.hidden = capturing() || !this.state || this.state.winner !== null;
@@ -395,6 +434,7 @@ export class BadmintonView extends TableView<State> {
     data.server = String(w.server);
     data.hitter = String(w.hitter);
     data.reach = can ? "1" : "0";
+    data.smashable = high ? "1" : "0";
     data.swung = String(this.swung);
     data.power = this.lastPower.toFixed(2);
   }
@@ -403,7 +443,7 @@ export class BadmintonView extends TableView<State> {
   }
   protected resize() {
     super.resize();
-    courtCamera(this.camera, this.camera.aspect, this.across);
+    courtCamera(this.camera, this.camera.aspect, this.eye, this.lift);
     this.redraw();
   }
   protected spots(): Spot[] {
@@ -416,6 +456,8 @@ export class BadmintonView extends TableView<State> {
       if (anew) this.world = this.newWorld();
       this.begun = true;
       serve(this.world, serverOf(state), fromRight(state));
+      const me = this.world.players[0];
+      this.eye = { x: me.x, y: me.y, z: me.z };
     }
     this.shown = state.ply;
     this.pose(performance.now(), 0);

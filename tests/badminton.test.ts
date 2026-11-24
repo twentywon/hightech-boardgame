@@ -13,20 +13,8 @@ function run(w: S.World, seconds: number, until: (w: S.World, h: S.Happening[]) 
   }
   return all;
 }
-/** The power that sends the shuttle from where it is now to `depth` past the net (for my player in these tests). */
-function aimed(w: S.World, depth: number) {
-  let low = 0,
-    high = S.MOST;
-  for (let k = 0; k < 24; k++) {
-    const p = (low + high) / 2,
-      v = S.speedOf(p),
-      e = S.elevationOf(w.shuttle.y),
-      end = S.landing({ ...w.shuttle, vx: 0, vy: v * Math.sin(e), vz: -v * Math.cos(e) });
-    if (end.net || end.z > -depth) low = p;
-    else high = p;
-  }
-  return low;
-}
+/** The power that sends the shuttle `depth` past the net (for my player in these tests). */
+const aimed = (_w: S.World, depth: number) => ((depth - 1.3) / (S.HALF_L - 1.1 - 1.3)) * S.DEEP;
 const points = (h: S.Happening[]) => h.filter((e): e is Extract<S.Happening, { kind: "point" }> => e.kind === "point");
 
 describe("badminton rules", () => {
@@ -67,28 +55,42 @@ describe("badminton rules", () => {
 });
 
 describe("badminton court", () => {
-  test("a quicker swipe sends the shuttle harder and further, and a much quicker one long", () => {
+  test("a quicker swipe sends the shuttle harder and further; it goes out only far too hard or far to the side", () => {
     expect(powerOf(0.5)).toBe(0);
     expect(powerOf(4)).toBeLessThan(powerOf(7));
-    let last = -Infinity;
-    for (const p of [0.2, 0.4, 0.6, 0.8, 1, 1.2]) {
-      const v = S.speedOf(p),
-        e = S.elevationOf(2),
-        end = S.landing({ x: 0, y: 2, z: 3.7, vx: 0, vy: v * Math.sin(e), vz: -v * Math.cos(e) });
-      expect(end.net).toBe(false);
-      expect(end.z).toBeLessThan(last === -Infinity ? 0 : last);
-      last = end.z;
-    }
-    // From the middle of my half: a medium swipe lands deep in the far court, the hardest goes out over the back line.
-    const at = (p: number) => {
-      const v = S.speedOf(p),
-        e = S.elevationOf(2);
-      return S.landing({ x: 0, y: 2, z: 3.7, vx: 0, vy: v * Math.sin(e), vz: -v * Math.cos(e) }).z;
+    // Struck from anywhere on my half, at any height: the same swipe lands at the same depth, deeper the quicker.
+    const stroke = (p: number, yaw: number, from: { x: number; y: number; z: number }) => {
+      const w = S.createWorld(1);
+      S.serve(w, 1, true);
+      Object.assign(w, { phase: "flying", hitter: 1, served: false });
+      w.players[0] = { ...w.players[0], x: from.x, z: from.z + 0.2 };
+      w.shuttle = { x: from.x, y: from.y, z: from.z, vx: 0, vy: -1, vz: 0 };
+      S.swing(w, 0, p, yaw);
+      S.step(w, "normal");
+      expect(w.hitter).toBe(0);
+      return { end: S.landing(w.shuttle), speed: Math.hypot(w.shuttle.vx, w.shuttle.vy, w.shuttle.vz) };
     };
-    expect(at(0.65)).toBeLessThan(-S.HALF_L + 1.5);
-    expect(at(0.65)).toBeGreaterThan(-S.HALF_L);
-    expect(at(S.MOST)).toBeLessThan(-S.HALF_L);
-    // A swipe leaning right aims right.
+    for (const from of [{ x: 0, y: 2, z: 3.7 }, { x: -2, y: 0.6, z: 1.5 }, { x: 2.2, y: 2.4, z: 6.2 }]) {
+      let last = 0,
+        lastSpeed = 0;
+      for (const p of [0, 0.3, 0.6, 0.85, 1.1, 1.3]) {
+        const { end, speed } = stroke(p, 0, from);
+        expect(end.net).toBe(false);
+        expect(end.z).toBeLessThan(last);
+        expect(end.z).toBeGreaterThanOrEqual(-S.HALF_L);
+        expect(Math.abs(end.x)).toBeLessThanOrEqual(S.HALF_W);
+        expect(speed).toBeGreaterThan(lastSpeed);
+        last = end.z;
+        lastSpeed = speed;
+      }
+      // Far too hard: long over the back line.
+      expect(stroke(1.6, 0, from).end.z).toBeLessThan(-S.HALF_L);
+      // A moderate lean stays in; the most lean goes out wide.
+      expect(Math.abs(stroke(0.7, 0.3, from).end.x)).toBeLessThan(S.HALF_W);
+      expect(stroke(0.7, 0.3, from).end.x).toBeGreaterThan(0.5);
+      expect(Math.abs(stroke(0.7, -0.5, from).end.x)).toBeGreaterThan(S.HALF_W);
+    }
+    expect(S.depthOf(0)).toBeGreaterThan(1);
     expect(yawOf(40, -200)).toBeGreaterThan(0);
     expect(yawOf(-40, -200)).toBeLessThan(0);
   });

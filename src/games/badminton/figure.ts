@@ -49,6 +49,8 @@ function racket(own: Own, frameColour: string) {
 }
 export interface Figure {
   root: T.Group;
+  /** The racket arm (shoulder down, with the racket): all that is drawn of my own player in the first person. */
+  arm: T.Group;
   /** Turned to face the net. */
   body: T.Group;
   hips: T.Group;
@@ -114,7 +116,8 @@ export function figure(own: Own, shirt: string, hair: string, frameColour: strin
   put(head, new T.TorusGeometry(0.1, 0.014, 6, 22).rotateX(Math.PI / 2), trim, 0, 0.035, -0.004);
   for (const sx of [-1, 1]) put(head, new T.SphereGeometry(0.02, 8, 6), skin, sx * 0.1, -0.005, 0);
   // The arms hang from the shoulders (along -y): upper arm with its sleeve, forearm, hand; the racket in the right hand.
-  const arms = [-1, 1].map((sx) => {
+  // arms[1] is the right arm (at -x while the body faces +z), the racket's.
+  const arms = [1, -1].map((sx) => {
     const arm = new T.Group();
     arm.position.set(sx * 0.215, 0.52, 0);
     torso.add(arm);
@@ -134,9 +137,9 @@ export function figure(own: Own, shirt: string, hair: string, frameColour: strin
   // Gripped in the right hand, pointing on along the forearm.
   held.position.set(0, -0.26, 0.02);
   held.rotation.x = Math.PI;
-  held.rotation.z = Math.PI;
+  held.rotation.y = Math.PI;
   elbows[1].add(held);
-  return { root, body, hips, legs, torso, arms, elbow: elbows[1], racket: held, stride: 0 };
+  return { root, arm: arms[1], body, hips, legs, torso, arms, elbow: elbows[1], racket: held, stride: 0 };
 }
 
 /**
@@ -155,7 +158,7 @@ export function pose(f: Figure, o: { speed: number; air: number; swing: number; 
   f.torso.rotation.z = o.lean * 0.12;
   // The free arm swings with the stride, or is raised to point at a high shuttle.
   f.arms[0].rotation.x = o.high && o.swing < 0.5 ? -2.2 : -s * 0.6 * stride - 0.25;
-  f.arms[0].rotation.z = -0.15;
+  f.arms[0].rotation.z = 0.15;
   // The racket arm: back and up, through the shuttle, and down across (overhead); or low behind, then up in front (underarm).
   const p = Math.max(0, Math.min(1, o.swing)),
     arm = f.arms[1];
@@ -176,10 +179,10 @@ export function pose(f: Figure, o: { speed: number; air: number; swing: number; 
   }
   if (p === 0 && !o.serve) {
     // Ready: the racket held up in front, its head high.
-    a = -1.25;
-    bend = -1.1;
-    turn = 0.35;
+    a = -0.9;
+    bend = -1.9;
+    turn = 0.4;
   }
-  arm.rotation.set(a, 0, -turn);
+  arm.rotation.set(a, 0, turn);
   f.elbow.rotation.x = bend;
 }

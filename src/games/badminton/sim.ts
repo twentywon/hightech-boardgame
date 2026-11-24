@@ -9,8 +9,8 @@
  * the short service line (|z| ≥ `SHORT`).
  *
  * How a stroke is played (the user asked): a swipe of the finger (or the mouse) swings the racket. The faster the swipe,
- * the harder and the further the shuttle goes (`speedOf`): a slow one drops it over the net, a quick one clears it to
- * the back line, and one quicker still sends it out. Its sideways lean aims it left or right. A smash is played only
+ * the harder and the further the shuttle goes (`depthOf`): a slow one drops it over the net, a quick one clears it to
+ * the back line; only one far too quick sends it out, and only one leaning far to the side goes out wide (`acrossOf`). A smash is played only
  * from a jump: the jump button first, then the swipe while in the air (`jump`, `swing`).
  */
 export const DT = 1 / 120;
@@ -35,7 +35,7 @@ export const REACH = 1.25,
   LOW = 0.12,
   TOP = 2.6,
   AIR_LOW = 1.25,
-  AIR_TOP = 2.8,
+  AIR_TOP = 3.0,
   /** A jump: its speed upward (about two thirds of a second in the air, half a metre high). */
   JUMP = 3.3,
   /** How long a swing looks for the shuttle once it has begun (a swipe a moment early still meets it). */
@@ -51,12 +51,30 @@ export const MY_SPEED = 4.6;
 export const SLOWEST = 9,
   FASTEST = 58,
   /** The most a swipe's power counts for: beyond 1 the shuttle goes harder than any player would hit it, and long. */
-  MOST = 1.35;
+  MOST = 1.7;
 /** How fast a stroke of power `p` sends the shuttle: each step up in power multiplies the speed (its way grows steadily with it). */
 export const speedOf = (p: number) => SLOWEST * (FASTEST / SLOWEST) ** Math.max(0, Math.min(MOST, p));
-/** A smash's speed and how far past the net it is aimed, by the swipe's power. */
-export const smashSpeed = (p: number) => 34 + 38 * Math.max(0, Math.min(MOST, p)),
-  smashDepth = (p: number) => 1.3 + 5.1 * Math.max(0, Math.min(MOST, p));
+/**
+ * How far past the net a stroke of power `p` is sent, whoever strikes it from wherever (the user asked that a shot go
+ * out only when it is struck far too hard or far to the side): from a drop just over the net, steadily deeper to near
+ * the back line at `DEEP`; then only a little deeper over a wide band of harder swipes (`SAFE`), so that a hard clear
+ * still lands in; only past that does it run long, out over the back line.
+ */
+export const DEEP = 0.85,
+  SAFE = 1.3;
+export function depthOf(p: number) {
+  const q = Math.max(0, Math.min(MOST, p));
+  if (q <= DEEP) return 1.3 + (HALF_L - 1.1 - 1.3) * (q / DEEP);
+  if (q <= SAFE) return HALF_L - 1.1 + 0.85 * ((q - DEEP) / (SAFE - DEEP));
+  return HALF_L - 0.25 + (q - SAFE) * 6;
+}
+/**
+ * Where across the far court a stroke is aimed: a little toward the side it is struck from, and across as far as the
+ * swipe leans (`yawOf`'s most, 0.5, goes out over a side line from anywhere; a moderate lean stays well in).
+ */
+export const acrossOf = (from: number, yaw: number) => Math.max(-0.5, Math.min(0.5, from * 0.2)) + (yaw / 0.5) * (HALF_W + 0.8);
+/** A smash's speed by the swipe's power. */
+export const smashSpeed = (p: number) => 34 + 30 * Math.max(0, Math.min(1.3, p));
 
 export const LEVELS = {
   easy: { speed: 3.3, react: 0.34, error: 0.85, blunder: 0.12, whiff: 0.1, smash: 0.12, judge: 0, pace: 0.8 },
@@ -278,7 +296,6 @@ function elevationFor(at: Shuttle, speed: number, dir: { x: number; z: number },
 }
 /** How high a stroke sends the shuttle up from where it is met: a low shuttle is lifted, a high one hit flatter. */
 export const elevationOf = (height: number) => (Math.max(18, Math.min(56, 30 + (1.7 - height) * 20)) * Math.PI) / 180;
-const heading = (side: 0 | 1, yaw: number) => ({ x: Math.sin(yaw), z: forward(side) * Math.cos(yaw) });
 
 /** Whether the shuttle is where `side`'s racket can meet it now (on its own half, within reach, at a height its stance allows). */
 export function inReach(world: World, side: 0 | 1) {
@@ -314,13 +331,33 @@ export function jump(world: World, side: 0 | 1) {
 }
 /** The serve: an underarm stroke from the server's hand, diagonally across into the receiver's service court. */
 function serveStroke(world: World, side: 0 | 1, power: number, yaw: number) {
+  // Into the receiver's service court: short just past its front line for a gentle swipe, high to its back for a quick
+  // one, beyond only for one far too quick; across by the swipe's lean, within the court unless it leans far.
   const p = Math.max(0, Math.min(MOST, power)),
     at = held(world),
-    box = { x: -Math.sign(courtX(side, world.even)) * 1.3, z: (forward(side) * (SHORT + HALF_L)) / 2 },
-    base = Math.atan2(box.x - at.x, Math.abs(box.z - at.z)),
-    elevation = ((20 + 32 * Math.min(1, p)) * Math.PI) / 180;
-  world.shuttle = launch(at, speedOf(p * 0.86), elevation, heading(side, base + yaw * 0.6));
+    across = -Math.sign(courtX(side, world.even)),
+    depth = p <= SAFE ? SHORT + 0.35 + (HALF_L - 0.6 - SHORT - 0.35) * Math.min(1, p / DEEP) : HALF_L - 0.6 + (p - SAFE) * 6,
+    x = across * 1.3 + (yaw / 0.5) * 1.5,
+    long = Math.min(1, p / DEEP);
+  aimAt(world, at, x, forward(side) * depth, 0.34 + long * 0.6);
   begin(world, side, false, true);
+}
+/**
+ * Sends the shuttle from `at` to come down at (x, z): at `elevation`, as fast as that needs; raised until it clears the
+ * net (the speed found again each time).
+ */
+function aimAt(world: World, at: Shuttle, x: number, z: number, elevation: number) {
+  const dx = x - at.x,
+    dz = z - at.z,
+    distance = Math.hypot(dx, dz),
+    way = { x: dx / distance, z: dz / distance };
+  let e = elevation;
+  for (let k = 0; k < 6; k++) {
+    const next = launch(at, speedFor(at, e, way, distance), e, way);
+    world.shuttle = next;
+    if (!landing(next).net) break;
+    e += 0.12;
+  }
 }
 /** The shuttle has just been struck by `side`. */
 function begin(world: World, side: 0 | 1, smash: boolean, served = false) {
@@ -338,14 +375,21 @@ function begin(world: World, side: 0 | 1, smash: boolean, served = false) {
 /** `side` meets the shuttle with the swing it has under way. */
 function strike(world: World, side: 0 | 1, power: number, yaw: number, smash: boolean) {
   const s = world.shuttle,
-    p = Math.max(0, Math.min(MOST, power)),
-    dir = heading(side, yaw);
+    p = Math.max(0, Math.min(MOST, power));
+  // Where it comes down depends on the swipe alone, not on where it is struck from (see `depthOf`).
+  const tx = acrossOf(s.x, yaw),
+    tz = forward(side) * (smash ? Math.max(2, depthOf(p)) : depthOf(p));
   if (smash) {
-    // Aimed down over the net, as far past it as the swipe was quick.
-    const distance = Math.abs(s.z) + smashDepth(p),
+    // Aimed down over the net, as deep as the swipe was quick, and the harder the quicker.
+    const dx = tx - s.x,
+      dz = tz - s.z,
+      distance = Math.hypot(dx, dz),
+      way = { x: dx / distance, z: dz / distance },
       speed = smashSpeed(p);
-    world.shuttle = launch(s, speed, elevationFor(s, speed, dir, distance / Math.cos(yaw)), dir);
-  } else world.shuttle = launch(s, speedOf(p), elevationOf(s.y), dir);
+    world.shuttle = launch(s, speed, elevationFor(s, speed, way, distance), way);
+    // Too low to come down over the net: it is lifted just enough to clear it.
+    for (let k = 0; k < 6 && landing(world.shuttle).net; k++) world.shuttle = launch(s, speed * 0.9, elevationFor(s, speed * 0.9, way, distance) + 0.06 * (k + 1), way);
+  } else aimAt(world, s, tx, tz, elevationOf(s.y));
   begin(world, side, smash);
 }
 
@@ -434,6 +478,11 @@ export function meeting(world: World, side: 0 | 1, speed: number, high = false) 
   const last = way[way.length - 1];
   return last ? behind(last) : null;
 }
+/** Whether the shuttle coming to me goes high enough over my half to be smashed from a jump (the view lights the jump button). */
+export function smashable(world: World) {
+  if (world.phase !== "flying" || world.hitter !== 1 || world.netted) return false;
+  return path(world, DT * 6).some((q) => q.z > 0.8 && q.y > 3.1);
+}
 /** Keeps a player on its own half, off the net. */
 function keepIn(side: 0 | 1, at: { x: number; z: number }) {
   const z = side === 0 ? Math.max(0.5, Math.min(HALF_L + 1.4, at.z)) : Math.min(-0.5, Math.max(-HALF_L - 1.4, at.z));
@@ -487,7 +536,9 @@ function steer(world: World, level: Level) {
       }
     }
     if (!look) continue;
-    const to = meeting(world, side, side === 0 ? MY_SPEED : L.speed, side === 1 && !!world.plan?.smash);
+    // A shuttle coming high over me is met where a jump can reach it, so that a jump and a swipe smash it.
+    const high = side === 1 ? !!world.plan?.smash : smashable(world);
+    const to = meeting(world, side, side === 0 ? MY_SPEED : L.speed, high);
     if (to) p.goal = keepIn(side, to);
   }
 }
