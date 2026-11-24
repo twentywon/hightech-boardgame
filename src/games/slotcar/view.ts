@@ -8,7 +8,7 @@ import { attic } from "./attic";
 import { DROP, MARGIN, SURFACE, scenePoint, slotSubject } from "./layout";
 import { follow, hostThrottles, inputOf, readSnap, snapOf } from "./net";
 import { COLORS, COLOR_NAMES, END, LAP, OFF, carName, packRanking, seatOfCar, type State } from "./rules";
-import { CAR_LENGTH, COUNTDOWN, DT, FLY, VMAX, autopilot, createWorld, poseOf, progress, ranking, step, ticks, type RaceEvent, type World } from "./sim";
+import { CAR_LENGTH, COUNTDOWN, DT, FLY, VMAX, autopilot, createWorld, poseOf, progress, ranking, step, strain, ticks, type RaceEvent, type World } from "./sim";
 import { buildTrack, laneAt, type Segment, type Track } from "./track";
 
 export const SLOT_COLORS: [string, string] = [COLORS[0], COLORS[1]];
@@ -634,23 +634,27 @@ export class SlotCarView extends TableView<State> {
     const world = this.world!;
     let mine = 0,
       pedal = false,
-      pack = 0;
+      pack = 0,
+      screech = 0;
     world.cars.forEach((car, k) => {
       const level = car.phase === "off" ? 0 : car.v / VMAX;
       if (this.isMine(k)) {
+        screech = Math.max(screech, strain(world, k));
         if (level >= mine) {
           mine = level;
           pedal = car.throttle;
         }
       } else pack = Math.max(pack, level);
     });
-    if (world.tick < ticks(COUNTDOWN)) mine = 0;
+    if (world.tick < ticks(COUNTDOWN)) mine = screech = 0;
     this.onKnock?.(pedal ? "whine" : "coast", mine);
     this.onKnock?.("pack", pack);
+    this.onKnock?.("screech", screech);
   }
   private hush() {
     this.onKnock?.("whine", 0);
     this.onKnock?.("pack", 0);
+    this.onKnock?.("screech", 0);
   }
   /** Puts every car where the race has it: in its slot (the tail stepping out as it slides), in the air, or set back. */
   private pose() {

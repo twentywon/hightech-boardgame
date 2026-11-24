@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { CAP, DEFAULT_ROSTER, addComputer, homeTeam, moveRow, playMode, readRoster, rosterProblem, waiting, writeRoster, type Team } from "../src/games/soccer/roster";
 import { GOAL, TIME, createGame, soccer } from "../src/games/soccer/rules";
-import { BODY, FLAT, GOAL_PAUSE, GRAVITY, IDLE, KICKOFF_WAIT, createWorld, step, think, type Input, type World } from "../src/games/soccer/sim";
+import { BODY, FLAT, GOAL_PAUSE, GRAVITY, GRAVITY_PACE, IDLE, KICKOFF_WAIT, createWorld, step, think, type Input, type World } from "../src/games/soccer/sim";
 
 /** Runs `world` for `n` slices with each player's controls from `control` (the computer's `think` by default); the events seen. */
 function run(world: World, n: number, control: (k: number) => Input | null = (k) => think(world, k)) {
@@ -159,10 +159,11 @@ describe("soccer pitch", () => {
     // A jump from the ground goes up; held in the air it does not jump again.
     run(w, 1, (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true, jumpPress: true } : IDLE));
     expect(me.vy).toBeGreaterThan(0.15);
-    run(w, 12, (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true } : IDLE));
+    // Slices scaled by the pitch's pace (a slower pitch rises and falls in more of them).
+    run(w, Math.round(12 / GRAVITY_PACE), (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true } : IDLE));
     const top = me.y;
     expect(top).toBeGreaterThan(1);
-    run(w, 10, (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true, jumpPress: true } : IDLE));
+    run(w, Math.round(10 / GRAVITY_PACE), (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true, jumpPress: true } : IDLE));
     expect(me.vy).toBeLessThan(0);
     // Dropped, the ball bounces back up off the grass.
     Object.assign(w.ball, { x: 2, y: 3, vx: 0, vy: 0 });
@@ -184,7 +185,7 @@ describe("soccer pitch", () => {
     Object.assign(w.ball, { x: GRAVITY.GL - 0.6, y: GRAVITY.GH + 0.6, vx: 0.15, vy: 0 });
     expect(run(w, 10, () => IDLE).some((e) => e.kind === "goal")).toBe(false);
     Object.assign(w.ball, { x: -GRAVITY.GL + 0.6, y: 0.6, vx: -0.15, vy: 0 });
-    expect(run(w, 20, () => IDLE).find((e) => e.kind === "goal")).toEqual({ kind: "goal", team: 1 });
+    expect(run(w, Math.round(20 / GRAVITY_PACE), () => IDLE).find((e) => e.kind === "goal")).toEqual({ kind: "goal", team: 1 });
   });
   test("the computer scores against an idle player, at every level, on both pitches", () => {
     for (const mode of ["flat", "gravity"] as const)

@@ -52,10 +52,11 @@ export const slotCarConfig: PointConfig<State> = {
     return null;
   },
   // The motors whine with the pedal and the speed (the people's cars, and the computer's as a quieter pack), a car
-  // flying off skids and clatters, the start lights beep and go, a lap of mine blips, a car set back clicks.
+  // at the edge of its grip screeches (카가각, so that the pedal can be let go in time), flying off skids and clatters, the start lights beep and go, a lap of mine blips, a car set back clicks.
   knock: (sound, kind: string, strength) => {
     if (kind === "whine" || kind === "coast") sound.slotMotor(strength, kind === "whine");
     else if (kind === "pack") sound.slotPack(strength);
+    else if (kind === "screech") sound.slotScreech(strength);
     else if (kind === "crash") sound.deslot(strength);
     else if (kind === "light" || kind === "go") sound.startLight(kind === "go");
     else if (kind === "lap") sound.lapBeep();
@@ -117,7 +118,8 @@ export const slotCarConfig: PointConfig<State> = {
         "트랙에는 차마다 자기 <b>레인</b>이 있습니다(최대 네 개). 차는 바닥의 홈(슬롯)에 끼운 가이드 날을 따라 달리므로 핸들은 없고, <b>가속 페달</b>만 씁니다.",
         "페달을 <b>누르고 있으면</b> 모터가 차를 끌어 점점 빨라집니다. <b>떼면</b> 모터가 멈추고 브레이크가 걸려 느려집니다.",
         "코너마다 <b>버틸 수 있는 속도</b>가 있습니다. 반지름이 작은 급한 코너, 그리고 코너 안쪽 레인일수록 낮고, 기울어진(뱅크) 코너는 높습니다.",
-        "그 속도를 넘으면 차 뒤꽁무니가 미끄러져 나가고, 오래 넘거나 한꺼번에 많이 넘으면 차가 <b>튕겨 나가</b> 테이블 위를 구릅니다.",
+        "그 속도에 가까워지면 타이어가 <b>'카가각'</b> 하고 비명을 지릅니다. 이 소리가 나면 페달에서 손을 떼세요.",
+        "그 속도를 넘으면 차 뒤꽁무니가 미끄러져 나가고, 페달을 계속 누르고 있거나 한꺼번에 아주 많이 넘으면 원심력에 차가 코너 바깥으로 <b>튕겨 나가</b> 테이블 위를 구릅니다. 직선에서는 아무리 빨라도 튕겨 나가지 않습니다.",
         `튕겨 나간 차는 약 ${penalty}초 뒤 마셜이 튕겨 나간 그 자리의 레인에 다시 올려 줍니다. 그동안 다른 차는 계속 달립니다.`,
         `출발 신호등 세 개가 하나씩 빨갛게 켜진 뒤(${COUNTDOWN}초) 모두 초록으로 바뀌면 출발합니다.`,
         "출발선을 지날 때마다 한 바퀴입니다. 정해진 바퀴(3·5·10바퀴)를 가장 먼저 마친 차가 1위입니다.",
@@ -168,7 +170,7 @@ export const slotCarConfig: PointConfig<State> = {
     part(
       "처음이라면",
       notes(
-        "직선에서는 페달을 끝까지 누르고, 코너가 보이면 조금 일찍 떼세요. 코너 안에서는 짧게 눌렀다 뗐다 하며 속도를 지킵니다.",
+        "직선에서는 페달을 끝까지 누르고, 코너가 보이면 조금 일찍 떼세요. 코너 안에서는 '카가각' 소리를 들으며 짧게 눌렀다 뗐다 해 속도를 지킵니다.",
         "차 뒤꽁무니가 바깥으로 흔들리면 한계에 가까운 것입니다. 바로 페달을 떼세요.",
         "튕겨 나가면 몇 초를 잃습니다. 조금 느려도 튕겨 나가지 않는 쪽이 대개 빠릅니다.",
         "같은 코너라도 안쪽 레인은 더 천천히 돌아야 합니다.",

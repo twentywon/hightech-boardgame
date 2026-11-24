@@ -60,6 +60,32 @@ function whining(context: BaseAudioContext) {
   return buffer;
 }
 /**
+ * 슬롯 카: a second of tyres chattering at the edge of their grip, to be looped: a rasp of squeal and grit broken up
+ * about 27 times a second, the "카가각" the user asked to hear before a car flies off. Whole cycles, so the loop joins.
+ */
+function screeching(context: BaseAudioContext) {
+  const rate = context.sampleRate,
+    length = rate,
+    buffer = context.createBuffer(1, length, rate),
+    data = buffer.getChannelData(0);
+  let seed = 11,
+    grit = 0,
+    peak = 0;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < length; i++) {
+    const t = i / rate,
+      // Each catch of the tyre: a sharp rise, a quick fall.
+      phase = (t * 27) % 1,
+      catchOf = Math.exp(-phase * 9) * (0.75 + 0.25 * Math.sin(2 * Math.PI * 3 * t)),
+      squeal = Math.sin(2 * Math.PI * 2300 * t + 0.6 * Math.sin(2 * Math.PI * 27 * t)) * 0.6 + Math.sin(2 * Math.PI * 3400 * t) * 0.35;
+    grit += (random() * 2 - 1 - grit) * 0.55;
+    data[i] = catchOf * (squeal + grit * 0.9);
+    peak = Math.max(peak, Math.abs(data[i]));
+  }
+  for (let i = 0; i < length; i++) data[i] *= 0.8 / peak;
+  return buffer;
+}
+/**
  * 축구: four seconds of a crowd's murmur made by the page, to be looped: many voices as low noise, swelling and falling
  * slowly, with now and then a shout over it. The ends are faded into each other so that the loop joins.
  */
@@ -869,12 +895,19 @@ export class Sound {
       samples.set("whine-0", buffer);
       samples.set("whine-1", buffer);
     }
+    if (c && !samples.has("screech-0")) samples.set("screech-0", screeching(c));
   }
   /** A person's car's motor (`level` 0 to 1, its speed; 0 is silence): louder and brighter while `pulling` (the pedal held), as long as it is asked for. */
   slotMotor(level: number, pulling: boolean) {
     this.motorLoops();
     const l = Math.max(0, Math.min(1, level));
     this.hum("whine-0", l > 0.02 ? (pulling ? 0.06 + 0.12 * l : 0.03 + 0.05 * l) : 0, 0.42 + 1.55 * l + (pulling ? 0.08 : 0));
+  }
+  /** My car's tyres at the edge of their grip (`level` 0 to 1; 0 is silence): louder and higher the nearer it is to flying off, as long as it is asked for. */
+  slotScreech(level: number) {
+    this.motorLoops();
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("screech-0", l > 0.03 ? 0.04 + 0.2 * l : 0, 0.85 + 0.35 * l);
   }
   /** The computer's cars as one quieter motor (`level` 0 to 1, the fastest of them), as long as it is asked for. */
   slotPack(level: number) {

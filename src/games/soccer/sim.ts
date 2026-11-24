@@ -32,29 +32,33 @@ export const KICKOFF_WAIT = ticks(6);
 export const FLAT = { HX: 7.4, HY: 3.4, GOAL: 1.28, DEPTH: 0.62, BX: 8.3, BY: 4.05, POST: 0.16, CIRCLE: 1.5 } as const;
 /** 중력 축구's pitch: half its width, its height to the ceiling, the goal line and the crossbar's height and thickness, the middle zone kept at a kickoff. */
 export const GRAVITY = { W: 7.3, H: 4.7, GL: 6.3, GH: 1.8, BAR: 0.08, ZONE: 1.7 } as const;
+/** How fast 중력 축구 runs against its first pace (1): the user asked for it a little slower. */
+export const GRAVITY_PACE = 0.8;
 /** The bodies of each pitch: radius, inverse mass, bounce, damping, pace, a kick's push and reach. */
 export const BODY = {
   flat: { man: 0.3, ball: 0.2, manIm: 0.5, manB: 0.5, ballB: 0.5, manDamp: 0.96, ballDamp: 0.99, acc: 0.0022, kickAcc: 0.0015, kick: 0.105, reach: 0.09 },
+  // 중력 축구 runs at GRAVITY_PACE of its first pace (the user found it a little fast): speeds are scaled by the pace,
+  // pulls by its square and each slice's damping by its power, so every jump and arc keeps its shape, only slower.
   gravity: {
     man: 0.42,
     ball: 0.27,
     manIm: 0.5,
     manB: 0.35,
     ballB: 0.6,
-    g: 0.0095,
-    jump: 0.205,
-    acc: 0.0075,
-    airAcc: 0.0028,
-    groundDamp: 0.9,
-    airDamp: 0.985,
-    ballDamp: 0.997,
-    roll: 0.985,
+    g: 0.0095 * GRAVITY_PACE ** 2,
+    jump: 0.205 * GRAVITY_PACE,
+    acc: 0.0075 * GRAVITY_PACE ** 2,
+    airAcc: 0.0028 * GRAVITY_PACE ** 2,
+    groundDamp: 0.9 ** GRAVITY_PACE,
+    airDamp: 0.985 ** GRAVITY_PACE,
+    ballDamp: 0.997 ** GRAVITY_PACE,
+    roll: 0.985 ** GRAVITY_PACE,
     floorB: 0.72,
     wallB: 0.82,
-    kick: 0.2,
+    kick: 0.2 * GRAVITY_PACE,
     lift: 0.55,
     reach: 0.14,
-    most: 0.45,
+    most: 0.45 * GRAVITY_PACE,
   },
 } as const;
 /** The computer by level (the five of the shared picker): how often it looks again, how fast it goes, how far its aim strays, how square it must stand to shoot, how often it takes a chance. */

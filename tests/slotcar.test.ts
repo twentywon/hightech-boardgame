@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COURSES, GRIP, buildTrack, laneLength, laneRadius, middle, safeSpeed, type Track } from "../src/games/slotcar/track";
-import { COUNTDOWN, DT, FLY, MARSHAL, WAIT, autopilot, createWorld, progress, ranking, step, ticks, type RaceEvent, type World } from "../src/games/slotcar/sim";
+import { COUNTDOWN, DT, FLY, MARSHAL, WAIT, autopilot, createWorld, progress, ranking, step, strain, ticks, type RaceEvent, type World } from "../src/games/slotcar/sim";
 import { END, LAP, OFF, createFromOptions, packRanking, slotCar, unpackRanking, type State } from "../src/games/slotcar/rules";
 import { coursePicture } from "../src/games/slotcar/art";
 
@@ -145,6 +145,29 @@ describe("slot car driving", () => {
         events = run(flat, (_, k) => k === 0, 20, (e) => e.some((x) => x.kind === "off"));
       expect(events.some((e) => e.kind === "off" && e.car === 0)).toBe(true);
     }
+  });
+  it("the tyres screech before a car flies off: a car let go at the first screech keeps its slot; held on, it flies off", () => {
+    const world = createWorld("eight", 2, 3),
+      { index, seg, d } = firstCurve(world.track, 0);
+    // Calm through the curve: no screech. Near the grip: the screech starts before any slide.
+    launch(world, 0, index, safeSpeed(seg, d) * 0.85);
+    expect(strain(world, 0)).toBe(0);
+    world.cars[0].v = safeSpeed(seg, d) * 0.98;
+    expect(strain(world, 0)).toBeGreaterThan(0);
+    expect(world.cars[0].slide).toBe(0);
+    // Into the curve a fifth too fast: it screeches; let go at once, it slows and stays in its slot.
+    for (const held of [false, true]) {
+      const w = createWorld("eight", 2, 3);
+      launch(w, 0, index, safeSpeed(seg, d) * 1.2);
+      expect(strain(w, 0)).toBeGreaterThan(0.5);
+      const events = run(w, (_, k) => k === 0 && held, 2.5, (e) => e.some((x) => x.kind === "off"));
+      expect(events.some((e) => e.kind === "off")).toBe(held);
+    }
+    // On a straight a car flat out never flies off.
+    const straight = world.track.segments.findIndex((s) => s.kind === "straight");
+    const flat = createWorld("eight", 2, 3);
+    launch(flat, 0, straight, 11);
+    expect(strain(flat, 0)).toBe(0);
   });
   it("counts a lap each time a car crosses the line, and the car home first is first", () => {
     const world = createWorld("eight", 2, 2),

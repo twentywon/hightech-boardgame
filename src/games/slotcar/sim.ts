@@ -17,10 +17,18 @@ export const VMAX = 11,
   ACCEL = 15,
   BRAKE = 10,
   DRAG = 0.3;
-/** How fast the tail steps out per unit of pull beyond the grip, how fast it comes back, and the pull that de-slots at once. */
-export const SLIDE_RATE = 6,
-  RECOVER = 2.2,
-  HARD = 0.9;
+/**
+ * How fast the tail steps out per unit of pull beyond the grip (counted up to `PULL_CAP`), how fast it comes back, and
+ * the pull that de-slots at once. The user found cars flew off too soon: a curve taken too fast now first screeches and
+ * slides (the screech starts a little below the grip, `SCREECH_FROM`), and the car flies off only if the pedal stays
+ * down (about 0.45 s at the most, seconds when only a little over), or at once only far beyond the grip (about 1.9 times the safe speed, a hairpin
+ * taken flat out). Straights never throw a car off.
+ */
+export const SLIDE_RATE = 1.7,
+  PULL_CAP = 1.3,
+  RECOVER = 2.6,
+  HARD = 2.5,
+  SCREECH_FROM = -0.12;
 /** Seconds of the start lights, of a car's flight off the track, of the marshal setting it back, and of the wait after the first car home. */
 export const COUNTDOWN = 3,
   FLY = 1.3,
@@ -31,7 +39,7 @@ export const CAR_LENGTH = 0.78;
 export const ticks = (seconds: number) => Math.round(seconds / DT);
 /** The computer's drivers by level: how near the grip they aim to take a curve, how far that judgement strays, how late they brake. */
 export const LEVELS = {
-  easy: { aim: 0.8, stray: 0.25, late: 1.8, react: 0.45 },
+  easy: { aim: 0.9, stray: 0.45, late: 1.8, react: 0.45 },
   normal: { aim: 0.93, stray: 0.15, late: 1.4, react: 0.3 },
   hard: { aim: 0.98, stray: 0.02, late: 1, react: 0.18 },
 };
@@ -205,6 +213,18 @@ function fly(off: Flight) {
   }
 }
 /**
+ * How near car k is to flying off, 0 to 1, for its tyres' screech: from a little below the grip of the curve it is in
+ * (`SCREECH_FROM`) it rises with the pull and with how far the tail has stepped out; 0 on a straight or out of its slot.
+ */
+export function strain(world: World, k: number): number {
+  const car = world.cars[k];
+  if (car.phase !== "slot") return 0;
+  const seg = world.track.segments[car.seg];
+  if (seg.kind !== "curve") return Math.min(1, car.slide);
+  const pull = (car.v * car.v) / laneRadius(seg, world.track.offsets[car.lane]) / gripOf(seg) - 1;
+  return Math.min(1, Math.max(0, (pull - SCREECH_FROM) / 0.5, car.slide));
+}
+/**
  * One slice of the race. `throttle[k]` is car k's pedal. Returns what happened in it: the lights, laps, a car flying
  * off or put back, and the end of the race with every car's place.
  */
@@ -261,7 +281,7 @@ export function step(world: World, throttle: boolean[], level: Level = "normal")
     // The pull of the curve against the grip: within it the tail comes back; beyond it, it steps out.
     if (seg.kind === "curve") {
       const pull = (car.v * car.v) / laneRadius(seg, d) / gripOf(seg) - 1;
-      if (pull > 0) car.slide += pull * SLIDE_RATE * DT;
+      if (pull > 0) car.slide += Math.min(pull, PULL_CAP) * SLIDE_RATE * DT;
       else car.slide = Math.max(0, car.slide - RECOVER * DT);
       if (car.slide >= 1 || pull > HARD) {
         events.push({ kind: "off", car: k, speed: car.v });
