@@ -79,7 +79,9 @@ test("soccer: the two-camp waiting room moves people and computers between red, 
   await expect(page.locator(".so-board")).toContainText("레드");
   await expect(canvas(page)).toHaveAttribute("data-mine", "0");
   if (phone) {
-    await expect(page.getByRole("button", { name: "점프" })).toBeVisible();
+    // The side view's phone controls are the same lever as the flat pitch's (up jumps), no 점프 button (the user asked).
+    await expect(page.locator(".so-stick")).toBeVisible();
+    await expect(page.getByRole("button", { name: "점프" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "차기" })).toBeVisible();
   }
   expect(errors).toEqual([]);

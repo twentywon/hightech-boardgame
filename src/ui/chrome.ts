@@ -38,7 +38,8 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
     back.removeAttribute("aria-label");
     back.className = "";
     const exit = document.createElement("div");
-    exit.className = "game-actions game-exit";
+    // Not ".game-actions": screens look that one up to add their own buttons (the Wi-Fi room) beside 새 게임.
+    exit.className = "game-exit";
     exit.append(back);
     const top = main.querySelector<HTMLElement>(".game-top");
     (top?.querySelector<HTMLElement>(":scope > div:first-child") ?? top)?.prepend(exit);

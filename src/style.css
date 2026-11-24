@@ -432,7 +432,7 @@ footer {
   display: flex;
   gap: 8px;
 }
-.game-actions button {
+.game-actions button, .game-exit button {
   font-size: 12px;
 }
 .table-layout {
@@ -712,7 +712,7 @@ dialog h2 {
   .game-actions {
     gap: 5px;
   }
-  .game-actions button {
+  .game-actions button, .game-exit button {
     font-size: 10px;
     padding: 9px;
   }
@@ -898,7 +898,7 @@ dialog h2 {
   .chess-mini i { font-size:26px; }
   .chess-game .game-top { align-items:flex-start;gap:10px; }
   .chess-game .game-actions { max-width:230px;gap:5px; }
-  .chess-game .game-actions button { padding:8px 10px;font-size:10px; }
+  .chess-game .game-actions button, .chess-game .game-exit button { padding:8px 10px;font-size:10px; }
   .chess-captured { font-size:22px; }
   .chess-game #confirm:not(:disabled) { position:fixed;left:20px;right:20px;bottom:calc(14px + env(safe-area-inset-bottom));width:calc(100% - 40px);z-index:5;box-shadow:0 6px 24px #102e2355; }
 }
@@ -2181,7 +2181,7 @@ dialog .deed-list button:hover { background: var(--ink); color: var(--paper); }
   .game-layout .game-top h1 { font-size: 17px; margin: 0; white-space: nowrap; }
   .game-layout .game-top h1 small { display: none; }
   .game-layout .game-actions { flex-wrap: nowrap; max-width: none; }
-  .game-layout .game-actions button { padding: 7px 12px; font-size: 12px; min-height: 0; }
+  .game-layout .game-actions button, .game-layout .game-exit button { padding: 7px 12px; font-size: 12px; min-height: 0; }
   .game-layout .table-layout { display: grid !important; grid-template-columns: minmax(0, 1fr) clamp(190px, 27vw, 250px) !important; gap: 10px !important; align-items: start; }
   .game-layout #board { height: var(--available-board-height, calc(100svh - 52px)) !important; min-height: 0 !important; }
   .game-layout .game-sidebar { padding: 0 !important; max-height: var(--available-board-height, calc(100svh - 52px)); overflow-y: auto; overscroll-behavior: contain; }
@@ -3815,3 +3815,25 @@ html[data-game="backgammon"] .board-area .board-controls .pg-tool.sr-only { posi
 html[data-capture] .pg-stick { display:none !important; }
 /* 나가기 at the left of the bar over the table, in the line of 게임 방법 (the user asked, instead of the arrow in the table's corner). */
 .game-top .game-exit { flex:none; }
+/* The main screen (the user asked): "made by KSK" small under the title, and 업데이트 로그 beside 참가하기. */
+.library .hero .made-by { margin:6px 0 0;font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--ink-soft); }
+.library .hero-actions { display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px;align-self:end;justify-self:end; }
+.library .hero-actions .hero-join { align-self:auto;justify-self:auto; }
+.library .hero-log { display:inline-flex;align-items:center;min-height:58px;padding:10px 22px;border:1.5px solid var(--ink);border-radius:999px;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;transition:transform .15s ease, background .15s ease; }
+.library .hero-log:hover:not(:disabled) { transform:translateY(-1px);background:#16181a0d; }
+.library .hero-log span { display:grid;gap:1px; }
+.library .hero-log b { font-size:17px;letter-spacing:-0.01em; }
+.library .hero-log small { font-size:12px;color:var(--ink-soft);white-space:nowrap; }
+@media (max-width: 640px) { .library .hero-actions { justify-self:start;justify-content:flex-start; } }
+@media (max-height: 500px) {
+  .library .hero-actions { margin-right:56px; }
+  .library .hero-actions .hero-join { margin-right:0; }
+  .library .hero-log { min-height:44px;padding:6px 16px; }
+  .library .hero-log b { font-size:15px; }
+  .library .hero-log small { font-size:11px; }
+}
+dialog .update-log { max-height:min(60vh, 520px);overflow:auto;text-align:left;padding-right:4px; }
+dialog .update-log section + section { margin-top:14px; }
+dialog .update-log h3 { margin:0 0 6px;font-family:var(--mono);font-size:13px;font-weight:600; }
+dialog .update-log ul { margin:0;padding-left:18px;display:grid;gap:4px;font-size:14px;line-height:1.5; }
+dialog .update-log li { margin:0; }
