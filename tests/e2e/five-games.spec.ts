@@ -143,6 +143,31 @@ test("pocket ball: after the white ball goes down the next player sets it where 
   expect(errors).toEqual([]);
 });
 
+test("pocket ball: nine-ball is chosen in the setup, the one is struck first and the cue strikes the shot", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "포켓볼");
+  await page.locator("#pg-variant").selectOption("nine");
+  await page.locator(".game-stage button.primary").click();
+  await expect(page.locator("canvas")).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await rest(page);
+  await expect(page.locator("#turn")).toContainText("1번을 먼저 맞히세요");
+  // Straight up the table at the rack's front ball: the cue drives through the white ball and the shot is made.
+  const subject = { half: 6.3, halfZ: 4.1, height: 0.6, lookY: 0, tilt: 1.02 },
+    from = await onScreen(page, subject, 0, 0.15, 2.9, Math.PI / 2),
+    to = await onScreen(page, subject, 0, 0, 4.4, Math.PI / 2);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 6 });
+  await page.mouse.up();
+  await expect(count(page)).toHaveText("1수", { timeout: 30000 });
+  await rest(page);
+  // Afterwards the status names the lowest ball left (or a foul and the ball in hand).
+  await expect(page.locator("#turn")).toContainText(/번을 먼저 맞히세요|9번만 남았습니다|흰 공을 끌어|이깁니다/);
+  expect(errors).toEqual([]);
+});
+
 test("table soccer: the ball runs by itself and my rods follow the keys", async ({ page }) => {
   const errors = await sit(page, "테이블 사커");
   const canvas = page.locator("canvas");
