@@ -22,7 +22,7 @@ test("the browser's back button leaves a table for the collection, not the page"
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator("canvas")).toBeVisible();
   // Leaving by the table's own button uses the entry up: the next back does not bring the table again.
-  await page.getByRole("button", { name: "← 컬렉션" }).click();
+  await page.getByRole("button", { name: "나가기", exact: true }).click();
   await expect(page.locator("main.library")).toBeVisible();
   await selectGame(page, "리버시");
   await page.locator(".game-stage button.primary").click();

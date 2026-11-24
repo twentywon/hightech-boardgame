@@ -164,7 +164,12 @@ export interface PointConfig<S> {
   /** The stage window comes up as soon as one sits down, not only from 새 게임. */
   stagesFirst?: boolean;
   /** The tools stand at the lower left as the arrow keys of a keyboard do; each names its place with `area` (up, left, down, right, or drop beside them). */
-  toolsLayout?: "arrows";
+  /**
+   * "arrows": the held tools as arrow keys at the lower left with the rest beside them. "stick": the held tools whose
+   * `area` is up, down, left or right become one lever at the lower left (pushed that way, each is held; diagonals hold
+   * two), and the other tools stand at the lower right (the user asked for the claw machine).
+   */
+  toolsLayout?: "arrows" | "stick";
   /** What the button over the table that starts anew is called, and the heading of its window, when it is not 새 게임. */
   newGameLabel?: string;
   /** A key that is a whole move (an arrow that slides the tiles), or null for the usual walk over the points. */
@@ -634,6 +639,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
         later(() => made(release), 300);
       };
     });
+    if (config.toolsLayout === "stick") lever();
     if (config.pausable) $("pg-pause").onclick = togglePause;
     if (config.turnable) $("camera").onclick = () => view?.resetView?.();
     if (config.newGameLabel) $("restart").textContent = config.newGameLabel;
@@ -763,6 +769,79 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
   }
   /** Plays a move of mine. */
   /** Stops the table's clock, or lets it run again. */
+  /** The "stick" layout's lever: the held tools of the four ways, pressed and let go as the knob is pushed and comes back. */
+  function lever() {
+    const ways = (config.tools ?? []).map((tool, i) => ({ tool, i })).filter(({ tool }) => tool.release !== undefined && ["up", "down", "left", "right"].includes(tool.area ?? ""));
+    if (!ways.length) return;
+    const area = document.querySelector<HTMLElement>("main.game-layout .board-area")!,
+      stick = document.createElement("div");
+    stick.className = "pg-stick";
+    stick.setAttribute("aria-hidden", "true");
+    stick.innerHTML = `<i class="pg-knob"></i>`;
+    area.append(stick);
+    const knob = stick.querySelector<HTMLElement>(".pg-knob")!,
+      held = new Set<string>(),
+      made = (to: number) => commit({ from: -1, to, extra: -1 });
+    let pointer: number | null = null;
+    const hold = (want: Set<string>) => {
+      for (const { tool } of ways) {
+        const way = tool.area!;
+        if (want.has(way) && !held.has(way)) {
+          held.add(way);
+          made(tool.point);
+        } else if (!want.has(way) && held.has(way)) {
+          held.delete(way);
+          made(tool.release!);
+        }
+      }
+    };
+    const move = (e: PointerEvent) => {
+      if (pointer !== e.pointerId) return;
+      const box = stick.getBoundingClientRect(),
+        r = box.width / 2,
+        dx = (e.clientX - box.left - r) / (r * 0.7),
+        dy = (e.clientY - box.top - r) / (r * 0.7),
+        len = Math.hypot(dx, dy),
+        k = len > 1 ? 1 / len : 1,
+        x = dx * k,
+        y = -dy * k,
+        want = new Set<string>();
+      if (len >= 0.3) {
+        if (x > 0.38) want.add("right");
+        if (x < -0.38) want.add("left");
+        if (y > 0.38) want.add("up");
+        if (y < -0.38) want.add("down");
+      }
+      knob.style.translate = `${x * r * 0.55}px ${-y * r * 0.55}px`;
+      stick.classList.toggle("on", want.size > 0);
+      hold(want);
+    };
+    const end = (e: PointerEvent) => {
+      if (pointer !== e.pointerId) return;
+      pointer = null;
+      knob.style.translate = "";
+      stick.classList.remove("on");
+      hold(new Set());
+    };
+    stick.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      pointer = e.pointerId;
+      try {
+        stick.setPointerCapture(e.pointerId);
+      } catch {
+        // Gone already.
+      }
+      move(e);
+    });
+    stick.addEventListener("pointermove", move);
+    stick.addEventListener("pointerup", end);
+    stick.addEventListener("pointercancel", end);
+    stick.addEventListener("lostpointercapture", end);
+    stick.addEventListener("contextmenu", (e) => e.preventDefault());
+    // The arrows the lever stands for stay for the keyboard and for readers, out of sight.
+    for (const { i } of ways) $(`pg-tool-${i}`).classList.add("pg-way");
+  }
   function togglePause() {
     if (!config.pausable || over()) return;
     // Over Wi-Fi a pause is the room's: anyone seated pauses (or lets run) the table for everyone.

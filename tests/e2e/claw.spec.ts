@@ -7,7 +7,7 @@ import { selectGame } from "./library";
 const moves = async (page: Page) => Number(/(\d+)/.exec(await page.locator("#move-count").innerText())?.[1] ?? 0);
 const tries = async (page: Page) => Number(/남은 횟수 (\d+)/.exec(await page.locator("#turn").innerText())?.[1] ?? -1);
 
-test("claw machine: the claw is steered by held keys, a held arrow and a press on the glass, the button lets it down, and the try is counted", async ({ page }) => {
+test("claw machine: the claw is steered by held keys, the lever and a press on the glass, the button lets it down, and the try is counted", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -21,11 +21,17 @@ test("claw machine: the claw is steered by held keys, a held arrow and a press o
   await page.keyboard.press("ArrowUp");
   // A key pressed and let go is two moves: the lever pushed, and let go.
   await expect.poll(() => moves(page)).toBeGreaterThanOrEqual(4);
-  // The arrow at the lower left, held a while: one move as it is pressed and one as it is let go.
+  // The lever at the lower left (the user asked for it instead of arrows), pushed right a while: one move as it is
+  // pushed and one as it is let go; the 뽑기 button stands at the lower right.
   const held = await moves(page),
-    arrow = (await page.getByRole("button", { name: "집게 오른쪽으로" }).boundingBox())!;
-  await page.mouse.move(arrow.x + arrow.width / 2, arrow.y + arrow.height / 2);
+    stick = (await page.locator(".pg-stick").boundingBox())!,
+    canvasBox = (await page.locator("canvas").boundingBox())!,
+    drop = (await page.getByRole("button", { name: "집게 내리기" }).boundingBox())!;
+  expect(drop.x).toBeGreaterThan(canvasBox.x + canvasBox.width / 2);
+  expect(stick.x + stick.width).toBeLessThan(canvasBox.x + canvasBox.width / 2);
+  await page.mouse.move(stick.x + stick.width / 2, stick.y + stick.height / 2);
   await page.mouse.down();
+  await page.mouse.move(stick.x + stick.width, stick.y + stick.height / 2, { steps: 4 });
   await page.waitForTimeout(400);
   await expect.poll(() => moves(page)).toBe(held + 1);
   await page.mouse.up();

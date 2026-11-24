@@ -18,6 +18,8 @@ const SECOND: Record<string, Role> = { ArrowUp: "up", ArrowLeft: "left", ArrowDo
 class LocalHand {
   keys = new Set<Role>();
   stick: { x: number; y: number } | null = null;
+  /** The joystick pushed up in the side view, which is the jump (the user asked: the lever up jumps). */
+  stickUp = false;
   touch = new Set<Role>();
   kicks = 0;
   jumps = 0;
@@ -32,7 +34,7 @@ class LocalHand {
       y = (this.holds("up") ? 1 : 0) - (this.holds("down") ? 1 : 0);
     if (this.stick && !x && !y) ({ x, y } = this.stick);
     // In the side view "up" is the jump.
-    return { x, y: gravity ? 0 : y, kick: this.holds("kick"), kicks: this.kicks, jump: gravity && (this.holds("jump") || this.holds("up")), jumps: this.jumps };
+    return { x, y: gravity ? 0 : y, kick: this.holds("kick"), kicks: this.kicks, jump: gravity && (this.holds("jump") || this.holds("up") || this.stickUp), jumps: this.jumps };
   }
   /** One slice's controls: a press counted since the last slice is a press now. */
   input(gravity: boolean): Input {
@@ -50,6 +52,7 @@ class LocalHand {
     this.keys.clear();
     this.touch.clear();
     this.stick = null;
+    this.stickUp = false;
   }
 }
 /** A player on the pitch: its body, its face, the kick's rim and flash, my ring. */
@@ -68,7 +71,7 @@ interface ManMesh {
  * colour with its number; mine has a yellow ring and a 나 tag (the second person at the screen a 2P tag), the kick held
  * shows as a white rim and a kick as a ring that flashes out. The scoreboard and the clock stand at the top. Keys: the
  * first person W A S D and Space (the arrows and X too when alone), the second the arrows and Enter (or /); in the
- * side view W and ↑ jump. A phone gets a joystick (or ◀ ▶ and 점프) and a 차기 button for its one person.
+ * side view W and ↑ jump. A phone gets a joystick (in the side view: left and right run, up jumps) and a 차기 button for its one person.
  */
 export class SoccerView extends TableView<State> {
   private mode: Mode;
@@ -190,7 +193,10 @@ export class SoccerView extends TableView<State> {
       h.keys.add(role);
     } else h.keys.delete(role);
   }
-  /** The touch controls of this screen's one person: a joystick (flat) or ◀ ▶ and 점프 (side view), and 차기. */
+  /**
+   * The touch controls of this screen's one person: a joystick and 차기, on both pitches (the user asked for the side
+   * view's ◀ ▶ and 점프 to become the same lever: there it runs left and right, and pushed up it jumps).
+   */
   private makePad() {
     this.pad.replaceChildren();
     const coarse = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
@@ -233,11 +239,7 @@ export class SoccerView extends TableView<State> {
       this.pad.append(b);
       return b;
     };
-    if (this.gravity) {
-      hold(button("so-left", "왼쪽", "◀"), "left");
-      hold(button("so-right", "오른쪽", "▶"), "right");
-      hold(button("so-jump", "점프", "점프"), "jump");
-    } else {
+    {
       const stick = document.createElement("div");
       stick.className = "so-stick";
       stick.setAttribute("aria-label", "조이스틱");
@@ -253,12 +255,17 @@ export class SoccerView extends TableView<State> {
           len = Math.hypot(dx, dy),
           k = len > 1 ? 1 / len : 1;
         hand.stick = len < 0.18 ? { x: 0, y: 0 } : { x: dx * k, y: -dy * k };
+        // In the side view the lever pushed well up is the jump: counted as a press when it gets there.
+        const up = this.gravity && hand.stick.y > 0.55;
+        if (up && !hand.stickUp) hand.press("jump", true);
+        hand.stickUp = up;
         knob.style.translate = `${dx * k * r * 0.55}px ${dy * k * r * 0.55}px`;
       };
       const end = (e: PointerEvent) => {
         if (this.stickPointer !== e.pointerId) return;
         this.stickPointer = null;
         hand.stick = null;
+        hand.stickUp = false;
         knob.style.translate = "";
       };
       stick.addEventListener("pointerdown", (e) => {
@@ -280,7 +287,7 @@ export class SoccerView extends TableView<State> {
   private markPad() {
     const hand = this.hands[0];
     this.pad.querySelectorAll<HTMLElement>(".so-button").forEach((b) => {
-      const role = (b.classList.contains("so-kick") ? "kick" : b.classList.contains("so-jump") ? "jump" : b.classList.contains("so-left") ? "left" : "right") as Role;
+      const role = "kick" as Role;
       b.classList.toggle("on", hand.touch.has(role));
     });
   }

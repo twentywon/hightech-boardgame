@@ -27,16 +27,21 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
   // Buttons a screen already laid over its table join them, so that all stand in one corner.
   board.querySelectorAll<HTMLElement>(":scope > .pg-tools, :scope > .bg-acting, :scope > .tour-end").forEach((el) => box.append(el));
   board.append(box);
-  // Leaving and the settings are two round buttons in the table's upper left corner; the page's own bar
-  // and the game's name are not shown at a table (both stay for readers and the keyboard).
+  // Leaving is a 나가기 button at the left of the bar over the table, the line of 게임 방법 (the user asked; the
+  // arrow in the table's corner is gone), and the settings a round button in the table's upper left corner; the
+  // page's own bar and the game's name are not shown at a table (both stay for readers and the keyboard).
   const nav = document.createElement("div");
   nav.className = "board-nav";
   const back = main.querySelector<HTMLButtonElement>("#back");
   if (back) {
-    back.innerHTML = BACK_ICON;
-    back.setAttribute("aria-label", "← 컬렉션");
-    back.className = "board-icon";
-    nav.append(back);
+    back.textContent = "나가기";
+    back.removeAttribute("aria-label");
+    back.className = "";
+    const exit = document.createElement("div");
+    exit.className = "game-actions game-exit";
+    exit.append(back);
+    const top = main.querySelector<HTMLElement>(".game-top");
+    (top?.querySelector<HTMLElement>(":scope > div:first-child") ?? top)?.prepend(exit);
   }
   const settings = document.querySelector<HTMLButtonElement>("#app > header #settings");
   if (settings) {
@@ -104,9 +109,8 @@ export function dress(setup: (host: HTMLElement) => void, controls: string[] = [
  */
 const HUD = new Set(["gomoku", "reversi", "chess", "blackjack", "seotda", "seven-poker", "texas-holdem", "janggi", "yut-nori", "hexa-germ-war", "dots-and-boxes", "mancala", "spider", "klondike", "freecell", "world-tour", "battleship", "indian-poker", "table-soccer", "air-hockey", "table-tennis", "falling-blocks", "brick-breaker", "minesweeper", "fruit-merge", "meat-grill", "go", "darts", "nim", "tactical-battle", "carom-billiards", "laser-chess", "continent-conquest", "hex-conquest"]),
   INK = new Set(["minesweeper", "fruit-merge", "falling-blocks", "mancala"]);
-/** The two buttons in the table's corner are bare white signs with a faint shadow, drawn thick (the user asked). */
-const BACK_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M11.5 5 4.5 12l7 7"/></svg>`,
-  GEAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+/** The settings button in the table's corner is a bare white sign with a faint shadow, drawn thick (the user asked). */
+const GEAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
 
 /**
  * The end of a game, told in the middle of the table (the user asked): 승리, 패배 or 무승부 in large letters, and

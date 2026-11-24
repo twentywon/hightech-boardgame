@@ -41,8 +41,8 @@ export const clawConfig: PointConfig<State> = {
     else if (kind === "lower" || kind === "raise") sound.winch(strength, kind === "raise");
     else if (kind === "clasp") sound.clasp(strength);
   },
-  // The arrow keys at the lower left, held down as a lever is, and the button beside them.
-  toolsLayout: "arrows",
+  // A lever at the lower left (the four held arrows, out of sight) and the 뽑기 button at the lower right (the user asked).
+  toolsLayout: "stick",
   tools: [
     { label: "↑", name: "집게 안쪽으로", point: STEER, release: RELEASE, area: "up", show: (state) => state.winner === null },
     { label: "←", name: "집게 왼쪽으로", point: STEER + 3, release: RELEASE + 3, area: "left", show: (state) => state.winner === null },
@@ -76,8 +76,8 @@ export const clawConfig: PointConfig<State> = {
     part(
       "움직이기",
       table(
-        ["레버", "왼쪽 아래 화살표나 기계 앞 판의 <b>레버</b>(빨간 공)를 누르고 있는 동안 그쪽으로 쭉 움직이고, 놓으면 멈춥니다. 레버는 잡은 채 끄는 쪽으로 기웁니다."],
-        ["터치·마우스", "유리 너머 인형을 누르면 집게가 그리로 가고, 누른 채 끌면 따라옵니다. 기계 앞 판의 <b>빨간 버튼</b>이나 왼쪽 아래 <b>뽑기</b>로 내립니다."],
+        ["레버", "화면 왼쪽 아래 <b>레버</b>를 그쪽으로 밀고 있는 동안 집게가 쭉 움직이고, 놓으면 멈춥니다. 대각선으로 밀면 두 방향으로 함께 갑니다. 기계 앞 판의 레버(빨간 공)를 잡고 끌어도 되고, 키보드는 방향키입니다."],
+        ["터치·마우스", "유리 너머 인형을 누르면 집게가 그리로 가고, 누른 채 끌면 따라옵니다. 기계 앞 판의 <b>빨간 버튼</b>이나 화면 오른쪽 아래 <b>뽑기</b>로 내립니다."],
         ["키보드", "방향키를 누르고 있는 동안 움직이고(↑는 안쪽, ↓는 앞쪽) 스페이스나 Enter로 내립니다."],
         ["흔들림", "집게는 줄에 매달려 있어 움직이기 시작하거나 멈출 때 달랑달랑 흔들립니다. 흔들리는 대로 내려가니 잦아든 뒤에 누르면 더 정확합니다."],
         ["빨간 고리", "집게 바로 아래, 집게가 내려가 닿을 자리에 빨간 고리가 보입니다. 집게가 흔들리면 고리도 함께 흔들립니다."],

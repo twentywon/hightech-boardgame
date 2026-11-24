@@ -89,7 +89,7 @@ export function soccerSetup(host: HTMLElement, preferences: PointOptions, rememb
         : "방향키 또는 W A S D로 움직이고, 스페이스(또는 X)로 찹니다. 휴대폰은 조이스틱과 차기 버튼."
       : two
         ? "나: A D 이동 · W 점프 · 스페이스 차기 / 2P: ← → 이동 · ↑ 점프 · Enter(또는 /) 차기"
-        : "← → (또는 A D)로 달리고 ↑(또는 W)로 점프, 스페이스(또는 X)로 찹니다. 휴대폰은 ◀ ▶ · 점프 · 차기 버튼.";
+        : "← → (또는 A D)로 달리고 ↑(또는 W)로 점프, 스페이스(또는 X)로 찹니다. 휴대폰은 레버(좌우로 달리기, 위로 올리면 점프)와 차기 버튼.";
     // Both limits open-ended would never end: the other's 무제한 is not offered while one is.
     for (const [id, other] of [["so-minutes", goals], ["so-goals", minutes]] as const)
       host.querySelectorAll<HTMLOptionElement>(`#${id} option[value="0"]`).forEach((o) => {
