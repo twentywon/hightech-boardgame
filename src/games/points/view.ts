@@ -3,6 +3,7 @@ import { afterGPUFrame, aim, wood, realism, planks, glossy, stuff, block, hop as
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { hanokYard, speckled } from "../../engine/scenery";
 import type { Effect } from "./types";
+import { zoomable } from "../../engine/zoom";
 
 type Paint = (
   ctx: CanvasRenderingContext2D,
@@ -127,7 +128,7 @@ export class PointBoardView {
     private spec: BoardSpec,
   ) {
     const { theme, radius, half, centreZ } = spec;
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

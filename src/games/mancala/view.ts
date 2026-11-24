@@ -6,6 +6,7 @@ import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
 import { STORE, play, type State } from "./rules";
 import { market, type Market } from "./market";
+import { zoomable } from "../../engine/zoom";
 
 export const MANCALA_SUBJECT: Subject & { tilt: number } = { half: 5.9, halfZ: 4.6, height: 0.8, lookY: 0, tilt: 1.0 };
 /** How deep the pits are cut into the plank. */
@@ -131,7 +132,7 @@ export class MancalaView implements PointView<State> {
   ) {
     const rich = capable();
     this.live = rich && !this.reducedMotion;
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

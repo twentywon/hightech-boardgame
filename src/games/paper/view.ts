@@ -3,6 +3,7 @@ import { afterGPUFrame, aim, wood, realism, planks } from "../../engine/scene-ut
 import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
+import { zoomable } from "../../engine/zoom";
 
 /** Pencil colours of the two players, and of the lines printed in the notebook. */
 export const PENCILS = ["#d2452f", "#2f62c0"],
@@ -206,7 +207,7 @@ export class PaperView<S> implements PointView<S> {
   ) {
     const PAGE_X = (this.pageX = pageX(game.corner));
     this.subject = paperSubject(game.corner);
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

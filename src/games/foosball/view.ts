@@ -7,6 +7,7 @@ import { BALL_R, DT, GOAL, HALF_X, HALF_Z, MAX_SLIDE, RODS, SWING, createWorld, 
 import { GOALS, type State } from "./rules";
 import { blend, type LiveGuest, type LiveSession } from "../../net/live";
 import { hostSlice, inputOf, readInput, readSnap, snapOf } from "./net";
+import { noZoom } from "../../engine/zoom";
 
 export const FOOSBALL_COLORS: [string, string] = ["#c8321f", "#e7b416"];
 /** How high the rods run over the pitch, and how tall the walls stand. */
@@ -88,6 +89,8 @@ export class FoosballView extends TableView<State> {
     private live: LiveSession | null = null,
   ) {
     super(host, quality, "#16110d");
+    // Two fingers on this canvas are the game's own (two players at one screen).
+    noZoom(this.renderer.domElement);
     if (live?.seat === 1) [this.mine, this.way] = [1, -1];
     this.scene.add(new T.HemisphereLight("#d8cdb8", "#221a14", 1.6));
     const lamp = new T.SpotLight("#fff0cf", 3.4, 0, 0.9, 0.5, 0);

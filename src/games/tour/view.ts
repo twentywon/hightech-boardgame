@@ -4,6 +4,7 @@ import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import { SPACES, type State } from "./rules";
 import { ATLAS_COLS, ATLAS_ROWS, banknote, boardPrint, cardBack, cardEdges, cardFace, dieFace, spaceAtlas } from "./paint";
 import { IDLE, bankTray, chest, island, rocket, spacecraft, travellerModel, type Paints, type Scenery } from "./models";
+import { zoomable } from "../../engine/zoom";
 
 export const TOUR_SUBJECT: Subject & { tilt: number } = { half: 7.55, halfZ: 7.55, height: 1.6, lookY: 0, tilt: 0.98 };
 export const PLAYER_COLORS = ["#d2452f", "#2f62c0", "#3f9a5a", "#e0a020"];
@@ -225,7 +226,7 @@ export class TourView {
     quality: "high" | "low",
     players: number,
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

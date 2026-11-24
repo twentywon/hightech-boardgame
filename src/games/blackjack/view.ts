@@ -4,6 +4,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { afterGPUFrame, aim, block, capable, glossy, wood, realism, weave } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, cameraDistance } from "../../engine/camera";
 import type { Card } from "./shoe";
+import { zoomable } from "../../engine/zoom";
 
 /** A card on the table; `face` is null while it lies face down. */
 export interface TableCard {
@@ -532,7 +533,7 @@ export class BlackjackView {
     readonly host: HTMLElement,
     quality: "high" | "low",
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

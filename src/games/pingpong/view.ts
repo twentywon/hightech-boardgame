@@ -9,6 +9,7 @@ import { serverOf, type State } from "./rules";
 import { BALL, BLADE, DT, FLOOR, HALF_L, HALF_W, PACE, WHY, alongSight, contact, createWorld, highest, keep, place as placePaddle, serve, step, toss, type Meeting, type Happening, type Level, type World } from "./sim";
 import { blend, type LiveGuest, type LiveSession } from "../../net/live";
 import { noCounts, inputOf, readInput, readSnap, snapOf, takeToss, type Counts } from "./net";
+import { noZoom } from "../../engine/zoom";
 
 export const TABLE_TENNIS_COLORS: [string, string] = ["#e0402c", "#2a72e0"];
 /** How long, in the hall's time, the ball of an ended rally is left to fall before the next serve. */
@@ -172,6 +173,8 @@ export class TableTennisView extends TableView<State> {
     private live: LiveSession | null = null,
   ) {
     super(host, quality, "#cfd6de");
+    // Two fingers on this canvas are the game's own (two players at one screen).
+    noZoom(this.renderer.domElement);
     if (live) {
       this.mine = live.seat === 1 ? 1 : 0;
       this.simple = !(live.host && live.seat === 0);

@@ -7,6 +7,7 @@ import { FELT, PILES_Z, PITCH, SPIDER_SUBJECT, STOCK_STEP, columnSpots, homeSpot
 import { cardGeometry } from "./card";
 import { completed } from "./runs";
 import { ROOM_CLEAR, cardRoom } from "./room";
+import { zoomable } from "../../engine/zoom";
 
 /** A card's way from where it is to where it goes. */
 interface Tween {
@@ -133,7 +134,7 @@ export class SpiderView {
     readonly host: HTMLElement,
     quality: "high" | "low",
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

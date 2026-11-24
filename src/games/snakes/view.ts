@@ -9,6 +9,7 @@ import { BOARD_THICK, BOARD_X, CELL, LADDER_LINES, LADDER_TOP, SNAKE_LINES, TABL
 import { Heads, SnakeModel, ladderModel } from "./pieces";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { LAWN, garden } from "./garden";
+import { zoomable } from "../../engine/zoom";
 
 export { squareAt } from "./layout";
 export const SNAKES_SUBJECT: Subject & { tilt: number } = { half: 4.6, halfZ: 4.5, height: 0.9, lookY: 0, tilt: 1.02 };
@@ -228,7 +229,7 @@ export class SnakesView implements PointView<State> {
   ) {
     const rich = capable();
     this.life = rich && !this.reducedMotion;
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

@@ -7,6 +7,7 @@ import { MODE_NAMES, TEAM_COLORS, TEAM_NAMES, modeOf, type Mode } from "./roster
 import { GOAL, TIME, playerName, shirtOf, type State } from "./rules";
 import { DT, FLAT, GRAVITY, createWorld, step as stepWorld, think, ticks, timeLeft, type Event as MatchEvent, type Input, type World } from "./sim";
 import { ballTexture, flatStadium, gravityStadium, shirtTexture, tagTexture, type Stadium } from "./stadium";
+import { noZoom } from "../../engine/zoom";
 
 export const SOCCER_COLORS: [string, string] = TEAM_COLORS;
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -113,6 +114,8 @@ export class SoccerView extends TableView<State> {
     private live: LiveSession | null = null,
   ) {
     super(host, quality, "#1c2530");
+    // Two fingers on this canvas are the game's own (two players at one screen).
+    noZoom(this.renderer.domElement);
     this.mode = modeOf(variant);
     this.hud = document.createElement("div");
     this.hud.className = "so-hud";

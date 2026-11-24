@@ -5,6 +5,7 @@ import { roundRect } from "../cards/table-view";
 import { capturing } from "../../ui/banner";
 import { faceOf, type Card } from "../spider/rules";
 import { UP, cameraFor, type PatienceLayout, type Slot, type Spot } from "./layout";
+import { zoomable } from "../../engine/zoom";
 
 /** Keeps a resource to be freed with the view. */
 export type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -109,7 +110,7 @@ export class PatienceView<S> {
     private layout: PatienceLayout<S>,
     setting: Setting,
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

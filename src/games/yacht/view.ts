@@ -5,6 +5,7 @@ import type { Card } from "./rules";
 import { CUP, SIZE, diceCup, diceKit } from "./dice";
 import { FAR, TOP, suite } from "./cabin";
 import { ScorePad } from "./pad";
+import { zoomable } from "../../engine/zoom";
 
 /** What the tray shows. Faces are 1–6, or 0 for dice waiting to be rolled. */
 export interface TrayModel {
@@ -194,7 +195,7 @@ export class YachtView {
   ) {
     const own = <R extends { dispose(): void }>(r: R) => this.own(r),
       rich = capable();
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

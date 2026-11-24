@@ -4,6 +4,7 @@ import { FOV, cameraDistance, type Subject } from "../../engine/camera";
 import type { PointView } from "../../ui/point-game";
 import type { Marks } from "../points/view";
 import type { Move } from "../points/types";
+import { zoomable } from "../../engine/zoom";
 
 export type TableSubject = Subject & { tilt: number };
 /** A place on the table that a tap can choose: it stands for the point `point`. */
@@ -72,7 +73,7 @@ export abstract class TableView<S> implements PointView<S> {
     quality: "high" | "low",
     clear: string,
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

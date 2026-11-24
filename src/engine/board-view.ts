@@ -16,6 +16,7 @@ import {
   cameraDistance,
   orbit,
 } from "./camera";
+import { zoomable } from "./zoom";
 
 const GOMOKU_BOARD = 6.55;
 /** Where a stone's or a disc's middle rests: gomoku's stones on the board's face (0.15), discs on the felt (0.18). */
@@ -160,7 +161,7 @@ export class BoardView {
     quality: "high" | "low",
     private variant: "gomoku" | "reversi" = "gomoku",
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(
       Math.min(devicePixelRatio, quality === "high" ? 2 : 1),
     );

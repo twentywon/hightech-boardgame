@@ -12,6 +12,7 @@ import {
 import { FILES, RANKS, at, kindOf, sideOf, xOf, yOf, type Move, type Side } from "./rules";
 import { PieceKit, RADIUS, THICK } from "./pieces";
 import { FACE, MAT, janggiBoard, sarangbang } from "./room";
+import { zoomable } from "../../engine/zoom";
 
 export const SPACING = 0.7;
 /** Centre of a board point in the scene. */
@@ -139,7 +140,7 @@ export class JanggiView {
     facing: Side,
   ) {
     this.facing = facing;
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

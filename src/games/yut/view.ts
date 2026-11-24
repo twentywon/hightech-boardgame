@@ -16,6 +16,7 @@ import {
   strawMaterial,
   tokenGeometry,
 } from "./props";
+import { zoomable } from "../../engine/zoom";
 
 /** What the yard shows. The view draws stations; it knows no rules. */
 export interface YardModel {
@@ -156,7 +157,7 @@ export class YutView {
     readonly host: HTMLElement,
     quality: "high" | "low",
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

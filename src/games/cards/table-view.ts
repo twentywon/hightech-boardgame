@@ -4,6 +4,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { afterGPUFrame, aim, capable, glossy, realism, weave } from "../../engine/scene-utils";
 import { FOV, SUBJECTS, TILT, cameraDistance, type Subject } from "../../engine/camera";
 import type { TableView, Tone } from "./game";
+import { zoomable } from "../../engine/zoom";
 
 /** How a game's cards look. Painters draw on a canvas of `pixels` size. */
 export interface CardSkin {
@@ -547,7 +548,7 @@ export class CardTableView {
     quality: "high" | "low",
     private skin: CardSkin,
   ) {
-    this.renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true, alpha: false }));
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, quality === "high" ? 2 : 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = T.PCFShadowMap;

@@ -9,6 +9,7 @@ import { DT, GOAL, HALF_X, HALF_Z, MALLET, MAX_PUCK, PUCK, createWorld, freshMin
 import { DROP, ORBIT, RAIL, airHockeySubject } from "./layout";
 import { blend, type LiveGuest, type LiveSession } from "../../net/live";
 import { hostSlice, inputOf, readInput, readSnap, snapOf, type Tally } from "./net";
+import { noZoom } from "../../engine/zoom";
 
 export const AIRHOCKEY_COLORS: [string, string] = ["#e0322a", "#2a6fe0"];
 /** Where a side's mallet stands at a face-off, before its goal. */
@@ -127,6 +128,8 @@ export class AirHockeyView extends TableView<State> {
     private live: LiveSession | null = null,
   ) {
     super(host, quality, "#16110d");
+    // Two fingers on this canvas are the game's own (two players at one screen).
+    noZoom(this.renderer.domElement);
     if (live) this.mine = live.seat === 1 ? 1 : 0;
     this.orbit = ORBIT + (this.mine ? Math.PI : 0);
     this.scene.add(new T.HemisphereLight("#d8cdb8", "#221a14", 1.6));

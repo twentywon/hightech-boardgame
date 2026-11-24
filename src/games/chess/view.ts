@@ -14,6 +14,7 @@ import {
   orbit,
 } from "../../engine/camera";
 import { capturing } from "../../ui/banner";
+import { zoomable } from "../../engine/zoom";
 /** How large a taken piece stands beside the board, and where the `i`-th piece `taker` took stands. */
 const TAKEN_SCALE = 0.72;
 /**
@@ -121,7 +122,7 @@ export class ChessView {
     facing: Color = "w",
   ) {
     this.facing = facing;
-    this.renderer = new T.WebGLRenderer({ antialias: true });
+    this.renderer = zoomable(new T.WebGLRenderer({ antialias: true }));
     this.renderer.setPixelRatio(
       Math.min(devicePixelRatio, quality === "high" ? 2 : 1),
     );

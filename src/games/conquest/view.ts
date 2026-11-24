@@ -9,6 +9,7 @@ import { OVERLAY_H, OVERLAY_W, paintMap, type Overlay, type Plate } from "./pain
 import { paintWorld } from "./paint-world";
 import { KIND_HEIGHT, MOST_GUNS, formation, pieceGeometries } from "./pieces";
 import type { Roll, State } from "./rules";
+import { noZoom } from "../../engine/zoom";
 
 /** The players' colours: red, blue, green, yellow, purple, black; and the neutral army's grey. */
 export const PLAYER_COLORS = ["#c9392b", "#2a62c4", "#3b9a4c", "#e2a21b", "#8a4ec2", "#2c2c30"];
@@ -146,6 +147,8 @@ export class ConquestView extends TableView<State> {
   private picker = new T.Raycaster();
   constructor(host: HTMLElement, quality: "high" | "low", map: WorldMap) {
     super(host, quality, "#1b1712");
+    // Two fingers on this canvas are the game's own (its map zooms by itself).
+    noZoom(this.renderer.domElement);
     this.map = map;
     this.scale = pieceScale(map);
     this.anchors = map.territories.map((t) => {
