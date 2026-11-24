@@ -1,6 +1,6 @@
 import type { GameOptions, Move, PointGame } from "../games/points/types";
 import { NOBODY, type NetRules } from "./match";
-import type { SeatKind } from "./protocol";
+import type { SeatInfo, SeatKind } from "./protocol";
 import type { HiddenView } from "./hidden";
 
 /**
@@ -49,6 +49,23 @@ export interface NetSpec<S> {
    * left out, the seat `winnerSeat` names won and the others lost. With it `winnerSeat` may give null.
    */
   outcome?: (state: S, seat: number) => "win" | "lose" | "draw";
+  /** The seats are two teams: the room's window shows them as two camps (`Camps`). */
+  camps?: Camps;
+}
+/**
+ * Seats grouped in two teams (축구's two-camp waiting room, the user asked): the room's window shows a column for each
+ * team and one between them for who only watches; a person joins a team by pressing its head, and the host moves
+ * others and adds or takes away the computer's players there. Free of the page, so every device draws it alike.
+ */
+export interface Camps {
+  names: [string, string];
+  colors: [string, string];
+  /** The team a seat belongs to. */
+  teamOf(seat: number): 0 | 1;
+  /** A line under the room's title (the mode and how many a team holds). */
+  label?(seats: SeatInfo[]): string;
+  /** Why the game cannot begin with these teams, or null. */
+  problem?(seats: SeatInfo[]): string | null;
 }
 /** A point game as a room plays it: laid from the room's start and seed, the seat to move, what a room refuses. */
 export function pointRules<S>(game: PointGame<S>, spec: NetSpec<S>): NetRules<S> {

@@ -93,6 +93,7 @@ import { shootingConfig } from "../games/shooting/config";
 import { marblePushConfig } from "../games/push/config";
 import { hexConquestConfig } from "../games/hexconquest/config";
 import { slotCarConfig } from "../games/slotcar/config";
+import { soccerConfig } from "../games/soccer/config";
 import type { PointConfig } from "./point-game";
 import { thumb } from "./thumbs";
 import { mountSpider, type SpiderController, type SpiderOptions } from "./spider";
@@ -284,6 +285,8 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "hex-conquest": { config: hexConquestConfig, options: { mode: "ai", variant: "", level: "normal" } },
   // 슬롯 카: the course is the variant; laps, computers and people are its settings.
   "slot-car": { config: slotCarConfig, options: { mode: "ai", variant: "eight", level: "normal" } },
+  // 축구: the variant is the pitch (flat or gravity); the waiting room's teams and the limits are its settings.
+  soccer: { config: soccerConfig, options: { mode: "ai", variant: "flat", level: "normal" } },
 };
 let chessOptions = { difficulty: "normal", color: "white" } as import("../core/ai").AIOptions;
 const ai = new AIClient();
@@ -520,6 +523,7 @@ type GameSelection =
   | "shooting"
   | "marble-push"
   | "slot-car"
+  | "soccer"
   | null;
 function gomokuSetup() {
   return `<section class="featured"><div class="feature-copy"><span class="game-number">NO. 01 — STRATEGY</span><h2>오목 <span>Gomoku</span></h2><p>다섯 개의 돌, 무한한 가능성.<br>단순한 규칙 속 깊은 한 수를 만나보세요.</p><div class="game-meta">2인 · 약 10분 · 전략 보드게임</div><div class="mode-select"><label><input type="radio" name="mode" value="local" ${mode === "local" && !wantWifi ? "checked" : ""}> 로컬 2인</label><label><input type="radio" name="mode" value="ai" ${mode === "ai" && !wantWifi ? "checked" : ""}> 컴퓨터 대전</label><label><input type="radio" name="mode" value="net" ${wantWifi ? "checked" : ""}> 와이파이 여럿이</label></div>${aiForm()}<label class="rule-option"><input type="checkbox" id="allow-33" ${allowDoubleThree ? "checked" : ""}> 삼삼(3-3) 허용<small>끄면 열린 삼을 한 번에 두 개 만드는 수를 둘 수 없습니다.</small></label><button class="primary" id="start">테이블에 앉기 <span>↗</span></button></div><div class="feature-art" role="img" aria-label="나무 오목판 미리보기"><div class="mini-board"><div class="mini-grid">${[35, 36, 37, 48, 49, 61, 62, 73].map((n, i) => `<i style="--r:${Math.floor(n / 11)};--c:${n % 11}" class="${i % 2 ? "white" : "black"}"></i>`).join("")}</div></div><span>한 수에 담긴 작은 여행</span></div></section>`;

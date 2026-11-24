@@ -4,6 +4,7 @@ import { qrSvg } from "../net/qr";
 import { codeProblem, gameTag, readInvite, PREFIX } from "../net/sdp";
 import { cameraProblem, scan, type CameraTrouble } from "../net/scan";
 import type { NetRules } from "../net/match";
+import type { Camps } from "../net/points";
 import { APP_VERSION, type SeatInfo, type SeatKind } from "../net/protocol";
 import { appLan, joinProblem, readRoomCode, roomCode, typedAddress, LAN_PORT, type RoomAd } from "../net/lan";
 import { allGames, EDITION } from "../core/catalog";
@@ -36,6 +37,8 @@ export interface LobbyOptions<S> {
   /** The fewest people seated before the host may start. */
   least: number;
   rules: NetRules<S>;
+  /** The seats are two teams, shown as two camps with the watchers between them (축구). */
+  camps?: Camps;
   /** A room already made (the 방 button during a game). */
   room?: AnyRoom<S>;
   /** A room was made: the screen listens to it from now on. */
@@ -200,6 +203,89 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
       })
       .join("")}</ul>`;
   };
+  /**
+   * The seats as two camps (축구, the user asked for a two-camp waiting room): a column for each team and one between
+   * them for who only watches, each person a row (mine in gold), each computer a row. A column's head moves me (or,
+   * for the host, the row picked) into it; the host adds a computer to a team's empty place and takes one away.
+   */
+  let picked: string | null = null;
+  const campsBlock = () => {
+    const c = o.camps!,
+      r = room!,
+      seats = r.seats,
+      fixed = started(),
+      isHost = r.host,
+      chosen = isHost ? (picked && (picked.startsWith("cpu:") ? seats[Number(picked.slice(4))]?.kind === "computer" : r.person(picked)) ? picked : r.me) : r.me,
+      seated = new Set(seats.filter((x) => x.kind === "person").map((x) => x.person));
+    const personRow = (id: string, away: boolean) => {
+      const p = r.person(id),
+        mine = id === r.me;
+      return `<li><button type="button" class="so-row person${mine ? " me" : ""}${chosen === id ? " picked" : ""}" data-pick="${escape(id)}" ${!isHost || fixed ? "disabled" : ""} aria-pressed="${chosen === id}"><i class="so-mark" aria-hidden="true"></i><span>${mine ? "나" : escape(p?.name ?? "")}${p?.host ? " <small>방장</small>" : ""}${away ? " <small>연결 끊김</small>" : ""}</span></button></li>`;
+    };
+    const column = (team: 0 | 1 | null) => {
+      const rows: string[] = [];
+      let count = 0,
+        cap = 0;
+      if (team === null) for (const p of r.people) {
+        if (!seated.has(p.id)) rows.push(personRow(p.id, !p.connected));
+      }
+      else
+        seats.forEach((seat, i) => {
+          if (c.teamOf(i) !== team) return;
+          cap++;
+          if (seat.kind === "person" && seat.person) {
+            count++;
+            rows.push(personRow(seat.person, r.away(i)));
+          } else if (seat.kind === "computer") {
+            count++;
+            const id = `cpu:${i}`;
+            rows.push(`<li><button type="button" class="so-row cpu${chosen === id ? " picked" : ""}" data-pick="${id}" ${!isHost || fixed ? "disabled" : ""} aria-pressed="${chosen === id}"><i class="so-mark" aria-hidden="true"></i><span>컴퓨터</span></button>${isHost && !fixed ? `<button type="button" class="so-x net-kind" data-seat="${i}" data-kind="open" aria-label="컴퓨터 빼기">×</button>` : ""}</li>`);
+          } else rows.push(`<li class="so-empty">${isHost && !fixed && seat.kinds.includes("computer") ? `<button type="button" class="so-add net-kind" data-seat="${i}" data-kind="computer" aria-label="빈자리에 컴퓨터 넣기">+ 컴퓨터</button>` : "<span>빈자리</span>"}</li>`);
+        });
+      const name = team === null ? "관전 · 대기" : c.names[team],
+        cls = team === null ? "wait" : `t${team}`;
+      return `<section class="so-camp ${cls}"><button type="button" class="so-camp-head" data-camp="${team === null ? "wait" : team}" ${fixed ? "disabled" : ""}>${name}${team === null ? "" : ` <small>${count}/${cap}</small>`}</button><ul class="so-list" aria-label="${name}">${rows.join("") || (team === null ? `<li class="so-none">없음</li>` : "")}</ul></section>`;
+    };
+    const why = !fixed && isHost ? (c.problem?.(seats) ?? null) : null;
+    return `<div class="so-room net-camps"><div class="so-room-top"><div class="so-room-title"><b>${escape(o.title)} 대기실</b><small>${escape(c.label?.(seats) ?? "")}</small></div></div><div class="so-camps">${column(0)}${column(null)}${column(1)}</div><p class="so-room-note">${fixed ? "경기 중입니다." : escape(why ?? (isHost ? "이름을 누른 뒤 레드·관전·블루 머리를 누르면 그쪽으로 옮깁니다. 빈자리에는 컴퓨터를 넣을 수 있습니다." : "레드나 블루 머리를 누르면 그 팀에 들어갑니다. 관전을 누르면 구경만 합니다."))}</p></div>`;
+  };
+  /** A camp's head pressed: me (or the host's picked row) into that team, or to the watchers. */
+  function toCamp(to: 0 | 1 | null) {
+    const c = o.camps!,
+      r = room!,
+      h = host(),
+      id = h ? (picked ?? r.me) : r.me;
+    if (started()) return;
+    const free = (team: 0 | 1) => r.seats.findIndex((seat, i) => c.teamOf(i) === team && seat.kind === "open");
+    if (id.startsWith("cpu:")) {
+      const from = Number(id.slice(4));
+      if (!h || r.seats[from]?.kind !== "computer") return;
+      if (to === null) {
+        h.setKind(from, "open");
+        picked = null;
+        return;
+      }
+      if (c.teamOf(from) === to) return;
+      const target = free(to);
+      if (target < 0) return;
+      h.setKind(from, "open");
+      h.setKind(target, "computer");
+      picked = `cpu:${target}`;
+      return;
+    }
+    const at = r.seatOf(id);
+    if (to === null) {
+      if (at === null) return;
+      if (h) h.sit(null, id);
+      else (r as GuestRoom<S>).sit(null);
+      return;
+    }
+    if (at !== null && c.teamOf(at) === to) return;
+    const target = free(to);
+    if (target < 0) return note(`${c.names[to]} 팀에 빈자리가 없습니다.`);
+    if (h) h.sit(target, id);
+    else (r as GuestRoom<S>).sit(target);
+  }
   /** A code shown as a QR picture, as text and with a copy button. */
   const codeBlock = (code: string, id: string, what: string) =>
     `<div class="net-code"><div class="net-qr-box">${qrSvg(code, `${what} QR 코드`)}</div><label class="net-text">${what} (글자로)<textarea id="${id}" readonly rows="3" spellcheck="false">${escape(code)}</textarea></label><button class="net-copy" data-copy="${id}">코드 복사</button></div>`;
@@ -257,12 +343,12 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
         : `<p class="net-problem">이 브라우저에서는 기기끼리 바로 연결(WebRTC)을 쓸 수 없습니다. 최신 Chrome에서 열어 주세요.</p>`;
     } else if (room.host) {
       const h = room as HostRoom<S>,
-        problem = h.startProblem(o.least);
+        problem = h.startProblem(o.least) ?? o.camps?.problem?.(h.seats) ?? null;
       // While a device is being paired its codes come first (the QR code must be in view to be read).
       const status = started()
           ? `<p class="net-status">게임 중입니다. 연결이 끊긴 사람은 ${lan ? "방 목록에서 이 방을 다시 누르거나 아래 QR 코드를 찍으면 같은 자리로 돌아옵니다" : "다음 사람 연결로 다시 들어올 수 있습니다"}.</p>`
           : `<p class="net-status">${lan ? "방을 열었습니다. 같은 와이파이의 기기에서 이 게임의 참가하기를 누르면 이 방이 보입니다." : "방을 열었습니다. 다음 사람 연결을 눌러 기기를 한 대씩 연결하세요."}</p>`,
-        room_ = `<h3>자리</h3>${seatList()}<h3>사람 <small>${room.people.length}/8</small></h3>${peopleList()}`,
+        room_ = o.camps ? campsBlock() : `<h3>자리</h3>${seatList()}<h3>사람 <small>${room.people.length}/8</small></h3>${peopleList()}`,
         pair = pairing
           ? `<section class="net-pair"><h3>다음 사람 연결</h3><ol class="net-steps"><li>참가할 기기에서 같은 게임 → 와이파이 여럿이 → 참가하기를 누르고 '방장 QR 찍기'로 이 QR 코드를 찍습니다.</li><li>그 기기에 나온 답 QR 코드를 '참가자 QR 찍기'로 찍거나, 답 코드를 붙여 넣고 연결을 누릅니다.</li></ol>${codeBlock(pairing.code, "net-offer", "초대 코드")}${pasteBlock("net-answer-in", "참가하는 기기의 답 코드", "연결", "net-connect", "참가자 QR 찍기")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
           : qr
@@ -295,7 +381,9 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
       html =
         `<p class="net-status" role="status">${status}</p>` +
         (g.online
-          ? `<h3>자리</h3>${seatList()}<h3>사람</h3>${peopleList()}`
+          ? o.camps
+            ? campsBlock()
+            : `<h3>자리</h3>${seatList()}<h3>사람</h3>${peopleList()}`
           : pairing
             ? `<section class="net-pair">${codeBlock(pairing.code, "net-answer", "답 코드")}<p class="net-pair-note" role="status">${escape(pairNote)}</p></section>`
             : finding
@@ -471,6 +559,14 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
     body.querySelectorAll<HTMLButtonElement>(".net-sit").forEach((b) => (b.onclick = () => sit(Number(b.dataset.seat))));
     body.querySelectorAll<HTMLButtonElement>(".net-stand").forEach((b) => (b.onclick = () => sit(null)));
     body.querySelectorAll<HTMLButtonElement>(".net-kind").forEach((b) => (b.onclick = () => host()?.setKind(Number(b.dataset.seat), b.dataset.kind as SeatKind)));
+    body.querySelectorAll<HTMLButtonElement>(".so-row[data-pick]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          picked = b.dataset.pick ?? null;
+          render();
+        }),
+    );
+    body.querySelectorAll<HTMLButtonElement>(".so-camp-head").forEach((b) => (b.onclick = () => toCamp(b.dataset.camp === "wait" ? null : (Number(b.dataset.camp) as 0 | 1))));
     body.querySelectorAll<HTMLButtonElement>(".net-copy").forEach(
       (b) =>
         (b.onclick = async () => {
@@ -624,9 +720,11 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
       const typing = body.querySelector<HTMLTextAreaElement>("#net-answer-in, #net-offer-in");
       if (typing?.value && !room?.match) {
         const seats = body.querySelector(".net-seats"),
-          people = body.querySelector(".net-people");
+          people = body.querySelector(".net-people"),
+          camps = body.querySelector(".net-camps");
         if (seats) seats.outerHTML = seatList();
         if (people) people.outerHTML = peopleList();
+        if (camps) camps.outerHTML = campsBlock();
         bind();
         return;
       }

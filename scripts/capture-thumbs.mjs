@@ -816,6 +816,18 @@ const play = {
     await wait(1600);
     await page.keyboard.press("p");
   },
+  // 축구 (the flat pitch, me against the computer): I run at the ball and kick off, the computer comes for it; paused
+  // with the ball between us.
+  soccer: async () => {
+    await page.locator("canvas").focus();
+    await page.keyboard.down("KeyD");
+    await page.keyboard.down("Space");
+    await wait(2600);
+    await page.keyboard.up("Space");
+    await page.keyboard.up("KeyD");
+    await wait(1400);
+    await page.keyboard.press("p");
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {

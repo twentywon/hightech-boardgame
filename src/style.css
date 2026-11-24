@@ -3688,3 +3688,114 @@ html[data-game="slot-car"] .game-layout .board-area > .board-hint { display:none
   .sc-pedal-plate em { font-size:14px; }
 }
 html[data-capture] :is(.sc-hud, .sc-pedals) { display:none !important; }
+
+/* 축구 (soccer) ----------------------------------------------------------------------------------------------------
+   The two-camp waiting room (양 진영 대기실, the user asked, after a picture they sent): a dark panel, the title at its
+   upper left and small buttons at its upper right, three tall lists (레드, 관전 · 대기, 블루) whose heads move the picked
+   row there, then the settings and the start. The Wi-Fi room's window shows the same panel (`.net-camps`). */
+dialog.setup-dialog.entry:has(.so-room), dialog.setup-dialog:has(.so-entry), dialog.setup-dialog.net-lobby:has(.net-camps) { width:min(96vw, 760px);max-width:none; }
+dialog.setup-dialog .so-entry { display:block; }
+dialog.setup-dialog .so-entry .feature-copy { max-width:none; }
+.so-intro { margin:0 0 10px;font-size:13.5px;line-height:1.6;color:var(--ink-soft, #5c5a55); }
+.so-room { padding:12px 12px 10px;border-radius:14px;background:linear-gradient(#20242c, #15181e);border:1px solid #2e333d;box-shadow:inset 0 1px 0 #ffffff12, 0 8px 22px rgba(0,0,0,.22);color:#e8e6df; }
+.so-room-top { display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:0 2px 10px; }
+.so-room-title { display:grid;gap:2px; }
+dialog .so-room-title b, .so-room-title b { font-size:15px;letter-spacing:.02em;color:#fff; }
+.so-room-title small { font-size:11.5px;color:#9aa3b2; }
+.so-room-tools { display:flex;gap:6px; }
+.so-room .so-tool { min-height:30px;padding:0 12px;border:1px solid #454c59;border-radius:8px;background:#2a2f39;color:#e8e6df;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer; }
+.so-room .so-tool:hover { background:#353b47; }
+.so-camps { display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px; }
+.so-camp { display:flex;flex-direction:column;min-width:0;border-radius:10px;background:#0e1014;border:1px solid #2a2f38;overflow:hidden; }
+.so-camp-head { display:flex;align-items:center;justify-content:center;gap:6px;min-height:36px;margin:6px;padding:0 8px;border:0;border-radius:7px;background:#2f3440;color:#fff;font:inherit;font-size:14px;font-weight:800;cursor:pointer; }
+.so-camp-head small { font-size:11px;font-weight:600;opacity:.8; }
+.so-camp.t0 .so-camp-head { background:linear-gradient(#e3474c, #b8262c); }
+.so-camp.t1 .so-camp-head { background:linear-gradient(#3d80ee, #2155bd); }
+.so-camp-head[aria-disabled="true"] { opacity:.55; }
+.so-camp-head:disabled { cursor:default;opacity:.75; }
+.so-list { flex:1;min-height:132px;margin:0;padding:2px 6px 8px;list-style:none;display:flex;flex-direction:column;gap:4px; }
+.so-list li, dialog .dialog-body .so-list li { display:flex;align-items:center;gap:4px;min-width:0;margin:0; }
+.so-room :is(.so-row, .so-x) { min-height:34px;height:34px;box-sizing:border-box; }
+.so-room .so-add { min-height:26px;height:26px; }
+.so-room .so-tool { min-height:30px; }
+.so-row { flex:1;display:flex;align-items:center;gap:8px;min-width:0;min-height:34px;padding:0 10px;border:1px solid transparent;border-radius:7px;background:#1c2028;color:#e8e6df;font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer; }
+.so-row span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.so-row small { font-size:10.5px;color:#9aa3b2;font-weight:600; }
+.so-row:disabled { cursor:default; }
+.so-room .so-row:hover:not(:disabled) { background:#262b35;color:#e8e6df; }
+.so-row.picked, .so-room .so-row.picked:hover { border-color:#ffd84a;background:#2a2a20; }
+.so-room .so-camp-head:hover:not(:disabled) { filter:brightness(1.1);color:#fff; }
+.so-row.me span, .so-row.person.me span { color:#ffd84a;font-weight:800; }
+.so-row.p2 span { color:#9be7ff;font-weight:800; }
+.so-mark { flex:none;width:9px;height:9px;border-radius:50%;background:#7c8494; }
+.so-camp.t0 .so-mark { background:#ff5a5f; }
+.so-camp.t1 .so-mark { background:#5a9bff; }
+.so-row.cpu .so-mark { border-radius:2px; }
+.so-x { flex:none;width:26px;height:34px;padding:0;border:0;border-radius:7px;background:#1c2028;color:#b9bfcc;font:inherit;font-size:18px;line-height:1;cursor:pointer; }
+.so-x:hover { background:#3a2226;color:#fff; }
+.so-empty { justify-content:center;min-height:34px;padding:3px;border:1px dashed #333946;border-radius:7px;color:#646c7a;font-size:12.5px; }
+.so-add { flex:1;min-height:26px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:#8d95a3;font:inherit;font-size:12.5px;font-weight:700;white-space:nowrap;cursor:pointer; }
+.so-add:hover { background:#323846;color:#fff; }
+.so-none { justify-content:center;min-height:34px;color:#565d6a;font-size:12.5px; }
+.so-room-note { margin:9px 2px 0;font-size:12px;line-height:1.5;color:#aab1bd; }
+.so-room-note.problem { color:#ffb07a; }
+dialog.setup-dialog .so-settings { display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:12px 16px;max-width:none;margin:14px 0 4px; }
+dialog.setup-dialog .so-settings label[hidden] { display:none; }
+dialog.setup-dialog .so-settings #so-level-field { grid-column:1 / -1; }
+.so-keys { display:block !important;margin:10px 0 0;font-size:12px;color:var(--ink-soft, #5c5a55); }
+dialog.setup-dialog .so-entry button.primary { margin-top:12px; }
+/* The Wi-Fi room's camps sit in the lobby window as they do in the setup. */
+dialog.net-lobby .net-camps { margin:12px 0 4px; }
+@media (max-width: 560px) {
+  .so-camps { gap:5px; }
+  .so-camp-head { margin:4px;font-size:13px;min-height:32px; }
+  .so-row { padding:0 6px;gap:5px;font-size:13px; }
+  dialog.setup-dialog .so-settings { grid-template-columns:1fr; }
+}
+@media (max-width: 380px) {
+  .so-camps { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .so-camp.wait { grid-column:1 / -1;order:3; }
+  .so-camp.wait .so-list { min-height:0; }
+}
+@media (orientation: landscape) and (max-height: 540px) {
+  .so-intro { display:none; }
+  .so-list { min-height:96px; }
+  .so-room { padding:8px 8px 6px; }
+}
+/* At the table: the scoreboard and the clock over the pitch, and a phone's joystick or buttons and its 차기. */
+html[data-game="soccer"] .game-layout .board-area > .board-hint { display:none !important; }
+.so-hud { position:absolute;left:50%;top:10px;translate:-50% 0;z-index:2;display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none;user-select:none;-webkit-user-select:none;font-family:"Inter","Noto Sans KR",sans-serif;color:#fff; }
+.so-board { display:flex;align-items:center;gap:10px;padding:5px 10px;border-radius:10px;background:linear-gradient(#1a1d24, #08090c);border:2px solid #343a45;box-shadow:0 6px 18px rgba(0,0,0,.45); }
+.so-side { display:flex;align-items:center;gap:6px;font-size:13px;font-weight:800;letter-spacing:.04em; }
+.so-side i { width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px #ffffff55; }
+.so-side.so-t0 i { background:#e3343a; }
+.so-side.so-t1 i { background:#2b6fe3; }
+.so-side.mine b { color:#ffd84a; }
+.so-score { display:flex;align-items:center;gap:5px;padding:2px 9px;border-radius:7px;background:#000;font:800 22px/1 var(--mono, ui-monospace, monospace);color:#ffd45a;text-shadow:0 0 8px #ffae1a88; }
+.so-score em { font-style:normal;color:#8a8576;font-size:18px; }
+.so-clock { padding:2px 9px;border-radius:6px;background:#000c;font:700 13px/1.2 var(--mono, ui-monospace, monospace);color:#7fe0ff;letter-spacing:.08em; }
+.so-clock.over { color:#ff9a6a; }
+.so-note { padding:2px 10px;border-radius:999px;background:#000a;font-size:12px;font-weight:700;color:#fff; }
+.so-pad { position:absolute;inset:0;z-index:3;pointer-events:none; }
+.so-stick { position:absolute;left:18px;bottom:40px;width:132px;height:132px;border-radius:50%;background:radial-gradient(#ffffff22, #ffffff10 60%, #00000033);border:2px solid #ffffff55;pointer-events:auto;touch-action:none; }
+.so-knob { position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:radial-gradient(circle at 40% 35%, #ffffff, #c9ced6);box-shadow:0 4px 10px #0007; }
+.so-button { position:absolute;bottom:40px;display:flex;align-items:center;justify-content:center;width:82px;height:82px;padding:0;border:3px solid #ffffffaa;border-radius:50%;background:#00000055;color:#fff;font:900 16px/1 "Pretendard","Noto Sans KR",sans-serif;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent; }
+.board-area .so-button:hover:not(:disabled) { background:#00000055; }
+.so-button.on, .board-area .so-button.on:hover { background:var(--team, #e3343a);transform:scale(.95); }
+.so-kick { right:18px;width:96px;height:96px;background:color-mix(in srgb, var(--team, #e3343a) 55%, transparent); }
+.so-jump { right:128px; }
+.so-left { left:18px; }
+.so-right { left:112px; }
+@media (max-height: 500px) {
+  .so-hud { top:6px; }
+  .so-board { padding:3px 8px;gap:7px; }
+  .so-score { font-size:17px; }
+  .so-side { font-size:11px; }
+  .so-stick { width:112px;height:112px;bottom:14px;left:12px; }
+  .so-button { bottom:14px;width:70px;height:70px;font-size:14px; }
+  .so-kick { width:84px;height:84px;right:12px; }
+  .so-jump { right:106px; }
+  .so-left { left:12px; }
+  .so-right { left:92px; }
+}
+html[data-capture] :is(.so-hud, .so-pad) { display:none !important; }

@@ -59,6 +59,37 @@ function whining(context: BaseAudioContext) {
   for (let i = 0; i < length; i++) data[i] *= 0.8 / peak;
   return buffer;
 }
+/**
+ * 축구: four seconds of a crowd's murmur made by the page, to be looped: many voices as low noise, swelling and falling
+ * slowly, with now and then a shout over it. The ends are faded into each other so that the loop joins.
+ */
+function murmuring(context: BaseAudioContext) {
+  const rate = context.sampleRate,
+    length = Math.ceil(rate * 4.3),
+    buffer = context.createBuffer(1, length, rate),
+    data = buffer.getChannelData(0);
+  let seed = 13,
+    low = 0,
+    mid = 0;
+  const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < length; i++) {
+    const n = random() * 2 - 1;
+    low += (n - low) * 0.05;
+    mid += (n - mid) * 0.22;
+    const swell = 0.75 + 0.25 * Math.sin((i / rate) * 1.7) * Math.sin((i / rate) * 0.63 + 1);
+    data[i] = (low * 1.6 + (mid - low) * 0.35) * swell;
+  }
+  for (let k = 0; k < 14; k++) {
+    const at = Math.floor(random() * (length - rate * 0.4)),
+      span = Math.floor(rate * (0.15 + random() * 0.25)),
+      f = 300 + random() * 380;
+    for (let j = 0; j < span; j++) data[at + j] += Math.sin((2 * Math.PI * f * j) / rate) * 0.05 * Math.sin((Math.PI * j) / span);
+  }
+  let peak = 0;
+  for (let i = 0; i < length; i++) peak = Math.max(peak, Math.abs(data[i]));
+  for (let i = 0; i < length; i++) data[i] *= 0.8 / peak;
+  return buffer;
+}
 function decode(context: AudioContext) {
   if (decoding) return;
   decoding = true;
@@ -872,5 +903,43 @@ export class Sound {
   lapBeep() {
     this.tone("triangle", 1568, 1568, 0, 0.07, 0.05);
     this.tone("triangle", 2093, 2093, 0.08, 0.1, 0.05);
+  }
+  // ─────────────── 축구 ───────────────
+  /** A football kicked (`strength` 0 to 1): the thump of the leather, a little higher than a basketball's. */
+  kickBall(strength = 1) {
+    if (!this.recording("bounce-1", 0.16 + 0.34 * Math.min(1, strength), 1.35)) this.soft(2, 0.4);
+  }
+  /** The ball against the boards (or a wall in the side view): a dull wooden knock. */
+  boardKnock(strength = 0.6) {
+    if (!this.recording("puck-2", 0.06 + 0.3 * Math.min(1, strength), 0.7)) this.knock(2);
+  }
+  /** The ball off a post or the crossbar: the ring of the metal. */
+  postRing(strength = 0.6) {
+    if (!this.recording("hoop-1", 0.12 + 0.36 * Math.min(1, strength), 1.1)) this.tile(5);
+  }
+  /** The referee's whistle, made by the page: a long blast for the start, two short ones for a kickoff. */
+  whistle(long = false) {
+    const blast = (at: number, length: number) => {
+      // The pea's trill: a tone near 3 kHz shaken quickly, with the breath through it.
+      for (let k = 0; k * 0.03 < length; k++) this.tone("sine", 3050 + (k % 2) * 160, 2950 + (k % 2) * 160, at + k * 0.03, 0.04, 0.035);
+      this.noise(at, length, 0.035, 3000, "bandpass", 3100);
+    };
+    if (long) blast(0, 0.75);
+    else {
+      blast(0, 0.16);
+      blast(0.24, 0.32);
+    }
+  }
+  /** A goal: the crowd's roar going up, and its clapping. */
+  goalRoar() {
+    this.noise(0, 2.4, 0.16, 500, "lowpass", 1100);
+    this.noise(0.05, 1.8, 0.07, 1400, "bandpass", 1900);
+    this.applause(1, 0.6);
+  }
+  /** The crowd's murmur (`level` 0 to 1; 0 is silence), as long as it is asked for. */
+  crowd(level: number) {
+    const c = this.context;
+    if (c && !samples.has("murmur-0")) samples.set("murmur-0", murmuring(c));
+    this.hum("murmur-0", 0.09 * Math.max(0, Math.min(1, level)), 0.95 + 0.1 * Math.min(1, level));
   }
 }

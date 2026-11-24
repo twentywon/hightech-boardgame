@@ -129,6 +129,10 @@ const coin = (fill: string, edge: string) => svg(26, 26, `<circle cx="13" cy="13
 const TIER_COINS: Record<string, string> = { "0": coin("#c0773a", "#7a4519"), "1": coin("#d9dde3", "#8b929c"), "2": coin("#f2c230", "#a77a0a") };
 /** A die, for a choice left to chance. */
 const die =svg(26, 26, `<rect x="4" y="4" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/>${[[9, 9], [17, 9], [13, 13], [9, 17], [17, 17]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" fill="currentColor"/>`).join("")}`);
+const SOCCER: Record<string, string> = {
+  flat: svg(48, 26, `<rect x="4" y="3" width="40" height="20" rx="1.5" fill="#3f9a45" stroke="#fff" stroke-width="1"/><path d="M24 3v20" stroke="#fff" stroke-width="1"/><circle cx="24" cy="13" r="4" fill="none" stroke="#fff" stroke-width="1"/><rect x="1.5" y="9.5" width="2.5" height="7" fill="none" stroke="#fff" stroke-width="1"/><rect x="44" y="9.5" width="2.5" height="7" fill="none" stroke="#fff" stroke-width="1"/><circle cx="16" cy="11" r="2.6" fill="#e3343a"/><circle cx="32" cy="15" r="2.6" fill="#2b6fe3"/><circle cx="24" cy="13" r="1.4" fill="#fff"/>`),
+  gravity: svg(48, 26, `<rect x="2" y="20" width="44" height="4" fill="#3f9a45"/><path d="M3 20V12h5M45 20V12h-5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="17" cy="16.5" r="3.4" fill="#e3343a"/><circle cx="31" cy="16.5" r="3.4" fill="#2b6fe3"/><circle cx="24" cy="6.5" r="2.2" fill="#fff" stroke="currentColor" stroke-width=".8"/><path d="M19 12.5 Q22 8 23 7.5" fill="none" stroke="currentColor" stroke-width=".9" stroke-dasharray="1.4 1.4"/>`),
+};
 const LEVEL_BARS: Record<string, [number, number]> = { beginner: [1, 5], easy: [2, 5], normal: [3, 5], hard: [4, 5], expert: [5, 5] };
 const POINT_LEVEL: Record<string, [number, number]> = { easy: [1, 3], normal: [2, 3], hard: [3, 3] };
 export function choiceIcon(select: string, value: string, label: string, game = ""): ChoiceIcon | null {
@@ -167,6 +171,8 @@ export function choiceIcon(select: string, value: string, label: string, game = 
   if (select === "pg-variant" && game === "slot-car") return { svg: coursePicture(value), only: false };
   if (select === "pg-set-people" && game === "slot-car") return { svg: people(Number(value)), only: true };
   if (select === "pg-set-computers" && game === "slot-car" && Number(value) > 0) return { svg: computers(Number(value)), only: true };
+  // 축구's two pitches: one seen from above with its goals at the ends, one from the side with a ball in the air.
+  if (select === "so-mode" && SOCCER[value]) return { svg: SOCCER[value], only: false };
   // Who moves first against the computer: me, the computer, or a throw of a die.
   if (select === "pg-set-first") return value === "me" ? { svg: svg(26, 26, person(13, 14)), only: false } : value === "computer" ? { svg: svg(26, 26, computer(13, 14)), only: false } : value === "random" ? { svg: die, only: false } : null;
   return null;

@@ -187,6 +187,12 @@ export interface PointConfig<S> {
   firstNote?: string;
   /** Play over one Wi-Fi (와이파이 여럿이): offered as a third mode for a game that sets it. */
   net?: NetSpec<S>;
+  /**
+   * A setup of the game's own instead of the usual form (축구's two-camp waiting room, the user asked): it is drawn
+   * into `host` from the preferences, keeps them through `remember` as they change and sits down through `start` (with
+   * the mode "net", the room's window opens). `create` receives the preferences' settings as they are (it checks them).
+   */
+  ownSetup?: (host: HTMLElement, preferences: PointOptions, remember: (preferences: PointOptions) => void, start: () => void) => void;
   /** What a piece coming to rest sounds like, instead of a tap. */
   contact?: (sound: Sound, state: S) => void;
   /** How the strikes of a shot sound, where a disc, a cushion and a pocket each have their own. */
@@ -290,7 +296,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     variant = preferences.variant,
     level = preferences.level,
     // The numbers and rules the game now on the table was set up with (none for most games).
-    options = optionsOf(config.settings, preferences, config.solo || config.computerOnly ? "ai" : mode),
+    options = config.ownSetup ? { ...(preferences.settings ?? {}) } : optionsOf(config.settings, preferences, config.solo || config.computerOnly ? "ai" : mode),
     state = game.create(variant, options),
     // What the panel describes: the last state whose pieces have come to rest.
     shown = state,
@@ -360,6 +366,16 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     if (host === nav.setupHost) stop();
     else if (config.stages) return stagePicker(host);
     else if (net) return netNewGame(host);
+    if (config.ownSetup)
+      return config.ownSetup(
+        host,
+        { ...preferences },
+        (chosen) => {
+          preferences = { ...chosen };
+          nav.remember({ ...preferences });
+        },
+        () => start(),
+      );
     host.innerHTML = `<section class="featured"><div class="feature-copy"><span class="game-number">${config.number}</span><h2>${config.name} <span>${config.english}</span></h2>${config.intro}<div class="game-meta">${config.meta}</div><div class="mode-select" ${alone && !wifi ? "hidden" : ""}>${alone ? "" : `<label><input type="radio" name="pg-mode" value="local"> ${config.localLabel ?? "로컬 2인"}</label>`}<label><input type="radio" name="pg-mode" value="ai"> 컴퓨터 대전</label>${config.net ? `<label><input type="radio" name="pg-mode" value="net"> 와이파이 여럿이</label>` : ""}</div><div class="ai-options">${config.variants ? `<label>${config.variantLabel ?? "종류"}<select id="pg-variant">${config.variants.map((v) => `<option value="${v.value}" ${preferences.variant === v.value ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>` : ""}${(config.settings ?? []).map((s) => settingField(s, settled(s, preferences.settings?.[s.id]))).join("")}<label id="pg-level-field">컴퓨터 난이도<select id="pg-level">${(Object.keys(LEVELS) as Level[]).map((l) => `<option value="${l}" ${preferences.level === l ? "selected" : ""}>${LEVELS[l].label}</option>`).join("")}</select></label></div><small id="pg-options" class="session-note" hidden>${config.firstNote ?? `컴퓨터 대전에서는 내가 ${config.sides[0]}으로 먼저 둡니다.`}</small><button id="pg-start" class="primary">${config.startWord} <span>↗</span></button></div><div class="feature-art ${config.artClass}" role="img" aria-label="${config.artLabel}">${config.art}</div></section>`;
     const radios = document.querySelectorAll<HTMLInputElement>("input[name=pg-mode]");
     /** The game's own settings as the form has them, each shown only where it is offered. */
@@ -525,7 +541,7 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
     mode = alone || preferences.mode === "ai" ? "ai" : "local";
     variant = preferences.variant;
     level = preferences.level;
-    options = optionsOf(config.settings, preferences, mode);
+    options = config.ownSetup ? { ...(preferences.settings ?? {}) } : optionsOf(config.settings, preferences, mode);
     state = shown = game.create(variant, options);
     spec = config.board?.(variant) ?? null;
     past = [];
@@ -1133,8 +1149,9 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       game: document.documentElement.dataset.game ?? config.english,
       title: config.name,
       variant: v,
-      options: optionsOf(config.settings, preferences, "net"),
+      options: config.ownSetup ? { ...(preferences.settings ?? {}) } : optionsOf(config.settings, preferences, "net"),
       seats: netSeats(v),
+      camps: config.net!.camps,
       least: config.net!.least ?? 2,
       rules,
       room: net?.room,

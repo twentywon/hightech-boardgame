@@ -83,11 +83,14 @@ function buttonize(host: HTMLElement) {
           rebuild(select, group);
           return sync();
         }
+        // Only what changes is written: the watch below sees `disabled` and `hidden`, and writing a disabled button's
+        // attribute again (even unchanged) is a mutation, which would sync again for ever.
         buttons.forEach((button, i) => {
           button.setAttribute("aria-pressed", String(options[i].value === select.value));
-          button.disabled = select.disabled || options[i].disabled;
+          const off = select.disabled || options[i].disabled;
+          if (button.disabled !== off) button.disabled = off;
         });
-        group.hidden = select.hidden;
+        if (group.hidden !== select.hidden) group.hidden = select.hidden;
       }
     },
     adopt = () => {
