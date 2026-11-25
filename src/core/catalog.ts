@@ -848,6 +848,14 @@ export const allGames = [
     icon: "🎣",
     available: true,
   },
+  {
+    name: "핀볼",
+    en: "PINBALL",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "◓",
+    available: true,
+  },
 ];
 
 /**

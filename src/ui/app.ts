@@ -47,6 +47,7 @@ import { balanceConfig } from "../games/scale/config";
 import { snakeConfig } from "../games/snake/config";
 import { whackConfig } from "../games/whack/config";
 import { fishingConfig } from "../games/fishing/config";
+import { pinballConfig } from "../games/pinball/config";
 import { tictactoeConfig } from "../games/tictactoe/config";
 import { airHockeyConfig } from "../games/airhockey/config";
 import { tableTennisConfig } from "../games/pingpong/config";
@@ -239,6 +240,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   snake: { config: snakeConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "whack-a-mole": { config: whackConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   fishing: { config: fishingConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  pinball: { config: pinballConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "tic-tac-toe": { config: tictactoeConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   "air-hockey": { config: airHockeyConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "table-tennis": { config: tableTennisConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -483,6 +485,7 @@ type GameSelection =
   | "snake"
   | "whack-a-mole"
   | "fishing"
+  | "pinball"
   | "tic-tac-toe"
   | "air-hockey"
   | "table-tennis"
