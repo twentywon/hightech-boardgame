@@ -23,6 +23,8 @@ function rally(seed: number, hitter: 0 | 1, from: s.Ball, shot: s.Shot) {
   world.paddles[0].x = 1.3;
   world.ball = from;
   s.launch(world, hitter, shot);
+  // The paddle was set aside without a swing: nothing to curve the ball with.
+  world.steer = null;
   return world;
 }
 
@@ -238,16 +240,21 @@ describe("table tennis: my stroke", () => {
     expect(drive.top).toBeGreaterThan(0);
     expect(chop.top).toBeLessThan(0);
     expect(chop.pace).toBeLessThan(still.pace);
-    // A wild swing goes long.
-    expect(s.swingShot(world, 0, paddle(0, -16), 0, 0, false).depth).toBeGreaterThan(1);
+    // However wild the swing, it never goes long (the user asked: no outs).
+    for (const [vx, vz] of [[0, -16], [0, -30], [16, -4], [-20, -10], [9, 0]]) {
+      const shot = s.swingShot(world, 0, paddle(vx, vz), 0, 0, false);
+      expect(shot.depth).toBeLessThanOrEqual(s.DEEPEST);
+      expect(Math.abs(shot.tx)).toBeLessThanOrEqual(s.EDGE);
+    }
   });
   test("the swing aims the stroke, not where the ball meets the blade: sideways curves it, quick forward smashes", () => {
     // The same swing gives the same stroke wherever on the blade the ball is met.
     expect(s.swingShot(world, 0, paddle(0, 0), -0.12, 0, false).tx).toBeCloseTo(s.swingShot(world, 0, paddle(0, 0), 0.12, 0, false).tx, 6);
-    // A swing to one side sends it that way, with sidespin.
+    // A swing to one side sends it that way, with no sidespin of its own (the blade's way after the stroke curves it).
     expect(s.swingShot(world, 0, paddle(-4, 0), 0, 0, false).tx).toBeLessThan(-0.3);
     expect(s.swingShot(world, 0, paddle(4, 0), 0, 0, false).tx).toBeGreaterThan(0.3);
-    expect(s.swingShot(world, 0, paddle(2, 0), 0, 0, false).side).not.toBe(0);
+    expect(s.swingShot(world, 0, paddle(2, 0), 0, 0, false).side).toBe(0);
+    expect(s.swingShot(world, 0, paddle(6, -3), 0, 0, true).side).toBe(0);
     // A quick swing toward the net is a smash: far quicker than a gentle one.
     expect(s.swingShot(world, 0, paddle(0, -12), 0, 0, false).pace).toBeGreaterThan(s.swingShot(world, 0, paddle(0, -1), 0, 0, false).pace + 4);
   });
@@ -300,32 +307,74 @@ describe("table tennis: my stroke", () => {
         expect(w.ball.z).toBeLessThan(-0.95);
       }
   });
-  test("a sideways swing curves the ball far more than before and still lands where it was sent", () => {
-    /** The ball's way to its first bounce: how far it bows out from the straight line, and where it comes down. */
-    const flight = (vx: number) => {
-      const shot = s.swingShot(world, 0, paddle(vx, -2), 0, 0, false),
-        w = rally(9, 0, ball(0.1, 0.25, s.HALF_L + 0.05), shot),
-        b = { ...w.ball },
-        start = { ...b },
-        way: [number, number][] = [];
-      for (let k = 0; k < 2000; k++) {
-        const hit = s.advanceBall(b);
-        way.push([b.x, b.z]);
-        if (hit.table >= 0) return { shot, side: hit.table, land: [b.x, b.z], bow: Math.max(...way.map(([x, z]) => Math.abs(((x - start.x) * (b.z - start.z) - (z - start.z) * (b.x - start.x)) / Math.hypot(b.x - start.x, b.z - start.z)))) };
-        if (hit.floor) break;
-      }
-      return { shot, side: -1, land: [NaN, NaN], bow: 0 };
-    };
-    // Before, a swing across at 4 m/s bowed 0.05 m and came down 0.2 m short of its aim; now it bows 0.18 m.
-    for (const vx of [-4, -2, 2, 3, 4, 5]) {
-      const f = flight(vx);
-      expect(f.side, `${vx}`).toBe(1);
-      expect(Math.abs(f.land[0] - f.shot.tx), `${vx}`).toBeLessThan(0.03);
-      expect(Math.abs(f.land[0])).toBeLessThan(s.HALF_W - 0.05);
-      expect(f.bow, `${vx}`).toBeGreaterThan(0.04 * Math.abs(vx));
-      expect(Math.sign(f.land[0] - 0.1)).toBe(Math.sign(vx));
+  /**
+   * My stroke, and then my hand moved across at `vx` (metres a second of the hall's clock) while the ball flies:
+   * where the ball comes down on the computer's side, and the furthest it went each way on its way there.
+   */
+  const steered = (shot: s.Shot, vx: number, from = 0.1) => {
+    const w = s.createWorld(9);
+    s.place(w, 0, from, s.HALF_L + 0.3);
+    w.ball = ball(from, 0.25, s.HALF_L + 0.05);
+    s.launch(w, 0, shot);
+    let most = -Infinity,
+      least = Infinity;
+    for (let k = 0; k < 2 / s.DT; k++) {
+      w.hands[0] = { x: w.hands[0].x + vx * s.DT, z: w.hands[0].z };
+      const seen = s.step(w, "normal");
+      most = Math.max(most, w.ball.x);
+      least = Math.min(least, w.ball.x);
+      const bounce = seen.find((e) => e.kind === "bounce" || e.kind === "point");
+      if (bounce) return { at: bounce, x: w.ball.x, z: w.ball.z, most, least, wy: w.ball.wy, bent: w.bent };
     }
-    expect(flight(4).bow).toBeGreaterThan(0.15);
+    throw new Error("the ball never came down");
+  };
+  test("the blade's way after the stroke curves the ball: held still it goes straight, drawn back it curves back, pushed on it goes wider", () => {
+    const right = s.swingShot(world, 0, paddle(2.5, -3), 0, 0, false);
+    expect(right.side).toBe(0);
+    const still = steered(right, 0),
+      back = steered(right, -3),
+      on = steered(right, 2.5);
+    for (const f of [still, back, on]) expect(f.at).toMatchObject({ kind: "bounce", side: 1 });
+    // Held still: no spin at all, straight to where the swing sent it.
+    expect(still.wy).toBe(0);
+    expect(Math.abs(still.x - right.tx)).toBeLessThan(0.03);
+    expect(still.bent).toBe(0);
+    // Struck to the right, then drawn back left: it goes out right and curves back left, coming down well left of it.
+    expect(back.x).toBeLessThan(still.x - 0.2);
+    expect(back.most).toBeGreaterThan(back.x + 0.1);
+    expect(back.bent).toBeGreaterThan(0);
+    // Pushed on to the right: it bends on out that way.
+    expect(on.x).toBeGreaterThan(still.x + 0.1);
+    // The same to the other side.
+    const left = s.swingShot(world, 0, paddle(-2.5, -3), 0, 0, false);
+    expect(steered(left, 3).x).toBeGreaterThan(steered(left, 0).x + 0.2);
+    expect(steered(left, -2.5).x).toBeLessThan(steered(left, 0).x - 0.1);
+  });
+  test("however far the blade pushes the curve, the ball still comes down on the table (no outs)", () => {
+    for (const vx of [-8, -4, 4, 8])
+      for (const swing of [-6, 0, 6])
+        for (const vz of [-2, -7, -12]) {
+          const shot = s.swingShot(world, 0, paddle(swing, vz), 0, 0, false),
+            f = steered(shot, vx, swing > 0 ? 0.5 : swing < 0 ? -0.5 : 0);
+          expect(f.at, `${vx} ${swing} ${vz}`).toMatchObject({ kind: "bounce", side: 1 });
+          expect(Math.abs(f.x), `${vx} ${swing} ${vz}`).toBeLessThanOrEqual(s.HALF_W - s.LAND_IN + 0.01);
+          expect(f.z).toBeGreaterThan(-s.HALF_L);
+        }
+  });
+  test("the curve is only for a moment after the stroke: a hand moved later does not bend the ball", () => {
+    const shot = s.swingShot(world, 0, paddle(0, -3), 0, 0, false),
+      w = s.createWorld(9);
+    s.place(w, 0, 0.1, s.HALF_L + 0.3);
+    w.ball = ball(0.1, 0.25, s.HALF_L + 0.05);
+    s.launch(w, 0, shot);
+    for (let k = 0; k < (s.STEER_TIME + 0.02) / s.DT; k++) s.step(w, "normal");
+    expect(w.steer).toBeNull();
+    const wy = w.ball.wy;
+    for (let k = 0; k < 20; k++) {
+      w.hands[0] = { x: w.hands[0].x + 6 * s.DT, z: w.hands[0].z };
+      s.step(w, "normal");
+    }
+    expect(w.ball.wy).toBe(wy);
   });
   test("the judgement is generous: a ball well off the blade's middle is still struck", () => {
     expect(s.REACH).toBeGreaterThan(s.BLADE * 3);
@@ -427,6 +476,7 @@ describe("table tennis: the computer", () => {
           ? { tx: (rnd() < 0.5 ? -1 : 1) * (0.45 + rnd() * 0.25), depth: 0.7 + rnd() * 0.2, pace: 6.5 + rnd() * 2, top: 150 * rnd(), side: 0 }
           : { tx: (rnd() - 0.5) * 0.6, depth: 0.55 + rnd() * 0.2, pace: 4 + rnd(), top: 60 * rnd(), side: 0 },
       );
+      w.steer = null;
       const seen = run(w, level, 6, (e) => e.kind === "point" || (e.kind === "bounce" && e.side === 0 && w.hitter === 1));
       if (seen.at(-1)?.kind === "bounce") back++;
     }

@@ -71,17 +71,31 @@ export const BACK = 0.6,
 /**
  * How a stroke of mine is judged from the racket's speed where it meets the ball (its whole speed over the hand's
  * plane, across and along, in metres a second of the hall's clock): from `SMASH` on it is a smash (far quicker, deep,
- * with topspin), as fast as it gets at `SMASH_FULL`; past `WILD` it goes long. A swing mostly back toward me cuts.
+ * with topspin), as fast as it gets at `SMASH_FULL`. A swing mostly back toward me cuts.
  */
 export const SMASH = 5.5,
-  SMASH_FULL = 9.5,
-  WILD = 14;
+  SMASH_FULL = 9.5;
 /**
- * The sidespin a sideways swing puts on my stroke (radians a second for each metre a second across), and its most.
- * The aim allows for the curve, so that the ball bends visibly and still comes down where the swing sent it.
+ * No stroke goes out (the user asked): every stroke is aimed no wider than `EDGE` across and no deeper than `DEEPEST`
+ * of the other half, whoever strikes it and however hard; a ball curved after it was struck (`steer`) still comes
+ * down within `LAND_IN` of the table's edges.
  */
-export const SIDE_SPIN = 84,
-  SIDE_MAX = 520;
+export const EDGE = HALF_W * 0.9,
+  DEEPEST = 0.92,
+  LAND_IN = 0.04;
+/**
+ * The curve a person gives the ball after striking it (the user asked: no sidespin of its own at the stroke; the
+ * blade's way after it bends the ball). For `STEER_TIME` of the hall's clock after the stroke (or until the ball
+ * comes down on the other side) the blade moving across sets the ball's sidespin: `SIDE_SPIN` radians a second for
+ * each metre a second across, at most `SIDE_MAX`, eased in over `STEER_EASE` seconds; it bends the ball the way the
+ * blade goes (struck to the right and then drawn back left, it bows right and curves back left; pushed on to the
+ * side, it goes on out that way, hard). A blade held still (under `STEER_STILL`) leaves the spin as it was.
+ */
+export const SIDE_SPIN = 110,
+  SIDE_MAX = 650,
+  STEER_TIME = 0.4,
+  STEER_EASE = 0.05,
+  STEER_STILL = 0.3;
 /** How many slices back the racket's speed at contact is measured over (25 ms of the hall's clock, two frames or so). */
 export const SWING_SLICES = 6;
 /**
@@ -199,8 +213,11 @@ export interface World {
   path: Float32Array;
   pathLen: number;
   pathAt: number;
-  /** The computer's hand: the wait before it serves, its reading of the ball, where it means to meet it and the height it strikes a serve at. */
-  ai: { wait: number; delay: number; seen: number; plan: { x: number; z: number } | null; strikeY: number; holdX: number };
+  /**
+   * The computer's hand: the wait before it serves, its reading of the ball, where it means to meet it and the height
+   * it strikes a serve at; how far its paddle strays from the ball this time, and the curve (`World.bent`) it last read.
+   */
+  ai: { wait: number; delay: number; seen: number; plan: { x: number; z: number } | null; strikeY: number; holdX: number; stray: number; bent: number };
   /**
    * Each paddle's last `SWING_SLICES` + 1 places, for its speed at contact (oldest overwritten first): x, y, z and,
    * while my blade keeps to the line of sight, the hand on its plane in x and z and the eye in the last three (NaN otherwise).
@@ -237,6 +254,10 @@ export interface World {
    * user found a serve went off by itself as it was tossed; the swing (a swipe, the mouse) serves it.
    */
   tossedAt: { x: number; z: number } | null;
+  /** A person's stroke still being curved by its blade (see `STEER_TIME`): whose, until when, and the spin the path was last read with. */
+  steer: { side: 0 | 1; until: number; read: number } | null;
+  /** How many times a curve has changed the ball's way (the computer reads the ball again when it does). */
+  bent: number;
 }
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 /** The world's own sequence, so that a game played the same way comes out the same. */
@@ -267,7 +288,7 @@ export function createWorld(seed = 1): World {
     path: new Float32Array(PATH_N * 4),
     pathLen: 0,
     pathAt: -1,
-    ai: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0 },
+    ai: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0, stray: 0, bent: 0 },
     trace: [new Float64Array((SWING_SLICES + 1) * TRACE), new Float64Array((SWING_SLICES + 1) * TRACE)],
     swept: new Float64Array((SWING_SLICES + 1) * 2),
     sight: null,
@@ -280,8 +301,10 @@ export function createWorld(seed = 1): World {
     lets: 0,
     seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
     people: [true, false],
-    nearAi: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0 },
+    nearAi: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0, stray: 0, bent: 0 },
     tossedAt: null,
+    steer: null,
+    bent: 0,
   };
   world.paddles.forEach((pad, side) => retrace(world, side as 0 | 1, pad));
   return world;
@@ -357,6 +380,7 @@ export function serve(world: World, server: 0 | 1) {
   world.stanceGoal = 0;
   world.passed = -1;
   world.tossedAt = null;
+  world.steer = null;
   hold(world);
 }
 /** The ball thrown up from the server's open hand (`by` must be the server), to be struck as it falls. */
@@ -525,13 +549,13 @@ function aimAt(from: { x: number; y: number; z: number }, ball: Ball, shot: Shot
 /** Where a ball goes with the table alone: the sides of its first two bounces and where the second was, whether it met the net, and how high it rose between them. */
 function course(start: Ball) {
   const c = { ...start },
-    bounces: { side: number; z: number }[] = [];
+    bounces: { side: number; x: number; z: number }[] = [];
   let net = false,
     rise = 0;
   for (let k = 0; k < PATH_N && bounces.length < 2; k++) {
     const hit = advanceBall(c);
     if (hit.net) net = true;
-    if (hit.table >= 0) bounces.push({ side: hit.table, z: c.z });
+    if (hit.table >= 0) bounces.push({ side: hit.table, x: c.x, z: c.z });
     else if (bounces.length === 1) rise = Math.max(rise, c.y);
     if (hit.floor) break;
   }
@@ -824,25 +848,28 @@ export function swingShot(world: World, side: 0 | 1, pad: Paddle, _ox: number, o
     // Where on the blade it met counts for nothing but a touch of height (a ball met low on the blade goes a little shorter).
     w = 0.25 * clamp(oy / REACH_Y, -1, 1),
     across = clamp(0.16 * vx, -1.25, 1.25),
-    tx = clamp(0.2 * b.x + HALF_W * 0.95 * across, -HALF_W * 1.12, HALF_W * 1.12);
+    tx = clamp(0.2 * b.x + HALF_W * 0.95 * across, -EDGE, EDGE);
+  // No sidespin at the stroke (the user asked): the ball goes straight where the swing sent it, and the blade's way
+  // after the stroke curves it (`steer`).
   if (serving) {
     const pace = clamp(2.6 + 0.4 * Math.max(0, forward), 2.6, 7.5);
-    // A serve keeps the gentler sidespin it had: it must come down twice, on both sides, and is not aimed round its curve.
-    return { tx: clamp(tx, -HALF_W * 0.92, HALF_W * 0.92), depth: 0.42 + 0.07 * (pace - 2.6) + 0.08 * w, pace, top: clamp(30 * forward, -200, 230), side: clamp(-f * 24 * vx, -180, 180) };
+    return { tx: clamp(tx, -HALF_W * 0.85, HALF_W * 0.85), depth: 0.42 + 0.07 * (pace - 2.6) + 0.08 * w, pace, top: clamp(30 * forward, -200, 230), side: 0 };
   }
-  const side_ = clamp(-f * SIDE_SPIN * vx, -SIDE_MAX, SIDE_MAX);
   if (back > 0.8 && back >= 0.6 * speed) {
     const pace = clamp(2.7 + 0.3 * coming - 0.3 * back, 2.3, 5);
-    return { tx, depth: 0.4 + 0.06 * (pace - 3) + 0.15 * w, pace, top: -clamp(40 + 30 * back, 40, 220), side: side_ };
+    return { tx, depth: Math.min(DEEPEST, 0.4 + 0.06 * (pace - 3) + 0.15 * w), pace, top: -clamp(40 + 30 * back, 40, 220), side: 0 };
   }
   if (speed >= SMASH) {
     const s = clamp((speed - SMASH) / (SMASH_FULL - SMASH), 0, 1),
       pace = clamp(7.6 + 3.4 * s + 0.15 * coming, 7.6, 12);
-    return { tx, depth: 0.8 + 0.06 * s + 0.05 * Math.max(0, speed - WILD) ** 2 + 0.1 * w, pace, top: 150 + 60 * s, side: side_, smash: true };
+    // However quick the swing, it comes down deep on the table, never long (the user asked: no outs).
+    return { tx, depth: Math.min(DEEPEST, 0.8 + 0.06 * s + 0.1 * w), pace, top: 150 + 60 * s, side: 0, smash: true };
   }
   const pace = clamp(2.7 + 0.3 * coming + 0.5 * speed, 2.3, 7);
-  return { tx, depth: 0.38 + 0.06 * (pace - 3) + 0.15 * w, pace, top: clamp(30 * Math.max(0, forward), 0, 160), side: side_ };
+  return { tx, depth: Math.min(DEEPEST, 0.38 + 0.06 * (pace - 3) + 0.15 * w), pace, top: clamp(30 * Math.max(0, forward), 0, 160), side: 0 };
 }
+/** A shot kept on the table: no wider than `EDGE`, no deeper than `DEEPEST`. */
+const onTable = (shot: Shot): Shot => ({ ...shot, tx: clamp(shot.tx, -EDGE, EDGE), depth: Math.min(DEEPEST, shot.depth) });
 /** Whether a stroke from where the ball is would come down first on the other side. */
 function lands(world: World, side: 0 | 1, shot: Shot) {
   const { bounces } = course(aimed(world.ball, side, shot));
@@ -854,6 +881,9 @@ function lands(world: World, side: 0 | 1, shot: Shot) {
  * strays a little, and (as often as its level checks) a stroke that would not clear the net is played softer.
  */
 export function computerShot(world: World, level: Level, side: 0 | 1 = 1): Shot {
+  return onTable(computerChoice(world, level, side));
+}
+function computerChoice(world: World, level: Level, side: 0 | 1): Shot {
   const L = LEVELS[level],
     b = world.ball,
     r = () => rand(world),
@@ -880,8 +910,8 @@ export function computerShot(world: World, level: Level, side: 0 | 1 = 1): Shot 
     for (let k = 0; k < 4 && !lands(world, side, smash); k++) [smash.pace, smash.depth] = [smash.pace * 0.92, Math.max(0.6, smash.depth - 0.05)];
     if (lands(world, side, smash)) return smash;
   }
-  // Now and then a stroke is misjudged: hit long or flat into the net, without a second look.
-  if (r() < L.blunder * (1 + Math.max(0, Math.abs(b.vz) - 4) * 0.25)) return r() < 0.5 ? { ...shot, depth: shot.depth + 0.55 } : { ...shot, pace: shot.pace * 1.35, depth: 0.3, top: 0 };
+  // Now and then a stroke is misjudged: hit flat into the net, without a second look (never long: no outs).
+  if (r() < L.blunder * (1 + Math.max(0, Math.abs(b.vz) - 4) * 0.25)) return { ...shot, pace: shot.pace * 1.35, depth: 0.3, top: 0 };
   if (r() < L.check)
     for (let k = 0; k < 5 && !lands(world, side, shot); k++) shot = { ...shot, pace: shot.pace * 0.85, depth: Math.min(0.85, shot.depth + 0.05), tx: shot.tx * 0.85, top: Math.abs(shot.top) };
   return shot;
@@ -891,7 +921,7 @@ export function computerServe(world: World, level: Level): Shot {
   const L = LEVELS[level],
     r = () => rand(world);
   return {
-    tx: (r() - 0.5) * 2 * L.spread * HALF_W * 0.8,
+    tx: (r() - 0.5) * 2 * L.spread * HALF_W * 0.75,
     depth: (level === "easy" ? 0.62 : level === "normal" ? 0.58 : 0.5) + r() * (level === "easy" ? 0.16 : level === "normal" ? 0.28 : 0.45),
     pace: L.serve[0] + r() * (L.serve[1] - L.serve[0]),
     top: (r() - 0.4) * (level === "easy" ? 60 : 160),
@@ -902,8 +932,10 @@ export function computerServe(world: World, level: Level): Shot {
 /** The ball struck by `side` with `shot`: the rally goes on from here. */
 export function launch(world: World, side: 0 | 1, shot: Shot, serving = false) {
   const b = world.ball,
-    sent = serving ? served(b, side, shot, !world.people[side]) : aimed(b, side, shot, world.people[side]);
+    // The aim allows for any sidespin's curve (only the computer's strokes have any), so that it stays on the table.
+    sent = serving ? served(b, side, shot, !world.people[side]) : aimed(b, side, shot, true);
   Object.assign(b, sent);
+  world.steer = world.people[side] ? { side, until: world.time + STEER_TIME, read: b.wy } : null;
   world.phase = "rally";
   world.hitter = side;
   world.own = world.other = 0;
@@ -1038,9 +1070,8 @@ function tryStrike(world: World, side: 0 | 1, before: { x: number; y: number; z:
  * The computer's reading of a ball the other side has struck: where, after its bounce, it comes to the top of its
  * rise (within reach). `side` is the computer's (1, or 0 where it stands in over Wi-Fi); `end` is its end's sign.
  */
-function intercept(world: World, level: Level, side: 0 | 1 = 1) {
-  const L = LEVELS[level],
-    end = side === 1 ? -1 : 1,
+function intercept(world: World, side: 0 | 1, stray: number) {
+  const end = side === 1 ? -1 : 1,
     back = side === 1 ? FAR_BACK : BACK;
   let chosen = -1;
   for (let k = Math.max(0, world.pathAt + 1); k < world.pathLen; k++) {
@@ -1056,7 +1087,7 @@ function intercept(world: World, level: Level, side: 0 | 1 = 1) {
     }
   }
   if (chosen < 0) return null;
-  return { x: world.path[chosen * 4] + (rand(world) - 0.5) * 2 * L.stray, z: world.path[chosen * 4 + 2] + end * (BALL + FACE) };
+  return { x: world.path[chosen * 4] + stray, z: world.path[chosen * 4 + 2] + end * (BALL + FACE) };
 }
 /**
  * The computer's hand: it serves after its pause (tossing and striking the ball as it falls), reads a ball the other
@@ -1085,13 +1116,70 @@ function think(world: World, level: Level, out: Happening[], side: 0 | 1 = 1) {
     if (world.struck[other] !== ai.seen) {
       ai.seen = world.struck[other];
       ai.delay = L.react * (0.75 + 0.5 * rand(world));
+      ai.stray = (rand(world) - 0.5) * 2 * L.stray;
       ai.plan = null;
+      ai.bent = world.bent;
     }
+    // A ball curved since it was read is read again (where it will come has changed), with the same stray.
+    if (ai.bent !== world.bent && ai.delay <= 0) [ai.plan, ai.bent] = [null, world.bent];
     if (ai.delay > 0) ai.delay -= DT;
-    else if (!ai.plan) ai.plan = intercept(world, level, side);
+    else if (!ai.plan) ai.plan = intercept(world, side, ai.stray);
     hand = ai.plan ?? world.hands[side];
   }
   world.hands[side] = hand;
+}
+/**
+ * Whether a ball struck by `side` (a serve, if `serving`) comes down where it should with the table alone: a stroke
+ * first on the other side, a serve on its own side and then the other's, clear of the net; within `LAND_IN` of the
+ * table's edges where it comes down on the other side.
+ */
+function fair(ball: Ball, side: 0 | 1, serving: boolean) {
+  const { bounces, net } = course(ball),
+    there = bounces[serving ? 1 : 0],
+    inside = (b: { x: number; z: number }) => Math.abs(b.x) <= HALF_W - LAND_IN && Math.abs(b.z) <= HALF_L - LAND_IN;
+  if (serving && (bounces[0]?.side !== side || net)) return false;
+  return there?.side === 1 - side && inside(there);
+}
+/**
+ * One slice of a person's curve (`STEER_TIME`): the blade's speed across sets the ball's sidespin, as far as it may
+ * without the ball coming down off the table (a ball that would not have come down fair anyway is curved freely).
+ * The ball's way is read again when its spin has changed, and the computer reads it again.
+ */
+function steer(world: World) {
+  const st = world.steer,
+    b = world.ball;
+  if (!st) return;
+  const serving = world.served && world.own === 0;
+  if (world.phase !== "rally" || world.hitter !== st.side || world.time > st.until || world.other > 0) {
+    world.steer = null;
+    return;
+  }
+  const pad = world.paddles[st.side],
+    f = st.side === 0 ? -1 : 1,
+    vx = pad.vx - (st.side === 0 ? world.stanceV : 0);
+  if (Math.abs(vx) < STEER_STILL) return;
+  const was = b.wy,
+    goal = clamp(f * SIDE_SPIN * vx, -SIDE_MAX, SIDE_MAX),
+    want = was + (goal - was) * (1 - Math.exp(-DT / STEER_EASE)),
+    tried = (wy: number) => fair({ ...b, wy }, st.side, serving);
+  if (tried(want) || !tried(was)) b.wy = want;
+  else {
+    // As far toward it as keeps the ball on the table.
+    let lo = 0,
+      hi = 1;
+    for (let k = 0; k < 7; k++) {
+      const mid = (lo + hi) / 2;
+      if (tried(was + (want - was) * mid)) lo = mid;
+      else hi = mid;
+    }
+    b.wy = was + (want - was) * lo;
+  }
+  if (Math.abs(b.wy - st.read) > 3) {
+    st.read = b.wy;
+    predict(world);
+    world.bent++;
+    if (st.side === 1 && world.people[0]) world.stanceGoal = leanFor(arrival(world));
+  }
 }
 /**
  * One slice of time: the computer's hand, both paddles, the ball and what it meets, and the strokes. Returns what
@@ -1143,6 +1231,7 @@ export function step(world: World, level: Level): Happening[] {
     if (ended) out.push(ended);
   }
   if (world.phase === "rally" && (hit.floor || Math.abs(b.x) > 7 || Math.abs(b.z) > 9 || world.since > IDLE)) out.push(grounded(world));
+  steer(world);
   if (world.phase === "rally") for (const side of [0, 1] as const) if (canHit(world, side)) tryStrike(world, side, before[side], from, level, out);
   return out;
 }

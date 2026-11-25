@@ -91,6 +91,8 @@ export interface Shuttle {
   vx: number;
   vy: number;
   vz: number;
+  /** How fast this flight runs against the court's clock (`paceOf`; `PACE` when not set). */
+  pace?: number;
 }
 export interface Player {
   x: number;
@@ -220,8 +222,27 @@ export function serve(world: World, server: 0 | 1, even: boolean) {
  * its shape and where it comes down, and takes 1 / `PACE` as long. Its speeds are kept in the flight's own time.
  */
 export const PACE = 0.7;
+/**
+ * A high flight runs quicker (the user asked: a shuttle sent high goes up and comes down faster): from `PACE` for one
+ * that goes no higher than `LOW_TOP` to `HIGH_PACE` for one that goes up to `HIGH_TOP` or more. Its shape and where it
+ * comes down stay the same; only its time is shorter.
+ */
+export const HIGH_PACE = 1.05,
+  LOW_TOP = 3.2,
+  HIGH_TOP = 6;
+/** The highest a shuttle sent off as `s` goes. */
+export function topOf(from: Shuttle) {
+  const s = { ...from, pace: PACE };
+  let top = s.y;
+  for (let t = 0; t < 8 && s.vy > 0; t += DT * 2) {
+    fly(s, DT * 2);
+    top = Math.max(top, s.y);
+  }
+  return top;
+}
+export const paceOf = (top: number) => PACE + (HIGH_PACE - PACE) * Math.max(0, Math.min(1, (top - LOW_TOP) / (HIGH_TOP - LOW_TOP)));
 function fly(s: Shuttle, real: number) {
-  const dt = real * PACE,
+  const dt = real * (s.pace ?? PACE),
     speed = Math.hypot(s.vx, s.vy, s.vz),
     k = DRAG * speed;
   s.vx -= k * s.vx * dt;
@@ -267,13 +288,14 @@ export function path(world: World, every = DT * 3) {
   return points;
 }
 /** A shuttle sent from `at` with `speed` at `elevation` (radians up) toward the heading `dir` (a unit vector across the floor). */
-const launch = (at: Shuttle, speed: number, elevation: number, dir: { x: number; z: number }): Shuttle => ({
+const launch = (at: Shuttle, speed: number, elevation: number, dir: { x: number; z: number }, pace?: number): Shuttle => ({
   x: at.x,
   y: at.y,
   z: at.z,
   vx: speed * Math.cos(elevation) * dir.x,
   vy: speed * Math.sin(elevation),
   vz: speed * Math.cos(elevation) * dir.z,
+  ...(pace === undefined ? {} : { pace }),
 });
 /** How far along the floor a shuttle sent off as `s` comes down from where it is (the net counts as where it stops). */
 const reachOf = (s: Shuttle) => {
@@ -281,13 +303,23 @@ const reachOf = (s: Shuttle) => {
   return Math.hypot(end.x - s.x, end.z - s.z);
 };
 /** The speed (at a fixed elevation) that lands the shuttle `distance` away, between `low` and `high`. */
-function speedFor(at: Shuttle, elevation: number, dir: { x: number; z: number }, distance: number, low = 4, high = 120) {
+function speedFor(at: Shuttle, elevation: number, dir: { x: number; z: number }, distance: number, pace?: number, low = 4, high = 120) {
   for (let k = 0; k < 26; k++) {
     const mid = (low + high) / 2;
-    if (reachOf(launch(at, mid, elevation, dir)) < distance) low = mid;
+    if (reachOf(launch(at, mid, elevation, dir, pace)) < distance) low = mid;
     else high = mid;
   }
   return (low + high) / 2;
+}
+/**
+ * The shuttle sent from `at` at `elevation` to come down `distance` away, at the pace it will fly at (`paceOf`): found
+ * once at the court's own pace, then again at the pace that flight's height gives it, so that a quicker high flight
+ * still comes down where it was sent (its slices of flight are longer).
+ */
+function sent(at: Shuttle, elevation: number, dir: { x: number; z: number }, distance: number) {
+  const first = launch(at, speedFor(at, elevation, dir, distance), elevation, dir),
+    pace = paceOf(topOf(first));
+  return pace === PACE ? { ...first, pace } : launch(at, speedFor(at, elevation, dir, distance, pace), elevation, dir, pace);
 }
 /** The elevation (at a fixed speed) that lands the shuttle `distance` away: a smash, aimed downward over the net. */
 function elevationFor(at: Shuttle, speed: number, dir: { x: number; z: number }, distance: number) {
@@ -359,7 +391,7 @@ function aimAt(world: World, at: Shuttle, x: number, z: number, elevation: numbe
     way = { x: dx / distance, z: dz / distance };
   let e = elevation;
   for (let k = 0; k < 6; k++) {
-    const next = launch(at, speedFor(at, e, way, distance), e, way);
+    const next = sent(at, e, way, distance);
     world.shuttle = next;
     if (!landing(next).net) break;
     e += 0.12;
@@ -376,6 +408,8 @@ function begin(world: World, side: 0 | 1, smash: boolean, served = false) {
   p.swing = null;
   p.struck = world.time;
   p.high = world.shuttle.y > 1.6;
+  // A smash is sent without its pace (it never goes high): its pace is found here.
+  world.shuttle.pace ??= paceOf(topOf(world.shuttle));
   world.plan = null;
 }
 /** `side` meets the shuttle with the swing it has under way. */
@@ -442,8 +476,7 @@ function computerStroke(world: World, level: Level, side: 0 | 1 = 1) {
     let elevation = tz < 3.3 ? 0.42 : tz > 5 ? 0.72 : 0.28;
     if (s.y < 1.2) elevation += 0.3;
     for (let k = 0; k < 4; k++) {
-      const speed = speedFor(s, elevation, dir, distance),
-        next = launch(s, speed, elevation, dir);
+      const next = sent(s, elevation, dir, distance);
       if (!landing(next).net || k === 3) {
         world.shuttle = next;
         break;
@@ -465,7 +498,7 @@ function computerServe(world: World, level: Level, side: 0 | 1 = 1) {
     distance = Math.hypot(dx, dz),
     dir = { x: dx / distance, z: dz / distance },
     elevation = long ? 0.92 : 0.36;
-  world.shuttle = launch(at, speedFor(at, elevation, dir, distance), elevation, dir);
+  world.shuttle = sent(at, elevation, dir, distance);
   begin(world, side, false, true);
 }
 

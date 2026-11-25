@@ -208,6 +208,38 @@ describe("badminton court", () => {
     expect(h.some((e) => e.kind === "hit")).toBe(false);
     expect(points(h)[0]).toEqual({ kind: "point", to: 1, why: S.OUT });
   });
+  test("a shuttle sent high goes up and comes down quicker than a low one, to the same place", () => {
+    /** My stroke of `power` at a shuttle at `height`: how high it goes, how long it flies (s), and where it lands. */
+    const stroke = (power: number, height: number) => {
+      const w = S.createWorld(1);
+      Object.assign(w, { phase: "flying", hitter: 1 });
+      w.shuttle = { x: 0, y: height, z: 3, vx: 0, vy: -1, vz: 0 };
+      Object.assign(w.players[0], { x: 0, z: 3.2 });
+      S.swing(w, 0, power, 0);
+      for (let k = 0; k < 20 && w.hitter !== 0; k++) S.step(w, "normal");
+      expect(w.hitter).toBe(0);
+      const top = S.topOf(w.shuttle),
+        end = S.landing(w.shuttle),
+        slow = S.landing({ ...w.shuttle, pace: S.PACE });
+      return { top, time: end.t / w.shuttle.pace!, slowTime: slow.t / S.PACE, end, slow, pace: w.shuttle.pace! };
+    };
+    // A drive met high stays low and keeps its pace.
+    const flat = stroke(0.5, 2.2);
+    expect(flat.top).toBeLessThan(S.LOW_TOP);
+    expect(flat.pace).toBeCloseTo(S.PACE, 9);
+    // A deep lift from low goes up over 6 m: it flies half as fast again, a third less time, landing where it did.
+    const lift = stroke(1.2, 0.6);
+    expect(lift.top).toBeGreaterThan(S.HIGH_TOP);
+    expect(lift.pace).toBeCloseTo(S.HIGH_PACE, 9);
+    expect(lift.time).toBeLessThan(lift.slowTime * 0.7);
+    expect(lift.time).toBeLessThan(3.3);
+    // Still aimed by the swipe alone: it comes down as deep as `depthOf` says, as the slow one did.
+    expect(lift.end.z).toBeCloseTo(-S.depthOf(1.2), 1);
+    expect(Math.abs(lift.end.x)).toBeLessThan(0.05);
+    // Between, the higher, the quicker.
+    expect(S.paceOf(4)).toBeGreaterThan(S.paceOf(3.5));
+    expect(S.paceOf(4)).toBeLessThan(S.HIGH_PACE);
+  });
 });
 
 describe("badminton over Wi-Fi", () => {
