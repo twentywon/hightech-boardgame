@@ -1,14 +1,14 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { numberCode } from "./game";
-import { AGAIN, DRAW_BLACK, DRAW_WHITE, GAP, HELPER, POOL, STOP, handOf, said, seatNames, tileCode, type State } from "./rules";
+import { AGAIN, DRAW_BLACK, DRAW_WHITE, GAP, HELPER, POOL, READY, STOP, handOf, said, seatNames, tileCode, type State } from "./rules";
 import { NUMBERCODE_COLORS, NumberCodeView } from "./view";
 import { numberCodeNet } from "./net";
 import { gapAt, lieAt, poolAt, standAt } from "./layout";
 
 /** Where the keyboard's points are: every tile on the table, the pool's places, and the gaps a joker of mine may go to. */
 function keyPoints(s: State) {
-  const points = Array.from({ length: GAP + 40 }, () => ({ x: NaN, z: NaN }));
+  const points = Array.from({ length: READY + 1 }, () => ({ x: NaN, z: NaN }));
   s.rows.forEach((row, seat) =>
     row.forEach((id, i) => {
       const pose = s.open[id] ? lieAt(s.seats, seat, i, row.length) : standAt(s.seats, seat, i, row.length);
@@ -19,12 +19,15 @@ function keyPoints(s: State) {
     if (id !== null) points[POOL + slot] = poolAt(slot, s.pool.length);
   });
   if (s.phase === "joker" && s.seat === 0) for (let k = 0; k <= s.rows[0].length; k++) points[GAP + k] = gapAt(s.seats, k, s.rows[0].length);
+  // 배열 완료 (Wi-Fi, before the first turn): Enter on my row says it.
+  if (s.phase === "arrange" && s.seat === 0) points[READY] = gapAt(s.seats, Math.floor(s.rows[0].length / 2), s.rows[0].length);
   return points;
 }
 /** Where the keyboard begins for what is to be done: the pool, the first hidden tile of the next player, my own row, the first gap. */
 function keyStart(s: State) {
   if (s.phase === "draw") return POOL + Math.max(0, s.pool.findIndex((id) => id !== null));
   if (s.phase === "joker") return GAP;
+  if (s.phase === "arrange") return READY;
   if (s.phase === "reveal") return tileCode(0, Math.max(0, s.rows[0].findIndex((id) => !s.open[id])));
   for (let k = 1; k < s.seats; k++) {
     const seat = (s.seat + k) % s.seats,
@@ -134,7 +137,7 @@ export const numberCodeConfig: PointConfig<State> = {
       "와이파이 여럿이",
       table(
         ["자리", "같은 와이파이의 기기 2~4대가 한 줄씩 맡습니다. 빈자리는 방장의 컴퓨터가 맡거나(1번·2번) 닫을 수 있습니다(3번·4번)."],
-        ["조커", "조커를 받은 사람은 첫 차례 전에 <b>각자 자기 기기에서 동시에</b> 놓을 자리를 고릅니다. 누가 조커를 받았는지는 다른 사람에게 알리지 않습니다."],
+        ["패 정리", "첫 차례 전에 <b>모두 각자 자기 기기에서 동시에</b> 패를 정리합니다. 조커를 받은 사람은 놓을 자리를 고르고, 모두 <b>배열 완료</b>를 누릅니다(조커가 없어도 누릅니다). 정리하는 동안에는 다른 사람의 줄이 보이지 않고, 모두 끝나면 한꺼번에 놓입니다. 그래서 누가 조커를 받았는지, 어느 타일이 조커인지 다른 사람은 알 수 없습니다."],
         ["보이는 것", "내 줄은 언제나 내 앞에 앞면으로 보이고, 다른 사람의 숨은 타일은 뒷면만 보입니다. 1번부터 자리 순서대로 합니다."],
         ["탈락", "탈락한 사람은 남은 사람의 게임을 지켜봅니다. 마지막까지 숨은 타일을 지킨 사람이 이깁니다."],
       ),

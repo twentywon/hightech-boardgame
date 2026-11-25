@@ -4,7 +4,7 @@ import { block, capable, glossy, planks, stuff, weave, wood } from "../../engine
 import type { Marks } from "../points/view";
 import { TableView, ringMesh, type Spot, type TableSubject } from "../table/view";
 import { sight, chances, possible } from "./deduce";
-import { AGAIN, GAP, JOKER, POOL, SAY, STOP, TILES, codeIndex, codeSeat, colourOf, isTileCode, numberOf, seatNames, tileCode, type State } from "./rules";
+import { AGAIN, GAP, JOKER, POOL, READY, SAY, STOP, TILES, codeIndex, codeSeat, colourOf, isTileCode, numberOf, seatNames, tileCode, type State } from "./rules";
 import { RACK, TILE, codeSubject, frames, gapAt, heldAt, lieAt, nameAt, poolAt, standAt, type Pose } from "./layout";
 
 export const NUMBERCODE_COLORS: [string, string] = ["#1d1b19", "#efe6d2"];
@@ -64,6 +64,7 @@ export class NumberCodeView extends TableView<State> {
   private said: HTMLDivElement;
   private picker: HTMLDivElement;
   private ask: HTMLDivElement;
+  private done: HTMLButtonElement;
   /** The helper's reading, for the state it was made for. */
   private reading: { state: State; text: Map<number, string> } | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
@@ -169,7 +170,18 @@ export class NumberCodeView extends TableView<State> {
       };
       this.ask.append(button);
     }
-    this.layer.append(this.said, this.ask, this.picker);
+    // Over Wi-Fi before the first turn: my row is arranged (every player says so, joker or none).
+    this.done = document.createElement("button");
+    this.done.type = "button";
+    this.done.className = "nc-ready";
+    this.done.tabIndex = -1;
+    this.done.textContent = "배열 완료";
+    this.done.hidden = true;
+    this.done.onclick = (e) => {
+      e.stopPropagation();
+      this.onPick(READY);
+    };
+    this.layer.append(this.said, this.ask, this.picker, this.done);
     if (getComputedStyle(host).position === "static") host.style.position = "relative";
     host.append(this.layer);
     this.begin();
@@ -375,6 +387,13 @@ export class NumberCodeView extends TableView<State> {
       const point = this.screen(0, 0.3, frames(s.seats)[0].z - 1.55);
       this.ask.style.left = `${point.left}px`;
       this.ask.style.top = `${point.top}px`;
+    }
+    const arranging = !quiet && s.seat === 0 && s.phase === "arrange";
+    this.done.hidden = !arranging;
+    if (arranging) {
+      const point = this.screen(0, 0.3, frames(s.seats)[0].z - 1.55);
+      this.done.style.left = `${point.left}px`;
+      this.done.style.top = `${point.top}px`;
     }
     this.helper(s, !quiet && s.helper);
   }

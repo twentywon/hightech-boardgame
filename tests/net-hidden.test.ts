@@ -16,7 +16,7 @@ import type { State as DominoState } from "../src/games/domino/rules";
 import { tileRummyConfig } from "../src/games/tilerummy/config";
 import type { State as RummyState } from "../src/games/tilerummy/rules";
 import { numberCodeConfig } from "../src/games/numbercode/config";
-import { GAP, POOL, isJoker, tileCode, type State as CodeState } from "../src/games/numbercode/rules";
+import { GAP, POOL, READY, isJoker, tileCode, type State as CodeState } from "../src/games/numbercode/rules";
 import { netCreate as codeCreate } from "../src/games/numbercode/net";
 import { Match } from "../src/net/match";
 
@@ -325,34 +325,63 @@ describe("숫자 코드 over Wi-Fi", () => {
     }
     throw new Error("no deal");
   }
-  test("jokers dealt are placed by their owners at once before the first turn; each view has its own row near", () => {
+  test("every player arranges its row at once before the first turn; nobody else can tell who had a joker or where it went", () => {
     const seed = jokerDeal(),
       match = new Match(rules, { round: 1, variant: "", options: { jokers: true }, seed, seats: [{ kind: "person", person: "a" }, { kind: "person", person: "b" }, { kind: "computer", person: null }, { kind: "closed", person: null }] });
     const s = match.state;
     expect(s.seats).toBe(3);
-    const placers = match.movers;
+    // All three arrange (joker or none): the user asked that nobody can tell who was dealt one.
+    expect(match.movers).toEqual([0, 1, 2]);
+    const placers = [0, 1, 2].filter((seat) => s.net!.waiting[seat].length),
+      plain = [0, 1, 2].find((seat) => !s.net!.waiting[seat].length)!;
     expect(placers).toHaveLength(2);
     // Every row is in order without its jokers, which wait with their owners.
     s.rows.forEach((row) => expect(row.some(isJoker)).toBe(false));
-    for (const seat of placers) {
+    for (const seat of [0, 1, 2]) {
       const view = hidden.view(s, seat);
-      expect(view.phase).toBe("joker");
+      expect(view.phase).toBe(placers.includes(seat) ? "joker" : "arrange");
       expect(view.seat).toBe(0);
       expect(view.rows[0]).toEqual(s.rows[seat]);
       expect(view.waiting).toEqual(s.net!.waiting[seat]);
+      // The others' rows are not shown while the rows are being arranged.
+      expect(view.rows.slice(1).every((row) => row.length === 0)).toBe(true);
     }
-    // Both place theirs, in either order; then 1번 begins with the pool.
-    for (const seat of [...placers].reverse())
-      while (match.state.net!.waiting[seat].length) expect(match.try({ from: -1, to: GAP, extra: -1 }, seat, false)).toHaveProperty("state"), match.push({ from: -1, to: GAP, extra: -1 }, seat);
+    // A joker placed leaves every other device's view exactly as it was: no tile, no count, no word of it (the room's
+    // own record, held by every honest device but shown by none, aside).
+    const seen = (at: typeof s) => JSON.stringify({ ...hidden.view(at, plain), net: null });
+    const before = seen(match.state);
+    for (const seat of placers)
+      while (match.state.net!.waiting[seat].length) {
+        expect(match.try({ from: -1, to: GAP, extra: -1 }, seat, false)).toHaveProperty("state");
+        match.push({ from: -1, to: GAP, extra: -1 }, seat);
+      }
+    expect(seen(match.state)).toBe(before);
+    expect(match.state.ply).toBe(s.ply);
+    expect(match.state.last).toBe(s.last);
+    // Each says 배열 완료, once (a joker still to place must be placed first); the move counts the same for everyone.
+    expect(match.try({ from: -1, to: READY, extra: -1 }, plain, false)).toHaveProperty("state");
+    match.push({ from: -1, to: READY, extra: -1 }, plain);
+    expect(match.state.ply).toBe(s.ply + 1);
+    expect(hidden.waiting!(match.state, plain)).toBe("다른 사람이 패를 정리하는 중입니다.");
+    expect(match.movers).toEqual(placers);
+    for (const seat of placers) match.push({ from: -1, to: READY, extra: -1 }, seat);
+    // Then 1번 begins with the pool, every row in sight.
     expect(match.movers).toEqual([0]);
     const after = match.state;
     expect(after.phase).toBe("draw");
+    expect(after.ply).toBe(s.ply + 3);
     for (const seat of placers) expect(isJoker(after.rows[seat][0])).toBe(true);
+    expect(hidden.view(after, plain).rows.every((row) => row.length > 0)).toBe(true);
     // Seat 1's view names a tile of seat 2 as its own seat 1; the room as seat 2's.
     const view = hidden.view(after, 1);
     expect(view.rows[1]).toEqual(after.rows[2]);
     expect(hidden.move({ from: -1, to: tileCode(1, 0), extra: 300 }, 1, after)).toEqual({ from: -1, to: tileCode(2, 0), extra: 300 });
     expect(hidden.move({ from: -1, to: POOL + 3, extra: -1 }, 1, after)).toEqual({ from: -1, to: POOL + 3, extra: -1 });
+  });
+  test("without jokers there is nothing to arrange: 1번 begins at once", () => {
+    const match = new Match(rules, { round: 1, variant: "", options: { jokers: false }, seed: 5, seats: [{ kind: "person", person: "a" }, { kind: "person", person: "b" }, { kind: "closed", person: null }, { kind: "closed", person: null }] });
+    expect(match.movers).toEqual([0]);
+    expect(match.state.phase).toBe("draw");
   });
 
   test("three devices and a computer play to the last one standing, each from its own view", async () => {

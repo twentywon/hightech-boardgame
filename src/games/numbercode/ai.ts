@@ -2,7 +2,7 @@ import type { Random } from "../../core/random";
 import type { Move } from "../points/types";
 import type { Level } from "../points/ai";
 import { chances, loose, sight, type Odds, type Sight } from "./deduce";
-import { GAP, JOKER, POOL, SAY, STOP, tileCode, type State } from "./rules";
+import { GAP, JOKER, POOL, READY, SAY, STOP, tileCode, type State } from "./rules";
 
 /** A guess the computer weighs: a hidden tile of another seat, a number for it, and how likely that is. */
 interface Guess {
@@ -26,6 +26,8 @@ export function chooseMove(s: State, level: Level, random: Random): Move | null 
     case "joker":
       // Anywhere in its row: a joker tells nothing by where it stands.
       return move(GAP + Math.floor(random() * (s.rows[s.seat].length + 1)));
+    case "arrange":
+      return move(READY);
     case "draw": {
       // Any tile of the pool: they are alike from the back but for the colour.
       const slots = s.pool.flatMap((id, i) => (id === null ? [] : [i]));

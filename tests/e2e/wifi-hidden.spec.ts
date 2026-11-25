@@ -256,3 +256,50 @@ test("dominoes in the app: each phone holds its own hand, the two lay in turn an
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
+
+test("number code by codes: both arrange their rows at once (a joker placed or not), neither sees the other's row until both say 배열 완료", async ({ browser }, info) => {
+  const a = await device(browser, info),
+    b = await device(browser, info),
+    pages = [a.page, b.page],
+    [host, guest] = pages;
+  await lobby(host, "숫자 코드", "방장");
+  await host.locator("#net-host").click();
+  await pair(host, guest, "숫자 코드", "민수");
+  await start(host, pages);
+  const data = (page: Page) => page.evaluate(() => ({ ...document.querySelector<HTMLCanvasElement>("main.game-layout canvas")!.dataset }));
+  // Each arranges its own row (the jokers are in by default): a joker to place, or only 배열 완료 to say; the other's
+  // row is not on its table meanwhile, and nothing on it says who has a joker.
+  for (const page of pages) {
+    await expect.poll(async () => (await data(page)).phase, { timeout: 30000 }).toMatch(/^(joker|arrange)$/);
+    expect((await data(page)).rows!.split(",")[1]).toBe("0");
+  }
+  const count = await moves(host);
+  // The host places any joker dealt to it (the keyboard at a gap of its row), then says it is done.
+  while ((await data(host)).phase === "joker") {
+    const before = (await data(host)).rows;
+    await keys(host, ["ArrowLeft", "Enter"]);
+    await expect.poll(async () => (await data(host)).rows, { timeout: 15000 }).not.toBe(before);
+  }
+  // A joker placed is no move, for either device.
+  for (const page of pages) expect(await moves(page)).toBe(count);
+  await expect(host.locator(".nc-ready")).toBeVisible();
+  await host.locator(".nc-ready").click();
+  await expect(turn(host)).toContainText("다른 사람이 패를 정리하는 중입니다", { timeout: 15000 });
+  await agree(pages, count + 1);
+  // The guest still arranging still sees no row of the host's.
+  expect((await data(guest)).rows!.split(",")[1]).toBe("0");
+  while ((await data(guest)).phase === "joker") {
+    const before = (await data(guest)).rows;
+    await keys(guest, ["ArrowLeft", "Enter"]);
+    await expect.poll(async () => (await data(guest)).rows, { timeout: 15000 }).not.toBe(before);
+  }
+  await guest.locator(".nc-ready").click();
+  await agree(pages, count + 2);
+  // Both rows come out together, and 1번 (the host) draws first.
+  for (const page of pages) {
+    await expect.poll(async () => (await data(page)).rows!.split(",").every((n) => Number(n) >= 4), { timeout: 15000 }).toBe(true);
+    await expect.poll(async () => (await data(page)).phase, { timeout: 15000 }).toBe("draw");
+  }
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});

@@ -3245,6 +3245,7 @@ html[data-game="laser-chess"] .board-area .board-controls #pg-tool-1 { left:-19p
 .nc-ask button { min-height:38px;padding:0 14px;border-radius:999px;border:0;font-weight:800;font-size:14px;cursor:pointer; }
 .nc-ask button.go { background:#2f9a5a;color:#fff; }
 .nc-ask button.stop { background:#ece3cf;color:#2b2620; }
+.nc-ready { position:absolute;translate:-50% -50%;min-height:44px;padding:0 22px;border-radius:999px;border:0;background:#2f9a5a;color:#fff;font-weight:900;font-size:15px;box-shadow:0 10px 28px rgba(0,0,0,.4);pointer-events:auto;cursor:pointer;animation:nc-pop .18s ease-out both; }
 @keyframes nc-pop { from { opacity:0;scale:.9; } to { opacity:1;scale:1; } }
 html[data-capture] .nc-layer > :not(.nc-name) { display:none !important; }
 /* The hidden tools (a tap on the table does their work) keep to a pixel at the cluster's foot, clear of 추리 도우미. */

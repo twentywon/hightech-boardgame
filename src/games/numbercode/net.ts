@@ -3,12 +3,15 @@ import { playing, turned } from "../../net/hidden";
 import type { GameOptions, Move, PointGame } from "../points/types";
 import { chooseMove } from "./ai";
 import { numberCode } from "./game";
-import { GAP, HELPER, codeIndex, codeSeat, createGame, isJoker, isTileCode, play, tileCode, type State } from "./rules";
+import { GAP, HELPER, READY, codeIndex, codeSeat, createGame, isJoker, isTileCode, play, tileCode, type State } from "./rules";
 
 /**
  * 숫자 코드 over one Wi-Fi (와이파이 여럿이, the user asked): two to four devices, one row each, in the room's seat order
- * (a seat may be closed, or the host's computer's). Before the first turn every player places the jokers dealt to them
- * on their own device, all at once; then 1번 (the first seat in play) begins. A player whose tiles are all face up is
+ * (a seat may be closed, or the host's computer's). Before the first turn (when jokers are in) every player arranges
+ * their row on their own device, all at once: places any joker dealt to them, and says 배열 완료 (`READY`), joker or
+ * none. Nobody can tell who had a joker or where it went (the user asked): while the rows are being arranged each
+ * device shows its own row alone; the others' come out together when all are done; placing a joker is not counted
+ * as a move (only 배열 완료 is, once each) and leaves no trace in `last`. Then 1번 (the first seat in play) begins. A player whose tiles are all face up is
  * out and watches; the last one with a hidden tile wins. The deal comes from the room's shared seed (the "honest
  * devices" of `src/net/hidden.ts`); each device is shown its own seat's view: the table turned so that its row is the
  * near one (seat 0 of the game, as against the computers), the others following it to the left, their tiles with
@@ -19,8 +22,13 @@ import { GAP, HELPER, codeIndex, codeSeat, createGame, isJoker, isTileCode, play
  */
 type Net = NonNullable<State["net"]>;
 const record = (s: State): Net => s.net ?? { seats: Array.from({ length: s.seats }, (_, p) => p), waiting: s.rows.map(() => []), helpers: s.rows.map(() => s.helper), champion: null };
-/** Whether jokers dealt are still being placed (before the first turn). */
-const opening = (s: State) => record(s).waiting.some((w) => w.length > 0);
+/** Whether player `p` has still to arrange its row (a joker to place, or 배열 완료 to say). */
+const arranging = (s: State, p: number) => {
+  const net = record(s);
+  return (net.waiting[p]?.length ?? 0) > 0 || net.ready?.[p] === false;
+};
+/** Whether the rows are still being arranged (before the first turn). */
+const opening = (s: State) => record(s).seats.some((_, p) => arranging(s, p));
 /** The player a room's seat is, or -1. */
 const playerOf = (s: State, seat: number) => record(s).seats.indexOf(seat);
 const shift = (seat: number, by: number, n: number) => (((seat + by) % n) + n) % n;
@@ -39,7 +47,8 @@ export function netCreate(options: GameOptions, seated: boolean[], random: () =>
     rows,
     waiting: [],
     phase: dealt.pool.some((id) => id !== null) ? "draw" : "guess",
-    net: { seats, waiting, helpers: rows.map(() => options.helper === true), champion: null },
+    // With jokers in, every player says its row is arranged (joker or none); without, there is nothing to arrange.
+    net: { seats, waiting, ready: rows.map(() => !dealt.jokers), helpers: rows.map(() => options.helper === true), champion: null },
   };
 }
 
@@ -47,17 +56,19 @@ export function netCreate(options: GameOptions, seated: boolean[], random: () =>
 function seatedAt(s: State, p: number): State {
   const n = s.seats,
     net = record(s),
-    back = (seat: number) => shift(seat, -p, n);
+    back = (seat: number) => shift(seat, -p, n),
+    // While the rows are being arranged, the others' are not shown (their tiles come out together at the start).
+    secret = opening(s);
   return {
     ...s,
-    rows: turned(s.rows, p),
+    rows: turned(s.rows, p).map((row, k) => (secret && k > 0 ? [] : row)),
     out: turned(s.out, p),
     seat: back(s.seat),
     fallen: s.fallen.map(back),
     last: s.last && { ...s.last, seat: back(s.last.seat), out: s.last.out.map(back) },
     waiting: net.waiting[p] ?? [],
-    // Placing a dealt joker is my move whatever the turn: the game is shown with me to place it.
-    ...(net.waiting[p]?.length ? { phase: "joker" as const, seat: 0, held: null, heldAt: null } : {}),
+    // Arranging my row is my move whatever the turn: the game is shown with me to place a joker, or to say it is done.
+    ...(arranging(s, p) ? { phase: net.waiting[p]?.length ? ("joker" as const) : ("arrange" as const), seat: 0, held: null, heldAt: null } : {}),
     helper: net.helpers[p] ?? s.helper,
     winner: s.winner === null || s.winner === "draw" ? s.winner : net.champion === p ? 0 : 1,
   };
@@ -75,16 +86,22 @@ export function netPlay(s: State, move: Move, _random: () => number, seat: numbe
   if (p < 0 || s.winner !== null || move.from !== -1) return null;
   const helpers = () => net.helpers.map((on, k) => (k === p ? !on : on));
   if (opening(s)) {
-    const left = net.waiting[p];
-    if (!left.length) return null;
-    if (move.to === HELPER && move.extra === -1) return { ...s, net: { ...net, helpers: helpers() } };
+    if (!arranging(s, p) || move.extra !== -1) return null;
+    if (move.to === HELPER) return { ...s, net: { ...net, helpers: helpers() } };
+    if (!net.waiting[p].length) {
+      // 배열 완료: the one move of the opening that counts (every player makes it, joker or none).
+      if (move.to !== READY) return null;
+      const ready = (net.ready ?? net.seats.map(() => true)).map((r, k) => (k === p ? true : r));
+      return { ...s, net: { ...net, ready }, ply: s.ply + 1 };
+    }
+    // A joker placed: not counted, and nothing said of it (`last` is left as it was).
     const k = move.to - GAP;
-    if (move.extra !== -1 || !Number.isInteger(k) || k < 0 || k > s.rows[p].length) return null;
+    if (!Number.isInteger(k) || k < 0 || k > s.rows[p].length) return null;
     const rows = s.rows.map((row) => [...row]),
       waiting = net.waiting.map((w) => [...w]),
       joker = waiting[p].shift()!;
     rows[p].splice(k, 0, joker);
-    return { ...s, rows, net: { ...net, waiting }, last: { kind: "joker", seat: p, target: null, said: null, tile: joker, out: [] }, ply: s.ply + 1 };
+    return { ...s, rows, net: { ...net, waiting } };
   }
   if (s.seat !== p) return null;
   if (move.to === HELPER && move.extra === -1) return { ...s, net: { ...net, helpers: helpers() } };
@@ -109,10 +126,10 @@ export function netPlay(s: State, move: Move, _random: () => number, seat: numbe
   if (alive.length <= 1) return { ...next, winner: 0, net: { ...net, champion: alive[0] ?? p } };
   return next;
 }
-/** Who may move: each player with a joker still to place, at once; then the player whose turn it is. */
+/** Who may move: each player still arranging its row, at once; then the player whose turn it is. */
 export function netMovers(s: State) {
   const net = record(s);
-  if (opening(s)) return net.waiting.flatMap((w, p) => (w.length ? [net.seats[p]] : []));
+  if (opening(s)) return net.seats.flatMap((seat, p) => (arranging(s, p) ? [seat] : []));
   return [net.seats[s.seat]];
 }
 
@@ -142,8 +159,8 @@ export const numberCodeNet: NetSpec<State> = {
       const to = netMovers(s).find((x) => x !== seat);
       return to ?? record(s).seats[shift(Math.max(0, playerOf(s, seat)), 1, s.seats)];
     },
-    // Who was dealt a joker is nobody else's to know (the user asked): the wait is not explained.
-    waiting: (s, seat) => (opening(s) && !record(s).waiting[playerOf(s, seat)]?.length ? "다른 사람이 준비하는 중입니다." : null),
+    // Who was dealt a joker is nobody else's to know (the user asked): everyone arranges, and the wait is the same for all.
+    waiting: (s, seat) => (opening(s) && !arranging(s, Math.max(0, playerOf(s, seat))) ? "다른 사람이 패를 정리하는 중입니다." : null),
     game: viewed,
   },
 };

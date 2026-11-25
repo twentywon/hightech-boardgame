@@ -30,7 +30,9 @@ export const SEAT = 32,
   AGAIN = 321,
   DRAW_BLACK = 330,
   DRAW_WHITE = 331,
-  HELPER = 340;
+  HELPER = 340,
+  /** Over Wi-Fi: my row is arranged (every player says so before the first turn; see `net.ts`). */
+  READY = 341;
 export const numberOf = (id: number) => (id >= 24 ? JOKER : id >> 1);
 export const colourOf = (id: number) => (id & 1) as 0 | 1;
 export const isJoker = (id: number) => id >= 24;
@@ -43,7 +45,8 @@ export const codeSeat = (code: number) => Math.floor(code / SEAT);
 export const codeIndex = (code: number) => code % SEAT;
 export const isTileCode = (code: number) => code >= 0 && code < 4 * SEAT;
 
-export type Phase = "joker" | "draw" | "guess" | "again" | "reveal";
+/** `arrange`: over Wi-Fi before the first turn, my row (and any joker dealt to me) is arranged and I say so. */
+export type Phase = "joker" | "arrange" | "draw" | "guess" | "again" | "reveal";
 export interface Last {
   kind: "joker" | "draw" | "right" | "wrong" | "stop" | "reveal";
   seat: number;
@@ -87,10 +90,11 @@ export interface State {
   ply: number;
   /**
    * Over Wi-Fi (`net.ts`): the room's seat of each player, the jokers each was dealt and has still to place (all
-   * place theirs at once before the first turn), each player's own 추리 도우미, and the player left last (the
-   * winner; `winner` is then 0). A player who goes out watches the rest; the game goes on until one is left.
+   * place theirs at once before the first turn), whether each has said its row is arranged (`ready`: everyone does,
+   * joker or none, so that nobody can tell who had one), each player's own 추리 도우미, and the player left last
+   * (the winner; `winner` is then 0). A player who goes out watches the rest; the game goes on until one is left.
    */
-  net?: { seats: number[]; waiting: number[][]; helpers: boolean[]; champion: number | null };
+  net?: { seats: number[]; waiting: number[][]; ready?: boolean[]; helpers: boolean[]; champion: number | null };
 }
 /** What each seat is called, for two, three or four players (me at the near side); `people`: over Wi-Fi, 상대 for 컴퓨터. */
 export function seatNames(seats: number, people = false) {
@@ -184,6 +188,8 @@ export function moves(s: State): Move[] {
   switch (s.phase) {
     case "joker":
       return [...Array.from({ length: s.rows[s.seat].length + 1 }, (_, k) => own(GAP + k)), ...helper];
+    case "arrange":
+      return [own(READY), ...helper];
     case "draw": {
       const slots = s.pool.flatMap((id, i) => (id === null ? [] : [own(POOL + i)]));
       const colours = [BLACK, WHITE].filter((c) => s.pool.some((id) => id !== null && colourOf(id) === c));
@@ -247,6 +253,8 @@ function endTurn(s: State, said: number[]) {
 export function play(s: State, m: Move): State | null {
   if (!legal(s, m)) return null;
   if (m.to === HELPER) return { ...s, helper: !s.helper };
+  // Saying a row is arranged is the Wi-Fi opening's alone (`netPlay`).
+  if (s.phase === "arrange") return null;
   const n: State = {
     ...s,
     rows: s.rows.map((row) => [...row]),
@@ -331,6 +339,8 @@ export function hint(s: State) {
   switch (s.phase) {
     case "joker":
       return s.waiting.length ? "받은 조커를 놓을 자리를 고르세요. 줄 어디에나 놓을 수 있습니다." : "뽑은 조커를 놓을 자리를 고르세요.";
+    case "arrange":
+      return "내 패를 확인했으면 '배열 완료'를 누르세요. 모두 끝내면 첫 차례가 시작됩니다.";
     case "draw":
       return "가운데 더미에서 타일을 한 장 가져오세요.";
     case "guess":
