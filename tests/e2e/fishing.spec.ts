@@ -47,7 +47,6 @@ async function angler(page: Page) {
 test("fishing: a press on the water casts, a strike at the bite hooks, reeling lands a catch and the score rises", async ({ page }, info) => {
   test.setTimeout(150000);
   const errors = await sit(page);
-  await expect(page.locator("#turn")).toContainText("남은 시간");
   expect(await score(page)).toBe(0);
   // A press (a tap on a phone) on the middle of the water casts the float there.
   const box = (await canvas(page).boundingBox())!,
@@ -70,27 +69,26 @@ test("fishing: a press on the water casts, a strike at the bite hooks, reeling l
   expect(errors).toEqual([]);
 });
 
-test("fishing: the round runs out after its 90 seconds and says 시간 종료 @alone", async ({ page }) => {
-  test.setTimeout(200000);
+test("fishing: no time limit; the lake's day goes on to night and nothing ends the fishing @alone", async ({ page }) => {
+  test.setTimeout(240000);
   // The lake never moves on more than 0.3 s in one frame (so that a bite is never skipped on a slow device): under
-  // software drawing (a few frames a second) the quicker clock gains little, so the round may still take its 90 s.
-  await fastClock(page, 3);
+  // software drawing the quicker clock gains little, so night may still take its three minutes.
+  await fastClock(page, 4);
   const errors = await sit(page);
-  // Cast once, and leave the line in the water until the clock has run out.
+  // No clock on the board: the score, the fish caught and the biggest of them.
+  await expect(page.locator(".fish-board")).not.toContainText("남은 시간");
+  await expect(page.locator(".fish-board [data-k=best]")).toHaveText("—");
+  await expect(page.locator("#turn")).not.toContainText("남은 시간");
+  // Cast once, and leave the line in the water while the day goes by.
   await canvas(page).focus();
   await page.keyboard.press("Space");
-  await expect(canvas(page)).toHaveAttribute("data-phase", /flight|wait/);
-  await expect(page.locator(".board-finale")).toBeVisible({ timeout: 150000 });
-  await expect(page.locator(".board-finale")).toContainText("시간 종료");
-  await expect(page.locator(".fish-board [data-k=left]")).toHaveText("0초");
-  // On the lake the day has gone by with the round: it is night now.
-  expect(Number(await canvas(page).getAttribute("data-day"))).toBeGreaterThan(0.95);
-  // The line comes back in, and nothing more can be cast.
-  await expect(canvas(page)).toHaveAttribute("data-phase", "ready", { timeout: 15000 });
+  await expect(canvas(page)).toHaveAttribute("data-phase", /flight|wait|bite|reel|ready/);
+  await expect.poll(async () => Number(await canvas(page).getAttribute("data-day")), { timeout: 200000, intervals: [1000] }).toBeGreaterThan(0.95);
+  // Night has come and nothing has ended.
+  await expect(page.locator(".board-finale")).toBeHidden();
   await canvas(page).focus();
   await page.keyboard.press("Space");
-  await page.waitForTimeout(400);
-  await expect(canvas(page)).toHaveAttribute("data-phase", "ready");
+  await expect(canvas(page)).not.toHaveAttribute("data-phase", "ready", { timeout: 15000 }).catch(() => {});
   expect(errors).toEqual([]);
 });
 
@@ -158,18 +156,19 @@ test("fishing: hooked, circles drawn on the screen turn the reel, and the fish c
   expect(errors).toEqual([]);
 });
 
-test("fishing at sea: its stage card lays the sea (the day does not go by), and its own fish are caught", async ({ page }) => {
-  test.setTimeout(150000);
+test("fishing at sea: its stage card lays the sea from a boat (the day does not go by), and its own fish are caught", async ({ page }) => {
+  test.setTimeout(300000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, "낚시");
-  await page.locator('.stage-card[data-stage="s1"]').click();
+  await page.locator('.stage-card[data-stage="sea"]').click();
   if (await page.locator(".game-stage button.primary").isVisible().catch(() => false)) await page.locator(".game-stage button.primary").click();
   await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 20000 });
   await expect(canvas(page)).toHaveAttribute("data-sea", "1");
   await angler(page);
-  await expect.poll(async () => Number(await canvas(page).getAttribute("data-caught")), { timeout: 110000, intervals: [250] }).toBeGreaterThan(0);
+  // A sea fight is long (the user asked for it so), and the water keeps the one pace that was the middle level.
+  await expect.poll(async () => Number(await canvas(page).getAttribute("data-caught")), { timeout: 240000, intervals: [250] }).toBeGreaterThan(0);
   // What was landed is the sea's: one of its fish, the starfish, or a can.
   const landed = Number(await canvas(page).getAttribute("data-landed") || -1);
   if (landed >= 0) expect(landed === 5 || landed >= 9).toBe(true);

@@ -55,9 +55,9 @@ function timeToLand(rate: number, limit = 60) {
 }
 
 describe("fishing", () => {
-  test("the clock runs the round out, and only what the lake reports changes the score", () => {
-    let s = fr.createGame(2);
-    expect(s.left).toBe(fr.ROUND);
+  test("there is no clock and no level: only what the water reports changes the score, and the fishing never ends", () => {
+    let s = fr.createGame();
+    expect("left" in s || "level" in s).toBe(false);
     s = fr.play(s, plain(fr.CAST))!;
     s = fr.play(s, plain(fr.SCARED))!;
     s = fr.play(s, plain(fr.SNAP))!;
@@ -68,14 +68,17 @@ describe("fishing", () => {
     expect(fr.play(s, { from: -1, to: fr.CATCH + 31, extra: fs.CARP * 1000 + 50 })).toBeNull();
     expect(fr.play(s, { from: -1, to: fr.CATCH + 5, extra: fs.CARP * 1000 + 10 })).toBeNull();
     expect(fr.play(s, { from: -1, to: fr.CATCH, extra: 99 * 1000 + 10 })).toBeNull();
-    expect(fr.play(s, { from: -1, to: fr.TICK, extra: 3 })).toBeNull();
+    expect(fr.play(s, { from: -1, to: fr.HOOK, extra: 3 })).toBeNull();
+    // The old clock's move is no move now.
+    expect(fr.play(s, plain(0))).toBeNull();
     // Junk is worth its flat points: a can nothing, a boot one.
-    expect(fr.play(s, fr.catchMove(fs.CAN, 12))!.score).toBe(s.score);
+    expect(fr.play(fr.createGame(), fr.catchMove(fs.CAN, 12))!.score).toBe(0);
     expect(fr.play(s, fr.catchMove(fs.BOOT, 28))!.score).toBe(s.score + 1);
-    for (let k = 0; k < fr.ROUND; k++) s = fr.play(s, plain(fr.TICK))!;
-    expect(s.left).toBe(0);
-    expect(s.winner).toBe(0);
-    expect(fr.play(s, plain(fr.TICK))).toBeNull();
+    // However long one fishes, nobody wins and the game goes on.
+    for (let k = 0; k < 300; k++) s = fr.play(s, plain(fr.CAST))!;
+    expect(s.winner).toBeNull();
+    expect(fr.moves(s).length).toBeGreaterThan(0);
+    expect(fr.fishing.tally(s)[0]).not.toContain("시간");
     expect(fr.fishing.reason(s)).toContain("잉어 50cm");
   });
   test("a cast lands within reach, fish nibble and then bite, and a press at the bite hooks the fish", () => {
@@ -256,7 +259,7 @@ describe("fishing", () => {
       expect(fish.size).toBeGreaterThanOrEqual(kind.min);
       expect(fish.size).toBeLessThanOrEqual(kind.max);
       expect(fish.points).toBe(fs.pointsOf(fish.kind, fish.size));
-      expect(fr.play(fr.createGame(3), fr.catchMove(fish.kind, fish.size))!.score).toBe(fish.points);
+      expect(fr.play(fr.createGame(world.sea), fr.catchMove(fish.kind, fish.size))!.score).toBe(fish.points);
     }
   });
   test("circles drawn on the screen are turns of the crank: a whole circle one turn, either way round; strokes and scrubs none", () => {
@@ -281,7 +284,7 @@ describe("fishing", () => {
     expect(back).toBe(0);
   });
   test("the sea has its own kinds, big to small, and the lake its own; each round takes only its water's catches", () => {
-    const atSeaGame = () => fr.fishing.create("s1");
+    const atSeaGame = () => fr.fishing.create("sea");
     const kindsAt = (sea: boolean) => {
       const world = fs.createWorld(3, seededRandom(sea ? 12 : 13), sea),
         seen = new Set<number>();
@@ -312,12 +315,15 @@ describe("fishing", () => {
     expect(fr.play(atSeaGame(), fr.catchMove(fs.WHALE, 850))!.score).toBe(fs.pointsOf(fs.WHALE, 850));
     expect(fs.KINDS[fs.TUNA].max).toBeGreaterThan(2 * fs.KINDS[fs.HORSE_MACKEREL].max);
     // The stages: "s1".."s3" are the sea; a catch from the other water is refused.
-    const atSea = fr.fishing.create("s2");
-    expect([atSea.sea, atSea.level]).toEqual([true, 2]);
-    expect(fr.fishing.create("3")).toMatchObject({ sea: false, level: 3 });
+    const atSea = fr.fishing.create("sea");
+    expect(atSea.sea).toBe(true);
+    expect(fr.fishing.create("lake").sea).toBe(false);
+    // An old stage remembered from before the levels went ("s2", "3") still opens its water.
+    expect(fr.fishing.create("s2").sea).toBe(true);
+    expect(fr.fishing.create("3").sea).toBe(false);
     expect(fr.play(atSea, fr.catchMove(fs.TUNA, 180))!.score).toBe(fs.pointsOf(fs.TUNA, 180));
     expect(fr.play(atSea, fr.catchMove(fs.CARP, 50))).toBeNull();
-    expect(fr.play(fr.createGame(1), fr.catchMove(fs.TUNA, 180))).toBeNull();
+    expect(fr.play(fr.createGame(false), fr.catchMove(fs.TUNA, 180))).toBeNull();
     expect(fr.play(atSea, fr.catchMove(fs.CAN, 12))).not.toBeNull();
   });
   test("at sea the same fish takes far longer to bring in, and surges harder, longer and more often", () => {

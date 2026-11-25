@@ -2,14 +2,13 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
 import { KINDS, caughtIn, pointsOf } from "./sim";
 
 /**
- * Fishing from a pier: cast the float, wait for a bite, strike and reel the fish in. The lake itself is played in
- * real time by the view (see `sim.ts`); the moves are what it reports: a second gone by, the float landing on the
- * water, a fish lost (struck too early, too late, the line snapped, or it got off a slack line), a fish hooked, and
- * a catch landed (for its points, with its kind and size). A round lasts `ROUND` seconds.
+ * Fishing from a pier on the lake, or from a boat at sea: cast the float, wait for a bite, strike and reel the fish
+ * in. The water itself is played in real time by the view (see `sim.ts`); the moves are what it reports: the float
+ * landing on the water, a fish lost (struck too early, too late, the line snapped, or it got off a slack line), a fish
+ * hooked, and a catch landed (for its points, with its kind and size). There is no clock and no level (the user asked
+ * to take both away): one fishes as long as one likes, the score adding up.
  */
-export const ROUND = 90,
-  TICK = 0,
-  CAST = 1,
+export const CAST = 1,
   SCARED = 2,
   LATE = 3,
   SNAP = 4,
@@ -18,17 +17,16 @@ export const ROUND = 90,
   /** A catch landed is a move to `CATCH + points`, its `extra` the kind × 1000 + its size in cm. */
   CATCH = 100,
   MOST = 400;
-export const LEVEL_NAMES = ["쉬움", "보통", "어려움"];
-/** The stages: the lake at each level ("1" to "3"), the sea at each ("s1" to "s3"). */
+/** The water's pace (the sim's level 2, the one kept when the levels were taken away). */
+export const LEVEL = 2;
+/** The stages: the lake ("lake") or the sea ("sea"; an old "s1"–"s3" too). */
 export const seaOf = (variant: string) => /^s/.test(variant ?? "");
-export const levelOf = (variant: string) => Number(String(variant ?? "").replace(/^s/, "")) || 1;
 export interface Catch {
   kind: number;
   size: number;
   points: number;
 }
 export interface State {
-  level: number;
   /** Fishing at sea (its own kinds, a longer fight) rather than on the lake. */
   sea: boolean;
   score: number;
@@ -37,21 +35,19 @@ export interface State {
   /** Fish lost: scared off, too late, snapped, got off. */
   lost: number;
   casts: number;
-  left: number;
+  /** Never decided: there is no end to the fishing (kept for the screen, which asks every game). */
   winner: Winner;
   last: number | null;
   /** The catch of the last move, when it was one. */
   landed: Catch | null;
   ply: number;
 }
-export const createGame = (level = 1, sea = false): State => ({
-  level: Math.max(1, Math.min(LEVEL_NAMES.length, Math.round(level) || 1)),
+export const createGame = (sea = false): State => ({
   sea,
   score: 0,
   caught: [],
   lost: 0,
   casts: 0,
-  left: ROUND,
   winner: null,
   last: null,
   landed: null,
@@ -59,13 +55,12 @@ export const createGame = (level = 1, sea = false): State => ({
 });
 const plain = (to: number): Move => ({ from: -1, to, extra: -1 });
 /** The moves the lake can report; a catch is any `CATCH + points` whose `extra` names a kind and a size worth those points. */
-export const moves = (state: State): Move[] => (state.winner !== null ? [] : [TICK, CAST, SCARED, LATE, SNAP, SLIP, HOOK].map(plain));
+export const moves = (state: State): Move[] => (state.winner !== null ? [] : [CAST, SCARED, LATE, SNAP, SLIP, HOOK].map(plain));
 export function play(state: State, move: Move): State | null {
   if (state.winner !== null || move.from !== -1) return null;
   const next: State = { ...state, last: move.to, landed: null, ply: state.ply + 1 };
   if (move.to < CATCH) {
     if (move.extra !== -1) return null;
-    if (move.to === TICK) return { ...next, left: state.left - 1, winner: state.left <= 1 ? 0 : null };
     if (move.to === CAST) return { ...next, casts: state.casts + 1 };
     if (move.to === SCARED || move.to === LATE || move.to === SNAP || move.to === SLIP) return { ...next, lost: state.lost + 1 };
     if (move.to === HOOK) return next;
@@ -83,7 +78,7 @@ export function play(state: State, move: Move): State | null {
 /** The move that lands a catch. */
 export const catchMove = (kind: number, size: number): Move => ({ from: -1, to: CATCH + pointsOf(kind, size), extra: kind * 1000 + size });
 const fishOf = (state: State) => state.caught.filter((c) => !KINDS[c.kind].junk);
-/** The biggest fish of the round, or null. */
+/** The biggest fish caught so far, or null. */
 export function biggest(state: State) {
   let best: Catch | null = null;
   for (const c of fishOf(state)) if (!best || c.points > best.points) best = c;
@@ -91,7 +86,7 @@ export function biggest(state: State) {
 }
 const effect = (): Effect | null => null;
 export const fishing: PointGame<State> = {
-  create: (variant) => createGame(levelOf(variant), seaOf(variant)),
+  create: (variant) => createGame(seaOf(variant)),
   moves,
   play: (state, move) => play(state, move),
   turn: () => 0,
@@ -100,8 +95,8 @@ export const fishing: PointGame<State> = {
   effect,
   ply: (state) => state.ply,
   evaluate: (state) => state.score,
-  hint: (state) => `남은 시간 ${state.left}초 · 점수 ${state.score}`,
-  tally: (state) => [`점수 ${state.score} · 잡은 물고기 ${fishOf(state).length} · 놓친 물고기 ${state.lost} · 남은 시간 ${state.left}초`, ""],
+  hint: (state) => `점수 ${state.score} · 잡은 물고기 ${fishOf(state).length}마리`,
+  tally: (state) => [`점수 ${state.score} · 잡은 물고기 ${fishOf(state).length} · 놓친 물고기 ${state.lost}`, ""],
   reason: (state) => {
     const best = biggest(state),
       count = fishOf(state).length;

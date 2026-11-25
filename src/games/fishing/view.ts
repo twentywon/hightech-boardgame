@@ -6,7 +6,7 @@ import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { DECK, HAND, ROD_LENGTH, anglerCamera } from "./layout";
-import { CAST as CAST_MOVE, HOOK, LATE, ROUND, SCARED, SLIP, SNAP, TICK, catchMove, type State } from "./rules";
+import { CAST as CAST_MOVE, HOOK, LATE, LEVEL, SCARED, SLIP, SNAP, biggest, catchMove, type State } from "./rules";
 import { CrankReader } from "./crank";
 import {
   BOOT,
@@ -36,7 +36,6 @@ import {
   distance,
   press,
   release,
-  retire,
   step,
   surgeNow,
   type Happening,
@@ -62,6 +61,8 @@ const TIMES = [
   { at: 0.55, sky: "#ffb48e", haze: "#e9ad8e", hemiSky: "#ffc8a4", hemiGround: "#5a4636", hemi: 1.15, sun: "#ff9050", sunPower: 1.6, horizon: "#f0a47e", zenith: "#76699c", glitter: "#ffa860", body: 0.72, shore: "#3a2e34", far: "#d09a90", lamp: 0.6, tip: 0.8 },
   { at: 1, sky: "#1d2749", haze: "#121a30", hemiSky: "#41538a", hemiGround: "#0e1218", hemi: 0.55, sun: "#9fb4ff", sunPower: 0.5, horizon: "#1c2949", zenith: "#070d20", glitter: "#c8d6ff", body: 0.3, shore: "#05070b", far: "#1d2438", lamp: 2.4, tip: 3 },
 ];
+/** Seconds of a whole day on the lake: from day to night and back (the user asked for the sky to go slowly). */
+const DAY_CYCLE = 360;
 /** The water's own colours, by day: the lake's green-brown, the sea's blue. */
 const WATERS = {
   lake: { deep: "#1c4a5e", shallow: "#29473c" },
@@ -130,6 +131,9 @@ export class FishingView extends TableView<State> {
   private seaSet = new T.Group();
   private atSea = false;
   private buoy = new T.Group();
+  /** The fishing boat at sea, rocking on the swell (its pivot under the angler), and how far it heaves now. */
+  private boat = new T.Group();
+  private heave = 0;
   /** What the time of day changes: the lights, the sky dome, the sun and the moon, the stars, the far shapes, the float's glow, the angler's lamp. */
   private hemi!: T.HemisphereLight;
   private sunLight!: T.DirectionalLight;
@@ -198,9 +202,13 @@ export class FishingView extends TableView<State> {
     this.lakeSet.add(...this.scene.children.slice(before));
     this.scene.add(this.lakeSet);
     this.seaside(keep);
+    this.boatModel(keep);
     this.seaSet.visible = false;
     this.scene.add(this.seaSet);
+    // The pier is the lake's; at sea the angler stands in a boat's bow.
+    const beforePier = this.scene.children.length;
     this.pier(keep);
+    this.lakeSet.add(...this.scene.children.slice(beforePier));
     this.rodModel(keep);
     this.floatModel(keep);
     const lineGeometry = keep(new T.BufferGeometry());
@@ -218,7 +226,7 @@ export class FishingView extends TableView<State> {
     this.hud.className = "fish-hud";
     this.hud.setAttribute("aria-hidden", "true");
     this.hud.innerHTML =
-      `<div class="fish-board"><span><small>점수</small><b data-k="score">0</b></span><span><small>남은 시간</small><b data-k="left">${ROUND}초</b></span><span><small>잡은 물고기</small><b data-k="count">0</b></span></div>` +
+      `<div class="fish-board"><span><small>점수</small><b data-k="score">0</b></span><span><small>잡은 물고기</small><b data-k="count">0마리</b></span><span><small>가장 큰 것</small><b data-k="best">—</b></span></div>` +
       `<div class="fish-gauge" hidden><small>장력</small><div class="fish-meter"><i data-k="tension"></i></div><em data-k="far"></em><div class="fish-slack"><i data-k="slack"></i></div><small>느슨함</small><div class="fish-spin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.4 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M2.2 6.2l2.6 3.4 3.6-2.4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="fish-spin-bar"><i data-k="spin"></i></div></div><small>릴</small></div>` +
       `<p class="fish-prompt" data-k="prompt"></p>`;
     host.append(this.hud);
@@ -590,6 +598,114 @@ export class FishingView extends TableView<State> {
     this.buoy.position.set(12, 0, -36);
     set.add(this.buoy);
   }
+  /**
+   * The boat at sea (the user asked to fish from a boat there): the angler stands in the bow of a small white fishing
+   * boat, its teak deck narrowing ahead to the stem, white bulwarks with a wooden gunwale, a steel bow rail, a cleat
+   * and a coil of rope at the stem, rod holders with spare rods, and a cooler for the catch where the pier's bucket
+   * stood. It rocks on the swell about a pivot under the angler (`rock`).
+   */
+  private boatModel(keep: Keep) {
+    const y = DECK.y,
+      pivot = 2.5,
+      boat = this.boat;
+    boat.position.set(0, 0, pivot);
+    this.seaSet.add(boat);
+    const at = (x: number, py: number, z: number) => new T.Vector3(x, py, z - pivot);
+    const outline = [
+      [-1.45, 6.5],
+      [-1.45, 0.6],
+      [-1.25, -0.6],
+      [-0.8, -1.6],
+      [0, -2.4],
+      [0.8, -1.6],
+      [1.25, -0.6],
+      [1.45, 0.6],
+      [1.45, 6.5],
+    ];
+    const timber = keep(wood(false, 0.7));
+    timber.wrapS = timber.wrapT = T.RepeatWrapping;
+    timber.repeat.set(0.45, 0.45);
+    const teak = this.standard({ map: timber, color: "#c99a66", roughness: 0.8 }),
+      white = this.standard({ color: "#f3f1ea", roughness: 0.45, side: T.DoubleSide }),
+      navy = this.standard({ color: "#1f4f86", roughness: 0.5, side: T.DoubleSide }),
+      gunwale = this.standard({ color: "#9a6a3e", roughness: 0.6 }),
+      steel = this.standard({ color: "#d4d8dc", roughness: 0.25, metalness: 0.9 }),
+      dark = this.standard({ color: "#2a2c30", roughness: 0.5 }),
+      put = (geometry: T.BufferGeometry, material: T.Material, p: T.Vector3) => {
+        const mesh = new T.Mesh(keep(geometry), material);
+        mesh.position.copy(p);
+        mesh.castShadow = mesh.receiveShadow = true;
+        boat.add(mesh);
+        return mesh;
+      },
+      // A bar from a to b (a tube of the rail, a gunwale's length).
+      bar = (a: T.Vector3, b: T.Vector3, geometry: (length: number) => T.BufferGeometry, material: T.Material) => {
+        const mesh = put(geometry(a.distanceTo(b)), material, a.clone().add(b).multiplyScalar(0.5));
+        mesh.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+        return mesh;
+      };
+    // The deck.
+    const shape = new T.Shape(outline.map(([x, z]) => new T.Vector2(x, -(z - pivot))));
+    put(new T.ShapeGeometry(shape, 8).rotateX(-Math.PI / 2), teak, new T.Vector3(0, y, 0));
+    // The bulwarks round it, white with a blue stripe, a wooden gunwale along their top.
+    const top = y + 0.34;
+    for (let k = 0; k + 1 < outline.length; k++) {
+      const [x0, z0] = outline[k],
+        [x1, z1] = outline[k + 1],
+        a = at(x0, 0, z0),
+        b = at(x1, 0, z1),
+        length = a.distanceTo(b),
+        middle = a.clone().add(b).multiplyScalar(0.5),
+        turn = Math.atan2(b.x - a.x, b.z - a.z);
+      const wall = put(new T.PlaneGeometry(length, top + 0.7), white, new T.Vector3(middle.x, (top - 0.7) / 2, middle.z));
+      wall.rotation.y = turn + Math.PI / 2;
+      const stripe = put(new T.PlaneGeometry(length, 0.12), navy, new T.Vector3(middle.x, y - 0.25, middle.z));
+      stripe.rotation.y = turn + Math.PI / 2;
+      // The stripe a hair outside the wall, toward the sea.
+      const out = new T.Vector3(b.z - a.z, 0, -(b.x - a.x)).normalize().multiplyScalar(Math.sign(-middle.x || 1) * -0.01);
+      stripe.position.add(out);
+      bar(at(x0, top, z0), at(x1, top, z1), (l) => new T.BoxGeometry(0.1, l, 0.07), gunwale);
+    }
+    // The bow rail: steel tubes on posts round the stem, from abreast of the angler forward.
+    const rail = y + 0.85;
+    for (let k = 1; k + 2 < outline.length; k++) {
+      const [x0, z0] = outline[k],
+        [x1, z1] = outline[k + 1];
+      bar(at(x0 * 0.96, rail, z0), at(x1 * 0.96, rail, z1), (l) => new T.CylinderGeometry(0.022, 0.022, l, 10), steel);
+      bar(at(x0 * 0.96, top, z0), at(x0 * 0.96, rail, z0), (l) => new T.CylinderGeometry(0.02, 0.02, l, 8), steel);
+    }
+    bar(at(outline[outline.length - 2][0] * 0.96, top, outline[outline.length - 2][1]), at(outline[outline.length - 2][0] * 0.96, rail, outline[outline.length - 2][1]), (l) => new T.CylinderGeometry(0.02, 0.02, l, 8), steel);
+    // A cleat and a coil of rope at the stem, a hatch over the anchor locker.
+    put(new T.BoxGeometry(0.3, 0.05, 0.06), steel, at(0, y + 0.06, -1.3));
+    put(new T.BoxGeometry(0.06, 0.06, 0.06), steel, at(0, y + 0.03, -1.3));
+    for (let k = 0; k < 4; k++) put(new T.TorusGeometry(0.2 - k * 0.025, 0.022, 6, 20).rotateX(Math.PI / 2), this.standard({ color: "#d8c89a", roughness: 0.95 }), at(0.32, y + 0.03 + k * 0.035, -0.85));
+    put(new T.BoxGeometry(0.7, 0.05, 0.55), this.standard({ color: "#e8e6de", roughness: 0.5 }), at(-0.2, y + 0.025, -0.4));
+    put(new T.BoxGeometry(0.1, 0.02, 0.04), dark, at(-0.2, y + 0.06, -0.2));
+    // The cooler for the catch (where the pier's bucket stood), white with a blue lid.
+    put(new T.BoxGeometry(0.62, 0.42, 0.42), this.standard({ color: "#f4f6f8", roughness: 0.4 }), at(-0.72, y + 0.21, 1.9));
+    put(new T.BoxGeometry(0.66, 0.07, 0.46), this.standard({ color: "#2f6fb8", roughness: 0.4 }), at(-0.72, y + 0.45, 1.9));
+    // Rod holders on the gunwales, with spare rods standing up and out.
+    for (const s of [-1, 1]) {
+      const holder = at(s * 1.42, top, 1.2);
+      bar(holder.clone().add(new T.Vector3(0, -0.25, 0)), holder.clone().add(new T.Vector3(0, 0.05, 0)), (l) => new T.CylinderGeometry(0.03, 0.03, l, 10), steel);
+      // Leaning out over the side and back, so that they stand by the edges of the view, not across it.
+      bar(holder, holder.clone().add(new T.Vector3(s * 0.9, 1.1, 0.9)), (l) => new T.CylinderGeometry(0.008, 0.016, l, 6), dark);
+    }
+  }
+  /** The boat rocks on the swell, and the angler with it (the eye, and the rod in the hand). */
+  private rock(seconds: number) {
+    const roll = 0.022 * Math.sin(seconds * 0.7),
+      pitch = 0.016 * Math.sin(seconds * 0.53 + 1),
+      heave = 0.06 * Math.sin(seconds * 0.9);
+    this.boat.rotation.set(pitch, 0, roll);
+    this.boat.position.y = heave;
+    this.heave = heave;
+    anglerCamera(this.camera, this.camera.aspect);
+    this.camera.position.y += heave;
+    this.camera.rotateZ(roll * 0.8);
+    this.camera.rotateX(pitch * 0.5);
+    this.camera.updateMatrixWorld();
+  }
   /** The lake or the sea: its shores, its water's colours and swell; the sea keeps the day. */
   private setSea(sea: boolean) {
     this.atSea = sea;
@@ -599,10 +715,21 @@ export class FishingView extends TableView<State> {
     u.uLand.value = sea ? 0 : 1;
     u.uSwell.value = sea ? 1.9 : 1;
     this.dayShown = "";
+    // Back on the lake the eye stands still again.
+    if (!sea) {
+      this.heave = 0;
+      anglerCamera(this.camera, this.camera.aspect);
+    }
   }
-  /** How far the lake's day has gone (0 day, 1 night): the round's time; the sea's stays at day. */
+  /**
+   * How far the lake's day has gone (0 day, 1 night): with no time limit it goes round (`DAY_CYCLE` seconds): day,
+   * dusk, night, then back through the dawn to day, a little while held at day and at night. The sea's stays at day.
+   */
   private timeOfDay() {
-    return this.atSea ? 0 : Math.max(0, Math.min(1, this.world.time / ROUND));
+    if (this.atSea) return 0;
+    const u = (this.world.time % DAY_CYCLE) / DAY_CYCLE,
+      wave = u < 0.5 ? u * 2 : 2 - u * 2;
+    return Math.max(0, Math.min(1, (wave - 0.08) / 0.84));
   }
   /** Lights, sky, sun and moon, stars, water and the far shapes for the time of day `p` (see `TIMES`). */
   private timeLight(p: number) {
@@ -1314,7 +1441,7 @@ export class FishingView extends TableView<State> {
     for (const event of events) {
       switch (event.kind) {
         case "second":
-          move(TICK);
+          // No clock (the user asked to take the time limit away): the seconds go by unreported.
           break;
         case "cast":
           this.at.cast = now;
@@ -1477,10 +1604,6 @@ export class FishingView extends TableView<State> {
         this.at.click = now;
         this.onKnock?.("reel", 0.25);
       }
-    } else if (this.state && this.state.winner !== null) {
-      // Time is up: the line comes in and nothing more bites.
-      retire(this.world);
-      for (let k = Math.round(real / DT); k > 0; k--) step(this.world);
     }
     this.pose(now);
     this.write();
@@ -1497,6 +1620,7 @@ export class FishingView extends TableView<State> {
     // The lake's day goes by with the round; at sea the buoy rides the swell.
     this.timeLight(this.timeOfDay());
     if (this.atSea) {
+      this.rock(seconds);
       this.buoy.position.y = -0.15 + 0.16 * Math.sin(seconds * 0.9);
       this.buoy.rotation.set(0.12 * Math.sin(seconds * 0.9 + 1), 0, 0.1 * Math.sin(seconds * 0.7));
     }
@@ -1592,6 +1716,8 @@ export class FishingView extends TableView<State> {
     const struck = (now - this.at.hook) / 1000;
     if (struck < 0.35) pitch += 0.35 * Math.sin((struck / 0.35) * Math.PI);
     this.rod.rotation.set(pitch, yaw, 0);
+    // In the boat the hand heaves with the swell.
+    this.rod.position.set(HAND.x, HAND.y + this.heave, HAND.z);
     const weights = this.segments.map((_, i) => (i + 1) ** 1.3),
       total = weights.reduce((a, b) => a + b, 0);
     this.segments.forEach((joint, i) => {
@@ -1790,12 +1916,11 @@ export class FishingView extends TableView<State> {
     };
     if (state) {
       set("score", String(state.score), (el) => (el.textContent = String(state.score)));
-      set("left", `${state.left}`, (el) => {
-        el.textContent = `${Math.max(0, state.left)}초`;
-        el.classList.toggle("low", state.left <= 10 && state.winner === null);
-      });
-      const fish = state.caught.filter((c) => !KINDS[c.kind].junk).length;
+      const fish = state.caught.filter((c) => !KINDS[c.kind].junk).length,
+        best = biggest(state),
+        bestText = best ? `${KINDS[best.kind].name} ${best.size}cm` : "—";
       set("count", String(fish), (el) => (el.textContent = `${fish}마리`));
+      set("best", bestText, (el) => (el.textContent = bestText));
     }
     const fighting = w.phase === "fight",
       gauge = this.hud.querySelector<HTMLElement>(".fish-gauge")!;
@@ -1872,12 +1997,12 @@ export class FishingView extends TableView<State> {
     put("landed", w.landed ? String(w.landed.kind) : "");
   }
   protected place(state: State) {
-    // A new round, known by the count of moves going back to nothing: the line comes in and the clock starts again.
+    // A new game, known by the count of moves going back to nothing (or the water changed): the line comes in.
     const anew = state.ply === 0 && this.shown > 0;
     this.shown = state.ply;
     if (this.atSea !== state.sea) this.setSea(state.sea);
-    if (anew || this.world.level !== state.level || this.world.sea !== state.sea) {
-      this.world = createWorld(state.level, cryptoRandom, state.sea);
+    if (anew || this.world.sea !== state.sea) {
+      this.world = createWorld(LEVEL, cryptoRandom, state.sea);
       for (const word of this.words) this.drop(word.sprite);
       this.words = [];
       if (this.label) this.drop(this.label);
@@ -1886,7 +2011,6 @@ export class FishingView extends TableView<State> {
       this.ripples = [];
       this.left = 0;
     }
-    if (state.winner !== null) retire(this.world);
     this.pose(performance.now());
     this.write();
   }
