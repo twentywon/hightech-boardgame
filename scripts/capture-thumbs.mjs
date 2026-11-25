@@ -547,6 +547,17 @@ const play = {
     }
     await wait(150);
   },
+  // 핀볼: the plunger held a moment and let go; the ball is caught on its way round the field, a flipper raised.
+  pinball: async () => {
+    await page.locator("canvas").focus();
+    await wait(1200);
+    await page.keyboard.down(" ");
+    await wait(700);
+    await page.keyboard.up(" ");
+    await wait(1100);
+    await page.keyboard.down("ArrowRight");
+    await wait(200);
+  },
   // 낚시: the float cast to the middle; a steady hand in the page strikes at the bite and reels while the fish does
   // not run (casting again after a miss), and the lake is paused as a fish (not junk) is held up out of the water.
   fishing: async () => {
