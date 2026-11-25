@@ -12,7 +12,7 @@ const at = (text: string, full = false) => ({ text, full });
 export const UPDATES: UpdateDay[] = [
   {
     date: "2026-11-25",
-    items: [at("배드민턴 와이파이 여럿이(둘이)")],
+    items: [at("배드민턴 와이파이 여럿이(둘이)"), at("배드민턴: 손가락을 떼지 않고 누른 채로 빠르게 밀기만 해도 칩니다")],
   },
   {
     date: "2026-11-24",

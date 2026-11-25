@@ -55,3 +55,51 @@ test("badminton: a swipe serves, the keys strike, the jump button jumps, and the
   expect(Number(mine) + Number(theirs)).toBe(await moves(page));
   expect(errors).toEqual([]);
 });
+
+test("badminton: a finger kept on the screen strikes with each quick slide, without being lifted", async ({ page }) => {
+  test.setTimeout(120000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await selectGame(page, "배드민턴");
+  await page.locator(".game-stage button.primary").click();
+  const canvas = page.locator("canvas");
+  await expect(canvas).toHaveAttribute("data-ready", "true", { timeout: 20000 });
+  await expect(canvas).toHaveAttribute("data-phase", "ready");
+  // A finger's slides, at true speed (a software-drawn page delivers real touches far apart): pointer events sent
+  // 16 ms apart in the page, the finger never lifted. The capture of a made-up pointer is left out.
+  const slide = (dy: number, ms: number, first: boolean) =>
+    page.evaluate(
+      ({ dy, ms, first }) => {
+        const el = document.querySelector<HTMLCanvasElement>("#board canvas")!,
+          box = el.getBoundingClientRect(),
+          w = window as unknown as { finger?: { x: number; y: number } };
+        el.setPointerCapture = () => {};
+        const send = (type: string, x: number, y: number) =>
+          el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: "touch", isPrimary: true, buttons: 1, clientX: x, clientY: y, bubbles: true }));
+        if (first) {
+          w.finger = { x: box.left + box.width / 2, y: box.top + box.height * 0.8 };
+          send("pointerdown", w.finger.x, w.finger.y);
+        }
+        const from = { ...w.finger! },
+          n = Math.round(ms / 16),
+          start = performance.now();
+        for (let k = 1; k <= n; k++) {
+          while (performance.now() - start < k * 16);
+          w.finger = { x: from.x, y: from.y + (dy * box.height * k) / n };
+          send("pointermove", w.finger.x, w.finger.y);
+        }
+      },
+      { dy, ms, first },
+    );
+  // Up the court and stopped there, still pressed: the serve goes.
+  await slide(-0.45, 160, true);
+  await expect(canvas).toHaveAttribute("data-swung", "1", { timeout: 10000 });
+  await expect.poll(() => canvas.getAttribute("data-phase"), { timeout: 10000 }).not.toBe("ready");
+  // Drawn back down slowly (no stroke), then slid up quickly again: a second swing, the finger still down.
+  await slide(0.3, 900, false);
+  expect(await canvas.getAttribute("data-swung")).toBe("1");
+  await slide(-0.4, 150, false);
+  await expect(canvas).toHaveAttribute("data-swung", "2", { timeout: 10000 });
+  expect(errors).toEqual([]);
+});

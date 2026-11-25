@@ -8,9 +8,10 @@ import { blend, type LiveGuest, type LiveSession } from "../../net/live";
 import { inputOf, noCounts, readInput, readSnap, snapOf, takeInput, type Counts } from "./net";
 import { featherPicture, hall } from "./court";
 import { SHOULDER, aimArm, figure, pose, type Figure } from "./figure";
-import { courtCamera, lookToward, powerOf, restingLook, yawOf } from "./layout";
+import { courtCamera, lookToward, restingLook } from "./layout";
+import { SlideReader, type Slide } from "./swipe";
 import { fromRight, serverOf, type State } from "./rules";
-import { DT, HALF_L, HALF_W, MOST, SWING, WHY, airborne, createWorld, inReach, jump, jumpNow, path, serve, smashable, step, swing, type Happening, type Level, type World } from "./sim";
+import { DT, HALF_L, HALF_W, SWING, WHY, airborne, createWorld, inReach, jump, jumpNow, path, serve, smashable, step, swing, type Happening, type Level, type World } from "./sim";
 
 export const BADMINTON_COLORS: [string, string] = ["#e0402c", "#2a72e0"];
 /** How long the shuttle of an ended rally is left on the floor before the next serve. */
@@ -48,11 +49,6 @@ interface Word {
   y: number;
   z: number;
 }
-/** A swipe under way: where it began and the last places the pointer passed, with their times. */
-interface Swipe {
-  id: number;
-  points: { x: number; y: number; t: number }[];
-}
 /**
  * A badminton hall seen from behind my back line: my player in red from behind in the lower middle, the computer in
  * blue across the net, the shuttle with its shadow. The rally is played in real time (`sim.ts`) and each point won is
@@ -72,7 +68,7 @@ export class BadmintonView extends TableView<State> {
   private words: Word[] = [];
   private tip: HTMLElement;
   private jumpButton: HTMLButtonElement;
-  private swipe: Swipe | null = null;
+  private swipe: SlideReader | null = null;
   /** The keyboard's stroke keys: their powers and leans. */
   private paused = false;
   private begun = false;
@@ -204,14 +200,14 @@ export class BadmintonView extends TableView<State> {
       this.pointer = { clientX: e.clientX, clientY: e.clientY };
       if (!this.running()) return;
       el.setPointerCapture?.(e.pointerId);
-      this.swipe = { id: e.pointerId, points: [{ x: e.clientX, y: e.clientY, t: performance.now() }] };
+      this.swipe = new SlideReader(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now() });
     });
     el.addEventListener("pointermove", (e) => {
       if (e.pointerType === "mouse" || e.buttons || this.swipe?.id === e.pointerId) this.pointer = { clientX: e.clientX, clientY: e.clientY };
       const swipe = this.swipe;
       if (!swipe || swipe.id !== e.pointerId) return;
-      swipe.points.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-      if (swipe.points.length > 40) swipe.points.splice(1, swipe.points.length - 40);
+      // Still held, a quick slide strikes too (the user asked: the finger need not be lifted each time).
+      this.flick(swipe.move({ x: e.clientX, y: e.clientY, t: performance.now() }, this.height()));
     });
     const done = (e: PointerEvent) => {
       // A finger lifted lets the racket go back to turning toward the shuttle by itself; a mouse stays where it is.
@@ -220,8 +216,7 @@ export class BadmintonView extends TableView<State> {
       if (!swipe || swipe.id !== e.pointerId) return;
       this.swipe = null;
       if (e.type === "pointercancel") return;
-      swipe.points.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-      this.flick(swipe);
+      this.flick(swipe.release({ x: e.clientX, y: e.clientY, t: performance.now() }, this.height()));
     };
     el.addEventListener("pointerup", done);
     el.addEventListener("pointercancel", done);
@@ -270,22 +265,13 @@ export class BadmintonView extends TableView<State> {
   private newWorld() {
     return createWorld(1 + Math.floor(Math.random() * 2e9));
   }
-  /** A swipe let go: its speed over its last moment is the stroke's power, its way up the screen and across the aim. */
-  private flick(swipe: Swipe) {
-    const pts = swipe.points,
-      end = pts[pts.length - 1],
-      // Its speed over its last tenth of a second: from the last place the pointer passed that long before its end (or
-      // its start, for a quicker swipe), so that a swipe whose last moves came late is not read as standing still.
-      startAt = [...pts].reverse().find((p) => end.t - p.t >= 100) ?? pts[0],
-      first = pts[0],
-      height = this.renderer.domElement.clientHeight || 1,
-      dx = end.x - first.x,
-      dy = end.y - first.y,
-      far = Math.hypot(dx, dy) / height;
-    if (far < 0.04) return;
-    const span = Math.max(16, end.t - startAt.t) / 1000,
-      speed = Math.hypot(end.x - startAt.x, end.y - startAt.y) / height / span;
-    this.stroke(Math.min(MOST, powerOf(speed)), yawOf(dx, dy));
+  /** The canvas's height, in which a swipe's speed is reckoned. */
+  private height() {
+    return this.renderer.domElement.clientHeight || 1;
+  }
+  /** A swipe read as a stroke (`SlideReader`: let go, or a quick slide still held): its power and aim swing my racket. */
+  private flick(slide: Slide | null) {
+    if (slide) this.stroke(slide.power, slide.yaw);
   }
   /** Whether this device sends its strokes to the host instead of playing them itself (a guest over Wi-Fi). */
   private get guest() {
@@ -353,6 +339,8 @@ export class BadmintonView extends TableView<State> {
       live = this.live;
     this.last = now;
     this.sideCheck();
+    // A quick slide whose finger has stopped on the screen strikes (no move comes to say so).
+    if (this.swipe) this.flick(this.swipe.still(now, this.height()));
     if (live && !live.host) return this.followHost(now, real);
     if (running || (this.state && this.state.winner !== null && !this.paused)) {
       if (live) {
