@@ -78,8 +78,25 @@ export class SnowboardView extends TableView<State> {
   /** The eye's distance for the screen's shape (`resize`), and how much further it stands now to keep the ground in sight. */
   private near = 30;
   private eye = { x: 0, y: 0, set: false };
-  private holds = new Map<number, -1 | 1>();
-  private keys = { hold: false, back: false, front: false };
+  /** What is held: the keys, and the buttons on the screen (`pad`). */
+  private keys = { tuck: false, back: false, front: false };
+  private held = { tuck: false, back: false, front: false };
+  private pad: HTMLElement;
+  private speedText: HTMLElement;
+  /** Speed lines (screen places `u`, `v` from -1 to 1 at depth `z`, each at its own share `k` of the rider's speed). */
+  private lines: { mesh: T.Mesh; u: number; v: number; z: number; k: number }[] = [];
+  private lineStuff: T.MeshBasicMaterial;
+  /** Snow drifts and pines close to the eye, rushing by at the foot of the screen. */
+  private fore: { obj: T.Object3D; x: number; z: number; pine: boolean; top: number }[] = [];
+  private shadow = new T.Group();
+  private shadowStuff: T.MeshBasicMaterial;
+  /** The scarf: points trailing from the neck in the wind (world places), and its pieces. */
+  private scarf: { points: T.Vector3[]; pieces: T.Mesh[] };
+  private neck = new T.Vector3(0.1, 1.5, 0);
+  private clouds: { sprite: T.Sprite; x: number; drift: number }[] = [];
+  private sparkle: T.PointsMaterial;
+  private lean = 0;
+  private shake = typeof matchMedia === "function" && !matchMedia("(prefers-reduced-motion: reduce)").matches;
   private carving = -1;
   private counts = { pops: 0, lands: 0, crashes: 0, gates: 0, flakes: 0 };
   private keep: Keep;
@@ -134,6 +151,11 @@ export class SnowboardView extends TableView<State> {
     this.scene.add(this.rider);
     this.snowfall = this.makeSnowfall(keep);
     this.spray = this.makeSpray(keep);
+    this.sparkle = keep(new T.PointsMaterial({ color: "#ffffff", size: 0.13, transparent: true, opacity: 0.9, depthWrite: false }));
+    this.lineStuff = keep(new T.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending }));
+    this.shadowStuff = keep(new T.MeshBasicMaterial({ color: "#3a2a6a", transparent: true, opacity: 0.3, depthWrite: false }));
+    this.speedEffects(keep);
+    this.scarf = this.makeScarf(keep);
     // SCORE at the top left, the multiplier at the top right, TIME at the bottom left (decoration over the canvas: the
     // status line tells the score too).
     this.hud = document.createElement("div");
@@ -147,8 +169,18 @@ export class SnowboardView extends TableView<State> {
     this.timeText.className = "sb-time";
     this.word = document.createElement("span");
     this.word.className = "sb-word";
-    this.hud.append(this.scoreText, this.multText, this.timeText, this.word);
+    this.speedText = document.createElement("span");
+    this.speedText.className = "sb-speed";
+    this.hud.append(this.scoreText, this.multText, this.timeText, this.speedText, this.word);
     host.append(this.hud);
+    // The buttons on the screen: turn back and forward at the lower left, jump and tuck at the lower right (the same
+    // as ← →, ↑ and ↓; held with several fingers at once).
+    this.pad = document.createElement("div");
+    this.pad.className = "sb-pad";
+    this.pad.innerHTML =
+      `<div class="sb-pad-left"><button type="button" class="sb-btn" data-act="back" aria-label="뒤로 돌기">⟲</button><button type="button" class="sb-btn" data-act="front" aria-label="앞으로 돌기">⟳</button></div>` +
+      `<div class="sb-pad-right"><button type="button" class="sb-btn sb-jump" data-act="jump" aria-label="점프">▲</button><button type="button" class="sb-btn" data-act="tuck" aria-label="숙이기">▼</button></div>`;
+    host.append(this.pad);
     this.controls();
     this.begin();
     const tick = () => {
@@ -180,6 +212,10 @@ export class SnowboardView extends TableView<State> {
     const sun = new T.DirectionalLight("#ffd2a6", 1.6);
     sun.position.set(-6, 10, 12);
     this.scene.add(sun);
+    // The low sun behind the slope rims the rider and the snow with warm light.
+    const rim = new T.DirectionalLight("#ff9a4a", 1.4);
+    rim.position.set(14, 6, -16);
+    this.scene.add(rim);
   }
   /** Far mountains in three layers that slide by slower than the slope (they follow the eye, a share of its way). */
   private mountains(keep: Keep) {
@@ -211,11 +247,136 @@ export class SnowboardView extends TableView<State> {
       }
       shape.lineTo(span / 2, s.low - 200);
       shape.closePath();
-      const mesh = new T.Mesh(keep(new T.ShapeGeometry(shape)), keep(new T.MeshBasicMaterial({ color: s.colour })));
+      // Coloured down from the ridge into the evening haze, with snow on the peaks.
+      const body = keep(new T.ShapeGeometry(shape)),
+        at = body.getAttribute("position") as T.BufferAttribute,
+        base = new T.Color(s.colour),
+        haze = new T.Color("#ffb08a"),
+        colours: number[] = [];
+      for (let k = 0; k < at.count; k++) {
+        const c = base.clone().lerp(haze, at.getY(k) < s.low - 100 ? 0.75 : 0);
+        colours.push(c.r, c.g, c.b);
+      }
+      body.setAttribute("color", new T.Float32BufferAttribute(colours, 3));
+      const mesh = new T.Mesh(body, keep(new T.MeshBasicMaterial({ vertexColors: true })));
       mesh.position.z = s.z;
+      const ridge: number[] = [],
+        caps: number[] = [],
+        capIndex: number[] = [],
+        snowLine = s.low + s.height * 0.78;
+      for (let i = 0; i <= steps; i++) {
+        const x = -span / 2 + (span * i) / steps,
+          u = (x / s.period) * Math.PI * 2;
+        let y = 0;
+        for (const w of waves) y += w.a * Math.sin(w.k * u + w.p);
+        const top = s.low + s.height * (0.55 + 0.45 * y),
+          // The snow reaches down unevenly, in tongues along the gullies.
+          deep = top > snowLine ? (top - snowLine) * (0.45 + 0.3 * Math.sin(x * 0.23) * Math.sin(x * 0.071 + 1.3) + 0.15 * Math.sin(x * 0.61)) + s.height * 0.03 : 0;
+        ridge.push(x, top, 0.2);
+        caps.push(x, top + 0.05, 0.1, x, top - deep, 0.1);
+        if (i > 0) capIndex.push((i - 1) * 2, (i - 1) * 2 + 1, i * 2, i * 2, (i - 1) * 2 + 1, i * 2 + 1);
+      }
+      const capShape = keep(new T.BufferGeometry());
+      capShape.setAttribute("position", new T.Float32BufferAttribute(caps, 3));
+      capShape.setIndex(capIndex);
+      mesh.add(new T.Mesh(capShape, keep(new T.MeshBasicMaterial({ color: new T.Color(s.colour).lerp(new T.Color("#fff1f4"), 0.72) }))));
+      const rim = keep(new T.BufferGeometry());
+      rim.setAttribute("position", new T.Float32BufferAttribute(ridge, 3));
+      mesh.add(new T.Line(rim, keep(new T.LineBasicMaterial({ color: "#ffd9b0", transparent: true, opacity: 0.7 }))));
       this.backdrop.add(mesh);
       this.layers.push({ mesh, share: s.share, period: s.period });
     }
+    // Soft clouds lit from below by the setting sun, drifting slowly.
+    const cloudArt = keep(this.cloudArt()),
+      random = sequence(41);
+    for (let k = 0; k < 7; k++) {
+      const sprite = new T.Sprite(keep(new T.SpriteMaterial({ map: cloudArt, transparent: true, depthWrite: false, opacity: 0.55 + random() * 0.35 })));
+      sprite.scale.set(70 + random() * 90, 16 + random() * 14, 1);
+      sprite.position.set(0, 40 + random() * 55, -420 + random() * 120);
+      this.backdrop.add(sprite);
+      this.clouds.push({ sprite, x: random() * 900, drift: 1 + random() * 2 });
+    }
+  }
+  /** A cloud: soft overlapping puffs, pale on top and warm underneath. */
+  private cloudArt() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 96;
+    const pen = canvas.getContext("2d")!,
+      random = sequence(8);
+    for (let k = 0; k < 14; k++) {
+      const x = 30 + random() * 196,
+        y = 40 + random() * 26,
+        r = 18 + random() * 22,
+        g = pen.createRadialGradient(x, y - r * 0.3, 2, x, y, r);
+      g.addColorStop(0, "rgba(255,236,220,0.9)");
+      g.addColorStop(0.6, "rgba(255,170,150,0.55)");
+      g.addColorStop(1, "rgba(255,140,150,0)");
+      pen.fillStyle = g;
+      pen.fillRect(0, 0, 256, 96);
+    }
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    return texture;
+  }
+  /** Speed lines, the shadow, and the drifts and pines close to the eye. */
+  private speedEffects(keep: Keep) {
+    const strip = keep(new T.PlaneGeometry(1, 1)),
+      random = sequence(19);
+    for (let k = 0; k < 34; k++) {
+      const mesh = new T.Mesh(strip, this.lineStuff);
+      mesh.renderOrder = 6;
+      mesh.frustumCulled = false;
+      this.scene.add(mesh);
+      this.lines.push({ mesh, u: random() * 2.4 - 1.2, v: random() * 1.7 - 0.85, z: 3 + random() * 13, k: 0.7 + random() * 0.9 });
+    }
+    const blob = new T.Mesh(keep(new T.CircleGeometry(1, 28)), this.shadowStuff);
+    blob.rotation.x = -Math.PI / 2;
+    blob.renderOrder = 2;
+    this.shadow.add(blob);
+    this.scene.add(this.shadow);
+    const drift = keep(new T.SphereGeometry(1, 20, 10)),
+      // In the shade by the eye: bluer than the sunlit slope, so the slope and the words over the screen stand out.
+      driftStuff = keep(new T.MeshStandardMaterial({ color: "#b9cde8", roughness: 0.95, emissive: "#6f86b8", emissiveIntensity: 0.3 })),
+      darkPine = keep(new T.MeshStandardMaterial({ color: "#123428", roughness: 0.9 }));
+    for (let k = 0; k < 12; k++) {
+      const pine = k % 4 === 3,
+        obj = new T.Group();
+      if (pine) {
+        for (let layer = 0; layer < 4; layer++) {
+          const crown = new T.Mesh(this.trees.crown, darkPine);
+          crown.scale.set(2.4 - layer * 0.5, 2.6 - layer * 0.35, 2.4 - layer * 0.5);
+          crown.position.y = 1.2 + layer * 1.5;
+          obj.add(crown);
+          const cap = new T.Mesh(this.trees.cap, this.trees.snow);
+          cap.scale.set((2.4 - layer * 0.5) * 0.6, (2.6 - layer * 0.35) * 0.35, (2.4 - layer * 0.5) * 0.6);
+          cap.position.y = crown.position.y + (2.6 - layer * 0.35) * 0.32;
+          obj.add(cap);
+        }
+      } else {
+        const mound = new T.Mesh(drift, driftStuff);
+        mound.scale.set(2.4 + random() * 2.4, 1.1 + random() * 0.5, 1.4);
+        obj.add(mound);
+      }
+      obj.traverse((o) => (o.frustumCulled = false));
+      this.scene.add(obj);
+      this.fore.push({ obj, x: k * 11 + random() * 6, z: 8 + random() * 4, pine, top: pine ? -0.76 : -0.92 });
+    }
+  }
+  /** A red scarf of a few pieces, trailing from the neck. */
+  private makeScarf(keep: Keep) {
+    const piece = keep(new T.BoxGeometry(1, 1, 1)),
+      red = keep(new T.MeshStandardMaterial({ color: "#e8344a", roughness: 0.7 })),
+      white = keep(new T.MeshStandardMaterial({ color: "#ffffff", roughness: 0.7 })),
+      points: T.Vector3[] = [],
+      pieces: T.Mesh[] = [];
+    for (let k = 0; k < 7; k++) points.push(new T.Vector3(-k * 0.18, 1.9, 0));
+    for (let k = 0; k < 6; k++) {
+      const mesh = new T.Mesh(piece, k % 2 ? white : red);
+      this.scene.add(mesh);
+      pieces.push(mesh);
+    }
+    return { points, pieces };
   }
   /** The rider: a board, legs bent at the knee, a jacket, arms out, a head in a beanie and goggles. */
   private buildRider(keep: Keep) {
@@ -263,6 +424,16 @@ export class SnowboardView extends TableView<State> {
       tip.rotation.z = s * 0.3;
       board.add(tip);
     }
+    // Bindings and a dark base edge.
+    const binding = keep(new T.MeshStandardMaterial({ color: "#202028", roughness: 0.5 }));
+    for (const s of [-1, 1]) {
+      const strap = new T.Mesh(keep(new T.BoxGeometry(0.2, 0.08, 0.32)), binding);
+      strap.position.set(s * 0.3, 0.06, 0);
+      board.add(strap);
+    }
+    const base = new T.Mesh(keep(new T.BoxGeometry(1.32, 0.018, 0.31)), keep(new T.MeshStandardMaterial({ color: "#3a1a40", roughness: 0.3 })));
+    base.position.y = -0.03;
+    board.add(base);
     board.position.y = 0.03;
     this.rider.add(board, this.body);
     // Drawn a little larger than life, so that the rider reads well against the wide slope.
@@ -311,6 +482,7 @@ export class SnowboardView extends TableView<State> {
     p.torso.position.copy(torsoMid);
     p.torso.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), new T.Vector3().subVectors(shoulder, hip).normalize());
     const head = shoulder.clone().add(new T.Vector3(0.03, 0.24, 0));
+    this.neck.copy(shoulder).add(new T.Vector3(-0.02, 0.1, 0));
     p.head.position.copy(head);
     p.beanie.position.copy(head).add(new T.Vector3(0, 0.02, 0));
     p.pom.position.copy(head).add(new T.Vector3(0, 0.17, 0));
@@ -433,6 +605,17 @@ export class SnowboardView extends TableView<State> {
     const rimShape = new T.BufferGeometry();
     rimShape.setAttribute("position", new T.Float32BufferAttribute(rim, 3));
     group.add(new T.Line(rimShape, new T.LineBasicMaterial({ color: "#9fdcff" })));
+    // Glints on the snow.
+    const glints: number[] = [],
+      shine = sequence(77 + i * 131);
+    for (let k = 0; k < 45; k++) {
+      const x = x0 + shine() * CHUNK,
+        z = -7 + shine() * 9;
+      glints.push(x, heightAt(course, x) + bankAt(z) + 0.04, z);
+    }
+    const glintShape = new T.BufferGeometry();
+    glintShape.setAttribute("position", new T.Float32BufferAttribute(glints, 3));
+    group.add(new T.Points(glintShape, this.sparkle));
     // Pines along the back of the slope.
     const random = sequence(1000 + i * 7919),
       tr = this.trees;
@@ -514,7 +697,7 @@ export class SnowboardView extends TableView<State> {
     chunk.group.traverse((o) => {
       const mesh = o as T.Mesh;
       // Only the chunk's own geometry and materials (the shared ones are kept).
-      if ((mesh.isMesh || (o as T.Line).isLine) && mesh.geometry && !this.sharedGeometry(mesh.geometry)) mesh.geometry.dispose();
+      if ((mesh.isMesh || (o as T.Line).isLine || (o as T.Points).isPoints) && mesh.geometry && !this.sharedGeometry(mesh.geometry)) mesh.geometry.dispose();
       if ((o as T.Line).isLine) ((o as T.Line).material as T.Material).dispose();
     });
     for (const g of chunk.gates) g.flags.forEach((f) => f.dispose());
@@ -534,37 +717,80 @@ export class SnowboardView extends TableView<State> {
   private controls() {
     const el = this.renderer.domElement;
     noZoom(el);
+    // A tap on the slope itself jumps (the buttons and keys do the rest).
     el.addEventListener("pointerdown", (e) => {
       if (this.disposed || (e.pointerType === "mouse" && e.button !== 0)) return;
-      const box = el.getBoundingClientRect();
-      this.holds.set(e.pointerId, (e.clientX - box.left) / box.width < 0.5 ? -1 : 1);
-      this.press();
+      this.jump();
+    });
+    const fingers = new Map<number, "tuck" | "back" | "front">();
+    this.pad.addEventListener("pointerdown", (e) => {
+      const act = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act;
+      if (!act || this.disposed) return;
+      e.preventDefault();
+      if (act === "jump") return this.jump();
+      fingers.set(e.pointerId, act as "tuck" | "back" | "front");
+      try {
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // A pointer the page cannot capture (it is held without).
+      }
+      this.handsFrom(fingers);
     });
     const lift = (e: PointerEvent) => {
-      if (!this.holds.delete(e.pointerId)) return;
-      this.press();
+      if (!fingers.delete(e.pointerId)) return;
+      this.handsFrom(fingers);
     };
-    el.addEventListener("pointerup", lift);
-    el.addEventListener("pointercancel", lift);
-    const KEYS: Record<string, "hold" | "back" | "front"> = { " ": "hold", ArrowDown: "hold", Enter: "hold", ArrowLeft: "back", ArrowRight: "front", a: "back", d: "front", A: "back", D: "front" };
+    this.pad.addEventListener("pointerup", lift);
+    this.pad.addEventListener("pointercancel", lift);
+    this.pad.addEventListener("lostpointercapture", lift);
+    this.pad.addEventListener("contextmenu", (e) => e.preventDefault());
+    const KEYS: Record<string, "tuck" | "back" | "front" | "jump"> = {
+      ArrowDown: "tuck",
+      s: "tuck",
+      S: "tuck",
+      ArrowUp: "jump",
+      w: "jump",
+      W: "jump",
+      " ": "jump",
+      Enter: "jump",
+      ArrowLeft: "back",
+      a: "back",
+      A: "back",
+      ArrowRight: "front",
+      d: "front",
+      D: "front",
+    };
     const key = (down: boolean) => (e: KeyboardEvent) => {
       const which = KEYS[e.key];
       if (!which || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
+      if (which === "jump") {
+        if (down) this.jump();
+        return;
+      }
       this.keys[which] = down;
       this.press();
     };
     el.addEventListener("keydown", key(true));
     el.addEventListener("keyup", key(false));
   }
-  /** What the pointers and keys hold, given to the run: a press anywhere crouches; its side (or ←/→) turns in the air. */
+  /** What the fingers on the buttons hold. */
+  private handsFrom(fingers: Map<number, "tuck" | "back" | "front">) {
+    const held = [...fingers.values()];
+    this.held = { tuck: held.includes("tuck"), back: held.includes("back"), front: held.includes("front") };
+    this.press();
+  }
+  /** ↑ (or the jump button, or a tap on the slope): the rider pops at once, or the moment it touches the snow. */
+  private jump() {
+    if (this.running()) this.world.jumpAt = this.world.time;
+  }
+  /** What the keys and buttons hold, given to the run: ↓ tucks, ← and → turn. */
   private press() {
-    const holds = [...this.holds.values()],
-      back = this.keys.back || holds.includes(-1),
-      front = this.keys.front || holds.includes(1);
-    this.world.hold = this.running() && (this.keys.hold || holds.length > 0);
+    const back = this.keys.back || this.held.back,
+      front = this.keys.front || this.held.front;
+    this.world.tuck = this.running() && (this.keys.tuck || this.held.tuck);
     this.world.turn = !this.running() || back === front ? 0 : back ? -1 : 1;
   }
   protected subject() {
@@ -671,7 +897,9 @@ export class SnowboardView extends TableView<State> {
       // back far enough to keep both in sight.
       goalY = Math.min(r.y, (r.y + under) / 2 + 1.5) + 1.2,
       tan = Math.tan(((this.camera.fov / 2) * Math.PI) / 180),
-      goalD = Math.min(this.near * 2.2, Math.max(this.near, ((r.y - under) / 2 + 3.5) / tan));
+      // Quicker, the eye stands back a little (more of the slope rushes by in sight).
+      quick = Math.max(0, Math.min(1, (speedOf(r) - 15) / 30)),
+      goalD = Math.min(this.near * 2.2, Math.max(this.near * (1 + 0.22 * quick), ((r.y - under) / 2 + 3.5) / tan));
     if (snap || !this.eye.set) {
       this.eye = { x: goalX, y: goalY, set: true };
       this.distance = goalD;
@@ -680,11 +908,88 @@ export class SnowboardView extends TableView<State> {
       this.eye.y += (goalY - this.eye.y) * (1 - Math.exp(-dt / 0.35));
       this.distance += (goalD - this.distance) * (1 - Math.exp(-dt / 0.6));
     }
-    const { x, y } = this.eye;
-    this.camera.position.set(x, y + this.distance * 0.16, EYE_Z + this.distance);
+    const { x, y } = this.eye,
+      // A fast ride on the snow shakes the eye a little.
+      rattle = this.shake && dt > 0 && r.ground && r.crashed < 0 ? Math.max(0, speedOf(r) - 26) * 0.0025 : 0;
+    this.camera.position.set(x + (Math.random() - 0.5) * rattle, y + this.distance * 0.16 + (Math.random() - 0.5) * rattle, EYE_Z + this.distance);
     this.camera.lookAt(x, y, 0);
     this.backdrop.position.set(x, y, 0);
     for (const layer of this.layers) layer.mesh.position.x = -mod(x * layer.share, layer.period);
+    const time = performance.now() / 1000;
+    for (const c of this.clouds) c.sprite.position.x = 450 - mod(c.x + x * 0.05 + time * c.drift, 900);
+  }
+  /** The shadow, the scarf, speed lines and the drifts by the eye, as quick as the rider goes. */
+  private effects(dt: number, speed: number, t: number) {
+    const w = this.world,
+      r = w.rider,
+      course = w.course;
+    // The shadow on the snow below, smaller and fainter the higher the rider is.
+    const ground = heightAt(course, r.x),
+      slope = (heightAt(course, r.x + 0.5) - heightAt(course, r.x - 0.5)) / 1,
+      up = Math.max(0, r.y - ground);
+    this.shadow.position.set(r.x, ground + 0.04, 0.6);
+    this.shadow.rotation.z = Math.atan(slope);
+    this.shadow.scale.setScalar(Math.max(0.35, 1.05 - up * 0.06));
+    this.shadowStuff.opacity = 0.32 / (1 + up * 0.18);
+    // The scarf: each point follows the one before it, blown back against the way the rider goes.
+    const sc = this.scarf,
+      neck = this.body.localToWorld(this.neck.clone()),
+      way = new T.Vector3(r.vx, r.vy, 0),
+      quick = way.length();
+    way.normalize();
+    if (quick < 0.5) way.set(1, 0, 0);
+    sc.points[0].copy(neck);
+    for (let k = 1; k < sc.points.length; k++) {
+      const flap = Math.sin(t * (10 + quick * 0.5) - k * 1.1) * Math.min(0.12, 0.02 + quick * 0.004) * k,
+        goal = sc.points[k - 1].clone().addScaledVector(way, -0.18).add(new T.Vector3(-way.y * flap, way.x * flap - (quick < 3 ? 0.08 : 0), 0.02));
+      sc.points[k].lerp(goal, dt > 0 ? Math.min(1, dt * 30) : 1);
+      const a = sc.points[k - 1],
+        b = sc.points[k],
+        piece = sc.pieces[k - 1],
+        d = new T.Vector3().subVectors(b, a);
+      piece.position.copy(a).addScaledVector(d, 0.5);
+      piece.quaternion.setFromUnitVectors(new T.Vector3(1, 0, 0), d.clone().normalize());
+      piece.scale.set(Math.max(0.05, d.length() + 0.03), 0.13 - k * 0.008, 0.07);
+    }
+    // Speed lines across the screen, showing once the ride is quick.
+    const cam = this.camera.position,
+      tan = Math.tan(((this.camera.fov / 2) * Math.PI) / 180),
+      strong = Math.max(0, Math.min(1, (speed - 12) / 26)),
+      heading = Math.atan2(r.vy, Math.max(0.1, r.vx));
+    this.lineStuff.opacity = 0.38 * strong;
+    for (const line of this.lines) {
+      const depth = cam.z - line.z,
+        halfH = tan * depth,
+        halfW = halfH * this.camera.aspect;
+      line.u -= (speed * line.k * dt) / halfW;
+      if (line.u < -1.25) {
+        line.u += 2.5;
+        line.v = Math.random() * 1.7 - 0.85;
+      }
+      line.mesh.visible = strong > 0;
+      line.mesh.position.set(cam.x + line.u * halfW, cam.y - this.distance * 0.16 + line.v * halfH, line.z);
+      line.mesh.rotation.z = heading * 0.7;
+      line.mesh.scale.set(Math.max(0.3, speed * 0.07 * line.k), 0.03 * (depth / 20), 1);
+    }
+    // Drifts and pines right by the eye, rushing past at the foot of the screen (they go by faster than the slope).
+    const foot = new T.Vector3(),
+      ray = new T.Vector3();
+    let last = -Infinity;
+    for (const f of this.fore) last = Math.max(last, f.x);
+    for (const f of this.fore) {
+      const depth = cam.z - f.z,
+        halfW = tan * depth * this.camera.aspect;
+      if (f.x < cam.x - halfW - 8) {
+        f.x = Math.max(last, cam.x + halfW) + 6 + Math.random() * 12;
+        last = f.x;
+      }
+      // Where the line `top` of the screen's height (from -1 at its foot) meets this depth.
+      ray.set(0, f.top, 0.5).unproject(this.camera).sub(cam);
+      foot.copy(cam).addScaledVector(ray, (f.z - cam.z) / ray.z);
+      f.obj.position.set(f.x, f.pine ? foot.y - 5.8 : foot.y - 0.7, f.z);
+    }
+    // The glints twinkle.
+    this.sparkle.opacity = 0.55 + 0.35 * Math.sin(t * 5);
   }
   /** Everything where the run has it: the eye, the slope's chunks, the rider and its pose, spray, snow, the HUD. */
   private draw(now: number, dt: number) {
@@ -697,10 +1002,15 @@ export class SnowboardView extends TableView<State> {
     this.rider.rotation.z = r.angle;
     const tumbling = r.crashed >= 0;
     this.pose(tumbling ? 0.8 : r.crouch, tumbling, t);
-    // Snow sprayed off the board's tail while carving, more when crouched and quick.
+    // On the snow, ← and → lean the rider back or forward (in the air they turn it).
+    this.lean += ((r.ground && !tumbling ? -w.turn * 0.22 : 0) - this.lean) * Math.min(1, dt * 10);
+    this.body.rotation.z = this.lean;
+    this.rider.updateMatrixWorld(true);
     const speed = speedOf(r);
+    this.effects(dt, speed, t);
+    // Snow sprayed off the board's tail while carving, more when crouched and quick.
     if (dt > 0 && r.ground && !tumbling) {
-      const many = Math.min(4, speed * dt * (1.2 + 2.5 * r.crouch));
+      const many = Math.min(6, speed * dt * (1.2 + 2.5 * r.crouch));
       for (let k = 0; k < many + (Math.random() < many % 1 ? 1 : 0); k++) this.puff(r.x - 0.7 * Math.cos(r.angle), r.y + 0.05, -1 - Math.random() * 2, 0.6 + Math.random() * 1.6);
     }
     const s = this.spray;
@@ -716,10 +1026,12 @@ export class SnowboardView extends TableView<State> {
     const fall = this.snowfall.geometry.getAttribute("position") as T.BufferAttribute,
       arr = fall.array as Float32Array;
     for (let k = 0; k < fall.count; k++) {
-      arr[k * 3] -= dt * (0.6 + (k % 5) * 0.2);
+      // Falling snow drifts in the wind and rushes past as quickly as the rider goes.
+      arr[k * 3] -= dt * (0.6 + (k % 5) * 0.2 + r.vx * (0.75 + (k % 4) * 0.08));
       arr[k * 3 + 1] -= dt * (1.1 + (k % 7) * 0.12);
       if (arr[k * 3 + 1] < -20) arr[k * 3 + 1] += 40;
       if (arr[k * 3] < -35) arr[k * 3] += 70;
+      if (arr[k * 3] > 35) arr[k * 3] -= 70;
     }
     fall.needsUpdate = true;
     this.snowfall.position.set(this.eye.x, this.eye.y, 0);
@@ -748,6 +1060,12 @@ export class SnowboardView extends TableView<State> {
     this.multText.textContent = `×${w.multiplier}`;
     this.multText.classList.toggle("sb-hot", w.multiplier > 1);
     this.timeText.textContent = `TIME ${clock(RUN - w.time)}`;
+    const kmh = Math.round(speed * 3.6);
+    if (this.speedText.dataset.kmh !== String(kmh)) {
+      this.speedText.dataset.kmh = String(kmh);
+      this.speedText.innerHTML = `${kmh}<small>km/h</small>`;
+      this.speedText.classList.toggle("sb-fast", kmh >= 100);
+    }
     const d = this.renderer.domElement.dataset;
     d.phase = this.state?.winner !== null || w.over ? "over" : tumbling ? "crash" : r.ground ? "ride" : "air";
     d.x = r.x.toFixed(2);
@@ -769,7 +1087,8 @@ export class SnowboardView extends TableView<State> {
       for (const i of [...this.chunks.keys()]) this.dropChunk(i);
       this.world = createWorld(Math.floor(cryptoRandom() * 2e9));
       this.counts = { pops: 0, lands: 0, crashes: 0, gates: 0, flakes: 0 };
-      this.holds.clear();
+      this.keys = { tuck: false, back: false, front: false };
+      this.held = { tuck: false, back: false, front: false };
       this.eye.set = false;
       this.press();
     }
@@ -787,6 +1106,7 @@ export class SnowboardView extends TableView<State> {
     cancelAnimationFrame(this.ticker);
     for (const i of [...this.chunks.keys()]) this.dropChunk(i);
     this.hud.remove();
+    this.pad.remove();
     super.dispose();
   }
 }

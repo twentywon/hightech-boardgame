@@ -76,17 +76,25 @@ describe("snowboard: riding", () => {
     expect(S.speedOf(up.rider)).toBeGreaterThan(S.CRAWL * 0.8);
     expect(up.rider.x).toBeGreaterThan(30);
   });
-  test("crouched on a downslope it gains more speed than standing, and on an upslope it loses more", () => {
+  test("tucked (↓) it goes faster than standing: much faster downhill, and a little even on the flat and uphill", () => {
     const fast = on(straight(0.3), 0, 8),
       plain = on(straight(0.3), 0, 8);
-    run(fast, 1.5, (w) => (w.hold = true));
+    run(fast, 1.5, (w) => (w.tuck = true));
     run(plain, 1.5);
-    expect(S.speedOf(fast.rider)).toBeGreaterThan(S.speedOf(plain.rider) + 0.8);
-    const tired = on(straight(-0.15), 0, 14),
-      fresh = on(straight(-0.15), 0, 14);
-    run(tired, 1, (w) => (w.hold = true));
-    run(fresh, 1);
-    expect(S.speedOf(tired.rider)).toBeLessThan(S.speedOf(fresh.rider));
+    expect(S.speedOf(fast.rider)).toBeGreaterThan(S.speedOf(plain.rider) + 3);
+    for (const grade of [0, -0.1]) {
+      const tucked = on(straight(grade), 0, 14),
+        upright = on(straight(grade), 0, 14);
+      run(tucked, 1, (w) => (w.tuck = true));
+      run(upright, 1);
+      expect(S.speedOf(tucked.rider), `${grade}`).toBeGreaterThan(S.speedOf(upright.rider) + 1);
+    }
+  });
+  test("the ride is quick: down a long 15° slope, tucked, it passes 150 km/h", () => {
+    const w = on(straight(Math.tan((15 * Math.PI) / 180)), 0, 10);
+    run(w, 12, (w) => (w.tuck = true));
+    expect(S.speedOf(w.rider) * 3.6).toBeGreaterThan(150);
+    expect(w.rider.ground).toBe(true);
   });
   test("a crest throws the rider into the air, and it comes down again on the ground", () => {
     // Down, then a sharp crest falling away steeply.
@@ -103,20 +111,38 @@ describe("snowboard: riding", () => {
     expect(slow.rider.x).toBeGreaterThan(48);
     expect(slowSeen.some((e) => e.kind === "launch")).toBe(false);
   });
-  test("a held press let go on the ground pops the rider up; holding it longer pops higher", () => {
-    const top = (hold: number) => {
-      const w = on(straight(0.1), 0, 10);
-      let highest = 0;
-      run(w, 2, (w) => {
-        w.hold = w.time < hold;
-        highest = Math.max(highest, w.rider.y - S.heightAt(w.course, w.rider.x));
-      });
-      return highest;
-    };
-    const tap = top(0.03),
-      long = top(S.POP_CHARGE + 0.1);
-    expect(tap).toBeGreaterThan(0.1);
-    expect(long).toBeGreaterThan(tap * 2);
+  test("↑ pops the rider up at once; pressed a moment before touching down it pops on landing; in the air, or long before, nothing", () => {
+    const w = on(straight(0.1), 0, 10);
+    w.jumpAt = w.time;
+    let highest = 0;
+    const seen = run(w, 2, (w) => (highest = Math.max(highest, w.rider.y - S.heightAt(w.course, w.rider.x))));
+    expect(seen.filter((e) => e.kind === "pop")).toHaveLength(1);
+    expect(highest).toBeGreaterThan(0.8);
+    // Thrown up a little: ↑ just before the board touches the snow still pops as it lands.
+    const early = on(straight(0.1), 0, 10);
+    early.rider.vy += 2;
+    early.rider.ground = false;
+    let pressed = false;
+    const pops = run(early, 2, (w) => {
+      if (!pressed && !w.rider.ground && w.rider.vy < 0 && w.rider.y - S.heightAt(w.course, w.rider.x) < 0.08) [w.jumpAt, pressed] = [w.time, true];
+    }).filter((e) => e.kind === "pop");
+    expect(pops).toHaveLength(1);
+    // Pressed high in the air, long before landing: it is forgotten, no pop when it lands.
+    const late = on(straight(0.1), 0, 10);
+    late.rider.vy += 6;
+    late.rider.ground = false;
+    late.jumpAt = 0.05;
+    expect(run(late, 3).some((e) => e.kind === "pop")).toBe(false);
+  });
+  test("← held on the ground starts turning the moment the rider leaves it", () => {
+    const w = on(course([-100, 0, 20, 26, 60, 400], [40, 0, -6, -6.3, -40, -300]), 2, 16);
+    let turnedOnGround = 0;
+    run(w, 1.2, (w) => {
+      w.turn = -1;
+      if (w.rider.ground) turnedOnGround = Math.max(turnedOnGround, Math.abs(w.rider.turned));
+    });
+    expect(turnedOnGround).toBe(0);
+    expect(w.rider.ground ? true : w.rider.turned > 0.5).toBe(true);
   });
 });
 
@@ -181,8 +207,10 @@ describe("snowboard: tricks, landings and crashes", () => {
     expect(run(into, 3, () => {}, (e) => e.kind === "crash").at(-1)).toEqual({ kind: "crash", why: "rock" });
     const over = on(straight(0.1), 0, 10);
     over.course.rocks.push({ x: 12, r: 0.6 });
-    // A long press let go a few metres before it: up and over.
-    const seen = run(over, 3, (w) => (w.hold = w.rider.x < 7));
+    // ↑ a few metres before it: up and over.
+    const seen = run(over, 3, (w) => {
+      if (w.rider.x > 8 && w.rider.x < 8.2 && w.rider.ground) w.jumpAt = w.time;
+    });
     expect(seen.some((e) => e.kind === "crash")).toBe(false);
     expect(over.rider.x).toBeGreaterThan(14);
   });
@@ -220,7 +248,8 @@ describe("snowboard: the run and its score", () => {
       const w = S.createWorld(31),
         log: string[] = [];
       run(w, 30, (w) => {
-        w.hold = Math.sin(w.time * 1.7) > 0.2;
+        w.tuck = Math.sin(w.time * 1.7) > 0.2;
+        if (Math.sin(w.time * 2.3) > 0.995) w.jumpAt = w.time;
         w.turn = Math.sin(w.time * 0.9) > 0.6 ? -1 : 0;
       }).forEach((e) => log.push(JSON.stringify(e)));
       return { log, x: w.rider.x, y: w.rider.y };

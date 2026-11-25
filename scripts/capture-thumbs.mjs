@@ -564,24 +564,30 @@ const play = {
     }
     await wait(150);
   },
-  // 스노보드: the run let go a few seconds, then a press held on a downslope and let go at a crest (a jump), the
+  // 스노보드: the run let go a few seconds, ↓ held on a downslope to tuck, then ↑ (a jump), the
   // picture taken with the rider in the air over the sunset slope.
   snowboard: async () => {
     await page.locator("canvas").focus();
     await page.evaluate(() => {
       const board = document.querySelector("#board canvas");
-      const key = (type) => board.dispatchEvent(new KeyboardEvent(type, { key: " ", bubbles: true, cancelable: true }));
-      let held = false;
+      const key = (type, k) => board.dispatchEvent(new KeyboardEvent(type, { key: k, bubbles: true, cancelable: true }));
+      let held = false,
+        jumped = false;
       const loop = () => {
         if (!board.isConnected) return;
         const d = board.dataset, x = Number(d.x);
-        // Hold from a little after the start, let go once: a pop.
+        // ↓ tucked from a little after the start, then ↑ once on the snow: a jump.
         const want = x > 8 && x < 30;
         if (want !== held) {
-          key(want ? "keydown" : "keyup");
+          key(want ? "keydown" : "keyup", "ArrowDown");
           held = want;
         }
-        if (x < 40) requestAnimationFrame(loop);
+        if (!jumped && x >= 30 && d.phase === "ride") {
+          key("keydown", "ArrowUp");
+          key("keyup", "ArrowUp");
+          jumped = true;
+        }
+        if (x < 40 || !jumped) requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
     });

@@ -11,35 +11,44 @@
  * meets the ground again: cleanly when the board lies along the slope (within `LAND_OK`), else it crashes.
  *
  * How it is played (the user asked for "이런 식의 스노우보드 게임": a side view, hills, jumps, tricks, flags, rocks,
- * score, multiplier and time): a press held (anywhere, or Space/↓) crouches; crouched on a downslope the rider
- * gains speed (pumping), crouched on an upslope it loses a little more; let go on the ground it pops (the longer it
- * was held, up to `POP_CHARGE`, the higher). In the air the left half of the screen (or ←) turns the rider back
- * (a backflip: counterclockwise as it goes right), the right half (or →) forward (a front flip). A clean landing
+ * score, multiplier and time; then for ↓ to tuck and go faster, ← → to turn and ↑ to jump, and far more speed):
+ * tucked (`World.tuck`: ↓, or the 숙이기 button) the rider gains speed on the ground (more of gravity on a downslope,
+ * less of the air's drag, and a push of its own); ↑ (or the 점프 button) pops it off the ground at once (`World.jump`,
+ * remembered for `JUMP_EARLY` so that a press a moment before touching down still counts). ← turns the rider back
+ * (a backflip: counterclockwise as it goes right), → forward (a front flip); held on the ground the turn starts the
+ * moment the rider leaves it. A clean landing
  * scores its flips, its time in the air and a near-perfect landing, all times the multiplier, and each flip raises
  * the multiplier (up to `MULT_MOST`); a crash (a bad landing, a rock) puts it back to ×1. A run lasts `RUN` seconds.
  */
 export const DT = 1 / 240;
 export const G = 9.81;
-/** Friction on the snow (a share of the normal force), and the air's drag (m⁻¹; terminal near 26 m/s on a 15° slope). */
-export const MU = 0.03,
-  DRAG = 0.0038,
-  /** Crouched: gravity along a downslope counts this much more (pumping), along an upslope this much more against. */
-  PUMP_DOWN = 0.45,
-  PUMP_UP = 0.2,
-  /** Crouched, the air's drag is this share of standing's (a tuck). */
-  TUCK = 0.7,
+/**
+ * Friction on the snow (a share of the normal force), and the air's drag (m⁻¹; terminal near 50 m/s, 180 km/h, on a
+ * 15° slope: the user asked for far more speed than the first run's 26 m/s).
+ */
+export const MU = 0.018,
+  DRAG = 0.001,
+  /** Tucked: gravity along a downslope counts this much more, the air's drag is `TUCK` of standing's, and the rider pushes on by `TUCK_PUSH` m/s². */
+  PUMP_DOWN = 0.5,
+  TUCK = 0.5,
+  TUCK_PUSH = 2.4,
   /** The least speed the rider keeps on the ground by skating along (m/s), and how hard it skates up to it. */
-  CRAWL = 4,
-  SKATE = 2.4;
-/** An ollie: the most it adds upward (m/s, along the ground's normal), reached after holding `POP_CHARGE` seconds; a tap gives `POP_MIN` of it. */
-export const POP = 4.2,
-  POP_CHARGE = 0.45,
-  POP_MIN = 0.35;
+  CRAWL = 7,
+  SKATE = 3.2;
+/** The course is laid this many times larger than its first sizes, for the quicker rider (its slopes are the same). */
+export const SCALE = 1.7;
+/** An ollie: what it adds upward (m/s, along the ground's normal); a jump pressed up to `JUMP_EARLY` s before touching down still pops. */
+export const POP = 5.2,
+  JUMP_EARLY = 0.15;
 /** Turning in the air: the most angular speed (rad/s) and how quickly it comes (and goes, when let go). */
 export const SPIN = 6.8,
   SPIN_EASE = 0.09;
-/** Left alone in the air, the board eases toward its way of flight (a rider keeps it so), over this many seconds. */
-export const ATTITUDE = 0.45;
+/**
+ * Left alone in the air, the board eases toward its way of flight (a rider keeps it so) over `ATTITUDE` seconds, and
+ * nearing the snow (within `SEEK` metres above it) toward the slope under it, so that a rider who does no trick lands.
+ */
+export const ATTITUDE = 0.3,
+  SEEK = 5;
 /** A landing is clean when the board lies along the ground within `LAND_OK` (radians); within `PERFECT` it is perfect. */
 export const LAND_OK = 0.72,
   PERFECT = 0.14;
@@ -102,8 +111,6 @@ export interface Rider {
   ground: boolean;
   /** How crouched (0 standing to 1), eased toward the press. */
   crouch: number;
-  /** Seconds the press has been held on the ground (the ollie's charge). */
-  held: number;
   /** In the air: when it took off, and how far it has turned since (radians, signed). */
   airAt: number;
   turned: number;
@@ -114,9 +121,10 @@ export interface World {
   time: number;
   course: Course;
   rider: Rider;
-  /** The player's hands: a press held (crouch), and which way it turns in the air (-1 back, 1 forward, 0 none). */
-  hold: boolean;
+  /** The player's hands: tucked (↓), which way it turns (-1 back, 1 forward, 0 none), and when ↑ was last pressed (-9 if not). */
+  tuck: boolean;
   turn: -1 | 0 | 1;
+  jumpAt: number;
   multiplier: number;
   /** The best trick of the run (points before the multiplier), for the end. */
   crashes: number;
@@ -154,8 +162,8 @@ export function createCourse(seed: number, ahead = 300): Course {
 }
 /** Adds a control point `dx` on from the last, `dy` up from it (and its slope, if set). */
 function point(course: Course, dx: number, dy: number, m = NaN) {
-  course.xs.push(course.xs[course.xs.length - 1] + dx);
-  course.ys.push(course.ys[course.ys.length - 1] + dy);
+  course.xs.push(course.xs[course.xs.length - 1] + dx * SCALE);
+  course.ys.push(course.ys[course.ys.length - 1] + dy * SCALE);
   course.ms.push(m);
 }
 const lastX = (course: Course) => course.xs[course.xs.length - 1];
@@ -184,7 +192,7 @@ export function extend(course: Course, to: number) {
       point(course, len * 0.35, -len * 0.2);
       point(course, len * 0.4, -len * 0.42);
       point(course, len * 0.25, -len * 0.12);
-      if (draw(course) < 0.5) course.gates.push({ x: lastX(course) - len * 0.12, passed: false });
+      if (draw(course) < 0.5) course.gates.push({ x: lastX(course) - len * 0.12 * SCALE, passed: false });
     } else if (kind === "kicker") {
       // The run-in, the lip (turned up), a short gap below it and the long landing slope.
       const runIn = between(course, 16, 24),
@@ -196,14 +204,14 @@ export function extend(course: Course, to: number) {
       const lipX = lastX(course),
         lipY = course.ys[course.ys.length - 1];
       // Before the lip, on the run-in, a rock to jump now and then (it sits where the slope is easy to pop from).
-      if (draw(course) < 0.5) course.rocks.push({ x: lipX - 5 - runIn * 0.25, r: between(course, 0.45, 0.7) });
+      if (draw(course) < 0.5) course.rocks.push({ x: lipX - (5 + runIn * 0.25) * SCALE, r: between(course, 0.45, 0.7) });
       const gap = between(course, 5, 9),
         land = between(course, 20, 30);
       point(course, gap, -height - gap * 0.35, -0.55);
       point(course, land * 0.55, -land * 0.42, -0.7);
       point(course, land * 0.45, -land * 0.18);
       // Snowflakes along the flight a good jump would take (a thrown body from the lip at a fair speed).
-      const v = 15,
+      const v = 25,
         vx = v * Math.cos(lip),
         vy = v * Math.sin(lip) + POP * 0.6;
       for (let k = 1; k <= 4; k++) {
@@ -220,7 +228,7 @@ export function extend(course: Course, to: number) {
     } else {
       const len = between(course, 22, 34);
       point(course, len * 0.5, -len * 0.16);
-      course.rocks.push({ x: lastX(course) - len * 0.1, r: between(course, 0.45, 0.75) });
+      course.rocks.push({ x: lastX(course) - len * 0.1 * SCALE, r: between(course, 0.45, 0.75) });
       point(course, len * 0.5, -len * 0.18);
     }
   }
@@ -270,9 +278,10 @@ export function createWorld(seed: number): World {
   return {
     time: 0,
     course,
-    rider: { x: 0, y: 0, vx: 6, vy: 0, angle: 0, spin: 0, ground: true, crouch: 0, held: 0, airAt: 0, turned: 0, crashed: -1 },
-    hold: false,
+    rider: { x: 0, y: 0, vx: 10, vy: 0, angle: 0, spin: 0, ground: true, crouch: 0, airAt: 0, turned: 0, crashed: -1 },
+    tuck: false,
     turn: 0,
+    jumpAt: -9,
     multiplier: 1,
     crashes: 0,
     over: false,
@@ -313,8 +322,8 @@ export function step(world: World): Happening[] {
     r.spin = 0;
     r.turned = 0;
   }
-  // The crouch follows the press (not while tumbling).
-  const crouching = world.hold && r.crashed < 0;
+  // The tuck follows ↓ (not while tumbling).
+  const crouching = world.tuck && r.crashed < 0;
   r.crouch += ((crouching ? 1 : 0) - r.crouch) * (1 - Math.exp(-DT / 0.08));
   if (r.ground) rideGround(world, out);
   else flyAir(world, out);
@@ -331,20 +340,20 @@ function rideGround(world: World, out: Happening[]) {
     sin = Math.sin(a),
     tumbling = r.crashed >= 0;
   let v = r.vx * cos + r.vy * sin;
-  // Gravity along the slope (sin < 0 going down), more of it when crouched on a downslope, against when crouched uphill.
+  // Gravity along the slope (sin < 0 going down), more of it when tucked on a downslope; tucked, the rider pushes on.
   const along = -G * sin,
-    pump = r.crouch * (along > 0 ? PUMP_DOWN : PUMP_UP);
-  let acc = along * (1 + pump) - Math.sign(v || 1) * MU * G * cos - (tumbling ? TUMBLE_SLOW : 0) * Math.sign(v || 1) - DRAG * (1 - (1 - TUCK) * r.crouch) * v * Math.abs(v);
+    pump = along > 0 ? r.crouch * PUMP_DOWN : 0;
+  let acc = along * (1 + pump) + (tumbling ? 0 : r.crouch * TUCK_PUSH) - Math.sign(v || 1) * MU * G * cos - (tumbling ? TUMBLE_SLOW : 0) * Math.sign(v || 1) - DRAG * (1 - (1 - TUCK) * r.crouch) * v * Math.abs(v);
   // The rider skates on when all but stopped (no stalling on a rise).
   if (!tumbling && v < CRAWL) acc = Math.max(acc + SKATE, SKATE * 0.6);
   v += acc * DT;
   if (tumbling) v = Math.max(0, v);
   const nx = r.x + v * cos * DT;
-  // The pop: a press let go on the ground (not while tumbling).
-  if (!world.hold && r.held > 0 && !tumbling) {
-    const charge = clamp(r.held / POP_CHARGE, POP_MIN, 1),
-      up = POP * charge;
-    r.held = 0;
+  // The pop: ↑ pressed on the ground, or a moment before touching down (not while tumbling).
+  if (world.time - world.jumpAt <= JUMP_EARLY && !tumbling) {
+    const charge = 1,
+      up = POP;
+    world.jumpAt = -9;
     r.vx = v * cos - up * sin;
     r.vy = v * sin + up * cos;
     r.y = here.y + 0.02;
@@ -352,7 +361,6 @@ function rideGround(world: World, out: Happening[]) {
     out.push({ kind: "pop", strength: charge });
     return;
   }
-  r.held = world.hold && !tumbling ? r.held + DT : 0;
   // Off the ground where it bends away faster than gravity can hold the rider to it (a crest, a lip): where the
   // pull needed to follow its curve, v²·κ, is more than gravity's part across the slope.
   const vx = v * cos,
@@ -408,7 +416,13 @@ function flyAir(world: World, out: Happening[]) {
   r.turned += r.spin * DT;
   if (tumbling) r.angle += 9 * DT;
   // No hand on it: the board comes round to its way of flight (not counted as turning).
-  else if (world.turn === 0 && Math.abs(r.spin) < 1) r.angle += wrap(Math.atan2(r.vy, r.vx) - r.angle) * (1 - Math.exp(-DT / ATTITUDE));
+  else if (world.turn === 0 && Math.abs(r.spin) < 1) {
+    const below = groundAt(course, r.x + r.vx * 0.15),
+      near = clamp(1 - (r.y - below.y) / SEEK, 0, 1),
+      way = Math.atan2(r.vy, r.vx),
+      goal = way + wrap(Math.atan(below.slope) - way) * near;
+    r.angle += wrap(goal - r.angle) * (1 - Math.exp(-DT / ATTITUDE));
+  }
   // Over a rock low enough to touch it: a crash.
   if (!tumbling)
     for (const rock of course.rocks) {
@@ -461,7 +475,7 @@ function crash(world: World, out: Happening[], why: "landing" | "rock") {
   r.vy *= CRASH_KEEP;
   r.spin = 0;
   r.turned = 0;
-  r.held = 0;
+  world.jumpAt = -9;
   world.multiplier = 1;
   world.crashes++;
   out.push({ kind: "crash", why });
