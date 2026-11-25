@@ -564,48 +564,6 @@ const play = {
     }
     await wait(150);
   },
-  // 스노보드: the run let go a few seconds, ↓ held on a downslope to tuck, then ↑ (a jump), the
-  // picture taken with the rider in the air over the sunset slope.
-  snowboard: async () => {
-    await page.locator("canvas").focus();
-    await page.evaluate(() => {
-      const board = document.querySelector("#board canvas");
-      const key = (type, k) => board.dispatchEvent(new KeyboardEvent(type, { key: k, bubbles: true, cancelable: true }));
-      let held = false,
-        jumped = false;
-      const loop = () => {
-        if (!board.isConnected) return;
-        const d = board.dataset, x = Number(d.x);
-        // ↓ tucked from a little after the start, then ↑ once on the snow: a jump.
-        const want = x > 8 && x < 30;
-        if (want !== held) {
-          key(want ? "keydown" : "keyup", "ArrowDown");
-          held = want;
-        }
-        if (!jumped && x >= 30 && d.phase === "ride") {
-          key("keydown", "ArrowUp");
-          key("keyup", "ArrowUp");
-          jumped = true;
-        }
-        if (x < 40 || !jumped) requestAnimationFrame(loop);
-      };
-      requestAnimationFrame(loop);
-    });
-    await page.waitForFunction(() => document.querySelector("#board canvas").dataset.phase === "air", null, { timeout: 30000 }).catch(() => {});
-    await wait(250);
-    await page.keyboard.press("p");
-  },
-  // 핀볼: the plunger held a moment and let go; the ball is caught on its way round the field, a flipper raised.
-  pinball: async () => {
-    await page.locator("canvas").focus();
-    await wait(1200);
-    await page.keyboard.down(" ");
-    await wait(700);
-    await page.keyboard.up(" ");
-    await wait(1100);
-    await page.keyboard.down("ArrowRight");
-    await wait(200);
-  },
   // 낚시: the float cast to the middle; a steady hand in the page strikes at the bite and reels while the fish does
   // not run (casting again after a miss), and the lake is paused as a fish (not junk) is held up out of the water.
   fishing: async () => {

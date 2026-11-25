@@ -849,14 +849,6 @@ export const allGames = [
     available: true,
   },
   {
-    name: "핀볼",
-    en: "PINBALL",
-    category: "아케이드게임",
-    players: "1인용",
-    icon: "◓",
-    available: true,
-  },
-  {
     name: "훌라",
     en: "HULA",
     category: "카드게임",
@@ -878,14 +870,6 @@ export const allGames = [
     category: "아케이드게임",
     players: "1인용",
     icon: "7",
-    available: true,
-  },
-  {
-    name: "스노보드",
-    en: "SNOWBOARD",
-    category: "스포츠게임",
-    players: "1인용",
-    icon: "🏂",
     available: true,
   },
 ];
