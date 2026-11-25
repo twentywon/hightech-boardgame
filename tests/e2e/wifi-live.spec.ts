@@ -203,7 +203,7 @@ test("table soccer on two devices: offered over Wi-Fi though it has no two at on
   expect(b.errors).toEqual([]);
 });
 
-test("table tennis on two devices: the guest stands behind the far end, its mouse moves its blue paddle on the host, and its press tosses its serve there", async ({ browser }, info) => {
+test("table tennis on two devices: the guest stands behind the far end, its mouse moves its blue paddle on the host, and its press tosses its serve there and its stroke serves it", async ({ browser }, info) => {
   const a = await device(browser, info),
     b = await device(browser, info),
     host = a.page,
@@ -227,11 +227,28 @@ test("table tennis on two devices: the guest stands behind the far end, its mous
   await guest.mouse.down();
   await guest.mouse.up();
   await tossed;
+  // And the toss is struck: the guest's keyboard stroke (Space while the ball is up) serves it on the host's hall. The
+  // user found a guest's serve never went (its tossed ball was struck only on the near end's serve). Tossed again
+  // until a stroke lands in time, the machine here being slow.
+  const served = host.waitForFunction(() => document.querySelector<HTMLCanvasElement>("main.game-layout canvas")?.dataset.phase === "rally", null, { polling: "raf", timeout: 60000 });
+  let struck = false;
+  served.then(() => (struck = true)).catch(() => {});
+  await canvasOf(guest).focus();
+  for (let k = 0; k < 12 && !struck; k++) {
+    await expect.poll(async () => (await canvasOf(guest).getAttribute("data-phase")) === "ready" || struck, { timeout: 10000 }).toBe(true);
+    if (struck) break;
+    await guest.keyboard.press(" ");
+    await expect.poll(async () => (await canvasOf(guest).getAttribute("data-phase")) !== "ready" || struck, { timeout: 5000 }).toBe(true).catch(() => {});
+    await guest.waitForTimeout(150 + 60 * (k % 4));
+    await guest.keyboard.press(" ");
+    await guest.waitForTimeout(600);
+  }
+  await served;
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
 
-test("table tennis on two devices by touch: the guest's finger moves its blue paddle on the host, and its tap tosses its serve there", async ({ browser }, info) => {
+test("table tennis on two devices by touch: the guest's finger tosses its serve and its swipe serves it on the host; a tap tosses the next", async ({ browser }, info) => {
   test.skip(info.project.name !== "mobile", "fingers are the phone's");
   const a = await device(browser, info),
     b = await device(browser, info),
@@ -247,19 +264,52 @@ test("table tennis on two devices by touch: the guest's finger moves its blue pa
     const v = new Vector3(x, HAND_Y, z).project(camera);
     return { x: box.x + ((v.x + 1) / 2) * box.width, y: box.y + ((1 - v.y) / 2) * box.height };
   };
-  // A finger put down and drawn across: the blue paddle follows it on the host.
+  // The host's hall watched every frame (a toss lasts half a second): what phases it goes through.
+  const phases = () =>
+    host.evaluate(() => {
+      const w = window as unknown as { phases?: string[] };
+      if (!w.phases) {
+        w.phases = [];
+        const look = () => {
+          const phase = document.querySelector<HTMLCanvasElement>("main.game-layout canvas")?.dataset.phase ?? "";
+          if (w.phases![w.phases!.length - 1] !== phase) w.phases!.push(phase);
+          requestAnimationFrame(look);
+        };
+        look();
+      }
+      return w.phases;
+    });
+  await phases();
+  // A finger put down tosses the guest's serve; pushed forward, the blue paddle follows it on the host and strikes the
+  // ball. The user found a guest's serve never went (its toss was struck only on the near end's serve).
   const cdp = await guest.context().newCDPSession(guest),
     from = screen(-0.3, -HALF_L - 0.3),
-    to = screen(0.45, -HALF_L - 0.3);
+    to = screen(-0.3, -HALF_L + 0.3);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y, id: 1 }] });
+  await expect.poll(async () => (await phases()).includes("toss"), { timeout: 15000 }).toBe(true);
   for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x + ((to.x - from.x) * k) / 6, y: from.y + ((to.y - from.y) * k) / 6, id: 1 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  // Tossed again by a slow machine's late swipe, the ball may have fallen first: tossed and swiped until it is served.
+  for (let k = 0; k < 8 && !(await phases()).includes("rally"); k++) {
+    await expect.poll(async () => (await canvasOf(guest).getAttribute("data-phase")) === "ready" || (await phases()).includes("rally"), { timeout: 10000 }).toBe(true);
+    if ((await phases()).includes("rally")) break;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y, id: 3 + k }] });
+    await guest.waitForTimeout(80 * (k % 4));
+    for (let j = 1; j <= 3; j++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x + ((to.x - from.x) * j) / 3, y: from.y + ((to.y - from.y) * j) / 3, id: 3 + k }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  }
+  expect(await phases()).toContain("rally");
+  // The point over and the guest's serve again, a finger drawn across moves the blue paddle there, and a tap tosses it.
+  await expect.poll(async () => `${await canvasOf(guest).getAttribute("data-phase")}|${await canvasOf(guest).getAttribute("data-server")}`, { timeout: 30000 }).toBe("ready|1");
+  const across = screen(0.45, -HALF_L - 0.3);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: across.x, y: across.y, id: 19 }] });
   await expect.poll(async () => (await paddles(host))[1][0], { timeout: 15000 }).toBeGreaterThan(0.25);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  // A tap tosses the guest's serve on the host's hall.
-  const tossed = host.waitForFunction(() => document.querySelector<HTMLCanvasElement>("main.game-layout canvas")?.dataset.phase === "toss", null, { polling: "raf", timeout: 20000 });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: to.x, y: to.y, id: 2 }] });
+  await expect.poll(async () => (await canvasOf(guest).getAttribute("data-phase")) === "ready", { timeout: 15000 }).toBe(true);
+  await host.evaluate(() => ((window as unknown as { phases: string[] }).phases.length = 0));
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: across.x, y: across.y, id: 20 }] });
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await tossed;
+  await expect.poll(async () => (await phases()).includes("toss"), { timeout: 15000 }).toBe(true);
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });

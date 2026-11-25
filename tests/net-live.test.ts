@@ -305,6 +305,17 @@ describe("table tennis over Wi-Fi", () => {
     expect(again.phase).toBe("ready");
     expect(tennis.takeToss(again, 1, 1, 0)).toBe(1);
     expect(again.phase).toBe("toss");
+    // The hand sent with the toss is where its swing is reckoned from: moved there in this frame, it does not serve.
+    const sent = tt.createWorld(4);
+    sent.people = [true, true];
+    sent.hands[1] = { x: 0, z: -tt.HALF_L - 0.4 };
+    tt.serve(sent, 1);
+    for (let k = 0; k < 20; k++) tt.step(sent, "normal");
+    const to = { x: 0.05, z: -0.9 };
+    tennis.takeToss(sent, 1, 1, 0, to);
+    expect(sent.tossedAt).toEqual(to);
+    sent.hands[1] = to;
+    for (let k = 0; k < 60; k++) expect(tt.step(sent, "normal").some((e) => e.kind === "hit")).toBe(false);
   });
 
   test("a person on the far side strikes the ball with a stroke of their swing; the computer can stand in on either side", () => {

@@ -247,12 +247,18 @@ export class TableTennisView extends TableView<State> {
       aim(ray, e, el, this.camera);
       if (ray.ray.intersectPlane(this.floor, hit)) this.reach(hit.x, hit.z);
     });
+    // Let go, a blade that aims itself (`simple`) stays where it stood: its hand is set there, off the line of sight
+    // (else it jumped as the finger lifted, and back as it pressed again, and the host took that for a swing).
+    const letGo = () => {
+      if (this.simple && this.pointer) this.hand = this.target();
+      this.pointer = null;
+    };
     const lift = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse") this.pointer = null;
+      if (e.pointerType !== "mouse") letGo();
     };
     el.addEventListener("pointerup", lift);
     el.addEventListener("pointercancel", lift);
-    el.addEventListener("pointerleave", () => (this.pointer = null));
+    el.addEventListener("pointerleave", letGo);
     // The arrows go as the table is seen: up away from me, toward the net. Space tosses my serve, or strikes.
     const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     el.addEventListener("keydown", (e) => {
@@ -345,7 +351,11 @@ export class TableTennisView extends TableView<State> {
    */
   private target() {
     const p = this.camera.position,
-      at = this.pointer ? alongSight({ x: p.x, y: p.y, z: p.z }, this.hand, this.world.paddles[this.mine].y) : this.hand;
+      w = this.world,
+      // Holding or tossing my serve, at the height it is held at: the blade rising with the tossed ball would move
+      // the place sent along the line of sight, and the host take that for a swing (serving it by itself).
+      y = (w.phase === "ready" || w.phase === "toss") && w.server === this.mine ? 0.12 : w.paddles[this.mine].y,
+      at = this.pointer ? alongSight({ x: p.x, y: p.y, z: p.z }, this.hand, y) : this.hand;
     return keep(this.mine, at.x, at.z);
   }
   /** A world of its own sequence; where the page asks for less motion I step aside only half as far. */
@@ -503,10 +513,16 @@ export class TableTennisView extends TableView<State> {
         sent = [0, 1].map((side) => {
           if (!live?.host || by[side] !== "remote") return null;
           const hand = readInput(live.input(side, now)),
-            tosses = readInput(live.latest(side))?.tosses ?? 0;
-          this.taken[side] = takeToss(this.world, side as 0 | 1, tosses, this.taken[side]);
-          const at = hand ? { x: hand.x, z: hand.z } : (this.remote[side] ?? { ...this.world.hands[side] });
-          return { from: this.remote[side] ?? at, to: at };
+            last = readInput(live.latest(side)),
+            glided = hand ? { x: hand.x, z: hand.z } : (this.remote[side] ?? { ...this.world.hands[side] });
+          this.taken[side] = takeToss(this.world, side as 0 | 1, last?.tosses ?? 0, this.taken[side], last ?? glided);
+          // While its toss waits for its swing, the blade goes by the hand last sent, not glided toward it: gliding
+          // there moved the hand, which the hall took for a swing and served the ball the moment it was tossed.
+          if (last && this.world.tossedAt && this.world.phase === "toss" && this.world.server === side) {
+            const at = { x: last.x, z: last.z };
+            return { from: at, to: at };
+          }
+          return { from: this.remote[side] ?? glided, to: glided };
         });
       for (let k = 1; k <= slices; k++) {
         this.left -= DT;

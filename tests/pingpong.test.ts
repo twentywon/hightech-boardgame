@@ -108,6 +108,57 @@ describe("table tennis: serves and points", () => {
     expect(bounces).toEqual([0, 1]);
     expect(world.phase).toBe("rally");
   });
+  test("over Wi-Fi a person at the far end strikes its own toss: its serve bounces on its side and then on the near one", () => {
+    // The user found a guest's serve never went: its tossed ball was struck only on side 0's serve, and fell back.
+    const world = s.createWorld(6);
+    world.people = [true, true];
+    world.hands[0] = { x: 0, z: s.HALF_L + 0.4 };
+    world.hands[1] = { x: -0.1, z: -s.HALF_L - 0.4 };
+    s.serve(world, 1);
+    for (let k = 0; k < 20; k++) s.step(world, "normal");
+    // No computer tosses it for the person: it waits, held, until the person does.
+    for (let k = 0; k < 240; k++) s.step(world, "normal");
+    expect(world.phase).toBe("ready");
+    expect(s.toss(world, 0)).toBe(false);
+    expect(s.toss(world, 1)).toBe(true);
+    let k = 0;
+    while (world.ball.vy > -0.4 && k++ < 400) s.step(world, "normal");
+    const seen: s.Happening[] = [];
+    for (let j = 0; j < 240; j++) {
+      // Forward for the far end is toward the net: up the table's z.
+      world.hands[1] = { x: world.ball.x, z: world.hands[1].z + 3 * s.DT };
+      seen.push(...s.step(world, "normal"));
+      if (seen.some((e) => e.kind === "bounce" && e.side === 0)) break;
+    }
+    expect(seen.find((e) => e.kind === "hit")).toMatchObject({ kind: "hit", side: 1 });
+    const bounces = seen.filter((e) => e.kind === "bounce").map((e) => (e as { side: number }).side);
+    expect(bounces).toEqual([1, 0]);
+    expect(world.phase).toBe("rally");
+  });
+  test("a toss is served by the swing alone: a hand already reaching forward, kept still, lets the ball fall (both ends)", () => {
+    // The user found a serve went off by itself the moment it was tossed (the blade let forward through the ball).
+    for (const side of [0, 1] as const) {
+      const world = s.createWorld(8 + side),
+        f = side === 0 ? 1 : -1;
+      world.people = [true, true];
+      world.hands[0] = { x: 0, z: side === 0 ? 0.8 : s.HALF_L + 0.4 };
+      world.hands[1] = { x: 0, z: side === 1 ? -0.8 : -s.HALF_L - 0.4 };
+      s.serve(world, side);
+      for (let k = 0; k < 40; k++) s.step(world, "normal");
+      expect(s.toss(world, side)).toBe(true);
+      const still = run(world, "normal", 1.2);
+      expect(still.some((e) => e.kind === "hit"), `side ${side}`).toBe(false);
+      expect(world.phase).toBe("ready");
+      // Tossed again and swung forward as it falls: served.
+      expect(s.toss(world, side)).toBe(true);
+      const seen: s.Happening[] = [];
+      for (let k = 0; k < 240 && !seen.some((e) => e.kind === "hit"); k++) {
+        if (world.ball.vy < -0.3) world.hands[side] = { x: 0, z: world.hands[side].z - f * 3 * s.DT };
+        seen.push(...s.step(world, "normal"));
+      }
+      expect(seen.find((e) => e.kind === "hit"), `side ${side}`).toMatchObject({ kind: "hit", side });
+    }
+  });
   test("a tossed ball let fall is tossed again, without a point", () => {
     const world = s.createWorld(2);
     s.serve(world, 0);

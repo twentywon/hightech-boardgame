@@ -63,6 +63,8 @@ export const FLIGHT_TOP = 0.42;
 export const TOSS = 2.3,
   TOSS_LOW = -0.08,
   SERVE_PAUSE = 0.9;
+/** How far a person's hand moves after its toss before its blade is let forward to the ball (see `World.tossedAt`). */
+export const TOSS_MOVED = 0.03;
 /** How far behind my end line my paddle may go, and the computer's. */
 export const BACK = 0.6,
   FAR_BACK = 1.15;
@@ -229,6 +231,12 @@ export interface World {
   people: [boolean, boolean];
   /** The computer's hand on side 0, kept apart from side 1's (`ai`), when it stands in there. */
   nearAi: World["ai"];
+  /**
+   * Where a person's hand was when it tossed its serve, until it moves: till then its blade stays behind the ball (as
+   * before the toss), so that a hand already reaching forward does not strike the ball the moment it is let go. The
+   * user found a serve went off by itself as it was tossed; the swing (a swipe, the mouse) serves it.
+   */
+  tossedAt: { x: number; z: number } | null;
 }
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 /** The world's own sequence, so that a game played the same way comes out the same. */
@@ -273,6 +281,7 @@ export function createWorld(seed = 1): World {
     seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
     people: [true, false],
     nearAi: { wait: 0, delay: 0, seen: -9, plan: null, strikeY: 0.2, holdX: 0 },
+    tossedAt: null,
   };
   world.paddles.forEach((pad, side) => retrace(world, side as 0 | 1, pad));
   return world;
@@ -318,7 +327,8 @@ export function keep(side: 0 | 1, x: number, z: number, limit = side === 0 ? 0.2
 /** The nearest a paddle may come to the net: behind its end line while its side holds the ball to serve, a little over it during the toss. */
 function frontOf(world: World, side: 0 | 1) {
   const serving = world.server === side && (world.phase === "ready" || world.phase === "toss"),
-    near = !serving ? 0.25 : world.phase === "ready" ? HALF_L + 0.2 : HALF_L - 0.1;
+    // A tossing hand not yet moved keeps its blade where it held the ball from: behind it (see `World.tossedAt`).
+    near = !serving ? 0.25 : world.phase === "ready" ? HALF_L + 0.2 : world.tossedAt ? Math.abs(world.ball.z) + 0.1 : HALF_L - 0.1;
   return side === 0 ? near : -near;
 }
 /** Where the server holds the ball before the toss: in front of its paddle and over it (so that it is seen), behind its end line. */
@@ -346,6 +356,7 @@ export function serve(world: World, server: 0 | 1) {
   if (!world.people[0]) Object.assign(world.nearAi, { wait: SERVE_PAUSE, plan: null, holdX: (rand(world) - 0.5) * 0.7 });
   world.stanceGoal = 0;
   world.passed = -1;
+  world.tossedAt = null;
   hold(world);
 }
 /** The ball thrown up from the server's open hand (`by` must be the server), to be struck as it falls. */
@@ -354,6 +365,7 @@ export function toss(world: World, by: 0 | 1 = world.server) {
   hold(world);
   world.phase = "toss";
   world.ball.vy = TOSS;
+  world.tossedAt = world.people[by] ? { ...world.hands[by] } : null;
   return true;
 }
 /**
@@ -714,6 +726,10 @@ const EASE = 1 - Math.exp(-DT / 0.035);
  */
 function movePaddles(world: World, level: Level) {
   world.ticks++;
+  // A tossing hand that has moved (by `TOSS_MOVED`) is swinging: its blade may now come forward to the ball.
+  const tossed = world.tossedAt,
+    tosser = world.hands[world.server];
+  if (tossed && (world.phase !== "toss" || Math.hypot(tosser.x - tossed.x, tosser.z - tossed.z) > TOSS_MOVED)) world.tossedAt = null;
   const slot = world.ticks % (SWING_SLICES + 1),
     at_ = slot * TRACE,
     oldest = ((world.ticks + 1) % (SWING_SLICES + 1)) * TRACE,
@@ -1098,7 +1114,10 @@ export function step(world: World, level: Level): Happening[] {
   if (world.phase === "toss") {
     b.vy -= G * DT;
     b.y += b.vy * DT;
-    if (world.server === 0) tryStrike(world, 0, before[0], from, level, out);
+    // A person's serve is struck by its own swing, on either side (over Wi-Fi a guest serves from the far end; the
+    // computer strikes its own toss in `think`). Kept to side 0 alone, a guest's toss fell back unstruck every time.
+    const server = world.server;
+    if (world.people[server]) tryStrike(world, server, before[server], from, level, out);
     if (world.phase === "toss" && b.y < TOSS_LOW) {
       world.phase = "ready";
       world.ai.wait = 0.5;
