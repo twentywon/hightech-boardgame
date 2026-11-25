@@ -29,7 +29,8 @@ const BUTTONS = [
   { key: "lines", label: "라인", move: LINE_MOVE, x: -0.24, colour: "#2a5ac8" },
   { key: "bet", label: "베팅", move: BET, x: -0.02, colour: "#e0a020" },
   { key: "max", label: "최대", move: MAX, x: 0.2, colour: "#c83a8a" },
-  { key: "spin", label: "스핀", move: PULL, x: 0.44, colour: "#d8261c" },
+  // Only the lever starts the machine by a click or a touch (the user asked); this button stops the turning reels sooner.
+  { key: "stop", label: "멈춤", move: HURRY, x: 0.44, colour: "#d8261c" },
 ];
 /** The console the buttons stand on: its middle's height, how far it stands out, and how far its top leans toward the player. */
 const DECK = { y: 0.86, z: FRONT + 0.2, slope: 0.62 };
@@ -143,7 +144,7 @@ function stripTextures(reel: number, keep: Keep) {
 /**
  * A slot machine in an amusement arcade's corner, seen from the stool before it: a cabinet with a lit sign and
  * chasing bulbs on top, the pay table, the reel window with three real drums turning behind the glass, the credit
- * display, a deck of buttons (정산, 라인, 베팅, 최대, 스핀), a lever on the right, and the coin tray under it where
+ * display, a deck of buttons (정산, 라인, 베팅, 최대, 멈춤), a lever on the right, and the coin tray under it where
  * the winnings rattle out. The reels' stops are drawn here at random (each place of a strip as likely as any) and
  * played as the spin's move; the books (`rules.ts`) pay what the stops show once every reel has come to rest.
  */
@@ -457,7 +458,7 @@ export class SlotView extends TableView<State> {
   private deckButtons(keep: Keep) {
     const ringPaint = this.metal("#d8dde4", capable(), 0.2);
     for (const button of BUTTONS) {
-      const big = button.key === "spin",
+      const big = button.key === "stop",
         r = big ? 0.085 : 0.066,
         label = painted(
           128,
@@ -548,7 +549,7 @@ export class SlotView extends TableView<State> {
   private legal(to: number) {
     return !!this.state && moves(this.state).some((m) => m.to === to);
   }
-  /** The lever, the spin button, a tap on the window or the space bar: pull (and spin), or hurry the next reel. */
+  /** The lever or the space bar: pull (and spin), or hurry the next reel. */
   private spinOrHurry() {
     const s = this.state;
     if (!s || s.winner !== null) return;
@@ -570,13 +571,15 @@ export class SlotView extends TableView<State> {
       const button = this.buttons[point - 2000];
       button.pressed = performance.now();
       this.onKnock?.("button", 1);
-      if (button.key === "spin") this.spinOrHurry();
-      else if (this.legal(button.move)) this.onMove({ from: -1, to: button.move, extra: -1 });
+      if (button.key === "stop") {
+        if (this.state?.pending && this.reels.some((r) => r.phase === "spin")) this.onMove({ from: -1, to: HURRY, extra: -1 });
+        else this.onKnock?.("deny", 1);
+      } else if (this.legal(button.move)) this.onMove({ from: -1, to: button.move, extra: -1 });
       else this.onKnock?.("deny", 1);
       return true;
     }
-    this.spinOrHurry();
-    return true;
+    // Anywhere else: nothing (only the lever starts the machine; the user found a tap anywhere pulled it).
+    return false;
   }
   protected dragMove(at: { x: number; y: number; z: number }) {
     const held = this.leverHeld;
@@ -779,8 +782,10 @@ export class SlotView extends TableView<State> {
       const age = now - b.pressed,
         dip = b.pressed >= 0 && age < 160 ? Math.sin((age / 160) * Math.PI) * 0.014 : 0;
       b.mesh.position.y = 0.03 - dip;
-      const on = b.key === "spin" ? !!this.state && this.state.winner === null && (!!this.state.pending || this.legal(PULL)) : this.legal(b.move);
-      b.cap.emissiveIntensity = on ? (b.key === "spin" && !this.state?.pending ? 0.55 + 0.25 * Math.sin(now / 220) : 0.5) : 0.08;
+      // 멈춤 lights while the reels turn (and blinks then); the others when what they do may be done.
+      const turning = !!this.state?.pending && this.reels.some((r) => r.phase === "spin"),
+        on = b.key === "stop" ? turning : this.legal(b.move);
+      b.cap.emissiveIntensity = on ? (b.key === "stop" ? 0.55 + 0.25 * Math.sin(now / 160) : 0.5) : 0.08;
     }
     // The lines: those played lit by their numbers; after a spin the winners blink; a change of lines shows them all.
     const s = this.state,

@@ -18,7 +18,7 @@ async function rested(page: Page) {
   await expect.poll(async () => /릴이 돌고/.test((await books(page)).text), { timeout: 20000 }).toBe(false);
 }
 
-test("slot machine: the bet is set on the cabinet, the lever pulled by a drag spins, space and the spin button spin, and the credits add up", async ({ page }, info) => {
+test("slot machine: the bet is set on the cabinet, the lever pulled by a drag spins, space spins, only the lever starts it by the mouse, the stop button hurries, and the credits add up", async ({ page }, info) => {
   test.slow();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -60,11 +60,23 @@ test("slot machine: the bet is set on the cabinet, the lever pulled by a drag sp
   await rested(page);
   after = await books(page);
   expect(after.credits).toBe(before - 10 + after.won);
-  // The spin button on the deck.
+  // Only the lever starts the machine by the mouse: a click on the reels' window, the stop button or the room spins
+  // nothing, and the lever stays up.
   before = after.credits;
-  const spin = await at("spin");
-  await page.mouse.click(spin.x, spin.y);
+  const frame = (await canvas.boundingBox())!,
+    stop = await at("stop");
+  for (const [x, y] of [[frame.x + frame.width / 2, frame.y + frame.height * 0.42], [stop.x, stop.y], [frame.x + 30, frame.y + frame.height - 30]]) {
+    await page.mouse.click(x, y);
+    await page.waitForTimeout(400);
+    await expect(canvas).toHaveAttribute("data-spinning", "false");
+    expect(Number(await canvas.getAttribute("data-lever"))).toBeLessThan(0.05);
+  }
+  expect((await books(page)).credits).toBe(before);
+  // While the reels turn, the 멈춤 button stops the next reel sooner.
+  await canvas.focus();
+  await page.keyboard.press(" ");
   await expect(canvas).toHaveAttribute("data-spinning", "true", { timeout: 10000 });
+  await page.mouse.click(stop.x, stop.y);
   await rested(page);
   after = await books(page);
   expect(after.credits).toBe(before - 10 + after.won);
