@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { seededRandom } from "../src/core/ai";
 import * as fr from "../src/games/fishing/rules";
 import * as fs from "../src/games/fishing/sim";
+import { CrankReader } from "../src/games/fishing/crank";
 
 const plain = (to: number) => ({ from: -1, to, extra: -1 });
 /** Steps the lake until `until` holds (or `limit` seconds pass), gathering what happened. */
@@ -28,15 +29,29 @@ function biting(kind: number, size: number, level = 2, seed = 5) {
   run(world, (w) => w.phase === "bite");
   return world;
 }
-/** Plays the fight as a careful hand does: reels while the fish is not running and the line is not too tight. */
-function reelCarefully(world: fs.World, limit = 60) {
+/** The crank turned at `rate` turns a second over one slice. */
+const turn = (world: fs.World, rate: number) => fs.crank(world, rate * fs.DT);
+/** Plays the fight as a careful hand does: turns the crank quickly while the fish is not running and the line is not too tight. */
+function reelCarefully(world: fs.World, limit = 60, rate = 2.4) {
   const seen: fs.Happening[] = [];
   for (let k = 0; k < limit / fs.DT && world.phase === "fight"; k++) {
     if (world.surge || world.tension > 0.85) fs.release(world);
-    else seen.push(...fs.press(world));
+    else turn(world, rate);
     seen.push(...fs.step(world));
   }
   return seen;
+}
+/** The seconds a careful hand at `rate` turns a second takes to bring a fish in (Infinity: not in `limit`). */
+function timeToLand(rate: number, limit = 60) {
+  const world = biting(fs.CRUCIAN, 20, 1, 8);
+  fs.press(world);
+  world.surgeIn = Infinity;
+  let k = 0;
+  for (; k < limit / fs.DT && world.phase === "fight"; k++) {
+    turn(world, rate);
+    fs.step(world);
+  }
+  return world.phase === "land" ? k * fs.DT : Infinity;
 }
 
 describe("fishing", () => {
@@ -77,7 +92,48 @@ describe("fishing", () => {
     expect(seen.findIndex((e) => e.kind === "bite")).toBeGreaterThan(seen.findIndex((e) => e.kind === "splashdown"));
     expect(fs.press(world)).toEqual([{ kind: "hook", x: world.float.x, z: world.float.z, fish }]);
     expect(world.phase).toBe("fight");
-    expect(world.reeling).toBe(true);
+    // Hooked, nothing winds until the crank is turned.
+    expect(world.reeling).toBe(false);
+  });
+  test("the reel winds only as the crank is turned, and the quicker it turns, the sooner the fish comes in", () => {
+    // Held, not turned: a press during the fight does nothing, and the line goes slack until the fish gets off.
+    const held = biting(fs.TROUT, 40, 1, 3);
+    fs.press(held);
+    held.surgeIn = Infinity;
+    const from = fs.distance(held);
+    const seen = run(held, (w) => {
+      fs.press(w);
+      return w.phase !== "fight";
+    });
+    expect(seen.at(-1)?.kind).toBe("slip");
+    expect(fs.distance(held)).toBeCloseTo(from, 5);
+    // Turned: quicker turning lands it sooner; too slow a turn does not wind at all, and the fish gets off.
+    const fast = timeToLand(2.6),
+      steady = timeToLand(1.4);
+    expect(fast).toBeLessThan(steady);
+    expect(steady).toBeLessThan(Infinity);
+    expect(timeToLand(0.2)).toBe(Infinity);
+  });
+  test("the crank's speed is the turns made, smoothed: a turn a press four times a second keeps it winding", () => {
+    const world = biting(fs.CARP, 50, 1, 4);
+    fs.press(world);
+    world.surgeIn = Infinity;
+    const speeds: number[] = [];
+    for (let k = 0; k < 3 / fs.DT; k++) {
+      if (k % 15 === 0) fs.crank(world, 0.5);
+      fs.step(world);
+      if (k > 60) speeds.push(world.spin);
+    }
+    const mean = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+    expect(mean).toBeGreaterThan(1.7);
+    expect(mean).toBeLessThan(2.3);
+    expect(Math.min(...speeds)).toBeGreaterThan(fs.SPIN_MIN);
+    // Let go, it stops at once; turns given away from the fight count for nothing.
+    fs.release(world);
+    expect([world.spin, world.reeling]).toEqual([0, false]);
+    const idle = fs.createWorld(1, seededRandom(2));
+    fs.crank(idle, 3);
+    expect(idle.owed).toBe(0);
   });
   test("a press before the bite scares the fish off; with no fish there, the line just comes in", () => {
     const world = fs.createWorld(2, seededRandom(4));
@@ -116,7 +172,14 @@ describe("fishing", () => {
   test("reeling on through a surge snaps the line", () => {
     const world = biting(fs.CATFISH, 80, 3, 2);
     fs.press(world);
-    const seen = run(world, (w) => w.phase !== "fight", 60);
+    const seen = run(
+      world,
+      (w) => {
+        turn(w, 2.4);
+        return w.phase !== "fight";
+      },
+      60,
+    );
     expect(seen.some((e) => e.kind === "surge")).toBe(true);
     expect(seen.at(-1)?.kind).toBe("snap");
     expect(world.phase).toBe("reel");
@@ -145,8 +208,14 @@ describe("fishing", () => {
     fs.release(world);
     run(world, () => false, 5);
     expect(world.phase).toBe("fight");
-    fs.press(world);
-    const seen = run(world, (w) => w.phase !== "fight", 30);
+    const seen = run(
+      world,
+      (w) => {
+        turn(w, 2);
+        return w.phase !== "fight";
+      },
+      30,
+    );
     expect(seen.some((e) => e.kind === "surge")).toBe(false);
     expect(seen.at(-1)).toMatchObject({ kind: "catch", fish: { kind: fs.BOOT, points: 1 } });
   });
@@ -167,7 +236,7 @@ describe("fishing", () => {
         if (world.phase === "bite" && world.t > 0.2) fs.press(world);
         if (world.phase === "fight") {
           if (world.surge || world.tension > 0.85) fs.release(world);
-          else fs.press(world);
+          else turn(world, 2.2);
         }
         for (const e of fs.step(world)) if (e.kind !== "second") log.push(JSON.stringify(e));
       }
@@ -189,5 +258,26 @@ describe("fishing", () => {
       expect(fish.points).toBe(fs.pointsOf(fish.kind, fish.size));
       expect(fr.play(fr.createGame(3), fr.catchMove(fish.kind, fish.size))!.score).toBe(fish.points);
     }
+  });
+  test("circles drawn on the screen are turns of the crank: a whole circle one turn, either way round; strokes and scrubs none", () => {
+    const circle = (r: CrankReader, laps: number, sense = 1, radius = 60, steps = 40) => {
+      let turns = 0;
+      for (let k = 0; k <= laps * steps; k++) {
+        const a = (sense * 2 * Math.PI * k) / steps;
+        turns += r.add(300 + radius * Math.cos(a), 300 + radius * Math.sin(a));
+      }
+      return turns;
+    };
+    expect(circle(new CrankReader(), 3)).toBeCloseTo(3, 0);
+    expect(circle(new CrankReader(), 2, -1, 25, 24)).toBeCloseTo(2, 0);
+    // A straight stroke, and a scrub back and forth, turn nothing.
+    const line = new CrankReader();
+    let straight = 0;
+    for (let k = 0; k < 40; k++) straight += line.add(100 + k * 8, 200 + k * 3);
+    expect(straight).toBeLessThan(0.02);
+    const scrub = new CrankReader();
+    let back = 0;
+    for (let k = 0; k < 40; k++) back += scrub.add(100 + (k % 2) * 30, 200);
+    expect(back).toBe(0);
   });
 });

@@ -60,6 +60,16 @@ export const SLACK = 2.5;
 /** How long the landed fish is held up to be seen, and how fast an empty line comes back. */
 export const LAND_TIME = 2.6,
   REEL_BACK = 11;
+/**
+ * The reel is wound by turning its crank (the user asked: turned quickly all the while, not a press held): the turns
+ * the hand makes (`crank`) are taken as a speed in turns a second, smoothed over `SPIN_EASE` seconds. From `SPIN_MIN`
+ * it winds, the fish coming in faster the quicker it turns, at the full pace at `FULL_SPIN` (and a little more beyond,
+ * to `SPIN_MOST` of it); slower it hardly gains, and the line goes slack.
+ */
+export const FULL_SPIN = 2,
+  SPIN_MIN = 0.35,
+  SPIN_EASE = 0.3,
+  SPIN_MOST = 1.25;
 export type Phase = "ready" | "flight" | "wait" | "bite" | "fight" | "reel" | "land";
 export interface Fish {
   kind: number;
@@ -97,6 +107,9 @@ export interface World {
   tension: number;
   slack: number;
   reeling: boolean;
+  /** How fast the crank turns, in turns a second (smoothed), and the turns the hand has made since the last slice. */
+  spin: number;
+  owed: number;
   surge: Surge | null;
   surgeIn: number;
   /** The fish lifted out, while it is shown. */
@@ -139,6 +152,8 @@ export function createWorld(level: number, random: Random): World {
     tension: 0,
     slack: 0,
     reeling: false,
+    spin: 0,
+    owed: 0,
     surge: null,
     surgeIn: 0,
     landed: null,
@@ -193,10 +208,13 @@ function reelBack(world: World) {
   world.surge = null;
   world.tension = 0;
   world.slack = 0;
+  world.reeling = false;
+  world.spin = world.owed = 0;
 }
 /**
  * The hand pulls (a press, or Space): waiting, it strikes too early (a fish that has come is scared off; with none
- * there, the line simply comes in); at a bite, it hooks the fish; hooked, it winds the reel while held.
+ * there, the line simply comes in); at a bite, it hooks the fish. Hooked, a press does nothing: the reel is wound by
+ * turning its crank (`crank`).
  */
 export function press(world: World): Happening[] {
   const at = { ...world.float };
@@ -210,19 +228,24 @@ export function press(world: World): Happening[] {
     const fish = world.fish!;
     world.phase = "fight";
     world.t = 0;
-    world.reeling = true;
+    world.reeling = false;
+    world.spin = world.owed = 0;
     world.tension = 0.15;
     world.slack = 0;
     world.surge = null;
     world.surgeIn = KINDS[fish.kind].junk ? Infinity : 0.6 + world.random() * 1.2;
     return [{ kind: "hook", ...at, fish }];
   }
-  if (world.phase === "fight") world.reeling = true;
   return [];
 }
-/** The hand lets go: the reel stops and line runs out freely. */
+/** The hand turns the crank by `turns` (either way round counts); only while a fish is on the line. */
+export function crank(world: World, turns: number) {
+  if (world.phase === "fight" && Number.isFinite(turns)) world.owed += Math.min(4, Math.abs(turns));
+}
+/** The hand lets go of the crank: it stops at once and line runs out freely. */
 export function release(world: World) {
   world.reeling = false;
+  world.spin = world.owed = 0;
 }
 /** How hard the surge under way pulls now (0 to its power): it builds up over its first moment and eases off at its end. */
 export function surgeNow(surge: Surge | null) {
@@ -345,6 +368,12 @@ function fight(world: World, out: Happening[]) {
     kind = KINDS[fish.kind],
     level = pace(world),
     f = world.float;
+  // The crank's speed: the turns made over this slice, smoothed.
+  world.spin += (world.owed / DT - world.spin) * Math.min(1, DT / SPIN_EASE);
+  world.owed = 0;
+  if (world.spin < 1e-4) world.spin = 0;
+  world.reeling = world.spin >= SPIN_MIN;
+  const wind = Math.min(SPIN_MOST, world.spin / FULL_SPIN);
   // Surges come now and then; junk never runs.
   if (world.surge) {
     world.surge.t += DT;
@@ -374,13 +403,15 @@ function fight(world: World, out: Happening[]) {
   if (world.reeling) {
     world.slack = 0;
     if (world.surge) {
-      // Winding against a running fish: the rod bends, the tension climbs, and it still takes a little line.
-      world.tension += (0.35 + 1.6 * pull) * DT;
+      // Winding against a running fish: the rod bends, the tension climbs (the faster, the quicker it turns), and it
+      // still takes a little line.
+      world.tension += (0.35 + 1.6 * pull) * (0.6 + 0.4 * wind) * DT;
       run(0.5 * pull);
     } else {
-      const steady = kind.junk ? 0.12 : 0.18 + 0.3 * kind.pull;
+      const steady = (kind.junk ? 0.12 : 0.18 + 0.3 * kind.pull) * (0.7 + 0.3 * Math.min(1, wind));
       world.tension += (steady - world.tension) * Math.min(1, 2.5 * DT);
-      const speed = 2.4 * (1 - 0.3 * kind.pull),
+      // The fish comes in as fast as the crank turns.
+      const speed = 2.4 * (1 - 0.3 * kind.pull) * wind,
         dx = REEL_TO.x - f.x,
         dz = REEL_TO.z - f.z,
         far = Math.hypot(dx, dz) || 1;
@@ -414,6 +445,7 @@ function fight(world: World, out: Happening[]) {
     world.fish = null;
     world.surge = null;
     world.reeling = false;
+    world.spin = world.owed = 0;
     world.tension = 0;
     out.push({ kind: "catch", x: f.x, z: f.z, fish });
   }

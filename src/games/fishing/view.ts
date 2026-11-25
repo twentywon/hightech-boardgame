@@ -7,6 +7,7 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { DECK, HAND, ROD_LENGTH, anglerCamera } from "./layout";
 import { CAST as CAST_MOVE, HOOK, LATE, ROUND, SCARED, SLIP, SNAP, TICK, catchMove, type State } from "./rules";
+import { CrankReader } from "./crank";
 import {
   BOOT,
   CAN,
@@ -14,6 +15,8 @@ import {
   CAST,
   CATFISH,
   DT,
+  FULL_SPIN,
+  crank,
   GOLDEN,
   KINDS,
   LAND_TIME,
@@ -33,6 +36,8 @@ import {
 } from "./sim";
 
 export const FISHING_COLORS: [string, string] = ["#2f7f8f", "#b9b3a4"];
+/** How far a press of Space (or Enter) turns the crank while a fish is on: four presses a second wind at the full pace. */
+const KEY_TURN = 0.5;
 /** The haze over the far water, the colour the sky has at the horizon. */
 const HAZE = "#dfe3dc";
 /** The low sun over the far shore, a little to the left: the sky glows there and its light glitters on the water. */
@@ -99,13 +104,17 @@ export class FishingView extends TableView<State> {
   /** When the scene was last posed, for the drops' flight. */
   private lastPose = performance.now();
   /** When things last happened, for their motion: the cast's swing, a nibble, the bite, the strike, a surge, the reel's last click. */
-  private at = { cast: -1e9, twitch: -1e9, bite: -1e9, hook: -1e9, surge: -1e9, click: -1e9, bob: -1e9 };
+  private at = { cast: -1e9, twitch: -1e9, bite: -1e9, hook: -1e9, surge: -1e9, click: -1e9, bob: -1e9, thrash: -1e9 };
   /** Where the float left the rod tip on its way out. */
   private launch = new T.Vector3();
   private launched = false;
   /** The pointer whose press is held (one at a time). */
   private pointer: number | null = null;
   private keyHeld = false;
+  /** The circles the pressed finger draws, read as turns of the crank (while a fish is on the line). */
+  private circles = new CrankReader();
+  /** When the crank was last turned on the screen, and the reel's last frame (for its turning). */
+  private crankAt = performance.now();
   private sight = new T.Raycaster();
   /** What the lake does between moves, for its sounds (the cast, a nibble, the bite, a surge, the reel's clicks). */
   onKnock: ((kind: string, strength: number) => void) | null = null;
@@ -141,7 +150,7 @@ export class FishingView extends TableView<State> {
     this.hud.setAttribute("aria-hidden", "true");
     this.hud.innerHTML =
       `<div class="fish-board"><span><small>점수</small><b data-k="score">0</b></span><span><small>남은 시간</small><b data-k="left">${ROUND}초</b></span><span><small>잡은 물고기</small><b data-k="count">0</b></span></div>` +
-      `<div class="fish-gauge" hidden><small>장력</small><div class="fish-meter"><i data-k="tension"></i></div><em data-k="far"></em><div class="fish-slack"><i data-k="slack"></i></div><small>느슨함</small></div>` +
+      `<div class="fish-gauge" hidden><small>장력</small><div class="fish-meter"><i data-k="tension"></i></div><em data-k="far"></em><div class="fish-slack"><i data-k="slack"></i></div><small>느슨함</small><div class="fish-spin"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a8 8 0 1 1-7.4 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M2.2 6.2l2.6 3.4 3.6-2.4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="fish-spin-bar"><i data-k="spin"></i></div></div><small>릴</small></div>` +
       `<p class="fish-prompt" data-k="prompt"></p>`;
     host.append(this.hud);
     this.listen();
@@ -863,7 +872,17 @@ export class FishingView extends TableView<State> {
       } catch {
         // A pointer that has already gone.
       }
+      this.circles = new CrankReader();
+      this.circles.add(e.clientX, e.clientY);
       this.hand(true, e);
+    });
+    // Circles drawn with the finger (or the pressed mouse) turn the reel's crank: the quicker, the faster it winds.
+    el.addEventListener("pointermove", (e) => {
+      if (e.pointerId !== this.pointer || this.world.phase !== "fight" || !this.running()) return;
+      const all = e.getCoalescedEvents?.() ?? [];
+      let turns = 0;
+      for (const p of all.length ? all : [e]) turns += this.circles.add(p.clientX, p.clientY);
+      if (turns > 0) crank(this.world, turns);
     });
     const up = (e: PointerEvent) => {
       if (e.pointerId !== this.pointer) return;
@@ -883,7 +902,8 @@ export class FishingView extends TableView<State> {
       if (e.key !== " " && e.key !== "Spacebar" && e.key !== "Enter") return;
       e.preventDefault();
       this.keyHeld = false;
-      if (this.pointer === null) this.hand(false);
+      // A key's turn of the crank is the press (pressed again and again it keeps turning); letting the key go does not stop it.
+      if (this.pointer === null && this.world.phase !== "fight") this.hand(false);
     });
     el.addEventListener("blur", () => {
       if (this.keyHeld && this.pointer === null) this.hand(false);
@@ -892,10 +912,16 @@ export class FishingView extends TableView<State> {
   }
   private hand(down: boolean, e?: PointerEvent | null) {
     if (!down) {
+      // The finger lifted lets go of the crank.
       release(this.world);
       return;
     }
     if (!this.running()) return;
+    // Hooked, Space (or Enter) turns the crank half round a press: pressed quickly again and again, it winds.
+    if (this.world.phase === "fight" && !e) {
+      crank(this.world, KEY_TURN);
+      return;
+    }
     if (this.world.phase === "ready") {
       const to = e ? this.waterUnder(e) : CAST.middle;
       this.report(cast(this.world, to.x, to.z));
@@ -983,7 +1009,7 @@ export class FishingView extends TableView<State> {
           this.at.hook = now;
           this.ripple(event.x, event.z, 1.3, now);
           this.splash(event.x, 0.05, event.z, 8, 1.6);
-          this.say("걸렸다!", KINDS[event.fish.kind].junk ? "무언가 걸렸어요" : "누르고 있으면 감깁니다", "#9effa8", event.x, event.z, now);
+          this.say("걸렸다!", KINDS[event.fish.kind].junk ? "무언가 걸렸어요" : "원을 그려 릴을 빠르게 돌리세요", "#9effa8", event.x, event.z, now);
           move(HOOK);
           this.onContact();
           break;
@@ -994,7 +1020,7 @@ export class FishingView extends TableView<State> {
           knock("surge", event.power);
           break;
         case "snap":
-          this.say("줄이 끊어졌어요!", "물고기가 당길 땐 손을 놓으세요", "#ff9a8a", event.x, event.z, now);
+          this.say("줄이 끊어졌어요!", "물고기가 당길 땐 릴을 멈추세요", "#ff9a8a", event.x, event.z, now);
           this.ripple(event.x, event.z, 1, now);
           move(SNAP);
           this.onContact();
@@ -1099,7 +1125,8 @@ export class FishingView extends TableView<State> {
         this.left -= DT;
         this.report(step(this.world));
       }
-      if (this.world.phase === "fight" && this.world.reeling && !this.world.surge && now - this.at.click > 85) {
+      // The reel clicks as it turns: the quicker, the closer the clicks.
+      if (this.world.phase === "fight" && this.world.reeling && now - this.at.click > Math.max(55, 260 / Math.max(0.1, this.world.spin))) {
         this.at.click = now;
         this.onKnock?.("reel", 0.25);
       }
@@ -1120,6 +1147,15 @@ export class FishingView extends TableView<State> {
     this.skyMap.offset.x = (seconds * 0.0008) % 1;
     const uniforms = this.waterPaint.uniforms;
     uniforms.uTime.value = seconds;
+    // Taken, the thrashing float throws up rings and spray all the while.
+    if (w.phase === "bite" && now - this.at.thrash > 90) {
+      this.at.thrash = now;
+      const shake = 0.4,
+        at = this.float.position;
+      this.ripple(at.x + (Math.random() - 0.5) * shake, at.z + (Math.random() - 0.5) * shake, 0.9 + Math.random() * 0.6, now);
+      if (!capturing()) this.splash(at.x, 0.04, at.z, 5 + Math.round(Math.random() * 5), 1.3 + Math.random() * 1.1);
+      if (now - this.at.bite > 150 && Math.random() < 0.5) this.onKnock?.("nibble", 0.35 + Math.random() * 0.25);
+    }
     // The float bobs, and sends out a faint ring now and then.
     if ((w.phase === "wait" || w.phase === "fight") && now - this.at.bob > 1700) {
       this.at.bob = now;
@@ -1203,9 +1239,11 @@ export class FishingView extends TableView<State> {
       joint.rotation.x = -bend * (weights[i] / total);
       joint.rotation.y = side * (weights[i] / total);
     });
-    // The crank turns while the line is wound in.
-    const winding = (w.phase === "fight" && w.reeling) || w.phase === "reel";
-    if (winding) this.crank.rotation.x -= w.phase === "reel" ? 0.5 : w.surge ? 0.05 : 0.28;
+    // The crank turns as fast as the hand turns it (and by itself as an empty line comes in).
+    const dt = Math.max(0, Math.min(0.1, (now - this.crankAt) / 1000));
+    this.crankAt = now;
+    if (w.phase === "reel") this.crank.rotation.x -= 0.5;
+    else if (w.phase === "fight") this.crank.rotation.x -= w.spin * 2 * Math.PI * dt;
   }
   /** Places the float (and returns where the line meets it): hanging from the tip, flying, riding the water, or dragged by the fish. */
   private poseFloat(now: number, tip: T.Vector3) {
@@ -1234,18 +1272,25 @@ export class FishingView extends TableView<State> {
     } else if (w.phase === "wait" || w.phase === "bite") {
       const twitch = (now - this.at.twitch) / 1000,
         bit = (now - this.at.bite) / 1000,
-        dip = twitch < 0.35 ? -0.12 * Math.sin((twitch / 0.35) * Math.PI) : 0;
+        dip = twitch < 0.35 ? -0.17 * Math.sin((twitch / 0.35) * Math.PI) + 0.03 * Math.sin(twitch * 55) : 0;
       let y = 0.012 * Math.sin(t * 2.3) + 0.008 * Math.sin(t * 3.7) + dip,
         x = w.float.x,
         z = w.float.z;
+      let roll = twitch < 0.35 ? Math.sin(twitch * 30) * 0.22 : Math.sin(t * 1.1) * 0.03,
+        pitch = 0;
       if (w.phase === "bite") {
-        // Pulled under, shaking, drawn a little away.
-        y = -0.46 * Math.min(1, bit / 0.16) + 0.03 * Math.sin(bit * 40);
-        x += Math.sin(bit * 2) * 0.12 * bit;
-        z -= 0.2 * bit;
+        // Taken: yanked under at once, and thrashing (the user asked for it wilder): it bursts up and is dragged
+        // down again and again, jerked from side to side and to and fro, rolling, as it is drawn away.
+        const sink = Math.min(1, bit / 0.08),
+          burst = Math.max(0, Math.sin(bit * 13)) ** 2;
+        y = -0.6 * sink + 0.55 * burst * sink + 0.1 * Math.sin(bit * 47) + 0.06 * Math.sin(bit * 79 + 1);
+        x += Math.sin(bit * 2) * 0.25 * bit + 0.26 * Math.sin(bit * 27) + 0.12 * Math.sin(bit * 61 + 2);
+        z += -0.45 * bit + 0.2 * Math.sin(bit * 35 + 1);
+        roll = 0.95 * Math.sin(bit * 23) + 0.3 * Math.sin(bit * 53);
+        pitch = 0.7 * Math.sin(bit * 31 + 0.5);
       }
       f.position.set(x, y, z);
-      f.rotation.z = twitch < 0.35 ? Math.sin(twitch * 30) * 0.12 : Math.sin(t * 1.1) * 0.03;
+      f.rotation.set(pitch, 0, roll);
     } else if (w.phase === "fight") {
       const pull = surgeNow(w.surge);
       f.position.set(w.float.x, -0.12 - w.tension * 0.22 - pull * 0.25 + 0.02 * Math.sin(t * 9), w.float.z + 0.15);
@@ -1394,6 +1439,14 @@ export class FishingView extends TableView<State> {
         el.parentElement!.classList.toggle("surge", surging);
       });
       set("far", distance(w).toFixed(1), (el) => (el.textContent = `${distance(w).toFixed(1)}m`));
+      // The reel's speed: full at the pace that winds at full speed; its arrow turns with the crank.
+      const spun = Math.round(Math.min(1, w.spin / FULL_SPIN) * 100);
+      set("spin", String(spun), (el) => {
+        el.style.width = `${spun}%`;
+        el.parentElement!.parentElement!.classList.toggle("fast", spun >= 60);
+      });
+      const arrow = this.hud.querySelector<SVGElement>(".fish-spin svg");
+      if (arrow) arrow.style.transform = `rotate(${((-this.crank.rotation.x * 180) / Math.PI) % 360}deg)`;
       const slack = Math.round((w.slack / SLACK) * 100);
       set("slack", String(slack), (el) => {
         el.style.width = `${slack}%`;
@@ -1405,7 +1458,16 @@ export class FishingView extends TableView<State> {
       if (w.phase === "ready") prompt = "물을 누르면 찌를 던집니다 (스페이스: 가운데로)";
       else if (w.phase === "wait") prompt = w.nibbling ? "입질이 와요… 찌가 쑥 들어갈 때 누르세요" : "찌를 지켜보세요";
       else if (w.phase === "bite") prompt = "지금! 눌러서 챔질하세요";
-      else if (w.phase === "fight") prompt = w.surge ? "물고기가 차고 나가요! 손을 놓으세요" : w.reeling ? "감는 중… 물고기가 당기면 손을 놓으세요" : w.slack > 1 ? "줄이 느슨해요! 다시 눌러 감으세요" : "누르고 있으면 감깁니다";
+      else if (w.phase === "fight")
+        prompt = w.surge
+          ? "물고기가 차고 나가요! 릴을 멈추세요"
+          : w.reeling
+            ? w.spin < FULL_SPIN * 0.6
+              ? "더 빠르게 돌리세요!"
+              : "계속 빠르게 돌리세요… 물고기가 당기면 멈추세요"
+            : w.slack > 1
+              ? "줄이 느슨해요! 원을 그려 릴을 돌리세요"
+              : "화면에 빙글빙글 원을 그려 릴을 감으세요 (스페이스 연타)";
     }
     set("prompt", prompt, (el) => {
       el.textContent = prompt;
@@ -1429,6 +1491,7 @@ export class FishingView extends TableView<State> {
     put("tension", w.tension.toFixed(2));
     put("surge", w.surge ? "1" : "0");
     put("reeling", w.reeling ? "1" : "0");
+    put("spin", w.spin.toFixed(2));
     put("distance", distance(w).toFixed(2));
     put("nibbling", w.nibbling ? "1" : "0");
     put("caught", String(state?.caught.length ?? 0));

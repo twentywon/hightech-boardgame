@@ -3178,6 +3178,13 @@ html[data-game="fishing"] .game-layout .board-area > .board-hint { display:none 
 .fish-slack { width:42px;height:6px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden; }
 .fish-slack i { display:block;height:100%;width:0;background:#7fd6ff; }
 .fish-slack.warn i { background:#ffcf4a; }
+/* The reel: an arrow that turns with the crank, and a bar for how fast it turns (full at the pace that winds fastest). */
+.fish-spin { display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:4px;color:#ffd36a; }
+.fish-spin svg { width:30px;height:30px;transform-origin:50% 50%; }
+.fish-spin-bar { width:42px;height:7px;border-radius:4px;background:rgba(255,255,255,.14);overflow:hidden; }
+.fish-spin-bar i { display:block;height:100%;width:0;background:#ffb03a;transition:width .1s linear; }
+.fish-spin.fast { color:#9effa8; }
+.fish-spin.fast .fish-spin-bar i { background:#4ed27a; }
 .fish-prompt { position:absolute;left:50%;bottom:44px;transform:translateX(-50%);margin:0;padding:7px 16px;border-radius:999px;background:rgba(14,30,36,.66);font-size:15px;font-weight:800;white-space:nowrap;max-width:calc(100% - 420px);overflow:hidden;text-overflow:ellipsis; }
 .fish-prompt.urgent { background:rgba(214,52,40,.88);animation:fish-pulse .5s ease-in-out infinite alternate; }
 @keyframes fish-shake { 0%, 100% { transform:translateX(0); } 25% { transform:translateX(-2px); } 75% { transform:translateX(2px); } }
@@ -3188,6 +3195,12 @@ html[data-game="fishing"] .game-layout .board-area > .board-hint { display:none 
   .fish-board b { font-size:17px; }
   .fish-board small { font-size:9.5px; }
   .fish-gauge { right:12px;padding:7px 7px 6px; }
+  /* Low screens: the gauge keeps clear of the pause button above it (the reel's row made it taller). */
+  .fish-gauge { gap:3px;top:calc(50% + 14px); }
+  .fish-meter { height:clamp(56px, 22vh, 120px); }
+  .fish-meter i { background-size:100% clamp(56px, 22vh, 120px); }
+  .fish-spin { margin-top:1px;gap:2px; }
+  .fish-spin svg { width:22px;height:22px; }
   .fish-prompt { bottom:30px;font-size:12.5px;padding:5px 12px;max-width:calc(100% - 330px); }
 }
 @media (prefers-reduced-motion: reduce) { .fish-meter.surge, .fish-prompt.urgent { animation:none; } }

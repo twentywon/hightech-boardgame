@@ -15,29 +15,29 @@ async function sit(page: Page) {
   return errors;
 }
 /**
- * A steady hand at the rod, run in the page frame by frame (a person watches the float the same way): Space is held
- * from the moment the float goes under, so the fish is struck and then reeled while it does not run; it is let go
- * while the fish surges or the line is near breaking, and a line back in is cast again with Space.
+ * A steady hand at the rod, run in the page frame by frame (a person watches the float the same way): Space strikes
+ * the moment the float goes under; then, hooked, Space pressed again and again (eight times a second by the clock)
+ * turns the reel's crank while the fish does not run, and stops while it surges or the line is near breaking; a line
+ * back in is cast again with Space.
  */
 async function angler(page: Page) {
   await page.evaluate(() => {
     const board = document.querySelector<HTMLCanvasElement>("#board canvas")!;
-    let held = false;
+    let last = performance.now();
     const key = (type: string) => board.dispatchEvent(new KeyboardEvent(type, { key: " ", bubbles: true, cancelable: true }));
+    const tap = () => {
+      key("keydown");
+      key("keyup");
+    };
     const loop = () => {
       if (!board.isConnected) return;
       const d = board.dataset,
-        want = d.phase === "bite" || (d.phase === "fight" && d.surge !== "1" && Number(d.tension) < 0.8);
-      if (d.phase === "ready" && !held) {
-        key("keydown");
-        key("keyup");
-      } else if (want && !held) {
-        key("keydown");
-        held = true;
-      } else if (!want && held) {
-        key("keyup");
-        held = false;
-      }
+        now = performance.now();
+      if (d.phase === "ready" || d.phase === "bite") tap();
+      else if (d.phase === "fight" && d.surge !== "1" && Number(d.tension) < 0.8) {
+        for (let k = 0; k < 4 && now - last >= 125; k++, last += 125) tap();
+        last = Math.max(last, now - 125);
+      } else last = now;
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);
@@ -89,5 +89,66 @@ test("fishing: the round runs out after its 90 seconds and says 시간 종료 @a
   await page.keyboard.press("Space");
   await page.waitForTimeout(400);
   await expect(canvas(page)).toHaveAttribute("data-phase", "ready");
+  expect(errors).toEqual([]);
+});
+
+test("fishing: hooked, circles drawn on the screen turn the reel, and the fish comes in; a press alone winds nothing", async ({ page }) => {
+  test.setTimeout(120000);
+  const errors = await sit(page);
+  const data = () => page.evaluate(() => ({ ...document.querySelector<HTMLCanvasElement>("#board canvas")!.dataset }));
+  // Cast with Space, and strike at the bite (watched every frame in the page).
+  await page.evaluate(() => {
+    const board = document.querySelector<HTMLCanvasElement>("#board canvas")!;
+    const tap = () => ["keydown", "keyup"].forEach((type) => board.dispatchEvent(new KeyboardEvent(type, { key: " ", bubbles: true, cancelable: true })));
+    const loop = () => {
+      const phase = board.dataset.phase;
+      if (phase === "ready" || phase === "bite") tap();
+      if (phase !== "fight") requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  });
+  await expect(canvas(page)).toHaveAttribute("data-phase", "fight", { timeout: 60000 });
+  // A finger put down and held still winds nothing.
+  const finger = (kind: "down" | "circles" | "up", ms = 0) =>
+    page.evaluate(
+      ({ kind, ms }) => {
+        const el = document.querySelector<HTMLCanvasElement>("#board canvas")!,
+          box = el.getBoundingClientRect(),
+          cx = box.left + box.width * 0.5,
+          cy = box.top + box.height * 0.6,
+          r = box.height * 0.12;
+        el.setPointerCapture = () => {};
+        const send = (type: string, x: number, y: number) =>
+          el.dispatchEvent(new PointerEvent(type, { pointerId: 9, pointerType: "touch", isPrimary: true, buttons: kind === "up" ? 0 : 1, clientX: x, clientY: y, bubbles: true }));
+        if (kind === "down") return send("pointerdown", cx + r, cy);
+        if (kind === "up") return send("pointerup", cx + r, cy);
+        // Circles, three a second, a place every 16 ms (a software-drawn page delivers real touches far apart).
+        const start = performance.now();
+        for (let k = 1; k * 16 <= ms; k++) {
+          while (performance.now() - start < k * 16);
+          const a = 2 * Math.PI * 3 * ((k * 16) / 1000);
+          send("pointermove", cx + r * Math.cos(a), cy + r * Math.sin(a));
+        }
+      },
+      { kind, ms },
+    );
+  await finger("down");
+  const before = Number((await data()).distance);
+  await page.waitForTimeout(500);
+  expect(Number((await data()).spin)).toBe(0);
+  // Circles: the crank turns, the reel winds and the fish comes nearer (between surges, while it is still on).
+  let spun = 0,
+    nearer = false;
+  for (let k = 0; k < 10 && !nearer; k++) {
+    await finger("circles", 700);
+    const d = await data();
+    spun = Math.max(spun, Number(d.spin));
+    if (d.phase !== "fight" || Number(d.distance) < before - 0.3) nearer = true;
+  }
+  expect(spun).toBeGreaterThan(1);
+  expect(nearer).toBe(true);
+  // Lifted, the crank stops.
+  await finger("up");
+  await expect.poll(async () => Number((await data()).spin), { timeout: 5000 }).toBe(0);
   expect(errors).toEqual([]);
 });
