@@ -83,7 +83,12 @@ export const caughtIn = (kind: number, sea: boolean) => {
  * pace, surge with `power` more strength, for `length` times as long, `gap` times as often apart, and run `run`
  * times as fast.
  */
-export const SEA = { reel: 0.55, power: 1.3, length: 1.6, gap: 0.75, run: 1.35 };
+export const SEA = { reel: 0.55, power: 1.3, length: 1.6, gap: 1, run: 1.35 };
+/**
+ * How much longer a hooked fish rests between its surges than the level's own `gap` says (the user found it ran too
+ * often): about twice as long, and its first surge comes later after the strike too.
+ */
+export const REST = 1.8;
 /** What a catch of `kind` and `size` cm is worth. */
 export const pointsOf = (kind: number, size: number) => {
   const k = KINDS[kind];
@@ -281,7 +286,7 @@ export function press(world: World): Happening[] {
     world.tension = 0.15;
     world.slack = 0;
     world.surge = null;
-    world.surgeIn = KINDS[fish.kind].junk ? Infinity : 0.6 + world.random() * 1.2;
+    world.surgeIn = KINDS[fish.kind].junk ? Infinity : 1.2 + world.random() * 1.8;
     return [{ kind: "hook", ...at, fish }];
   }
   return [];
@@ -428,7 +433,7 @@ function fight(world: World, out: Happening[]) {
     world.surge.t += DT;
     if (world.surge.t >= world.surge.length) {
       world.surge = null;
-      world.surgeIn = (between(world, level.gap) / kind.lively) * sea.gap;
+      world.surgeIn = (between(world, level.gap) / kind.lively) * sea.gap * REST;
     }
   } else if (!kind.junk) {
     world.surgeIn -= DT;

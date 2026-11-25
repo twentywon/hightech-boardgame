@@ -369,4 +369,27 @@ describe("fishing", () => {
     expect(sea.power).toBeGreaterThan(1.15 * lake.power);
     expect(sea.length).toBeGreaterThan(1.3 * lake.length);
   });
+  test("a hooked fish rests a good while between its surges (the user found it ran too often), at sea no more often than on the lake", () => {
+    const rests = (sea: boolean) => {
+      const world = biting(fs.CARP, 50, 2, 40);
+      world.sea = sea;
+      fs.press(world);
+      const starts: number[] = [];
+      let first = -1;
+      for (let k = 0; k < 120 / fs.DT; k++) {
+        world.slack = 0;
+        world.tension = 0;
+        world.float = { x: 0, z: -14 };
+        for (const e of fs.step(world)) if (e.kind === "surge") starts.push(k * fs.DT);
+        if (first < 0 && starts.length) first = starts[0];
+      }
+      return { first, count: starts.length, gap: (starts[starts.length - 1] - starts[0]) / (starts.length - 1) };
+    };
+    const lake = rests(false),
+      sea = rests(true);
+    // The first surge only after a moment's grace; then one every six seconds or so (a carp at the one pace left).
+    expect(lake.first).toBeGreaterThan(1.1);
+    expect(lake.gap).toBeGreaterThan(5);
+    expect(sea.count).toBeLessThanOrEqual(lake.count);
+  });
 });

@@ -131,6 +131,8 @@ export class FishingView extends TableView<State> {
   private seaSet = new T.Group();
   private atSea = false;
   private buoy = new T.Group();
+  /** The lighthouse's lamp room, lit up at night. */
+  private beacon: T.MeshStandardMaterial | null = null;
   /** The fishing boat at sea, rocking on the swell (its pivot under the angler), and how far it heaves now. */
   private boat = new T.Group();
   private heave = 0;
@@ -559,8 +561,9 @@ export class FishingView extends TableView<State> {
     const rock = this.standard({ color: "#5b5d5a", roughness: 0.95 }),
       white = this.standard({ color: "#f2f0ea", roughness: 0.6 }),
       red = this.standard({ color: "#c8352e", roughness: 0.55 }),
-      glass = this.standard({ color: "#fff2c0", emissive: "#ffd870", emissiveIntensity: 0.6, roughness: 0.2 }),
-      stone = keep(new T.DodecahedronGeometry(1, 0)),
+      glass = this.standard({ color: "#fff2c0", emissive: "#ffd870", emissiveIntensity: 0.6, roughness: 0.2 });
+    this.beacon = glass;
+    const stone = keep(new T.DodecahedronGeometry(1, 0)),
       house = new T.Group(),
       random = sequence(41);
     for (let k = 0; k < 9; k++) {
@@ -722,11 +725,10 @@ export class FishingView extends TableView<State> {
     }
   }
   /**
-   * How far the lake's day has gone (0 day, 1 night): with no time limit it goes round (`DAY_CYCLE` seconds): day,
-   * dusk, night, then back through the dawn to day, a little while held at day and at night. The sea's stays at day.
+   * How far the day has gone (0 day, 1 night): with no time limit it goes round (`DAY_CYCLE` seconds): day,
+   * dusk, night, then back through the dawn to day, a little while held at day and at night; at sea too (the user asked).
    */
   private timeOfDay() {
-    if (this.atSea) return 0;
     const u = (this.world.time % DAY_CYCLE) / DAY_CYCLE,
       wave = u < 0.5 ? u * 2 : 2 - u * 2;
     return Math.max(0, Math.min(1, (wave - 0.08) / 0.84));
@@ -777,8 +779,11 @@ export class FishingView extends TableView<State> {
       body = num(a.body, b.body);
     (u.uDeep.value as T.Color).set(water.deep).multiplyScalar(body);
     (u.uShallow.value as T.Color).set(water.shallow).multiplyScalar(body);
-    (u.uHorizon.value as T.Color).copy(this.atSea && p === 0 ? new T.Color("#cfdfe8") : color(a.horizon, b.horizon));
-    (u.uZenith.value as T.Color).copy(this.atSea && p === 0 ? new T.Color("#4c8bcc") : color(a.zenith, b.zenith));
+    // At sea the day's sky in the water is a clearer blue, turning to the same dusk and night.
+    (u.uHorizon.value as T.Color).copy(color(this.atSea && k === 0 ? "#cfdfe8" : a.horizon, b.horizon));
+    (u.uZenith.value as T.Color).copy(color(this.atSea && k === 0 ? "#4c8bcc" : a.zenith, b.zenith));
+    // The lighthouse's lamp burns brighter as night falls.
+    if (this.beacon) this.beacon.emissiveIntensity = 0.6 + 4 * night;
     (u.uShore.value as T.Color).copy(color(a.shore, b.shore));
     (u.uSunColor.value as T.Color).copy(color(a.glitter, b.glitter));
     (u.uSun.value as T.Vector3).copy(night > 0.5 ? MOON : sun);
@@ -1617,7 +1622,7 @@ export class FishingView extends TableView<State> {
     this.skyMap.offset.x = (seconds * 0.0008) % 1;
     const uniforms = this.waterPaint.uniforms;
     uniforms.uTime.value = seconds;
-    // The lake's day goes by with the round; at sea the buoy rides the swell.
+    // The day goes by on the lake and at sea alike; at sea the buoy rides the swell.
     this.timeLight(this.timeOfDay());
     if (this.atSea) {
       this.rock(seconds);

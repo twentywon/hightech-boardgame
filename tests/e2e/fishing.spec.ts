@@ -156,7 +156,7 @@ test("fishing: hooked, circles drawn on the screen turn the reel, and the fish c
   expect(errors).toEqual([]);
 });
 
-test("fishing at sea: its stage card lays the sea from a boat (the day does not go by), and its own fish are caught", async ({ page }) => {
+test("fishing at sea: its stage card lays the sea from a boat, its day goes by too, and its own fish are caught", async ({ page }) => {
   test.setTimeout(300000);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -172,6 +172,7 @@ test("fishing at sea: its stage card lays the sea from a boat (the day does not 
   // What was landed is the sea's: one of its fish, the starfish, or a can.
   const landed = Number(await canvas(page).getAttribute("data-landed") || -1);
   if (landed >= 0) expect(landed === 5 || landed >= 9).toBe(true);
-  expect(await canvas(page).getAttribute("data-day")).toBe("0.00");
+  // The day goes by at sea as on the lake (the user asked): it has begun to turn by now.
+  expect(Number(await canvas(page).getAttribute("data-day"))).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
