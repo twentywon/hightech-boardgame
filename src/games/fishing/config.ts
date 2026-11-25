@@ -1,7 +1,10 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { CAST, CATCH, HOOK, LATE, LEVEL_NAMES, ROUND, SCARED, SLIP, SNAP, fishing, levelOf, seaOf, type State } from "./rules";
-import { BOOT, CAN, GOLDEN, KINDS, LEVELS, SEA, SLACK, STARFISH, TUNA } from "./sim";
+import { BOOT, CAN, GOLDEN, KINDS, LEVELS, MARLIN, SEA, SHARK, SLACK, STARFISH, TUNA, WHALE } from "./sim";
+
+/** The rare big catches: a sparkle when landed, and 드물게 in the guide. */
+const RARE = [GOLDEN, TUNA, MARLIN, SHARK, WHALE];
 import { FISHING_COLORS, FishingView } from "./view";
 
 const stat = (label: string, value: string | number) => `<span class="solo-stat"><small>${label}</small><b>${value}</b></span>`;
@@ -39,7 +42,7 @@ export const fishingConfig: PointConfig<State> = {
       if (kind === CAN) return sound.tile(2);
       if (kind === BOOT || kind === STARFISH) return sound.soft(3);
       sound.splash();
-      if (kind === GOLDEN || kind === TUNA) sound.sparkle();
+      if (RARE.includes(kind)) sound.sparkle();
       return;
     }
     if (last === CAST) return sound.plop();
@@ -104,7 +107,7 @@ export const fishingConfig: PointConfig<State> = {
           `${k.name}${k.water === "both" ? "" : k.water === "sea" ? " (바다)" : " (호수)"}`,
           k.junk
             ? `${k.flat}점. 싸우지 않고 그냥 끌려옵니다.`
-            : `${k.min}~${k.max}cm, 1cm에 ${k.worth}점.${i === GOLDEN || i === TUNA ? " 드물게 나옵니다." : ""}${k.pull >= 0.9 ? " 무겁고 세게 당깁니다." : k.lively > 1.2 ? " 자주 차고 나갑니다." : ""}`,
+            : `${k.min}~${k.max}cm, 1cm에 ${k.worth}점.${RARE.includes(i) ? " 드물게 나옵니다." : ""}${k.pull >= 0.9 ? " 무겁고 세게 당깁니다." : k.lively > 1.2 ? " 자주 차고 나갑니다." : ""}`,
         ]),
         ["크기", "같은 물고기라도 크기가 제각각이고, 멀리 던질수록 큰 물고기가 잘 겁니다."],
       ),
@@ -112,8 +115,8 @@ export const fishingConfig: PointConfig<State> = {
     part(
       "호수와 바다",
       table(
-        ["호수", "붕어·잉어·송어·메기·황금 잉어가 삽니다. 시간이 흐르면서 하늘이 낮에서 해질녘을 지나 밤으로 천천히 바뀝니다. 밤에는 찌 끝이 밝게 빛납니다."],
-        ["바다", `전갱이·고등어 같은 작은 물고기부터 우럭·감성돔·광어·참돔·방어, 드물게 아주 큰 참치까지 삽니다. 시간은 낮으로 일정합니다. 물고기가 무거워 호수보다 감는 데 훨씬 오래 걸리고(약 ${Math.round(1 / SEA.reel * 10) / 10}배), 더 세고 길게, 더 자주 차고 나가며 크게 요동칩니다.`],
+        ["호수", "붕어·잉어·송어·메기·황금 잉어와 개구리·가재가 삽니다. 시간이 흐르면서 하늘이 낮에서 해질녘을 지나 밤으로 천천히 바뀝니다. 밤에는 찌 끝이 밝게 빛납니다."],
+        ["바다", `전갱이·고등어 같은 작은 물고기부터 우럭·장어·감성돔·광어·방어·참치, 드물게 아주 큰 청새치·상어·고래까지 삽니다. 시간은 낮으로 일정합니다. 물고기가 무거워 호수보다 감는 데 훨씬 오래 걸리고(약 ${Math.round(1 / SEA.reel * 10) / 10}배), 더 세고 길게, 더 자주 차고 나가며 크게 요동칩니다.`],
       ),
     ) +
     part("레벨", table(...LEVEL_NAMES.map((name, i): [string, string] => [name, `찌가 들어가 있는 시간 약 ${LEVELS[i].bite}초. 레벨이 높을수록 물고기가 더 세고 자주 차고 나갑니다.`]), ["고르기", "위쪽의 <b>레벨 선택</b>을 누르면 호수·바다와 레벨을 고를 수 있습니다."])) +

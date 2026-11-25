@@ -16,8 +16,14 @@ import {
   CATFISH,
   DT,
   FULL_SPIN,
+  CRAYFISH,
+  EEL,
+  FROG,
+  MARLIN,
+  SHARK,
   STARFISH,
   TUNA,
+  WHALE,
   crank,
   GOLDEN,
   KINDS,
@@ -88,15 +94,21 @@ const LOOKS: { back: string; side: string; belly: string; fin: string; deep: num
   // The can and the boot are not fish (built apart).
   { back: "#000000", side: "#000000", belly: "#000000", fin: "#000000", deep: 0.3, wide: 0.15 },
   { back: "#000000", side: "#000000", belly: "#000000", fin: "#000000", deep: 0.3, wide: 0.15 },
-  // The sea's: horse mackerel, mackerel, rockfish, black porgy, flatfish, red sea bream, yellowtail, tuna.
+  // The frog and the crayfish are not fish (built apart).
+  { back: "#000000", side: "#000000", belly: "#000000", fin: "#000000", deep: 0.3, wide: 0.15 },
+  { back: "#000000", side: "#000000", belly: "#000000", fin: "#000000", deep: 0.3, wide: 0.15 },
+  // The sea's: horse mackerel, mackerel, rockfish, eel, black porgy, flatfish, yellowtail, tuna, marlin, shark, whale.
   { back: "#3c5a66", side: "#a9bcc0", belly: "#eef3f2", fin: "#c8b860", deep: 0.26, wide: 0.12, stripe: "#d8c860" },
   { back: "#1f4f5a", side: "#7fa0a8", belly: "#f2f4f0", fin: "#6a7c80", deep: 0.24, wide: 0.13, spots: "#14323a" },
   { back: "#2a2620", side: "#5a5248", belly: "#b8ae9c", fin: "#3a342c", deep: 0.36, wide: 0.18, spots: "#1a1612" },
+  { back: "#2a2a1c", side: "#5a5634", belly: "#c8c09a", fin: "#3e3a24", deep: 0.11, wide: 0.1 },
   { back: "#2c3036", side: "#6e767e", belly: "#c8ccd0", fin: "#3a3e44", deep: 0.44, wide: 0.15 },
   { back: "#5a4a32", side: "#7a6a4a", belly: "#f4efe4", fin: "#6a5a3c", deep: 0.5, wide: 0.08, spots: "#3a2e1e" },
-  { back: "#d84a5a", side: "#f08a8a", belly: "#fbe0dc", fin: "#e46a70", deep: 0.42, wide: 0.15, spots: "#6ac0e8" },
   { back: "#2a4a6a", side: "#a8b8c4", belly: "#f0f2f0", fin: "#c8b040", deep: 0.27, wide: 0.15, stripe: "#e8d050" },
   { back: "#14243e", side: "#6a7a90", belly: "#e8ecf0", fin: "#e8c040", deep: 0.3, wide: 0.22 },
+  { back: "#10305e", side: "#3e6aa8", belly: "#e4ecf4", fin: "#1c3e78", deep: 0.22, wide: 0.13, stripe: "#7ab8ff" },
+  { back: "#5a6670", side: "#87939c", belly: "#eef0f0", fin: "#5a6670", deep: 0.26, wide: 0.2 },
+  { back: "#28323e", side: "#3e4a58", belly: "#c8ccd0", fin: "#28323e", deep: 0.3, wide: 0.28 },
 ];
 /**
  * Fishing from a wooden pier on a calm lake (asked for by the user: "찌가 움직일 때 당겨 물고기를 잡습니다"): the
@@ -998,6 +1010,58 @@ export class FishingView extends TableView<State> {
       can.position.y = -0.2;
       can.rotation.z = 0.25;
       model.add(can);
+    } else if (kind === FROG) {
+      // A frog: a green body with a pale belly, bulging eyes, long folded hind legs and short front ones.
+      const skin = this.standard({ color: "#4f8a3a", roughness: 0.45 }),
+        belly = this.standard({ color: "#e4e0b4", roughness: 0.6 }),
+        black = this.standard({ color: "#121212", roughness: 0.2 }),
+        gold = this.standard({ color: "#e0b030", roughness: 0.3 });
+      const body = new T.Mesh(keep(new T.SphereGeometry(0.5, 20, 14)), skin);
+      body.scale.set(0.62, 0.34, 0.42);
+      this.attach(model, body, -0.34, 0, 0);
+      const under = new T.Mesh(keep(new T.SphereGeometry(0.5, 16, 10)), belly);
+      under.scale.set(0.56, 0.22, 0.36);
+      this.attach(model, under, -0.36, -0.07, 0);
+      for (const s of [-1, 1]) {
+        this.attach(model, new T.Mesh(keep(new T.SphereGeometry(0.07, 12, 8)), skin), -0.12, 0.13, s * 0.11);
+        this.attach(model, new T.Mesh(keep(new T.SphereGeometry(0.05, 10, 8)), gold), -0.1, 0.15, s * 0.14);
+        this.attach(model, new T.Mesh(keep(new T.SphereGeometry(0.028, 8, 6)), black), -0.08, 0.16, s * 0.165);
+        const thigh = new T.Mesh(keep(new T.CapsuleGeometry(0.06, 0.3, 4, 8)), skin);
+        thigh.rotation.set(s * 0.5, 0, 1.2);
+        this.attach(model, thigh, -0.62, -0.05, s * 0.2);
+        const shin = new T.Mesh(keep(new T.CapsuleGeometry(0.045, 0.34, 4, 8)), skin);
+        shin.rotation.set(s * 0.9, 0, -1.3);
+        this.attach(model, shin, -0.78, -0.06, s * 0.3);
+        const arm = new T.Mesh(keep(new T.CapsuleGeometry(0.035, 0.14, 4, 8)), skin);
+        arm.rotation.set(s * 0.6, 0, 0.4);
+        this.attach(model, arm, -0.2, -0.12, s * 0.17);
+      }
+    } else if (kind === CRAYFISH) {
+      // A crayfish: a red-brown shell in segments, a fanned tail, long feelers and two big claws ahead.
+      const shell = this.standard({ color: "#a8402a", roughness: 0.5 }),
+        dark = this.standard({ color: "#5a1e14", roughness: 0.5 });
+      const head = new T.Mesh(keep(new T.SphereGeometry(0.5, 16, 12)), shell);
+      head.scale.set(0.36, 0.17, 0.2);
+      this.attach(model, head, -0.24, 0, 0);
+      for (let k = 0; k < 5; k++) {
+        const ring = new T.Mesh(keep(new T.SphereGeometry(0.5, 12, 8)), k % 2 ? dark : shell);
+        ring.scale.set(0.12, 0.13 - k * 0.012, 0.17 - k * 0.015);
+        this.attach(model, ring, -0.46 - k * 0.08, -0.01, 0);
+      }
+      const fan = new T.Mesh(keep(new T.ConeGeometry(0.1, 0.14, 5).rotateZ(Math.PI / 2)), shell);
+      fan.scale.set(1, 0.35, 1);
+      this.attach(model, fan, -0.9, -0.01, 0);
+      for (const s of [-1, 1]) {
+        const arm = new T.Mesh(keep(new T.CapsuleGeometry(0.025, 0.2, 4, 8)), shell);
+        arm.rotation.set(0, s * 0.5, Math.PI / 2);
+        this.attach(model, arm, -0.02, -0.02, s * 0.1);
+        const claw = new T.Mesh(keep(new T.SphereGeometry(0.5, 12, 8)), shell);
+        claw.scale.set(0.22, 0.07, 0.1);
+        this.attach(model, claw, 0.16, -0.02, s * 0.17);
+        const feeler = new T.Mesh(keep(new T.CylinderGeometry(0.004, 0.006, 0.5, 5)), dark);
+        feeler.rotation.set(s * 0.25, 0, -1.3);
+        this.attach(model, feeler, 0.2, 0.04, s * 0.05);
+      }
     } else if (kind === STARFISH) {
       // A starfish: five rounded arms, orange and knobbly, hung by one of them.
       const star = new T.Shape();
@@ -1098,13 +1162,17 @@ export class FishingView extends TableView<State> {
         tail.quadraticCurveTo(-0.17, 0, -0.26, -look.deep * 0.62);
         tail.closePath();
       }
-      this.attach(model, new T.Mesh(keep(new T.ShapeGeometry(tail, 6)), fin), -0.94, 0, 0);
+      const fluke = this.attach(model, new T.Mesh(keep(new T.ShapeGeometry(tail, 6)), fin), -0.94, 0, 0);
+      // A whale's flukes lie flat, across the body.
+      if (kind === WHALE) fluke.rotation.x = Math.PI / 2;
       // A dorsal fin along the back (long on carp), a fin under the tail, and a pectoral fin each side.
+      // The shark's is a tall triangle, the marlin's a high sail, the eel's a low ridge most of its length, the whale's small.
       const dorsal = new T.Shape(),
-        long = kind === TROUT ? 0.16 : kind === CATFISH ? 0.08 : 0.34;
+        long = kind === TROUT ? 0.16 : kind === CATFISH || kind === WHALE ? 0.08 : kind === SHARK ? 0.14 : kind === MARLIN ? 0.42 : kind === EEL ? 0.56 : 0.34,
+        high = kind === SHARK ? 1.3 : kind === MARLIN ? 1.6 : kind === EEL ? 0.35 : kind === WHALE ? 0.3 : 0.4;
       dorsal.moveTo(0, 0);
-      dorsal.lineTo(-0.04, look.deep * 0.4);
-      dorsal.lineTo(-long, look.deep * 0.18);
+      dorsal.lineTo(kind === SHARK ? -0.1 : -0.04, look.deep * high);
+      dorsal.lineTo(-long, look.deep * high * 0.45);
       dorsal.lineTo(-long - 0.04, 0);
       dorsal.closePath();
       this.attach(model, new T.Mesh(keep(new T.ShapeGeometry(dorsal, 2)), fin), -0.34, look.deep * 0.42, 0);
@@ -1121,6 +1189,8 @@ export class FishingView extends TableView<State> {
         p.rotation.x = s * 0.9;
         model.add(p);
       }
+      // The marlin's spear of a bill, out ahead of its mouth.
+      if (kind === MARLIN) this.attach(model, new T.Mesh(keep(new T.ConeGeometry(0.018, 0.34, 8).rotateZ(-Math.PI / 2)), fin), 0.16, 0.01, 0);
       // Eyes.
       for (const s of [-1, 1]) {
         this.attach(model, new T.Mesh(keep(new T.SphereGeometry(0.034, 12, 8)), white), -0.13, look.deep * 0.1, s * look.wide * 0.36);
@@ -1389,7 +1459,7 @@ export class FishingView extends TableView<State> {
     this.label = null;
     if (capturing()) return;
     const junk = KINDS[kind].junk;
-    this.label = this.sign(`${KINDS[kind].name} ${size}cm`, junk ? (points ? `+${points}점 · 쓰레기를 건졌어요` : "0점 · 쓰레기를 건졌어요") : `+${points}점`, kind === GOLDEN || kind === TUNA ? "#ffe066" : "#ffffff", "rgba(12, 28, 36, 0.9)");
+    this.label = this.sign(`${KINDS[kind].name} ${size}cm`, junk ? (points ? `+${points}점 · 쓰레기를 건졌어요` : "0점 · 쓰레기를 건졌어요") : `+${points}점`, kind === GOLDEN || kind === TUNA || kind === MARLIN || kind === SHARK || kind === WHALE ? "#ffe066" : "#ffffff", "rgba(12, 28, 36, 0.9)");
     this.label.scale.set(1.1, 0.41, 1);
   }
   private advance(now: number) {
@@ -1633,7 +1703,8 @@ export class FishingView extends TableView<State> {
     let model: T.Group | null = null;
     if (kind !== undefined) {
       const size = w.phase === "land" ? w.landed!.size : w.fish!.size,
-        scale = KINDS[kind].junk ? 0.62 : 0.18 + (Math.min(size, 140) / 100) * 0.6;
+        // The giants (marlin, shark, whale) are drawn larger still when lifted out, though less than true to size.
+        scale = KINDS[kind].junk ? 0.62 : 0.18 + (Math.min(size, kind === WHALE || kind === SHARK || kind === MARLIN ? 300 : 140) / 100) * 0.6;
       if (w.phase === "land") {
         model = this.catchModel(kind);
         const mouth = this.liftedAt(now),

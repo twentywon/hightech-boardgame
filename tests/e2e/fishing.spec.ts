@@ -172,7 +172,7 @@ test("fishing at sea: its stage card lays the sea (the day does not go by), and 
   await expect.poll(async () => Number(await canvas(page).getAttribute("data-caught")), { timeout: 110000, intervals: [250] }).toBeGreaterThan(0);
   // What was landed is the sea's: one of its fish, the starfish, or a can.
   const landed = Number(await canvas(page).getAttribute("data-landed") || -1);
-  if (landed >= 0) expect(landed === 5 || landed >= 7).toBe(true);
+  if (landed >= 0) expect(landed === 5 || landed >= 9).toBe(true);
   expect(await canvas(page).getAttribute("data-day")).toBe("0.00");
   expect(errors).toEqual([]);
 });

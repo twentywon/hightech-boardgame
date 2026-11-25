@@ -32,15 +32,21 @@ export const CRUCIAN = 0,
   GOLDEN = 4,
   CAN = 5,
   BOOT = 6,
-  HORSE_MACKEREL = 7,
-  MACKEREL = 8,
-  ROCKFISH = 9,
-  PORGY = 10,
-  FLATFISH = 11,
-  SEABREAM = 12,
-  YELLOWTAIL = 13,
-  TUNA = 14,
-  STARFISH = 15;
+  FROG = 7,
+  CRAYFISH = 8,
+  HORSE_MACKEREL = 9,
+  MACKEREL = 10,
+  ROCKFISH = 11,
+  EEL = 12,
+  PORGY = 13,
+  FLATFISH = 14,
+  YELLOWTAIL = 15,
+  TUNA = 16,
+  MARLIN = 17,
+  SHARK = 18,
+  WHALE = 19,
+  STARFISH = 20;
+/** A catch's size in cm is kept under 1000 (a catch move packs it with its kind, `catchMove`). */
 export const KINDS: Kind[] = [
   { name: "붕어", min: 12, max: 32, worth: 0.5, pull: 0.3, lively: 0.85, weight: [46, 40, 34], water: "lake" },
   { name: "잉어", min: 30, max: 72, worth: 0.6, pull: 0.62, lively: 1, weight: [17, 19, 20], water: "lake" },
@@ -49,16 +55,22 @@ export const KINDS: Kind[] = [
   { name: "황금 잉어", min: 40, max: 80, worth: 1.6, pull: 0.75, lively: 1.15, weight: [3, 3, 4], water: "lake" },
   { name: "빈 깡통", min: 11, max: 13, worth: 0, flat: 0, pull: 0, lively: 0, junk: true, weight: [7, 7, 7], water: "both" },
   { name: "장화", min: 26, max: 30, worth: 0, flat: 1, pull: 0, lively: 0, junk: true, weight: [7, 7, 7], water: "lake" },
-  // The sea (the user asked: many kinds, from big to small): small and common, then ever larger and rarer, the tuna
-  // the giant of them, rare and very strong.
+  // The lake's small creatures (the user asked): a frog that kicks, a crayfish that hardly fights; worth more a cm.
+  { name: "개구리", min: 6, max: 15, worth: 1.2, pull: 0.15, lively: 1.6, weight: [8, 7, 6], water: "lake" },
+  { name: "가재", min: 8, max: 18, worth: 1, pull: 0.22, lively: 0.5, weight: [8, 7, 6], water: "lake" },
+  // The sea (the user asked: many kinds, from big to small): small and common, then ever larger and rarer, up to the
+  // marlin, the shark and the whale, the giants, rare and very strong.
   { name: "전갱이", min: 15, max: 32, worth: 0.6, pull: 0.38, lively: 1.25, weight: [30, 25, 21], water: "sea" },
   { name: "고등어", min: 25, max: 46, worth: 0.6, pull: 0.5, lively: 1.5, weight: [22, 20, 18], water: "sea" },
   { name: "우럭", min: 20, max: 52, worth: 0.7, pull: 0.58, lively: 0.8, weight: [15, 15, 14], water: "sea" },
+  { name: "장어", min: 40, max: 120, worth: 0.8, pull: 0.7, lively: 1.6, weight: [8, 8, 8], water: "sea" },
   { name: "감성돔", min: 25, max: 58, worth: 0.9, pull: 0.72, lively: 1, weight: [9, 10, 11], water: "sea" },
   { name: "광어", min: 35, max: 85, worth: 0.8, pull: 0.85, lively: 0.7, weight: [7, 8, 9], water: "sea" },
-  { name: "참돔", min: 35, max: 95, worth: 1, pull: 0.92, lively: 1.1, weight: [5, 6, 7], water: "sea" },
   { name: "방어", min: 50, max: 115, worth: 1, pull: 1.1, lively: 1.3, weight: [3, 4, 5], water: "sea" },
   { name: "참치", min: 90, max: 210, worth: 1.3, pull: 1.35, lively: 1.2, weight: [1, 1.5, 2], water: "sea" },
+  { name: "청새치", min: 150, max: 400, worth: 0.8, pull: 1.55, lively: 1.5, weight: [0.8, 1.1, 1.4], water: "sea" },
+  { name: "상어", min: 100, max: 350, worth: 0.7, pull: 1.6, lively: 1.1, weight: [1.2, 1.6, 2], water: "sea" },
+  { name: "고래", min: 400, max: 900, worth: 0.3, pull: 1.9, lively: 0.9, weight: [0.4, 0.6, 0.8], water: "sea" },
   { name: "불가사리", min: 14, max: 26, worth: 0, flat: 1, pull: 0, lively: 0, junk: true, weight: [5, 5, 5], water: "sea" },
 ];
 /** Whether `kind` is caught in the sea (`sea`) or the lake. */

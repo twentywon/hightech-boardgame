@@ -281,6 +281,7 @@ describe("fishing", () => {
     expect(back).toBe(0);
   });
   test("the sea has its own kinds, big to small, and the lake its own; each round takes only its water's catches", () => {
+    const atSeaGame = () => fr.fishing.create("s1");
     const kindsAt = (sea: boolean) => {
       const world = fs.createWorld(3, seededRandom(sea ? 12 : 13), sea),
         seen = new Set<number>();
@@ -295,9 +296,20 @@ describe("fishing", () => {
     for (const kind of sea) expect(fs.caughtIn(kind, true), fs.KINDS[kind].name).toBe(true);
     for (const kind of lake) expect(fs.caughtIn(kind, false), fs.KINDS[kind].name).toBe(true);
     // Every sea fish comes up, the tuna (the biggest) too, and no lake fish does.
-    for (const kind of [fs.HORSE_MACKEREL, fs.MACKEREL, fs.ROCKFISH, fs.PORGY, fs.FLATFISH, fs.SEABREAM, fs.YELLOWTAIL, fs.TUNA, fs.STARFISH]) expect(sea.has(kind), fs.KINDS[kind].name).toBe(true);
-    expect(sea.has(fs.CRUCIAN) || sea.has(fs.CARP) || sea.has(fs.BOOT)).toBe(false);
-    expect(lake.has(fs.TUNA)).toBe(false);
+    for (const kind of [fs.HORSE_MACKEREL, fs.MACKEREL, fs.ROCKFISH, fs.EEL, fs.PORGY, fs.FLATFISH, fs.YELLOWTAIL, fs.TUNA, fs.MARLIN, fs.SHARK, fs.WHALE, fs.STARFISH]) expect(sea.has(kind), fs.KINDS[kind].name).toBe(true);
+    expect(sea.has(fs.CRUCIAN) || sea.has(fs.CARP) || sea.has(fs.BOOT) || sea.has(fs.FROG) || sea.has(fs.CRAYFISH)).toBe(false);
+    // The lake has its frog and crayfish (the user asked), and none of the sea's.
+    for (const kind of [fs.CRUCIAN, fs.CARP, fs.TROUT, fs.CATFISH, fs.GOLDEN, fs.FROG, fs.CRAYFISH]) expect(lake.has(kind), fs.KINDS[kind].name).toBe(true);
+    expect(lake.has(fs.TUNA) || lake.has(fs.WHALE) || lake.has(fs.SHARK)).toBe(false);
+    // The red sea bream is gone (the user asked); the whale is the biggest of all.
+    expect(fs.KINDS.some((k) => k.name === "참돔")).toBe(false);
+    expect(Math.max(...fs.KINDS.map((k) => k.max))).toBe(fs.KINDS[fs.WHALE].max);
+    // Every size fits a catch move (kind × 1000 + size), and every catch's points within the rules' bound.
+    for (const [kind, k] of fs.KINDS.entries()) {
+      expect(k.max, k.name).toBeLessThan(1000);
+      expect(fs.pointsOf(kind, k.max), k.name).toBeLessThanOrEqual(fr.MOST);
+    }
+    expect(fr.play(atSeaGame(), fr.catchMove(fs.WHALE, 850))!.score).toBe(fs.pointsOf(fs.WHALE, 850));
     expect(fs.KINDS[fs.TUNA].max).toBeGreaterThan(2 * fs.KINDS[fs.HORSE_MACKEREL].max);
     // The stages: "s1".."s3" are the sea; a catch from the other water is refused.
     const atSea = fr.fishing.create("s2");
@@ -329,7 +341,7 @@ describe("fishing", () => {
     expect(landTime(true)).toBeGreaterThan(1.6 * landTime(false));
     // Surges: watched over a long fight held still (the fish never landed), their strength, length and number.
     const surges = (sea: boolean) => {
-      const world = biting(fs.SEABREAM, 60, 2, 30);
+      const world = biting(fs.YELLOWTAIL, 60, 2, 30);
       world.sea = sea;
       fs.press(world);
       const found: { power: number; length: number }[] = [];
