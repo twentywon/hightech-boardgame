@@ -23,7 +23,7 @@ const playable = (excluded: string[] = []): Playable[] =>
   allGames
     .filter((g) => g.available && !excluded.includes(g.en))
     .map((g) => ({ id: idOf(g.en), name: g.name, wifi: OWN_WIFI.includes(idOf(g.en)) || netPoints.includes(idOf(g.en)) }));
-const STUDENT_OUT = ["BLACKJACK", "SEOTDA", "SEVEN POKER", "TEXAS HOLDEM", "GO-STOP", "COIN PUSHER"];
+const STUDENT_OUT = ["BLACKJACK", "SEOTDA", "SEVEN POKER", "TEXAS HOLDEM", "GO-STOP", "COIN PUSHER", "ROULETTE"];
 const ADDRESS = "192.168.0.12:47297";
 
 describe("routing a room to its game", () => {

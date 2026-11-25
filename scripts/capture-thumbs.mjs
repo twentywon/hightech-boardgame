@@ -602,6 +602,12 @@ const play = {
     await page.keyboard.up(" ");
     await page.keyboard.press("p");
   },
+  // 룰렛: a few chips laid by the keyboard (25s round 17, 100s on a corner and a street), the wheel beside the layout.
+  roulette: async () => {
+    await page.locator("canvas").focus();
+    await keys(["3", "Enter", "ArrowRight", "ArrowRight", "Enter", "ArrowUp", "Enter", "4", "ArrowLeft", "Enter", "ArrowDown", "ArrowDown", "Enter"], 160);
+    await wait(600);
+  },
   // 사격 (the BB booth, the default): a few lit targets shot by hand, each press held until the sights are near a line and
   // let go on the target, so that the displays show a score and other targets are lit; then paused at rest.
   shooting: async () => {

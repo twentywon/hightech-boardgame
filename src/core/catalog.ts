@@ -848,11 +848,19 @@ export const allGames = [
     icon: "🎣",
     available: true,
   },
+  {
+    name: "룰렛",
+    en: "ROULETTE",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "◉",
+    available: true,
+  },
 ];
 
 /**
  * The student edition (built with `VITE_EDITION=student`, `npm run build:student`) leaves out the games commonly
- * thought of as gambling: the betting card games, go-stop, blackjack and the coin pusher (Indian poker and the claw
+ * thought of as gambling: the betting card games, go-stop, blackjack, the coin pusher and roulette (Indian poker and the claw
  * machine stay in: the user asked). The full edition keeps
  * every game; nothing else differs. `import.meta.env` is missing under plain Node (browser tests import this file).
  */
@@ -866,6 +874,7 @@ export const STUDENT_EXCLUDED = [
   "TEXAS HOLDEM",
   "GO-STOP",
   "COIN PUSHER",
+  "ROULETTE",
 ];
 /** The games this edition shows. */
 export const games = EDITION === "student" ? allGames.filter((g) => !STUDENT_EXCLUDED.includes(g.en)) : allGames;

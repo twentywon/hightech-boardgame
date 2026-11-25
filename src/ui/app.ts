@@ -91,6 +91,7 @@ import { laserChessConfig } from "../games/laserchess/config";
 import { archeryConfig } from "../games/archery/config";
 import { tuhoConfig } from "../games/tuho/config";
 import { coinPusherConfig } from "../games/coinpusher/config";
+import { rouletteConfig } from "../games/roulette/config";
 import { shootingConfig } from "../games/shooting/config";
 import { marblePushConfig } from "../games/push/config";
 import { hexConquestConfig } from "../games/hexconquest/config";
@@ -284,6 +285,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   archery: { config: archeryConfig, options: { mode: "ai", variant: "match", level: "normal" } },
   tuho: { config: tuhoConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "coin-pusher": { config: coinPusherConfig, options: { mode: "ai", variant: "30", level: "normal" } },
+  roulette: { config: rouletteConfig, options: { mode: "ai", variant: "", level: "normal" } },
   shooting: { config: shootingConfig, options: { mode: "ai", variant: "bb", level: "normal" } },
   "marble-push": { config: marblePushConfig, options: { mode: "ai", variant: "standard", level: "normal" } },
   // 헥스 정복전 is a territory game like 대륙 쟁탈전, played on the point-game screen.
@@ -527,6 +529,7 @@ type GameSelection =
   | "archery"
   | "tuho"
   | "coin-pusher"
+  | "roulette"
   | "shooting"
   | "marble-push"
   | "slot-car"

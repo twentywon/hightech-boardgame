@@ -3948,3 +3948,40 @@ dialog.setup-dialog.entry .setup-host button.primary.entry-start { position:abso
   dialog.setup-dialog.entry .entry-actions #setup-cancel { min-height:42px; }
 }
 dialog.setup-dialog.entry .setup-host button.primary.entry-start { display:inline-flex !important;align-items:center !important;gap:6px;line-height:1.2;padding-top:0 !important;padding-bottom:0 !important; }
+/* 룰렛: the chips to choose, the balance and the bets' buttons in a dark bar over the table's foot, the numbers lately
+   come in a strip at the upper right (decoration over the canvas: the same choices are keys, and the status line
+   tells the balance). */
+.rl-bar { position:absolute;left:50%;bottom:max(34px, env(safe-area-inset-bottom));translate:-50% 0;z-index:4;display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:20px;background:rgba(10,22,16,.84);box-shadow:0 8px 24px rgba(0,0,0,.4);color:#f6efdc;font-family:"Inter","Noto Sans KR",sans-serif;max-width:calc(100% - 20px);user-select:none;-webkit-user-select:none; }
+.rl-chips { display:flex;gap:6px; }
+.rl-chip { width:46px;height:46px;border-radius:50%;padding:0;display:grid;place-items:center;border:3px dashed rgba(255,255,255,.85);font:900 14px/1 "Inter",sans-serif;cursor:pointer;box-shadow:0 3px 8px rgba(0,0,0,.45);transition:transform .12s, box-shadow .12s; }
+.rl-chip span { display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#f6f1e4; }
+.rl-chip-1 { background:#2f63c4;color:#2f63c4; }
+.rl-chip-5 { background:#c8312b;color:#c8312b; }
+.rl-chip-25 { background:#2c8a4f;color:#2c8a4f; }
+.rl-chip-100 { background:#1d1d22;color:#1d1d22;border-color:#e8c25a; }
+.rl-chip[aria-pressed="true"] { transform:translateY(-5px) scale(1.08);box-shadow:0 0 0 3px #ffd75a, 0 8px 16px rgba(0,0,0,.5); }
+.rl-chip:disabled { opacity:.4;cursor:default; }
+.rl-purse { margin:0;display:flex;flex-direction:column;gap:2px;font-size:12px;font-weight:700;opacity:.92;white-space:nowrap;min-width:78px; }
+.rl-purse b { font-size:17px;font-weight:900;font-variant-numeric:tabular-nums;color:#ffe08a;margin-left:4px; }
+.rl-acts { display:flex;gap:6px; }
+.rl-acts button { padding:9px 13px;border-radius:999px;border:0;background:#f6f1e4;color:#1d2a26;font:700 13px/1 "Inter","Noto Sans KR",sans-serif;cursor:pointer;white-space:nowrap; }
+.rl-acts button[hidden] { display:none; }
+.rl-acts button:disabled { opacity:.45;cursor:default; }
+.rl-acts .rl-spin { background:#e2b13c;color:#2a1a06;font-weight:900;padding:9px 18px; }
+.rl-history { position:absolute;right:14px;top:58px;z-index:3;display:flex;gap:4px;pointer-events:none; }
+.rl-n { display:grid;place-items:center;width:26px;height:26px;border-radius:50%;font:800 12px/1 "Inter",sans-serif;font-style:normal;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.4); }
+.rl-red { background:#b52a24; }
+.rl-black { background:#1b1b1f; }
+.rl-green { background:#13804a; }
+.rl-last { width:34px;height:34px;font-size:15px;box-shadow:0 0 0 2px #ffd75a, 0 2px 8px rgba(0,0,0,.45); }
+@media (max-height: 520px) {
+  .rl-bar { bottom:8px;gap:8px;padding:6px 8px; }
+  .rl-chip { width:38px;height:38px;font-size:12px; }
+  .rl-chip span { width:22px;height:22px; }
+  .rl-acts button { padding:8px 10px;font-size:12px; }
+  .rl-history { top:46px; }
+  .rl-n { width:22px;height:22px;font-size:10.5px; }
+  .rl-last { width:28px;height:28px;font-size:13px; }
+}
+@media (max-width: 700px) { .rl-purse { display:none; } }
+html[data-capture] .rl-bar, html[data-capture] .rl-history { display:none !important; }
