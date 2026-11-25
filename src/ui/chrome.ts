@@ -129,6 +129,8 @@ const TIMED: Record<string, Partial<Record<Outcome, string>>> = {
   shooting: { win: "사격 종료", lose: "사격 종료", draw: "사격 종료" },
   // 슬롯 카: first home is 우승; any other place against the computer is the race's end, not a defeat.
   "slot-car": { win: "우승", lose: "레이스 종료" },
+  // 주차 요원 is a shift: its end is the clock running out.
+  "valet-parking": { win: "근무 종료", lose: "근무 종료", draw: "근무 종료" },
 };
 export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   const board = document.querySelector<HTMLElement>(".board-area");

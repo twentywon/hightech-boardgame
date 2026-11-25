@@ -873,6 +873,14 @@ export const allGames = [
     available: true,
   },
   {
+    name: "주차 요원",
+    en: "VALET PARKING",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "🅿",
+    available: true,
+  },
+  {
     name: "금화 쟁탈전",
     en: "GOLD RAID",
     category: "아케이드게임",
