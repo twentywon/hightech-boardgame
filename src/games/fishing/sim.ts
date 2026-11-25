@@ -83,12 +83,30 @@ export const caughtIn = (kind: number, sea: boolean) => {
  * pace, surge with `power` more strength, for `length` times as long, `gap` times as often apart, and run `run`
  * times as fast.
  */
-export const SEA = { reel: 0.55, power: 1.3, length: 1.6, gap: 1, run: 1.35 };
+export const SEA = { reel: 1, power: 1.3, length: 1.6, gap: 1, run: 1.35 };
 /**
  * How much longer a hooked fish rests between its surges than the level's own `gap` says (the user found it ran too
  * often): about twice as long, and its first surge comes later after the strike too.
  */
 export const REST = 1.8;
+/**
+ * How quickly a hooked fish comes in, by how hard it pulls (the user asked: the common ones in at once, the big ones a
+ * long fight): `REEL_PACE` times (`COMMON_PULL` / its pull) to the `REEL_POWER`, at most `REEL_MOST`, and a bigger
+ * one of its kind a little slower. A crucian comes in about four times as fast as a catfish, a whale about a tenth as
+ * fast as a horse mackerel.
+ */
+export const COMMON_PULL = 0.3,
+  REEL_POWER = 1.4,
+  REEL_MOST = 2.6,
+  REEL_PACE = 2.4;
+export const reelPace = (pull: number, sizeShare = 0.5) => REEL_PACE * Math.min(REEL_MOST, Math.pow(COMMON_PULL / Math.max(0.05, pull), REEL_POWER)) * (1.15 - 0.3 * sizeShare);
+/** A heavy fish rests longer between its surges (the user asked: fewer surges even in a long fight): its rest times this. */
+export const restOf = (pull: number) => 1 + 1.5 * Math.max(0, pull - 0.5);
+/**
+ * How far a surge carries the fish off, as a share of a common fish's run: a heavy one pulls the line as hard (the
+ * tension), but comes in so slowly that runs as long would never let it be landed.
+ */
+export const runOf = (pull: number) => Math.max(0.25, Math.min(1, Math.pow(COMMON_PULL / Math.max(0.05, pull), REEL_POWER)));
 /** What a catch of `kind` and `size` cm is worth. */
 export const pointsOf = (kind: number, size: number) => {
   const k = KINDS[kind];
@@ -433,7 +451,7 @@ function fight(world: World, out: Happening[]) {
     world.surge.t += DT;
     if (world.surge.t >= world.surge.length) {
       world.surge = null;
-      world.surgeIn = (between(world, level.gap) / kind.lively) * sea.gap * REST;
+      world.surgeIn = (between(world, level.gap) / kind.lively) * sea.gap * REST * restOf(kind.pull);
     }
   } else if (!kind.junk) {
     world.surgeIn -= DT;
@@ -449,10 +467,11 @@ function fight(world: World, out: Happening[]) {
   }
   const pull = surgeNow(world.surge),
     run = (speed: number) => {
-      // The fish runs its way (away from the pier, to one side).
-      const way = world.surge!.way;
-      f.x += Math.sin(way) * speed * sea.run * DT;
-      f.z -= Math.cos(way) * speed * sea.run * DT;
+      // The fish runs its way (away from the pier, to one side); a heavy one, a shorter way.
+      const way = world.surge!.way,
+        far = speed * sea.run * runOf(kind.pull) * DT;
+      f.x += Math.sin(way) * far;
+      f.z -= Math.cos(way) * far;
     };
   if (world.reeling) {
     world.slack = 0;
@@ -465,7 +484,8 @@ function fight(world: World, out: Happening[]) {
       const steady = (kind.junk ? 0.12 : 0.18 + 0.3 * kind.pull) * (0.7 + 0.3 * Math.min(1, wind));
       world.tension += (steady - world.tension) * Math.min(1, 2.5 * DT);
       // The fish comes in as fast as the crank turns.
-      const speed = 2.4 * Math.max(0.35, 1 - 0.3 * kind.pull) * wind * sea.reel,
+      const share = kind.max > kind.min ? (fish.size - kind.min) / (kind.max - kind.min) : 0.5,
+        speed = (kind.junk ? REEL_PACE : reelPace(kind.pull, share)) * wind * sea.reel,
         dx = REEL_TO.x - f.x,
         dz = REEL_TO.z - f.z,
         far = Math.hypot(dx, dz) || 1;

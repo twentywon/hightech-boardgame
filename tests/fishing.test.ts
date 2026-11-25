@@ -326,7 +326,7 @@ describe("fishing", () => {
     expect(fr.play(fr.createGame(false), fr.catchMove(fs.TUNA, 180))).toBeNull();
     expect(fr.play(atSea, fr.catchMove(fs.CAN, 12))).not.toBeNull();
   });
-  test("at sea the same fish takes far longer to bring in, and surges harder, longer and more often", () => {
+  test("at sea the same fish surges harder, longer and more often", () => {
     const landTime = (sea: boolean) => {
       const world = fs.createWorld(2, seededRandom(21), sea);
       fs.cast(world, fs.CAST.middle.x, fs.CAST.middle.z);
@@ -344,7 +344,8 @@ describe("fishing", () => {
       }
       return k * fs.DT;
     };
-    expect(landTime(true)).toBeGreaterThan(1.6 * landTime(false));
+    // The same fish winds in no slower at sea (its weight decides that); its surges are what make the sea wilder.
+    expect(landTime(true)).toBeGreaterThanOrEqual(landTime(false) * 0.95);
     // Surges: watched over a long fight held still (the fish never landed), their strength, length and number.
     const surges = (sea: boolean) => {
       const world = biting(fs.YELLOWTAIL, 60, 2, 30);
@@ -391,5 +392,55 @@ describe("fishing", () => {
     expect(lake.first).toBeGreaterThan(1.1);
     expect(lake.gap).toBeGreaterThan(5);
     expect(sea.count).toBeLessThanOrEqual(lake.count);
+  });
+});
+
+describe("fishing: common fish come in quickly, big ones take long, with few surges", () => {
+  /** A careful hand's fight with a middling `kind` of its size (lake or sea by its water), over a few seeds: its length and surges. */
+  const fight = (kind: number) => {
+    const k = fs.KINDS[kind],
+      sea = k.water === "sea";
+    let time = 0,
+      surges = 0,
+      landed = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      const world = fs.createWorld(2, seededRandom(seed * 13), sea);
+      fs.cast(world, fs.CAST.middle.x, fs.CAST.middle.z);
+      run(world, (w) => w.phase === "wait");
+      const size = Math.round((k.min + k.max) / 2);
+      world.fish = { kind, size, points: fs.pointsOf(kind, size) };
+      world.nibbles = 0;
+      world.nibbleIn = 0;
+      run(world, (w) => w.phase === "bite");
+      fs.press(world);
+      let t = 0;
+      for (; t < 300 / fs.DT && world.phase === "fight"; t++) {
+        if (world.surge || world.tension > 0.85) fs.release(world);
+        else turn(world, 2.4);
+        for (const e of fs.step(world)) if (e.kind === "surge") surges++;
+      }
+      if (world.landed) landed++;
+      time += t * fs.DT;
+    }
+    return { time: time / 4, surges: surges / 4, landed };
+  };
+  test("a crucian or a horse mackerel is in within seconds; a catfish takes far longer; a tuna or a whale a long fight, yet only a few surges, and is landed", () => {
+    const crucian = fight(fs.CRUCIAN),
+      catfish = fight(fs.CATFISH),
+      mackerel = fight(fs.KINDS.findIndex((k) => k.name === "전갱이")),
+      tuna = fight(fs.TUNA),
+      whale = fight(fs.WHALE);
+    expect(crucian.time).toBeLessThan(8);
+    expect(mackerel.time).toBeLessThan(13);
+    expect(catfish.time).toBeGreaterThan(crucian.time * 3);
+    expect(tuna.time).toBeGreaterThan(mackerel.time * 4);
+    expect(whale.time).toBeGreaterThan(60);
+    for (const big of [catfish, tuna, whale]) {
+      expect(big.landed).toBe(4);
+      expect(big.surges).toBeLessThanOrEqual(7);
+    }
+    // A big one of its kind comes in a little slower than a small one.
+    expect(fs.reelPace(1, 1)).toBeLessThan(fs.reelPace(1, 0));
+    expect(fs.reelPace(0.3)).toBeGreaterThan(fs.reelPace(1.9) * 8);
   });
 });

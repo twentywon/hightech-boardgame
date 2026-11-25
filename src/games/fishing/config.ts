@@ -1,7 +1,7 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { CAST, CATCH, HOOK, LATE, LEVEL, SCARED, SLIP, SNAP, fishing, seaOf, type State } from "./rules";
-import { BOOT, CAN, GOLDEN, KINDS, LEVELS, MARLIN, SEA, SHARK, SLACK, STARFISH, TUNA, WHALE } from "./sim";
+import { BOOT, CAN, GOLDEN, KINDS, LEVELS, MARLIN, SHARK, SLACK, STARFISH, TUNA, WHALE } from "./sim";
 
 /** The rare big catches: a sparkle when landed, and 드물게 in the guide. */
 const RARE = [GOLDEN, TUNA, MARLIN, SHARK, WHALE];
@@ -107,13 +107,14 @@ export const fishingConfig: PointConfig<State> = {
             : `${k.min}~${k.max}cm, 1cm에 ${k.worth}점.${RARE.includes(i) ? " 드물게 나옵니다." : ""}${k.pull >= 0.9 ? " 무겁고 세게 당깁니다." : k.lively > 1.2 ? " 자주 차고 나갑니다." : ""}`,
         ]),
         ["크기", "같은 물고기라도 크기가 제각각이고, 멀리 던질수록 큰 물고기가 잘 겁니다."],
+        ["감는 시간", "흔한 작은 물고기(붕어·개구리·가재·전갱이)는 금방 딸려 오고, 무거운 물고기일수록 오래 걸립니다(메기는 붕어의 네 배쯤, 참치·청새치·상어·고래는 1분 안팎). 같은 물고기도 클수록 조금 더 걸립니다. 무거운 물고기는 차고 나가는 사이가 길어서, 오래 싸워도 요동치는 횟수는 몇 번뿐입니다."],
       ),
     ) +
     part(
       "호수와 바다",
       table(
         ["호수", "나무 잔교에 서서 낚습니다. 붕어·잉어·송어·메기·황금 잉어와 개구리·가재가 삽니다. 시간이 흐르면서 하늘이 낮에서 해질녘을 지나 밤으로, 다시 새벽을 지나 낮으로 천천히 바뀝니다. 밤에는 찌 끝이 밝게 빛납니다."],
-        ["바다", `작은 낚싯배 위에서 낚습니다. 배는 너울에 천천히 흔들립니다. 전갱이·고등어 같은 작은 물고기부터 우럭·장어·감성돔·광어·방어·참치, 드물게 아주 큰 청새치·상어·고래까지 삽니다. 하늘은 호수처럼 낮에서 해질녘·밤·새벽으로 천천히 바뀌고, 밤에는 등대 불이 밝게 켜집니다. 물고기가 무거워 호수보다 감는 데 훨씬 오래 걸리고(약 ${Math.round(1 / SEA.reel * 10) / 10}배), 더 세고 길게 차고 나가며 크게 요동칩니다.`],
+        ["바다", `작은 낚싯배 위에서 낚습니다. 배는 너울에 천천히 흔들립니다. 전갱이·고등어 같은 작은 물고기부터 우럭·장어·감성돔·광어·방어·참치, 드물게 아주 큰 청새치·상어·고래까지 삽니다. 하늘은 호수처럼 낮에서 해질녘·밤·새벽으로 천천히 바뀌고, 밤에는 등대 불이 밝게 켜집니다. 큰 물고기가 많아 호수보다 감는 데 오래 걸리고, 더 세고 길게 차고 나가며 크게 요동칩니다.`],
       ),
     ) +
     part("장소 고르기", table(["고르기", "위쪽의 <b>장소 선택</b>을 누르면 호수와 바다 가운데 고를 수 있습니다. 새로 고르면 점수가 0부터 다시 시작합니다."], ["챔질", `찌가 들어가 있는 시간은 약 ${LEVELS[LEVEL - 1].bite}초입니다.`])) +
