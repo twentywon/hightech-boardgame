@@ -80,8 +80,8 @@ final class LanSockets {
                         line.write(b);
                     }
                 }
-            } catch (IOException e) {
-                // The connection ended.
+            } catch (IOException | RuntimeException e) {
+                // The connection ended (or something unforeseen: it ends the connection, never the app).
             }
             end();
         }
@@ -94,7 +94,8 @@ final class LanSockets {
                         OutputStream out = socket.getOutputStream();
                         out.write(bytes);
                         out.flush();
-                    } catch (IOException e) {
+                    } catch (IOException | RuntimeException e) {
+                        // An error on this thread would close the whole app: it closes the connection instead.
                         end();
                     }
                 });
@@ -147,7 +148,7 @@ final class LanSockets {
             Socket socket;
             try {
                 socket = listening.accept();
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
                 return;
             }
             InetAddress from = socket.getInetAddress();
@@ -167,11 +168,16 @@ final class LanSockets {
             } catch (IOException e) {
                 // Defaults are fine.
             }
-            peers.put(peer.id, peer);
-            events.incoming(peer.id, from.getHostAddress());
-            Thread reader = new Thread(peer::read, "wtg-lan-" + peer.id);
-            reader.setDaemon(true);
-            reader.start();
+            try {
+                peers.put(peer.id, peer);
+                events.incoming(peer.id, from.getHostAddress());
+                Thread reader = new Thread(peer::read, "wtg-lan-" + peer.id);
+                reader.setDaemon(true);
+                reader.start();
+            } catch (RuntimeException e) {
+                // A guest that cannot be taken in is let go; the room stays open for the others.
+                peer.end();
+            }
         }
     }
 
@@ -225,8 +231,13 @@ final class LanSockets {
                 return;
             }
             peer.socket = socket;
-            peers.put(id, peer);
-            events.opened(id);
+            try {
+                peers.put(id, peer);
+                events.opened(id);
+            } catch (RuntimeException e) {
+                peer.end();
+                return;
+            }
             peer.read();
         }, "wtg-lan-" + id);
         dial.setDaemon(true);

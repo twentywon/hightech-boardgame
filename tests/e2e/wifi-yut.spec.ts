@@ -123,3 +123,50 @@ test("yut nori over Wi-Fi: two devices take turns throwing and moving, only the 
   expect(moves).toBeGreaterThanOrEqual(2);
   await done();
 });
+
+/** The host invites, the guest answers, the host takes the answer: both see the room. */
+async function pair(host: Page, guest: Page, game: string, name: string) {
+  await host.locator("#net-invite").click();
+  const offer = host.locator("#net-offer");
+  await expect(offer).toBeVisible({ timeout: 20000 });
+  await lobby(guest, game, name);
+  await guest.locator("#net-join").click();
+  await guest.locator("#net-offer-in").fill(await offer.inputValue());
+  await guest.locator("#net-accept").click();
+  const answer = guest.locator("#net-answer");
+  await expect(answer).toBeVisible({ timeout: 20000 });
+  await host.locator("#net-answer-in").fill(await answer.inputValue());
+  await host.locator("#net-connect").click();
+  await expect(guest.locator(".net-seats")).toBeVisible({ timeout: 30000 });
+  await expect(host.locator(".net-people li", { hasText: name })).toBeVisible({ timeout: 30000 });
+}
+
+test("yut nori for four on four devices: the host starts, every device lays the yard and stays alive, and the first throws go round", async ({ browser }, info) => {
+  const devices = [await device(browser, info), await device(browser, info), await device(browser, info), await device(browser, info)],
+    pages = devices.map((d) => d.page),
+    [host] = pages;
+  await lobby(host, "윷놀이", "방장");
+  await host.locator("#net-host").click();
+  for (const [k, name] of ["민수", "지아", "하늘"].entries()) await pair(host, pages[k + 1], "윷놀이", name);
+  for (const [k, name] of ["민수", "지아", "하늘"].entries()) await expect(host.locator(".net-seat").nth(k + 1)).toContainText(name);
+  await host.locator("#net-start").click({ noWaitAfter: true, timeout: 120000 });
+  for (const page of pages) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  // The host's page still answers (it froze here: the user's tablet went down when the game began).
+  await expect.poll(() => host.evaluate(() => document.querySelectorAll(".yut-sides li").length), { timeout: 60000 }).toBe(4);
+  for (const page of pages) await resting(page);
+  // Each of the four throws in turn from its own device; every device agrees after each.
+  for (let k = 0; k < 4; k++) {
+    const turn = Number(await host.locator("#board").getAttribute("data-turn")),
+      mover = pages[turn],
+      before = await snapshot(host);
+    const choice = mover.locator("#yut-moves button:not([disabled])");
+    if (await choice.count()) await choice.first().evaluate((b) => (b as HTMLButtonElement).click());
+    else {
+      await expect(mover.locator("#yut-throw")).toBeEnabled({ timeout: 60000 });
+      await press(mover, "#yut-throw");
+    }
+    await expect.poll(() => snapshot(host), { timeout: 60000 }).not.toBe(before);
+    for (const page of pages) await resting(page);
+  }
+  for (const d of devices) expect(d.errors).toEqual([]);
+});

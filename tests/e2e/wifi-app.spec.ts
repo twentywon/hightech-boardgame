@@ -286,3 +286,41 @@ test("table tennis in the app: the guest's finger moves its blue paddle on the h
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
+
+test("yut nori for four in the app: the host starts the game with three guests and every phone lays the yard and plays on", async ({ browser }, info) => {
+  test.skip(info.project.name !== "mobile", "the app is the phone's");
+  const wifi = new FakeWifi();
+  const phones = [await phone(browser, info, wifi, "192.168.0.12"), await phone(browser, info, wifi, "192.168.0.23"), await phone(browser, info, wifi, "192.168.0.34"), await phone(browser, info, wifi, "192.168.0.45")],
+    pages = phones.map((p) => p.page),
+    [host] = pages;
+  await lobby(host, "윷놀이", "방장");
+  await host.locator("#net-host").click();
+  for (const [k, name] of ["민수", "지아", "하늘"].entries()) {
+    const guest = pages[k + 1];
+    await lobby(guest, "윷놀이", name);
+    await guest.locator("#net-join").click();
+    await guest.locator(".net-room:not(.other)").first().click();
+    await expect(guest.locator(".net-seats")).toBeVisible({ timeout: 15000 });
+    await expect(host.locator(".net-people li", { hasText: name })).toBeVisible({ timeout: 15000 });
+  }
+  await host.locator("#net-start").click({ noWaitAfter: true, timeout: 120000 });
+  for (const page of pages) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  await expect.poll(() => host.evaluate(() => document.querySelectorAll(".yut-sides li").length), { timeout: 60000 }).toBe(4);
+  const turnOf = () => host.locator("#board").getAttribute("data-turn");
+  for (let k = 0; k < 4; k++) {
+    for (const page of pages) await expect(page.locator("#board")).not.toHaveAttribute("data-animating", "true", { timeout: 60000 });
+    // What every phone must agree on: whose turn, the throws waiting to be used and the move count (a throw moves no piece).
+    const yard = (page: Page) => page.evaluate(() => [document.getElementById("board")!.dataset.turn, document.getElementById("yut-pending")?.textContent, document.getElementById("move-count")?.textContent].join(" | "));
+    const mover = pages[Number(await turnOf())],
+      before = await yard(host);
+    const choice = mover.locator("#yut-moves button:not([disabled])");
+    if (await choice.count()) await choice.first().evaluate((b) => (b as HTMLButtonElement).click());
+    else {
+      await expect(mover.locator("#yut-throw")).toBeEnabled({ timeout: 60000 });
+      await mover.locator("#yut-throw").first().evaluate((el) => (el as HTMLElement).click());
+    }
+    await expect.poll(() => yard(host), { timeout: 60000 }).not.toBe(before);
+    for (const page of pages) await expect.poll(() => yard(page), { timeout: 30000 }).toBe(await yard(host));
+  }
+  for (const p of phones) expect(p.errors).toEqual([]);
+});

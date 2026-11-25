@@ -15,6 +15,8 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.PermissionRequest;
+import android.webkit.RenderProcessGoneDetail;
+import android.widget.Toast;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -40,12 +42,23 @@ public class MainActivity extends Activity {
     /** The Wi-Fi rooms of 와이파이 여럿이 (hosting, finding, connections). */
     private LanBridge lan;
 
-    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        build(state);
+        hideBars();
+    }
+
+    /**
+     * The WebView and its bridge, opened at the page (or at the state Android kept). Built again, opened afresh at the
+     * collection, when the page's process ends ({@link #rebuild}).
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private void build(Bundle state) {
         web = new WebView(this);
+        // The page is what the person is using: its process is kept as long as the app's own.
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         web.setBackgroundColor(Color.rgb(0xEE, 0xE6, 0xD4));
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -96,11 +109,42 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 lan.reset();
             }
+
+            /**
+             * The page's process ended (most often a tablet out of graphics memory while a table was being drawn; the
+             * user found the host's tablet going down as a four-player yut game began). Left to Android, that closes the
+             * whole app; instead the page is built again at the collection and the person is told.
+             */
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                if (view == web) runOnUiThread(MainActivity.this::rebuild);
+                return true;
+            }
         });
         setContentView(web);
-        hideBars();
         if (state != null) web.restoreState(state);
         else web.loadUrl("file:///android_asset/index.html");
+    }
+
+    /** A new WebView and bridge in place of the ones whose page process ended; the old ones are let go. */
+    private void rebuild() {
+        WebView dead = web;
+        LanBridge old = lan;
+        try {
+            old.destroy();
+        } catch (RuntimeException e) {
+            // Its connections are gone with the page in any case.
+        }
+        build(null);
+        try {
+            dead.destroy();
+        } catch (RuntimeException e) {
+            // Already torn down with its process.
+        }
+        lan.onStart();
+        web.onResume();
+        hideBars();
+        Toast.makeText(this, "화면을 다시 불러왔습니다. 와이파이 방은 다시 열어 주세요.", Toast.LENGTH_LONG).show();
     }
 
     /** The person's answer to the camera: the page's waiting request is granted or denied with it. */

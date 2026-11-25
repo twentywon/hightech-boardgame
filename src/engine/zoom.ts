@@ -1,4 +1,5 @@
 import type * as T from "three";
+import { Vector2 } from "three";
 
 /**
  * Zooming into the game's table (the user asked), for every view that draws through a `zoomable` renderer:
@@ -124,8 +125,48 @@ function tick(canvas: HTMLCanvasElement) {
   });
 }
 
-/** Lets the table drawn by `renderer` be zoomed into. */
+/**
+ * The most pixels a table's drawing buffer may hold: a large screen at twice the density (a tablet's) is drawn at a
+ * little less density instead, so that its buffer stays near a phone's few millions. The user found the host's tablet
+ * going down as a four-player yut game began; a page whose buffer outgrows a modest tablet's graphics memory is ended
+ * by Android, and the app with it.
+ */
+export const MOST_PIXELS = 3_500_000;
+/**
+ * Holds a renderer's density to `MOST_PIXELS`: whatever density a view asks for (`setPixelRatio`), the buffer is drawn
+ * at no more than fits its size (`setSize`); a small screen keeps the density asked for.
+ */
+export function capped(renderer: T.WebGLRenderer) {
+  const ask = renderer.setPixelRatio.bind(renderer),
+    size = renderer.setSize.bind(renderer),
+    now = new Vector2();
+  let wanted = renderer.getPixelRatio(),
+    busy = false;
+  const fit = () => {
+    if (busy) return;
+    renderer.getSize(now);
+    const most = Math.sqrt(MOST_PIXELS / Math.max(1, now.x * now.y)),
+      ratio = Math.min(wanted, Math.max(1, most));
+    if (Math.abs(ratio - renderer.getPixelRatio()) < 1e-3) return;
+    busy = true;
+    ask(ratio);
+    busy = false;
+  };
+  renderer.setPixelRatio = (ratio: number) => {
+    wanted = ratio;
+    busy = true;
+    ask(ratio);
+    busy = false;
+    fit();
+  };
+  renderer.setSize = (width: number, height: number, style?: boolean) => {
+    size(width, height, style);
+    fit();
+  };
+}
+/** Lets the table drawn by `renderer` be zoomed into (and holds its drawing buffer to `MOST_PIXELS`). */
 export function zoomable(renderer: T.WebGLRenderer) {
+  capped(renderer);
   const canvas = renderer.domElement,
     render = renderer.render.bind(renderer);
   const zoom: Zoom = { z: 1, x: 0, y: 0, renderer, render, stale: false };
