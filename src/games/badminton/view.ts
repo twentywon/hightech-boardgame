@@ -1,5 +1,5 @@
 import * as T from "three";
-import { capable, glossy } from "../../engine/scene-utils";
+import { aim, capable, glossy } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -85,6 +85,9 @@ export class BadmintonView extends TableView<State> {
   private look = { x: 0, y: 0.95, z: -6.1 };
   private shook = -1;
   private reachShown = 0;
+  /** Where on the screen the pointer that holds my racket is (the mouse over the court, a finger held down), and the ray through it. */
+  private pointer: { clientX: number; clientY: number } | null = null;
+  private pointerRay = new T.Raycaster();
   /** Where each racket was aimed when it struck, held through the follow-through (the shuttle has gone by then). */
   private lastAim: (T.Vector3 | null)[] = [null, null];
   /** The glow round the shuttle while my racket can reach it. */
@@ -183,18 +186,23 @@ export class BadmintonView extends TableView<State> {
     });
     this.jumpButton.addEventListener("click", (e) => e.preventDefault());
     host.append(this.jumpButton);
+    // My racket follows the pointer (the user asked): the mouse over the court, or a finger while it stays on the screen.
     el.addEventListener("pointerdown", (e) => {
+      this.pointer = { clientX: e.clientX, clientY: e.clientY };
       if (!this.running()) return;
       el.setPointerCapture?.(e.pointerId);
       this.swipe = { id: e.pointerId, points: [{ x: e.clientX, y: e.clientY, t: performance.now() }] };
     });
     el.addEventListener("pointermove", (e) => {
+      if (e.pointerType === "mouse" || e.buttons || this.swipe?.id === e.pointerId) this.pointer = { clientX: e.clientX, clientY: e.clientY };
       const swipe = this.swipe;
       if (!swipe || swipe.id !== e.pointerId) return;
       swipe.points.push({ x: e.clientX, y: e.clientY, t: performance.now() });
       if (swipe.points.length > 40) swipe.points.splice(1, swipe.points.length - 40);
     });
     const done = (e: PointerEvent) => {
+      // A finger lifted lets the racket go back to turning toward the shuttle by itself; a mouse stays where it is.
+      if (e.pointerType !== "mouse") this.pointer = null;
       const swipe = this.swipe;
       if (!swipe || swipe.id !== e.pointerId) return;
       this.swipe = null;
@@ -204,6 +212,9 @@ export class BadmintonView extends TableView<State> {
     };
     el.addEventListener("pointerup", done);
     el.addEventListener("pointercancel", done);
+    el.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse") this.pointer = null;
+    });
     // The keyboard: ↑ a clear, ↓ a drop, ← and → a shot to that side, Space (or J) the jump.
     const KEYS: Record<string, [number, number]> = { ArrowUp: [0.82, 0], ArrowDown: [0.22, 0], ArrowLeft: [0.6, -0.35], ArrowRight: [0.6, 0.35] };
     el.addEventListener("keydown", (e) => {
@@ -391,7 +402,8 @@ export class BadmintonView extends TableView<State> {
       to.set(to.x * turned, to.y, to.z * turned);
       if (to.lengthSq() < 1e-4) to.set(0, 1, 0.3);
       to.normalize();
-      const toward = weight > 0 ? new T.Vector3(-0.3, 0.78, 0.55).normalize().lerp(to, weight).normalize() : null;
+      const held = side === 0 ? this.pointed(shoulder) : null,
+        toward = held ? new T.Vector3(held.x * turned, held.y, held.z * turned) : weight > 0 ? new T.Vector3(-0.3, 0.78, 0.55).normalize().lerp(to, weight).normalize() : null;
       // The swing: wound up while it waits for the shuttle (to about 0.4), through the shuttle at the stroke, followed through after.
       const stroke = swingAt >= 0 ? Math.min(0.4, (swingAt / SWING) * 0.4) : since >= 0 && since < 0.4 ? 0.45 + (since / 0.4) * 0.55 : null;
       aimArm(f, stroke !== null && since >= 0 && since < 0.4 && swingAt < 0 ? this.lastAim[side] ?? toward : toward, stroke, stroke !== null && swingAt < 0 ? p.high : s.y > 1.55 || airborne(w, side as 0 | 1));
@@ -470,6 +482,30 @@ export class BadmintonView extends TableView<State> {
     data.jumpnow = now_ ? "1" : "0";
     data.swung = String(this.swung);
     data.power = this.lastPower.toFixed(2);
+  }
+  /**
+   * The way (in the court's frame) from my shoulder to where the pointer points: the point under it at a racket's reach
+   * from the shoulder (a sphere round it, its near side if that is in front, else its far side), or, where the ray passes
+   * outside that reach, the ray's nearest point. Null without a pointer.
+   */
+  private pointed(shoulder: T.Vector3) {
+    if (!this.pointer || capturing()) return null;
+    aim(this.pointerRay, this.pointer as PointerEvent, this.renderer.domElement, this.camera);
+    const { origin, direction } = this.pointerRay.ray,
+      reach = 1.15,
+      to = origin.clone().sub(shoulder),
+      b = to.dot(direction),
+      c = to.lengthSq() - reach * reach,
+      disc = b * b - c;
+    let t: number;
+    if (disc >= 0) {
+      const near = -b - Math.sqrt(disc),
+        far = -b + Math.sqrt(disc),
+        front = origin.clone().addScaledVector(direction, near);
+      t = near > 0 && front.z < shoulder.z + 0.15 ? near : far;
+    } else t = Math.max(0, -b);
+    const way = origin.clone().addScaledVector(direction, t).sub(shoulder);
+    return way.lengthSq() > 1e-4 ? way.normalize() : null;
   }
   protected subject(_aspect: number): TableSubject {
     return { half: HALF_W + 1, halfZ: HALF_L + 1, height: 2, lookY: 0, tilt: 0.4 };
