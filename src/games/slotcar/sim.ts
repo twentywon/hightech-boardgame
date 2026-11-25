@@ -38,10 +38,15 @@ export const COUNTDOWN = 3,
 export const CAR_LENGTH = 0.78;
 export const ticks = (seconds: number) => Math.round(seconds / DT);
 /** The computer's drivers by level: how near the grip they aim to take a curve, how far that judgement strays, how late they brake. */
+/**
+ * …and how often, at each curve of a lap, it pushes its luck (`push`: the user asked that the computer's cars also fly
+ * off now and then when they go fast): it takes that curve at `over` times the safe speed or more, and does not lift
+ * when the tail steps out, so that it often slides out and flies off.
+ */
 export const LEVELS = {
-  easy: { aim: 0.9, stray: 0.45, late: 1.8, react: 0.45 },
-  normal: { aim: 0.93, stray: 0.15, late: 1.4, react: 0.3 },
-  hard: { aim: 0.98, stray: 0.02, late: 1, react: 0.18 },
+  easy: { aim: 0.9, stray: 0.45, late: 1.8, react: 0.45, push: 0.07, over: [1.3, 1.55] },
+  normal: { aim: 0.93, stray: 0.15, late: 1.4, react: 0.3, push: 0.06, over: [1.3, 1.55] },
+  hard: { aim: 0.98, stray: 0.02, late: 1, react: 0.18, push: 0.045, over: [1.3, 1.5] },
 };
 export type Level = keyof typeof LEVELS;
 export interface Flight {
@@ -126,7 +131,11 @@ export function createWorld(course: string, cars: number, laps: number, level: L
 /** A driver's judgement of every curve for the coming lap. */
 function rejudge(world: World, car: number, level: Level) {
   const skill = LEVELS[level];
-  world.judge[car] = world.track.segments.map(() => skill.aim * (1 + (draw(world) * 2 - 1) * skill.stray));
+  world.judge[car] = world.track.segments.map((seg) => {
+    const steady = skill.aim * (1 + (draw(world) * 2 - 1) * skill.stray);
+    if (seg.kind !== "curve" || draw(world) >= skill.push) return steady;
+    return skill.over[0] + (skill.over[1] - skill.over[0]) * draw(world);
+  });
 }
 /** Whether the green light is on. */
 export const racing = (world: World) => world.tick >= ticks(COUNTDOWN) && world.closed === null;
@@ -322,7 +331,7 @@ export function autopilot(world: World, k: number, level: Level = "normal") {
     }
     ahead += laneLength(seg, d);
   }
-  // Tail out: a careful driver lifts at once.
-  if (level !== "easy" && car.slide > (level === "hard" ? 0.2 : 0.45)) return false;
+  // Tail out: a careful driver lifts at once (not where it is pushing its luck: it keeps its foot down).
+  if (level !== "easy" && car.slide > (level === "hard" ? 0.2 : 0.45) && !(world.judge[k][car.seg] > 1)) return false;
   return car.v < limit - 0.08;
 }

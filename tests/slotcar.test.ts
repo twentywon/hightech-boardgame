@@ -184,7 +184,7 @@ describe("slot car driving", () => {
     expect(end.kind === "end" && end.ranking).toEqual([0, 1]);
     expect(world.closed! - world.cars[0].finish!).toBe(ticks(WAIT));
   });
-  it("the computer's drivers finish a race at every level, the hard ones never flying off", () => {
+  it("the computer's drivers finish a race at every level", () => {
     for (const course of COURSES)
       for (const level of ["easy", "normal", "hard"] as const) {
         const world = createWorld(course.value, 4, 3, level, 7),
@@ -192,18 +192,29 @@ describe("slot car driving", () => {
         expect(events.some((e) => e.kind === "end")).toBe(true);
         expect(world.order).toHaveLength(4);
         expect(ranking(world)).toEqual(world.order);
-        if (level === "hard") expect(world.cars.every((c) => c.offs === 0)).toBe(true);
       }
   });
-  it("the easy drivers fly off now and then", () => {
-    let offs = 0;
-    for (const course of COURSES)
-      for (let seed = 1; seed <= 4; seed++) {
-        const world = createWorld(course.value, 4, 5, "easy", seed);
-        run(world, (w, k) => autopilot(w, k, "easy"), 300, (e) => e.some((x) => x.kind === "end"), "easy");
-        offs += world.cars.reduce((sum, c) => sum + c.offs, 0);
-      }
-    expect(offs).toBeGreaterThan(0);
+  it("at every level the computer's drivers fly off now and then, going too fast into a curve (the lower the level, the more often), but not often", () => {
+    const rate = (level: "easy" | "normal" | "hard") => {
+      let offs = 0,
+        laps = 0;
+      for (const course of COURSES)
+        for (let seed = 1; seed <= 4; seed++) {
+          const world = createWorld(course.value, 4, 5, level, seed);
+          run(world, (w, k) => autopilot(w, k, level), 300, (e) => e.some((x) => x.kind === "end"), level);
+          offs += world.cars.reduce((sum, c) => sum + c.offs, 0);
+          laps += world.cars.reduce((sum, c) => sum + c.laps, 0);
+        }
+      return offs / laps;
+    };
+    const easy = rate("easy"),
+      normal = rate("normal"),
+      hard = rate("hard");
+    for (const r of [easy, normal, hard]) {
+      expect(r).toBeGreaterThan(0.01);
+      expect(r).toBeLessThan(0.15);
+    }
+    expect(easy).toBeGreaterThan(hard);
   });
   it("is the same race every time it is run with the same seed and the same pedals", () => {
     const race = () => {

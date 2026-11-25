@@ -286,6 +286,7 @@ export class SlotCarView extends TableView<State> {
     sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -half - 1, right: half + 1, top: depth + 6, bottom: -depth - 6, near: 1, far: 50 });
     sun.shadow.normalBias = 0.02;
+    sun.shadow.bias = -0.0004;
     this.own(sun.shadow);
     this.scene.add(sun);
     const lamp = new T.PointLight("#ffd9a0", 26, 30, 1.6);
@@ -404,12 +405,15 @@ export class SlotCarView extends TableView<State> {
           m.castShadow = m.receiveShadow = true;
           this.scene.add(m);
         }
-        const s = scenePoint(this.track, mid.x, mid.y, mid.h),
+        // The beam lies across under the track from foot to foot, tilted as the track is (on a banked curve its ends
+        // stuck up through the surface when it was kept level).
+        const [l, r] = feet.map((f) => scenePoint(this.track, f.x, f.y, f.h)),
+          from = new T.Vector3(l.x, l.y - THICK - 0.05, l.z),
+          to = new T.Vector3(r.x, r.y - THICK - 0.05, r.z),
           m = new T.Mesh(beam, grey);
-        m.scale.x = half * 2 - 0.2;
-        m.position.set(s.x, s.y - THICK - 0.05, s.z);
-        // The beam lies across the track: a quarter turn from its heading.
-        m.rotation.y = mid.heading + Math.PI / 2;
+        m.scale.x = from.distanceTo(to);
+        m.position.copy(from).add(to).multiplyScalar(0.5);
+        m.quaternion.setFromUnitVectors(new T.Vector3(1, 0, 0), to.clone().sub(from).normalize());
         this.scene.add(m);
       }
   }

@@ -233,14 +233,20 @@ export interface Pose {
   bank: number;
   slope: number;
 }
+/** The widest track's half width: a banked curve turns about its inner edge there, so no part of it sinks below the table. */
+export const WIDEST_HALF = 2 * LANE_W + BORDER;
 /** Where a lane at offset `d` is at fraction `f` through segment `seg`. */
 export function laneAt(seg: Segment, f: number, d: number): Pose {
   const m = middle(seg, f * seg.length),
-    bank = bankAt(seg, f) * Math.sign(seg.turn),
+    sign = Math.sign(seg.turn),
+    bank = bankAt(seg, f) * sign,
     eased = ease(f),
     h = seg.h0 + (seg.h1 - seg.h0) * eased,
     slope = ((seg.h1 - seg.h0) * 6 * f * (1 - f)) / Math.max(1e-6, seg.length);
-  return { x: m.x - Math.sin(m.heading) * d, y: m.y + Math.cos(m.heading) * d, h: h - Math.sin(bank) * d, heading: m.heading, bank, slope };
+  // Banked, the track is raised on its outer side about its inner edge (it tilted about its middle, and its inner
+  // edge sank into the table: the user saw the track broken there).
+  const raised = Math.sin(Math.abs(bank)) * (WIDEST_HALF - sign * d);
+  return { x: m.x - Math.sin(m.heading) * d, y: m.y + Math.cos(m.heading) * d, h: h + (seg.kind === "curve" ? raised : 0), heading: m.heading, bank, slope };
 }
 /** A point of the track's surface `d` across from the middle line, `along` units into a segment. */
 export const surfaceAt = (seg: Segment, along: number, d: number) => laneAt(seg, Math.min(1, Math.max(0, along / seg.length)), d);
