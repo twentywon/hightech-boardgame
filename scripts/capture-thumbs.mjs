@@ -602,6 +602,16 @@ const play = {
     await page.keyboard.up(" ");
     await page.keyboard.press("p");
   },
+  // 슬롯머신: one spin let run to its end (the reels at rest, the credits shown), then the lever pulled again and the
+  // picture taken with the reels turning.
+  "slot-machine": async () => {
+    await page.locator("canvas").focus();
+    await page.keyboard.press(" ");
+    await wait(3600);
+    await page.keyboard.press(" ");
+    await wait(700);
+    await page.keyboard.press("p");
+  },
   // 사격 (the BB booth, the default): a few lit targets shot by hand, each press held until the sights are near a line and
   // let go on the target, so that the displays show a score and other targets are lit; then paused at rest.
   shooting: async () => {
