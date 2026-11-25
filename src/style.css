@@ -3948,3 +3948,6 @@ dialog.setup-dialog.entry .setup-host button.primary.entry-start { position:abso
   dialog.setup-dialog.entry .entry-actions #setup-cancel { min-height:42px; }
 }
 dialog.setup-dialog.entry .setup-host button.primary.entry-start { display:inline-flex !important;align-items:center !important;gap:6px;line-height:1.2;padding-top:0 !important;padding-bottom:0 !important; }
+/* 훌라: the stock's tool (a tap on the stock does its work) keeps to a pixel at the cluster's foot, clear of the buttons; the scores over the table. */
+html[data-game="hula"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;bottom:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
+.hula-score b { font-weight:900; }

@@ -60,6 +60,7 @@ import { tentsConfig } from "../games/tents/config";
 import { amazonsConfig } from "../games/amazons/config";
 import { backgammonConfig } from "../games/backgammon/config";
 import { oneCardConfig } from "../games/onecard/config";
+import { hulaConfig } from "../games/hula/config";
 import { oldMaidConfig } from "../games/oldmaid/config";
 import { curlingConfig } from "../games/curling/config";
 import { starBattleConfig } from "../games/starbattle/config";
@@ -253,6 +254,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   backgammon: { config: backgammonConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "one-card": { config: oneCardConfig, options: { mode: "ai", variant: "", level: "normal" } },
   "old-maid": { config: oldMaidConfig, options: { mode: "ai", variant: "", level: "normal" } },
+  hula: { config: hulaConfig, options: { mode: "ai", variant: "3", level: "normal" } },
   curling: { config: curlingConfig, options: { mode: "ai", variant: "3", level: "normal" } },
   "star-battle": { config: starBattleConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   pipes: { config: pipesConfig, options: { mode: "ai", variant: "1", level: "normal" } },
@@ -497,6 +499,7 @@ type GameSelection =
   | "backgammon"
   | "one-card"
   | "old-maid"
+  | "hula"
   | "curling"
   | "star-battle"
   | "pipes"

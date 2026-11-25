@@ -465,6 +465,23 @@ const play = {
   "one-card": async () => {
     await wait(1200);
   },
+  hula: async () => {
+    // A few turns of mine (draw, discard my first card, pass any 땡큐) so that the computers' melds lie on the table.
+    for (let k = 0; k < 4; k++) {
+      await page
+        .waitForFunction(() => document.querySelector("canvas")?.dataset.seat === "0" && document.querySelector("#board")?.dataset.animating === "false", null, { timeout: 30000 })
+        .catch(() => {});
+      const phase = await page.locator("canvas").getAttribute("data-phase");
+      if (phase === "scored") break;
+      if (phase === "claim") await press("#pg-tool-4");
+      else if (phase === "draw") await press("#pg-tool-7");
+      else {
+        await keys(["ArrowLeft", "Enter"]);
+        await press("#pg-tool-2");
+      }
+    }
+    await wait(1600);
+  },
   "old-maid": async () => {
     await keys(["ArrowRight", "Enter"], 200);
     await wait(4000);

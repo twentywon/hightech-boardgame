@@ -848,6 +848,14 @@ export const allGames = [
     icon: "🎣",
     available: true,
   },
+  {
+    name: "훌라",
+    en: "HULA",
+    category: "카드게임",
+    players: "2인용",
+    icon: "♦",
+    available: true,
+  },
 ];
 
 /**
