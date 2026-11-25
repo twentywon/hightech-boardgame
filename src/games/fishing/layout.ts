@@ -8,8 +8,11 @@ export const DECK = { y: 0.8, end: -0.8, back: 14, half: 1.25 };
 /** The angler stands on the deck near its end, eyes about 1.6 above it, looking out over the water to the far shore. */
 export const EYE = { x: 0, y: 2.45, z: 3.4 },
   LOOK = { x: 0, y: 0.3, z: -16 };
-/** The hand at the rod's grip: to the right of and below the eye, a little ahead. */
-export const HAND = { x: 0.78, y: 1.55, z: 2.45 };
+/**
+ * The hand at the rod's grip: to the right of and below the eye, a little ahead, high enough that the reel under it
+ * is in sight at the lower right (the user asked to see the reel turn).
+ */
+export const HAND = { x: 0.5, y: 2.14, z: 2.55 };
 export const ROD_LENGTH = 4.7;
 /** The angler's camera: narrow screens step back a little so that the water to the sides stays in sight. */
 export function anglerCamera(camera: T.PerspectiveCamera, aspect: number) {

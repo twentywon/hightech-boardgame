@@ -1,5 +1,5 @@
 import type { Effect, Move, PointGame, Winner } from "../points/types";
-import { KINDS, pointsOf } from "./sim";
+import { KINDS, caughtIn, pointsOf } from "./sim";
 
 /**
  * Fishing from a pier: cast the float, wait for a bite, strike and reel the fish in. The lake itself is played in
@@ -17,8 +17,11 @@ export const ROUND = 90,
   HOOK = 6,
   /** A catch landed is a move to `CATCH + points`, its `extra` the kind × 1000 + its size in cm. */
   CATCH = 100,
-  MOST = 200;
+  MOST = 400;
 export const LEVEL_NAMES = ["쉬움", "보통", "어려움"];
+/** The stages: the lake at each level ("1" to "3"), the sea at each ("s1" to "s3"). */
+export const seaOf = (variant: string) => /^s/.test(variant ?? "");
+export const levelOf = (variant: string) => Number(String(variant ?? "").replace(/^s/, "")) || 1;
 export interface Catch {
   kind: number;
   size: number;
@@ -26,6 +29,8 @@ export interface Catch {
 }
 export interface State {
   level: number;
+  /** Fishing at sea (its own kinds, a longer fight) rather than on the lake. */
+  sea: boolean;
   score: number;
   /** Everything landed, junk too, in the order caught. */
   caught: Catch[];
@@ -39,8 +44,9 @@ export interface State {
   landed: Catch | null;
   ply: number;
 }
-export const createGame = (level = 1): State => ({
+export const createGame = (level = 1, sea = false): State => ({
   level: Math.max(1, Math.min(LEVEL_NAMES.length, Math.round(level) || 1)),
+  sea,
   score: 0,
   caught: [],
   lost: 0,
@@ -70,7 +76,7 @@ export function play(state: State, move: Move): State | null {
     size = move.extra % 1000;
   if (!Number.isInteger(points) || points > MOST || !Number.isInteger(move.extra) || move.extra < 0) return null;
   const k = KINDS[kind];
-  if (!k || size < k.min || size > k.max || pointsOf(kind, size) !== points) return null;
+  if (!k || !caughtIn(kind, state.sea) || size < k.min || size > k.max || pointsOf(kind, size) !== points) return null;
   const landed = { kind, size, points };
   return { ...next, score: state.score + points, caught: [...state.caught, landed], landed };
 }
@@ -85,7 +91,7 @@ export function biggest(state: State) {
 }
 const effect = (): Effect | null => null;
 export const fishing: PointGame<State> = {
-  create: (variant) => createGame(Number(variant) || 1),
+  create: (variant) => createGame(levelOf(variant), seaOf(variant)),
   moves,
   play: (state, move) => play(state, move),
   turn: () => 0,

@@ -16,6 +16,8 @@ import {
   CATFISH,
   DT,
   FULL_SPIN,
+  STARFISH,
+  TUNA,
   crank,
   GOLDEN,
   KINDS,
@@ -42,6 +44,23 @@ const KEY_TURN = 0.5;
 const HAZE = "#dfe3dc";
 /** The low sun over the far shore, a little to the left: the sky glows there and its light glitters on the water. */
 const SUN = new T.Vector3(-0.34, 0.12, -0.93).normalize();
+/** Where the sun has gone down to by dusk (just under the far hills), and where the moon stands at night. */
+const SUNSET = new T.Vector3(-0.42, -0.06, -0.9).normalize();
+const MOON = new T.Vector3(0.3, 0.15, -0.94).normalize();
+/**
+ * The lake's time of day over a round (the user asked: from day through dusk to night, the sky going slowly): three
+ * moments, day at the start, dusk past the middle, night at the end, blended between. The sea keeps the day.
+ */
+const TIMES = [
+  { at: 0, sky: "#ffffff", haze: "#dfe3dc", hemiSky: "#e4eefa", hemiGround: "#5d6b45", hemi: 1.55, sun: "#ffe9c8", sunPower: 2.3, horizon: "#c6d6de", zenith: "#5b8fc6", glitter: "#fff0cc", body: 1, shore: "#3f5a40", far: "#ffffff", lamp: 0, tip: 0 },
+  { at: 0.55, sky: "#ffb48e", haze: "#e9ad8e", hemiSky: "#ffc8a4", hemiGround: "#5a4636", hemi: 1.15, sun: "#ff9050", sunPower: 1.6, horizon: "#f0a47e", zenith: "#76699c", glitter: "#ffa860", body: 0.72, shore: "#3a2e34", far: "#d09a90", lamp: 0.6, tip: 0.8 },
+  { at: 1, sky: "#1d2749", haze: "#121a30", hemiSky: "#41538a", hemiGround: "#0e1218", hemi: 0.55, sun: "#9fb4ff", sunPower: 0.5, horizon: "#1c2949", zenith: "#070d20", glitter: "#c8d6ff", body: 0.3, shore: "#05070b", far: "#1d2438", lamp: 2.4, tip: 3 },
+];
+/** The water's own colours, by day: the lake's green-brown, the sea's blue. */
+const WATERS = {
+  lake: { deep: "#1c4a5e", shallow: "#29473c" },
+  sea: { deep: "#0d3a62", shallow: "#145466" },
+};
 /** The lake's outline: an oval round (0, −48), 30 across to each side and 58 along (the near shore behind the pier), its edge wavering. */
 const LAKE = { x: 0, z: -48, rx: 30, rz: 58 };
 function shore(angle: number, grow = 1) {
@@ -66,6 +85,18 @@ const LOOKS: { back: string; side: string; belly: string; fin: string; deep: num
   { back: "#3d4c3c", side: "#aeb9ab", belly: "#f0f2ea", fin: "#8b8a72", deep: 0.26, wide: 0.13, spots: "#2a2a22", stripe: "#e0889a" },
   { back: "#24221e", side: "#4f4a42", belly: "#c2baa8", fin: "#35322c", deep: 0.2, wide: 0.2 },
   { back: "#d8891a", side: "#ffc53a", belly: "#fff0b4", fin: "#ff9a2e", deep: 0.34, wide: 0.16, shine: true },
+  // The can and the boot are not fish (built apart).
+  { back: "#000000", side: "#000000", belly: "#000000", fin: "#000000", deep: 0.3, wide: 0.15 },
+  { back: "#000000", side: "#000000", belly: "#000000", fin: "#000000", deep: 0.3, wide: 0.15 },
+  // The sea's: horse mackerel, mackerel, rockfish, black porgy, flatfish, red sea bream, yellowtail, tuna.
+  { back: "#3c5a66", side: "#a9bcc0", belly: "#eef3f2", fin: "#c8b860", deep: 0.26, wide: 0.12, stripe: "#d8c860" },
+  { back: "#1f4f5a", side: "#7fa0a8", belly: "#f2f4f0", fin: "#6a7c80", deep: 0.24, wide: 0.13, spots: "#14323a" },
+  { back: "#2a2620", side: "#5a5248", belly: "#b8ae9c", fin: "#3a342c", deep: 0.36, wide: 0.18, spots: "#1a1612" },
+  { back: "#2c3036", side: "#6e767e", belly: "#c8ccd0", fin: "#3a3e44", deep: 0.44, wide: 0.15 },
+  { back: "#5a4a32", side: "#7a6a4a", belly: "#f4efe4", fin: "#6a5a3c", deep: 0.5, wide: 0.08, spots: "#3a2e1e" },
+  { back: "#d84a5a", side: "#f08a8a", belly: "#fbe0dc", fin: "#e46a70", deep: 0.42, wide: 0.15, spots: "#6ac0e8" },
+  { back: "#2a4a6a", side: "#a8b8c4", belly: "#f0f2f0", fin: "#c8b040", deep: 0.27, wide: 0.15, stripe: "#e8d050" },
+  { back: "#14243e", side: "#6a7a90", belly: "#e8ecf0", fin: "#e8c040", deep: 0.3, wide: 0.22 },
 ];
 /**
  * Fishing from a wooden pier on a calm lake (asked for by the user: "찌가 움직일 때 당겨 물고기를 잡습니다"): the
@@ -82,10 +113,29 @@ export class FishingView extends TableView<State> {
   private rings: T.Mesh[] = [];
   private sway = { value: 0 };
   private skyMap!: T.Texture;
+  /** The lake's shores (hills, land, trees, reeds) and the sea's (islands, a lighthouse, a buoy): one shown at a time. */
+  private lakeSet = new T.Group();
+  private seaSet = new T.Group();
+  private atSea = false;
+  private buoy = new T.Group();
+  /** What the time of day changes: the lights, the sky dome, the sun and the moon, the stars, the far shapes, the float's glow, the angler's lamp. */
+  private hemi!: T.HemisphereLight;
+  private sunLight!: T.DirectionalLight;
+  private domePaint!: T.MeshBasicMaterial;
+  private sunGlows: T.Sprite[] = [];
+  private moon!: T.Sprite;
+  private stars!: T.Points;
+  private tinted: { material: T.MeshBasicMaterial; base: T.Color }[] = [];
+  private floatTip!: T.MeshStandardMaterial;
+  private lamp!: T.PointLight;
+  /** The time of day last shown (0 day, 1 night), and at which water. */
+  private dayShown = "";
   private rod = new T.Group();
   private segments: T.Group[] = [];
   private tip = new T.Object3D();
   private crank = new T.Group();
+  /** The reel's rotor and bail, which whirl round the rod's line as the handle turns (several times a turn of it). */
+  private rotor = new T.Group();
   private float = new T.Group();
   private line: T.Line;
   private linePoints = new Float32Array(3 * 40);
@@ -127,10 +177,17 @@ export class FishingView extends TableView<State> {
     const keep: Keep = (r) => this.own(r);
     this.light();
     this.sky(keep);
+    this.water(keep);
+    // The lake's shores, gathered into one group so that the sea can take their place.
+    const before = this.scene.children.length;
     this.hills(keep);
     this.land(keep);
-    this.water(keep);
     this.greenery(keep);
+    this.lakeSet.add(...this.scene.children.slice(before));
+    this.scene.add(this.lakeSet);
+    this.seaside(keep);
+    this.seaSet.visible = false;
+    this.scene.add(this.seaSet);
     this.pier(keep);
     this.rodModel(keep);
     this.floatModel(keep);
@@ -167,9 +224,15 @@ export class FishingView extends TableView<State> {
     return false;
   }
   private light() {
-    this.scene.add(new T.HemisphereLight("#e4eefa", "#5d6b45", 1.55));
+    this.hemi = new T.HemisphereLight("#e4eefa", "#5d6b45", 1.55);
+    this.scene.add(this.hemi);
+    // The angler's head lamp, lit as night falls, so that the rod and the deck stay in sight.
+    this.lamp = new T.PointLight("#ffe2b0", 0, 9, 1.4);
+    this.lamp.position.set(0.2, 2.6, 3.1);
+    this.scene.add(this.lamp);
     // The light comes from the sun's side and from above, so that the rod and the pier are lit on their left.
     const sun = new T.DirectionalLight("#ffe9c8", 2.3);
+    this.sunLight = sun;
     sun.position.set(-14, 18, -4);
     sun.target.position.set(0, 0, 0);
     sun.castShadow = true;
@@ -232,7 +295,8 @@ export class FishingView extends TableView<State> {
     );
     map.wrapS = T.RepeatWrapping;
     this.skyMap = map;
-    const dome = new T.Mesh(keep(new T.SphereGeometry(320, 48, 20, 0, Math.PI * 2, 0, THETA)), keep(new T.MeshBasicMaterial({ map, side: T.BackSide, fog: false, depthWrite: false })));
+    this.domePaint = keep(new T.MeshBasicMaterial({ map, side: T.BackSide, fog: false, depthWrite: false }));
+    const dome = new T.Mesh(keep(new T.SphereGeometry(320, 48, 20, 0, Math.PI * 2, 0, THETA)), this.domePaint);
     dome.renderOrder = -2;
     this.scene.add(dome);
     // The sun: a warm glow and a bright core, drawn over the dome.
@@ -252,9 +316,41 @@ export class FishingView extends TableView<State> {
       sprite.scale.setScalar(size);
       sprite.renderOrder = -1;
       this.scene.add(sprite);
+      return sprite;
     };
-    glow("rgba(255,232,196,0.32)", 95);
-    glow("rgba(255,252,236,1)", 22);
+    this.sunGlows = [glow("rgba(255,232,196,0.32)", 95), glow("rgba(255,252,236,1)", 22)];
+    // The moon, and the stars: out only as night falls on the lake.
+    const moonMap = keep(
+      painted(256, 256, (pen) => {
+        const g = pen.createRadialGradient(128, 128, 0, 128, 128, 128);
+        g.addColorStop(0, "rgba(255,255,248,1)");
+        g.addColorStop(0.16, "rgba(246,244,232,1)");
+        g.addColorStop(0.2, "rgba(200,214,255,0.35)");
+        g.addColorStop(1, "rgba(160,180,255,0)");
+        pen.fillStyle = g;
+        pen.fillRect(0, 0, 256, 256);
+      }),
+    );
+    this.moon = new T.Sprite(keep(new T.SpriteMaterial({ map: moonMap, transparent: true, depthWrite: false, fog: false, opacity: 0 })));
+    this.moon.position.copy(MOON).multiplyScalar(300);
+    this.moon.scale.setScalar(70);
+    this.moon.renderOrder = -1;
+    this.moon.visible = false;
+    this.scene.add(this.moon);
+    const twinkle = sequence(31),
+      spots = new Float32Array(700 * 3);
+    for (let k = 0; k < 700; k++) {
+      const a = twinkle() * Math.PI * 2,
+        up = 0.06 + Math.pow(twinkle(), 0.7) * 0.94,
+        flat = Math.sqrt(1 - up * up);
+      spots.set([Math.cos(a) * flat * 300, up * 300, Math.sin(a) * flat * 300], k * 3);
+    }
+    const starGeometry = keep(new T.BufferGeometry());
+    starGeometry.setAttribute("position", new T.BufferAttribute(spots, 3));
+    this.stars = new T.Points(starGeometry, keep(new T.PointsMaterial({ color: "#f4f6ff", size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false })));
+    this.stars.renderOrder = -1;
+    this.stars.visible = false;
+    this.scene.add(this.stars);
   }
   /** Hills beyond the far shore, in layers that fade into the haze, lowest where the sun goes down. */
   private hills(keep: Keep) {
@@ -276,7 +372,9 @@ export class FishingView extends TableView<State> {
       }
       shape.lineTo(600, -2);
       shape.closePath();
-      const hill = new T.Mesh(keep(new T.ShapeGeometry(shape, 1)), keep(new T.MeshBasicMaterial({ color })));
+      const paint = keep(new T.MeshBasicMaterial({ color }));
+      this.tinted.push({ material: paint, base: new T.Color(color) });
+      const hill = new T.Mesh(keep(new T.ShapeGeometry(shape, 1)), paint);
       hill.position.z = z;
       this.scene.add(hill);
     }
@@ -322,6 +420,8 @@ export class FishingView extends TableView<State> {
             uSun: { value: SUN.clone() },
             uSunColor: { value: new T.Color("#fff0cc") },
             uRipples: { value: ripples },
+            uLand: { value: 1 },
+            uSwell: { value: 1 },
           },
         ]),
         vertexShader: /* glsl */ `
@@ -338,6 +438,7 @@ export class FishingView extends TableView<State> {
           uniform float uTime;
           uniform vec3 uDeep, uShallow, uHorizon, uZenith, uShore, uSun, uSunColor;
           uniform vec4 uRipples[8];
+          uniform float uLand, uSwell;
           varying vec3 vWorld;
           #include <fog_pars_fragment>
           vec2 wave(vec2 p, vec2 d, float k, float s, float a) {
@@ -354,6 +455,9 @@ export class FishingView extends TableView<State> {
             g += wave(p, vec2(-0.8, 0.6), 4.7, 2.3, 0.0042 * near);
             g += wave(p, vec2(-0.96, -0.28), 6.6, 2.8, 0.003 * near);
             g += wave(p, vec2(0.64, -0.77), 10.3, 3.6, 0.0022 * near * near);
+            // The sea runs higher than the lake: a long swell under the same waves, all of them taller.
+            g += wave(p, vec2(0.12, 0.99), 0.32, 0.55, 0.05 * (uSwell - 1.0));
+            g *= uSwell;
             for (int i = 0; i < 8; i++) {
               vec4 r = uRipples[i];
               if (r.w <= 0.0) continue;
@@ -374,7 +478,7 @@ export class FishingView extends TableView<State> {
             float az = atan(r.x, -r.z);
             float ridge = 0.055 + 0.014 * sin(az * 4.0 + 1.3) + 0.008 * sin(az * 11.0 + 0.4);
             float under = smoothstep(ridge + 0.012, ridge - 0.008, up);
-            sky = mix(sky, uShore, under * 0.85);
+            sky = mix(sky, uShore, under * 0.85 * uLand);
             vec3 body = mix(uShallow, uDeep, clamp(dist / 24.0, 0.0, 1.0));
             vec3 col = mix(body, sky, fres);
             float s = max(dot(r, uSun), 0.0);
@@ -400,6 +504,145 @@ export class FishingView extends TableView<State> {
       this.rings.push(mesh);
       this.scene.add(mesh);
     }
+  }
+  /**
+   * The sea's shores, in place of the lake's: low islands far out fading into the haze, a lighthouse on a rocky islet
+   * to the left, and a red buoy riding the swell.
+   */
+  private seaside(keep: Keep) {
+    const set = this.seaSet;
+    const islands: [number, number, number, number, string, number][] = [
+      [-170, -320, 160, 15, "#8ea3b2", 3],
+      [80, -360, 220, 10, "#9fb2be", 5],
+      [235, -280, 100, 19, "#8199a9", 7],
+      [-70, -235, 56, 6, "#728d9b", 9],
+    ];
+    for (const [x, z, width, height, color, seed] of islands) {
+      const random = sequence(seed),
+        phase = [random() * 6, random() * 6],
+        shape = new T.Shape();
+      shape.moveTo(x - width / 2, -2);
+      for (let k = 0; k <= 40; k++) {
+        const u = k / 40,
+          bump = Math.sin(u * Math.PI) ** 0.6 * (0.75 + 0.18 * Math.sin(u * 9 + phase[0]) + 0.07 * Math.sin(u * 23 + phase[1]));
+        shape.lineTo(x - width / 2 + width * u, height * bump);
+      }
+      shape.lineTo(x + width / 2, -2);
+      shape.closePath();
+      const paint = keep(new T.MeshBasicMaterial({ color }));
+      this.tinted.push({ material: paint, base: new T.Color(color) });
+      const island = new T.Mesh(keep(new T.ShapeGeometry(shape, 1)), paint);
+      island.position.z = z;
+      set.add(island);
+    }
+    // The lighthouse: white with red bands on a heap of dark rocks, a glass lamp room and a red cap.
+    const rock = this.standard({ color: "#5b5d5a", roughness: 0.95 }),
+      white = this.standard({ color: "#f2f0ea", roughness: 0.6 }),
+      red = this.standard({ color: "#c8352e", roughness: 0.55 }),
+      glass = this.standard({ color: "#fff2c0", emissive: "#ffd870", emissiveIntensity: 0.6, roughness: 0.2 }),
+      stone = keep(new T.DodecahedronGeometry(1, 0)),
+      house = new T.Group(),
+      random = sequence(41);
+    for (let k = 0; k < 9; k++) {
+      const piece = new T.Mesh(stone, rock),
+        a = (k / 9) * Math.PI * 2;
+      piece.position.set(Math.cos(a) * (2 + random() * 2.5), -0.4 + random() * 1.2, Math.sin(a) * (1.6 + random() * 2));
+      piece.scale.set(1.6 + random() * 1.8, 1 + random() * 1.4, 1.4 + random() * 1.6);
+      piece.rotation.set(random() * 3, random() * 3, 0);
+      house.add(piece);
+    }
+    const part = (geometry: T.BufferGeometry, material: T.Material, y: number) => {
+      const mesh = new T.Mesh(keep(geometry), material);
+      mesh.position.y = y;
+      mesh.castShadow = true;
+      house.add(mesh);
+    };
+    part(new T.CylinderGeometry(0.95, 1.35, 9, 22), white, 5.2);
+    part(new T.CylinderGeometry(1.24, 1.29, 1.1, 22), red, 2.6);
+    part(new T.CylinderGeometry(1.08, 1.14, 1.1, 22), red, 6.2);
+    part(new T.CylinderGeometry(1.3, 1.3, 0.22, 22), red, 9.8);
+    part(new T.CylinderGeometry(0.72, 0.72, 1.2, 16), glass, 10.5);
+    part(new T.ConeGeometry(0.95, 1.1, 16), red, 11.65);
+    house.position.set(-30, 0, -64);
+    set.add(house);
+    // The buoy: a red cone over a float, bobbing on the swell (see `pose`).
+    const buoyRed = this.standard({ color: "#d8402e", roughness: 0.5 }),
+      buoyDark = this.standard({ color: "#2a2a2c", roughness: 0.6 });
+    const base = new T.Mesh(keep(new T.CylinderGeometry(0.55, 0.7, 0.6, 18)), buoyRed);
+    base.position.y = 0.1;
+    const top = new T.Mesh(keep(new T.ConeGeometry(0.4, 1.2, 14)), buoyRed);
+    top.position.y = 1;
+    const band = new T.Mesh(keep(new T.CylinderGeometry(0.58, 0.58, 0.14, 18)), buoyDark);
+    band.position.y = 0.32;
+    this.buoy.add(base, top, band);
+    this.buoy.position.set(12, 0, -36);
+    set.add(this.buoy);
+  }
+  /** The lake or the sea: its shores, its water's colours and swell; the sea keeps the day. */
+  private setSea(sea: boolean) {
+    this.atSea = sea;
+    this.lakeSet.visible = !sea;
+    this.seaSet.visible = sea;
+    const u = this.waterPaint.uniforms;
+    u.uLand.value = sea ? 0 : 1;
+    u.uSwell.value = sea ? 1.9 : 1;
+    this.dayShown = "";
+  }
+  /** How far the lake's day has gone (0 day, 1 night): the round's time; the sea's stays at day. */
+  private timeOfDay() {
+    return this.atSea ? 0 : Math.max(0, Math.min(1, this.world.time / ROUND));
+  }
+  /** Lights, sky, sun and moon, stars, water and the far shapes for the time of day `p` (see `TIMES`). */
+  private timeLight(p: number) {
+    const key = `${this.atSea}|${p.toFixed(3)}`;
+    if (key === this.dayShown) return;
+    this.dayShown = key;
+    const k = p <= TIMES[1].at ? 0 : 1,
+      a = TIMES[k],
+      b = TIMES[k + 1],
+      raw = (p - a.at) / (b.at - a.at),
+      q = raw * raw * (3 - 2 * raw),
+      color = (from: string, to: string) => new T.Color(from).lerp(new T.Color(to), q),
+      num = (from: number, to: number) => from + (to - from) * q;
+    const haze = color(a.haze, b.haze);
+    this.renderer.setClearColor(haze);
+    (this.scene.fog as T.Fog).color.copy(haze);
+    this.domePaint.color.copy(color(a.sky, b.sky));
+    this.hemi.color.copy(color(a.hemiSky, b.hemiSky));
+    this.hemi.groundColor.copy(color(a.hemiGround, b.hemiGround));
+    this.hemi.intensity = num(a.hemi, b.hemi);
+    this.sunLight.color.copy(color(a.sun, b.sun));
+    this.sunLight.intensity = num(a.sunPower, b.sunPower);
+    this.lamp.intensity = num(a.lamp, b.lamp);
+    this.floatTip.emissiveIntensity = 0.7 + num(a.tip, b.tip);
+    const far = color(a.far, b.far);
+    for (const { material, base } of this.tinted) material.color.copy(base).multiply(far);
+    // The sun goes down to the far hills by dusk and is gone by night; the moon and the stars come out.
+    const sinking = Math.min(1, p / 0.62),
+      sun = SUN.clone().lerp(SUNSET, sinking).normalize(),
+      sunShown = 1 - Math.max(0, Math.min(1, (p - 0.55) / 0.2)),
+      night = Math.max(0, Math.min(1, (p - 0.62) / 0.3));
+    this.sunGlows.forEach((glow, i) => {
+      glow.position.copy(sun).multiplyScalar(300);
+      glow.material.opacity = sunShown;
+      glow.material.color.copy(new T.Color("#ffffff").lerp(new T.Color(i ? "#ffb070" : "#ff8a50"), sinking));
+      glow.visible = sunShown > 0.01;
+    });
+    this.moon.material.opacity = night;
+    this.moon.visible = night > 0.01;
+    (this.stars.material as T.PointsMaterial).opacity = night * 0.9;
+    this.stars.visible = night > 0.01;
+    // The water: its body darkens, it mirrors the sky's colours, and glitters with the sun, then the moon.
+    const u = this.waterPaint.uniforms,
+      water = this.atSea ? WATERS.sea : WATERS.lake,
+      body = num(a.body, b.body);
+    (u.uDeep.value as T.Color).set(water.deep).multiplyScalar(body);
+    (u.uShallow.value as T.Color).set(water.shallow).multiplyScalar(body);
+    (u.uHorizon.value as T.Color).copy(this.atSea && p === 0 ? new T.Color("#cfdfe8") : color(a.horizon, b.horizon));
+    (u.uZenith.value as T.Color).copy(this.atSea && p === 0 ? new T.Color("#4c8bcc") : color(a.zenith, b.zenith));
+    (u.uShore.value as T.Color).copy(color(a.shore, b.shore));
+    (u.uSunColor.value as T.Color).copy(color(a.glitter, b.glitter));
+    (u.uSun.value as T.Vector3).copy(night > 0.5 ? MOON : sun);
   }
   /**
    * Trees on the banks and along the far shore, reeds at the water's edge that sway in the breeze, lily pads, a few
@@ -645,15 +888,33 @@ export class FishingView extends TableView<State> {
     put(new T.CylinderGeometry(0.034, 0.03, 0.72, 14).rotateX(Math.PI / 2), cork, 0, 0, 0, this.rod);
     put(new T.SphereGeometry(0.036, 12, 8), black, 0, 0, 0.36, this.rod);
     put(new T.CylinderGeometry(0.03, 0.03, 0.12, 12).rotateX(Math.PI / 2), gold, 0, 0, -0.2, this.rod);
-    // The reel under the rod, its spool along the rod and its crank at the side.
-    put(new T.BoxGeometry(0.02, 0.12, 0.04), metal, 0, -0.07, -0.2, this.rod);
-    put(new T.SphereGeometry(0.06, 16, 12), black, 0, -0.15, -0.18, this.rod).scale.set(0.9, 1, 1.2);
-    put(new T.CylinderGeometry(0.055, 0.05, 0.08, 18).rotateX(Math.PI / 2), metal, 0, -0.15, -0.28, this.rod);
-    put(new T.CylinderGeometry(0.058, 0.058, 0.015, 18).rotateX(Math.PI / 2), gold, 0, -0.15, -0.32, this.rod);
-    this.crank.position.set(0.07, -0.15, -0.17);
-    put(new T.BoxGeometry(0.012, 0.13, 0.016), metal, 0, -0.06, 0, this.crank);
-    put(new T.CylinderGeometry(0.014, 0.014, 0.05, 10).rotateZ(Math.PI / 2), black, 0.025, -0.12, 0, this.crank);
-    this.rod.add(this.crank);
+    // The spinning reel under the rod, held in sight at the lower right (the user asked to see it turn): its foot on
+    // the rod, the body with its gear cap, the rotor and its bail that whirl round the rod's line as the handle turns,
+    // the spool wound with line, and the handle on the left, toward the eye, turned by the hand.
+    const reel = new T.Group();
+    reel.position.set(0, 0, -0.2);
+    reel.scale.setScalar(1.3);
+    this.rod.add(reel);
+    put(new T.BoxGeometry(0.016, 0.09, 0.05), metal, 0, -0.05, 0, reel);
+    put(new T.BoxGeometry(0.03, 0.008, 0.11), metal, 0, -0.006, 0, reel);
+    put(new T.SphereGeometry(0.05, 18, 12), black, 0, -0.12, 0.01, reel).scale.set(0.85, 1, 1.15);
+    put(new T.CylinderGeometry(0.03, 0.03, 0.018, 18).rotateZ(Math.PI / 2), gold, -0.045, -0.12, 0.01, reel);
+    put(new T.CylinderGeometry(0.03, 0.03, 0.018, 18).rotateZ(Math.PI / 2), gold, 0.045, -0.12, 0.01, reel);
+    this.rotor.position.set(0, -0.12, -0.055);
+    put(new T.CylinderGeometry(0.046, 0.04, 0.05, 20).rotateX(Math.PI / 2), black, 0, 0, 0, this.rotor);
+    for (const s of [-1, 1]) put(new T.BoxGeometry(0.008, 0.016, 0.05), gold, s * 0.048, 0, -0.03, this.rotor);
+    const bail = put(new T.TorusGeometry(0.05, 0.003, 6, 20, Math.PI), metal, 0, 0, -0.055, this.rotor);
+    bail.rotation.set(0, Math.PI / 2, Math.PI / 2);
+    reel.add(this.rotor);
+    put(new T.CylinderGeometry(0.04, 0.04, 0.045, 20).rotateX(Math.PI / 2), metal, 0, -0.12, -0.105, reel);
+    put(new T.CylinderGeometry(0.036, 0.036, 0.036, 20).rotateX(Math.PI / 2), this.standard({ color: "#eef0e8", roughness: 0.6 }), 0, -0.12, -0.105, reel);
+    put(new T.CylinderGeometry(0.046, 0.046, 0.006, 20).rotateX(Math.PI / 2), gold, 0, -0.12, -0.13, reel);
+    // The handle: an arm out from the gear cap, a knob at its end (turning about the reel's crosswise axis).
+    this.crank.position.set(-0.058, -0.12, 0.01);
+    put(new T.CylinderGeometry(0.006, 0.006, 0.03, 8).rotateZ(Math.PI / 2), metal, -0.008, 0, 0, this.crank);
+    put(new T.BoxGeometry(0.01, 0.09, 0.016), metal, -0.02, -0.042, 0, this.crank);
+    put(new T.CylinderGeometry(0.014, 0.016, 0.04, 12).rotateZ(Math.PI / 2), this.standard({ color: "#d9b26a", roughness: 0.5 }), -0.044, -0.085, 0, this.crank);
+    reel.add(this.crank);
     const joints = 10,
       length = (ROD_LENGTH - 0.36) / joints,
       guide = keep(new T.TorusGeometry(0.018, 0.004, 6, 12));
@@ -693,8 +954,11 @@ export class FishingView extends TableView<State> {
       ["#ff3a2a", 0.35, 0.1, 0.35],
       ["#3ad06a", 0.25, 0.1, 0.25],
       ["#f4f1e8", 0.08, 0.17, 0],
-    ].forEach(([color, top, long, glow]) => {
-      const piece = new T.Mesh(stem, band(color as string, glow as number));
+    ].forEach(([color, top, long, glow], i) => {
+      const paint = band(color as string, glow as number);
+      // The tip: it glows brighter as night falls (a night float's light).
+      if (i === 0) this.floatTip = paint;
+      const piece = new T.Mesh(stem, paint);
       piece.scale.y = long as number;
       piece.position.y = (top as number) - (long as number) / 2;
       this.float.add(piece);
@@ -734,6 +998,19 @@ export class FishingView extends TableView<State> {
       can.position.y = -0.2;
       can.rotation.z = 0.25;
       model.add(can);
+    } else if (kind === STARFISH) {
+      // A starfish: five rounded arms, orange and knobbly, hung by one of them.
+      const star = new T.Shape();
+      for (let k = 0; k <= 10; k++) {
+        const a = (k / 10) * Math.PI * 2 - Math.PI / 2,
+          r = k % 2 ? 0.08 : 0.24;
+        if (k) star.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        else star.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      const skin = this.standard({ color: "#e8703a", roughness: 0.85 }),
+        body = new T.Mesh(keep(new T.ExtrudeGeometry(star, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.03, bevelSegments: 2 })), skin);
+      body.position.set(0, -0.24, -0.02);
+      model.add(body);
     } else if (kind === BOOT) {
       // A rubber boot, dark green with a black sole, hung by its top.
       const rubber = this.standard({ color: "#2f4a2c", roughness: 0.55 }),
@@ -1112,7 +1389,7 @@ export class FishingView extends TableView<State> {
     this.label = null;
     if (capturing()) return;
     const junk = KINDS[kind].junk;
-    this.label = this.sign(`${KINDS[kind].name} ${size}cm`, junk ? (points ? `+${points}점 · 쓰레기를 건졌어요` : "0점 · 쓰레기를 건졌어요") : `+${points}점`, kind === GOLDEN ? "#ffe066" : "#ffffff", "rgba(12, 28, 36, 0.9)");
+    this.label = this.sign(`${KINDS[kind].name} ${size}cm`, junk ? (points ? `+${points}점 · 쓰레기를 건졌어요` : "0점 · 쓰레기를 건졌어요") : `+${points}점`, kind === GOLDEN || kind === TUNA ? "#ffe066" : "#ffffff", "rgba(12, 28, 36, 0.9)");
     this.label.scale.set(1.1, 0.41, 1);
   }
   private advance(now: number) {
@@ -1147,6 +1424,18 @@ export class FishingView extends TableView<State> {
     this.skyMap.offset.x = (seconds * 0.0008) % 1;
     const uniforms = this.waterPaint.uniforms;
     uniforms.uTime.value = seconds;
+    // The lake's day goes by with the round; at sea the buoy rides the swell.
+    this.timeLight(this.timeOfDay());
+    if (this.atSea) {
+      this.buoy.position.y = -0.15 + 0.16 * Math.sin(seconds * 0.9);
+      this.buoy.rotation.set(0.12 * Math.sin(seconds * 0.9 + 1), 0, 0.1 * Math.sin(seconds * 0.7));
+    }
+    // At sea a surging fish thrashes at the surface: spray and rings all the while it runs.
+    if (w.sea && w.phase === "fight" && w.surge && now - this.at.thrash > 130) {
+      this.at.thrash = now;
+      this.ripple(w.float.x, w.float.z, 1 + surgeNow(w.surge) * 0.6, now);
+      if (!capturing()) this.splash(w.float.x, 0.05, w.float.z, 4 + Math.round(surgeNow(w.surge) * 6), 1.6 + surgeNow(w.surge));
+    }
     // Taken, the thrashing float throws up rings and spray all the while.
     if (w.phase === "bite" && now - this.at.thrash > 90) {
       this.at.thrash = now;
@@ -1242,8 +1531,10 @@ export class FishingView extends TableView<State> {
     // The crank turns as fast as the hand turns it (and by itself as an empty line comes in).
     const dt = Math.max(0, Math.min(0.1, (now - this.crankAt) / 1000));
     this.crankAt = now;
-    if (w.phase === "reel") this.crank.rotation.x -= 0.5;
-    else if (w.phase === "fight") this.crank.rotation.x -= w.spin * 2 * Math.PI * dt;
+    const turned = w.phase === "reel" ? 0.5 : w.phase === "fight" ? w.spin * 2 * Math.PI * dt : 0;
+    this.crank.rotation.x -= turned;
+    // A spinning reel's rotor goes round about five times a turn of the handle.
+    this.rotor.rotation.z += turned * 5.2;
   }
   /** Places the float (and returns where the line meets it): hanging from the tip, flying, riding the water, or dragged by the fish. */
   private poseFloat(now: number, tip: T.Vector3) {
@@ -1281,21 +1572,29 @@ export class FishingView extends TableView<State> {
       if (w.phase === "bite") {
         // Taken: yanked under at once, and thrashing (the user asked for it wilder): it bursts up and is dragged
         // down again and again, jerked from side to side and to and fro, rolling, as it is drawn away.
-        const sink = Math.min(1, bit / 0.08),
+        // At sea, wilder still.
+        const wild = w.sea ? 1.45 : 1,
+          sink = Math.min(1, bit / 0.08),
           burst = Math.max(0, Math.sin(bit * 13)) ** 2;
-        y = -0.6 * sink + 0.55 * burst * sink + 0.1 * Math.sin(bit * 47) + 0.06 * Math.sin(bit * 79 + 1);
-        x += Math.sin(bit * 2) * 0.25 * bit + 0.26 * Math.sin(bit * 27) + 0.12 * Math.sin(bit * 61 + 2);
-        z += -0.45 * bit + 0.2 * Math.sin(bit * 35 + 1);
-        roll = 0.95 * Math.sin(bit * 23) + 0.3 * Math.sin(bit * 53);
-        pitch = 0.7 * Math.sin(bit * 31 + 0.5);
+        y = -0.6 * sink + 0.55 * wild * burst * sink + wild * (0.1 * Math.sin(bit * 47) + 0.06 * Math.sin(bit * 79 + 1));
+        x += Math.sin(bit * 2) * 0.25 * bit + wild * (0.26 * Math.sin(bit * 27) + 0.12 * Math.sin(bit * 61 + 2));
+        z += -0.45 * bit + wild * 0.2 * Math.sin(bit * 35 + 1);
+        roll = Math.min(1.4, wild * (0.95 * Math.sin(bit * 23) + 0.3 * Math.sin(bit * 53)));
+        pitch = Math.min(1.1, wild * 0.7 * Math.sin(bit * 31 + 0.5));
       }
       f.position.set(x, y, z);
       f.rotation.set(pitch, 0, roll);
     } else if (w.phase === "fight") {
-      const pull = surgeNow(w.surge);
-      f.position.set(w.float.x, -0.12 - w.tension * 0.22 - pull * 0.25 + 0.02 * Math.sin(t * 9), w.float.z + 0.15);
+      // Dragged under as the line tightens; a surge jerks it about, the sea's far more (the user asked: wilder at sea).
+      const pull = surgeNow(w.surge),
+        wild = w.sea ? 2.2 : 1;
+      f.position.set(
+        w.float.x + pull * wild * 0.12 * Math.sin(t * 21),
+        -0.12 - w.tension * 0.22 - pull * 0.25 + wild * (0.02 + pull * 0.05) * Math.sin(t * 9 + pull * 4),
+        w.float.z + 0.15 + pull * wild * 0.08 * Math.sin(t * 17 + 1),
+      );
       // Leaning toward the rod, the way the line pulls it.
-      f.rotation.set(0.55 + w.tension * 0.4, 0, Math.sin(t * 7) * 0.12);
+      f.rotation.set(0.55 + w.tension * 0.4 + pull * wild * 0.25 * Math.sin(t * 13), 0, Math.sin(t * 7) * 0.12 * (1 + pull * wild * 2));
     } else if (w.phase === "reel") {
       // Skipping back over the water, then up to the tip.
       const left = distance(w),
@@ -1334,7 +1633,7 @@ export class FishingView extends TableView<State> {
     let model: T.Group | null = null;
     if (kind !== undefined) {
       const size = w.phase === "land" ? w.landed!.size : w.fish!.size,
-        scale = KINDS[kind].junk ? 0.62 : 0.18 + (size / 100) * 0.6;
+        scale = KINDS[kind].junk ? 0.62 : 0.18 + (Math.min(size, 140) / 100) * 0.6;
       if (w.phase === "land") {
         model = this.catchModel(kind);
         const mouth = this.liftedAt(now),
@@ -1492,6 +1791,10 @@ export class FishingView extends TableView<State> {
     put("surge", w.surge ? "1" : "0");
     put("reeling", w.reeling ? "1" : "0");
     put("spin", w.spin.toFixed(2));
+    // The water, how far the lake's day has gone (0 day, 1 night), and how far the reel's handle has turned (radians).
+    put("sea", w.sea ? "1" : "0");
+    put("day", this.timeOfDay().toFixed(2));
+    put("reel", (-this.crank.rotation.x).toFixed(1));
     put("distance", distance(w).toFixed(2));
     put("nibbling", w.nibbling ? "1" : "0");
     put("caught", String(state?.caught.length ?? 0));
@@ -1501,8 +1804,9 @@ export class FishingView extends TableView<State> {
     // A new round, known by the count of moves going back to nothing: the line comes in and the clock starts again.
     const anew = state.ply === 0 && this.shown > 0;
     this.shown = state.ply;
-    if (anew || this.world.level !== state.level) {
-      this.world = createWorld(state.level, cryptoRandom);
+    if (this.atSea !== state.sea) this.setSea(state.sea);
+    if (anew || this.world.level !== state.level || this.world.sea !== state.sea) {
+      this.world = createWorld(state.level, cryptoRandom, state.sea);
       for (const word of this.words) this.drop(word.sprite);
       this.words = [];
       if (this.label) this.drop(this.label);

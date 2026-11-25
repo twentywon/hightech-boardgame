@@ -22,6 +22,8 @@ export interface Kind {
   lively: number;
   junk?: boolean;
   weight: [number, number, number];
+  /** Where it is caught: the lake, the sea, or both (a can is everywhere). */
+  water: "lake" | "sea" | "both";
 }
 export const CRUCIAN = 0,
   CARP = 1,
@@ -29,16 +31,47 @@ export const CRUCIAN = 0,
   CATFISH = 3,
   GOLDEN = 4,
   CAN = 5,
-  BOOT = 6;
+  BOOT = 6,
+  HORSE_MACKEREL = 7,
+  MACKEREL = 8,
+  ROCKFISH = 9,
+  PORGY = 10,
+  FLATFISH = 11,
+  SEABREAM = 12,
+  YELLOWTAIL = 13,
+  TUNA = 14,
+  STARFISH = 15;
 export const KINDS: Kind[] = [
-  { name: "붕어", min: 12, max: 32, worth: 0.5, pull: 0.3, lively: 0.85, weight: [46, 40, 34] },
-  { name: "잉어", min: 30, max: 72, worth: 0.6, pull: 0.62, lively: 1, weight: [17, 19, 20] },
-  { name: "송어", min: 25, max: 58, worth: 0.7, pull: 0.5, lively: 1.4, weight: [13, 15, 16] },
-  { name: "메기", min: 40, max: 95, worth: 0.6, pull: 0.95, lively: 0.8, weight: [7, 9, 12] },
-  { name: "황금 잉어", min: 40, max: 80, worth: 1.6, pull: 0.75, lively: 1.15, weight: [3, 3, 4] },
-  { name: "빈 깡통", min: 11, max: 13, worth: 0, flat: 0, pull: 0, lively: 0, junk: true, weight: [7, 7, 7] },
-  { name: "장화", min: 26, max: 30, worth: 0, flat: 1, pull: 0, lively: 0, junk: true, weight: [7, 7, 7] },
+  { name: "붕어", min: 12, max: 32, worth: 0.5, pull: 0.3, lively: 0.85, weight: [46, 40, 34], water: "lake" },
+  { name: "잉어", min: 30, max: 72, worth: 0.6, pull: 0.62, lively: 1, weight: [17, 19, 20], water: "lake" },
+  { name: "송어", min: 25, max: 58, worth: 0.7, pull: 0.5, lively: 1.4, weight: [13, 15, 16], water: "lake" },
+  { name: "메기", min: 40, max: 95, worth: 0.6, pull: 0.95, lively: 0.8, weight: [7, 9, 12], water: "lake" },
+  { name: "황금 잉어", min: 40, max: 80, worth: 1.6, pull: 0.75, lively: 1.15, weight: [3, 3, 4], water: "lake" },
+  { name: "빈 깡통", min: 11, max: 13, worth: 0, flat: 0, pull: 0, lively: 0, junk: true, weight: [7, 7, 7], water: "both" },
+  { name: "장화", min: 26, max: 30, worth: 0, flat: 1, pull: 0, lively: 0, junk: true, weight: [7, 7, 7], water: "lake" },
+  // The sea (the user asked: many kinds, from big to small): small and common, then ever larger and rarer, the tuna
+  // the giant of them, rare and very strong.
+  { name: "전갱이", min: 15, max: 32, worth: 0.6, pull: 0.38, lively: 1.25, weight: [30, 25, 21], water: "sea" },
+  { name: "고등어", min: 25, max: 46, worth: 0.6, pull: 0.5, lively: 1.5, weight: [22, 20, 18], water: "sea" },
+  { name: "우럭", min: 20, max: 52, worth: 0.7, pull: 0.58, lively: 0.8, weight: [15, 15, 14], water: "sea" },
+  { name: "감성돔", min: 25, max: 58, worth: 0.9, pull: 0.72, lively: 1, weight: [9, 10, 11], water: "sea" },
+  { name: "광어", min: 35, max: 85, worth: 0.8, pull: 0.85, lively: 0.7, weight: [7, 8, 9], water: "sea" },
+  { name: "참돔", min: 35, max: 95, worth: 1, pull: 0.92, lively: 1.1, weight: [5, 6, 7], water: "sea" },
+  { name: "방어", min: 50, max: 115, worth: 1, pull: 1.1, lively: 1.3, weight: [3, 4, 5], water: "sea" },
+  { name: "참치", min: 90, max: 210, worth: 1.3, pull: 1.35, lively: 1.2, weight: [1, 1.5, 2], water: "sea" },
+  { name: "불가사리", min: 14, max: 26, worth: 0, flat: 1, pull: 0, lively: 0, junk: true, weight: [5, 5, 5], water: "sea" },
 ];
+/** Whether `kind` is caught in the sea (`sea`) or the lake. */
+export const caughtIn = (kind: number, sea: boolean) => {
+  const water = KINDS[kind]?.water;
+  return water === "both" || water === (sea ? "sea" : "lake");
+};
+/**
+ * The sea against the lake (the user asked: longer to bring in, and wilder): its fish come in at `reel` of the
+ * pace, surge with `power` more strength, for `length` times as long, `gap` times as often apart, and run `run`
+ * times as fast.
+ */
+export const SEA = { reel: 0.55, power: 1.3, length: 1.6, gap: 0.75, run: 1.35 };
 /** What a catch of `kind` and `size` cm is worth. */
 export const pointsOf = (kind: number, size: number) => {
   const k = KINDS[kind];
@@ -85,6 +118,8 @@ export interface Surge {
 }
 export interface World {
   level: number;
+  /** At sea (`SEA`, its own kinds), or on the lake. */
+  sea: boolean;
   random: Random;
   /** Seconds into the round, and to the next whole second. */
   time: number;
@@ -133,9 +168,10 @@ export type Happening =
   | { kind: "catch"; x: number; z: number; fish: Fish }
   | { kind: "ready" };
 
-export function createWorld(level: number, random: Random): World {
+export function createWorld(level: number, random: Random, sea = false): World {
   return {
     level: Math.max(1, Math.min(LEVELS.length, Math.round(level) || 1)),
+    sea,
     random,
     time: 0,
     tick: 1,
@@ -182,7 +218,7 @@ export function cast(world: World, x: number, z: number): Happening[] {
 }
 /** Draws what takes the bait: a kind by its weight at this level, and a size (bigger, more often, the further out). */
 export function draw(world: World): Fish {
-  const weights = KINDS.map((k) => k.weight[world.level - 1]),
+  const weights = KINDS.map((k, i) => (caughtIn(i, world.sea) ? k.weight[world.level - 1] : 0)),
     total = weights.reduce((a, b) => a + b, 0);
   let roll = world.random() * total,
     kind = 0;
@@ -375,19 +411,20 @@ function fight(world: World, out: Happening[]) {
   world.reeling = world.spin >= SPIN_MIN;
   const wind = Math.min(SPIN_MOST, world.spin / FULL_SPIN);
   // Surges come now and then; junk never runs.
+  const sea = world.sea ? SEA : { reel: 1, power: 1, length: 1, gap: 1, run: 1 };
   if (world.surge) {
     world.surge.t += DT;
     if (world.surge.t >= world.surge.length) {
       world.surge = null;
-      world.surgeIn = between(world, level.gap) / kind.lively;
+      world.surgeIn = (between(world, level.gap) / kind.lively) * sea.gap;
     }
   } else if (!kind.junk) {
     world.surgeIn -= DT;
     if (world.surgeIn <= 0) {
       world.surge = {
         t: 0,
-        length: 0.7 + world.random() * 0.8,
-        power: kind.pull * level.power * (0.75 + world.random() * 0.5),
+        length: (0.7 + world.random() * 0.8) * sea.length,
+        power: kind.pull * level.power * (0.75 + world.random() * 0.5) * sea.power,
         way: (world.random() - 0.5) * 1.8,
       };
       out.push({ kind: "surge", x: f.x, z: f.z, power: world.surge.power });
@@ -397,8 +434,8 @@ function fight(world: World, out: Happening[]) {
     run = (speed: number) => {
       // The fish runs its way (away from the pier, to one side).
       const way = world.surge!.way;
-      f.x += Math.sin(way) * speed * DT;
-      f.z -= Math.cos(way) * speed * DT;
+      f.x += Math.sin(way) * speed * sea.run * DT;
+      f.z -= Math.cos(way) * speed * sea.run * DT;
     };
   if (world.reeling) {
     world.slack = 0;
@@ -411,7 +448,7 @@ function fight(world: World, out: Happening[]) {
       const steady = (kind.junk ? 0.12 : 0.18 + 0.3 * kind.pull) * (0.7 + 0.3 * Math.min(1, wind));
       world.tension += (steady - world.tension) * Math.min(1, 2.5 * DT);
       // The fish comes in as fast as the crank turns.
-      const speed = 2.4 * (1 - 0.3 * kind.pull) * wind,
+      const speed = 2.4 * Math.max(0.35, 1 - 0.3 * kind.pull) * wind * sea.reel,
         dx = REEL_TO.x - f.x,
         dz = REEL_TO.z - f.z,
         far = Math.hypot(dx, dz) || 1;

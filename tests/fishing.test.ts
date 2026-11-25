@@ -280,4 +280,75 @@ describe("fishing", () => {
     for (let k = 0; k < 40; k++) back += scrub.add(100 + (k % 2) * 30, 200);
     expect(back).toBe(0);
   });
+  test("the sea has its own kinds, big to small, and the lake its own; each round takes only its water's catches", () => {
+    const kindsAt = (sea: boolean) => {
+      const world = fs.createWorld(3, seededRandom(sea ? 12 : 13), sea),
+        seen = new Set<number>();
+      for (let k = 0; k < 3000; k++) {
+        world.float = { x: 0, z: -(fs.CAST.near + (k % 18)) };
+        seen.add(fs.draw(world).kind);
+      }
+      return seen;
+    };
+    const sea = kindsAt(true),
+      lake = kindsAt(false);
+    for (const kind of sea) expect(fs.caughtIn(kind, true), fs.KINDS[kind].name).toBe(true);
+    for (const kind of lake) expect(fs.caughtIn(kind, false), fs.KINDS[kind].name).toBe(true);
+    // Every sea fish comes up, the tuna (the biggest) too, and no lake fish does.
+    for (const kind of [fs.HORSE_MACKEREL, fs.MACKEREL, fs.ROCKFISH, fs.PORGY, fs.FLATFISH, fs.SEABREAM, fs.YELLOWTAIL, fs.TUNA, fs.STARFISH]) expect(sea.has(kind), fs.KINDS[kind].name).toBe(true);
+    expect(sea.has(fs.CRUCIAN) || sea.has(fs.CARP) || sea.has(fs.BOOT)).toBe(false);
+    expect(lake.has(fs.TUNA)).toBe(false);
+    expect(fs.KINDS[fs.TUNA].max).toBeGreaterThan(2 * fs.KINDS[fs.HORSE_MACKEREL].max);
+    // The stages: "s1".."s3" are the sea; a catch from the other water is refused.
+    const atSea = fr.fishing.create("s2");
+    expect([atSea.sea, atSea.level]).toEqual([true, 2]);
+    expect(fr.fishing.create("3")).toMatchObject({ sea: false, level: 3 });
+    expect(fr.play(atSea, fr.catchMove(fs.TUNA, 180))!.score).toBe(fs.pointsOf(fs.TUNA, 180));
+    expect(fr.play(atSea, fr.catchMove(fs.CARP, 50))).toBeNull();
+    expect(fr.play(fr.createGame(1), fr.catchMove(fs.TUNA, 180))).toBeNull();
+    expect(fr.play(atSea, fr.catchMove(fs.CAN, 12))).not.toBeNull();
+  });
+  test("at sea the same fish takes far longer to bring in, and surges harder, longer and more often", () => {
+    const landTime = (sea: boolean) => {
+      const world = fs.createWorld(2, seededRandom(21), sea);
+      fs.cast(world, fs.CAST.middle.x, fs.CAST.middle.z);
+      run(world, (w) => w.phase === "wait");
+      world.fish = { kind: fs.PORGY, size: 40, points: fs.pointsOf(fs.PORGY, 40) };
+      world.nibbles = 0;
+      world.nibbleIn = 0;
+      run(world, (w) => w.phase === "bite");
+      fs.press(world);
+      world.surgeIn = Infinity;
+      let k = 0;
+      for (; k < 120 / fs.DT && world.phase === "fight"; k++) {
+        turn(world, 2.2);
+        fs.step(world);
+      }
+      return k * fs.DT;
+    };
+    expect(landTime(true)).toBeGreaterThan(1.6 * landTime(false));
+    // Surges: watched over a long fight held still (the fish never landed), their strength, length and number.
+    const surges = (sea: boolean) => {
+      const world = biting(fs.SEABREAM, 60, 2, 30);
+      world.sea = sea;
+      fs.press(world);
+      const found: { power: number; length: number }[] = [];
+      let surging = 0;
+      for (let k = 0; k < 60 / fs.DT; k++) {
+        world.slack = 0;
+        world.tension = 0;
+        world.float = { x: 0, z: -14 };
+        for (const e of fs.step(world)) if (e.kind === "surge") found.push({ power: e.power, length: world.surge!.length });
+        if (world.surge) surging++;
+      }
+      const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+      return { share: (surging * fs.DT) / 60, power: mean(found.map((f) => f.power)), length: mean(found.map((f) => f.length)) };
+    };
+    const lake = surges(false),
+      sea = surges(true);
+    // Running a larger share of the fight (longer surges, shorter rests between them).
+    expect(sea.share).toBeGreaterThan(1.4 * lake.share);
+    expect(sea.power).toBeGreaterThan(1.15 * lake.power);
+    expect(sea.length).toBeGreaterThan(1.3 * lake.length);
+  });
 });
