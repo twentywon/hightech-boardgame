@@ -113,12 +113,13 @@ const PATH_N = 800;
  * The computer by level: its paddle's top speed (metres a second), how long it takes to read a ball, how far its
  * paddle strays from where the ball will be, the speed and depth of its returns and serves, how wide and long its
  * aim strays, how far across it aims, how often it makes sure a return clears the net before playing it, and how
- * often it misjudges a stroke altogether (more often against a quick ball).
+ * often it misjudges a stroke altogether (more often against a quick ball). Its paddle is quicker than it was (the
+ * user found a ball struck or curved to the side too easy a winner): 2.0, 2.6 and 3.4 m/s, reading the ball sooner.
  */
 export const LEVELS = {
-  easy: { speed: 1.35, react: 0.32, stray: 0.16, pace: [3.2, 4.3], depth: [0.66, 0.88], serve: [3.4, 3.8], wide: 0.22, long: 0.16, spread: 0.3, check: 0.65, blunder: 0.1 },
-  normal: { speed: 1.7, react: 0.22, stray: 0.1, pace: [4.2, 6.0], depth: [0.6, 0.9], serve: [3.4, 4.2], wide: 0.12, long: 0.09, spread: 0.55, check: 0.9, blunder: 0.05 },
-  hard: { speed: 1.9, react: 0.17, stray: 0.05, pace: [5.2, 7.6], depth: [0.52, 0.92], serve: [3.6, 5.0], wide: 0.05, long: 0.05, spread: 0.85, check: 1, blunder: 0.025 },
+  easy: { speed: 2.0, react: 0.3, stray: 0.16, pace: [3.2, 4.3], depth: [0.66, 0.88], serve: [3.4, 3.8], wide: 0.22, long: 0.16, spread: 0.3, check: 0.65, blunder: 0.1 },
+  normal: { speed: 2.6, react: 0.2, stray: 0.1, pace: [4.2, 6.0], depth: [0.6, 0.9], serve: [3.4, 4.2], wide: 0.12, long: 0.09, spread: 0.55, check: 0.9, blunder: 0.05 },
+  hard: { speed: 3.4, react: 0.13, stray: 0.05, pace: [5.2, 7.6], depth: [0.52, 0.92], serve: [3.6, 5.0], wide: 0.05, long: 0.05, spread: 0.85, check: 1, blunder: 0.025 },
 };
 export type Level = keyof typeof LEVELS;
 /** The hardest computer smashes (the user asked): a ball over this height mostly, at this pace (metres a second). */

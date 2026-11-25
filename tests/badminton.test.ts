@@ -56,7 +56,7 @@ describe("badminton rules", () => {
 });
 
 describe("badminton court", () => {
-  test("a quicker swipe sends the shuttle harder and further; it never goes long, only out wide when leaning far", () => {
+  test("a quicker swipe sends the shuttle harder and further; it never goes out, long or wide", () => {
     expect(powerOf(0.5)).toBe(0);
     expect(powerOf(4)).toBeLessThan(powerOf(7));
     // Struck from anywhere on my half, at any height: the same swipe lands at the same depth, deeper the quicker.
@@ -84,15 +84,15 @@ describe("badminton court", () => {
         last = end.z;
         lastSpeed = speed;
       }
-      // Far too hard: long over the back line.
       // No swipe, however hard, sends it long over the back line.
       expect(stroke(1.5, 0, from).end.z).toBeGreaterThanOrEqual(-S.HALF_L);
       expect(stroke(S.MOST, 0, from).end.z).toBeGreaterThanOrEqual(-S.HALF_L);
       expect(stroke(5, 0, from).end.z).toBeGreaterThanOrEqual(-S.HALF_L);
-      // A moderate lean stays in; the most lean goes out wide.
+      // A lean sends it that way; the most lean goes to just inside the side line, never out (the user asked).
       expect(Math.abs(stroke(0.7, 0.3, from).end.x)).toBeLessThan(S.HALF_W);
       expect(stroke(0.7, 0.3, from).end.x).toBeGreaterThan(0.5);
-      expect(Math.abs(stroke(0.7, -0.5, from).end.x)).toBeGreaterThan(S.HALF_W);
+      expect(Math.abs(stroke(0.7, -0.5, from).end.x)).toBeLessThanOrEqual(S.HALF_W - S.IN_SIDE + 0.1);
+      expect(Math.abs(stroke(0.7, -0.5, from).end.x)).toBeGreaterThan(S.HALF_W - S.IN_SIDE - 0.3);
     }
     expect(S.depthOf(0)).toBeGreaterThan(1);
     expect(yawOf(40, -200)).toBeGreaterThan(0);
@@ -207,6 +207,61 @@ describe("badminton court", () => {
     const h = run(v, 6, (_, h) => h.some((e) => e.kind === "point"), "hard");
     expect(h.some((e) => e.kind === "hit")).toBe(false);
     expect(points(h)[0]).toEqual({ kind: "point", to: 1, why: S.OUT });
+  });
+  test("no shuttle goes out: every stroke, smash and serve, mine or the computer's, comes down in", () => {
+    /** Where the shuttle comes down once nobody plays it any more (both sides people who do not swing), or null. */
+    const landed = (w: S.World) => {
+      w.people = [true, true];
+      const h = run(w, 8, (_, h) => h.some((e) => e.kind === "land"));
+      const land = h.find((e) => e.kind === "land") as { in: boolean } | undefined;
+      return { land, net: h.some((e) => e.kind === "net"), point: points(h)[0] };
+    };
+    let checked = 0;
+    // My strokes: every power and lean, struck low, high and from a jump (a smash), from the middle and the sides.
+    for (const power of [0, 0.4, 0.85, 1.2, 1.7, 3])
+      for (const yaw of [-0.6, -0.5, -0.3, 0, 0.3, 0.5, 0.6])
+        for (const [x, height, jump] of [[0, 0.8, false], [-2.2, 1.6, false], [2.2, 2.4, false], [0.5, 2.9, true], [-1.8, 3.1, true]] as const) {
+          const w = S.createWorld(3);
+          Object.assign(w, { phase: "flying", hitter: 1 });
+          Object.assign(w.players[0], { x, z: 4, y: jump ? 0.4 : 0, vy: 0 });
+          w.shuttle = { x, y: height, z: 3.9, vx: 0, vy: -0.5, vz: 0.5 };
+          S.swing(w, 0, power, yaw);
+          run(w, 0.3, (w) => w.hitter === 0);
+          if (w.hitter !== 0) continue;
+          const end = landed(w);
+          if (end.net) continue;
+          expect(end.land?.in, `${power} ${yaw} ${x} ${height} ${jump}`).toBe(true);
+          checked++;
+        }
+    expect(checked).toBeGreaterThan(150);
+    // My serves, from both courts, whatever the swipe: into the right service court.
+    for (const even of [true, false])
+      for (const power of [0, 0.5, 1, 1.7, 3])
+        for (const yaw of [-0.6, -0.3, 0, 0.3, 0.6]) {
+          const w = S.createWorld(4);
+          S.serve(w, 0, even);
+          S.swing(w, 0, power, yaw);
+          const end = landed(w);
+          if (end.net) continue;
+          expect(end.point?.why, `serve ${even} ${power} ${yaw}`).toBe(S.WON);
+        }
+    // The computer's strokes and serves, at every level, over many seeds.
+    for (const level of ["easy", "normal", "hard"] as const)
+      for (let seed = 1; seed <= 40; seed++) {
+        const w = S.createWorld(seed);
+        S.serve(w, 1, seed % 2 === 0);
+        run(w, 4, (w) => w.phase === "flying", level);
+        const serve = landed(w);
+        if (!serve.net) expect(serve.point?.why, `${level} serve ${seed}`).toBe(S.WON);
+        const v = S.createWorld(seed);
+        Object.assign(v, { phase: "flying", hitter: 0, served: false });
+        v.people = [true, false];
+        v.shuttle = { x: (seed % 5) - 2, y: 2.2, z: -2, vx: 0, vy: 3, vz: -4 };
+        run(v, 3, (w) => w.hitter === 1, level);
+        if (v.hitter !== 1) continue;
+        const end = landed(v);
+        if (!end.net) expect(end.land?.in, `${level} stroke ${seed}`).toBe(true);
+      }
   });
   test("a shuttle sent high goes up and comes down quicker than a low one, to the same place", () => {
     /** My stroke of `power` at a shuttle at `height`: how high it goes, how long it flies (s), and where it lands. */

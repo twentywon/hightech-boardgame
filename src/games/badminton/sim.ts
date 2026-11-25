@@ -52,7 +52,7 @@ export const MOST = 1.7;
 /**
  * How far past the net a stroke of power `p` is sent, whoever strikes it from wherever: from a drop just over the net,
  * steadily deeper to near the back line at `DEEP`, then a little deeper up to 0.3 m inside it at `SAFE`, and no further
- * for any quicker swipe (the user asked: no long outs; only a stroke leaning far to the side goes out).
+ * for any quicker swipe (the user asked: no long outs; and then none at all, see `IN_SIDE`).
  */
 export const DEEP = 0.85,
   SAFE = 1.6;
@@ -63,10 +63,19 @@ export function depthOf(p: number) {
   return HALF_L - 1.1 + 0.8 * Math.min(1, (q - DEEP) / (SAFE - DEEP));
 }
 /**
- * Where across the far court a stroke is aimed: a little toward the side it is struck from, and across as far as the
- * swipe leans (`yawOf`'s most, 0.5, goes out over a side line from anywhere; a moderate lean stays well in).
+ * No shuttle goes out (the user asked: "배드민턴도 아웃 없애 줘"): every stroke, smash and serve, mine or the
+ * computer's, is aimed at least `IN_SIDE` inside the side lines and `IN_BACK` inside the back line (a serve into the
+ * right service court), however far the swipe leans or however quick it is.
  */
-export const acrossOf = (from: number, yaw: number) => Math.max(-0.5, Math.min(0.5, from * 0.2)) + (yaw / 0.5) * (HALF_W + 0.8);
+export const IN_SIDE = 0.3,
+  IN_BACK = 0.3;
+/** A place across kept inside the side lines. */
+export const inside = (x: number) => Math.max(-(HALF_W - IN_SIDE), Math.min(HALF_W - IN_SIDE, x));
+/**
+ * Where across the far court a stroke is aimed: a little toward the side it is struck from, and across as far as the
+ * swipe leans, up to just inside the side line (`inside`; a lean of about 0.34 reaches it, any further stays there).
+ */
+export const acrossOf = (from: number, yaw: number) => inside(Math.max(-0.5, Math.min(0.5, from * 0.2)) + (yaw / 0.5) * (HALF_W + 0.8));
 /** A smash's speed by the swipe's power. */
 export const smashSpeed = (p: number) => 34 + 30 * Math.max(0, Math.min(1.3, p));
 
@@ -253,7 +262,7 @@ function fly(s: Shuttle, real: number) {
   s.z += s.vz * dt;
 }
 /** Where a shuttle sent off as `s` comes down, and whether it meets the net on its way. */
-export function landing(from: Shuttle, dt = DT * 2): { x: number; z: number; t: number; net: boolean } {
+export function landing(from: Shuttle, dt = DT): { x: number; z: number; t: number; net: boolean } {
   const s = { ...from };
   let t = 0;
   while (s.y > 0 && t < 8) {
@@ -375,7 +384,8 @@ function serveStroke(world: World, side: 0 | 1, power: number, yaw: number) {
     at = held(world),
     across = -Math.sign(courtX(side, world.even)),
     depth = SHORT + 0.35 + (HALF_L - 0.6 - SHORT - 0.35) * Math.min(1, p / DEEP),
-    x = across * 1.3 + (yaw / 0.5) * 1.5,
+    // Within the receiver's service court however far it leans: past the centre line no more than on it, inside the side line.
+    x = across * Math.max(IN_SIDE, Math.min(HALF_W - IN_SIDE, across * (across * 1.3 + (yaw / 0.5) * 1.5))),
     long = Math.min(1, p / DEEP);
   aimAt(world, at, x, forward(side) * depth, 0.34 + long * 0.6);
   begin(world, side, false, true);
@@ -396,6 +406,27 @@ function aimAt(world: World, at: Shuttle, x: number, z: number, elevation: numbe
     if (!landing(next).net) break;
     e += 0.12;
   }
+}
+/** Whether a shuttle sent off as `s` comes down in (or on the net, which is not out). */
+function landsIn(s: Shuttle) {
+  const end = landing(s);
+  return end.net || (Math.abs(end.x) <= HALF_W - 0.1 && Math.abs(end.z) <= HALF_L - 0.1);
+}
+/**
+ * A smash lifted over the net may then carry out (a weak one struck close to it): it is struck slower, and if even
+ * that goes out, sent down to its place as a plain stroke. No shuttle goes out (`IN_SIDE`).
+ */
+function smashIn(world: World, at: Shuttle, tx: number, tz: number, way: { x: number; z: number }, distance: number, speed: number) {
+  if (landsIn(world.shuttle)) return;
+  for (const slower of [0.8, 0.65, 0.5]) {
+    const v = speed * slower,
+      tried = launch(at, v, elevationFor(at, v, way, distance), way);
+    if (!landing(tried).net && landsIn(tried)) {
+      world.shuttle = tried;
+      return;
+    }
+  }
+  aimAt(world, at, tx, tz, elevationOf(at.y));
 }
 /** The shuttle has just been struck by `side`. */
 function begin(world: World, side: 0 | 1, smash: boolean, served = false) {
@@ -429,6 +460,7 @@ function strike(world: World, side: 0 | 1, power: number, yaw: number, smash: bo
     world.shuttle = launch(s, speed, elevationFor(s, speed, way, distance), way);
     // Too low to come down over the net: it is lifted just enough to clear it.
     for (let k = 0; k < 6 && landing(world.shuttle).net; k++) world.shuttle = launch(s, speed * 0.9, elevationFor(s, speed * 0.9, way, distance) + 0.06 * (k + 1), way);
+    smashIn(world, s, tx, tz, way, distance, speed);
   } else aimAt(world, s, tx, tz, elevationOf(s.y));
   begin(world, side, smash);
 }
@@ -453,16 +485,11 @@ function computerStroke(world: World, level: Level, side: 0 | 1 = 1) {
       near = Math.abs(me.z) < 3;
     tz = r < (deep ? 0.55 : near ? 0.15 : 0.3) ? 2.1 + draw(world) * 1.1 : r < 0.82 ? 5.3 + draw(world) * 1.1 : 3.6 + draw(world) * 1.4;
   }
-  tx += gauss(world) * L.error;
-  // Its error never carries a deep shot over the back line (the user asked for few long outs); it may fall short.
-  tz = Math.min(HALF_L - 0.25, tz + gauss(world) * L.error);
-  if (draw(world) < L.blunder) {
-    // A blunder: long, wide, or short into the net.
-    const r = draw(world);
-    // (Never long over the back line: the user asked that there be no long outs.)
-    if (r < 0.55) tx = Math.sign(tx || 1) * (HALF_W + 0.3 + draw(world) * 0.6);
-    else tz = 0.4;
-  }
+  // Its error never carries a shot out (the user asked: no outs); it may fall short.
+  tx = inside(tx + gauss(world) * L.error);
+  tz = Math.max(0.6, Math.min(HALF_L - IN_BACK, tz + gauss(world) * L.error));
+  // A blunder: short into the net (never out).
+  if (draw(world) < L.blunder) tz = 0.4;
   tz *= forward(side);
   const dx = tx - s.x,
     dz = tz - s.z,
@@ -471,6 +498,7 @@ function computerStroke(world: World, level: Level, side: 0 | 1 = 1) {
   if (smash) {
     const speed = (34 + 18 * draw(world)) * L.pace;
     world.shuttle = launch(s, speed, elevationFor(s, speed, dir, distance), dir);
+    smashIn(world, s, tx, tz, dir, distance, speed);
   } else {
     // A drop goes up gently and falls short; a clear goes high; a drive flat. Raised if it would meet the net.
     let elevation = tz < 3.3 ? 0.42 : tz > 5 ? 0.72 : 0.28;
@@ -491,8 +519,10 @@ function computerServe(world: World, level: Level, side: 0 | 1 = 1) {
   const L = LEVELS[level],
     at = held(world),
     long = draw(world) < 0.4,
-    tx = -Math.sign(courtX(side, world.even)) * (0.8 + draw(world) * 1.1) + gauss(world) * L.error * 0.35,
-    tz = forward(side) * ((long ? 6.0 + draw(world) * 0.5 : SHORT + 0.35 + draw(world) * 0.5) + gauss(world) * L.error * 0.3),
+    across = -Math.sign(courtX(side, world.even)),
+    // Into the receiver's service court whatever its error (the user asked: no outs).
+    tx = across * Math.max(IN_SIDE, Math.min(HALF_W - IN_SIDE, 0.8 + draw(world) * 1.1 + across * gauss(world) * L.error * 0.35)),
+    tz = forward(side) * Math.max(SHORT + 0.25, Math.min(HALF_L - IN_BACK, (long ? 6.0 + draw(world) * 0.5 : SHORT + 0.35 + draw(world) * 0.5) + gauss(world) * L.error * 0.3)),
     dx = tx - at.x,
     dz = tz - at.z,
     distance = Math.hypot(dx, dz),

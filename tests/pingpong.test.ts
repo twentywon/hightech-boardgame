@@ -500,6 +500,39 @@ describe("table tennis: the computer", () => {
   });
 });
 
+describe("table tennis: the computer against side strokes and curves", () => {
+  /** My strokes swung hard to one side (and, with `push`, curved on that way after), and how many the computer puts back. */
+  function sideReturns(level: s.Level, push: number) {
+    let back = 0;
+    const n = 30;
+    for (let seed = 1; seed <= n; seed++) {
+      const w = s.createWorld(seed * 7 + 3),
+        rnd = () => s.rand(w),
+        from = (rnd() - 0.5) * 0.6,
+        dir = rnd() < 0.5 ? -1 : 1;
+      s.place(w, 0, from, s.HALF_L + 0.3);
+      w.ball = ball(from, 0.25, s.HALF_L + 0.05);
+      s.launch(w, 0, s.swingShot(w, 0, { x: from, y: 0.25, z: s.HALF_L + 0.05, vx: dir * (3 + rnd() * 3), vy: 0, vz: -2 - rnd() * 2 }, 0, 0, false));
+      const seen = run(w, level, 6, (e) => {
+        if (w.steer) w.hands[0] = { x: w.hands[0].x + dir * push * s.DT, z: w.hands[0].z };
+        return e.kind === "point" || (e.kind === "bounce" && e.side === 0 && w.hitter === 1);
+      });
+      if (seen.at(-1)?.kind === "bounce") back++;
+    }
+    return back / n;
+  }
+  test("a ball struck to the side, or curved on out, is no easy winner except against the easiest computer", () => {
+    const side = { easy: sideReturns("easy", 0), normal: sideReturns("normal", 0), hard: sideReturns("hard", 0) },
+      curve = { easy: sideReturns("easy", 3), normal: sideReturns("normal", 3), hard: sideReturns("hard", 3) };
+    expect(side.normal).toBeGreaterThan(0.8);
+    expect(side.hard).toBeGreaterThan(0.9);
+    expect(curve.normal).toBeGreaterThan(0.3);
+    expect(curve.hard).toBeGreaterThan(0.85);
+    expect(side.easy).toBeLessThan(side.normal);
+    expect(curve.easy).toBeLessThan(curve.normal);
+  });
+});
+
 describe("table tennis: the fixed-step table", () => {
   test("the same hand on the same seed plays out exactly the same", () => {
     const play = () => {
