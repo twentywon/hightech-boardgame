@@ -4,6 +4,8 @@ import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { noZoom } from "../../engine/zoom";
+import { blend, type LiveGuest, type LiveSession } from "../../net/live";
+import { inputOf, noCounts, readInput, readSnap, snapOf, takeInput, type Counts } from "./net";
 import { featherPicture, hall } from "./court";
 import { SHOULDER, aimArm, figure, pose, type Figure } from "./figure";
 import { courtCamera, lookToward, powerOf, restingLook, yawOf } from "./layout";
@@ -95,10 +97,30 @@ export class BadmintonView extends TableView<State> {
   /** The last power a swipe had (for the browser tests), and how many swipes swung. */
   private swung = 0;
   private lastPower = -1;
+  /**
+   * Over Wi-Fi (`live`): the side this device plays (seat 1 stands behind the far end), read from the room every frame.
+   * The host's view runs the one court, a person's swipes and jumps on each side that has one (mine, a guest's as the
+   * room feeds them), the computer on a side whose person is away; it tells the court to all (`snapOf`). A guest's view
+   * runs no court: it draws the host's a moment behind and sends its swipes and jumps as counts (`inputOf`).
+   */
+  private mine: 0 | 1 = 0;
+  private seatKnown = false;
+  /** What the court has done that makes a sound or a word (told to guests), and what a guest has heard of it. */
+  private counts: Counts = noCounts();
+  private heard_: Counts | null = null;
+  /** A guest's swipes and jumps so far, and its last swipe; on the host, each guest's taken so far. */
+  private swings = 0;
+  private jumps = 0;
+  private lastSwipe = { power: 0, yaw: 0 };
+  private taken = [
+    { swings: 0, jumps: 0 },
+    { swings: 0, jumps: 0 },
+  ];
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
     private level: Level,
+    private live: LiveSession | null = null,
   ) {
     super(host, quality, "#c9d2dc");
     const el = this.renderer.domElement;
@@ -123,16 +145,7 @@ export class BadmintonView extends TableView<State> {
     hall(this.scene, keep_);
     this.figures = [figure(keep_, "#d8322a", "#2a1d14", "#e23b2a"), figure(keep_, "#2363d0", "#121418", "#1f8adf")];
     for (const f of this.figures) this.scene.add(f.root);
-    // Semi first person: of my own player only the racket is drawn (the user asked: no arm), still moved by the
-    // unseen arm's swing; the eye is just behind its head.
-    const arm = this.figures[0].racket;
-    this.figures[0].root.traverse((part) => {
-      if (!(part instanceof T.Mesh)) return;
-      let inArm = false;
-      for (let at: T.Object3D | null = part; at; at = at.parent) if (at === arm) inArm = true;
-      part.visible = inArm;
-      part.castShadow = inArm;
-    });
+    this.dress();
     // The shuttle: a white cork at its nose and a skirt of feathers, made along -y (the nose) so that it can be turned along its way.
     this.shuttle = new T.Group();
     const cork = new T.Mesh(keep_(new T.SphereGeometry(0.014, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2)), this.standard({ color: "#f7f5ee", roughness: 0.55 })),
@@ -251,7 +264,8 @@ export class BadmintonView extends TableView<State> {
     this.swipe = null;
   }
   private running() {
-    return !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
+    // Over Wi-Fi a window open on one device does not stop the court for the others (a pause does, for all).
+    return !!this.state && this.state.winner === null && !this.paused && !document.hidden && (!!this.live || !document.querySelector("dialog[open]"));
   }
   private newWorld() {
     return createWorld(1 + Math.floor(Math.random() * 2e9));
@@ -273,22 +287,83 @@ export class BadmintonView extends TableView<State> {
       speed = Math.hypot(end.x - startAt.x, end.y - startAt.y) / height / span;
     this.stroke(Math.min(MOST, powerOf(speed)), yawOf(dx, dy));
   }
+  /** Whether this device sends its strokes to the host instead of playing them itself (a guest over Wi-Fi). */
+  private get guest() {
+    return !!this.live && !this.live.host;
+  }
+  /** Whether this device holds a racket (one watching over Wi-Fi does not). */
+  private get playing() {
+    return !this.live || this.live.seat === 0 || this.live.seat === 1;
+  }
   private stroke(power: number, yaw: number) {
-    if (!this.running()) return;
-    if (swing(this.world, 0, power, yaw)) {
+    if (!this.running() || !this.playing) return;
+    if (this.guest) {
+      // Counted for the host, which swings my side with it (or serves, if it is my serve).
+      this.swings++;
+      this.lastSwipe = { power, yaw };
       this.swung++;
       this.lastPower = power;
-      if (this.world.phase === "flying" && this.world.hitter === 0 && this.world.served) this.knock("disc", 0.35, performance.now());
+      return;
+    }
+    if (swing(this.world, this.mine, power, yaw)) {
+      this.swung++;
+      this.lastPower = power;
     }
   }
   private leap() {
-    if (this.running() && jump(this.world, 0)) this.jumpButton.classList.add("on");
+    if (!this.running() || !this.playing) return;
+    if (this.guest) {
+      if (!airborne(this.world, this.mine) && this.world.phase === "flying") this.jumps++;
+      return;
+    }
+    if (jump(this.world, this.mine)) this.jumpButton.classList.add("on");
+  }
+  /**
+   * Of my own player only the racket is drawn (semi first person, the user asked: no arm), still moved by the unseen
+   * arm's swing; the other player whole. Done again when my side changes (over Wi-Fi).
+   */
+  private dress() {
+    this.figures.forEach((f, side) => {
+      const racket = f.racket;
+      f.root.traverse((part) => {
+        if (!(part instanceof T.Mesh)) return;
+        let inRacket = false;
+        for (let at: T.Object3D | null = part; at; at = at.parent) if (at === racket) inRacket = true;
+        part.visible = side !== this.mine || inRacket;
+        part.castShadow = part.visible;
+      });
+    });
+  }
+  /** Over Wi-Fi, my side read from the room every frame (it may be known only after the court is built, or change). */
+  private sideCheck() {
+    const live = this.live;
+    if (!live) return;
+    const mine: 0 | 1 = live.seat === 1 ? 1 : 0;
+    if (mine === this.mine && this.seatKnown) return;
+    this.seatKnown = true;
+    this.mine = mine;
+    this.dress();
+    const me = this.world.players[mine];
+    this.eye = { x: me.x, y: me.y, z: me.z };
+    this.look = restingLook(me, mine);
   }
   private advance(now: number) {
     const real = Math.min(0.2, (now - this.last) / 1000),
-      running = this.running();
+      running = this.running(),
+      live = this.live;
     this.last = now;
+    this.sideCheck();
+    if (live && !live.host) return this.followHost(now, real);
     if (running || (this.state && this.state.winner !== null && !this.paused)) {
+      if (live) {
+        // The host's court has a person on each side that has one (mine, a guest's), the computer on the others; a
+        // guest's swipes and jumps are taken as its counts go up.
+        for (const side of [0, 1] as const) {
+          const by = live.control(side);
+          this.world.people[side] = by === "me" || by === "remote";
+          if (by === "remote" && running) this.taken[side] = takeInput(this.world, side, readInput(live.latest(side)), this.taken[side]);
+        }
+      }
       this.left += real;
       while (this.left >= DT) {
         this.left -= DT;
@@ -296,22 +371,73 @@ export class BadmintonView extends TableView<State> {
       }
       if (running && this.state && this.state.winner === null && this.world.phase === "dead" && this.world.dead > DEAD_WAIT) serve(this.world, serverOf(this.state), fromRight(this.state));
     }
+    // The host tells its court to the guests, paused or not (so that one coming back sees it).
+    if (live?.host && this.state) live.tick(() => snapOf(this.world, this.counts), now);
     this.pose(now, real);
     this.redraw();
   }
+  /**
+   * A guest's frame: my swipes and jumps are sent to the host as counts, and the host's court is drawn a moment
+   * behind; the sounds and words follow the court's counts.
+   */
+  private followHost(now: number, real: number) {
+    const live = this.live as LiveGuest,
+      playing = this.playing && this.running() && !live.paused;
+    live.tick(() => (playing ? inputOf(this.swings, this.lastSwipe.power, this.lastSwipe.yaw, this.jumps) : null), now);
+    const frame = live.frame(now),
+      a = frame && readSnap(frame.a.data),
+      b = frame && readSnap(frame.b.data);
+    if (frame && a && b) {
+      const t = frame.t,
+        w = this.world,
+        [x, y, z] = blend([a.shuttle.x, a.shuttle.y, a.shuttle.z], [b.shuttle.x, b.shuttle.y, b.shuttle.z], t);
+      // The guest's court keeps its own clock at a fixed moment; each player's swing and stroke are set back from it.
+      w.time = 10;
+      w.shuttle = { x, y, z, vx: b.shuttle.vx, vy: b.shuttle.vy, vz: b.shuttle.vz };
+      ([0, 1] as const).forEach((side) => {
+        const [px, pz, py, vx, vz] = blend(
+          [a.players[side].x, a.players[side].z, a.players[side].y, a.players[side].vx, a.players[side].vz],
+          [b.players[side].x, b.players[side].z, b.players[side].y, b.players[side].vx, b.players[side].vz],
+          t,
+        );
+        const p = w.players[side],
+          q = b.players[side];
+        Object.assign(p, { x: px, z: pz, y: py, vx, vz, vy: 0, struck: w.time - q.struck, high: q.high, swing: q.swing >= 0 ? { at: w.time - q.swing, power: 0, yaw: 0, smash: py > 0.04 } : null });
+      });
+      Object.assign(w, { phase: b.phase, server: b.server, hitter: b.hitter, served: b.served, netted: b.netted, even: b.even, people: [true, true] });
+      this.heardFrom(b.counts, now);
+    }
+    this.pose(now, real);
+    this.redraw();
+  }
+  /** A guest hears the host's court: each count gone up since it last heard is a sound (and a smash a word). */
+  private heardFrom(counts: Counts, now: number) {
+    const was = this.heard_;
+    this.heard_ = { ...counts, smashes: [...counts.smashes] as [number, number] };
+    if (!was) return;
+    if (counts.hits > was.hits) this.knock("disc", 0.5, now);
+    if (counts.lands > was.lands) this.knock("cushion", 0.5, now);
+    if (counts.nets > was.nets) this.knock("pocket", 0.5, now);
+    for (const side of [0, 1] as const) if (counts.smashes[side] > was.smashes[side]) this.say("스매싱!", side === this.mine ? "#ff8a3a" : "#9fd0ff", now, this.world.shuttle.x, side);
+  }
   private hear(events: Happening[], now: number, running: boolean) {
     for (const event of events) {
+      // Counted for the guests, who make their own sounds and words of them.
+      const c = this.counts;
+      if (event.kind === "hit") [c.hits, c.smashes[event.side]] = [c.hits + 1, c.smashes[event.side] + (event.smash ? 1 : 0)];
+      else if (event.kind === "land") c.lands++;
+      else if (event.kind === "net") c.nets++;
       if (event.kind === "hit") {
         this.knock("disc", Math.max(0.25, event.strength), now);
         if (event.smash) {
-          this.say("스매싱!", event.side === 0 ? "#ff8a3a" : "#9fd0ff", now, this.world.shuttle.x, event.side);
+          this.say("스매싱!", event.side === this.mine ? "#ff8a3a" : "#9fd0ff", now, this.world.shuttle.x, event.side);
           // My smash shakes the eye a moment.
-          if (event.side === 0 && !this.reducedMotion) this.shook = now;
+          if (event.side === this.mine && !this.reducedMotion) this.shook = now;
         }
       } else if (event.kind === "land") this.knock("cushion", 0.3 + event.strength * 0.5, now);
       else if (event.kind === "net") this.knock("pocket", 0.5, now);
       else if (event.kind === "point" && running && this.state?.winner === null) {
-        this.say(WHY[event.why], event.to === 0 ? "#ffd34a" : "#9fd0ff", now, 0, sideOfWord(this.world));
+        this.say(WHY[event.why], event.to === this.mine ? "#ffd34a" : "#9fd0ff", now, 0, sideOfWord(this.world));
         this.onMove({ from: -1, to: event.to, extra: event.why });
       }
     }
@@ -341,7 +467,9 @@ export class BadmintonView extends TableView<State> {
     sprite.scale.set(2.6, 0.65, 1);
     sprite.renderOrder = 20;
     this.scene.add(sprite);
-    this.words.push({ sprite, at: now, x: Math.max(-1.5, Math.min(1.5, x)), y: 2.6, z: side === 0 ? 1 : -1.5 });
+    // Over the striker's half, a little toward the far side of whoever looks.
+    const toward = this.mine === 0 ? 1 : -1;
+    this.words.push({ sprite, at: now, x: Math.max(-1.5, Math.min(1.5, x)), y: 2.6, z: side === this.mine ? toward : -1.5 * toward });
   }
   private pose(now: number, real: number) {
     const w = this.world,
@@ -402,7 +530,7 @@ export class BadmintonView extends TableView<State> {
       to.set(to.x * turned, to.y, to.z * turned);
       if (to.lengthSq() < 1e-4) to.set(0, 1, 0.3);
       to.normalize();
-      const held = side === 0 ? this.pointed(shoulder) : null,
+      const held = side === this.mine && this.playing ? this.pointed(shoulder) : null,
         toward = held ? new T.Vector3(held.x * turned, held.y, held.z * turned) : weight > 0 ? new T.Vector3(-0.3, 0.78, 0.55).normalize().lerp(to, weight).normalize() : null;
       // The swing: wound up while it waits for the shuttle (to about 0.4), through the shuttle at the stroke, followed through after.
       const stroke = swingAt >= 0 ? Math.min(0.4, (swingAt / SWING) * 0.4) : since >= 0 && since < 0.4 ? 0.45 + (since / 0.4) * 0.55 : null;
@@ -410,8 +538,8 @@ export class BadmintonView extends TableView<State> {
       if (stroke === null || swingAt >= 0) this.lastAim[side] = toward?.clone() ?? null;
     });
     // My reach: a glow round the shuttle while my racket can meet it; at the easiest level, where it will come down.
-    const me = w.players[0],
-      can = inReach(w, 0) && !capturing(),
+    const me = w.players[this.mine],
+      can = this.playing && inReach(w, this.mine) && !capturing(),
       fade = 1 - Math.exp(-(real || 0) / 0.06);
     this.reachShown += ((can ? 1 : 0) - this.reachShown) * (real > 0 ? fade : 1);
     // In flight a soft orange glow keeps the white shuttle in sight against the light walls; lime and bright in reach.
@@ -422,7 +550,7 @@ export class BadmintonView extends TableView<State> {
     this.halo.scale.setScalar((0.2 + 0.1 * this.reachShown) * grow);
     halo.color.setRGB(1 - this.reachShown * 0.2, 0.55 + this.reachShown * 0.45, 0.25 + this.reachShown * 0.1);
     halo.opacity = Math.max(glowing ? 0.55 : 0, this.reachShown);
-    const coming = flying && w.hitter === 1 && this.level === "easy" && !capturing();
+    const coming = flying && w.hitter !== this.mine && this.level === "easy" && !this.live && !capturing();
     if (coming) {
       const way = path(w),
         endAt = way[way.length - 1];
@@ -438,14 +566,14 @@ export class BadmintonView extends TableView<State> {
     // The eye follows the shuttle while it flies, wherever it is (high, near the floor, far), and between rallies looks
     // down the court; quickly enough to keep up with a smash, eased so that it does not jerk.
     const aspect = this.camera.aspect,
-      goal = flying || (w.phase === "dead" && s.y > 0.05) ? lookToward(this.eye, s, aspect) : restingLook(this.eye),
+      goal = flying || (w.phase === "dead" && s.y > 0.05) ? lookToward(this.eye, s, aspect, this.mine) : restingLook(this.eye, this.mine),
       follow = real > 0 ? 1 - Math.exp(-real * (flying ? 7 : 3)) : 1;
     this.look.x += (goal.x - this.look.x) * follow;
     this.look.y += (goal.y - this.look.y) * follow;
     this.look.z += (goal.z - this.look.z) * follow;
     const since = (now - this.shook) / 1000,
       shake = this.shook >= 0 && since < 0.3 ? (1 - since / 0.3) * 0.05 : 0;
-    courtCamera(this.camera, aspect, this.eye, this.look, { x: shake * Math.sin(now * 0.09), y: shake * Math.cos(now * 0.11) });
+    courtCamera(this.camera, aspect, this.eye, this.look, { x: shake * Math.sin(now * 0.09), y: shake * Math.cos(now * 0.11) }, this.mine);
     this.words = this.words.filter((word) => {
       const p = (now - word.at) / 1300;
       if (p >= 1) {
@@ -459,21 +587,23 @@ export class BadmintonView extends TableView<State> {
       return true;
     });
     // The word over the court: my serve; or, for a shuttle coming high over me, the jump that smashes it.
-    const mine = w.phase === "ready" && w.server === 0,
-      high = this.running() && smashable(w) && !airborne(w, 0);
+    const mine = this.playing && w.phase === "ready" && w.server === this.mine,
+      high = this.playing && this.running() && smashable(w, this.mine) && !airborne(w, this.mine);
     // The jump button pulses only when a jump begun now meets the shuttle in the air (the moment for the smash).
-    const now_ = high && jumpNow(w);
+    const now_ = high && jumpNow(w, this.mine);
     this.tip.textContent = mine ? "화면을 위로 밀어 서브하세요 · 빠를수록 멀리 갑니다" : now_ ? "지금 점프! 그리고 밀면 스매싱" : "높이 떴습니다! 점프 버튼이 깜박이면 뛰세요";
     this.tip.hidden = !(this.running() && (mine || high)) || capturing();
-    const canJump = this.running() && flying && !airborne(w, 0);
+    const canJump = this.playing && this.running() && flying && !airborne(w, this.mine);
     this.jumpButton.classList.toggle("hint", now_ && !capturing());
-    this.jumpButton.classList.toggle("on", airborne(w, 0));
-    this.jumpButton.classList.toggle("off", !canJump && !airborne(w, 0));
+    this.jumpButton.classList.toggle("on", airborne(w, this.mine));
+    this.jumpButton.classList.toggle("off", !canJump && !airborne(w, this.mine));
     this.jumpButton.hidden = capturing() || !this.state || this.state.winner !== null;
     // For the browser tests: where the shuttle and the players are, and how the point stands.
     const data = this.renderer.domElement.dataset;
     data.shuttle = `${s.x.toFixed(2)},${s.y.toFixed(2)},${s.z.toFixed(2)}`;
     data.me = `${me.x.toFixed(2)},${me.y.toFixed(2)},${me.z.toFixed(2)}`;
+    // Both players (red;blue), for the Wi-Fi browser tests.
+    data.players = w.players.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)},${p.z.toFixed(2)}`).join(";");
     data.phase = w.phase;
     data.server = String(w.server);
     data.hitter = String(w.hitter);
@@ -512,7 +642,7 @@ export class BadmintonView extends TableView<State> {
   }
   protected resize() {
     super.resize();
-    courtCamera(this.camera, this.camera.aspect, this.eye, this.look);
+    courtCamera(this.camera, this.camera.aspect, this.eye, this.look, undefined, this.mine);
     this.redraw();
   }
   protected spots(): Spot[] {
@@ -525,10 +655,12 @@ export class BadmintonView extends TableView<State> {
       if (anew) this.world = this.newWorld();
       this.begun = true;
       serve(this.world, serverOf(state), fromRight(state));
-      const me = this.world.players[0];
+      const me = this.world.players[this.mine];
       this.eye = { x: me.x, y: me.y, z: me.z };
-      this.look = restingLook(me);
+      this.look = restingLook(me, this.mine);
     }
+    // A guest's court ends no rally itself: the point the host told is said over the net here.
+    if (this.live && !this.live.host && state.ply > this.shown && state.last !== null && state.why >= 0) this.say(WHY[state.why], state.last === this.mine ? "#ffd34a" : "#9fd0ff", performance.now(), 0, sideOfWord(this.world));
     this.shown = state.ply;
     this.pose(performance.now(), 0);
   }

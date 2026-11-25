@@ -11,6 +11,10 @@ export interface UpdateDay {
 const at = (text: string, full = false) => ({ text, full });
 export const UPDATES: UpdateDay[] = [
   {
+    date: "2026-11-25",
+    items: [at("배드민턴 와이파이 여럿이(둘이)")],
+  },
+  {
     date: "2026-11-24",
     items: [
       at("배드민턴: 세미 1인칭 시점(라켓만 보임), 중계 화면 같은 작은 점수판, 느린 셔틀콕, 셔틀콕 쪽으로 돌아가는 라켓(낮으면 아래에서 위로), 셔틀콕을 따라가는 시점, 마우스·손가락을 따라가는 라켓, 백 라인 아웃 없음, 높이 뜬 셔틀콕이 오면 점프 버튼이 깜박여 스매싱 안내"),

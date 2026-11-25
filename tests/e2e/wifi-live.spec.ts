@@ -230,3 +230,84 @@ test("table tennis on two devices: the guest stands behind the far end, its mous
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
+
+test("table tennis on two devices by touch: the guest's finger moves its blue paddle on the host, and its tap tosses its serve there", async ({ browser }, info) => {
+  test.skip(info.project.name !== "mobile", "fingers are the phone's");
+  const a = await device(browser, info),
+    b = await device(browser, info),
+    host = a.page,
+    guest = b.page;
+  await begin(host, guest, "탁구");
+  await expect(guest.locator("#turn")).toContainText("내 서브");
+  const paddles = async (page: Page) => ((await canvasOf(page).getAttribute("data-paddles")) ?? "NaN,NaN;NaN,NaN").split(";").map(pair2);
+  const box = (await canvasOf(guest).boundingBox())!,
+    camera = new PerspectiveCamera(50, box.width / box.height, 0.05, 80);
+  rallyCamera(camera, box.width / box.height, 0, 0, 1);
+  const screen = (x: number, z: number) => {
+    const v = new Vector3(x, HAND_Y, z).project(camera);
+    return { x: box.x + ((v.x + 1) / 2) * box.width, y: box.y + ((1 - v.y) / 2) * box.height };
+  };
+  // A finger put down and drawn across: the blue paddle follows it on the host.
+  const cdp = await guest.context().newCDPSession(guest),
+    from = screen(-0.3, -HALF_L - 0.3),
+    to = screen(0.45, -HALF_L - 0.3);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y, id: 1 }] });
+  for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x + ((to.x - from.x) * k) / 6, y: from.y + ((to.y - from.y) * k) / 6, id: 1 }] });
+  await expect.poll(async () => (await paddles(host))[1][0], { timeout: 15000 }).toBeGreaterThan(0.25);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  // A tap tosses the guest's serve on the host's hall.
+  const tossed = host.waitForFunction(() => document.querySelector<HTMLCanvasElement>("main.game-layout canvas")?.dataset.phase === "toss", null, { polling: "raf", timeout: 20000 });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: to.x, y: to.y, id: 2 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await tossed;
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});
+
+test("badminton on two devices: the guest stands behind the far end, its strokes return the host's serve and its jump shows on the host", async ({ browser }, info) => {
+  const a = await device(browser, info),
+    b = await device(browser, info),
+    host = a.page,
+    guest = b.page;
+  await begin(host, guest, "배드민턴");
+  // Red (the host) serves first; the guest is told the other serves, and stands behind the far end.
+  await expect(host.locator("#turn")).toContainText("내 서브");
+  await expect(guest.locator("#turn")).toContainText("상대 서브");
+  const data = (page: Page) => page.evaluate(() => ({ ...document.querySelector<HTMLCanvasElement>("main.game-layout canvas")!.dataset }));
+  const triple = (t: string | undefined) => (t ?? "NaN,NaN,NaN").split(",").map(Number);
+  await expect.poll(async () => triple((await data(guest)).me)[2], { timeout: 15000 }).toBeLessThan(0);
+  // The host serves long; the guest strikes it back with its keys as it comes, and jumps once while it flies.
+  await canvasOf(host).focus();
+  await host.keyboard.press("ArrowUp");
+  await canvasOf(guest).focus();
+  let returned = false,
+    jumped = false;
+  const start = Date.now();
+  while (Date.now() - start < 90000 && !(returned && jumped)) {
+    const d = await data(guest),
+      s = triple(d.shuttle),
+      me = triple(d.me);
+    if ((await data(host)).phase === "ready" && (await data(host)).server === "0") {
+      await canvasOf(host).focus();
+      await host.keyboard.press("ArrowUp");
+      await canvasOf(guest).focus();
+    }
+    if (d.phase === "flying" && d.hitter === "0" && s[2] < 0) {
+      if (!jumped) {
+        await guest.locator(".bd-jump").dispatchEvent("pointerdown");
+        jumped = await expect
+          .poll(async () => triple((await data(host)).players?.split(";")[1])[1], { timeout: 4000 })
+          .toBeGreaterThan(0)
+          .then(() => true)
+          .catch(() => false);
+      } else if (Math.hypot(s[0] - me[0], s[2] - me[2]) < 2.4) await guest.keyboard.press("ArrowUp");
+    }
+    if ((await data(host)).hitter === "1" && (await data(host)).phase === "flying") returned = true;
+    await guest.waitForTimeout(40);
+  }
+  if (process.env.SHOT_DIR) for (const [name, page] of [["host", host], ["guest", guest]] as const) await page.screenshot({ path: `${process.env.SHOT_DIR}/bd-wifi-${name}-${info.project.name}.png` });
+  expect(jumped).toBe(true);
+  expect(returned).toBe(true);
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});

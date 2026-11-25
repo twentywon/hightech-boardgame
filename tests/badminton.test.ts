@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import * as R from "../src/games/badminton/rules";
 import * as S from "../src/games/badminton/sim";
+import * as N from "../src/games/badminton/net";
 import { powerOf, yawOf } from "../src/games/badminton/layout";
 
 /** Steps the world until `until` holds or `seconds` pass; the happenings on the way. */
@@ -206,5 +207,61 @@ describe("badminton court", () => {
     const h = run(v, 6, (_, h) => h.some((e) => e.kind === "point"), "hard");
     expect(h.some((e) => e.kind === "hit")).toBe(false);
     expect(points(h)[0]).toEqual({ kind: "point", to: 1, why: S.OUT });
+  });
+});
+
+describe("badminton over Wi-Fi", () => {
+  test("the computer can stand in on either side, and a person can play the far side", () => {
+    // The computer on the near side against a person on the far side who swings whenever it can.
+    const w = S.createWorld(11);
+    w.people = [false, true];
+    S.serve(w, 0, true);
+    const by = [0, 0];
+    for (let t = 0; t < 30 && by[0] + by[1] < 8; t += S.DT) {
+      if (w.phase === "flying" && w.hitter === 0 && !w.players[1].swing && S.inReach(w, 1)) S.swing(w, 1, 0.6, 0);
+      for (const e of S.step(w, "normal")) if (e.kind === "hit") by[e.side]++;
+      if (w.phase === "dead" && w.dead > 1) S.serve(w, w.server, true);
+    }
+    expect(by[0]).toBeGreaterThan(1);
+    expect(by[1]).toBeGreaterThan(1);
+    // The far side's strokes land in the near half.
+    const v = S.createWorld(4);
+    v.people = [true, true];
+    S.serve(v, 1, true);
+    expect(S.swing(v, 1, 0.3, 0)).toBe(true);
+    expect(v.served).toBe(true);
+    const end = S.landing(v.shuttle);
+    expect(end.z).toBeGreaterThan(0);
+    expect(S.goodServe(v, end.x, end.z)).toBe(true);
+  });
+  test("the court's state and a guest's controls travel as numbers, and a guest's swipes and jumps are taken once", () => {
+    const w = S.createWorld(8);
+    S.serve(w, 1, false);
+    const counts = { ...N.noCounts(), hits: 4, smashes: [1, 2] as [number, number], lands: 3 },
+      snap = N.readSnap(N.snapOf(w, counts))!;
+    expect(snap.phase).toBe("ready");
+    expect(snap.server).toBe(1);
+    expect(snap.even).toBe(false);
+    expect(snap.players[1].x).toBeCloseTo(w.players[1].x, 3);
+    expect(snap.shuttle.z).toBeCloseTo(w.shuttle.z, 3);
+    expect(snap.counts).toEqual(counts);
+    expect(N.readSnap(N.snapOf(w, counts).slice(1))).toBeNull();
+    expect(N.readInput(N.inputOf(2, 0.7, -0.2, 1))).toEqual({ swings: 2, power: 0.7, yaw: -0.2, jumps: 1 });
+    expect(N.readInput([1, 2])).toBeNull();
+    // The guest's first swipe serves its side's serve; the same count again does nothing.
+    w.people = [true, true];
+    let taken = N.takeInput(w, 1, N.readInput(N.inputOf(1, 0.3, 0, 0)), { swings: 0, jumps: 0 });
+    expect(w.phase).toBe("flying");
+    expect(w.hitter).toBe(1);
+    taken = N.takeInput(w, 1, N.readInput(N.inputOf(1, 0.3, 0, 0)), taken);
+    expect(taken).toEqual({ swings: 1, jumps: 0 });
+    // A guest whose court was built again counts from nothing: the tally starts again, and its next swipe counts.
+    const again = S.createWorld(8);
+    S.serve(again, 1, false);
+    again.people = [true, true];
+    expect(N.takeInput(again, 1, N.readInput(N.inputOf(0, 0, 0, 0)), { swings: 6, jumps: 2 })).toEqual({ swings: 0, jumps: 0 });
+    expect(again.phase).toBe("ready");
+    N.takeInput(again, 1, N.readInput(N.inputOf(1, 0.3, 0, 0)), { swings: 0, jumps: 0 });
+    expect(again.phase).toBe("flying");
   });
 });

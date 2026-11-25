@@ -251,3 +251,38 @@ test("QR로 연결 in the app: its 방장 QR 찍기 reads the host's room code t
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
+
+test("table tennis in the app: the guest's finger moves its blue paddle on the host and its tap tosses its serve", async ({ browser }, info) => {
+  test.skip(info.project.name !== "mobile", "fingers are the phone's");
+  const wifi = new FakeWifi();
+  const a = await phone(browser, info, wifi, "192.168.0.12"),
+    b = await phone(browser, info, wifi, "192.168.0.23"),
+    host = a.page,
+    guest = b.page;
+  await lobby(host, "탁구", "방장");
+  await host.locator("#net-host").click();
+  await lobby(guest, "탁구", "민수");
+  await guest.locator("#net-join").click();
+  await guest.locator(".net-room:not(.other)").click();
+  await expect(guest.locator(".net-seats")).toBeVisible({ timeout: 15000 });
+  await host.locator("#net-start").click();
+  const canvasOf = (page: Page) => page.locator("main.game-layout canvas");
+  for (const page of [host, guest]) await expect(canvasOf(page)).toHaveAttribute("data-ready", "true", { timeout: 30000 });
+  await expect(guest.locator("#turn")).toContainText("내 서브");
+  const paddles = async () => ((await canvasOf(host).getAttribute("data-paddles")) ?? "NaN,NaN;NaN,NaN").split(";").map((p) => p.split(",").map(Number));
+  const box = (await canvasOf(guest).boundingBox())!,
+    cdp = await guest.context().newCDPSession(guest),
+    from = { x: box.x + box.width * 0.4, y: box.y + box.height * 0.75 },
+    to = { x: box.x + box.width * 0.62, y: box.y + box.height * 0.75 };
+  const before = (await paddles())[1][0];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y, id: 1 }] });
+  for (let k = 1; k <= 6; k++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x + ((to.x - from.x) * k) / 6, y: to.y, id: 1 }] });
+  await expect.poll(async () => Math.abs((await paddles())[1][0] - before), { timeout: 15000 }).toBeGreaterThan(0.15);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  const tossed = host.waitForFunction(() => document.querySelector<HTMLCanvasElement>("main.game-layout canvas")?.dataset.phase === "toss", null, { polling: "raf", timeout: 20000 });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: to.x, y: to.y, id: 2 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await tossed;
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});

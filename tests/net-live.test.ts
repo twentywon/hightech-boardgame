@@ -298,6 +298,13 @@ describe("table tennis over Wi-Fi", () => {
     expect(tennis.takeToss(world, 1, 1, 0)).toBe(1);
     expect(world.phase).toBe("toss");
     expect(tennis.takeToss(world, 1, 1, 1)).toBe(1);
+    // A guest whose table was built again counts from nothing: the host's tally starts again, and its next tap tosses.
+    const again = tt.createWorld(3);
+    tt.serve(again, 1);
+    expect(tennis.takeToss(again, 1, 0, 7)).toBe(0);
+    expect(again.phase).toBe("ready");
+    expect(tennis.takeToss(again, 1, 1, 0)).toBe(1);
+    expect(again.phase).toBe("toss");
   });
 
   test("a person on the far side strikes the ball with a stroke of their swing; the computer can stand in on either side", () => {

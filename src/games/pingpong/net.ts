@@ -75,9 +75,11 @@ export function readInput(data: number[] | null): { x: number; z: number; tosses
 }
 /**
  * A guest's toss taken on the host: when its count has gone up since the last one `taken`, its side tosses (if it is
- * its serve, the ball held); the count taken back.
+ * its serve, the ball held); the count taken back (also when it went back).
  */
 export function takeToss(world: World, side: 0 | 1, tosses: number, taken: number) {
   if (tosses > taken) toss(world, side);
-  return Math.max(taken, tosses);
+  // A count that went back (the guest's table was built again: it rejoined, or was resynced) starts the tally again;
+  // kept at the old count, the guest's taps were ignored until they passed it, and its serve was not tossed.
+  return tosses;
 }

@@ -130,6 +130,11 @@ export interface World {
   plan: { from: number; leave: boolean; smash: boolean; miss: boolean } | null;
   /** Where the shuttle came down last (for the view's mark). */
   landed: { x: number; z: number; in: boolean } | null;
+  /**
+   * Which sides a person plays (its swipes and jumps given through `swing` and `jump`); the others are the computer's.
+   * Against the computer it is me on side 0; over Wi-Fi the host's world has a person on each side that has one.
+   */
+  people: [boolean, boolean];
   /** When the players last chose where to run (they look again a few times a second, and at once after a stroke). */
   steered: number;
   seed: number;
@@ -172,6 +177,7 @@ export function createWorld(seed = 1): World {
     wait: 0,
     plan: null,
     landed: null,
+    people: [true, false],
     steered: -9,
     seed: Math.max(1, Math.floor(Math.abs(seed)) % 2147483646) || 1,
   };
@@ -398,18 +404,19 @@ function strike(world: World, side: 0 | 1, power: number, yaw: number, smash: bo
  * my back line, a drop over the net or a drive between, aimed away from where I stand; with its level's error, and now
  * and then a blunder.
  */
-function computerStroke(world: World, level: Level) {
+function computerStroke(world: World, level: Level, side: 0 | 1 = 1) {
   const L = LEVELS[level],
     s = world.shuttle,
-    me = world.players[0],
+    me = world.players[1 - side],
     smash = !!world.plan?.smash && s.y > 1.9;
+  // Depths are measured from the net into the other half (`forward` turns them to the court's z at the end).
   let tx = -Math.sign(me.x || draw(world) - 0.5) * (0.7 + draw(world) * 1.55),
     tz: number;
   if (smash) tz = 2.4 + draw(world) * 3.2;
   else {
     const r = draw(world),
-      deep = me.z > 4.2,
-      near = me.z < 3;
+      deep = Math.abs(me.z) > 4.2,
+      near = Math.abs(me.z) < 3;
     tz = r < (deep ? 0.55 : near ? 0.15 : 0.3) ? 2.1 + draw(world) * 1.1 : r < 0.82 ? 5.3 + draw(world) * 1.1 : 3.6 + draw(world) * 1.4;
   }
   tx += gauss(world) * L.error;
@@ -422,6 +429,7 @@ function computerStroke(world: World, level: Level) {
     if (r < 0.55) tx = Math.sign(tx || 1) * (HALF_W + 0.3 + draw(world) * 0.6);
     else tz = 0.4;
   }
+  tz *= forward(side);
   const dx = tx - s.x,
     dz = tz - s.z,
     distance = Math.hypot(dx, dz),
@@ -443,22 +451,22 @@ function computerStroke(world: World, level: Level) {
       elevation += 0.14;
     }
   }
-  begin(world, 1, smash);
+  begin(world, side, smash);
 }
-/** The computer serves: mostly short over the net into my service court, sometimes long to its back. */
-function computerServe(world: World, level: Level) {
+/** The computer serves from `side`: mostly short over the net into the other's service court, sometimes long to its back. */
+function computerServe(world: World, level: Level, side: 0 | 1 = 1) {
   const L = LEVELS[level],
     at = held(world),
     long = draw(world) < 0.4,
-    tx = -Math.sign(courtX(1, world.even)) * (0.8 + draw(world) * 1.1) + gauss(world) * L.error * 0.35,
-    tz = (long ? 6.0 + draw(world) * 0.5 : SHORT + 0.35 + draw(world) * 0.5) + gauss(world) * L.error * 0.3,
+    tx = -Math.sign(courtX(side, world.even)) * (0.8 + draw(world) * 1.1) + gauss(world) * L.error * 0.35,
+    tz = forward(side) * ((long ? 6.0 + draw(world) * 0.5 : SHORT + 0.35 + draw(world) * 0.5) + gauss(world) * L.error * 0.3),
     dx = tx - at.x,
     dz = tz - at.z,
     distance = Math.hypot(dx, dz),
     dir = { x: dx / distance, z: dz / distance },
     elevation = long ? 0.92 : 0.36;
   world.shuttle = launch(at, speedFor(at, elevation, dir, distance), elevation, dir);
-  begin(world, 1, false, true);
+  begin(world, side, false, true);
 }
 
 /**
@@ -479,21 +487,21 @@ export function meeting(world: World, side: 0 | 1, speed: number, high = false) 
   const last = way[way.length - 1];
   return last ? behind(last) : null;
 }
-/** Whether the shuttle coming to me goes high enough over my half to be smashed from a jump (the view lights the jump button). */
-export function smashable(world: World) {
-  if (world.phase !== "flying" || world.hitter !== 1 || world.netted) return false;
-  return path(world, DT * 6).some((q) => q.z > 0.8 && q.y > 3.1);
+/** Whether the shuttle coming to `side` goes high enough over its half to be smashed from a jump (the view lights the jump button). */
+export function smashable(world: World, side: 0 | 1 = 0) {
+  if (world.phase !== "flying" || world.hitter === side || world.netted) return false;
+  return path(world, DT * 6).some((q) => -forward(side) * q.z > 0.8 && q.y > 3.1);
 }
 /**
  * Whether a jump begun now would meet the shuttle: it comes within reach of my racket in the air at the jump's height
  * while I am up (the view pulses the jump button then, so that the jump is timed for the smash).
  */
-export function jumpNow(world: World) {
-  if (!smashable(world) || airborne(world, 0)) return false;
-  const me = world.players[0],
+export function jumpNow(world: World, side: 0 | 1 = 0) {
+  if (!smashable(world, side) || airborne(world, side)) return false;
+  const me = world.players[side],
     up = (2 * JUMP) / G;
   return path(world, DT * 2).some((q) => {
-    if (q.t < 0.12 || q.t > up * 0.85 || q.z < 0.3) return false;
+    if (q.t < 0.12 || q.t > up * 0.85 || -forward(side) * q.z < 0.3) return false;
     const y = JUMP * q.t - (G * q.t * q.t) / 2;
     return q.y >= y + AIR_LOW && q.y <= y + AIR_TOP && Math.hypot(q.x - me.x, q.z - me.z) <= REACH;
   });
@@ -536,12 +544,12 @@ function steer(world: World, level: Level) {
       if (world.time - p.struck > 0.15) p.goal = { x: p.x * 0.3, z: side === 0 ? BASE : -BASE };
       continue;
     }
-    if (side === 1) {
+    if (!world.people[side]) {
       if (!world.plan) {
         // The computer reads the stroke: it lets a shuttle go that it judges out, and decides whether to smash it.
         const end = landing(world.shuttle),
           out = Math.abs(end.x) - HALF_W > L.judge || Math.abs(end.z) - HALF_L > L.judge,
-          high = path(world).some((q) => q.y > 3.2 && sideOf(q.z) === 1);
+          high = path(world).some((q) => q.y > 3.2 && sideOf(q.z) === side);
         world.plan = { from: world.time + L.react, leave: L.judge > 0 && out && !end.net, smash: high && draw(world) < L.smash, miss: draw(world) < L.whiff };
       }
       if (world.time < world.plan.from) continue;
@@ -552,8 +560,8 @@ function steer(world: World, level: Level) {
     }
     if (!look) continue;
     // A shuttle coming high over me is met where a jump can reach it, so that a jump and a swipe smash it.
-    const high = side === 1 ? !!world.plan?.smash : smashable(world);
-    const to = meeting(world, side, side === 0 ? MY_SPEED : L.speed, high);
+    const high = world.people[side] ? smashable(world, side) : !!world.plan?.smash;
+    const to = meeting(world, side, world.people[side] ? MY_SPEED : L.speed, high);
     if (to) p.goal = keepIn(side, to);
   }
 }
@@ -587,16 +595,17 @@ export function step(world: World, level: Level): Happening[] {
   }
   if (world.phase === "ready") {
     world.shuttle = held(world);
-    if (world.server === 1) {
+    const server = world.server;
+    if (!world.people[server]) {
       world.wait -= DT;
       if (world.wait <= 0) {
-        computerServe(world, level);
-        out.push({ kind: "serve", side: 1 }, { kind: "hit", side: 1, smash: false, strength: 0.35 });
+        computerServe(world, level, server);
+        out.push({ kind: "serve", side: server }, { kind: "hit", side: server, smash: false, strength: 0.35 });
       }
     }
   }
   steer(world, level);
-  for (const side of [0, 1] as const) run(world.players[side], side === 0 ? MY_SPEED : L.speed, DT);
+  for (const side of [0, 1] as const) run(world.players[side], world.people[side] ? MY_SPEED : L.speed, DT);
   if (world.phase !== "flying") return out;
   const s = world.shuttle,
     z0 = s.z,
@@ -629,38 +638,40 @@ export function step(world: World, level: Level): Happening[] {
     else end(world, other, OUT, out);
     return out;
   }
-  // The rackets: my swing meets the shuttle if it comes within reach before the swing is over; the computer swings by itself.
-  const me = world.players[0];
-  if (me.swing) {
-    if (inReach(world, 0)) {
-      const { power, yaw, smash } = me.swing;
-      strike(world, 0, power, yaw, smash);
-      out.push({ kind: "hit", side: 0, smash, strength: Math.min(1, Math.hypot(world.shuttle.vx, world.shuttle.vy, world.shuttle.vz) / 60) });
-    } else if (world.time - me.swing.at > SWING && !(me.swing.smash && airborne(world, 0))) {
-      // (A swing begun in the air waits for the shuttle until the jump comes down: the jump, then the swipe, then the smash.)
-      me.swing = null;
-      out.push({ kind: "whiff", side: 0 });
+  // The rackets: a person's swing meets the shuttle if it comes within reach before the swing is over (one begun in the
+  // air waits until the jump comes down: the jump, then the swipe, then the smash); the computer swings by itself.
+  for (const side of [0, 1] as const) {
+    const p = world.players[side];
+    if (!world.people[side] || !p.swing || world.phase !== "flying") continue;
+    if (inReach(world, side)) {
+      const { power, yaw, smash } = p.swing;
+      strike(world, side, power, yaw, smash);
+      out.push({ kind: "hit", side, smash, strength: Math.min(1, Math.hypot(world.shuttle.vx, world.shuttle.vy, world.shuttle.vz) / 60) });
+    } else if (world.time - p.swing.at > SWING && !(p.swing.smash && airborne(world, side))) {
+      p.swing = null;
+      out.push({ kind: "whiff", side });
     }
   }
-  const them = world.players[1],
+  const cpu = (1 - world.hitter) as 0 | 1,
+    them = world.players[cpu],
     plan = world.plan;
-  if (world.phase === "flying" && world.hitter === 0 && plan && !plan.leave && world.time >= plan.from) {
+  if (world.phase === "flying" && !world.people[cpu] && plan && !plan.leave && world.time >= plan.from) {
     // A smash is played from a jump, begun as the shuttle comes down toward the jump's reach above the computer.
-    if (plan.smash && !airborne(world, 1) && s.vy < 0 && s.y < TOP + 1.3 && s.y > TOP && Math.hypot(s.x - them.x, s.z - them.z) < REACH) {
+    if (plan.smash && !airborne(world, cpu) && s.vy < 0 && s.y < TOP + 1.3 && s.y > TOP && Math.hypot(s.x - them.x, s.z - them.z) < REACH) {
       them.vy = JUMP;
-      out.push({ kind: "jump", side: 1 });
+      out.push({ kind: "jump", side: cpu });
     }
-    const wanted = plan.smash && airborne(world, 1) ? true : s.y < TOP - 0.25 || s.vy < 0;
-    if (inReach(world, 1) && wanted) {
+    const wanted = plan.smash && airborne(world, cpu) ? true : s.y < TOP - 0.25 || s.vy < 0;
+    if (inReach(world, cpu) && wanted) {
       if (plan.miss) {
         // A misjudged stroke: the racket goes through, the shuttle on past it.
         world.plan = { ...plan, leave: true };
         them.struck = world.time;
-        out.push({ kind: "whiff", side: 1 });
+        out.push({ kind: "whiff", side: cpu });
       } else {
-        if (!airborne(world, 1)) world.plan = { ...plan, smash: false };
-        computerStroke(world, level);
-        out.push({ kind: "hit", side: 1, smash: world.smash, strength: Math.min(1, Math.hypot(world.shuttle.vx, world.shuttle.vy, world.shuttle.vz) / 60) });
+        if (!airborne(world, cpu)) world.plan = { ...plan, smash: false };
+        computerStroke(world, level, cpu);
+        out.push({ kind: "hit", side: cpu, smash: world.smash, strength: Math.min(1, Math.hypot(world.shuttle.vx, world.shuttle.vy, world.shuttle.vz) / 60) });
       }
     }
   }

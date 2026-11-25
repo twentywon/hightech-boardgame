@@ -175,11 +175,7 @@ export class TableTennisView extends TableView<State> {
     super(host, quality, "#cfd6de");
     // Two fingers on this canvas are the game's own (two players at one screen).
     noZoom(this.renderer.domElement);
-    if (live) {
-      this.mine = live.seat === 1 ? 1 : 0;
-      this.simple = !(live.host && live.seat === 0);
-      this.hand = this.sent = homeOf(this.mine);
-    }
+    if (live) this.seated_();
     // Where the processor draws the picture alone, a real-time table keeps to one pixel a point, or it falls to a frame a second.
     if (!capable()) this.renderer.setPixelRatio(1);
     this.scene.add(new T.HemisphereLight("#f4f6ff", "#6b4a35", 1.35));
@@ -452,8 +448,31 @@ export class TableTennisView extends TableView<State> {
     this.lunge = -1;
     return 0;
   }
+  /**
+   * Over Wi-Fi, which side this device plays and whether it aims its own blade, read from the room every frame: the
+   * seat may be known only after the table is built, or change (a guest that rejoined under a new name and was seated
+   * again). Read once at the start, a guest whose seat came late played the red near end: its blade was held to the
+   * wrong half and its serve taps were ignored as not its serve (the user found the blue paddle not moving and its
+   * serve not tossed). On a change the hand starts again behind its own end and the eye turns round.
+   */
+  private seated_() {
+    const live = this.live;
+    if (!live) return;
+    const mine: 0 | 1 = live.seat === 1 ? 1 : 0,
+      simple = !(live.host && live.seat === 0);
+    if (mine === this.mine && simple === this.simple && this.seatKnown) return;
+    this.seatKnown = true;
+    this.mine = mine;
+    this.simple = simple;
+    this.hand = this.sent = homeOf(mine);
+    this.world.sight = null;
+    this.keys = { x: 0, z: 0 };
+    if (this.begun) this.resize();
+  }
+  private seatKnown = false;
   /** Runs the hall for the time that has passed since the last frame. */
   private advance(now: number) {
+    this.seated_();
     // The hall keeps the wall clock's time down to five frames a second; slower than that it slows down with the screen.
     const real = Math.min(0.2, (now - this.last) / 1000),
       running = this.running(),
