@@ -564,6 +564,31 @@ const play = {
     }
     await wait(150);
   },
+  // 스노보드: the run let go a few seconds, then a press held on a downslope and let go at a crest (a jump), the
+  // picture taken with the rider in the air over the sunset slope.
+  snowboard: async () => {
+    await page.locator("canvas").focus();
+    await page.evaluate(() => {
+      const board = document.querySelector("#board canvas");
+      const key = (type) => board.dispatchEvent(new KeyboardEvent(type, { key: " ", bubbles: true, cancelable: true }));
+      let held = false;
+      const loop = () => {
+        if (!board.isConnected) return;
+        const d = board.dataset, x = Number(d.x);
+        // Hold from a little after the start, let go once: a pop.
+        const want = x > 8 && x < 30;
+        if (want !== held) {
+          key(want ? "keydown" : "keyup");
+          held = want;
+        }
+        if (x < 40) requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    });
+    await page.waitForFunction(() => document.querySelector("#board canvas").dataset.phase === "air", null, { timeout: 30000 }).catch(() => {});
+    await wait(250);
+    await page.keyboard.press("p");
+  },
   // 핀볼: the plunger held a moment and let go; the ball is caught on its way round the field, a flipper raised.
   pinball: async () => {
     await page.locator("canvas").focus();

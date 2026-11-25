@@ -3988,3 +3988,15 @@ html[data-capture] .rl-bar, html[data-capture] .rl-history { display:none !impor
 /* 훌라: the stock's tool (a tap on the stock does its work) keeps to a pixel at the cluster's foot, clear of the buttons; the scores over the table. */
 html[data-game="hula"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;bottom:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
 .hula-score b { font-weight:900; }
+/* 스노보드: SCORE at the top left, the multiplier at the top right, TIME at the bottom left, a trick's word in the
+   middle (decoration over the canvas: the status line tells the score too). */
+.sb-hud { position:absolute;inset:0;pointer-events:none;z-index:3;font-family:"Inter","Noto Sans KR",sans-serif;font-weight:900;color:#fff;text-shadow:0 2px 0 rgba(90,20,60,.55),0 0 10px rgba(120,30,80,.35);letter-spacing:.02em; }
+.sb-score { position:absolute;top:max(72px, calc(env(safe-area-inset-top) + 60px));left:max(18px, env(safe-area-inset-left));font-size:clamp(18px, 2.6vw, 28px);display:flex;flex-direction:column;gap:2px; }
+.sb-score small { font-size:.52em;opacity:.85; }
+.sb-mult { position:absolute;top:max(72px, calc(env(safe-area-inset-top) + 60px));right:max(18px, env(safe-area-inset-right));font-size:clamp(22px, 3.4vw, 38px); }
+.sb-mult.sb-hot { color:#ffe14a; }
+.sb-time { position:absolute;bottom:max(18px, env(safe-area-inset-bottom));left:max(18px, env(safe-area-inset-left));font-size:clamp(16px, 2.2vw, 24px);font-variant-numeric:tabular-nums; }
+.sb-word { position:absolute;left:50%;top:26%;translate:-50% 0;white-space:nowrap;font-size:clamp(20px, 3.2vw, 36px);opacity:0; }
+.sb-word.sb-show { animation:sb-word 1.4s ease-out forwards; }
+@keyframes sb-word { 0% { opacity:0;transform:scale(.7) translateY(10px); } 12% { opacity:1;transform:scale(1.08); } 25% { transform:scale(1); } 75% { opacity:1; } 100% { opacity:0;transform:translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) { .sb-word.sb-show { animation:sb-fade 1.4s linear forwards; } @keyframes sb-fade { 0%,75% { opacity:1; } 100% { opacity:0; } } }

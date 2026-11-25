@@ -394,6 +394,7 @@ const OWN: Record<string, Piece> = {
   "claw-machine": ARCADE,
   "coin-pusher": ARCADE,
   pinball: ARCADE,
+  snowboard: ARCADE,
   "slot-machine": ARCADE,
   basketball: ARCADE,
   bowling: ROCK,

@@ -126,6 +126,8 @@ const TIMED: Record<string, Partial<Record<Outcome, string>>> = {
   fishing: { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
   // 핀볼 is a score: its end is the last ball drained.
   pinball: { win: "게임 종료", lose: "게임 종료", draw: "게임 종료" },
+  // 스노보드 is a timed run: its end is the clock running out.
+  snowboard: { win: "시간 종료", lose: "시간 종료", draw: "시간 종료" },
   basketball: { win: "성공", lose: "시간 종료" },
   // 사격 is a score: its end is the end of the round (pellets, clays, or the hunt's clock or cartridges).
   shooting: { win: "사격 종료", lose: "사격 종료", draw: "사격 종료" },

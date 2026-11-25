@@ -880,6 +880,14 @@ export const allGames = [
     icon: "7",
     available: true,
   },
+  {
+    name: "스노보드",
+    en: "SNOWBOARD",
+    category: "스포츠게임",
+    players: "1인용",
+    icon: "🏂",
+    available: true,
+  },
 ];
 
 /**
