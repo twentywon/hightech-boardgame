@@ -3988,3 +3988,75 @@ html[data-capture] .rl-bar, html[data-capture] .rl-history { display:none !impor
 /* 훌라: the stock's tool (a tap on the stock does its work) keeps to a pixel at the cluster's foot, clear of the buttons; the scores over the table. */
 html[data-game="hula"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;bottom:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
 .hula-score b { font-weight:900; }
+/* 금화 쟁탈전: both treasuries and sacks over the valley, a word called out, numbers rising where gold is taken, and a
+   phone's buttons (◀ ▶ at the lower left, 치기 and 점프 at the lower right; for two at one screen a set at each side). */
+html[data-game="gold-raid"] .game-layout .board-area > .board-hint { display:none !important; }
+.gr-hud { position:absolute;left:50%;top:10px;translate:-50% 0;z-index:2;pointer-events:none;user-select:none;-webkit-user-select:none;font-family:"Inter","Noto Sans KR",sans-serif;color:#fff; }
+.gr-board { display:flex;align-items:center;gap:10px;padding:6px 12px;border-radius:12px;background:linear-gradient(#3a2a1ce6, #1e140cf0);border:2px solid #b8894a;box-shadow:0 6px 18px rgba(0,0,0,.4), inset 0 1px 0 #ffffff22; }
+.gr-side { display:grid;grid-template-columns:auto 132px auto;grid-template-rows:auto auto;align-items:center;column-gap:8px;row-gap:2px; }
+.gr-side b { font-size:13px;font-weight:900;letter-spacing:.02em;white-space:nowrap; }
+.gr-side.gr-s0 b { color:#ff8d84; }
+.gr-side.gr-s1 b { color:#8db8ff; }
+.gr-bar { display:block;height:14px;border-radius:7px;background:#00000080;box-shadow:inset 0 0 0 1.5px #ffffff30;overflow:hidden; }
+.gr-bar i { display:block;height:100%;border-radius:7px;transition:width .35s ease;box-shadow:inset 0 -5px 0 #00000026, inset 0 2px 0 #ffffff55; }
+.gr-s0 .gr-bar i { background:linear-gradient(90deg, #d8352c, #ffcf3a 85%); }
+.gr-s1 .gr-bar i { background:linear-gradient(90deg, #2b6fe3, #ffcf3a 85%); }
+.gr-gold { min-width:58px;font:800 19px/1 var(--mono, ui-monospace, monospace);font-style:normal;color:#ffd84a;text-shadow:0 0 8px #ffae1a66;white-space:nowrap; }
+.gr-gold small { font-size:12px;color:#c9b48a;font-weight:700; }
+.gr-sack { grid-column:2 / 4;justify-self:start;padding:1px 8px;border-radius:999px;background:#00000066;font-size:11px;font-weight:800;color:#f1e3c2;white-space:nowrap; }
+.gr-sack.full { background:#ffcf3a;color:#3a2a10; }
+.gr-side.gr-s1 { direction:rtl; }
+.gr-side.gr-s1 > * { direction:ltr; }
+.gr-s1 .gr-bar { transform:scaleX(-1); }
+.gr-s1 .gr-gold { text-align:right; }
+.gr-mid { min-width:46px;padding:4px 8px;border-radius:8px;background:#000a;font:800 15px/1 var(--mono, ui-monospace, monospace);color:#ffe9b0;text-align:center;letter-spacing:.04em; }
+.gr-mid.late { color:#ff8a6a;animation:gr-late .5s steps(2) infinite; }
+@keyframes gr-late { 50% { opacity:.45; } }
+.gr-word { position:absolute;left:50%;top:27%;translate:-50% -50%;z-index:2;pointer-events:none;opacity:0;white-space:nowrap;font:900 clamp(26px, 5.2vw, 58px)/1 "Pretendard","Noto Sans KR",sans-serif;letter-spacing:-.01em;-webkit-text-stroke:2px #2a1a0c;paint-order:stroke fill;text-shadow:0 4px 0 #2a1a0c, 0 8px 18px #0008; }
+.gr-word.gr-show { animation:gr-word 1.5s ease-out both; }
+@keyframes gr-word { 0% { opacity:0;scale:.5; } 12% { opacity:1;scale:1.12; } 22% { scale:1; } 78% { opacity:1; } 100% { opacity:0;scale:1.04; } }
+.gr-pops { position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden; }
+.gr-pop { position:absolute;translate:-50% -50%;white-space:nowrap;font:900 18px/1 "Inter","Noto Sans KR",sans-serif;color:#ffe14a;-webkit-text-stroke:1px #2a1a0c;paint-order:stroke fill;text-shadow:0 2px 0 #2a1a0c;animation:gr-pop .9s ease-out both; }
+.gr-pop.gr-big { font-size:24px;animation-duration:1.3s; }
+.gr-pop.gr-s0 { color:#ffd9a0; }
+.gr-pop.gr-s1 { color:#bfe0ff; }
+.gr-pop.gr-big.gr-s0, .gr-pop.gr-big.gr-s1 { color:#ffe14a; }
+@keyframes gr-pop { 0% { opacity:0;transform:translateY(8px) scale(.6); } 15% { opacity:1;transform:translateY(0) scale(1.1); } 100% { opacity:0;transform:translateY(-46px) scale(1); } }
+.gr-pad { position:absolute;inset:0;z-index:3;pointer-events:none; }
+.gr-cluster { position:absolute;bottom:34px;display:flex;gap:12px;pointer-events:none; }
+.gr-at-left { left:max(16px, env(safe-area-inset-left)); }
+.gr-at-right { right:max(16px, env(safe-area-inset-right)); }
+.gr-btn { display:flex;align-items:center;justify-content:center;width:78px;height:78px;padding:0;border:3px solid #ffffffb0;border-radius:50%;background:#00000059;color:#fff;font:900 16px/1 "Pretendard","Noto Sans KR",sans-serif;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent; }
+.gr-btn span { pointer-events:none; }
+.board-area .gr-btn:hover:not(:disabled) { background:#00000059; }
+.gr-btn.gr-left, .gr-btn.gr-right { font-size:26px; }
+.gr-btn.gr-jump { background:color-mix(in srgb, var(--side, #d8352c) 55%, transparent); }
+.gr-btn.gr-strike { background:color-mix(in srgb, #ffb52e 50%, transparent); }
+.gr-btn.on, .board-area .gr-btn.on:hover { background:var(--side, #d8352c);transform:scale(.94); }
+.gr-pad.gr-two .gr-cluster { gap:8px; }
+.gr-pad.gr-two .gr-btn { width:64px;height:64px;font-size:14px; }
+.gr-pad.gr-two .gr-btn.gr-left, .gr-pad.gr-two .gr-btn.gr-right { font-size:22px; }
+@media (max-width: 760px), (max-height: 500px) {
+  .gr-hud { top:5px; }
+  .gr-board { padding:3px 8px;gap:6px;border-radius:10px; }
+  .gr-side { grid-template-columns:auto 84px auto;column-gap:5px;row-gap:1px; }
+  .gr-side b { font-size:11px; }
+  .gr-bar { height:10px; }
+  .gr-gold { min-width:44px;font-size:15px; }
+  .gr-gold small { font-size:10px; }
+  .gr-sack { font-size:10px;padding:0 6px; }
+  .gr-mid { min-width:36px;font-size:12px;padding:3px 5px; }
+  .gr-cluster { bottom:12px;gap:9px; }
+  .gr-btn { width:68px;height:68px;font-size:14px; }
+  .gr-pad.gr-two .gr-btn { width:56px;height:56px;font-size:12px; }
+  .gr-pop { font-size:14px; }
+  .gr-pop.gr-big { font-size:18px; }
+}
+@media (max-width: 520px) {
+  .gr-side { grid-template-columns:auto 52px auto; }
+  .gr-side b { display:none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gr-word.gr-show { animation-duration:1.5s;animation-timing-function:steps(1); }
+}
+html[data-capture] :is(.gr-hud, .gr-pad, .gr-word, .gr-pops) { display:none !important; }

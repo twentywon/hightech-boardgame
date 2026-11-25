@@ -872,6 +872,14 @@ export const allGames = [
     icon: "7",
     available: true,
   },
+  {
+    name: "금화 쟁탈전",
+    en: "GOLD RAID",
+    category: "아케이드게임",
+    players: "2인용",
+    icon: "♛",
+    available: true,
+  },
 ];
 
 /**

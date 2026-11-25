@@ -398,6 +398,7 @@ const OWN: Record<string, Piece> = {
   bowling: ROCK,
   "slot-car": ROCK,
   soccer: ARCADE,
+  "gold-raid": ARCADE,
 };
 /** How long a bar of a piece lasts, in seconds. */
 const barLength = (piece: Piece) => ("tempo" in piece ? (60 / piece.tempo) * 4 : piece.beat * 4);

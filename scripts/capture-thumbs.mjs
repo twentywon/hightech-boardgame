@@ -903,6 +903,17 @@ const play = {
     await wait(1400);
     await page.keyboard.press("p");
   },
+  // 금화 쟁탈전: I run out for the first loot and jump as the computer does the same; paused in the air with gold
+  // falling and lying in the valley. (The thumbnail is cut from the middle of this picture: the valley is wide.)
+  "gold-raid": async () => {
+    await page.locator("canvas").focus();
+    await page.keyboard.down("KeyD");
+    await wait(1500);
+    await page.keyboard.press("KeyW");
+    await wait(350);
+    await page.keyboard.up("KeyD");
+    await page.keyboard.press("p");
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {
