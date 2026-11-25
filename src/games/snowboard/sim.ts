@@ -40,8 +40,8 @@ export const SCALE = 1.7;
 /** An ollie: what it adds upward (m/s, along the ground's normal); a jump pressed up to `JUMP_EARLY` s before touching down still pops. */
 export const POP = 5.2,
   JUMP_EARLY = 0.15;
-/** Turning in the air: the most angular speed (rad/s) and how quickly it comes (and goes, when let go). */
-export const SPIN = 6.8,
+/** Turning in the air: the most angular speed (rad/s; slower than it was, the user asked) and how quickly it comes (and goes, when let go). */
+export const SPIN = 4.4,
   SPIN_EASE = 0.09;
 /**
  * Left alone in the air, the board eases toward its way of flight (a rider keeps it so) over `ATTITUDE` seconds, and
@@ -54,8 +54,11 @@ export const LAND_OK = 0.72,
   PERFECT = 0.14;
 /** Time in the air below which a landing is only a bump (no points, no word). */
 export const HOP = 0.4;
-/** A crash: how long the rider tumbles before riding on, and the speed it keeps. */
-export const CRASH_TIME = 1.4,
+/**
+ * A crash: the rider falls on the snow and slides, lying, then gets up (the user asked: a fall and getting up, no
+ * tumbling round), `CRASH_TIME` seconds in all; and the speed it keeps.
+ */
+export const CRASH_TIME = 1.9,
   CRASH_KEEP = 0.5,
   /** How hard a tumbling rider is slowed by the snow (m/s²). */
   TUMBLE_SLOW = 2.5;
@@ -168,68 +171,79 @@ function point(course: Course, dx: number, dy: number, m = NaN) {
 }
 const lastX = (course: Course) => course.xs[course.xs.length - 1];
 /**
- * Lays sections until the course reaches `to`. Sections: rolling bumps (a gate in a dip now and then), a steep drop,
- * a kicker (a run-in down, a lip turned up, a gap and a long steep landing; a rock or two before the lip to jump,
- * snowflakes over the gap along the flight), a gentle stretch with a rock, and a dip and rise (a half-pipe's side).
+ * Lays sections until the course reaches `to`, each one of three patterns (the user asked for the course to come in
+ * these, rocks only on the plain one):
+ * - rolling (`roll`): big bumps one after another, up and down, a gate in a dip now and then;
+ * - a long run and a kick (`kick`): a steady steep downhill, then one kicker (a lip turned up, a gap, a long steep
+ *   landing), snowflakes over the gap along the flight;
+ * - plain (`plain`): an even, easy downhill, the only place rocks lie (one to three, to jump), a gate now and then.
  */
 export function extend(course: Course, to: number) {
   while (lastX(course) < to) {
     const n = course.sections++,
       r = draw(course),
-      kind = n < 1 ? "roll" : r < 0.34 ? "kicker" : r < 0.62 ? "roll" : r < 0.75 ? "drop" : r < 0.88 ? "dip" : "gentle";
+      kind = n < 1 ? "start" : r < 0.36 ? "roll" : r < 0.68 ? "kick" : "plain";
     if (kind === "roll") {
-      const bumps = 2 + Math.floor(draw(course) * 3);
+      const bumps = 3 + Math.floor(draw(course) * 3);
       for (let k = 0; k < bumps; k++) {
-        const len = between(course, 13, 20),
-          rise = between(course, 0.8, 2.2);
-        point(course, len * 0.5, -len * 0.32);
-        point(course, len * 0.5, -len * 0.06 + rise);
+        const len = between(course, 20, 30),
+          rise = between(course, 2, 4.2);
+        point(course, len * 0.5, -len * 0.3);
+        point(course, len * 0.5, -len * 0.05 + rise);
         // A gate in the dip, now and then (the flags stand where the rider rides through on the ground).
-        if (draw(course) < 0.45) course.gates.push({ x: course.xs[course.xs.length - 2], passed: false });
+        if (draw(course) < 0.4) course.gates.push({ x: course.xs[course.xs.length - 2], passed: false });
       }
-    } else if (kind === "drop") {
-      const len = between(course, 18, 28);
-      point(course, len * 0.35, -len * 0.2);
-      point(course, len * 0.4, -len * 0.42);
-      point(course, len * 0.25, -len * 0.12);
-      if (draw(course) < 0.5) course.gates.push({ x: lastX(course) - len * 0.12 * SCALE, passed: false });
-    } else if (kind === "kicker") {
+    } else if (kind === "kick") {
+      // The long run: steadily steep, hardly varying.
+      const legs = 2 + Math.floor(draw(course) * 2);
+      for (let k = 0; k < legs; k++) {
+        const len = between(course, 20, 28);
+        point(course, len, -len * between(course, 0.32, 0.4));
+      }
       // The run-in, the lip (turned up), a short gap below it and the long landing slope.
-      const runIn = between(course, 16, 24),
-        lip = between(course, 0.35, 0.6),
-        height = between(course, 1.6, 3);
-      point(course, runIn * 0.6, -runIn * 0.38);
-      point(course, runIn * 0.4, -runIn * 0.12, 0);
-      point(course, 5, height, Math.tan(lip));
+      const runIn = between(course, 16, 22),
+        // A long, low kicker: at the speed of the run a steep one threw the rider far too high over the slope.
+        lip = between(course, 0.2, 0.34),
+        height = between(course, 1.3, 2.3);
+      point(course, runIn * 0.6, -runIn * 0.36);
+      point(course, runIn * 0.4, -runIn * 0.1, 0);
+      point(course, 9, height, Math.tan(lip));
       const lipX = lastX(course),
         lipY = course.ys[course.ys.length - 1];
-      // Before the lip, on the run-in, a rock to jump now and then (it sits where the slope is easy to pop from).
-      if (draw(course) < 0.5) course.rocks.push({ x: lipX - (5 + runIn * 0.25) * SCALE, r: between(course, 0.45, 0.7) });
-      const gap = between(course, 5, 9),
-        land = between(course, 20, 30);
-      point(course, gap, -height - gap * 0.35, -0.55);
-      point(course, land * 0.55, -land * 0.42, -0.7);
-      point(course, land * 0.45, -land * 0.18);
+      // A table past the lip, then a long landing falling away as a fast flight does (gently at first, then steeper),
+      // so that a jump comes down on it rather than far over it.
+      const deck = between(course, 6, 10);
+      point(course, deck, -height * 0.4, -0.08);
+      const falls = [
+        [between(course, 22, 30), 0.16],
+        [between(course, 26, 34), 0.36],
+        [between(course, 26, 34), 0.48],
+        [between(course, 20, 26), 0.3],
+      ] as const;
+      for (const [len, grade] of falls) point(course, len, -len * grade);
       // Snowflakes along the flight a good jump would take (a thrown body from the lip at a fair speed).
-      const v = 25,
+      const v = 27,
         vx = v * Math.cos(lip),
-        vy = v * Math.sin(lip) + POP * 0.6;
+        vy = v * Math.sin(lip) + POP * 0.4;
       for (let k = 1; k <= 4; k++) {
-        const t = k * 0.28;
+        const t = k * 0.3;
         course.flakes.push({ x: lipX + vx * t, y: lipY + vy * t - (G * t * t) / 2 + 0.9, taken: false });
       }
-    } else if (kind === "dip") {
-      const len = between(course, 22, 30),
-        rise = between(course, 2.5, 4.5);
-      point(course, len * 0.3, -len * 0.34);
-      point(course, len * 0.2, -len * 0.08, 0);
-      point(course, len * 0.25, rise, 0.9);
-      point(course, len * 0.25, -rise - len * 0.1, -0.9);
     } else {
-      const len = between(course, 22, 34);
-      point(course, len * 0.5, -len * 0.16);
-      course.rocks.push({ x: lastX(course) - len * 0.1 * SCALE, r: between(course, 0.45, 0.75) });
-      point(course, len * 0.5, -len * 0.18);
+      // Plain (and the start, which has no rocks): long, even and easy, with only a ripple.
+      const legs = 3 + Math.floor(draw(course) * 2),
+        from = lastX(course);
+      for (let k = 0; k < legs; k++) {
+        const len = between(course, 20, 28);
+        point(course, len, -len * between(course, 0.15, 0.24));
+      }
+      if (kind === "plain") {
+        // One to three rocks, well apart, away from the stretch's ends.
+        const span = lastX(course) - from,
+          rocks = 1 + Math.floor(draw(course) * 3);
+        for (let k = 0; k < rocks; k++) course.rocks.push({ x: from + span * ((k + 0.35 + draw(course) * 0.3) / rocks), r: between(course, 0.45, 0.75) });
+        if (draw(course) < 0.35) course.gates.push({ x: from + span * 0.12, passed: false });
+      }
     }
   }
 }
@@ -382,8 +396,8 @@ function rideGround(world: World, out: Happening[]) {
   r.y = next.y;
   r.vx = v * Math.cos(na);
   r.vy = v * Math.sin(na);
-  if (!tumbling) r.angle = na;
-  else r.angle += 9 * DT;
+  // The board lies along the snow (a fallen rider slides on it, lying beside it, and gets up on it).
+  r.angle = na;
   // A rock on the ground ahead: a crash.
   if (!tumbling)
     for (const rock of course.rocks)
@@ -414,7 +428,8 @@ function flyAir(world: World, out: Happening[]) {
   r.spin += (goal - r.spin) * (1 - Math.exp(-DT / SPIN_EASE));
   r.angle += r.spin * DT;
   r.turned += r.spin * DT;
-  if (tumbling) r.angle += 9 * DT;
+  // Falling: the board comes round to its way of flight, to come down flat on the snow.
+  if (tumbling) r.angle += wrap(Math.atan2(r.vy, r.vx) - r.angle) * (1 - Math.exp(-DT / ATTITUDE));
   // No hand on it: the board comes round to its way of flight (not counted as turning).
   else if (world.turn === 0 && Math.abs(r.spin) < 1) {
     const below = groundAt(course, r.x + r.vx * 0.15),

@@ -49,7 +49,15 @@ describe("snowboard: the course", () => {
     // It goes downhill overall, with kickers (a lip turned up), rocks, gates and snowflakes on it.
     expect(S.heightAt(a, 1400)).toBeLessThan(-200);
     expect(a.ms.some((m) => m > 0.3)).toBe(true);
-    expect(a.rocks.length).toBeGreaterThan(3);
+    expect(a.rocks.length).toBeGreaterThan(2);
+    // Rocks lie only on the plain stretches: never on a kicker's run or lip, nor in a rolling dip (where the ground
+    // is steep or bends sharply).
+    for (const rock of S.createCourse(7, 6000).rocks) {
+      const c = S.createCourse(7, 6000),
+        here = S.groundAt(c, rock.x);
+      expect(here.slope, `${rock.x}`).toBeLessThan(-0.1);
+      expect(here.slope, `${rock.x}`).toBeGreaterThan(-0.3);
+    }
     expect(a.gates.length).toBeGreaterThan(3);
     expect(a.flakes.length).toBeGreaterThan(3);
   });
