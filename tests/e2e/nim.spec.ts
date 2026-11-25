@@ -99,6 +99,12 @@ test("nim: numbers set in the entry window, then a game won against the computer
     await expect.poll(() => moves(page), { timeout: 20000 }).toBe(before + 2);
   }
   await expect(page.locator(".board-finale")).toBeVisible({ timeout: 20000 });
+  // Taps anywhere else after the end (the rings, the table's corners) leave the final word standing (the user asked).
+  const table = (await canvas(page).boundingBox())!;
+  for (const [x, y] of [[0.5, 0.55], [0.12, 0.85], [0.88, 0.25], [0.3, 0.4]]) await page.mouse.click(table.x + table.width * x, table.y + table.height * y);
+  await page.waitForTimeout(600);
+  await expect(page.locator(".board-finale")).toBeVisible();
+  await expect(page.locator(".board-finale .finale-word")).toHaveText("승리");
   await expect(page.locator("#pg-final")).toContainText("이겼습니다!");
   await expect(page.locator("#pg-result")).toHaveAttribute("data-outcome", "win");
   const taken = [await page.locator("#pg-count-0").innerText(), await page.locator("#pg-count-1").innerText()].map((t) => Number(/\d+/.exec(t)![0]));

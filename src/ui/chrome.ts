@@ -168,10 +168,15 @@ export function finale(outcome: Outcome, setup?: (host: HTMLElement) => void) {
   setTimeout(() => {
     if (box.isConnected) ways.hidden = false;
   }, 1300);
-  // A new game begun on the same table (or a move taken back) changes the count: the finale goes.
+  // A new game begun on the same table (or a move taken back) changes the count: the finale goes. Only a real change
+  // does: the screen writes the same count again on every redraw (a tap anywhere after the end), and the user found
+  // the final word went with any tap.
   const count = document.querySelector("#move-count");
   if (count) {
+    const was = count.textContent;
     const watch = new MutationObserver(() => {
+      if (!box.isConnected) return watch.disconnect();
+      if (count.textContent === was) return;
       watch.disconnect();
       box.remove();
     });
