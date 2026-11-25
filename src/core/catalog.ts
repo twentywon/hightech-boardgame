@@ -857,6 +857,14 @@ export const allGames = [
     available: true,
   },
   {
+    name: "룰렛",
+    en: "ROULETTE",
+    category: "아케이드게임",
+    players: "1인용",
+    icon: "◉",
+    available: true,
+  },
+  {
     name: "슬롯머신",
     en: "SLOT MACHINE",
     category: "아케이드게임",
@@ -868,7 +876,7 @@ export const allGames = [
 
 /**
  * The student edition (built with `VITE_EDITION=student`, `npm run build:student`) leaves out the games commonly
- * thought of as gambling: the betting card games, go-stop, blackjack, the coin pusher and the slot machine (Indian poker and the claw
+ * thought of as gambling: the betting card games, go-stop, blackjack, the coin pusher, roulette and the slot machine (Indian poker and the claw
  * machine stay in: the user asked). The full edition keeps
  * every game; nothing else differs. `import.meta.env` is missing under plain Node (browser tests import this file).
  */
@@ -882,6 +890,7 @@ export const STUDENT_EXCLUDED = [
   "TEXAS HOLDEM",
   "GO-STOP",
   "COIN PUSHER",
+  "ROULETTE",
   "SLOT MACHINE",
 ];
 /** The games this edition shows. */
