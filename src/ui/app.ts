@@ -47,6 +47,7 @@ import { balanceConfig } from "../games/scale/config";
 import { snakeConfig } from "../games/snake/config";
 import { whackConfig } from "../games/whack/config";
 import { fishingConfig } from "../games/fishing/config";
+import { valetConfig } from "../games/valet/config";
 import { slotMachineConfig } from "../games/slots/config";
 import { tictactoeConfig } from "../games/tictactoe/config";
 import { airHockeyConfig } from "../games/airhockey/config";
@@ -242,6 +243,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   snake: { config: snakeConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "whack-a-mole": { config: whackConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   fishing: { config: fishingConfig, options: { mode: "ai", variant: "1", level: "normal" } },
+  "valet-parking": { config: valetConfig, options: { mode: "ai", variant: "1", level: "normal" } },
   "slot-machine": { config: slotMachineConfig, options: { mode: "ai", variant: "1000", level: "normal" } },
   "tic-tac-toe": { config: tictactoeConfig, options: { mode: "ai", variant: "classic", level: "normal" } },
   "air-hockey": { config: airHockeyConfig, options: { mode: "ai", variant: "", level: "normal" } },
@@ -489,6 +491,7 @@ type GameSelection =
   | "snake"
   | "whack-a-mole"
   | "fishing"
+  | "valet-parking"
   | "slot-machine"
   | "tic-tac-toe"
   | "air-hockey"

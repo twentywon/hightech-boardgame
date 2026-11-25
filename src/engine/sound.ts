@@ -941,6 +941,20 @@ export class Sound {
     this.tone("triangle", 1568, 1568, 0, 0.07, 0.05);
     this.tone("triangle", 2093, 2093, 0.08, 0.1, 0.05);
   }
+  // ─────────────── 주차 요원 ───────────────
+  /** A car's engine from the driver's seat (`level` 0 to 1, its speed; a quiet idle at 0 while `running`): deeper than a toy's motor, fuller while `pulling`. Silent when not `running`. */
+  carEngine(level: number, pulling: boolean, running = true) {
+    const l = Math.max(0, Math.min(1, level));
+    this.hum("motor-1", running ? 0.07 + 0.16 * l + (pulling ? 0.05 : 0) : 0, 0.5 + 0.75 * l + (pulling ? 0.06 : 0));
+  }
+  /** An angry customer's horn: two notes together, held and let go, then a short second blast. */
+  horn() {
+    for (const [at, length] of [
+      [0, 0.42],
+      [0.5, 0.2],
+    ])
+      for (const f of [392, 494]) this.tone("square", f, f, at, length, 0.035);
+  }
   // ─────────────── 축구 ───────────────
   /** A football kicked (`strength` 0 to 1): the thump of the leather, a little higher than a basketball's. */
   kickBall(strength = 1) {

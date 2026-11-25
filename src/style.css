@@ -3985,6 +3985,43 @@ dialog.setup-dialog.entry .setup-host button.primary.entry-start { display:inlin
 }
 @media (max-width: 700px) { .rl-purse { display:none; } }
 html[data-capture] .rl-bar, html[data-capture] .rl-history { display:none !important; }
+/* 주차 요원: the money at the top left, the shift's clock at the top right, the waiting customers in a row at the top,
+   a word of what has just happened in the middle, the gear over the pedals (decoration over the canvas: the status line
+   tells the money too); the wheel's buttons at the lower left and the pedals at the lower right. */
+.vp-hud { position:absolute;inset:0;pointer-events:none;z-index:3;font-family:"Inter","Noto Sans KR",sans-serif;font-weight:900;color:#fff;text-shadow:0 2px 0 rgba(20,30,40,.55),0 0 10px rgba(20,30,40,.35);user-select:none;-webkit-user-select:none; }
+.vp-money { position:absolute;top:max(72px, calc(env(safe-area-inset-top) + 60px));left:max(18px, env(safe-area-inset-left));font-size:clamp(17px, 2.4vw, 26px);display:flex;flex-direction:column;gap:2px; }
+.vp-money small { font-size:.56em;opacity:.9; }
+.vp-clock { position:absolute;top:max(72px, calc(env(safe-area-inset-top) + 60px));right:max(18px, env(safe-area-inset-right));font-size:clamp(22px, 3.2vw, 36px);font-variant-numeric:tabular-nums; }
+.vp-clock.vp-late { color:#ff8a7a; }
+.vp-jobs { position:absolute;top:max(60px, calc(env(safe-area-inset-top) + 50px));left:50%;translate:-50% 0;display:flex;gap:6px;max-width:56%;flex-wrap:wrap;justify-content:center;text-shadow:none; }
+.vp-job { display:grid;grid-template-columns:12px auto;align-items:center;column-gap:5px;row-gap:3px;padding:4px 8px 5px;border-radius:9px;background:rgba(18,24,32,.78);font-size:12px;font-weight:800;line-height:1.1;border:2px solid transparent; }
+.vp-job.mine { border-color:#ffe14a; }
+.vp-job.late b { color:#ff8a7a; }
+.vp-job i { width:12px;height:12px;border-radius:3px;box-shadow:0 0 0 1px #ffffff66; }
+.vp-job b { white-space:nowrap; }
+.vp-job u { grid-column:1 / 3;height:5px;border-radius:3px;background:#ffffff33;overflow:hidden;text-decoration:none; }
+.vp-job s { display:block;height:100%;border-radius:3px;text-decoration:none; }
+.vp-word { position:absolute;left:50%;top:30%;translate:-50% 0;white-space:nowrap;font-size:clamp(17px, 2.6vw, 30px);opacity:0; }
+.vp-word.vp-show { animation:vp-word 1.6s ease-out forwards; }
+@keyframes vp-word { 0% { opacity:0;transform:scale(.7) translateY(10px); } 12% { opacity:1;transform:scale(1.06); } 25% { transform:scale(1); } 78% { opacity:1; } 100% { opacity:0;transform:translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) { .vp-word.vp-show { animation:vp-fade 1.6s linear forwards; } @keyframes vp-fade { 0%,78% { opacity:1; } 100% { opacity:0; } } }
+.vp-gear { position:absolute;right:max(22px, env(safe-area-inset-right));bottom:calc(max(14px, env(safe-area-inset-bottom)) + 124px);min-width:34px;height:34px;padding:0 6px;display:grid;place-items:center;border-radius:8px;background:rgba(18,24,32,.8);font-size:20px;text-shadow:none; }
+.vp-gear:empty { display:none; }
+.vp-gear[data-gear="R"] { color:#ffe14a; }
+.vp-gear[data-gear="P"] { color:#ff8a7a; }
+.vp-pad { position:absolute;inset:auto 0 0 0;z-index:4;pointer-events:none;display:flex;justify-content:space-between;align-items:flex-end;padding:0 max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+.vp-wheel, .vp-pedals { display:flex;gap:12px;align-items:flex-end;pointer-events:none; }
+.vp-btn, .vp-pedal { pointer-events:auto;border:2px solid rgba(255,255,255,.8);color:#fff;padding:0;display:grid;place-items:center;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;box-shadow:0 5px 14px rgba(10,20,30,.35);cursor:pointer;transition:transform .06s; }
+.vp-btn { width:74px;height:74px;border-radius:50%;background:rgba(24,32,44,.5);font:900 28px/1 "Inter",sans-serif; }
+.vp-pedal { width:84px;height:104px;border-radius:14px 14px 20px 20px;background:rgba(232,69,46,.72); }
+.vp-pedal.vp-back { width:72px;height:84px;background:rgba(40,52,68,.72); }
+.vp-pedal em { font:800 15px/1 "Inter","Noto Sans KR",sans-serif;font-style:normal; }
+.board-area .vp-btn:hover:not(:disabled) { background:rgba(24,32,44,.5); }
+.board-area .vp-pedal:hover:not(:disabled) { background:rgba(232,69,46,.72); }
+.board-area .vp-pedal.vp-back:hover:not(:disabled) { background:rgba(40,52,68,.72); }
+.board-area .vp-btn.on, .board-area .vp-pedal.on, .board-area .vp-pedal.vp-back.on { background:rgba(255,225,74,.6);transform:scale(.94); }
+@media (max-height: 460px) { .vp-btn { width:58px;height:58px;font-size:23px; } .vp-pedal { width:66px;height:78px;background:rgba(232,69,46,.5); } .vp-pedal.vp-back { width:58px;height:66px;background:rgba(40,52,68,.5); } .board-area .vp-pedal:hover:not(:disabled) { background:rgba(232,69,46,.5); } .board-area .vp-pedal.vp-back:hover:not(:disabled) { background:rgba(40,52,68,.5); } .vp-pad { padding-bottom:max(10px, env(safe-area-inset-bottom)); } .vp-gear { bottom:calc(max(10px, env(safe-area-inset-bottom)) + 90px); } .vp-money { top:max(64px, calc(env(safe-area-inset-top) + 54px)); } .vp-clock { top:max(64px, calc(env(safe-area-inset-top) + 54px)); } .vp-jobs { left:max(18px, env(safe-area-inset-left));top:max(118px, calc(env(safe-area-inset-top) + 108px));translate:none;flex-direction:column;align-items:flex-start;gap:4px;max-width:none; } .vp-job { font-size:11px;padding:3px 6px 4px; } .vp-word { top:24%; } }
+html[data-capture] .vp-pad, html[data-capture] .vp-hud { display:none !important; }
 /* 훌라: the stock's tool (a tap on the stock does its work) keeps to a pixel at the cluster's foot, clear of the buttons; the scores over the table. */
 html[data-game="hula"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;bottom:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
 .hula-score b { font-weight:900; }

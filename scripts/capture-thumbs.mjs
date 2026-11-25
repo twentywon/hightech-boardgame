@@ -7,6 +7,7 @@
 // The PNGs are then reduced to WebP under src/assets/thumbs/ (see README).
 import { createRequire } from "module";
 import { games } from "../src/core/catalog.ts";
+import { atTheWheel, driver } from "../tests/valet-driver.ts";
 
 const { chromium } = createRequire(import.meta.url)("playwright");
 const out = process.argv[2] ?? ".";
@@ -592,6 +593,19 @@ const play = {
       return d?.phase === "land" && Number(d.landed) < 5;
     }, null, { timeout: 85000, polling: 50 });
     await wait(650);
+    await page.keyboard.press("p");
+  },
+  // 주차 요원: the tests' careful driver at the wheel in the page (by keys) parks three cars; the lot is paused as
+  // the fourth is driven up the aisle, with its owner waiting by the booth.
+  "valet-parking": async () => {
+    await page.locator("canvas").focus();
+    await page.evaluate(atTheWheel, driver.toString());
+    await page.waitForFunction(() => {
+      const d = document.querySelector("#board canvas")?.dataset;
+      if (!d || d.phase !== "drive" || d.job !== "waiting" || Number(d.counts.split(",")[0]) < 3) return false;
+      const [x, , , v] = d.car.split(",").map(Number);
+      return x > -5 && v > 1.5;
+    }, null, { timeout: 600000, polling: 50 });
     await page.keyboard.press("p");
   },
   // The claw run over the middle of the pit with the lever held, and let down: the picture is taken as it closes on a toy.
