@@ -857,6 +857,14 @@ export const allGames = [
     available: true,
   },
   {
+    name: "훌라",
+    en: "HULA",
+    category: "카드게임",
+    players: "2인용",
+    icon: "♦",
+    available: true,
+  },
+  {
     name: "룰렛",
     en: "ROULETTE",
     category: "아케이드게임",

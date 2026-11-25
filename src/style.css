@@ -3985,3 +3985,6 @@ dialog.setup-dialog.entry .setup-host button.primary.entry-start { display:inlin
 }
 @media (max-width: 700px) { .rl-purse { display:none; } }
 html[data-capture] .rl-bar, html[data-capture] .rl-history { display:none !important; }
+/* 훌라: the stock's tool (a tap on the stock does its work) keeps to a pixel at the cluster's foot, clear of the buttons; the scores over the table. */
+html[data-game="hula"] .board-area .board-controls .pg-tool.sr-only { position:absolute !important;bottom:0;left:0;width:1px !important;height:1px !important;min-height:0 !important;max-width:none !important;padding:0 !important;flex:none !important; }
+.hula-score b { font-weight:900; }
