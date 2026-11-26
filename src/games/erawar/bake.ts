@@ -44,7 +44,7 @@ export function bakeColours(group: T.Object3D, paint: T.Material, own: Own, keep
   if (!merged) return;
   const one = new T.Mesh(own(merged), paint);
   one.castShadow = shadow;
-  one.receiveShadow = true;
+  one.receiveShadow = parts.some((m) => m.receiveShadow);
   for (const m of parts) m.removeFromParent();
   group.add(one);
 }

@@ -153,14 +153,17 @@ export class Kit {
     this.flashMat = own(new T.SpriteMaterial({ map: glow(own, 64, 0.25), color: "#ffd27a", transparent: true, blending: T.AdditiveBlending, depthWrite: false }));
     const g = this.g;
     g.box = own(new T.BoxGeometry(1, 1, 1));
-    g.ball = own(new T.SphereGeometry(1, rich ? 16 : 12, rich ? 12 : 8));
+    // (Where the processor draws, every vertex costs: rounder shapes only with a graphics card.)
+    g.ball = own(new T.SphereGeometry(1, rich ? 16 : 8, rich ? 12 : 6));
     g.ballLo = own(new T.SphereGeometry(1, 8, 6));
-    g.cyl = own(new T.CylinderGeometry(1, 1, 1, rich ? 12 : 9));
+    /** A tiny round part (an eye, a button): a sphere with a graphics card, eight faces where the processor draws. */
+    g.dot = rich ? g.ballLo : own(new T.OctahedronGeometry(1, 0));
+    g.cyl = own(new T.CylinderGeometry(1, 1, 1, rich ? 12 : 7));
     g.cyl6 = own(new T.CylinderGeometry(1, 1, 1, 6));
-    g.cone = own(new T.ConeGeometry(1, 1, rich ? 12 : 9));
+    g.cone = own(new T.ConeGeometry(1, 1, rich ? 12 : 7));
     g.cone4 = own(new T.ConeGeometry(1, 1, 4));
-    g.limb = own(new T.CylinderGeometry(1, 0.82, 1, rich ? 10 : 7).translate(0, -0.5, 0));
-    g.wheel = own(new T.TorusGeometry(1, 0.16, 6, 18));
+    g.limb = own(new T.CylinderGeometry(1, 0.82, 1, rich ? 10 : 6, 1, !rich).translate(0, -0.5, 0));
+    g.wheel = own(new T.TorusGeometry(1, 0.16, rich ? 6 : 4, rich ? 18 : 12));
     /** Half a ring: a bow's limbs, a tusk's curve. */
     g.arc = own(new T.TorusGeometry(1, 0.07, 6, 14, Math.PI));
     g.disc = own(new T.CylinderGeometry(1, 1, 1, 18));
@@ -266,10 +269,10 @@ function person(k: Kit, parent: T.Object3D, o: Dress): Person {
   k.mesh("ball", skin, 0, 0, 0, 0.112, 0.128, 0.108, head);
   k.mesh("ball", skin, 0.045, -0.06, 0, 0.07, 0.055, 0.075, head);
   for (const z of [-0.04, 0.04]) {
-    k.mesh("ball", "eye", 0.092, 0.018, z, 0.022, 0.02, 0.02, head);
-    k.mesh("ball", "pupil", 0.108, 0.018, z, 0.011, 0.012, 0.011, head);
+    k.mesh("dot", "eye", 0.092, 0.018, z, 0.022, 0.02, 0.02, head);
+    k.mesh("dot", "pupil", 0.108, 0.018, z, 0.011, 0.012, 0.011, head);
     k.mesh("box", o.hair ?? "hair", 0.1, 0.05, z, 0.012, 0.013, 0.036, head).rotation.x = z > 0 ? -0.15 : 0.15;
-    k.mesh("ball", skin, -0.005, 0.0, z * 2.7, 0.022, 0.034, 0.016, head);
+    k.mesh("dot", skin, -0.005, 0.0, z * 2.7, 0.022, 0.034, 0.016, head);
   }
   k.mesh("cone4", skin, 0.118, -0.01, 0, 0.018, 0.045, 0.02, head).rotation.z = -Math.PI / 2;
   k.mesh("box", "lip", 0.106, -0.058, 0, 0.008, 0.009, 0.038, head);
@@ -401,7 +404,7 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
     // A coat in the side's colour with white lapels and cuffs, coat tails, cross-belts, brass buttons, gaiters, a pack.
     k.mesh("box", "white", 0.106, 0.2, 0.06, 0.006, 0.26, 0.05, c);
     k.mesh("box", "white", 0.106, 0.2, -0.06, 0.006, 0.26, 0.05, c);
-    for (let i = 0; i < 4; i++) k.mesh("ball", "brass", 0.112, 0.08 + i * 0.07, 0, 0.012, 0.012, 0.012, c);
+    for (let i = 0; i < 4; i++) k.mesh("dot", "brass", 0.112, 0.08 + i * 0.07, 0, 0.012, 0.012, 0.012, c);
     for (const r of [0.6, -0.6]) k.mesh("box", "white", 0.004, 0.17, 0, 0.214, 0.045, 0.31, c).rotation.x = r;
     k.mesh("box", dark, -0.04, -0.12, 0, 0.14, 0.2, 0.28, c).rotation.z = -0.15;
     k.mesh("box", "leatherDark", -0.14, 0.18, 0, 0.08, 0.2, 0.22, c);
@@ -457,7 +460,7 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
       const sword = pivot(hand, 0, 0, 0);
       sword.rotation.z = -Math.PI / 2.2;
       k.mesh("cyl", "leatherDark", 0, 0.0, 0, 0.018, 0.1, 0.018, sword);
-      k.mesh("ball", "brass", 0, -0.06, 0, 0.025, 0.025, 0.025, sword);
+      k.mesh("dot", "brass", 0, -0.06, 0, 0.025, 0.025, 0.025, sword);
       k.mesh("box", "brass", 0, 0.06, 0, 0.03, 0.025, 0.16, sword);
       k.mesh("box", "steel", 0, 0.34, 0, 0.022, 0.52, 0.05, sword);
       k.mesh("box", "iron", 0, 0.3, 0, 0.024, 0.4, 0.012, sword);
@@ -586,8 +589,8 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
       const ear = pivot(head, -0.08, 0.04, z * 0.3, "flap");
       k.mesh("ball", "furDark", 0, 0, z * 0.05, 0.1, 0.18, 0.06, ear);
       f.flaps.push(ear);
-      k.mesh("ball", "eye", 0.26, 0.09, z * 0.17, 0.035, 0.03, 0.03, head);
-      k.mesh("ball", "pupil", 0.29, 0.09, z * 0.17, 0.02, 0.02, 0.02, head);
+      k.mesh("dot", "eye", 0.26, 0.09, z * 0.17, 0.035, 0.03, 0.03, head);
+      k.mesh("dot", "pupil", 0.29, 0.09, z * 0.17, 0.02, 0.02, 0.02, head);
       const tusk = new T.Mesh(k.g.arc, k.m.tusk);
       tusk.scale.set(0.32, 0.32, 1);
       tusk.rotation.z = Math.PI;
@@ -630,7 +633,7 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     k.mesh("box", "iron", 0.37, 0.45, 0, 0.3, 0.16, 0.16, neck).rotation.z = -0.35;
     k.mesh("box", "mane", 0.02, 0.33, 0, 0.34, 0.08, 0.05, neck).rotation.z = -0.55;
     for (const z of [-0.06, 0.06]) k.mesh("cone", "horse", 0.2, 0.6, z, 0.035, 0.1, 0.035, neck);
-    k.mesh("ball", "pupil", 0.42, 0.5, 0.075, 0.018, 0.018, 0.018, neck);
+    k.mesh("dot", "pupil", 0.42, 0.5, 0.075, 0.018, 0.018, 0.018, neck);
     f.strike = neck;
     for (const [x, z] of [[0.38, -0.13], [0.38, 0.13], [-0.4, -0.13], [-0.4, 0.13]] as const) beastLeg(k, horse, x, 0.86, z, [0.065, 0.42], [0.05, 0.38], "horse", "black", f);
     const tail = pivot(horse, -0.62, 1.02, 0, "tail");

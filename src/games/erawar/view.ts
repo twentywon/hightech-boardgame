@@ -482,7 +482,7 @@ export class EraWarView extends TableView<State> {
     this.fx.emit("fire", x, y + 0.3, 0.4, Math.round(5 * size), { speed: 2 * size, up: 1, size: 0.6 * size, grow: 1.8, life: 0.4 });
     this.fx.emit("smoke", x, y + 0.5, 0.3, Math.round(6 * size), { speed: 1.2, up: 1.2, size: 0.6 * size, grow: 2.4, life: 1.5 });
     this.fx.emit("chip", x, y + 0.3, 0.4, Math.round(6 * size), { speed: 3.5, up: 3, size: 0.09, life: 0.9 });
-    this.fx.emit("dust", x, 0.15, 0.4, Math.round(4 * size), { speed: 2.4 * size, up: 0.3, size: 0.7 * size, grow: 2, life: 1.2 });
+    if (this.kit.rich) this.fx.emit("dust", x, 0.15, 0.4, Math.round(4 * size), { speed: 2.4 * size, up: 0.3, size: 0.7 * size, grow: 2, life: 1.2 });
     if (this.flash) {
       this.flash.position.set(x, y + 1, 1.2);
       this.flashed = this.clock;
@@ -702,7 +702,7 @@ export class EraWarView extends TableView<State> {
             barrel = tur.group.userData.barrel as T.Group;
           barrel.position.x = (barrel.userData.x ?? (barrel.userData.x = barrel.position.x)) - kick * 0.12;
           tur.flash.visible = era >= 2 && fired < 0.08;
-          if (fired < tur.fired && era >= 2 && !quiet) {
+          if (fired < tur.fired && era >= 2 && !quiet && this.kit.rich) {
             const m = this.at(tur.flash);
             this.fx.emit("smoke", m.x, m.y, m.z, era === 2 ? 3 : 1, { speed: 0.5, up: 0.5, size: 0.4, grow: 2.2, life: 1.1 });
           }
@@ -728,14 +728,15 @@ export class EraWarView extends TableView<State> {
       d.f.root.position.set(u.x, 0, big ? -0.25 : depth * 0.07);
       poseFigure(d.f, d.dist, u.walking, u.since, u.life, t + u.id, u.rank);
       // A new shot from a gun: smoke at its mouth.
-      if (u.since < d.since && d.f.muzzle && u.era >= 2 && !quiet) {
+      // (Where the processor draws, every puff is a draw: only the big guns smoke there.)
+      if (u.since < d.since && d.f.muzzle && u.era >= 2 && !quiet && (big || this.kit.rich)) {
         const m = this.at(d.f.muzzle);
         this.fx.emit("smoke", m.x, m.y, m.z, big ? 4 : 1, { speed: big ? 0.9 : 0.4, up: 0.4, size: big ? 0.55 : 0.25, grow: 2.4, life: big ? 1.4 : 0.8 });
         if (big) this.fx.emit("dust", u.x, 0.1, 0.2, 3, { speed: 1.4, up: 0.2, size: 0.5, life: 0.8 });
       }
       d.since = u.since;
       // A tank breathes exhaust as it rolls.
-      if (big && u.era === 3 && u.walking && !quiet && (this.exhaust += dt) > 0.35) {
+      if (big && u.era === 3 && u.walking && !quiet && this.kit.rich && (this.exhaust += dt) > 0.35) {
         this.exhaust = 0;
         this.fx.emit("smoke", u.x - (u.side ? -1 : 1) * 1.0, 0.75, -0.2, 1, { speed: 0.3, up: 0.6, size: 0.3, grow: 2.5, life: 1.2 });
       }
@@ -782,7 +783,7 @@ export class EraWarView extends TableView<State> {
       if (s.kind === "rock" || s.kind === "fallRock" || s.kind === "ball") held.mesh.rotation.z += t * 9;
       held.mesh.position.set(s.x, s.y, s.kind === "bomb" || s.kind.startsWith("fall") ? 0.1 : 0.15);
       held.seen += dt;
-      if (!quiet && (s.kind === "ball" || s.kind === "shell" || s.kind === "fallShell" || s.kind === "bomb") && held.seen > 0.05) {
+      if (!quiet && this.kit.rich && (s.kind === "ball" || s.kind === "shell" || s.kind === "fallShell" || s.kind === "bomb") && held.seen > 0.05) {
         held.seen = 0;
         this.fx.emit("smoke", s.x, s.y, 0.1, 1, { speed: 0.1, up: 0.15, size: s.kind === "bomb" ? 0.3 : 0.18, grow: 2.2, life: 0.7 });
       }
@@ -800,7 +801,7 @@ export class EraWarView extends TableView<State> {
       p.x += p.dir * 11 * dt;
       p.mesh.position.set(p.x, 9 + Math.sin(p.age * 2) * 0.2, -1.5);
       p.mesh.visible = p.age >= 0;
-      if (p.age >= 0 && !quiet && Math.random() < dt * 8) this.fx.emit("smoke", p.x - p.dir * 1.2, 9, -1.5, 1, { speed: 0.05, up: 0, size: 0.25, grow: 3, life: 1.6 });
+      if (p.age >= 0 && !quiet && this.kit.rich && Math.random() < dt * 8) this.fx.emit("smoke", p.x - p.dir * 1.2, 9, -1.5, 1, { speed: 0.05, up: 0, size: 0.25, grow: 3, life: 1.6 });
       if (p.age > 4) {
         this.root.remove(p.mesh);
         return false;

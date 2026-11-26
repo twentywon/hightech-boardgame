@@ -53,18 +53,20 @@ export interface Field {
 const rnd = stream(77);
 /** How far in front of a base (toward the eye) its turrets stand. */
 export const MAST_Z = 1.15;
-function grassTexture(own: Own) {
+function grassTexture(own: Own, rich: boolean) {
+  // (Half the size where the processor draws: a smaller picture is read faster.)
+  const n = rich ? 512 : 256;
   return painted(
     own,
-    512,
-    512,
+    n,
+    n,
     (ctx) => {
       ctx.fillStyle = "#6c9a3c";
-      ctx.fillRect(0, 0, 512, 512);
+      ctx.fillRect(0, 0, n, n);
       // Patches of lighter and darker grass, then blades, then a few flowers.
-      for (let k = 0; k < 60; k++) {
-        const x = rnd() * 512,
-          y = rnd() * 512,
+      for (let k = 0; k < (rich ? 60 : 16); k++) {
+        const x = rnd() * n,
+          y = rnd() * n,
           r = 20 + rnd() * 60,
           g = ctx.createRadialGradient(x, y, 0, x, y, r);
         g.addColorStop(0, `hsla(${75 + rnd() * 30}, 45%, ${30 + rnd() * 18}%, 0.35)`);
@@ -72,9 +74,9 @@ function grassTexture(own: Own) {
         ctx.fillStyle = g;
         ctx.fillRect(x - r, y - r, r * 2, r * 2);
       }
-      for (let k = 0; k < 9000; k++) {
-        const x = rnd() * 512,
-          y = rnd() * 512,
+      for (let k = 0; k < (rich ? 9000 : 2600); k++) {
+        const x = rnd() * n,
+          y = rnd() * n,
           l = 26 + rnd() * 34;
         ctx.strokeStyle = `hsla(${78 + rnd() * 32}, ${40 + rnd() * 25}%, ${l}%, 0.6)`;
         ctx.lineWidth = 1;
@@ -83,17 +85,17 @@ function grassTexture(own: Own) {
         ctx.lineTo(x + (rnd() - 0.5) * 3, y - 3 - rnd() * 5);
         ctx.stroke();
       }
-      for (let k = 0; k < 160; k++) {
+      for (let k = 0; k < (rich ? 160 : 40); k++) {
         ctx.fillStyle = ["#f4e27a", "#ffffff", "#e7a6d8", "#f2b04a"][Math.floor(rnd() * 4)];
-        ctx.fillRect(rnd() * 512, rnd() * 512, 2, 2);
+        ctx.fillRect(rnd() * n, rnd() * n, 2, 2);
       }
     },
-    [16, 8],
+    rich ? [16, 8] : [18, 9],
   );
 }
 /** The lane: worn earth, two ruts, wheel marks, stones, a few puddles, grass at its edges (and its height, for relief). */
-function laneCanvases() {
-  const w = 1024,
+function laneCanvases(rich: boolean) {
+  const w = rich ? 1024 : 512,
     h = 128,
     r = stream(9),
     marks: { x: number; y: number; w: number; h: number; kind: number }[] = [];
@@ -338,12 +340,12 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     up = new T.Euler(),
     one = (x: number, y: number, z: number, sx: number, sy: number, sz: number, ry = 0) => m4.compose(new T.Vector3(x, y, z), q.setFromEuler(up.set(0, ry, 0)), new T.Vector3(sx, sy, sz));
   // The plain and the lane.
-  const ground = new T.Mesh(own(new T.PlaneGeometry(160, 80)), std({ color: "#ffffff", map: grassTexture(own) }));
+  const ground = new T.Mesh(own(new T.PlaneGeometry(160, 80)), std({ color: "#ffffff", map: grassTexture(own, rich) }));
   ground.rotation.x = -Math.PI / 2;
   ground.position.z = -22;
   ground.receiveShadow = true;
   scene.add(ground);
-  const laneArt = laneCanvases(),
+  const laneArt = laneCanvases(rich),
     laneMap = texture(own, laneArt.map),
     lane = new T.Mesh(own(new T.PlaneGeometry(BASE_X * 2 + 6, 2.6)), std({ color: "#ffffff", map: laneMap, normalMap: rich ? normalFrom(own, laneArt.height, 2) : undefined, roughness: 0.95 }));
   lane.rotation.x = -Math.PI / 2;
@@ -353,7 +355,8 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
   // Tufts of grass along the lane's edges and on the plain before it: crossed cards, instanced.
   const tuftMat = std({ color: "#ffffff", map: tuftTexture(own), transparent: false, alphaTest: 0.4, side: T.DoubleSide }),
     tuftGeo = own(new T.PlaneGeometry(0.34, 0.22).translate(0, 0.1, 0)),
-    tuftCount = rich ? 700 : 220,
+    // (Only with a graphics card: cut-out cards cost dear where the processor draws.)
+    tuftCount = rich ? 700 : 0,
     tufts = new T.InstancedMesh(tuftGeo, tuftMat, tuftCount * 2);
   for (let k = 0; k < tuftCount; k++) {
     const x = -BASE_X - 6 + rnd() * (BASE_X * 2 + 12),
@@ -372,14 +375,15 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     mountainFar = std({ color: "#9aa8bc", flatShading: true }),
     snow = std({ color: "#f1f4f8", flatShading: true });
   const hills = new T.InstancedMesh(g.ballLo, hill, 6),
-    hillsFar = new T.InstancedMesh(g.ballLo, hillFar, 6);
+    hillsFar = new T.InstancedMesh(g.ballLo, hillFar, rich ? 6 : 0);
   for (let k = 0; k < 6; k++) {
     hills.setMatrixAt(k, one(-48 + k * 19 + rnd() * 5, -0.8, -14 - rnd() * 4, 10 + rnd() * 9, 2.8 + rnd() * 3, 5 + rnd() * 2));
-    hillsFar.setMatrixAt(k, one(-54 + k * 21 + rnd() * 6, -1, -24 - rnd() * 4, 14 + rnd() * 10, 4.5 + rnd() * 4, 6));
+    if (rich) hillsFar.setMatrixAt(k, one(-54 + k * 21 + rnd() * 6, -1, -24 - rnd() * 4, 14 + rnd() * 10, 4.5 + rnd() * 4, 6));
   }
   scene.add(hills, hillsFar);
+  // (The far range only with a graphics card: where the processor draws, every layer of sky-filling shapes costs.)
   const peaks = new T.InstancedMesh(g.cone, mountain, 8),
-    peaksFar = new T.InstancedMesh(g.cone, mountainFar, 9),
+    peaksFar = new T.InstancedMesh(g.cone, mountainFar, rich ? 9 : 0),
     caps = new T.InstancedMesh(g.cone, snow, 8);
   for (let k = 0; k < 8; k++) {
     const tall = 14 + rnd() * 12,
@@ -388,30 +392,36 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     peaks.setMatrixAt(k, one(x, tall / 2 - 1, z, tall * 1.1, tall, tall * 0.6, rnd()));
     caps.setMatrixAt(k, one(x, tall - 1 - tall * 0.15, z + 0.2, tall * 0.33, tall * 0.3, tall * 0.18));
   }
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0; k < peaksFar.count; k++) {
     const tall = 18 + rnd() * 14;
     peaksFar.setMatrixAt(k, one(-70 + k * 18 + rnd() * 8, tall / 2 - 1, -78 - rnd() * 8, tall * 1.2, tall, tall * 0.6, rnd()));
   }
   scene.add(peaks, peaksFar, caps);
   // Woods: instanced trunks and crowns (conifers in tiers and round trees) behind the lane and past the bases.
   const spots: { x: number; z: number; s: number; pine: boolean }[] = [];
-  for (let k = 0; k < 90; k++) spots.push({ x: -50 + rnd() * 100, z: -4.5 - rnd() * 14, s: 0.8 + rnd() * 0.9, pine: rnd() < 0.55 });
+  for (let k = 0; k < (rich ? 90 : 66); k++) spots.push({ x: -50 + rnd() * 100, z: -4.5 - rnd() * 14, s: 0.8 + rnd() * 0.9, pine: rnd() < 0.55 });
   for (let k = 0; k < 12; k++) spots.push({ x: (rnd() < 0.5 ? -1 : 1) * (BASE_X + 4 + rnd() * 10), z: -2 + rnd() * 5, s: 0.8 + rnd() * 0.5, pine: rnd() < 0.5 });
   const trunk = new T.InstancedMesh(g.cyl, kit.m.woodDark, spots.length),
     pines = spots.filter((p) => p.pine),
     rounds = spots.filter((p) => !p.pine),
-    pine = new T.InstancedMesh(g.cone, std({ color: "#2f5a2c" }), pines.length * 3),
-    crown = new T.InstancedMesh(g.ballLo, std({ color: "#4a7a2f" }), rounds.length * 3);
+    tiers = rich ? 3 : 2,
+    pine = new T.InstancedMesh(g.cone, std({ color: "#2f5a2c" }), pines.length * tiers),
+    crown = new T.InstancedMesh(g.ballLo, std({ color: "#4a7a2f" }), rounds.length * tiers);
   spots.forEach((p, i) => trunk.setMatrixAt(i, one(p.x, 0.6 * p.s, p.z, 0.12 * p.s, 1.2 * p.s, 0.12 * p.s)));
   pines.forEach((p, i) => {
-    pine.setMatrixAt(i * 3, one(p.x, 1.5 * p.s, p.z, 0.95 * p.s, 1.8 * p.s, 0.95 * p.s, rnd()));
-    pine.setMatrixAt(i * 3 + 1, one(p.x, 2.25 * p.s, p.z, 0.75 * p.s, 1.5 * p.s, 0.75 * p.s, rnd()));
-    pine.setMatrixAt(i * 3 + 2, one(p.x, 2.9 * p.s, p.z, 0.5 * p.s, 1.2 * p.s, 0.5 * p.s, rnd()));
+    if (tiers === 3) {
+      pine.setMatrixAt(i * 3, one(p.x, 1.5 * p.s, p.z, 0.95 * p.s, 1.8 * p.s, 0.95 * p.s, rnd()));
+      pine.setMatrixAt(i * 3 + 1, one(p.x, 2.25 * p.s, p.z, 0.75 * p.s, 1.5 * p.s, 0.75 * p.s, rnd()));
+      pine.setMatrixAt(i * 3 + 2, one(p.x, 2.9 * p.s, p.z, 0.5 * p.s, 1.2 * p.s, 0.5 * p.s, rnd()));
+    } else {
+      pine.setMatrixAt(i * 2, one(p.x, 1.7 * p.s, p.z, 0.9 * p.s, 2.2 * p.s, 0.9 * p.s));
+      pine.setMatrixAt(i * 2 + 1, one(p.x, 2.6 * p.s, p.z, 0.65 * p.s, 1.6 * p.s, 0.65 * p.s));
+    }
   });
   rounds.forEach((p, i) => {
-    crown.setMatrixAt(i * 3, one(p.x, 1.9 * p.s, p.z, 1.1 * p.s, 0.95 * p.s, 1.1 * p.s));
-    crown.setMatrixAt(i * 3 + 1, one(p.x + 0.45 * p.s, 1.7 * p.s, p.z + 0.2, 0.75 * p.s, 0.7 * p.s, 0.75 * p.s));
-    crown.setMatrixAt(i * 3 + 2, one(p.x - 0.4 * p.s, 2.2 * p.s, p.z - 0.2, 0.7 * p.s, 0.65 * p.s, 0.7 * p.s));
+    crown.setMatrixAt(i * tiers, one(p.x, 1.9 * p.s, p.z, 1.1 * p.s, 0.95 * p.s, 1.1 * p.s));
+    crown.setMatrixAt(i * tiers + 1, one(p.x + 0.45 * p.s, 1.7 * p.s, p.z + 0.2, 0.75 * p.s, 0.7 * p.s, 0.75 * p.s));
+    if (tiers === 3) crown.setMatrixAt(i * 3 + 2, one(p.x - 0.4 * p.s, 2.2 * p.s, p.z - 0.2, 0.7 * p.s, 0.65 * p.s, 0.7 * p.s));
   });
   for (const m of [trunk, pine, crown]) {
     m.castShadow = true;
@@ -424,12 +434,12 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     const s = 0.05 + rnd() * 0.13;
     pebbles.setMatrixAt(k, one(-24 + rnd() * 48, s * 0.3, (rnd() < 0.6 ? -1 : 1) * (1.35 + rnd() * 2.2), s * 1.4, s, s * 1.1, rnd() * 3));
   }
-  pebbles.castShadow = true;
-  pebbles.receiveShadow = true;
+  pebbles.castShadow = rich;
+  pebbles.receiveShadow = rich;
   scene.add(pebbles);
   const cloudMap = cloudTexture(own),
     clouds: T.Sprite[] = [];
-  for (let k = 0; k < 10; k++) {
+  for (let k = 0; k < (rich ? 10 : 7); k++) {
     const s = new T.Sprite(own(new T.SpriteMaterial({ map: cloudMap, transparent: true, depthWrite: false, opacity: 0.85, fog: false })));
     s.scale.set(14 + rnd() * 10, 6 + rnd() * 3, 1);
     s.position.set(-60 + k * 13 + rnd() * 6, 13 + rnd() * 7, -35 - rnd() * 12);
@@ -469,10 +479,12 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     plumes: { s: T.Sprite; x: number; y: number; z: number; rise: number; age: number; size: number; group: T.Object3D }[] = [];
   /** A column of smoke rising from a place in the distance (its puffs loop up and fade). */
   const plume = (group: T.Object3D, x: number, y: number, z: number, size: number, colour: string) => {
-    for (let k = 0; k < 6; k++) {
+    // (Only with a graphics card: where the processor draws, wide soft puffs over the sky cost dear.)
+    const n = rich ? 6 : 0;
+    for (let k = 0; k < n; k++) {
       const s = new T.Sprite(own(new T.SpriteMaterial({ map: smokeMap, color: colour, transparent: true, depthWrite: false, opacity: 0.6 })));
       group.add(s);
-      plumes.push({ s, x, y, z, rise: 1 + rnd() * 0.5, age: k / 6, size, group });
+      plumes.push({ s, x, y, z, rise: 1 + rnd() * 0.5, age: k / n, size: rich ? size : size * 0.6, group });
     }
   };
   const tintedFar = own(new T.MeshLambertMaterial({ vertexColors: true })),
@@ -561,8 +573,15 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
       plume(d, -20, 10, -50, 8, "#4c4a4a");
       plume(d, 14, 8, -46, 6, "#5a5656");
     }
+    // Far off: it neither casts nor takes the sun's shadow (each costs where the processor draws).
+    d.traverse((o) => {
+      if (o instanceof T.Mesh) o.castShadow = o.receiveShadow = false;
+    });
     if (!rich) bakeAll(still, tintedFar, own);
     compactStill(still, own);
+    d.traverse((o) => {
+      if (o instanceof T.Mesh) o.castShadow = o.receiveShadow = false;
+    });
     scene.add(d);
     return d;
   });
