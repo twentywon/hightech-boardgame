@@ -8,8 +8,9 @@
  * the loss); a trickle of gold comes to each base besides, so that neither can be left with nothing. Experience opens
  * the next era (석기 → 중세 → 화약 → 현대, the user asked for no era after the modern one): stronger soldiers, a
  * stronger base, a new turret and a new special attack. Up to three turrets stand on a base and shoot what comes near;
- * a turret is sold back for half. The special attack, once it is ready, rains rocks, arrows, shells or bombs on the
- * enemy's soldiers. A base brought to nothing loses the match.
+ * a turret is sold back for half. The special attack, once it is ready, lets rocks, arrows, shells or bombs fall slowly
+ * over the whole lane, each striking only the one enemy soldier it lands on (no splash). Soldiers take seconds to train
+ * and walk slowly (the user asked for both). A base brought to nothing loses the match.
  * There is no time limit (the user asked for it gone). So that no match stands still for ever, the last era has two
  * things more: its gold, which piles up faster than soldiers can be trained, buys ranks (강화), each making the soldiers
  * trained afterwards (and the special attack) stronger, so that the side winning its fights (whose kills pay) grows
@@ -41,12 +42,20 @@ export const KILL_GOLD = 0.9,
 /** The special attack's wait between uses, and its first wait. */
 export const ABILITY_COOL = 50,
   ABILITY_FIRST = 25;
+/**
+ * How the special attack falls (the user asked: over the whole lane, slowly, each piece striking one soldier only): the
+ * seconds a piece takes from the sky to the ground, how long the whole volley takes to set off, and how far beside a
+ * soldier's middle a piece still strikes it (its half-room and this).
+ */
+export const FALL_TIME = 2.6,
+  VOLLEY = 4.5,
+  FALL_PAD = 0.12;
 export const START_GOLD = 175;
 /**
  * Momentum (기세), in the last era: a soldier past the lane's middle strikes harder the further it has pushed (up to
  * this share more at the enemy's front), so that two even sides do not stand for ever in the middle of the lane.
  */
-export const MOMENTUM = 0.8;
+export const MOMENTUM = 2.2;
 /** How much harder a soldier strikes where it stands (its era's momentum). */
 export const momentum = (u: { side: number; era: number; x: number }) => (u.era >= LAST_ERA ? 1 + MOMENTUM * Math.max(0, Math.min(1, ahead(u.side, u.x) / FRONT)) : 1);
 
@@ -76,7 +85,8 @@ export interface EraType {
   trickle: number;
   units: [UnitType, UnitType, UnitType];
   turret: { name: string; cost: number; dmg: number; range: number; cool: number; shot: ShotKind; splash?: number };
-  ability: { name: string; count: number; dmg: number; radius: number; shot: ShotKind };
+  /** The special attack: how many fall (spread over the whole lane), and what each does to the one soldier it strikes. */
+  ability: { name: string; count: number; dmg: number; shot: ShotKind };
 }
 export const ERAS: EraType[] = [
   {
@@ -84,48 +94,48 @@ export const ERAS: EraType[] = [
     base: 600,
     trickle: 2,
     units: [
-      { name: "몽둥이 전사", cost: 15, hp: 60, dmg: 14, range: 0.8, cool: 1, speed: 1, train: 1, size: 0.8 },
-      { name: "투석꾼", cost: 25, hp: 42, dmg: 9, range: 3.6, cool: 1.3, speed: 1, train: 1.2, shot: "rock", size: 0.8 },
-      { name: "매머드 기수", cost: 110, hp: 330, dmg: 34, range: 1.1, cool: 1.5, speed: 0.8, train: 3, size: 1.6 },
+      { name: "몽둥이 전사", cost: 15, hp: 60, dmg: 14, range: 0.8, cool: 1, speed: 0.6, train: 2.5, size: 0.8 },
+      { name: "투석꾼", cost: 25, hp: 42, dmg: 9, range: 3.6, cool: 1.3, speed: 0.6, train: 3, shot: "rock", size: 0.8 },
+      { name: "매머드 기수", cost: 110, hp: 330, dmg: 34, range: 1.1, cool: 1.5, speed: 0.48, train: 7.5, size: 1.6 },
     ],
     turret: { name: "돌팔매 탑", cost: 150, dmg: 10, range: 6, cool: 1.6, shot: "rock" },
-    ability: { name: "낙석", count: 10, dmg: 60, radius: 0.8, shot: "fallRock" },
+    ability: { name: "낙석", count: 26, dmg: 60, shot: "fallRock" },
   },
   {
     name: "중세",
     base: 1200,
     trickle: 4,
     units: [
-      { name: "검사", cost: 45, hp: 165, dmg: 30, range: 0.85, cool: 1, speed: 1, train: 1.2, size: 0.8 },
-      { name: "장궁수", cost: 70, hp: 100, dmg: 20, range: 4, cool: 1.3, speed: 1, train: 1.4, shot: "arrow", size: 0.8 },
-      { name: "기사", cost: 320, hp: 820, dmg: 70, range: 1.2, cool: 1.4, speed: 1.15, train: 3.2, size: 1.6 },
+      { name: "검사", cost: 45, hp: 165, dmg: 30, range: 0.85, cool: 1, speed: 0.6, train: 3, size: 0.8 },
+      { name: "장궁수", cost: 70, hp: 100, dmg: 20, range: 4, cool: 1.3, speed: 0.6, train: 3.5, shot: "arrow", size: 0.8 },
+      { name: "기사", cost: 320, hp: 820, dmg: 70, range: 1.2, cool: 1.4, speed: 0.69, train: 8, size: 1.6 },
     ],
     turret: { name: "쇠뇌 탑", cost: 450, dmg: 28, range: 6.2, cool: 1.6, shot: "arrow" },
-    ability: { name: "화살비", count: 16, dmg: 75, radius: 0.5, shot: "fallArrow" },
+    ability: { name: "화살비", count: 28, dmg: 70, shot: "fallArrow" },
   },
   {
     name: "화약",
     base: 2400,
     trickle: 9,
     units: [
-      { name: "총검병", cost: 140, hp: 410, dmg: 62, range: 0.9, cool: 1, speed: 1, train: 1.4, size: 0.8 },
-      { name: "머스킷 사수", cost: 200, hp: 250, dmg: 48, range: 4.4, cool: 1.6, speed: 0.95, train: 1.6, shot: "bullet", size: 0.8 },
-      { name: "야포", cost: 900, hp: 1400, dmg: 150, range: 4.2, cool: 2.2, speed: 0.6, train: 4, shot: "ball", splash: 0.9, size: 1.7 },
+      { name: "총검병", cost: 140, hp: 410, dmg: 62, range: 0.9, cool: 1, speed: 0.6, train: 3.5, size: 0.8 },
+      { name: "머스킷 사수", cost: 200, hp: 250, dmg: 48, range: 4.4, cool: 1.6, speed: 0.57, train: 4, shot: "bullet", size: 0.8 },
+      { name: "야포", cost: 900, hp: 1400, dmg: 150, range: 4.2, cool: 2.2, speed: 0.36, train: 10, shot: "ball", splash: 0.9, size: 1.7 },
     ],
     turret: { name: "요새포", cost: 1300, dmg: 70, range: 6.4, cool: 2.4, shot: "ball", splash: 0.6 },
-    ability: { name: "일제 포격", count: 10, dmg: 260, radius: 1, shot: "fallShell" },
+    ability: { name: "일제 포격", count: 22, dmg: 420, shot: "fallShell" },
   },
   {
     name: "현대",
     base: 5000,
     trickle: 20,
     units: [
-      { name: "돌격병", cost: 420, hp: 920, dmg: 120, range: 0.9, cool: 0.9, speed: 1.05, train: 1.6, size: 0.8 },
-      { name: "기관총 사수", cost: 600, hp: 600, dmg: 34, range: 4.8, cool: 0.35, speed: 0.95, train: 1.8, shot: "bullet", size: 0.8 },
-      { name: "전차", cost: 2400, hp: 3600, dmg: 300, range: 4, cool: 2, speed: 0.7, train: 4.5, shot: "shell", splash: 1, size: 2 },
+      { name: "돌격병", cost: 420, hp: 920, dmg: 120, range: 0.9, cool: 0.9, speed: 0.63, train: 4, size: 0.8 },
+      { name: "기관총 사수", cost: 600, hp: 600, dmg: 34, range: 4.8, cool: 0.35, speed: 0.57, train: 4.5, shot: "bullet", size: 0.8 },
+      { name: "전차", cost: 2400, hp: 3600, dmg: 300, range: 4, cool: 2, speed: 0.42, train: 11.25, shot: "shell", splash: 1, size: 2 },
     ],
     turret: { name: "기관포", cost: 3500, dmg: 26, range: 6.6, cool: 0.4, shot: "bullet" },
-    ability: { name: "공습", count: 8, dmg: 700, radius: 1.2, shot: "bomb" },
+    ability: { name: "공습", count: 22, dmg: 1100, shot: "bomb" },
   },
 ];
 /** The experience that opens the next era (from era k to k + 1). */
@@ -324,17 +334,19 @@ export function command(world: World, side: 0 | 1, c: Command): boolean {
     case "ability": {
       a.ability = ABILITY_COOL;
       const ab = ERAS[a.era].ability,
-        foe = (1 - side) as 0 | 1,
-        foes = world.units.filter((u) => u.side === foe),
-        // Over the enemy's foremost soldiers and back toward its base, or over the middle of the lane with none.
-        lead = foes.length ? foes.reduce((m, u) => (ahead(foe, u.x) > ahead(foe, m.x) ? u : m)).x : 0,
-        from = lead - way(foe) * 1.2,
-        span = 8;
-      for (let k = 0; k < ab.count; k++) {
-        const tx = Math.max(-FRONT + 0.5, Math.min(FRONT - 0.5, from - way(foe) * span * ((k + rand(world)) / ab.count)));
-        world.shots.push({ id: world.nextId++, side, kind: ab.shot, x0: tx + way(side) * 2.5, y0: 13, x: tx + way(side) * 2.5, y: 13, target: -2, tx, ty: 0, t: 0, time: 0.9, arc: 0, dmg: ab.dmg * powerOf(a.rank), splash: ab.radius, wait: k * 0.13 + rand(world) * 0.25 });
-      }
-      emit(world, "ability", lead, side, a.era);
+        reach = FRONT - 0.5,
+        // Over the whole lane, base to base: each piece in its own stretch of it, set off in a shuffled order (the
+        // bombers' from the own base onward, under the planes as they cross).
+        spots = Array.from({ length: ab.count }, (_, k) => -reach + (2 * reach * (k + rand(world))) / ab.count);
+      if (ab.shot === "bomb") spots.sort((p, q) => ahead(side, p) - ahead(side, q));
+      else
+        for (let k = spots.length - 1; k > 0; k--) {
+          const j = Math.floor(rand(world) * (k + 1));
+          [spots[k], spots[j]] = [spots[j], spots[k]];
+        }
+      for (const [k, tx] of spots.entries())
+        world.shots.push({ id: world.nextId++, side, kind: ab.shot, x0: tx - way(side) * 1.5, y0: 13, x: tx - way(side) * 1.5, y: 13, target: -2, tx, ty: 0, t: 0, time: FALL_TIME, arc: 0, dmg: ab.dmg * powerOf(a.rank), splash: 0, wait: (k / ab.count) * VOLLEY + (ab.shot === "bomb" ? 0 : rand(world) * 0.2) });
+      emit(world, "ability", 0, side, a.era);
       return true;
     }
     case "era": {
@@ -393,10 +405,17 @@ function hitBase(world: World, side: 0 | 1, dmg: number) {
     emit(world, "fall", baseX(side), side, a.era);
   }
 }
-/** A shot landing at x for a side: on its target, or on every enemy soldier within its splash. */
+/** A shot landing at x for a side: on its target, or on every enemy soldier within its splash; a piece of the special attack on the one enemy it falls on, if any. */
 function land(world: World, s: Shot) {
   const foe = (1 - s.side) as 0 | 1;
-  if (s.splash > 0) {
+  if (s.target === -2) {
+    let struck: Unit | null = null;
+    for (const u of world.units) {
+      const off = Math.abs(u.x - s.x);
+      if (u.side === foe && u.hp > 0 && off <= typeOf(u).size / 2 + FALL_PAD && (!struck || off < Math.abs(struck.x - s.x))) struck = u;
+    }
+    if (struck) hurt(world, struck, s.dmg, s.side);
+  } else if (s.splash > 0) {
     for (const u of world.units) if (u.side === foe && u.hp > 0 && Math.abs(u.x - s.x) <= s.splash) hurt(world, u, s.dmg, s.side);
     if (s.target === -1) hitBase(world, foe, s.dmg);
   } else if (s.target === -1) hitBase(world, foe, s.dmg);
@@ -575,10 +594,9 @@ export function think(world: World, side: 0 | 1, level: Level, mind: Mind): Comm
     theirs = world.units.filter((u) => u.side === foe),
     worth = (list: Unit[]) => list.reduce((n, u) => n + typeOf(u).cost * (u.era + 1) * (u.hp / u.max), 0);
   if (a.era < LAST_ERA && canEra(world, side) && mind.could >= L.eraDelay) out.push({ kind: "era" });
-  // The special attack: on a crowd of enemies (or, the easy computer, on anything), or on any near its base.
+  // The special attack (it falls over the whole lane): on enough enemies (or, the easy computer, on anything), or on any near its base.
   if (a.ability <= 0 && theirs.length) {
-    const lead = foremost(world, foe)!,
-      crowd = theirs.filter((u) => Math.abs(u.x - lead.x) < 5).length,
+    const crowd = theirs.length,
       near = theirs.some((u) => Math.abs(u.x - frontOf(side)) < 5);
     if (crowd >= L.abilityAt || (near && L.mix !== "whim")) out.push({ kind: "ability" });
   }

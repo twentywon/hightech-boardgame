@@ -12,6 +12,8 @@ import {
   ABILITY_COOL,
   BASE_X,
   DT,
+  FRONT,
+  VOLLEY,
   ERAS,
   LAST_ERA,
   QUEUE,
@@ -798,11 +800,12 @@ export class EraWarView extends TableView<State> {
     // Bombers over the lane, and the trails of their engines.
     this.planes = this.planes.filter((p) => {
       p.age += dt;
-      p.x += p.dir * 11 * dt;
+      // As fast as the volley crosses the lane (`VOLLEY`), so that the bombs fall under them.
+      p.x += p.dir * (2 * (FRONT - 0.5)) / VOLLEY * dt;
       p.mesh.position.set(p.x, 9 + Math.sin(p.age * 2) * 0.2, -1.5);
       p.mesh.visible = p.age >= 0;
       if (p.age >= 0 && !quiet && this.kit.rich && Math.random() < dt * 8) this.fx.emit("smoke", p.x - p.dir * 1.2, 9, -1.5, 1, { speed: 0.05, up: 0, size: 0.25, grow: 3, life: 1.6 });
-      if (p.age > 4) {
+      if (p.age > VOLLEY + 4) {
         this.root.remove(p.mesh);
         return false;
       }
