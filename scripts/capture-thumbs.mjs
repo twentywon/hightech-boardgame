@@ -947,6 +947,19 @@ const play = {
     await page.waitForFunction(() => Number(document.querySelector("#board canvas")?.dataset.time) > 24, null, { timeout: 280000 });
     await page.keyboard.press("p");
   },
+  // 땅따먹기: out of my patch to the right and down, the trail behind me and the computers' lands about, then paused
+  // mid-loop.
+  territory: async () => {
+    await page.locator("#board canvas").waitFor();
+    await page.waitForFunction(() => document.querySelector("#board canvas")?.dataset.phase === "play", null, { timeout: 120000 });
+    await wait(5000);
+    for (const [key, ms] of [["ArrowRight", 1600], ["ArrowDown", 1300], ["ArrowLeft", 700]]) {
+      await page.keyboard.down(key);
+      await wait(ms);
+      await page.keyboard.up(key);
+    }
+    await page.keyboard.press("p");
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {
