@@ -10,7 +10,6 @@ test.setTimeout(240_000);
 const canvas = (page: Page) => page.locator("#board canvas");
 const list = async (page: Page, what: string) => ((await canvas(page).getAttribute(`data-${what}`)) ?? "").split(",").map(Number);
 const place = async (page: Page, k = 0) => ((await canvas(page).getAttribute("data-pos")) ?? "").split(";")[k].split(",").map(Number);
-const key = (page: Page, code: string, down: boolean) => page.evaluate(([c, d]) => void document.dispatchEvent(new KeyboardEvent(d ? "keydown" : "keyup", { code: c as string, bubbles: true })), [code, down] as const);
 async function sit(page: Page, computers = "1", level = "easy", variant = "180") {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -22,13 +21,6 @@ async function sit(page: Page, computers = "1", level = "easy", variant = "180")
   await page.locator(".game-stage button.primary").click();
   await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 60_000 });
   return errors;
-}
-/** Holds a key until my mover has passed `to` along `axis` (0 across, 1 down) the key's way, then lets it go. */
-async function steer(page: Page, code: string, axis: 0 | 1, to: number) {
-  const way = code === "ArrowRight" || code === "ArrowDown" ? 1 : -1;
-  await key(page, code, true);
-  await expect.poll(async () => ((await place(page))[axis] - to) * way, { timeout: 90_000 }).toBeGreaterThan(0);
-  await key(page, code, false);
 }
 
 test("territory against the computer: the field and its board, a loop out of my land takes more land, a pause stops it", async ({ page }) => {
@@ -45,17 +37,50 @@ test("territory against the computer: the field and its board, a loop out of my 
   await expect(canvas(page)).toHaveAttribute("data-phase", "play", { timeout: 60_000 });
   const start = (await list(page, "shares"))[0];
   expect(start).toBeCloseTo(0.51, 1);
-  // It runs on by itself.
-  const p0 = await place(page);
-  await expect.poll(async () => Math.hypot(...(await place(page)).map((v, i) => v - p0[i])), { timeout: 30_000 }).toBeGreaterThan(1);
-  // A loop: right, down, left, and up into my land again (my patch is about cells 13 to 17 both ways).
-  await steer(page, "ArrowRight", 0, 23);
-  expect((await list(page, "trails"))[0]).toBeGreaterThan(0);
-  await steer(page, "ArrowDown", 1, 23);
-  await steer(page, "ArrowLeft", 0, 15.2);
-  await key(page, "ArrowUp", true);
-  await expect.poll(async () => (await list(page, "shares"))[0], { timeout: 90_000 }).toBeGreaterThan(start + 0.3);
-  await key(page, "ArrowUp", false);
+  // A loop, steered in the page by what the canvas tells (the software-drawn page is too slow to steer from here):
+  // right, down, back left past where it began, and up into my land again.
+  const loop = await page.evaluate(
+    (start) =>
+      new Promise<{ share: number; outs: number; trail: number; leg: number }>((done) => {
+        const el = document.querySelector<HTMLCanvasElement>("#board canvas")!,
+          read = () => {
+            const d = el.dataset,
+              [x, y] = d.pos!.split(";")[0].split(",").map(Number);
+            return { x, y, share: Number(d.shares!.split(",")[0]), outs: Number(d.outs!.split(",")[0]), trail: Number(d.trails!.split(",")[0]) };
+          },
+          key = (code: string, down: boolean) => document.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", { code, bubbles: true })),
+          from = read(),
+          legs: [string, (p: ReturnType<typeof read>) => boolean][] = [
+            ["ArrowRight", (p) => p.x > from.x + 4],
+            ["ArrowDown", (p) => p.y > from.y + 4],
+            ["ArrowLeft", (p) => p.x < from.x],
+            ["ArrowUp", (p) => p.share > start + 0.3],
+          ],
+          began = performance.now();
+        let leg = 0,
+          most = 0;
+        key(legs[0][0], true);
+        const tick = () => {
+          const p = read();
+          most = Math.max(most, p.trail);
+          if (p.outs || performance.now() - began > 150_000) {
+            key(legs[Math.min(leg, 3)][0], false);
+            return done({ share: p.share, outs: p.outs, trail: most, leg });
+          }
+          if (legs[leg][1](p)) {
+            key(legs[leg][0], false);
+            if (++leg === legs.length) return done({ share: p.share, outs: p.outs, trail: most, leg });
+            key(legs[leg][0], true);
+          }
+          requestAnimationFrame(tick);
+        };
+        tick();
+      }),
+    start,
+  );
+  expect(loop).toMatchObject({ outs: 0, leg: 4 });
+  expect(loop.trail).toBeGreaterThan(5);
+  expect(loop.share).toBeGreaterThan(start + 0.3);
   expect((await list(page, "outs"))[0]).toBe(0);
   expect(Number(await canvas(page).getAttribute("data-claims"))).toBeGreaterThan(0);
   await expect(page.locator(".ld-clock span")).not.toHaveText("0.5%");

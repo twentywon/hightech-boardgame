@@ -193,7 +193,7 @@ export class TerritoryView extends TableView<State> {
   private key(e: KeyboardEvent, down: boolean) {
     if (!KEYS[e.code] || e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement | null;
-    if (target && target !== this.renderer.domElement && target.closest("input, select, textarea, dialog")) return;
+    if (target instanceof Element && target !== this.renderer.domElement && target.closest("input, select, textarea, dialog")) return;
     if (down && document.querySelector("dialog[open]")) return;
     e.preventDefault();
     if (down) this.keys.add(e.code);
