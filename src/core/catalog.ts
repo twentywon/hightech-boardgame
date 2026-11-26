@@ -888,6 +888,14 @@ export const allGames = [
     icon: "♛",
     available: true,
   },
+  {
+    name: "활잡이 결투",
+    en: "ARCHER DUEL",
+    category: "아케이드게임",
+    players: "2인용",
+    icon: "➹",
+    available: true,
+  },
 ];
 
 /**

@@ -928,6 +928,15 @@ const play = {
     await page.keyboard.up("KeyD");
     await page.keyboard.press("p");
   },
+  // One arrow of mine by the keyboard (short, standing in the grass), the computer's answer, then my archer drawn
+  // again a little higher and harder, the camera back on it.
+  "archer-duel": async () => {
+    await page.locator("canvas").focus();
+    await page.keyboard.press("Space");
+    await wait(14000);
+    await keys(["ArrowUp", "ArrowUp", "ArrowUp", "ArrowRight", "ArrowRight", "ArrowRight", "ArrowRight"], 60);
+    await wait(1500);
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {
