@@ -1,11 +1,12 @@
 import * as T from "three";
 import { cryptoRandom } from "../../core/random";
-import { block } from "../../engine/scene-utils";
+import { block, capable } from "../../engine/scene-utils";
 import { noZoom } from "../../engine/zoom";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
 import { VALET_SUBJECT } from "./layout";
+import { dress, type Look } from "./scenery";
 import { ANGRY, BUMP, END, parkedMove, returnedMove, type State } from "./rules";
 import { ANGRY_FINE, BUMP_FINE, CAR_L, CAR_W, DT, MAX_STEER, SHIFT, TIDY, V_MOST, alight, board, canAlight, createWorld, freeBays, jobs, reachable, standing, step, type Car, type Happening, type Input, type Lot, type World } from "./sim";
 
@@ -28,6 +29,10 @@ export const clock = (s: number) => {
 const won = (units: number) => `${(units * 100).toLocaleString("ko-KR")}원`;
 interface CarModel {
   root: T.Group;
+  head: T.MeshStandardMaterial;
+  /** The headlights' light on the ground ahead, and the glare of the two lamps (seen in the dark). */
+  beam: T.Mesh;
+  flares: T.Sprite[];
   front: T.Group[];
   wheels: T.Mesh[];
   brake: T.MeshStandardMaterial;
@@ -99,6 +104,12 @@ export class ValetView extends TableView<State> {
   private left = 0;
   private ticker = 0;
   private kit: { [name: string]: T.BufferGeometry | T.Material } = {};
+  private sky!: T.HemisphereLight;
+  private sun!: T.DirectionalLight;
+  /** How the lot of the stage is lit and painted (see `scenery.ts`). */
+  private look: Look | null = null;
+  /** The reflection of the lot's surroundings in shiny things (night and underground, with a graphics card). */
+  private room: T.Texture | null = null;
   private said = { jobs: "", money: "" };
   /** The sounds of the lot (set by the screen from the game's `knock`). */
   onKnock: ((kind: string, strength: number) => void) | null = null;
@@ -107,8 +118,9 @@ export class ValetView extends TableView<State> {
     this.world = createWorld(1, Math.floor(cryptoRandom() * 2e9));
     this.camera.far = 260;
     this.camera.updateProjectionMatrix();
-    this.scene.add(new T.HemisphereLight("#eaf3ff", "#5a6a4a", 1.7));
-    const sun = new T.DirectionalLight("#fff1d6", 2.2);
+    this.sky = new T.HemisphereLight("#eaf3ff", "#5a6a4a", 1.7);
+    this.scene.add(this.sky);
+    const sun = (this.sun = new T.DirectionalLight("#fff1d6", 2.2));
     sun.position.set(-10, 26, 12);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -121,7 +133,6 @@ export class ValetView extends TableView<State> {
     this.scene.add(this.root);
     this.root.add(this.lot);
     this.makeKit();
-    this.grounds();
     this.markers();
     this.valet = this.person("#e8452e", true);
     // (A little larger than life, to be followed at a glance on a phone.)
@@ -180,7 +191,55 @@ export class ValetView extends TableView<State> {
       tyre: keep(new T.MeshStandardMaterial({ color: "#17181b", roughness: 0.9 })),
       rim: keep(new T.MeshStandardMaterial({ color: "#c9ccd2", roughness: 0.35, metalness: 0.7 })),
       glass: keep(new T.MeshStandardMaterial({ color: "#1d2a36", roughness: 0.15, metalness: 0.4 })),
-      head: keep(new T.MeshStandardMaterial({ color: "#fff6c8", emissive: "#ffe9a0", emissiveIntensity: 0.6 })),
+      beam: keep(new T.PlaneGeometry(7.5, 4.2)),
+      beamLight: keep(
+        new T.MeshBasicMaterial({
+          map: keep(
+            this.painted(256, 128, (pen) => {
+              // Two cones of light from the lamps, bright near the car and fading ahead and to the sides.
+              for (const y of [44, 84]) {
+                const g = pen.createRadialGradient(0, y, 0, 0, y, 250);
+                g.addColorStop(0, "rgba(255,255,255,0.9)");
+                g.addColorStop(0.35, "rgba(255,255,255,0.35)");
+                g.addColorStop(1, "rgba(255,255,255,0)");
+                pen.fillStyle = g;
+                pen.beginPath();
+                pen.moveTo(0, y - 6);
+                pen.lineTo(256, y - 62);
+                pen.lineTo(256, y + 62);
+                pen.lineTo(0, y + 6);
+                pen.fill();
+              }
+            }),
+          ),
+          color: "#fff1d0",
+          transparent: true,
+          opacity: 0,
+          blending: T.AdditiveBlending,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      ),
+      flare: keep(
+        new T.SpriteMaterial({
+          map: keep(
+            this.painted(64, 64, (pen) => {
+              const g = pen.createRadialGradient(32, 32, 0, 32, 32, 32);
+              g.addColorStop(0, "rgba(255,255,255,1)");
+              g.addColorStop(0.3, "rgba(255,255,255,0.4)");
+              g.addColorStop(1, "rgba(255,255,255,0)");
+              pen.fillStyle = g;
+              pen.fillRect(0, 0, 64, 64);
+            }),
+          ),
+          color: "#fff4d8",
+          transparent: true,
+          opacity: 0.85,
+          blending: T.AdditiveBlending,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      ),
       scratch: keep(new T.MeshStandardMaterial({ color: "#2a2623", roughness: 1 })),
       skin: keep(new T.MeshStandardMaterial({ color: "#f0c8a4", roughness: 0.8 })),
       trousers: keep(new T.MeshStandardMaterial({ color: "#2b3140", roughness: 0.8 })),
@@ -189,27 +248,6 @@ export class ValetView extends TableView<State> {
       face: keep(new T.SphereGeometry(0.24, 14, 10)),
       cap: keep(new T.CylinderGeometry(0.25, 0.26, 0.12, 12)),
     };
-  }
-  /** What lies round every lot: the grass, the street outside the entrance and the road the exit leads to. */
-  private grounds() {
-    const grass = this.standard({ color: "#6a9550", roughness: 1 }),
-      road = this.standard({ color: "#44474d", roughness: 0.95 }),
-      walk = this.standard({ color: "#b9b5ab", roughness: 0.9 });
-    const flat = (w: number, d: number, x: number, z: number, y: number, m: T.Material) => {
-      const mesh = new T.Mesh(this.own(new T.PlaneGeometry(w, d)), m);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(x, y, z);
-      mesh.receiveShadow = true;
-      this.root.add(mesh);
-      return mesh;
-    };
-    flat(160, 120, 0, 0, -0.04, grass);
-    // The street runs past the entrance; cars turn in from it.
-    flat(9, 120, -16 - 5.2, 0, -0.02, road);
-    flat(1.4, 120, -16 - 0.3, 0, -0.012, walk);
-    flat(30, 7.4, 16 + 15, 0, -0.02, road);
-    const dash = this.standard({ color: "#e8e4d2", roughness: 0.8 });
-    for (let k = -8; k <= 8; k++) flat(0.16, 2.2, -16 - 5.2, k * 5, -0.012, dash);
   }
   /** What shows where to go: a glow on each free bay and on the exit, an arrow bobbing over the place, a pointer on the ground before the car. */
   private markers() {
@@ -327,14 +365,16 @@ export class ValetView extends TableView<State> {
   private clearLot() {
     this.lot.traverse((o) => {
       const mesh = o as T.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.geometry.dispose();
+      if (!mesh.isMesh && !(o as T.Sprite).isSprite) return;
+      if (mesh.isMesh) mesh.geometry.dispose();
       for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
-        (m as T.MeshStandardMaterial).map?.dispose();
+        // Every picture the stuff is painted with (colour, glow, bumps, shine).
+        for (const value of Object.values(m)) if ((value as T.Texture | null)?.isTexture) (value as T.Texture).dispose();
         m.dispose();
       }
     });
     this.lot.clear();
+    this.look = null;
     this.glows = [];
     this.arms = [];
   }
@@ -359,20 +399,19 @@ export class ValetView extends TableView<State> {
     const w = lot.maxX - lot.minX,
       d = lot.maxZ - lot.minZ,
       cz = (lot.maxZ + lot.minZ) / 2;
-    // Asphalt, speckled like the real thing; darker on the underground lot.
-    const speckle = this.painted(256, 256, (pen) => {
-      pen.fillStyle = stage === 3 ? "#4b4e55" : "#54585f";
-      pen.fillRect(0, 0, 256, 256);
-      for (let k = 0; k < 2600; k++) {
-        pen.fillStyle = `rgba(${k % 2 ? "255,255,255" : "0,0,0"},${0.04 + Math.random() * 0.07})`;
-        pen.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 2);
-      }
-    });
-    speckle.wrapS = speckle.wrapT = T.RepeatWrapping;
-    speckle.repeat.set(w / 8, d / 8);
-    flat(w, d, std({ map: speckle, roughness: 0.95 }), 0, cz, 0);
-    // The bays: white lines, a number at the aisle's end, and a glow shown while the bay is where to go.
-    const white = std({ color: "#f1efe6", roughness: 0.7 });
+    // What is round the lot, and how it is lit (the mart by day, the burger restaurant by night, under the ground).
+    const look = (this.look = dress(stage, lot, this.lot));
+    this.renderer.setClearColor(look.clear);
+    this.sky.color.set(look.sky[0]);
+    this.sky.groundColor.set(look.sky[1]);
+    this.sky.intensity = look.sky[2];
+    this.sun.color.set(look.sun.color);
+    this.sun.intensity = look.sun.intensity;
+    this.sun.position.set(...look.sun.at);
+    this.reflect(look);
+    flat(w, d, look.floor, 0, cz, 0).receiveShadow = true;
+    // The bays: lines, a number at the aisle's end, and a glow shown while the bay is where to go.
+    const white = look.line;
     lot.bays.forEach((bay) => {
       const group = new T.Group();
       group.position.set(bay.x, 0, bay.z);
@@ -431,8 +470,8 @@ export class ValetView extends TableView<State> {
     flat(lot.exit.hx * 2, lot.exit.hz * 2, this.exitGlow, lot.exit.x, lot.exit.z, 0.02);
     flat(4.4, 4.4, new T.MeshBasicMaterial({ map: sign("입구", "#f1efe6", false), transparent: true, depthWrite: false, opacity: 0.8 }), lot.entrance.x, lot.entrance.z, 0.015);
     // Kerbs round the lot, open at the entrance and the exit.
-    const kerb = std({ color: "#c9c5ba", roughness: 0.8 }),
-      wall = (x0: number, z0: number, x1: number, z1: number) => add(block(Math.abs(x1 - x0) + 0.36, 0.28, Math.abs(z1 - z0) + 0.36, 0.05), kerb, (x0 + x1) / 2, 0.14, (z0 + z1) / 2);
+    const wall = (x0: number, z0: number, x1: number, z1: number) =>
+      add(block(Math.abs(x1 - x0) + 0.36, 0.28, Math.abs(z1 - z0) + 0.36, 0.05), look.kerb(Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0))), (x0 + x1) / 2, 0.14, (z0 + z1) / 2);
     wall(lot.minX, lot.minZ - 0.18, lot.maxX, lot.minZ - 0.18);
     wall(lot.minX, lot.maxZ + 0.18, lot.maxX, lot.maxZ + 0.18);
     for (const s of [-1, 1]) {
@@ -443,7 +482,8 @@ export class ValetView extends TableView<State> {
     const [booth, ...planters] = lot.blocks;
     add(block(booth.hx * 2, 2.5, booth.hz * 2, 0.08), std({ color: "#f3efe4" }), booth.x, 1.25, booth.z);
     add(block(booth.hx * 2 + 0.5, 0.22, booth.hz * 2 + 0.5, 0.06), std({ color: "#e8452e" }), booth.x, 2.6, booth.z);
-    add(new T.BoxGeometry(booth.hx * 1.5, 0.9, 0.06), std({ color: "#22313f", roughness: 0.2, metalness: 0.3 }), booth.x, 1.55, booth.z + booth.hz + 0.02, false);
+    // Its window (lit from within in the dark).
+    add(new T.BoxGeometry(booth.hx * 1.5, 0.9, 0.06), std(look.dark ? { color: "#ffe2b0", emissive: "#ffcf8a", emissiveIntensity: 0.9, roughness: 0.3 } : { color: "#22313f", roughness: 0.2, metalness: 0.3 }), booth.x, 1.55, booth.z + booth.hz + 0.02, false);
     const board = this.painted(256, 64, (pen) => {
       pen.fillStyle = "#e8452e";
       pen.fillRect(0, 0, 256, 64);
@@ -462,17 +502,22 @@ export class ValetView extends TableView<State> {
     const concrete = std({ color: "#c2c4c8", roughness: 0.7 }),
       stripe = std({ color: "#f2c230", roughness: 0.6 });
     for (const p of lot.pillars) {
+      if (look.pillar) {
+        look.pillar(p);
+        continue;
+      }
       add(new T.CylinderGeometry(p.r, p.r, 2.6, 16), concrete, p.x, 1.3, p.z);
       add(new T.CylinderGeometry(p.r + 0.02, p.r + 0.02, 0.5, 16), stripe, p.x, 0.5, p.z, false);
     }
     // Lamp posts along the back, and a barrier at each gate that lifts as a car goes through.
     const steel = std({ color: "#5a5f66", roughness: 0.4, metalness: 0.6 }),
       bulb = new T.MeshStandardMaterial({ color: "#fff6d8", emissive: "#ffe9a8", emissiveIntensity: 0.9 });
-    for (const x of [-9, 0, 9]) {
-      add(new T.CylinderGeometry(0.07, 0.09, 4.2, 8), steel, x, 2.1, lot.minZ - 0.7);
-      add(new T.BoxGeometry(0.9, 0.12, 0.3), steel, x, 4.2, lot.minZ - 0.35, false);
-      add(new T.SphereGeometry(0.16, 10, 8), bulb, x, 4.1, lot.minZ - 0.05, false);
-    }
+    if (look.lamps)
+      for (const x of [-9, 0, 9]) {
+        add(new T.CylinderGeometry(0.07, 0.09, 4.2, 8), steel, x, 2.1, lot.minZ - 0.7);
+        add(new T.BoxGeometry(0.9, 0.12, 0.3), steel, x, 4.2, lot.minZ - 0.35, false);
+        add(new T.SphereGeometry(0.16, 10, 8), bulb, x, 4.1, lot.minZ - 0.05, false);
+      }
     const bar = std({ color: "#f4f1e8" }),
       red = std({ color: "#d4302a" });
     for (const [x, half] of [
@@ -491,6 +536,25 @@ export class ValetView extends TableView<State> {
       }
       this.arms.push({ pivot, open: 0 });
     }
+  }
+  /** Shiny things (paint, glass, a polished floor) reflect the lot's surroundings, where a graphics card draws them. */
+  private reflect(look: Look) {
+    this.room?.dispose();
+    this.room = null;
+    this.scene.environment = null;
+    if (!look.room || !capable()) return;
+    const { scene, intensity } = look.room(),
+      pmrem = new T.PMREMGenerator(this.renderer);
+    this.room = pmrem.fromScene(scene, 0.04).texture;
+    pmrem.dispose();
+    scene.traverse((o) => {
+      const mesh = o as T.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.geometry.dispose();
+      (mesh.material as T.Material).dispose();
+    });
+    this.scene.environment = this.room;
+    this.scene.environmentIntensity = intensity;
   }
   /** A little person: legs, a body in `colour`, a head; the valet wears a cap. */
   private person(colour: string, cap = false) {
@@ -567,8 +631,17 @@ export class ValetView extends TableView<State> {
       }
     const brake = this.standard({ color: "#7a1612", emissive: "#ff2a1a", emissiveIntensity: 0.15 }),
       back = this.standard({ color: "#8a8a86", emissive: "#ffffff", emissiveIntensity: 0 });
+    const head = this.standard({ color: "#fff6c8", emissive: "#ffe9a0", emissiveIntensity: 0.6 }),
+      flares: T.Sprite[] = [];
     for (const z of [-0.6, 0.6]) {
-      put(k.lamp as T.BufferGeometry, k.head as T.Material, CAR_L / 2 - 0.02, 0.62, z, false);
+      put(k.lamp as T.BufferGeometry, head, CAR_L / 2 - 0.02, 0.62, z, false);
+      const flare = new T.Sprite(k.flare as T.SpriteMaterial);
+      flare.position.set(CAR_L / 2 + 0.12, 0.64, z);
+      flare.scale.setScalar(0.95);
+      flare.renderOrder = 3;
+      flare.visible = false;
+      root.add(flare);
+      flares.push(flare);
       put(k.lamp as T.BufferGeometry, brake, -CAR_L / 2 + 0.02, 0.66, z, false);
       put(k.lamp as T.BufferGeometry, back, -CAR_L / 2 + 0.02, 0.66, z * 0.45, false).scale.z = 0.5;
     }
@@ -583,8 +656,14 @@ export class ValetView extends TableView<State> {
       mesh.visible = false;
       return mesh;
     });
+    const beam = new T.Mesh(k.beam as T.BufferGeometry, k.beamLight as T.Material);
+    beam.rotation.x = -Math.PI / 2;
+    beam.position.set(CAR_L / 2 + 3.7, 0.05, 0);
+    beam.renderOrder = 1;
+    beam.visible = false;
+    root.add(beam);
     this.root.add(root);
-    return { root, front, wheels, brake, back, dents, spin: 0 };
+    return { root, head, beam, flares, front, wheels, brake, back, dents, spin: 0 };
   }
   private controls() {
     const el = this.renderer.domElement;
@@ -848,6 +927,8 @@ export class ValetView extends TableView<State> {
   }
   /** Everything where the lot has it: cars, customers, the valet, the marks, the barriers, the words, the sounds. */
   private pose(now: number, dt: number) {
+    (this.kit.beamLight as T.MeshBasicMaterial).opacity = this.look?.beams ?? 0;
+    this.look?.tick?.(now / 1000);
     const w = this.world,
       lot = w.lot,
       t = now / 1000,
@@ -869,7 +950,12 @@ export class ValetView extends TableView<State> {
       for (const wheel of model.wheels) wheel.rotation.y = -model.spin;
       const mine = car === hand,
         braking = mine && ((input.gas < 0 && car.v > 0.05) || (input.gas > 0 && car.v < -0.05) || input.handbrake);
-      model.brake.emissiveIntensity = braking ? 1.6 : 0.15;
+      // In the dark a car that runs (rolling in, in hand, driving off) has its lights on; one left standing has them off.
+      const lit = !!this.look?.dark && (mine || car.state === "queue" || car.state === "arriving" || car.state === "leaving");
+      model.head.emissiveIntensity = lit ? 2.4 : this.look?.dark ? 0.04 : 0.6;
+      model.beam.visible = lit;
+      for (const flare of model.flares) flare.visible = lit;
+      model.brake.emissiveIntensity = braking ? 1.6 : lit ? 0.7 : 0.15;
       model.back.emissiveIntensity = mine && (car.v < -0.05 || (input.gas < 0 && car.v <= 0.05)) ? 1.2 : 0;
       model.dents.forEach((d, k) => (d.visible = k < car.dents));
     }
@@ -1053,6 +1139,7 @@ export class ValetView extends TableView<State> {
     d.counts = `${this.state?.parked ?? 0},${this.state?.returned ?? 0},${this.state?.bumps ?? 0},${this.state?.angry ?? 0}`;
     d.free = JSON.stringify(freeBays(w).map((k) => [k, +lot.bays[k].x.toFixed(2), +lot.bays[k].z.toFixed(2), +lot.bays[k].angle.toFixed(4)]));
     d.exit = `${lot.exit.x},${lot.exit.z}`;
+    d.scene = this.look?.name ?? "";
     d.cars = String(mod(seen.size, 1000));
   }
   protected place(state: State) {
@@ -1079,6 +1166,7 @@ export class ValetView extends TableView<State> {
     cancelAnimationFrame(this.ticker);
     this.hush();
     this.clearLot();
+    this.room?.dispose();
     for (const c of this.customers) {
       c.texture.dispose();
       c.sprite.material.dispose();

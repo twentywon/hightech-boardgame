@@ -6,7 +6,9 @@ import { VALET_COLORS, ValetView } from "./view";
 
 const stat = (label: string, value: string | number) => `<span class="solo-stat"><small>${label}</small><b>${value}</b></span>`;
 const won = (units: number) => `${(units * 100).toLocaleString("ko-KR")}원`;
-const NOTES = ["넓은 칸 · 처음이라면", "비스듬한 칸", "좁은 칸 · 기둥 · 평행 주차"];
+const NOTES = ["낮 · 넓은 칸 · 처음이라면", "밤 · 비스듬한 칸", "지하 · 좁은 칸 · 기둥 · 평행 주차"];
+/** The ground of each lot's little map: grass by day, the dark of night, the concrete under the ground. */
+const GROUNDS = ["#6a9550", "#141c30", "#2c3035"];
 /** A small map of a lot: its bays as they lie (square, slanted, along the wall), its pillars, the entrance and the exit. */
 function lotArt(stage: number) {
   const lot = lotOf(stage),
@@ -17,7 +19,7 @@ function lotArt(stage: number) {
     .map((b) => `<rect x="${(-b.l / 2) * s}" y="${(-b.w / 2) * s}" width="${b.l * s}" height="${b.w * s}" fill="none" stroke="#f1efe6" stroke-width="1.2" transform="translate(${px(b.x)} ${pz(b.z)}) rotate(${(b.angle * 180) / Math.PI})"/>`)
     .join("");
   const pillars = lot.pillars.map((p) => `<circle cx="${px(p.x)}" cy="${pz(p.z)}" r="2.4" fill="#f2c230"/>`).join("");
-  return `<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="132" height="132" rx="16" fill="#6a9550"/><text x="70" y="24" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="Helvetica, Arial, sans-serif">${STAGE_NAMES[stage - 1]}</text><rect x="${px(lot.minX)}" y="${pz(lot.minZ)}" width="${(lot.maxX - lot.minX) * s}" height="${(lot.maxZ - lot.minZ) * s}" rx="3" fill="#54585f"/>${bays}${pillars}<rect x="${px(-13.4)}" y="${pz(-0.6)}" width="10" height="5" rx="1.5" fill="#e8452e"/><path d="M${px(11)} ${pz(0)} h12 m-4 -4 l4 4 l-4 4" fill="none" stroke="#ffc42e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="132" height="132" rx="16" fill="${GROUNDS[stage - 1]}"/><text x="70" y="24" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="Helvetica, Arial, sans-serif">${STAGE_NAMES[stage - 1]}</text><rect x="${px(lot.minX)}" y="${pz(lot.minZ)}" width="${(lot.maxX - lot.minX) * s}" height="${(lot.maxZ - lot.minZ) * s}" rx="3" fill="#54585f"/>${bays}${pillars}<rect x="${px(-13.4)}" y="${pz(-0.6)}" width="10" height="5" rx="1.5" fill="#e8452e"/><path d="M${px(11)} ${pz(0)} h12 m-4 -4 l4 4 l-4 4" fill="none" stroke="#ffc42e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 export const valetConfig: PointConfig<State> = {
   game: valet,
@@ -97,8 +99,8 @@ export const valetConfig: PointConfig<State> = {
       "주차장",
       table(
         [STAGE_NAMES[0], "칸이 넓고 통로와 직각입니다. 위아래 두 줄, 14칸. 손님이 가장 느긋합니다."],
-        [STAGE_NAMES[1], "칸이 60°로 비스듬하고 조금 좁습니다. 들어오는 방향 그대로 비스듬히 꺾어 넣으면 쉽습니다. 12칸."],
-        [STAGE_NAMES[2], "칸이 좁고 칸 입구마다 기둥이 서 있으며, 통로 가운데에도 기둥이 있습니다. 아래쪽 벽에는 벽과 나란한 평행 주차 칸이 있습니다. 11칸, 손님도 더 자주 옵니다."],
+        [STAGE_NAMES[1], "밤의 햄버거 가게 주차장입니다. 가로등 불빛 아래, 칸이 60°로 비스듬하고 조금 좁습니다. 들어오는 방향 그대로 비스듬히 꺾어 넣으면 쉽습니다. 12칸."],
+        [STAGE_NAMES[2], "땅속 주차장입니다. 칸이 좁고 칸 입구마다 기둥이 서 있으며, 통로 가운데에도 기둥이 있습니다. 아래쪽 벽에는 벽과 나란한 평행 주차 칸이 있습니다. 11칸, 손님도 더 자주 옵니다."],
         ["고르기", "위쪽의 <b>주차장 선택</b>을 누르면 고를 수 있습니다."],
       ),
     ) +

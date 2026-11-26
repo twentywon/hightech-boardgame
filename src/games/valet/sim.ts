@@ -93,7 +93,7 @@ export interface Lot {
   returnPatience: number;
   stay: [number, number];
 }
-export const STAGE_NAMES = ["마트 주차장", "사선 주차장", "지하 주차장"];
+export const STAGE_NAMES = ["마트 주차장", "햄버거 가게 주차장", "지하 주차장"];
 /**
  * The half width of every lot, the aisle's half width, a perpendicular bay's length, and where the rows of bays begin
  * (far enough from the entrance that a car backing out of the first bay clears the one waiting there).
