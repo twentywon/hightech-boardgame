@@ -44,7 +44,8 @@ const settle = (page: Page) => page.evaluate(() => new Promise<void>((done) => s
 async function run(page: Page, code: string, way: 1 | -1, far = 0.8, who = 0) {
   const from = (await men(page))[who][0];
   await key(page, code, true);
-  await expect.poll(async () => ((await men(page))[who][0] - from) * way, { timeout: 20_000 }).toBeGreaterThan(far);
+  // (Long: against the computer my bandit may be struck down on the way, and gets up and runs on.)
+  await expect.poll(async () => ((await men(page))[who][0] - from) * way, { timeout: 60_000 }).toBeGreaterThan(far);
   await key(page, code, false);
   await settle(page);
 }
@@ -120,7 +121,9 @@ test("gold raid: against the computer the keys run, jump and strike my bandit, a
 
 test("gold raid: gold picked up and brought to my gate raises my treasury on the board", async ({ page }) => {
   test.setTimeout(240_000);
-  const errors = await sit(page, "ai");
+  // Two at one screen, the other bandit left standing: the computer robs a laden bandit before anything else, and
+  // would take every pouch off mine on the way home.
+  const errors = await sit(page, "local");
   // Played in the page by what the canvas tells: to the nearest gold lying on the road, then home with it.
   const gold = await page.evaluate(
     () =>
