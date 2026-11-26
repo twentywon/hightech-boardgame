@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as R from "../src/games/valet/rules";
 import * as S from "../src/games/valet/sim";
 import { driver } from "./valet-driver";
+import * as W from "../src/games/valet/wheel";
 
 /** A world with one car in the valet's hand, standing at (x, z, heading) (left with me, its customer having named bay `want`, unless `state` says otherwise). */
 function holding(stage: number, x: number, z: number, heading: number, state: S.CarState = "waiting", want = -1) {
@@ -578,5 +579,58 @@ describe("valet parking: the shift", () => {
     expect(R.play(s, R.parkedMove(20))).toBeNull();
     expect(R.moves(s)).toEqual([]);
     expect(R.valet.reason!(s)).toContain("5,200원");
+  });
+});
+
+describe("valet parking: the steering wheel on the screen", () => {
+  test("a finger going round the wheel turns it the short way round; clockwise is to the right", () => {
+    expect(W.turnBetween(0, Math.PI / 2)).toBeCloseTo(Math.PI / 2, 9);
+    expect(W.turnBetween(Math.PI / 2, 0)).toBeCloseTo(-Math.PI / 2, 9);
+    // Across the back of the circle (from just under +π to just over −π) it is a small step, not nearly a whole turn.
+    expect(W.turnBetween(3, -3)).toBeCloseTo(2 * Math.PI - 6, 9);
+    expect(W.turnBetween(-3, 3)).toBeCloseTo(-(2 * Math.PI - 6), 9);
+    // Top, right, bottom (clockwise on the screen, y down): a half turn to the right, half the lock's steering.
+    let angle = 0;
+    const points = [
+      [0, -40],
+      [40, 0],
+      [0, 40],
+    ];
+    for (let k = 1; k < points.length; k++) angle = W.turnWheel(angle, Math.atan2(points[k - 1][1], points[k - 1][0]), Math.atan2(points[k][1], points[k][0]));
+    expect(angle).toBeCloseTo(Math.PI, 9);
+    expect(W.steerOf(angle)).toBeCloseTo(Math.PI / W.WHEEL_LOCK, 9);
+    expect(W.steerOf(angle)).toBeGreaterThan(0);
+  });
+  test("turned on past the lock it stays at the lock; the steering is the share of the lock, −1 to 1", () => {
+    let angle = 0;
+    // Round and round clockwise, a quarter at a time: three quarters of a turn is the lock, and it goes no further.
+    for (let k = 0; k < 12; k++) angle = W.turnWheel(angle, (k * Math.PI) / 2, ((k + 1) * Math.PI) / 2);
+    expect(angle).toBe(W.WHEEL_LOCK);
+    expect(W.steerOf(angle)).toBe(1);
+    for (let k = 0; k < 20; k++) angle = W.turnWheel(angle, (-k * Math.PI) / 2, (-(k + 1) * Math.PI) / 2);
+    expect(angle).toBe(-W.WHEEL_LOCK);
+    expect(W.steerOf(angle)).toBe(-1);
+    expect(W.steerOf(0)).toBe(0);
+    expect(W.steerOf(W.WHEEL_LOCK / 2)).toBeCloseTo(0.5, 9);
+    expect(W.WHEEL_LOCK).toBeCloseTo((3 * Math.PI) / 2, 9);
+  });
+  test("let go, it comes back to the middle smoothly, not at once, and settles there", () => {
+    let angle = W.WHEEL_LOCK;
+    const seen = [angle];
+    for (let k = 0; k < 120; k++) seen.push((angle = W.centred(angle, 1 / 60)));
+    // A sixtieth of a second later it has hardly moved; it is a good way back within a quarter second and home in two.
+    expect(seen[1]).toBeGreaterThan(W.WHEEL_LOCK * 0.85);
+    expect(seen[15]).toBeLessThan(W.WHEEL_LOCK * 0.25);
+    expect(seen[15]).toBeGreaterThan(0);
+    expect(angle).toBe(0);
+    for (let k = 1; k < seen.length; k++) expect(seen[k]).toBeLessThanOrEqual(seen[k - 1]);
+    // From the left, the same way back.
+    expect(W.centred(-1, 0.1)).toBeGreaterThan(-1);
+    expect(W.centred(-1, 0.1)).toBeLessThan(0);
+  });
+  test("a finger at the very middle of the wheel is not followed (its angle there jumps about)", () => {
+    expect(W.fingerAngle(2, 1, 60)).toBeNull();
+    expect(W.fingerAngle(0, -40, 60)).toBeCloseTo(-Math.PI / 2, 9);
+    expect(W.fingerAngle(40, 0, 60)).toBeCloseTo(0, 9);
   });
 });
