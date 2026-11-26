@@ -101,6 +101,7 @@ import { hexConquestConfig } from "../games/hexconquest/config";
 import { slotCarConfig } from "../games/slotcar/config";
 import { soccerConfig } from "../games/soccer/config";
 import { goldRaidConfig } from "../games/goldraid/config";
+import { rRouletteConfig } from "../games/rroulette/config";
 import { bowDuelConfig } from "../games/bowduel/config";
 import type { PointConfig } from "./point-game";
 import { thumb } from "./thumbs";
@@ -304,6 +305,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   soccer: { config: soccerConfig, options: { mode: "ai", variant: "flat", level: "normal" } },
   // 금화 쟁탈전: the variant is the castle's size (60, 100 or 150 gold) or three minutes on the clock.
   "gold-raid": { config: goldRaidConfig, options: { mode: "ai", variant: "100", level: "normal" } },
+  "russian-roulette": { config: rRouletteConfig, options: { mode: "ai", variant: "", level: "normal" } },
   // 활잡이 결투: the variant is the field (windy or calm); the gap and the mounds are laid afresh each game.
   "archer-duel": { config: bowDuelConfig, options: { mode: "ai", variant: "wind", level: "normal" } },
 };
@@ -550,6 +552,7 @@ type GameSelection =
   | "slot-car"
   | "soccer"
   | "gold-raid"
+  | "russian-roulette"
   | "archer-duel"
   | null;
 function gomokuSetup() {

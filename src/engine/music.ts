@@ -400,6 +400,8 @@ const OWN: Record<string, Piece> = {
   "slot-car": ROCK,
   soccer: ARCADE,
   "gold-raid": ARCADE,
+  // A party: the arcade's upbeat pop.
+  "russian-roulette": ARCADE,
   "archer-duel": ARCADE,
 };
 /** How long a bar of a piece lasts, in seconds. */
