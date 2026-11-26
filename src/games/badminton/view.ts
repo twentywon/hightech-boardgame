@@ -82,14 +82,11 @@ export class BadmintonView extends TableView<State> {
   /** Where the eye looks (eased toward the shuttle while it flies, back down the court between rallies). */
   private look = { x: 0, y: 0.95, z: -6.1 };
   private shook = -1;
-  private reachShown = 0;
   /** Where on the screen the pointer that holds my racket is (the mouse over the court, a finger held down), and the ray through it. */
   private pointer: { clientX: number; clientY: number } | null = null;
   private pointerRay = new T.Raycaster();
   /** Where each racket was aimed when it struck, held through the follow-through (the shuttle has gone by then). */
   private lastAim: (T.Vector3 | null)[] = [null, null];
-  /** The glow round the shuttle while my racket can reach it. */
-  private halo: T.Sprite;
   /** The last power a swipe had (for the browser tests), and how many swipes swung. */
   private swung = 0;
   private lastPower = -1;
@@ -160,10 +157,6 @@ export class BadmintonView extends TableView<State> {
     this.ring = new T.Mesh(keep_(new T.CircleGeometry(0.9, 40).rotateX(-Math.PI / 2)), keep_(new T.MeshBasicMaterial({ map: keep_(glow("#c8ff5c", true)), transparent: true, depthWrite: false, blending: T.AdditiveBlending })));
     this.ring.renderOrder = 3;
     this.ring.visible = false;
-    this.halo = new T.Sprite(keep_(new T.SpriteMaterial({ map: keep_(glow("#ffffff", true)), transparent: true, depthTest: false, depthWrite: false, blending: T.AdditiveBlending })));
-    this.halo.renderOrder = 19;
-    this.halo.visible = false;
-    this.scene.add(this.halo);
     this.landMark = new T.Mesh(keep_(new T.CircleGeometry(0.32, 32).rotateX(-Math.PI / 2)), keep_(new T.MeshBasicMaterial({ map: keep_(glow("#ffe05a", true)), transparent: true, depthWrite: false, blending: T.AdditiveBlending })));
     this.landMark.renderOrder = 3;
     this.landMark.visible = false;
@@ -525,19 +518,9 @@ export class BadmintonView extends TableView<State> {
       aimArm(f, stroke !== null && since >= 0 && since < 0.4 && swingAt < 0 ? this.lastAim[side] ?? toward : toward, stroke, stroke !== null && swingAt < 0 ? p.high : s.y > 1.55 || airborne(w, side as 0 | 1));
       if (stroke === null || swingAt >= 0) this.lastAim[side] = toward?.clone() ?? null;
     });
-    // My reach: a glow round the shuttle while my racket can meet it; at the easiest level, where it will come down.
+    // No glow round the shuttle (the user asked for the circle round it to go); at the easiest level, where it will come down.
     const me = w.players[this.mine],
-      can = this.playing && inReach(w, this.mine) && !capturing(),
-      fade = 1 - Math.exp(-(real || 0) / 0.06);
-    this.reachShown += ((can ? 1 : 0) - this.reachShown) * (real > 0 ? fade : 1);
-    // In flight a soft orange glow keeps the white shuttle in sight against the light walls; lime and bright in reach.
-    const glowing = flying && !capturing(),
-      halo = this.halo.material as T.SpriteMaterial;
-    this.halo.visible = glowing || this.reachShown > 0.03;
-    this.halo.position.copy(this.shuttle.position);
-    this.halo.scale.setScalar((0.2 + 0.1 * this.reachShown) * grow);
-    halo.color.setRGB(1 - this.reachShown * 0.2, 0.55 + this.reachShown * 0.45, 0.25 + this.reachShown * 0.1);
-    halo.opacity = Math.max(glowing ? 0.55 : 0, this.reachShown);
+      can = this.playing && inReach(w, this.mine) && !capturing();
     const coming = flying && w.hitter !== this.mine && this.level === "easy" && !this.live && !capturing();
     if (coming) {
       const way = path(w),
