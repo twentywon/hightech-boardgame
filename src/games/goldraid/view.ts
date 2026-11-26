@@ -8,7 +8,10 @@ import { END, TILT, aimX, follow, goldRaidFrame, goldRaidSubject, pairView, type
 import { TIME, depositMove, raidedMove, type State } from "./rules";
 import { BLAST, BODY, CAP, CART, DT, FUSE, LOOT_LIFE, SWING, createWorld, gateOf, step, think, timeLeft, type Bandit, type Happening, type Input, type Loot, type LootKind, type World } from "./sim";
 import { Hand, LEVER_JUMP, leverRun, type Act } from "./hands";
-import { CLOUDS, GAUGE_TALL, SIDE_COLORS, buildValley, type Valley } from "./valley";
+import { CLOUDS, GAUGE_TALL, SIDE_COLORS, SUNLIGHT, buildValley, type Valley } from "./valley";
+import { capable } from "../../engine/scene-utils";
+import { Effects } from "./fx";
+import { glint, glow, painted, stream } from "./paint";
 
 export const GOLD_RAID_COLORS: [string, string] = SIDE_COLORS;
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -21,16 +24,23 @@ interface Figure {
   lean: T.Group;
   legs: [T.Group, T.Group];
   arm: T.Group;
+  /** The arm away from the eye, and the cape. */
+  back: T.Group;
+  cape: T.Group;
   sack: T.Mesh;
   loot: T.Mesh;
   stars: T.Group;
   tag: T.Sprite | null;
+  /** Whether it was in the air at the last pose, when it last came down (it squashes and kicks up dust), and when its feet last threw dust. */
+  air: boolean;
+  landed: number;
+  puffed: number;
 }
 interface CartModel {
   group: T.Group;
   wheels: T.Group[];
   cover: T.Object3D;
-  legs: T.Mesh[];
+  legs: T.Object3D[];
   heap: T.Object3D;
 }
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -51,7 +61,7 @@ export class GoldRaidView extends TableView<State> {
   private world: World | null = null;
   private valley: Valley;
   private figures: Figure[] = [];
-  private lootMeshes = new Map<number, { item: Loot; mesh: T.Group; kind: LootKind }>();
+  private lootMeshes = new Map<number, { item: Loot; mesh: T.Group; kind: LootKind; glints: T.Sprite | null; spark: T.Sprite | null }>();
   private lootParts: Record<string, { geometry: T.BufferGeometry; material: T.Material }[]> = {};
   private cart: CartModel;
   private arrows: T.Mesh[] = [];
@@ -68,6 +78,12 @@ export class GoldRaidView extends TableView<State> {
   private seam: HTMLElement;
   private pad: HTMLElement;
   private sun: T.DirectionalLight;
+  private rich: boolean;
+  private fx: Effects;
+  private flash: T.PointLight | null = null;
+  private flashed_at = -9;
+  private tip = new T.Vector3();
+  private cartDust = 0;
   /** The eye: against the computer it follows my bandit; two at one screen, one view holds both or the screen is split. */
   private eye = { x: 0, zoom: 1, split: false, halves: [0, 0] as [number, number], set: false };
   /** The right half's camera while the screen is split (the left half's is the view's own). */
@@ -111,17 +127,27 @@ export class GoldRaidView extends TableView<State> {
     // Several fingers on this canvas are the game's own (two players at one screen).
     noZoom(this.renderer.domElement);
     this.camera.far = 200;
-    this.scene.add(new T.HemisphereLight("#eaf4ff", "#6a7a4a", 1.9));
-    // The sun goes along with the eye (`light`): its shadows are drawn round what is in view.
-    const sun = (this.sun = new T.DirectionalLight("#fff1d6", 2.3));
-    sun.position.set(5, 11, 9);
+    // A graphics card gets the richer valley (relief, torch light, soft shadows, more grass); where the processor
+    // draws (and in the browser tests) it keeps to what is cheap.
+    const rich = (this.rich = capable());
+    this.scene.add(new T.HemisphereLight("#d6e8ff", "#6f7a44", 1.75));
+    // The low afternoon sun goes along with the eye (`light`): its shadows are drawn round what is in view.
+    const sun = (this.sun = new T.DirectionalLight(SUNLIGHT, 2.7));
+    sun.position.set(7, 9, 8);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -19, right: 19, top: 11, bottom: -3, near: 1, far: 40 });
     sun.shadow.normalBias = 0.03;
+    if (rich) {
+      this.renderer.shadowMap.type = T.PCFSoftShadowMap;
+      // A bomb's flash lights what is round it.
+      this.flash = new T.PointLight("#ffb060", 0, 7, 2);
+      this.scene.add(this.flash);
+    }
     this.own(sun.shadow);
     this.scene.add(sun, sun.target);
-    this.valley = buildValley(this.scene, own);
+    this.valley = buildValley(this.scene, own, rich);
+    this.fx = new Effects(this.scene, own);
     this.cart = this.makeCart(own);
     // An arrow over each gate, shown to a person carrying gold: bring it here.
     const cone = own(new T.ConeGeometry(0.26, 0.5, 4));
@@ -314,17 +340,81 @@ export class GoldRaidView extends TableView<State> {
   /** A bandit king: boots and legs, a tunic in its side's colour, a bearded head under a gold crown, a club and a sack. */
   private makeFigure(own: Own, side: 0 | 1): Figure {
     const m = (color: string, roughness = 0.7, extra: T.MeshStandardMaterialParameters = {}) => this.standard({ color, roughness, ...extra }),
-      tunic = m(SIDE_COLORS[side], 0.6),
-      dark = m("#2a2420"),
-      skin = m("#f0c39a"),
-      beard = m(side === 0 ? "#5a3a22" : "#d8d2c4"),
-      gold = m("#ffcc33", 0.3, { emissive: "#7a5a00", emissiveIntensity: 0.4 }),
-      wood = m("#8a5a34"),
-      cloth = m("#a8824e", 0.9),
+      colour = new T.Color(SIDE_COLORS[side]),
+      // The tunic: woven cloth in the side's colour with a gold hem.
+      tunic = m("#ffffff", 0.75, {
+        map: painted(own, 128, 128, (ctx) => {
+          ctx.fillStyle = colour.getStyle();
+          ctx.fillRect(0, 0, 128, 128);
+          const random = stream(side + 3);
+          for (let k = 0; k < 900; k++) {
+            ctx.fillStyle = random() < 0.5 ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.07)";
+            ctx.fillRect(Math.floor(random() * 64) * 2, Math.floor(random() * 64) * 2, 2, 2);
+          }
+          // Folds down the cloth, and the gold hem near the bottom.
+          for (let x = 0; x < 128; x += 16) {
+            const g = ctx.createLinearGradient(x, 0, x + 16, 0);
+            g.addColorStop(0, "rgba(0,0,0,0.12)");
+            g.addColorStop(0.5, "rgba(255,255,255,0.06)");
+            g.addColorStop(1, "rgba(0,0,0,0.12)");
+            ctx.fillStyle = g;
+            ctx.fillRect(x, 70, 16, 58);
+          }
+          ctx.fillStyle = "#e8b830";
+          ctx.fillRect(0, 108, 128, 7);
+          ctx.fillStyle = "#fff0a0";
+          ctx.fillRect(0, 108, 128, 1.5);
+        }),
+      }),
+      sleeve = m(colour.clone().offsetHSL(0, 0, -0.05).getStyle(), 0.75),
+      trousers = m("#3a3a48", 0.85),
+      boot = m("#5a3a22", 0.55),
+      leather = m("#4a2e1a", 0.5),
+      skin = m("#f2c49c", 0.65),
+      cheek = m("#f0a890", 0.7),
+      hair = m(side === 0 ? "#5a3a22" : "#e2ddd2", 0.9),
+      white = m("#ffffff", 0.4),
+      pupil = m("#1a1410", 0.3),
+      gold = m("#ffcc33", 0.25, { metalness: 0.6, emissive: "#6a4a00", emissiveIntensity: 0.35 }),
+      ermine = m("#f6f2ea", 0.95),
+      wood = m("#8a5a34", 0.7),
+      steel = m("#7a7a82", 0.35, { metalness: 0.7 }),
+      cloth = m("#ffffff", 0.95, {
+        map: painted(own, 64, 64, (ctx) => {
+          ctx.fillStyle = "#a8824e";
+          ctx.fillRect(0, 0, 64, 64);
+          const random = stream(side + 11);
+          for (let y = 0; y < 64; y += 3)
+            for (let x = 0; x < 64; x += 3) {
+              ctx.fillStyle = (x + y) % 6 ? "rgba(60,40,20,0.2)" : "rgba(255,230,180,0.15)";
+              ctx.fillRect(x, y, 2, 2);
+            }
+          for (let k = 0; k < 6; k++) {
+            ctx.fillStyle = "rgba(70,50,30,0.3)";
+            ctx.fillRect(random() * 64, random() * 64, 10, 6);
+          }
+        }),
+      }),
+      capeCloth = this.own(
+        new T.MeshStandardMaterial({
+          side: T.DoubleSide,
+          roughness: 0.8,
+          map: painted(own, 64, 128, (ctx) => {
+            const g = ctx.createLinearGradient(0, 0, 64, 0);
+            g.addColorStop(0, colour.clone().offsetHSL(0, 0, -0.18).getStyle());
+            g.addColorStop(0.5, colour.clone().offsetHSL(0, 0, -0.08).getStyle());
+            g.addColorStop(1, colour.clone().offsetHSL(0, 0, -0.2).getStyle());
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 64, 128);
+            ctx.fillStyle = "#e8b830";
+            ctx.fillRect(0, 120, 64, 8);
+          }),
+        }),
+      ),
       group = new T.Group(),
       lean = new T.Group(),
-      cyl = own(new T.CylinderGeometry(1, 1, 1, 10)),
-      ball = own(new T.SphereGeometry(1, 16, 12));
+      cyl = own(new T.CylinderGeometry(1, 1, 1, 12)),
+      ball = own(new T.SphereGeometry(1, 18, 14));
     group.add(lean);
     const part = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number, parent: T.Object3D = lean) => {
       const mesh = new T.Mesh(geometry, material);
@@ -334,52 +424,110 @@ export class GoldRaidView extends TableView<State> {
       parent.add(mesh);
       return mesh;
     };
+    // Legs: trousers into boots with turned-down cuffs.
     const legs = [0.1, -0.1].map((z) => {
       const leg = new T.Group();
       leg.position.set(0, 0.48, z);
-      part(cyl, dark, 0, -0.2, 0, 0.075, 0.4, 0.075, leg);
-      part(own(new T.BoxGeometry(0.24, 0.1, 0.15)), m("#3a2a1e"), 0.05, -0.43, 0, 1, 1, 1, leg);
+      part(cyl, trousers, 0, -0.17, 0, 0.078, 0.34, 0.078, leg);
+      part(cyl, boot, 0, -0.36, 0, 0.082, 0.18, 0.082, leg);
+      part(cyl, leather, 0, -0.27, 0, 0.095, 0.04, 0.095, leg);
+      part(own(new T.CapsuleGeometry(0.06, 0.14, 4, 10)), boot, 0.05, -0.44, 0, 1, 1, 1, leg).rotation.z = Math.PI / 2;
       lean.add(leg);
       return leg;
     }) as [T.Group, T.Group];
-    part(own(new T.CapsuleGeometry(0.2, 0.26, 6, 12)), tunic, 0, 0.74, 0, 1, 1, 1);
-    part(cyl, dark, 0, 0.58, 0, 0.215, 0.06, 0.215);
-    part(ball, gold, 0.2, 0.58, 0, 0.04, 0.04, 0.04);
-    // The head: a face turned the way it runs, a beard, and the crown.
-    part(ball, skin, 0.02, 1.07, 0, 0.18, 0.18, 0.18);
-    part(ball, beard, 0.07, 0.99, 0, 0.15, 0.13, 0.16);
-    part(ball, skin, 0.2, 1.07, 0, 0.04, 0.04, 0.04);
-    for (const z of [0.07, -0.07]) part(ball, dark, 0.17, 1.12, z, 0.025, 0.03, 0.025);
-    part(own(new T.CylinderGeometry(0.16, 0.14, 0.1, 12, 1, true)), own(new T.MeshStandardMaterial({ color: "#ffcc33", roughness: 0.3, emissive: "#7a5a00", emissiveIntensity: 0.4, side: T.DoubleSide })), 0.02, 1.25, 0, 1, 1, 1);
-    const spike = own(new T.ConeGeometry(0.035, 0.09, 5));
-    for (let k = 0; k < 6; k++) part(spike, gold, 0.02 + Math.cos((k * Math.PI) / 3) * 0.15, 1.34, Math.sin((k * Math.PI) / 3) * 0.15, 1, 1, 1);
-    part(ball, m(side === 0 ? "#3aa0ff" : "#ff5a5a", 0.3, { emissive: side === 0 ? "#104a80" : "#801010", emissiveIntensity: 0.5 }), 0.17, 1.26, 0, 0.028, 0.028, 0.028);
-    // The sack on its back: it swells as it fills, gold showing at its mouth.
+    // The cape, behind the body, hung from the shoulders.
+    const cape = new T.Group();
+    cape.position.set(-0.08, 1.0, -0.12);
+    const capeShape = own(new T.PlaneGeometry(0.2, 0.62, 1, 5));
+    capeShape.translate(-0.06, -0.31, 0);
+    part(capeShape, capeCloth, 0, 0, 0, 1, 1, 1, cape);
+    lean.add(cape);
+    // The body: the tunic, a belt with a gold buckle and a pouch, a collar.
+    part(own(new T.CapsuleGeometry(0.2, 0.26, 8, 16)), tunic, 0, 0.74, 0, 1, 1, 1);
+    part(cyl, leather, 0, 0.58, 0, 0.216, 0.065, 0.216);
+    part(own(new T.BoxGeometry(0.05, 0.09, 0.1)), gold, 0.205, 0.58, 0, 1, 1, 1);
+    part(ball, leather, 0.1, 0.52, 0.16, 0.06, 0.07, 0.05);
+    part(own(new T.TorusGeometry(0.15, 0.04, 8, 18)), ermine, 0.01, 0.97, 0, 1, 1, 1).rotation.x = Math.PI / 2;
+    // The head: hair at the back, the face turned the way it runs (eyes, brows, a round nose, rosy cheeks), a
+    // moustache over a full beard, and the crown on an ermine band, set with stones.
+    part(ball, skin, 0.02, 1.08, 0, 0.18, 0.18, 0.18);
+    part(ball, hair, -0.06, 1.12, 0, 0.15, 0.13, 0.17);
+    part(ball, hair, 0.08, 0.98, 0, 0.15, 0.13, 0.16);
+    part(ball, hair, 0.12, 0.93, 0, 0.1, 0.1, 0.12);
+    for (const z of [0.06, -0.06]) part(ball, hair, 0.18, 1.03, z, 0.05, 0.025, 0.06).rotation.y = z * 4;
+    part(ball, skin, 0.2, 1.07, 0, 0.042, 0.042, 0.042);
+    for (const z of [0.075, -0.075]) {
+      part(ball, cheek, 0.15, 1.04, z, 0.03, 0.025, 0.02);
+      part(ball, white, 0.16, 1.13, z, 0.032, 0.036, 0.03);
+      part(ball, pupil, 0.185, 1.13, z, 0.018, 0.022, 0.018);
+      part(own(new T.BoxGeometry(0.07, 0.018, 0.035)), hair, 0.165, 1.18, z, 1, 1, 1).rotation.z = 0.15;
+    }
+    part(own(new T.TorusGeometry(0.155, 0.035, 8, 20)), ermine, 0.02, 1.215, 0, 1, 1, 1).rotation.x = Math.PI / 2;
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2;
+      part(ball, pupil, 0.02 + Math.cos(a) * 0.17, 1.215, Math.sin(a) * 0.17, 0.008, 0.012, 0.008);
+    }
+    part(own(new T.CylinderGeometry(0.16, 0.15, 0.11, 16, 1, true)), own(new T.MeshStandardMaterial({ color: "#ffcc33", roughness: 0.25, metalness: 0.6, emissive: "#6a4a00", emissiveIntensity: 0.35, side: T.DoubleSide })), 0.02, 1.29, 0, 1, 1, 1);
+    part(ball, m("#b02030", 0.6), 0.02, 1.27, 0, 0.13, 0.06, 0.13);
+    const spike = own(new T.ConeGeometry(0.035, 0.1, 6));
+    for (let k = 0; k < 6; k++) {
+      const a = (k * Math.PI) / 3;
+      part(spike, gold, 0.02 + Math.cos(a) * 0.15, 1.39, Math.sin(a) * 0.15, 1, 1, 1);
+      part(ball, gold, 0.02 + Math.cos(a) * 0.15, 1.45, Math.sin(a) * 0.15, 0.018, 0.018, 0.018);
+    }
+    const stones = ["#e8304a", "#3aa0ff", "#38d070"];
+    for (let k = 0; k < 3; k++) {
+      const a = -0.6 + k * 0.6;
+      part(ball, m(stones[(k + side) % 3], 0.15, { emissive: stones[(k + side) % 3], emissiveIntensity: 0.35 }), 0.02 + Math.cos(a) * 0.162, 1.3, Math.sin(a) * 0.162, 0.025, 0.025, 0.02);
+    }
+    // The sack on its back: it swells as it fills, gold showing at its mouth; its strap across the chest.
     const sack = part(ball, cloth, -0.27, 0.78, 0, 0.16, 0.18, 0.16),
       loot = part(ball, gold, -0.27, 0.95, 0, 0.09, 0.05, 0.09);
-    part(cyl, cloth, -0.1, 0.9, -0.18, 0.045, 0.3, 0.045).rotation.z = 0.9;
-    // The club arm, toward the eye.
+    part(cyl, leather, -0.1, 0.9, -0.18, 0.03, 0.32, 0.03).rotation.z = 0.9;
+    part(cyl, leather, 0.02, 0.8, 0.19, 0.022, 0.42, 0.022).rotation.z = -0.8;
+    // The arm away from the eye, swinging as it runs.
+    const back = new T.Group();
+    back.position.set(0.0, 0.92, -0.2);
+    part(cyl, sleeve, 0, -0.13, 0, 0.06, 0.26, 0.06, back);
+    part(cyl, ermine, 0, -0.26, 0, 0.065, 0.03, 0.065, back);
+    part(ball, skin, 0, -0.3, 0, 0.06, 0.06, 0.06, back);
+    lean.add(back);
+    // The club arm, toward the eye: a knotty club bound with leather, iron studs in its head.
     const arm = new T.Group();
     arm.position.set(0.02, 0.92, 0.22);
-    part(cyl, tunic, 0, -0.14, 0, 0.065, 0.28, 0.065, arm);
+    part(own(new T.SphereGeometry(1, 12, 10)), sleeve, 0, 0, 0, 0.085, 0.085, 0.085, arm);
+    part(cyl, sleeve, 0, -0.14, 0, 0.065, 0.28, 0.065, arm);
+    part(cyl, ermine, 0, -0.27, 0, 0.07, 0.03, 0.07, arm);
     part(ball, skin, 0, -0.3, 0, 0.065, 0.065, 0.065, arm);
-    part(own(new T.CylinderGeometry(0.075, 0.04, 0.56, 9)), wood, 0, -0.56, 0, 1, 1, 1, arm);
-    for (const y of [-0.66, -0.76]) part(cyl, dark, 0, y, 0, 0.078, 0.02, 0.078, arm);
+    part(own(new T.CylinderGeometry(0.08, 0.035, 0.58, 10)), wood, 0, -0.57, 0, 1, 1, 1, arm);
+    for (const y of [-0.38, -0.44]) part(cyl, leather, 0, y, 0, 0.045, 0.025, 0.045, arm);
+    const stud = own(new T.ConeGeometry(0.018, 0.05, 5));
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2,
+        y = -0.7 + (k % 2) * 0.1,
+        s = part(stud, steel, Math.cos(a) * 0.072, y, Math.sin(a) * 0.072, 1, 1, 1, arm);
+      s.rotation.set(Math.sin(a) * (Math.PI / 2), 0, -Math.cos(a) * (Math.PI / 2));
+    }
     lean.add(arm);
     // Stars round its head while it is stunned.
     const stars = new T.Group(),
       star = own(new T.OctahedronGeometry(0.07)),
-      yellow = own(new T.MeshBasicMaterial({ color: "#fff06a" }));
-    for (let k = 0; k < 3; k++) {
-      const s = new T.Mesh(star, yellow);
-      s.position.set(Math.cos((k * Math.PI * 2) / 3) * 0.32, 0, Math.sin((k * Math.PI * 2) / 3) * 0.32);
+      yellow = own(new T.MeshBasicMaterial({ color: "#fff06a" })),
+      twinkle = own(new T.SpriteMaterial({ map: glint(own, 64), color: "#fff6a0", transparent: true, depthWrite: false, blending: T.AdditiveBlending }));
+    for (let k = 0; k < 4; k++) {
+      const s = new T.Mesh(star, yellow),
+        a = (k * Math.PI * 2) / 4;
+      s.position.set(Math.cos(a) * 0.32, 0, Math.sin(a) * 0.32);
+      const t = new T.Sprite(twinkle);
+      t.scale.setScalar(0.3);
+      s.add(t);
       stars.add(s);
     }
-    stars.position.y = 1.52;
+    stars.position.y = 1.58;
     stars.visible = false;
     group.add(stars);
     this.scene.add(group);
-    return { group, lean, legs, arm, sack, loot, stars, tag: null };
+    return { group, lean, legs, arm, back, cape, sack, loot, stars, tag: null, air: false, landed: -9, puffed: 0 };
   }
   /** A name over a bandit's head (나, 1P, 2P). */
   private makeTag(own: Own, text: string, color: string) {
@@ -414,14 +562,64 @@ export class GoldRaidView extends TableView<State> {
     this.scene.add(tag);
     return tag;
   }
-  /** The merchant's cart: a wagon under a canvas cover with gold heaped at its tail, on two spoked wheels, drawn by an ox. */
+  /** The merchant's cart: a plank wagon under a patched canvas cover with gold heaped at its tail, on two iron-shod spoked wheels, drawn by an ox under a yoke. */
   private makeCart(own: Own): CartModel {
     const m = (color: string, roughness = 0.8, extra: T.MeshStandardMaterialParameters = {}) => this.standard({ color, roughness, ...extra }),
+      boards = m("#ffffff", 0.85, {
+        map: painted(own, 256, 64, (ctx) => {
+          const random = stream(71);
+          for (let b = 0; b < 4; b++) {
+            ctx.fillStyle = ["#8a5a34", "#94623a", "#7e522f", "#8f5d36"][b];
+            ctx.fillRect(0, b * 16, 256, 16);
+            for (let k = 0; k < 12; k++) {
+              ctx.strokeStyle = "rgba(50,30,14,0.3)";
+              ctx.lineWidth = 1;
+              const y = b * 16 + random() * 16;
+              ctx.beginPath();
+              ctx.moveTo(0, y);
+              ctx.lineTo(256, y + (random() - 0.5) * 3);
+              ctx.stroke();
+            }
+            ctx.fillStyle = "rgba(30,18,8,0.7)";
+            ctx.fillRect(0, b * 16, 256, 1.5);
+          }
+          ctx.fillStyle = "#2c2824";
+          for (const x of [20, 128, 236]) ctx.fillRect(x, 0, 8, 64);
+        }),
+      }),
       wood = m("#8a5a34"),
-      dark = m("#4a3220"),
-      canvas = m("#efe6cf", 0.95),
-      hide = m("#b98a5c"),
-      gold = m("#ffcc33", 0.3, { emissive: "#7a5a00", emissiveIntensity: 0.5 }),
+      dark = m("#3a2a1e"),
+      iron = m("#3a3a40", 0.4, { metalness: 0.6 }),
+      canvasCloth = m("#ffffff", 0.95, {
+        side: T.DoubleSide,
+        map: painted(own, 256, 128, (ctx) => {
+          ctx.fillStyle = "#efe4c8";
+          ctx.fillRect(0, 0, 256, 128);
+          for (let x = 0; x < 256; x += 32) {
+            ctx.fillStyle = "rgba(190,70,50,0.75)";
+            ctx.fillRect(x, 0, 12, 128);
+          }
+          const random = stream(19);
+          for (let k = 0; k < 4; k++) {
+            ctx.fillStyle = ["#d8c49a", "#c9b48a", "#e2d2aa"][k % 3];
+            const x = random() * 220,
+              y = random() * 90;
+            ctx.fillRect(x, y, 26, 22);
+            ctx.strokeStyle = "rgba(80,60,40,0.6)";
+            ctx.setLineDash([3, 3]);
+            ctx.strokeRect(x, y, 26, 22);
+            ctx.setLineDash([]);
+          }
+          for (let k = 0; k < 400; k++) {
+            ctx.fillStyle = "rgba(120,100,70,0.12)";
+            ctx.fillRect(random() * 256, random() * 128, 2, 2);
+          }
+        }),
+      }),
+      hide = m("#a87a4e", 0.85),
+      belly = m("#d8bc94", 0.9),
+      horn = m("#f2ead8", 0.5),
+      gold = m("#ffcc33", 0.25, { metalness: 0.6, emissive: "#7a5a00", emissiveIntensity: 0.5 }),
       group = new T.Group(),
       add = (geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, parent: T.Object3D = group) => {
         const mesh = new T.Mesh(own(geometry), material);
@@ -430,39 +628,86 @@ export class GoldRaidView extends TableView<State> {
         parent.add(mesh);
         return mesh;
       };
-    add(new T.BoxGeometry(1.5, 0.1, 0.9), wood, -0.5, 0.52, 0);
-    for (const z of [0.44, -0.44]) add(new T.BoxGeometry(1.5, 0.3, 0.05), wood, -0.5, 0.7, z);
-    add(new T.BoxGeometry(0.05, 0.3, 0.9), wood, -1.24, 0.7, 0);
-    const cover = add(new T.CylinderGeometry(0.5, 0.5, 1.1, 14, 1, false, 0, Math.PI), canvas, -0.32, 0.82, 0);
-    cover.rotation.set(0, 0, Math.PI / 2);
-    cover.rotation.order = "ZYX";
-    cover.rotation.y = Math.PI / 2;
-    const heap = new T.Group();
-    for (let k = 0; k < 7; k++) add(new T.SphereGeometry(0.11, 10, 8), gold, -1.05 + (k % 3) * 0.1, 0.86 + Math.floor(k / 3) * 0.1, -0.24 + (k % 4) * 0.16, heap);
+    add(new T.BoxGeometry(1.5, 0.1, 0.9), boards, -0.5, 0.52, 0);
+    for (const z of [0.44, -0.44]) add(new T.BoxGeometry(1.5, 0.3, 0.05), boards, -0.5, 0.7, z);
+    add(new T.BoxGeometry(0.05, 0.3, 0.9), boards, -1.24, 0.7, 0);
+    add(new T.BoxGeometry(1.56, 0.05, 0.06), dark, -0.5, 0.86, 0.45);
+    const cover = new T.Group();
+    const hoop = add(new T.CylinderGeometry(0.5, 0.5, 1.1, 18, 1, true, 0, Math.PI), canvasCloth, -0.32, 0.82, 0, cover);
+    hoop.rotation.set(0, 0, Math.PI / 2);
+    hoop.rotation.order = "ZYX";
+    hoop.rotation.y = Math.PI / 2;
+    // Ribs over the canvas.
+    for (const x of [-0.82, -0.32, 0.18]) {
+      const rib = add(new T.TorusGeometry(0.505, 0.018, 5, 16, Math.PI), wood, x + 0.05, 0.82, 0, cover);
+      rib.rotation.y = Math.PI / 2;
+    }
+    group.add(cover);
+    // The gold at its tail: a heap of coins and pouches, catching the light.
+    const heap = new T.Group(),
+      coin = own(new T.CylinderGeometry(0.07, 0.07, 0.02, 14)),
+      random = stream(29);
+    for (let k = 0; k < 22; k++) {
+      const c = new T.Mesh(coin, gold);
+      c.position.set(-1.1 + random() * 0.24, 0.62 + random() * 0.25, -0.34 + random() * 0.68);
+      c.rotation.set(random() * 3, random() * 3, random() * 3);
+      heap.add(c);
+    }
+    for (let k = 0; k < 3; k++) add(new T.SphereGeometry(0.11, 12, 10), m("#9c6b3c", 0.95), -1.0, 0.72, -0.25 + k * 0.25, heap);
+    const shine = new T.Sprite(own(new T.SpriteMaterial({ map: glint(own, 64), color: "#fff0b0", transparent: true, depthWrite: false, blending: T.AdditiveBlending })));
+    shine.position.set(-1.05, 0.95, 0.35);
+    shine.scale.setScalar(0.5);
+    heap.add(shine);
     group.add(heap);
     const wheels = [0.5, -0.5].map((z) => {
       const wheel = new T.Group();
       wheel.position.set(-0.5, 0.38, z);
-      const rim = add(new T.TorusGeometry(0.34, 0.045, 8, 22), dark, 0, 0, 0, wheel);
-      rim.castShadow = true;
-      for (let k = 0; k < 3; k++) add(new T.BoxGeometry(0.62, 0.05, 0.04), wood, 0, 0, 0, wheel).rotation.z = (k * Math.PI) / 3;
+      add(new T.TorusGeometry(0.34, 0.04, 8, 28), wood, 0, 0, 0, wheel);
+      add(new T.TorusGeometry(0.365, 0.018, 6, 28), iron, 0, 0, 0, wheel);
+      for (let k = 0; k < 4; k++) add(new T.BoxGeometry(0.64, 0.04, 0.035), wood, 0, 0, 0, wheel).rotation.z = (k * Math.PI) / 4;
+      add(new T.CylinderGeometry(0.07, 0.07, 0.1, 12), dark, 0, 0, 0, wheel).rotation.x = Math.PI / 2;
+      add(new T.CylinderGeometry(0.035, 0.035, 0.12, 8), iron, 0, 0, z > 0 ? 0.03 : -0.03, wheel).rotation.x = Math.PI / 2;
       group.add(wheel);
       return wheel;
     });
-    // The pole and the ox.
+    // The pole, the yoke and the ox: a deep body, a paler belly, a broad head with a muzzle and curved horns, a tail.
     add(new T.BoxGeometry(0.9, 0.05, 0.05), wood, 0.55, 0.52, 0);
-    add(new T.BoxGeometry(0.85, 0.46, 0.42), hide, 0.95, 0.68, 0);
-    add(new T.BoxGeometry(0.3, 0.3, 0.3), hide, 1.5, 0.78, 0);
-    add(new T.BoxGeometry(0.12, 0.12, 0.22), m("#e8d0b0"), 1.67, 0.72, 0);
-    for (const z of [0.13, -0.13]) add(new T.ConeGeometry(0.035, 0.18, 6), m("#f4eedd"), 1.5, 1.0, z).rotation.x = z > 0 ? 0.5 : -0.5;
+    const body = add(new T.CapsuleGeometry(0.24, 0.5, 6, 14), hide, 0.95, 0.7, 0);
+    body.rotation.z = Math.PI / 2;
+    body.scale.set(1, 1, 0.85);
+    const under = add(new T.CapsuleGeometry(0.18, 0.4, 6, 12), belly, 0.95, 0.6, 0);
+    under.rotation.z = Math.PI / 2;
+    under.scale.set(1, 1, 0.8);
+    add(new T.SphereGeometry(0.2, 14, 12), hide, 1.3, 0.82, 0).scale.set(1, 1.1, 0.9);
+    const head = add(new T.SphereGeometry(0.16, 14, 12), hide, 1.53, 0.8, 0);
+    head.scale.set(1.15, 1, 0.9);
+    add(new T.SphereGeometry(0.1, 12, 10), m("#e8cfae", 0.8), 1.68, 0.72, 0).scale.set(1, 0.8, 1.1);
+    for (const z of [0.06, -0.06]) add(new T.SphereGeometry(0.018, 6, 6), dark, 1.76, 0.73, z);
+    for (const z of [0.09, -0.09]) add(new T.SphereGeometry(0.022, 8, 6), dark, 1.6, 0.86, z);
+    for (const s of [1, -1]) {
+      const h = add(new T.TorusGeometry(0.11, 0.022, 6, 12, Math.PI * 0.7), horn, 1.5, 0.98, s * 0.08);
+      h.rotation.set(s * 0.3, s > 0 ? 0 : Math.PI, 0.4);
+      const ear = add(new T.SphereGeometry(0.05, 8, 6), hide, 1.46, 0.9, s * 0.15);
+      ear.scale.set(0.6, 0.4, 1.2);
+    }
+    // The yoke over its neck, and the bell under it.
+    add(new T.BoxGeometry(0.08, 0.06, 0.6), wood, 1.3, 1.0, 0);
+    add(new T.SphereGeometry(0.06, 10, 8), gold, 1.36, 0.55, 0);
+    const tail = add(new T.CylinderGeometry(0.015, 0.02, 0.4, 5), hide, 0.6, 0.62, 0);
+    tail.rotation.z = -0.4;
     const legs = [
-      [0.64, 0.14],
-      [0.64, -0.14],
-      [1.26, 0.14],
-      [1.26, -0.14],
-    ].map(([x, z]) => add(new T.BoxGeometry(0.1, 0.46, 0.1), hide, x, 0.23, z));
-    // A bell at its neck.
-    add(new T.SphereGeometry(0.06, 10, 8), gold, 1.4, 0.55, 0);
+      [0.72, 0.14],
+      [0.72, -0.14],
+      [1.2, 0.14],
+      [1.2, -0.14],
+    ].map(([x, z]) => {
+      const leg = new T.Group();
+      leg.position.set(x, 0.5, z);
+      add(new T.CylinderGeometry(0.055, 0.045, 0.44, 8), hide, 0, -0.22, 0, leg);
+      add(new T.CylinderGeometry(0.05, 0.055, 0.06, 8), dark, 0, -0.47, 0, leg);
+      group.add(leg);
+      return leg;
+    });
     group.visible = false;
     this.scene.add(group);
     return { group, wheels, cover, legs, heap };
@@ -472,7 +717,7 @@ export class GoldRaidView extends TableView<State> {
       pos = new Float32Array(n * 3).fill(-999),
       geometry = own(new T.BufferGeometry());
     geometry.setAttribute("position", new T.BufferAttribute(pos, 3));
-    const points = new T.Points(geometry, own(new T.PointsMaterial({ color: "#ffe066", size: 0.16, transparent: true, opacity: 0.95, depthWrite: false })));
+    const points = new T.Points(geometry, own(new T.PointsMaterial({ color: "#ffd860", map: glow(own, 64, 0.3), size: 0.22, transparent: true, opacity: 1, depthWrite: false, blending: T.AdditiveBlending })));
     points.frustumCulled = false;
     this.scene.add(points);
     return { points, pos, vel: new Float32Array(n * 3), life: new Float32Array(n), next: 0 };
@@ -494,53 +739,132 @@ export class GoldRaidView extends TableView<State> {
     if (this.lootParts[kind]) return this.lootParts[kind];
     const own: Own = (r) => this.own(r),
       m = (color: string, roughness = 0.5, extra: T.MeshStandardMaterialParameters = {}) => this.standard({ color, roughness, ...extra }),
-      gold = m("#ffcc33", 0.3, { emissive: "#8a6200", emissiveIntensity: 0.55 }),
+      gold = m("#ffcc33", 0.25, { metalness: 0.6, emissive: "#8a6200", emissiveIntensity: 0.5 }),
       at = (geometry: T.BufferGeometry, x: number, y: number, z: number, rx = 0, rz = 0) => {
         geometry.rotateX(rx);
         geometry.rotateZ(rz);
         geometry.translate(x, y, z);
         return own(geometry);
+      },
+      // A sphere pushed in and out a little: cloth that sags, a pot thrown by hand.
+      lumpy = (r: number, seed: number, rough: number) => {
+        const g = new T.SphereGeometry(r, 18, 14),
+          pos = g.getAttribute("position") as T.BufferAttribute,
+          p = new T.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          p.fromBufferAttribute(pos, i);
+          const u = p.clone().normalize(),
+            n = Math.sin(u.x * 4.1 + seed) * Math.sin(u.y * 3.3 + seed) * Math.sin(u.z * 4.7 + seed * 2) + 0.4 * Math.sin(u.x * 9 + u.z * 7);
+          p.multiplyScalar(1 + rough * n);
+          // Sagging: the bottom flattens on what it lies on.
+          if (p.y < -r * 0.55) p.y = -r * 0.55 - (p.y + r * 0.55) * 0.3;
+          pos.setXYZ(i, p.x, p.y, p.z);
+        }
+        g.computeVertexNormals();
+        return g;
       };
     let parts: { geometry: T.BufferGeometry; material: T.Material }[];
-    if (kind === "coin")
+    if (kind === "pouch") {
+      const burlap = m("#ffffff", 0.95, {
+          map: painted(own, 128, 128, (ctx) => {
+            ctx.fillStyle = "#9c6b3c";
+            ctx.fillRect(0, 0, 128, 128);
+            for (let y = 0; y < 128; y += 4)
+              for (let x = 0; x < 128; x += 4) {
+                ctx.fillStyle = (x / 4 + y / 4) % 2 ? "rgba(60,36,16,0.28)" : "rgba(220,170,110,0.22)";
+                ctx.fillRect(x, y, 3, 3);
+              }
+            const random = stream(5);
+            for (let k = 0; k < 10; k++) {
+              ctx.strokeStyle = "rgba(50,30,14,0.4)";
+              ctx.lineWidth = 2;
+              const x = random() * 128;
+              ctx.beginPath();
+              ctx.moveTo(x, 0);
+              ctx.quadraticCurveTo(x + 10, 64, x - 6, 128);
+              ctx.stroke();
+            }
+          }),
+        }),
+        rope = m("#d8b47a", 0.9),
+        neck = new T.CylinderGeometry(0.06, 0.12, 0.13, 12, 1, true),
+        pos = neck.getAttribute("position") as T.BufferAttribute;
+      // Gathered folds at the neck.
+      for (let i = 0; i < pos.count; i++) {
+        const a = Math.atan2(pos.getZ(i), pos.getX(i)),
+          f = 1 + 0.18 * Math.sin(a * 6);
+        pos.setXYZ(i, pos.getX(i) * f, pos.getY(i), pos.getZ(i) * f);
+      }
+      neck.computeVertexNormals();
       parts = [
-        { geometry: at(new T.CylinderGeometry(0.17, 0.17, 0.045, 20), 0, 0.06, 0, Math.PI / 2), material: gold },
-        { geometry: at(new T.CylinderGeometry(0.11, 0.11, 0.055, 16), 0, 0.06, 0, Math.PI / 2), material: m("#ffe27a", 0.3, { emissive: "#8a6200", emissiveIntensity: 0.4 }) },
+        { geometry: at(lumpy(0.2, 1.3, 0.08), 0, 0.1, 0), material: burlap },
+        { geometry: at(neck, 0, 0.3, 0), material: burlap },
+        { geometry: at(new T.TorusGeometry(0.075, 0.022, 6, 16), 0, 0.27, 0, Math.PI / 2), material: rope },
+        { geometry: at(new T.CylinderGeometry(0.012, 0.012, 0.16, 5), 0.07, 0.22, 0.05, 0.3, 0.6), material: rope },
+        { geometry: at(new T.CylinderGeometry(0.055, 0.055, 0.016, 16), -0.02, 0.38, 0.01, 0.5, 0.3), material: gold },
+        { geometry: at(new T.CylinderGeometry(0.05, 0.05, 0.016, 16), 0.04, 0.37, -0.02, -0.3, -0.4), material: gold },
+        { geometry: at(new T.CylinderGeometry(0.045, 0.045, 0.016, 16), 0.0, 0.4, -0.03, 1.2, 0.1), material: gold },
       ];
-    else if (kind === "pouch")
-      parts = [
-        { geometry: at(new T.SphereGeometry(0.2, 14, 10), 0, 0.1, 0), material: m("#9a6a3a", 0.9) },
-        { geometry: at(new T.CylinderGeometry(0.07, 0.11, 0.12, 10), 0, 0.3, 0), material: m("#9a6a3a", 0.9) },
-        { geometry: at(new T.TorusGeometry(0.08, 0.02, 6, 14), 0, 0.26, 0, Math.PI / 2), material: m("#3a2a1e") },
-        { geometry: at(new T.SphereGeometry(0.07, 10, 8), 0, 0.37, 0), material: gold },
-      ];
+    } else if (kind === "coin")
+      parts = [{ geometry: at(new T.CylinderGeometry(0.17, 0.17, 0.045, 20), 0, 0.06, 0, Math.PI / 2), material: gold }];
     else if (kind === "gem")
       parts = [{ geometry: at(new T.OctahedronGeometry(0.22), 0, 0.14, 0), material: m("#4ae0ff", 0.1, { emissive: "#0a8ab0", emissiveIntensity: 0.9, flatShading: true }) }];
     else if (kind === "chest")
       parts = [
         { geometry: at(new T.BoxGeometry(0.62, 0.32, 0.42), 0, 0.06, 0), material: m("#7a4a26", 0.8) },
-        { geometry: at(new T.CylinderGeometry(0.21, 0.21, 0.62, 14, 1, false, 0, Math.PI), 0, 0.22, 0, 0, Math.PI / 2), material: m("#8a5630", 0.8) },
         { geometry: at(new T.BoxGeometry(0.07, 0.56, 0.44), -0.2, 0.14, 0), material: gold },
         { geometry: at(new T.BoxGeometry(0.07, 0.56, 0.44), 0.2, 0.14, 0), material: gold },
-        { geometry: at(new T.BoxGeometry(0.12, 0.12, 0.05), 0, 0.2, 0.22), material: gold },
       ];
-    else
+    else if (kind === "pot")
+      // A fire pot: a clay pot with a rope handle (its flame is the piece's own).
       parts = [
-        { geometry: at(new T.SphereGeometry(0.22, 16, 12), 0, 0.12, 0), material: kind === "pot" ? m("#b0562e", 0.8) : m("#1c1c22", 0.35) },
-        { geometry: at(new T.CylinderGeometry(0.05, 0.07, 0.08, 8), 0, 0.36, 0), material: m("#5a5a62", 0.5) },
-        { geometry: at(new T.SphereGeometry(0.07, 8, 6), 0.03, 0.46, 0), material: own(new T.MeshBasicMaterial({ color: "#ff8a2a" })) },
+        { geometry: at(lumpy(0.2, 3.1, 0.05), 0, 0.12, 0), material: m("#b0562e", 0.85) },
+        { geometry: at(new T.CylinderGeometry(0.09, 0.12, 0.1, 12, 1, true), 0, 0.3, 0), material: m("#9a4824", 0.85) },
+        { geometry: at(new T.TorusGeometry(0.1, 0.018, 6, 14), 0, 0.33, 0, Math.PI / 2), material: m("#3a2a1e") },
       ];
+    else {
+      // A bomb: a black iron ball with a riveted band, a cap and a curled fuse (its spark is the piece's own).
+      const fuse = new T.TubeGeometry(new T.CatmullRomCurve3([new T.Vector3(0, 0.36, 0), new T.Vector3(0.03, 0.43, 0), new T.Vector3(0.09, 0.47, 0), new T.Vector3(0.13, 0.44, 0)]), 10, 0.014, 5),
+        iron = m("#22232a", 0.35, { metalness: 0.65 });
+      parts = [
+        { geometry: at(new T.SphereGeometry(0.22, 20, 16), 0, 0.12, 0), material: iron },
+        { geometry: at(new T.TorusGeometry(0.222, 0.018, 6, 28), 0, 0.12, 0, Math.PI / 2), material: m("#4a4a52", 0.4, { metalness: 0.7 }) },
+        { geometry: at(new T.CylinderGeometry(0.06, 0.075, 0.08, 10), 0, 0.35, 0), material: m("#5a5a62", 0.45, { metalness: 0.6 }) },
+        { geometry: own(fuse), material: m("#c8a46a", 0.9) },
+      ];
+    }
     return (this.lootParts[kind] = parts);
   }
+  /** The shared sprites of the loot: the gold's glint, and a fuse's spark (or a fire pot's flame). */
+  private lootSprites: { glint: T.SpriteMaterial; spark: T.SpriteMaterial } | null = null;
   private makeLoot(item: Loot) {
-    const group = new T.Group();
-    for (const p of this.partsOf(item.pot ? "pot" : item.kind)) {
+    const group = new T.Group(),
+      kind = item.pot ? "pot" : item.kind;
+    for (const p of this.partsOf(kind)) {
       const mesh = new T.Mesh(p.geometry, p.material);
       mesh.castShadow = true;
       group.add(mesh);
     }
+    if (!this.lootSprites) {
+      const own: Own = (r) => this.own(r);
+      this.lootSprites = {
+        glint: own(new T.SpriteMaterial({ map: glint(own, 64), color: "#fff2c0", transparent: true, depthWrite: false, blending: T.AdditiveBlending })),
+        spark: own(new T.SpriteMaterial({ map: glow(own, 64, 0.25), color: "#ffb040", transparent: true, depthWrite: false, blending: T.AdditiveBlending })),
+      };
+    }
+    let glints: T.Sprite | null = null,
+      spark: T.Sprite | null = null;
+    if (kind === "pouch" || kind === "coin" || kind === "gem" || kind === "chest") {
+      glints = new T.Sprite(this.lootSprites.glint);
+      glints.position.set(0.04, 0.4, 0.12);
+      group.add(glints);
+    } else {
+      spark = new T.Sprite(this.lootSprites.spark);
+      spark.position.set(kind === "pot" ? 0 : 0.13, kind === "pot" ? 0.42 : 0.45, 0.02);
+      group.add(spark);
+    }
     this.scene.add(group);
-    return group;
+    return { group, glints, spark };
   }
   /** A number or a word that rises from a place in the valley and fades. */
   private pop(text: string, x: number, y: number, cls = "") {
@@ -578,6 +902,8 @@ export class GoldRaidView extends TableView<State> {
       if (e.kind === "jump") {
         c.jumps[e.side]++;
         knock("jump");
+        const j = world.bandits[e.side];
+        this.fx.emit("dust", j.x, j.y + 0.04, 0.45, 3, { speed: 0.9, up: 0.15, size: 0.28, life: 0.45 });
       } else if (e.kind === "swing") {
         c.swings[e.side]++;
         knock("swing");
@@ -585,12 +911,14 @@ export class GoldRaidView extends TableView<State> {
         c.pickups[e.side]++;
         knock(e.what === "chest" ? "chest" : e.what === "gem" ? "gem" : "coin", Math.min(1, 0.4 + e.value / 8));
         this.sparkle(e.x, e.y + 0.2, 4 + Math.min(10, e.value * 2), 2.4);
+        this.fx.emit("glint", e.x, e.y + 0.5, 0.7, 3, { speed: 1.6, up: 1.5, size: 0.45, life: 0.5 });
         this.pop(`+${e.value}`, e.x, e.y + 0.7, `gr-s${e.side}`);
       } else if (e.kind === "deposit") {
         c.deposits[e.side]++;
         knock("deposit", Math.min(1, 0.5 + e.amount / 20));
         this.flashed[e.side] = performance.now();
         this.sparkle(gateOf(e.side), 1, 10 + e.amount, 4);
+        this.fx.emit("glint", gateOf(e.side), 1.4, 0.7, 4 + Math.min(8, e.amount / 2), { speed: 2.4, up: 2.2, size: 0.55, life: 0.7 });
         this.pop(`금화 +${e.amount}`, gateOf(e.side), 2.6, `gr-big gr-s${e.side}`);
         this.onMove(depositMove(e.side, e.amount));
       } else if (e.kind === "hit") {
@@ -598,6 +926,8 @@ export class GoldRaidView extends TableView<State> {
         knock("hit");
         const o = world.bandits[e.on];
         this.sparkle(o.x, o.y + 0.9, 8, 3);
+        this.fx.emit("star", o.x, o.y + 1.2, 0.8, 4, { speed: 2.2, up: 1.2, size: 0.5, life: 0.5 });
+        this.fx.emit("dust", o.x, o.y + 0.1, 0.5, 4, { speed: 1.2, up: 0.4, size: 0.35, life: 0.6 });
         if (e.dropped > 0) this.say("강탈!", SIDE_COLORS[e.by]);
       } else if (e.kind === "boom") {
         c.booms++;
@@ -607,6 +937,14 @@ export class GoldRaidView extends TableView<State> {
         blast.age = 0;
         blast.mesh.position.set(e.x, e.y + 0.2, 0.5);
         blast.mesh.visible = true;
+        // Fire, smoke rolling up, and bits thrown about; on a graphics card the flash lights the valley round it.
+        this.fx.emit("fire", e.x, e.y + 0.35, 0.6, 9, { speed: 2.4, up: 1.2, size: 0.7, grow: 1.8, life: 0.4 });
+        this.fx.emit("smoke", e.x, e.y + 0.5, 0.4, 9, { speed: 1.4, up: 1.2, size: 0.6, grow: 2.6, life: 1.4 });
+        this.fx.emit("chip", e.x, e.y + 0.3, 0.6, 8, { speed: 4, up: 3, size: 0.09, life: 0.9 });
+        if (this.flash) {
+          this.flash.position.set(e.x, e.y + 0.8, 1.2);
+          this.flashed_at = performance.now();
+        }
       } else if (e.kind === "drop") {
         if (e.what === "chest") {
           knock("fall");
@@ -619,9 +957,13 @@ export class GoldRaidView extends TableView<State> {
       } else if (e.kind === "shed") {
         knock("shed");
         this.sparkle(e.x, 1, 8, 3);
+        this.fx.emit("chip", e.x, 0.9, 0.2, 3, { speed: 2.5, up: 2, size: 0.07, life: 0.7 });
       } else if (e.kind === "broken") {
         knock("broken");
         this.sparkle(e.x, 1, 26, 5);
+        this.fx.emit("dust", e.x, 0.4, 0.2, 10, { speed: 2, up: 0.8, size: 0.6, life: 1 });
+        this.fx.emit("chip", e.x, 0.9, 0.2, 10, { speed: 4, up: 3, size: 0.1, life: 1 });
+        this.fx.emit("glint", e.x, 1, 0.5, 6, { speed: 3, up: 2.5, size: 0.5, life: 0.7 });
         this.say("수레가 부서졌다!", "#ffe14a");
       } else if (e.kind === "raid") {
         c.raids++;
@@ -649,11 +991,26 @@ export class GoldRaidView extends TableView<State> {
   }
   /** A bandit's figure where the valley has it: its run, its jump, its swing, its sack, its daze. */
   private poseBandit(f: Figure, b: Bandit, t: number, moving: boolean, depth: number) {
-    f.group.position.set(b.x, b.y, depth);
-    f.group.scale.set(b.face * DRAWN, DRAWN, DRAWN);
     const stunned = b.stun > 0,
       running = b.ground && Math.abs(b.vx) > 0.4,
       phase = b.stride * 5.2;
+    // Coming down it squashes a moment and kicks up dust; going up it stretches a little.
+    if (!b.ground) f.air = true;
+    else if (f.air) {
+      f.air = false;
+      f.landed = t;
+      if (moving) this.fx.emit("dust", b.x, b.y + 0.05, depth, 5, { speed: 1.4, up: 0.3, size: 0.32, life: 0.55 });
+    }
+    const since = t - f.landed,
+      squash = since < 0.2 ? Math.sin((since / 0.2) * Math.PI) * 0.14 : 0,
+      stretch = !b.ground && b.vy > 1 ? Math.min(0.07, b.vy * 0.012) : 0;
+    f.group.position.set(b.x, b.y, depth);
+    f.group.scale.set(b.face * DRAWN * (1 + squash * 0.6 - stretch * 0.5), DRAWN * (1 - squash + stretch), DRAWN * (1 + squash * 0.6));
+    // Running feet throw a little dust behind.
+    if (moving && running && t - f.puffed > 0.24) {
+      f.puffed = t;
+      this.fx.emit("dust", b.x - b.face * 0.15, 0.06 + b.y, depth - 0.05, 1, { speed: 0.5, up: 0.25, size: 0.2, life: 0.45, way: -b.face * 0.4 });
+    }
     f.legs[0].rotation.z = !b.ground ? 0.55 : running ? Math.sin(phase) * 0.8 : 0;
     f.legs[1].rotation.z = !b.ground ? -0.45 : running ? -Math.sin(phase) * 0.8 : 0;
     f.lean.position.y = running ? Math.abs(Math.sin(phase)) * 0.05 : 0;
@@ -662,6 +1019,11 @@ export class GoldRaidView extends TableView<State> {
     // The club: at rest held forward and down; a swing raises it over the head and brings it down.
     const p = b.swing < 0 ? -1 : b.swing / SWING;
     f.arm.rotation.z = p < 0 ? 0.85 + (running ? Math.sin(phase) * 0.25 : 0) : p < 0.3 ? lerp(0.85, 3.2, p / 0.3) : lerp(3.2, 1.0, (p - 0.3) / 0.7);
+    // The other arm swings against the legs; in the air both are thrown up a little; dazed it hangs.
+    f.back.rotation.z = stunned ? -0.2 : !b.ground ? -1.1 : running ? -Math.sin(phase) * 0.9 : Math.sin(t * 1.7) * 0.05;
+    // The cape streams back with speed and in the air, and flutters.
+    const speed = Math.min(1, Math.abs(b.vx) / 2.8);
+    f.cape.rotation.z = -(0.08 + speed * 0.5 + (b.ground ? 0 : 0.35) + Math.sin(t * (6 + speed * 8)) * (0.03 + speed * 0.06));
     const full = b.carry / CAP,
       size = 0.14 + 0.2 * Math.sqrt(full);
     f.sack.scale.set(size, size * 1.12, size);
@@ -686,7 +1048,10 @@ export class GoldRaidView extends TableView<State> {
     for (const item of world.loot) {
       alive.add(item.id);
       let held = this.lootMeshes.get(item.id);
-      if (!held) this.lootMeshes.set(item.id, (held = { item, mesh: this.makeLoot(item), kind: item.kind }));
+      if (!held) {
+        const made = this.makeLoot(item);
+        this.lootMeshes.set(item.id, (held = { item, mesh: made.group, kind: item.kind, glints: made.glints, spark: made.spark }));
+      }
       const g = held.mesh,
         lit = item.kind === "bomb";
       g.position.set(item.x, item.y - 0.12, 0.34 + (item.id % 5) * 0.03);
@@ -697,7 +1062,23 @@ export class GoldRaidView extends TableView<State> {
       const fading = !lit && item.rest && item.age > LOOT_LIFE - 3;
       g.visible = !fading || Math.floor(t * 8) % 2 === 0;
       const swell = lit && item.rest ? 1 + 0.25 * (item.age / FUSE) * (0.5 + 0.5 * Math.sin(t * (18 + 30 * (item.age / FUSE)))) : 1;
-      g.scale.setScalar(swell * (item.kind === "chest" ? 1.15 : 1));
+      // A pouch spilled with less than a full three in it is smaller.
+      g.scale.setScalar(swell * (item.kind === "chest" ? 1.15 : item.kind === "pouch" ? 0.7 + 0.3 * Math.min(1, item.value / 3) : 1));
+      // Gold catches the sun now and then; a fuse sparks (hotter once it burns), a fire pot flames.
+      if (held.glints) {
+        const w = Math.max(0, Math.sin(t * 2.3 + item.id * 1.7));
+        held.glints.scale.setScalar(0.05 + 0.5 * Math.pow(w, 6));
+        held.glints.material.rotation = t * 0.8;
+      }
+      if (held.spark) {
+        const burning = item.pot || item.rest,
+          f = 0.75 + 0.25 * Math.sin(t * 40 + item.id) * Math.sin(t * 23);
+        held.spark.scale.setScalar((burning ? (item.pot ? 0.55 : 0.34) : 0.16) * f);
+        if (burning && dt > 0 && Math.random() < dt * (item.pot ? 10 : 6)) {
+          const tip = held.spark.getWorldPosition(this.tip);
+          this.fx.emit(item.pot ? "fire" : "glint", tip.x, tip.y, tip.z, 1, { speed: 0.6, up: 0.6, size: item.pot ? 0.22 : 0.12, life: 0.35 });
+        }
+      }
     }
     for (const [id, held] of this.lootMeshes)
       if (!alive.has(id)) {
@@ -728,7 +1109,6 @@ export class GoldRaidView extends TableView<State> {
       castle.gauge.scale.y = tall;
       castle.gauge.position.y = 1.2 + tall / 2;
       castle.windows.forEach((w, k) => w.color.set(share >= (k + 1) / 4 ? "#ffd86a" : "#3a3028"));
-      castle.flag.rotation.y = Math.sin(t * 2.4 + side) * 0.35;
       const since = (now - this.flashed[side]) / 1000;
       (castle.ring.material as T.MeshBasicMaterial).opacity = since < 0.6 ? 1 : world.bandits[side].carry > 0 ? 0.55 + 0.3 * Math.sin(t * 6) : 0.4;
       castle.ring.scale.setScalar(since < 0.6 ? 1 + 0.5 * (since / 0.6) : 1);
@@ -737,6 +1117,17 @@ export class GoldRaidView extends TableView<State> {
       arrow.position.y = 2.75 + Math.sin(t * 5) * 0.14;
       arrow.rotation.y = t * 2;
     });
+    this.valley.tick(t, dt);
+    this.fx.update(dt);
+    if (this.flash) {
+      const since = (now - this.flashed_at) / 1000;
+      this.flash.intensity = since < 0.35 ? 40 * (1 - since / 0.35) : 0;
+    }
+    // The cart's wheels throw a little dust as it rolls.
+    if (cart && cart.broken < 0 && dt > 0 && t - this.cartDust > 0.3) {
+      this.cartDust = t;
+      this.fx.emit("dust", cart.x - cart.dir * 0.5, 0.06, -0.0, 1, { speed: 0.4, up: 0.2, size: 0.3, life: 0.6, way: -cart.dir * 0.3 });
+    }
     this.valley.clouds.forEach((cloud, k) => {
       cloud.position.x += dt * (0.12 + k * 0.03);
       if (cloud.position.x > CLOUDS) cloud.position.x = -CLOUDS;
