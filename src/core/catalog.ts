@@ -888,6 +888,14 @@ export const allGames = [
     icon: "♛",
     available: true,
   },
+  {
+    name: "러시안 룰렛",
+    en: "RUSSIAN ROULETTE",
+    category: "보드게임",
+    players: "2인용",
+    icon: "✺",
+    available: true,
+  },
 ];
 
 /**
