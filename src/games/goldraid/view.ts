@@ -48,7 +48,7 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const DRAWN = 1.22;
 
 /**
- * 금화 쟁탈전: the valley of `valley.ts` seen from the side, two bandit kings (jointed figures with a crown, a club and
+ * 금화 쟁탈전: the valley of `valley.ts` seen from the side, two bandit kings (jointed figures with a crown, a sword and
  * a sack that swells as it fills), the loot that falls (coins, pouches, gems, chests, bombs), the merchant's ox cart,
  * and the two castles whose towers fill with gold. The view steps the valley in real time (`sim.ts`) and reports
  * deposits, robberies and the clock's end as moves; a board over the canvas shows both treasuries and sacks.
@@ -337,7 +337,7 @@ export class GoldRaidView extends TableView<State> {
     stick.classList.toggle("gr-go-r", run > 0);
     stick.classList.toggle("gr-go-u", y > LEVER_JUMP);
   }
-  /** A bandit king: boots and legs, a tunic in its side's colour, a bearded head under a gold crown, a club and a sack. */
+  /** A bandit king: boots and legs, a tunic in its side's colour, a bearded head under a gold crown, a sword and a sack. */
   private makeFigure(own: Own, side: 0 | 1): Figure {
     const m = (color: string, roughness = 0.7, extra: T.MeshStandardMaterialParameters = {}) => this.standard({ color, roughness, ...extra }),
       colour = new T.Color(SIDE_COLORS[side]),
@@ -492,22 +492,27 @@ export class GoldRaidView extends TableView<State> {
     part(cyl, ermine, 0, -0.26, 0, 0.065, 0.03, 0.065, back);
     part(ball, skin, 0, -0.3, 0, 0.06, 0.06, 0.06, back);
     lean.add(back);
-    // The club arm, toward the eye: a knotty club bound with leather, iron studs in its head.
+    // The sword arm, toward the eye (the user asked for a sword in place of the club): a gold pommel over a grip bound in
+    // leather, a gold crossguard, a long bright blade with a dark fuller down its middle and a pointed tip.
     const arm = new T.Group();
     arm.position.set(0.02, 0.92, 0.22);
     part(own(new T.SphereGeometry(1, 12, 10)), sleeve, 0, 0, 0, 0.085, 0.085, 0.085, arm);
     part(cyl, sleeve, 0, -0.14, 0, 0.065, 0.28, 0.065, arm);
     part(cyl, ermine, 0, -0.27, 0, 0.07, 0.03, 0.07, arm);
     part(ball, skin, 0, -0.3, 0, 0.065, 0.065, 0.065, arm);
-    part(own(new T.CylinderGeometry(0.08, 0.035, 0.58, 10)), wood, 0, -0.57, 0, 1, 1, 1, arm);
-    for (const y of [-0.38, -0.44]) part(cyl, leather, 0, y, 0, 0.045, 0.025, 0.045, arm);
-    const stud = own(new T.ConeGeometry(0.018, 0.05, 5));
-    for (let k = 0; k < 8; k++) {
-      const a = (k / 8) * Math.PI * 2,
-        y = -0.7 + (k % 2) * 0.1,
-        s = part(stud, steel, Math.cos(a) * 0.072, y, Math.sin(a) * 0.072, 1, 1, 1, arm);
-      s.rotation.set(Math.sin(a) * (Math.PI / 2), 0, -Math.cos(a) * (Math.PI / 2));
-    }
+    const blade = m("#e8edf5", 0.22, { metalness: 0.6, emissive: "#6a7484", emissiveIntensity: 0.45 }),
+      fuller = m("#8d96a6", 0.3, { metalness: 0.8 });
+    part(ball, gold, 0, -0.22, 0, 0.035, 0.035, 0.035, arm);
+    part(cyl, leather, 0, -0.33, 0, 0.026, 0.17, 0.026, arm);
+    for (const y of [-0.28, -0.33, -0.38]) part(cyl, wood, 0, y, 0, 0.029, 0.012, 0.029, arm);
+    part(own(new T.BoxGeometry(1, 1, 1)), gold, 0, -0.43, 0, 0.22, 0.04, 0.05, arm);
+    for (const x of [-0.11, 0.11]) part(ball, gold, x, -0.43, 0, 0.028, 0.028, 0.028, arm);
+    // The blade's flat faces the eye (the swing turns it in the picture's plane).
+    part(own(new T.BoxGeometry(1, 1, 1)), blade, 0, -0.76, 0, 0.085, 0.62, 0.018, arm);
+    part(own(new T.BoxGeometry(1, 1, 1)), fuller, 0, -0.72, 0, 0.018, 0.46, 0.022, arm);
+    const tip = part(own(new T.ConeGeometry(0.053, 0.13, 4)), blade, 0, -1.13, 0, 1, 1, 1, arm);
+    tip.rotation.set(Math.PI, Math.PI / 4, 0);
+    tip.scale.set(0.85, 1, 0.24);
     lean.add(arm);
     // Stars round its head while it is stunned.
     const stars = new T.Group(),
@@ -1016,7 +1021,7 @@ export class GoldRaidView extends TableView<State> {
     f.lean.position.y = running ? Math.abs(Math.sin(phase)) * 0.05 : 0;
     // A heavy sack bows it forward (and slows it: `runOf`).
     f.lean.rotation.z = stunned ? 0.55 + Math.sin(t * 20) * 0.08 : (running ? -0.12 : 0) - 0.16 * (b.carry / CAP);
-    // The club: at rest held forward and down; a swing raises it over the head and brings it down.
+    // The sword: at rest held forward and down; a swing raises it over the head and brings it down.
     const p = b.swing < 0 ? -1 : b.swing / SWING;
     f.arm.rotation.z = p < 0 ? 0.85 + (running ? Math.sin(phase) * 0.25 : 0) : p < 0.3 ? lerp(0.85, 3.2, p / 0.3) : lerp(3.2, 1.0, (p - 0.3) / 0.7);
     // The other arm swings against the legs; in the air both are thrown up a little; dazed it hangs.

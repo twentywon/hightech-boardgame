@@ -14,7 +14,7 @@ export const goldRaidConfig: PointConfig<State> = {
   noPanel: true,
   view: (host, quality, _variant, mode, level) => new GoldRaidView(host, quality, mode === "local", level),
   colors: GOLD_RAID_COLORS,
-  // Coins and gems taken, a chest, gold poured into the treasury, the club through the air and on a head, a bomb, the
+  // Coins and gems taken, a chest, gold poured into the treasury, the sword through the air and on a head, a bomb, the
   // cart's bells and its boards breaking, the blow on a gate.
   knock: ((sound, kind: string, strength) => {
     if (kind === "coin") sound.coin(strength);
@@ -29,6 +29,8 @@ export const goldRaidConfig: PointConfig<State> = {
     } else if (kind === "jump") sound.hop();
     else if (kind === "swing") sound.swish();
     else if (kind === "hit") {
+      // The sword's blow: a ring of steel over the knock (the user asked for a sword in place of the club).
+      sound.postRing(Math.min(1, 0.5 + strength * 0.5));
       sound.bonk();
       sound.chips();
     } else if (kind === "boom") sound.explosion();
@@ -59,7 +61,7 @@ export const goldRaidConfig: PointConfig<State> = {
   name: "금화 쟁탈전",
   english: "Gold Raid",
   number: "NO. 113 — FILL YOUR CASTLE",
-  intro: `<p>두 산적 왕이 골짜기에서 금화를 다툽니다.<br>하늘에서 떨어지는 돈주머니를 자루에 담아 내 성문으로 나르세요. 지나가는 대상의 수레를 털고, 상대를 몽둥이로 쳐서 금화를 떨어뜨리게 할 수도 있습니다. 내 성을 먼저 채우면 이깁니다.</p>`,
+  intro: `<p>두 산적 왕이 골짜기에서 금화를 다툽니다.<br>하늘에서 떨어지는 돈주머니를 자루에 담아 내 성문으로 나르세요. 지나가는 대상의 수레를 털고, 상대를 검으로 쳐서 금화를 떨어뜨리게 할 수도 있습니다. 내 성을 먼저 채우면 이깁니다.</p>`,
   meta: "컴퓨터 대전 · 로컬 2인 · 실시간",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FILL YOUR CASTLE</span>`,
   artClass: "foosball-art",
@@ -88,9 +90,9 @@ export const goldRaidConfig: PointConfig<State> = {
       ),
     ) +
     part(
-      "몽둥이",
+      "검",
       table(
-        ["상대를 치기", `가까이서 치면 상대가 잠깐 기절하고 자루의 ${percent(DROP_SHARE)}를 길에 흘립니다('강탈!'). 흘린 금화는 먼저 줍는 사람이 임자입니다. 쓰러져 있는 동안은 다시 맞지 않고 폭탄에도 휘말리지 않지만, 일어나면 곧바로 다시 맞을 수 있습니다. 대신 친 쪽은 몽둥이를 다시 들기까지 상대가 일어나는 것보다 조금 더 걸립니다.`],
+        ["상대를 치기", `가까이서 치면 상대가 잠깐 기절하고 자루의 ${percent(DROP_SHARE)}를 길에 흘립니다('강탈!'). 흘린 금화는 먼저 줍는 사람이 임자입니다. 쓰러져 있는 동안은 다시 맞지 않고 폭탄에도 휘말리지 않지만, 일어나면 곧바로 다시 맞을 수 있습니다. 대신 친 쪽은 검을 다시 휘두르기까지 상대가 일어나는 것보다 조금 더 걸립니다.`],
         ["대상의 수레", `가끔 '대상 행렬!'과 함께 방울 소리를 내며 소 수레가 길을 지나갑니다. 한 판 동안 수레는 늘 같은 쪽 끝에서 옵니다(어느 쪽인지는 판마다 정해짐). 금화 ${CART.gold}을 싣고 있고, 한 번 칠 때마다 ${CART.shed}씩 떨어집니다. ${CART.blows}번 치면 수레가 부서져 남은 금화가 모두 쏟아집니다.`],
         ["상대의 성문", `상대 성문을 치면 금고에서 금화 ${RAID}을 꺼내 옵니다('성문 습격!'). 대신 성에서 불단지가 떨어지니 얼른 피하세요. 성문은 잠시 잠깁니다.`],
       ),
@@ -112,8 +114,8 @@ export const goldRaidConfig: PointConfig<State> = {
       table(
         ["컴퓨터 대전", "내가 빨강, 컴퓨터가 파랑입니다."],
         ["로컬 2인", "한 화면(한 키보드, 또는 한 휴대폰의 양쪽 버튼)에서 둘이 겨룹니다."],
-        ["쉬움", "컴퓨터가 느리게 반응하고 폭탄을 잘 피하지 못합니다. 내 자루에 금화가 있으면 줍기보다 먼저 쫓아와 몽둥이로 칩니다."],
-        ["보통", "내 자루에 금화가 있으면 어디서든 먼저 쫓아와 몽둥이로 치고, 흘린 금화를 주워 갑니다. 발판에 올라가 줍고 폭탄을 피합니다."],
+        ["쉬움", "컴퓨터가 느리게 반응하고 폭탄을 잘 피하지 못합니다. 내 자루에 금화가 있으면 줍기보다 먼저 쫓아와 검으로 칩니다."],
+        ["보통", "내 자루에 금화가 있으면 어디서든 먼저 쫓아와 검으로 치고, 흘린 금화를 주워 갑니다. 발판에 올라가 줍고 폭탄을 피합니다."],
         ["어려움", "빠르게 쫓아와 내 자루를 털고, 수레를 쫓으며, 내 금고가 차면 성문을 습격하기도 합니다."],
       ),
     ) +
