@@ -22,7 +22,11 @@ export interface Castle {
 export interface Valley {
   castles: [Castle, Castle];
   clouds: T.Mesh[];
+  /** The sun and its glow: as far as the sky, it goes along with the eye (the view sets it across). */
+  sun: T.Group;
 }
+/** How far either way the scenery goes (the view never looks past the castles' backs). */
+const SCENERY = GATE + 8;
 /** How tall the gold stands in a tower's slit when the castle is full. */
 export const GAUGE_TALL = 3.1;
 const lambert = (own: Own, options: T.MeshLambertMaterialParameters) => own(new T.MeshLambertMaterial(options));
@@ -89,16 +93,18 @@ function ridge(own: Own, seed: number, span: number, low: number, high: number, 
   shape.closePath();
   return new T.Mesh(own(new T.ShapeGeometry(shape)), basic(own, { color: colour }));
 }
-function backdrop(own: Own, scene: T.Scene): T.Mesh[] {
+function backdrop(own: Own, scene: T.Scene): { clouds: T.Mesh[]; sun: T.Group } {
   // The sun and its glow, low over the far mountains.
-  const sun = put(own, scene, new T.CircleGeometry(2.6, 40), basic(own, { color: "#fff3c4" }), 6.5, 9.5, -46);
-  sun.renderOrder = -5;
-  put(own, scene, new T.CircleGeometry(6, 40), basic(own, { color: "#ffe9a8", transparent: true, opacity: 0.35, depthWrite: false }), 6.5, 9.5, -46.5).renderOrder = -6;
-  const far = ridge(own, 5, 150, 2.5, 9, "#8fb4d6", 1.1);
+  const sun = new T.Group();
+  scene.add(sun);
+  put(own, sun, new T.CircleGeometry(2.6, 40), basic(own, { color: "#fff3c4" }), 6.5, 9.5, -46).renderOrder = -5;
+  put(own, sun, new T.CircleGeometry(6, 40), basic(own, { color: "#ffe9a8", transparent: true, opacity: 0.35, depthWrite: false }), 6.5, 9.5, -46.5).renderOrder = -6;
+  // The ridges are long enough for the eye at either end of the valley (the farther, the more of it is seen).
+  const far = ridge(own, 5, 220, 2.5, 9, "#8fb4d6", 1.1);
   far.position.z = -44;
-  const mid = ridge(own, 12, 120, 1.2, 6, "#79a878", 1.2);
+  const mid = ridge(own, 12, 180, 1.2, 6, "#79a878", 1.2);
   mid.position.z = -32;
-  const near = ridge(own, 31, 90, 0.2, 3.6, "#5e9a54", 1.4);
+  const near = ridge(own, 31, 140, 0.2, 3.6, "#5e9a54", 1.4);
   near.position.z = -20;
   scene.add(far, mid, near);
   // Clouds: a few soft heaps that drift.
@@ -106,10 +112,10 @@ function backdrop(own: Own, scene: T.Scene): T.Mesh[] {
     random = stream(77),
     white = basic(own, { color: "#ffffff", transparent: true, opacity: 0.9, depthWrite: false }),
     puff = own(new T.CircleGeometry(1, 24));
-  for (let k = 0; k < 6; k++) {
+  for (let k = 0; k < 14; k++) {
     const cloud = new T.Mesh(puff, white);
     cloud.scale.set(2.2 + random() * 2, 0.7 + random() * 0.5, 1);
-    cloud.position.set(-26 + random() * 52, 9 + random() * 6, -40 + random() * 4);
+    cloud.position.set(-CLOUDS + random() * 2 * CLOUDS, 9 + random() * 6, -40 + random() * 4);
     for (let p = 0; p < 3; p++) {
       const more = new T.Mesh(puff, white);
       more.scale.set(0.5 + random() * 0.25, 0.75 + random() * 0.5, 1);
@@ -119,8 +125,10 @@ function backdrop(own: Own, scene: T.Scene): T.Mesh[] {
     scene.add(cloud);
     clouds.push(cloud);
   }
-  return clouds;
+  return { clouds, sun };
 }
+/** How far either way the clouds drift before they come round again. */
+export const CLOUDS = 62;
 /** The meadow, the road across it and the cut bank toward the eye; trees and bushes behind the road. */
 function ground(own: Own, scene: T.Scene) {
   const grass = lambert(own, {
@@ -199,13 +207,13 @@ function ground(own: Own, scene: T.Scene) {
     round = own(new T.SphereGeometry(1, 12, 9)),
     bark = lambert(own, { color: "#6a4a30" }),
     greens = ["#3f7f3c", "#4b8f44", "#357238"].map((color) => lambert(own, { color }));
-  for (let k = 0; k < 22; k++) {
-    const x = -15 + random() * 30,
+  for (let k = 0; k < 64; k++) {
+    const x = -SCENERY + random() * 2 * SCENERY,
       z = -3.4 - random() * 9,
       size = 1.4 + random() * 1.5,
       green = greens[Math.floor(random() * 3)];
     // Not behind the castles' towers.
-    if (Math.abs(x) > 8.2 && z > -5.5) continue;
+    if (Math.abs(x) > GATE - 1.1 && z > -5.5) continue;
     const t = new T.Mesh(trunk, bark);
     t.scale.set(size, size * 0.7, size);
     t.position.set(x, size * 0.35, z);
@@ -226,18 +234,18 @@ function ground(own: Own, scene: T.Scene) {
       scene.add(c);
     }
   }
-  for (let k = 0; k < 16; k++) {
+  for (let k = 0; k < 46; k++) {
     const b = new T.Mesh(round, greens[k % 3]);
     b.scale.set(0.35 + random() * 0.3, 0.22 + random() * 0.14, 0.3);
-    b.position.set(-13 + random() * 26, 0.12, -1.5 - random() * 1.4);
+    b.position.set(-(GATE + 2) + random() * 2 * (GATE + 2), 0.12, -1.5 - random() * 1.4);
     scene.add(b);
   }
   // Tufts and stones along the bank's edge.
   const stone = lambert(own, { color: "#a9a59a" });
-  for (let k = 0; k < 10; k++) {
+  for (let k = 0; k < 30; k++) {
     const s = new T.Mesh(round, stone);
     s.scale.set(0.12 + random() * 0.12, 0.08 + random() * 0.06, 0.12);
-    s.position.set(-12 + random() * 24, 0.05, 1.6 + random() * 0.6);
+    s.position.set(-SCENERY + random() * 2 * SCENERY, 0.05, 1.6 + random() * 0.6);
     scene.add(s);
   }
 }
@@ -286,7 +294,7 @@ function castle(own: Own, scene: T.Scene, side: 0 | 1): Castle {
   const sign = side === 0 ? -1 : 1,
     colour = SIDE_COLORS[side],
     group = new T.Group(),
-    CENTRE = 10.7,
+    CENTRE = GATE + 1.4,
     gate = GATE - CENTRE,
     stone = lambert(own, {
       map: painted(own, 256, 256, (ctx) => {
@@ -364,8 +372,8 @@ function castle(own: Own, scene: T.Scene, side: 0 | 1): Castle {
 /** Builds the whole valley into `scene` and hands back what moves. */
 export function buildValley(scene: T.Scene, own: Own): Valley {
   sky(own, scene);
-  const clouds = backdrop(own, scene);
+  const { clouds, sun } = backdrop(own, scene);
   ground(own, scene);
   ledges(own, scene);
-  return { castles: [castle(own, scene, 0), castle(own, scene, 1)], clouds };
+  return { castles: [castle(own, scene, 0), castle(own, scene, 1)], clouds, sun };
 }

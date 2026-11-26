@@ -160,7 +160,7 @@ export abstract class TableView<S> implements PointView<S> {
       const moved = this.step(performance.now());
       if (!this.dirty && !moved) return;
       this.dirty = false;
-      this.renderer.render(this.scene, this.camera);
+      this.drawPicture();
       if (!this.readyFlag && !this.cancelReady)
         this.cancelReady = afterGPUFrame(this.renderer, () => {
           this.readyFlag = true;
@@ -168,6 +168,10 @@ export abstract class TableView<S> implements PointView<S> {
         });
     };
     this.raf = requestAnimationFrame(loop);
+  }
+  /** Draws the picture: the scene from the camera (a view may draw it from several, each in its part of the canvas). */
+  protected drawPicture() {
+    this.renderer.render(this.scene, this.camera);
   }
   /** The usual lighting: sky and bounce, and a sun that casts shadows over `reach`. */
   protected daylight(sky: string, ground: string, sun: string, reach = 9, strength = 2.3) {

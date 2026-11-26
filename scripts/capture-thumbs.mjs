@@ -917,12 +917,12 @@ const play = {
     await wait(1400);
     await page.keyboard.press("p");
   },
-  // 금화 쟁탈전: I run out for the first loot and jump as the computer does the same; paused in the air with gold
-  // falling and lying in the valley. (The thumbnail is cut from the middle of this picture: the valley is wide.)
+  // 금화 쟁탈전: I run out from my castle (the eye follows me along the long valley) and jump; paused in the air with
+  // gold falling and lying on the ledges ahead. (The thumbnail is cut from the middle of this picture.)
   "gold-raid": async () => {
     await page.locator("canvas").focus();
     await page.keyboard.down("KeyD");
-    await wait(1500);
+    await wait(4200);
     await page.keyboard.press("KeyW");
     await wait(350);
     await page.keyboard.up("KeyD");

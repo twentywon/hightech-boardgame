@@ -55,9 +55,19 @@ test("gold raid: against the computer the keys run, jump and strike my bandit, a
   await expect(page.locator(".gr-gold-0")).toHaveText("0/100");
   await expect(canvas(page)).toHaveAttribute("data-two", "false");
   const [start] = await men(page);
-  expect(start[0]).toBeLessThan(-6);
+  expect(start[0]).toBeLessThan(-20);
+  // The valley is long: the eye is on my bandit at my end of it, and the strip under the board shows all of it.
+  const eye = async () => (await canvas(page).getAttribute("data-eye"))!.split(",").map(Number);
+  await expect(canvas(page)).toHaveAttribute("data-split", "false");
+  expect((await eye())[0]).toBeLessThan(-10);
+  await expect(page.locator(".gr-map .gr-map-man")).toHaveCount(2);
+  await expect(page.locator(".gr-map .gr-map-castle")).toHaveCount(2);
+  await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(1);
   // D runs to the right, A back to the left; the arrows are mine too against the computer.
-  await run(page, "KeyD", 1);
+  const looked = (await eye())[0];
+  await run(page, "KeyD", 1, 9);
+  // The eye has followed it (out from the valley's end, where it stood at the castle).
+  expect((await eye())[0]).toBeGreaterThan(looked + 0.5);
   const [right] = await men(page);
   expect(right[0]).toBeGreaterThan(start[0] + 0.8);
   expect((await counts(page, "face"))[0]).toBe(1);
@@ -84,7 +94,7 @@ test("gold raid: against the computer the keys run, jump and strike my bandit, a
     expect((await counts(page, "swings"))[0]).toBeGreaterThan(swings + 1);
   }).toPass({ timeout: 30_000 });
   // The computer plays its own bandit: it leaves its gate for the loot.
-  await expect.poll(async () => (await men(page))[1][0], { timeout: 30_000 }).toBeLessThan(6.5);
+  await expect.poll(async () => (await men(page))[1][0], { timeout: 30_000 }).toBeLessThan(21);
   // P pauses the valley: nothing moves.
   await page.keyboard.press("p");
   await expect(canvas(page)).toHaveAttribute("data-phase", "paused");
@@ -132,7 +142,7 @@ test("gold raid: gold picked up and brought to my gate raises my treasury on the
           const bomb = loot.some((i) => i.kind === "bomb" && Math.abs(i.x - x) < 2.6 && i.y < 5),
             near = loot.filter((i) => i.kind !== "bomb" && i.rest && i.y < 0.5).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0],
             // Home with anything in the sack; away from a bomb; else to the gold; else wait near my side's middle.
-            to = carry > 0 ? -9.3 : bomb ? x - 3 : near ? near.x : -5,
+            to = carry > 0 ? -25 : bomb ? x - 3 : near ? near.x : -14,
             way = Math.abs(to - x) < 0.15 ? 0 : Math.sign(to - x);
           key("KeyD", way > 0);
           key("KeyA", way < 0);
@@ -201,8 +211,15 @@ test("gold raid: two at one screen each move their own bandit with their own key
   await expect(page.locator(".gr-hud .gr-s0 b")).toHaveText("1P");
   await expect(page.locator(".gr-hud .gr-s1 b")).toHaveText("2P");
   const [a, b] = await men(page);
-  expect(a[0]).toBeLessThan(-6);
-  expect(b[0]).toBeGreaterThan(6);
+  expect(a[0]).toBeLessThan(-20);
+  expect(b[0]).toBeGreaterThan(20);
+  // So far apart at their gates, the screen is split: each half follows one, and the strip shows two windows.
+  await expect(canvas(page)).toHaveAttribute("data-split", "true");
+  await expect(page.locator(".gr-seam.on")).toBeVisible();
+  await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(2);
+  const halves = (await canvas(page).getAttribute("data-eye"))!.split(",").map(Number);
+  expect(halves[0]).toBeLessThan(-10);
+  expect(halves[1]).toBeGreaterThan(10);
   // The first person's D moves red alone; the second's ← moves blue alone.
   await run(page, "KeyD", 1);
   const [a1, b1] = await men(page);
@@ -230,6 +247,9 @@ test("gold raid: two at one screen each move their own bandit with their own key
     const left = await page.locator('.gr-btn[data-side="0"][data-act="jump"]').boundingBox(),
       right = await page.locator('.gr-btn[data-side="1"][data-act="left"]').boundingBox();
     expect(left!.x + left!.width).toBeLessThan(right!.x);
+    // A jump hangs in the air over a second now: blue is first let come down from the last.
+    await expect.poll(async () => (await men(page))[1][1]).toBe(0);
+    await settle(page);
     const before = (await counts(page, "jumps"))[1];
     await page.evaluate(() => {
       const b = document.querySelector<HTMLElement>('.gr-pad .gr-btn[data-act="jump"][data-side="1"]')!;

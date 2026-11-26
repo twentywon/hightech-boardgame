@@ -15,55 +15,67 @@
  * blow and breaks open at the last. A blow on the other's gate takes a little from its treasury (the coins fall out
  * before the gate, to be carried home like any), and the castle answers by dropping a fire pot there.
  */
+/**
+ * The valley is long (gate to gate 50 m, near three times the screen's width): the castles are far apart and the
+ * view follows a bandit along it. And it is played at an easy pace: a bandit runs at 2.8 m/s and a jump hangs in
+ * the air for over a second (the game was asked to be much slower than at first, when it ran at 5.6 and a jump
+ * lasted 0.8 s; every other speed and time was scaled with it, the heights kept).
+ * The sim is stepped in slices of `DT` s.
+ */
 export const DT = 1 / 120;
 /** The valley: how far a bandit may go either way, and where loot bounces back. */
-export const X_MOST = 10.3,
-  LOOT_MOST = 9.9;
-/** A bandit: its half width and height, its run and jump, gravity. */
+export const X_MOST = 26,
+  LOOT_MOST = 25.6;
+/** A bandit: its half width and height, its run and jump, gravity (a jump rises JUMP² / 2G = 2 m). */
 export const BODY = { half: 0.32, tall: 1.15 },
-  RUN = 5.6,
-  JUMP = 10.2,
-  G = 26,
+  RUN = 2.8,
+  JUMP = 6.6,
+  G = 10.9,
   /** How quickly it comes to its speed on the ground and in the air (m/s²). */
-  GRIP = 70,
-  AIR = 34;
+  GRIP = 18,
+  AIR = 9;
 /** A jump pressed up to `BUFFER` s before landing still jumps; so does one up to `COYOTE` s after walking off an edge. */
-export const BUFFER = 0.12,
-  COYOTE = 0.09;
+export const BUFFER = 0.18,
+  COYOTE = 0.14;
 /** The sack: how much it holds, and how much a full one slows its bearer. */
 export const CAP = 20,
   LOAD_SLOW = 0.22;
 /** The gates: where each castle's stands (side 0 at −`GATE`), and how near counts as at it. */
-export const GATE = 9.3,
+export const GATE = 25,
   GATE_R = 1.05;
 export const gateOf = (side: number) => (side === 0 ? -GATE : GATE);
-/** The ledges: stood on from above, passed through from below (three low, three high, alike on both sides). */
-export const PLATFORMS = [
-  { x0: -7.6, x1: -4.6, y: 1.6 },
+/** The ledges, alike on both sides: stood on from above, passed through from below; a high one stands over a low one. */
+const RIGHT = [
   { x0: 4.6, x1: 7.6, y: 1.6 },
-  { x0: -2.6, x1: 2.6, y: 1.6 },
-  { x0: -5.4, x1: -3.4, y: 3.2 },
   { x0: 3.4, x1: 5.4, y: 3.2 },
+  { x0: 10.4, x1: 13, y: 1.6 },
+  { x0: 12, x1: 14.6, y: 3.2 },
+  { x0: 16.4, x1: 19.2, y: 1.6 },
+  { x0: 18, x1: 20.4, y: 3.2 },
+];
+export const PLATFORMS = [
+  { x0: -2.6, x1: 2.6, y: 1.6 },
   { x0: -1.3, x1: 1.3, y: 3.2 },
+  ...RIGHT.flatMap((p) => [{ x0: -p.x1, x1: -p.x0, y: p.y }, p]),
 ];
 /** The club: how long a swing lasts, when in it the blow lands, how far it reaches, and the wait before the next. */
-export const SWING = 0.3,
-  SWING_HIT = 0.09,
+export const SWING = 0.5,
+  SWING_HIT = 0.16,
   REACH = 1.25,
-  COOL = 0.5;
+  COOL = 0.9;
 /** A blow on a bandit: how long it is stunned, how long after that it cannot be struck again, and the share of its sack it drops. */
-export const STUN = 0.85,
-  SAFE = 1.1,
+export const STUN = 1.6,
+  SAFE = 2,
   DROP_SHARE = 0.4;
 /** A bomb: its fuse once it lies, its blast's reach, the stun and the share of the sack lost. */
-export const FUSE = 1.3,
+export const FUSE = 2.4,
   BLAST = 1.6,
-  BOMB_STUN = 1.3,
+  BOMB_STUN = 2.4,
   BOMB_SHARE = 0.5;
 /** Loot in the air: its gravity and the fastest it falls; and how long it lies before it is gone. */
-export const LOOT_G = 14,
-  LOOT_FALL = 6.2,
-  LOOT_LIFE = 14,
+export const LOOT_G = 5.5,
+  LOOT_FALL = 3.6,
+  LOOT_LIFE = 18,
   /** How near a bandit's middle a piece of loot must be to be taken (across, and up from its feet). */
   TAKE = { across: 0.62, low: -0.25, high: 1.4 };
 export type LootKind = "coin" | "pouch" | "gem" | "chest" | "bomb";
@@ -76,24 +88,26 @@ export const KINDS: Record<LootKind, { value: number; share: number }> = {
   bomb: { value: 0, share: 15 },
 };
 /** The seconds between two pieces falling (drawn between these), and where across they fall. */
-export const DROP_EVERY = [0.6, 1.45],
-  DROP_REACH = 8.6,
+export const DROP_EVERY = [0.5, 1.15],
+  DROP_REACH = 23.4,
+  DROP_BIAS = 1.4,
   DROP_FROM = 9.5;
 /** The merchant's cart: its gold, its pace, what a blow sheds, how many blows break it, and the seconds between two carts. */
-export const CART = { gold: 24, pace: 1.5, shed: 3, blows: 5, half: 1.05, first: 11, every: [22, 30] };
+export const CART = { gold: 24, pace: 0.9, shed: 3, blows: 5, half: 1.05, first: 22, every: [36, 50] };
 /** A raid on the other's gate: what a blow takes from its treasury, and how long the gate is then shut against the next. */
 export const RAID = 2,
-  RAID_LOCK = 2.6;
+  RAID_LOCK = 5;
 /**
  * The computer by level: how fast it runs (a share of a person's), how often it thinks again (s), how long it takes
- * to strike what has come into reach, the sack it goes home with, how often it sees a bomb coming, the least the
+ * to strike what has come into reach, the sack it goes home with (and how much it weighs the long way home: `thrift`
+ * makes it bring a fuller sack from far off and prefer loot on the homeward side), how often it sees a bomb coming, the least the
  * other must carry for it to strike or to give chase (and from how far), and whether it climbs to the high ledges and
  * raids a gate left alone.
  */
 export const LEVELS = {
-  easy: { pace: 0.8, think: 0.5, react: 0.5, home: 14, dodge: 0, strike: Infinity, chase: Infinity, chaseFar: 0, climb: false, raid: false },
-  normal: { pace: 0.93, think: 0.28, react: 0.26, home: 10, dodge: 0.7, strike: 5, chase: 10, chaseFar: 3.5, climb: true, raid: false },
-  hard: { pace: 1, think: 0.14, react: 0.12, home: 8, dodge: 1, strike: 3, chase: 7, chaseFar: 5.5, climb: true, raid: true },
+  easy: { pace: 0.8, think: 0.8, react: 0.8, home: 14, thrift: 0, dodge: 0, strike: Infinity, chase: Infinity, chaseFar: 0, climb: false, raid: false },
+  normal: { pace: 0.9, think: 0.5, react: 0.42, home: 10, thrift: 0.4, dodge: 0.7, strike: 5, chase: 10, chaseFar: 3.5, climb: true, raid: false },
+  hard: { pace: 1, think: 0.24, react: 0.2, home: 8, thrift: 0.6, dodge: 1, strike: 3, chase: 7, chaseFar: 4, climb: true, raid: true },
 };
 export type Level = keyof typeof LEVELS;
 /** A player's controls for one slice: the way it runs (−1 to 1), and whether jump and strike were pressed in it. */
@@ -150,7 +164,7 @@ export interface Cart {
 }
 interface Mind {
   wait: number;
-  goal: { x: number; y: number; what: "home" | "loot" | "cart" | "chase" | "raid" | "defend" | "idle" | "flee" } | null;
+  goal: { x: number; y: number; what: "home" | "loot" | "cart" | "chase" | "raid" | "defend" | "idle" | "flee"; id?: number } | null;
   /** Seconds since something came into its club's reach. */
   ready: number;
 }
@@ -248,7 +262,7 @@ export function spill(world: World, amount: number, x: number, y: number, way = 
   while (left > 0) {
     const kind: LootKind = left >= 3 && draw(world) < 0.5 ? "pouch" : "coin",
       side = way ? way * (0.4 + draw(world)) : draw(world) * 2 - 1;
-    spawn(world, kind, clamp(x, -LOOT_MOST, LOOT_MOST), y, side * 3.2, 4 + draw(world) * 3.5, 0.35);
+    spawn(world, kind, clamp(x, -LOOT_MOST, LOOT_MOST), y, side * 1.8, 2.8 + draw(world) * 2.2, 0.6);
     left -= KINDS[kind].value;
   }
 }
@@ -273,8 +287,8 @@ function explode(world: World, bomb: Loot, out: Happening[]) {
     b.stun = BOMB_STUN;
     b.safe = BOMB_STUN + SAFE;
     b.swing = -1;
-    b.vx = Math.sign(b.x - bomb.x || 1) * 3.5;
-    b.vy = 6;
+    b.vx = Math.sign(b.x - bomb.x || 1) * 1.8;
+    b.vy = 3.9;
     b.ground = false;
   });
   world.loot.splice(world.loot.indexOf(bomb), 1);
@@ -293,8 +307,8 @@ function blow(world: World, side: number, out: Happening[]) {
     o.stun = STUN;
     o.safe = STUN + SAFE;
     o.swing = -1;
-    o.vx = b.face * 4.5;
-    o.vy = 5.5;
+    o.vx = b.face * 2.3;
+    o.vy = 3.6;
     o.ground = false;
     out.push({ kind: "hit", by: side, on: other, dropped });
     return;
@@ -438,7 +452,7 @@ function fall(world: World, out: Happening[]) {
       explode(world, item, out);
       continue;
     }
-    if (item.vy < -3.2) {
+    if (item.vy < -2.2) {
       item.vy = -item.vy * 0.32;
       item.vx *= 0.5;
     } else {
@@ -447,13 +461,15 @@ function fall(world: World, out: Happening[]) {
     }
   }
 }
+/** Where across the next piece falls: anywhere in the valley, the more often the nearer its middle (where the two meet). */
+const dropX = (world: World) => (draw(world) < 0.5 ? -1 : 1) * DROP_REACH * Math.pow(draw(world), DROP_BIAS);
 /** The sky's loot and the merchant's cart, each in its time. */
 function supply(world: World, out: Happening[]) {
   world.nextDrop -= DT;
   if (world.nextDrop <= 0) {
     world.nextDrop = between(world, DROP_EVERY);
     // Each piece is followed by its like on the other half, so that neither side is favoured.
-    const piece = world.mirror ?? { kind: pickKind(world), x: (draw(world) * 2 - 1) * DROP_REACH };
+    const piece = world.mirror ?? { kind: pickKind(world), x: dropX(world) };
     world.mirror = world.mirror ? null : { kind: piece.kind, x: -piece.x };
     spawn(world, piece.kind, piece.x, DROP_FROM);
     out.push({ kind: "drop", what: piece.kind, x: piece.x });
@@ -471,8 +487,8 @@ function supply(world: World, out: Happening[]) {
   cart.shaken += DT;
   if (cart.broken >= 0) cart.broken += DT;
   // A cart just struck stands a moment; a broken one lies where it broke and is then cleared away.
-  else if (cart.shaken > 0.35) cart.x += cart.dir * CART.pace * DT;
-  if (cart.broken > 2.5 || Math.abs(cart.x) > X_MOST + 2.4) {
+  else if (cart.shaken > 0.6) cart.x += cart.dir * CART.pace * DT;
+  if (cart.broken > 4 || Math.abs(cart.x) > X_MOST + 2.4) {
     world.cart = null;
     world.nextCart = between(world, CART.every);
   }
@@ -500,6 +516,8 @@ export function step(world: World, inputs: [Input, Input]): Happening[] {
 }
 
 // ── The computer ──
+/** How much more the loot it is already going for counts than any other. */
+const STEADY = 1.5;
 const ledgeAt = (x: number, y: number) => PLATFORMS.find((p) => Math.abs(p.y - y) < 0.35 && x >= p.x0 - 0.3 && x <= p.x1 + 0.3) ?? null;
 /** The way to run and whether to jump, to come to (tx, ty) over the ledges. */
 function route(b: Bandit, tx: number, ty: number): { x: number; jump: boolean } {
@@ -551,34 +569,44 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
       near = (x: number, y: number) => Math.abs(x - b.x) + 1.3 * Math.abs(y - b.y);
     let best: Mind["goal"] = null,
       score = 0;
+    // On its way home it keeps going, taking only what lies on the way.
+    const homeward = m.goal?.what === "home" && b.carry > 0;
     for (const item of world.loot) {
       if (item.kind === "bomb") continue;
+      if (homeward && Math.abs(item.x - home) > Math.abs(b.x - home) + 1) continue;
       const y = restOf(item);
       if (!L.climb && y > 2) continue;
+      // What will be gone before it is reached is let be (the valley is long).
+      if (item.rest && LOOT_LIFE - item.age < Math.abs(item.x - b.x) / RUN + 1) continue;
       // What the other will plainly reach first is left to it (the best players reckon so).
       if (level === "hard" && near(item.x, y) > 2.5 * (Math.abs(item.x - o.x) + 1.3 * Math.abs(y - o.y)) + 1 && o.stun <= 0) continue;
-      const s = Math.min(item.value, CAP - b.carry) / (near(item.x, y) + 1.5);
-      if (s > score) [best, score] = [{ x: item.x, y, what: "loot" }, s];
+      // The better players weigh the way back too: with gold in the sack, loot farther from home counts for less.
+      const away = L.thrift * (b.carry / CAP) * Math.max(0, Math.abs(item.x - home) - Math.abs(b.x - home)),
+        // What it is already going for is kept unless something plainly better turns up (no dithering between two).
+        s = ((m.goal?.id === item.id ? STEADY : 1) * Math.min(item.value, CAP - b.carry)) / (near(item.x, y) + 1.5 + away);
+      if (s > score) [best, score] = [{ x: item.x, y, what: "loot", id: item.id }, s];
     }
     const cart = world.cart;
     if (cart && cart.broken < 0 && b.carry < CAP - 2) {
       const s = 4 / (Math.abs(cart.x - b.x) + 1.5);
       if (s > score) [best, score] = [{ x: cart.x - cart.dir * 0.2, y: 0, what: "cart" }, s];
     }
-    const full = b.carry >= L.home || b.carry >= CAP,
+    // Home with a fuller sack the farther home is (the better players): the long way is not run for a little.
+    const full = b.carry >= L.home + L.thrift * clamp((Math.abs(home - b.x) - 8) / 4, 0, 6) || b.carry >= CAP,
       wins = b.carry > 0 && world.treasury[side] + b.carry >= world.target,
       late = left !== null && b.carry > 0 && left < Math.abs(home - b.x) / (RUN * 0.7) + 2,
       close = b.carry >= 3 && Math.abs(home - b.x) < 3 && score < 0.6,
       idle = b.carry >= 4 && score < 0.25;
-    if (full || wins || late || close || idle) best = { x: home, y: 0, what: "home" };
+    if (full || wins || late || close || idle || (homeward && score < 0.5)) best = { x: home, y: 0, what: "home" };
     else {
       // A rival robbing my gate (its club up there, or the gate just struck) is seen off; one laden and near is chased.
       const robbing = Math.abs(o.x - home) < GATE_R + 0.8 && world.treasury[side] > 0 && o.safe <= 0 && (o.swing >= 0 || world.locked[side] > 0);
-      if (level !== "easy" && robbing && Math.abs(o.x - b.x) < 9) best = { x: o.x, y: o.y, what: "defend" };
+      if (level !== "easy" && robbing && Math.abs(o.x - b.x) < 14) best = { x: o.x, y: o.y, what: "defend" };
       else if (o.carry >= L.chase && o.safe <= 0.3 && near(o.x, o.y) < L.chaseFar && b.cool <= 0.2) best = { x: o.x, y: o.y, what: "chase" };
-      else if (L.raid && !best && b.carry <= 6 && world.treasury[other] >= 8 && Math.abs(o.x - gateOf(other)) > 9) best = { x: gateOf(other) - Math.sign(gateOf(other)) * 0.4, y: 0, what: "raid" };
+      else if (L.raid && !best && b.carry <= 6 && world.treasury[other] >= 8 && Math.abs(o.x - gateOf(other)) > 9 && Math.abs(b.x - gateOf(other)) < 14) best = { x: gateOf(other) - Math.sign(gateOf(other)) * 0.4, y: 0, what: "raid" };
     }
-    m.goal = best ?? { x: clamp(b.x * 0.4, -3, 3), y: 0, what: "idle" };
+    // Nothing worth going for: it waits in the middle of its own half, where its share of the loot falls.
+    m.goal = best ?? { x: home * 0.45, y: 0, what: "idle" };
     // A bomb seen coming down (or lying lit) near me: away from it first.
     if (L.dodge > 0 && draw(world) < L.dodge)
       for (const item of world.loot) {
@@ -590,6 +618,15 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
   const goal = m.goal!,
     way = route(b, goal.x, goal.y),
     input: Input = { x: way.x * L.pace, jump: way.jump, strike: false };
+  // A lit bomb lying on its way: it waits clear of the blast until it has gone off (backs off when too near).
+  if (L.dodge > 0 && way.x !== 0)
+    for (const item of world.loot) {
+      const ahead = (item.x - b.x) * way.x;
+      if (item.kind !== "bomb" || !item.rest || Math.abs(item.y - 0.12 - b.y) > 0.6 || ahead < -0.3 || ahead > BLAST + 0.9 || (goal.x - item.x) * way.x < -0.5) continue;
+      input.x = ahead < BLAST + 0.2 ? -way.x * L.pace : 0;
+      input.jump = false;
+      break;
+    }
   // The club: what has stood within its reach long enough is struck.
   const ahead = (x: number) => (x - b.x) * b.face,
     rival = o.safe <= 0 && o.carry >= L.strike && ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && Math.abs(o.y - b.y) < 0.9,
@@ -602,7 +639,7 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
       input.strike = true;
       m.ready = 0;
       // After a raid's blow it runs from the fire pot.
-      if (gate) [m.goal, m.wait] = [{ x: b.x - Math.sign(gateOf(other)) * (BLAST + 2), y: 0, what: "flee" }, 0.9];
+      if (gate) [m.goal, m.wait] = [{ x: b.x - Math.sign(gateOf(other)) * (BLAST + 2), y: 0, what: "flee" }, 1.6];
     }
   } else m.ready = 0;
   // Beside the cart it stands and strikes rather than walk through it.

@@ -4,10 +4,10 @@ import { capturing } from "../../ui/banner";
 import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { FOV } from "../../engine/camera";
-import { TILT, goldRaidFrame, goldRaidSubject } from "./layout";
+import { END, TILT, aimX, follow, goldRaidFrame, goldRaidSubject, pairView, type Frame } from "./layout";
 import { TIME, depositMove, raidedMove, type State } from "./rules";
 import { BLAST, BODY, CAP, CART, DT, FUSE, LOOT_LIFE, SWING, createWorld, gateOf, step, think, timeLeft, type Bandit, type Happening, type Input, type Loot, type LootKind, type World } from "./sim";
-import { GAUGE_TALL, SIDE_COLORS, buildValley, type Valley } from "./valley";
+import { CLOUDS, GAUGE_TALL, SIDE_COLORS, buildValley, type Valley } from "./valley";
 
 export const GOLD_RAID_COLORS: [string, string] = SIDE_COLORS;
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -86,7 +86,20 @@ export class GoldRaidView extends TableView<State> {
   private sparks: { points: T.Points; pos: Float32Array; vel: Float32Array; life: Float32Array; next: number };
   private hands = [new Hand(), new Hand()];
   private hud: HTMLElement;
+  private board: HTMLElement;
+  /** The strip under the board: the whole valley small, with the castles, the bandits, the cart, chests and what is in view. */
+  private map: HTMLElement;
+  private charted = new Map<HTMLElement, string>();
+  /** The line down the middle while two at one screen are split. */
+  private seam: HTMLElement;
   private pad: HTMLElement;
+  private sun: T.DirectionalLight;
+  /** The eye: against the computer it follows my bandit; two at one screen, one view holds both or the screen is split. */
+  private eye = { x: 0, zoom: 1, split: false, halves: [0, 0] as [number, number], set: false };
+  /** The right half's camera while the screen is split (the left half's is the view's own). */
+  private second = new T.PerspectiveCamera(FOV, 1, 0.1, 200);
+  /** The canvas's shape (the cameras' own aspects are each half's while split). */
+  private shape = 16 / 9;
   private word: HTMLElement;
   private pops: HTMLElement;
   private hudText = "";
@@ -118,14 +131,15 @@ export class GoldRaidView extends TableView<State> {
     noZoom(this.renderer.domElement);
     this.camera.far = 200;
     this.scene.add(new T.HemisphereLight("#eaf4ff", "#6a7a4a", 1.9));
-    const sun = new T.DirectionalLight("#fff1d6", 2.3);
+    // The sun goes along with the eye (`light`): its shadows are drawn round what is in view.
+    const sun = (this.sun = new T.DirectionalLight("#fff1d6", 2.3));
     sun.position.set(5, 11, 9);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -15, right: 15, top: 11, bottom: -3, near: 1, far: 40 });
+    Object.assign(sun.shadow.camera, { left: -19, right: 19, top: 11, bottom: -3, near: 1, far: 40 });
     sun.shadow.normalBias = 0.03;
     this.own(sun.shadow);
-    this.scene.add(sun);
+    this.scene.add(sun, sun.target);
     this.valley = buildValley(this.scene, own);
     this.cart = this.makeCart(own);
     // An arrow over each gate, shown to a person carrying gold: bring it here.
@@ -157,6 +171,17 @@ export class GoldRaidView extends TableView<State> {
       return d;
     };
     this.hud = el("gr-hud");
+    this.board = document.createElement("div");
+    this.map = document.createElement("div");
+    this.map.className = "gr-map";
+    this.map.innerHTML =
+      `<i class="gr-map-road"></i><b class="gr-map-eye"></b><b class="gr-map-eye"></b>` +
+      [0, 1].map((side) => `<i class="gr-map-castle gr-s${side}"></i>`).join("") +
+      `<i class="gr-map-cart"></i>` +
+      `<i class="gr-map-chest"></i>`.repeat(4) +
+      [1, 0].map((side) => `<i class="gr-map-man gr-s${side}${side === 0 || this.two ? " gr-mine" : ""}"></i>`).join("");
+    this.hud.append(this.board, this.map);
+    this.seam = el("gr-seam");
     this.word = el("gr-word");
     this.pops = el("gr-pops");
     this.pad = el("gr-pad");
@@ -492,11 +517,13 @@ export class GoldRaidView extends TableView<State> {
   /** A number or a word that rises from a place in the valley and fades. */
   private pop(text: string, x: number, y: number, cls = "") {
     if (capturing()) return;
-    const at = new T.Vector3(x, y, 0.4).project(this.camera),
+    // Split, it rises in the half whose eye is nearer.
+    const right = this.eye.split && Math.abs(x - this.eye.halves[1]) < Math.abs(x - this.eye.halves[0]),
+      at = new T.Vector3(x, y, 0.4).project(right ? this.second : this.camera),
       el = document.createElement("span");
     el.className = `gr-pop ${cls}`;
     el.textContent = text;
-    el.style.left = `${((at.x + 1) / 2) * 100}%`;
+    el.style.left = `${(this.eye.split ? (right ? 0.5 : 0) + (at.x + 1) / 4 : (at.x + 1) / 2) * 100}%`;
     el.style.top = `${((1 - at.y) / 2) * 100}%`;
     el.addEventListener("animationend", () => el.remove());
     this.pops.append(el);
@@ -624,6 +651,7 @@ export class GoldRaidView extends TableView<State> {
     const world = this.world!,
       state = this.state!,
       t = now / 1000;
+    this.aim(dt);
     // Side by side they do not stand in each other: the first a little nearer the eye.
     world.bandits.forEach((b, side) => this.poseBandit(this.figures[side], b, t, dt > 0, side === 0 ? 0.52 : 0.38));
     // Loot: a mesh for each piece, gone with it.
@@ -684,7 +712,7 @@ export class GoldRaidView extends TableView<State> {
     });
     this.valley.clouds.forEach((cloud, k) => {
       cloud.position.x += dt * (0.12 + k * 0.03);
-      if (cloud.position.x > 30) cloud.position.x = -30;
+      if (cloud.position.x > CLOUDS) cloud.position.x = -CLOUDS;
     });
     // Blasts and sparks.
     for (const b of this.blasts) {
@@ -728,8 +756,9 @@ export class GoldRaidView extends TableView<State> {
       text = `<div class="gr-board">${side(0)}<div class="gr-mid${left !== null && left < 20 ? " late" : ""}">${clock || "VS"}</div>${side(1)}</div>`;
     if (text !== this.hudText) {
       this.hudText = text;
-      this.hud.innerHTML = text;
+      this.board.innerHTML = text;
     }
+    this.chart();
     const d = this.renderer.domElement.dataset,
       b = world.bandits,
       c = this.counts;
@@ -747,19 +776,130 @@ export class GoldRaidView extends TableView<State> {
     d.loot = world.loot.map((i) => `${i.kind}:${i.x.toFixed(2)}:${i.y.toFixed(2)}:${i.rest ? 1 : 0}`).join(";");
     d.cart = world.cart ? `${world.cart.x.toFixed(2)},${world.cart.gold}` : "";
     d.time = (world.tick * DT).toFixed(2);
+    d.split = String(this.eye.split);
+    d.eye = (this.eye.split ? this.eye.halves : [this.eye.x]).map((x) => x.toFixed(2)).join(",");
+    d.zoom = this.eye.zoom.toFixed(2);
     d.target = String(world.target);
   }
   protected subject(aspect: number): TableSubject {
     return goldRaidSubject(aspect);
   }
-  /** The camera is set by the valley's own framing (`goldRaidFrame`): the road lifted clear of a phone's buttons. */
+  /** The cameras are set by the valley's own framing (`layout.ts`): the road lifted clear of a phone's buttons. */
   protected resize() {
     super.resize();
-    const frame = goldRaidFrame(this.camera.aspect, this.coarse),
-      distance = frame.span / (2 * Math.tan((FOV * Math.PI) / 360));
-    this.camera.position.set(0, frame.lookY + Math.sin(TILT) * distance, Math.cos(TILT) * distance);
-    this.camera.lookAt(0, frame.lookY, 0);
+    if (this.disposed || !this.host.clientWidth || !this.host.clientHeight) return;
+    this.shape = this.host.clientWidth / this.host.clientHeight;
+    this.aim(0);
     this.redraw();
+  }
+  /** A camera looking at `x` across with `frame`, drawn back `zoom` times. */
+  private look(camera: T.PerspectiveCamera, frame: Frame, aspect: number, x: number, zoom = 1) {
+    const distance = (frame.span * zoom) / (2 * Math.tan((FOV * Math.PI) / 360)),
+      y = frame.lookY * zoom;
+    if (camera.aspect !== aspect) {
+      camera.aspect = aspect;
+      camera.updateProjectionMatrix();
+    }
+    camera.position.set(x, y + Math.sin(TILT) * distance, Math.cos(TILT) * distance);
+    camera.lookAt(x, y, 0);
+  }
+  /**
+   * The eye `dt` seconds on: against the computer it follows my bandit, looking a little ahead of it; two at one
+   * screen, one view holds both (drawing back as they part) until they are too far apart, and then each half of the
+   * screen follows one (`pairView`).
+   */
+  private aim(dt: number) {
+    const eye = this.eye,
+      world = this.world,
+      full = goldRaidFrame(this.shape, this.coarse),
+      [a, b] = world ? world.bandits : [null, null];
+    if (!a || !b) {
+      this.look(this.camera, full, this.shape, eye.x);
+      return;
+    }
+    // A new match starts with the eye where it belongs; after that it follows (and stands while the valley is still).
+    const to = (from: number, at: number) => (eye.set ? follow(from, at, Math.max(0, dt)) : at);
+    if (!this.two) {
+      eye.x = to(eye.x, aimX(a.x, a.vx, a.face, full.wide));
+      eye.zoom = 1;
+      this.look(this.camera, full, this.shape, eye.x);
+    } else {
+      const pair = pairView(a.x, b.x, full.wide, eye.split);
+      if (pair.split) {
+        const half = goldRaidFrame(this.shape / 2, this.coarse),
+          [l, r] = a.x <= b.x ? [a, b] : [b, a],
+          aims = [aimX(l.x, l.vx, l.face, half.wide), aimX(r.x, r.vx, r.face, half.wide)];
+        eye.halves = eye.split && eye.set ? [to(eye.halves[0], aims[0]), to(eye.halves[1], aims[1])] : [aims[0], aims[1]];
+        this.look(this.camera, half, this.shape / 2, eye.halves[0]);
+        this.look(this.second, half, this.shape / 2, eye.halves[1]);
+      } else {
+        const fresh = eye.split || !eye.set;
+        eye.x = fresh ? pair.x : to(eye.x, pair.x);
+        eye.zoom = fresh ? pair.zoom : to(eye.zoom, pair.zoom);
+        this.look(this.camera, full, this.shape, eye.x, eye.zoom);
+      }
+      eye.split = pair.split;
+      this.seam.classList.toggle("on", pair.split);
+    }
+    eye.set = true;
+  }
+  /** The sun and the sky's sun go along with an eye looking at `x`. */
+  private light(x: number) {
+    this.sun.position.set(x + 5, 11, 9);
+    this.sun.target.position.set(x, 0, 0);
+    this.sun.target.updateMatrixWorld();
+    this.valley.sun.position.x = x * 0.92;
+  }
+  /** The picture: one view, or the two halves of a split screen side by side. */
+  protected drawPicture() {
+    const r = this.renderer;
+    if (!this.eye.split) {
+      this.light(this.eye.x);
+      r.render(this.scene, this.camera);
+      return;
+    }
+    const size = r.getSize(new T.Vector2()),
+      half = Math.floor(size.x / 2);
+    r.setScissorTest(true);
+    for (const k of [0, 1]) {
+      const x = k ? half : 0,
+        w = k ? size.x - half : half;
+      r.setViewport(x, 0, w, size.y);
+      r.setScissor(x, 0, w, size.y);
+      this.light(this.eye.halves[k]);
+      r.render(this.scene, k ? this.second : this.camera);
+    }
+    r.setScissorTest(false);
+    r.setViewport(0, 0, size.x, size.y);
+    r.setScissor(0, 0, size.x, size.y);
+  }
+  /** The strip under the board: everything at its place along the whole valley. */
+  private chart() {
+    const world = this.world!,
+      at = (x: number) => ((x + END) / (2 * END)) * 100,
+      put = (el: Element | undefined, left: number | null, width?: number) => {
+        if (!(el instanceof HTMLElement)) return;
+        const key = left === null ? "" : `${left.toFixed(1)}|${width?.toFixed(1) ?? ""}`;
+        if (this.charted.get(el) === key) return;
+        this.charted.set(el, key);
+        el.hidden = left === null;
+        if (left !== null) el.style.left = `${left}%`;
+        if (width !== undefined) el.style.width = `${width}%`;
+      },
+      eyes = this.map.querySelectorAll(".gr-map-eye"),
+      chests = this.map.querySelectorAll(".gr-map-chest"),
+      eye = this.eye;
+    // What is in view: one window, or one for each half.
+    const windows = eye.split ? eye.halves.map((x) => ({ x, wide: goldRaidFrame(this.shape / 2, this.coarse).wide })) : [{ x: eye.x, wide: goldRaidFrame(this.shape, this.coarse).wide * eye.zoom }];
+    eyes.forEach((el, k) => {
+      const w = windows[k];
+      put(el, w ? at(w.x - w.wide / 2) : null, w ? (w.wide / (2 * END)) * 100 : undefined);
+    });
+    this.map.querySelectorAll(".gr-map-castle").forEach((el, side) => put(el, at(gateOf(side))));
+    put(this.map.querySelector(".gr-map-cart") ?? undefined, world.cart && world.cart.broken < 0 ? at(world.cart.x) : null);
+    const lying = world.loot.filter((i) => i.kind === "chest");
+    chests.forEach((el, k) => put(el, lying[k] ? at(lying[k].x) : null));
+    this.map.querySelectorAll(".gr-map-man").forEach((el) => put(el, at(world.bandits[el.classList.contains("gr-s0") ? 0 : 1].x)));
   }
   protected spots(): Spot[] {
     return [];
@@ -777,6 +917,8 @@ export class GoldRaidView extends TableView<State> {
       this.lootMeshes.clear();
       this.world = createWorld(Math.floor(Math.random() * 2e9) + 1, state.target, state.seconds);
       this.world.treasury = [state.gold[0], state.gold[1]];
+      this.eye.set = false;
+      this.eye.split = false;
       this.counts = { jumps: [0, 0], swings: [0, 0], pickups: [0, 0], deposits: [0, 0], hits: 0, booms: 0, carts: 0, raids: 0 };
       this.letGo();
       if (!this.figures[0].tag) {
@@ -801,7 +943,7 @@ export class GoldRaidView extends TableView<State> {
     document.removeEventListener("keyup", this.keyUp);
     window.removeEventListener("blur", this.letGo);
     document.removeEventListener("visibilitychange", this.hidden);
-    for (const el of [this.hud, this.word, this.pops, this.pad]) el.remove();
+    for (const el of [this.hud, this.seam, this.word, this.pops, this.pad]) el.remove();
     super.dispose();
   }
 }

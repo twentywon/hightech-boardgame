@@ -4059,6 +4059,24 @@ html[data-game="gold-raid"] .game-layout .board-area > .board-hint { display:non
 .gr-pop.gr-s1 { color:#bfe0ff; }
 .gr-pop.gr-big.gr-s0, .gr-pop.gr-big.gr-s1 { color:#ffe14a; }
 @keyframes gr-pop { 0% { opacity:0;transform:translateY(8px) scale(.6); } 15% { opacity:1;transform:translateY(0) scale(1.1); } 100% { opacity:0;transform:translateY(-46px) scale(1); } }
+/* The strip under the board: the whole valley small, the castles at its ends, the bandits, the cart, chests, and what is in view. */
+.gr-map { position:relative;height:16px;margin:6px 8px 0;border-radius:8px;background:#1e140cc8;box-shadow:inset 0 0 0 1.5px #b8894a99, 0 3px 10px #0006; }
+.gr-map [hidden] { display:none; }
+.gr-map > * { position:absolute;top:50%;translate:-50% -50%; }
+.gr-map > .gr-map-road { left:6px;right:6px;height:2px;translate:0 -50%;background:#c9a36a99;border-radius:1px; }
+.gr-map > .gr-map-eye { height:calc(100% + 4px);translate:0 -50%;box-sizing:border-box;border:1.5px solid #ffffffd0;border-radius:6px;background:#ffffff22; }
+.gr-map-castle { width:11px;height:12px;border-radius:2px 2px 1px 1px;box-shadow:0 0 0 1.5px #1e140c; }
+.gr-map-castle.gr-s0 { background:#d8352c; }
+.gr-map-castle.gr-s1 { background:#2b6fe3; }
+.gr-map-cart { width:13px;height:7px;border-radius:4px 4px 1px 1px;background:#efe6cf;box-shadow:0 0 0 1.5px #4a3220; }
+.gr-map-chest { width:7px;height:7px;rotate:45deg;background:#ffcf3a;box-shadow:0 0 6px #ffcf3a; }
+.gr-map-man { width:9px;height:9px;box-sizing:border-box;border-radius:50%;border:2px solid #ffffffd8; }
+.gr-map-man.gr-mine { width:12px;height:12px;border-color:#fff;box-shadow:0 0 0 1.5px #1e140c; }
+.gr-map-man.gr-s0 { background:#ff5a4e; }
+.gr-map-man.gr-s1 { background:#4a8cff; }
+/* Two at one screen, split: the line between the halves. */
+.gr-seam { position:absolute;top:0;bottom:0;left:50%;width:4px;translate:-50% 0;z-index:1;pointer-events:none;display:none;background:#1e140c;box-shadow:0 0 0 1px #b8894aa0; }
+.gr-seam.on { display:block; }
 .gr-pad { position:absolute;inset:0;z-index:3;pointer-events:none; }
 .gr-cluster { position:absolute;bottom:34px;display:flex;gap:12px;pointer-events:none; }
 .gr-at-left { left:max(16px, env(safe-area-inset-left)); }
@@ -4076,13 +4094,16 @@ html[data-game="gold-raid"] .game-layout .board-area > .board-hint { display:non
 @media (max-width: 760px), (max-height: 500px) {
   .gr-hud { top:5px; }
   .gr-board { padding:3px 8px;gap:6px;border-radius:10px; }
-  .gr-side { grid-template-columns:auto 84px auto;column-gap:5px;row-gap:1px; }
-  .gr-side b { font-size:11px; }
-  .gr-bar { height:10px; }
-  .gr-gold { min-width:44px;font-size:15px; }
-  .gr-gold small { font-size:10px; }
-  .gr-sack { font-size:10px;padding:0 6px; }
-  .gr-mid { min-width:36px;font-size:12px;padding:3px 5px; }
+  .gr-side { grid-template-columns:auto 96px auto;column-gap:6px;row-gap:1px; }
+  .gr-side b { font-size:12px; }
+  .gr-bar { height:12px; }
+  .gr-gold { min-width:48px;font-size:17px; }
+  .gr-gold small { font-size:11px; }
+  .gr-sack { font-size:11px;padding:0 6px; }
+  .gr-mid { min-width:38px;font-size:13px;padding:3px 5px; }
+  .gr-map { height:13px;margin-top:4px; }
+  .gr-map-castle { width:9px;height:10px; }
+  .gr-map-man.gr-mine { width:11px;height:11px; }
   .gr-cluster { bottom:12px;gap:9px; }
   .gr-btn { width:68px;height:68px;font-size:14px; }
   .gr-pad.gr-two .gr-btn { width:56px;height:56px;font-size:12px; }
@@ -4096,4 +4117,4 @@ html[data-game="gold-raid"] .game-layout .board-area > .board-hint { display:non
 @media (prefers-reduced-motion: reduce) {
   .gr-word.gr-show { animation-duration:1.5s;animation-timing-function:steps(1); }
 }
-html[data-capture] :is(.gr-hud, .gr-pad, .gr-word, .gr-pops) { display:none !important; }
+html[data-capture] :is(.gr-hud, .gr-pad, .gr-word, .gr-pops, .gr-seam) { display:none !important; }
