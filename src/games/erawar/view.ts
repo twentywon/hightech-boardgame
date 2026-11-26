@@ -7,7 +7,7 @@ import type { LiveGuest, LiveSession } from "../../net/live";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { Effects } from "../goldraid/fx";
 import { eraFrame, eraWarSubject, EDGE, type Frame } from "./layout";
-import { fallMove, timeMove, type State } from "./rules";
+import { fallMove, type State } from "./rules";
 import {
   ABILITY_COOL,
   BASE_X,
@@ -17,6 +17,7 @@ import {
   QUEUE,
   SLOTS,
   computerSide,
+  rankCost,
   createWorld,
   freshMind,
   step,
@@ -54,7 +55,6 @@ const UNIT_ICONS = [
 const ABILITY_WORDS = ["낙석!", "화살비!", "일제 포격!", "공습!"];
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /**
  * 시대 전쟁 drawn: the lane seen from the side (the plain, the woods and mountains behind), both bases as their eras
@@ -126,7 +126,6 @@ export class EraWarView extends TableView<State> {
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
-    private variant: string,
     private level: Level,
     private live: LiveSession | null = null,
   ) {
@@ -348,10 +347,9 @@ export class EraWarView extends TableView<State> {
     if (this.pic) this.draw(real);
     this.redraw();
   }
-  /** The end, reported once as the match's move: a base fallen, or the time up. */
+  /** The end, reported once as the match's move: a base fallen (there is no time limit). */
   private end(world: World) {
-    if (world.timeUp) this.onMove(timeMove(world.winner));
-    else this.onMove(fallMove(world.winner === 0 ? 1 : 0));
+    this.onMove(fallMove(world.winner === 0 ? 1 : 0));
   }
   /** A guest's frame: my orders sent, the host's picture drawn a moment behind, its happenings heard. */
   private follow(now: number) {
@@ -760,13 +758,13 @@ export class EraWarView extends TableView<State> {
       right = pic.sides[1 - me],
       names = this.live ? (this.mine === null ? ["1번", "2번"] : ["나", "상대"]) : ["나", "컴퓨터"],
       side = (s: SidePic, who: string, cls: string, team: number) =>
-        `<div class="ew-side ${cls}" style="--team:${SIDE_COLORS[team]}"><span class="ew-era">${ERAS[s.era].name}</span><b>${who}</b><span class="ew-hp"><i style="width:${Math.max(0, Math.min(100, (s.hp / s.max) * 100)).toFixed(1)}%"></i><em>${Math.max(0, Math.ceil(s.hp))}</em></span></div>`,
+        `<div class="ew-side ${cls}" style="--team:${SIDE_COLORS[team]}"><span class="ew-era">${ERAS[s.era].name}${s.rank ? `<small>★${s.rank}</small>` : ""}</span><b>${who}</b><span class="ew-hp"><i style="width:${Math.max(0, Math.min(100, (s.hp / s.max) * 100)).toFixed(1)}%"></i><em>${Math.max(0, Math.ceil(s.hp))}</em></span></div>`,
       at = (x: number) => (((x * this.flip) / EDGE + 1) / 2) * 100,
       dots = pic.units.map((u) => `<i class="ew-dot ew-d${u.side}${u.kind === 2 ? " ew-big" : ""}" style="left:${at(u.x).toFixed(1)}%"></i>`).join(""),
       wide = (this.frame.wide / (2 * EDGE)) * 100,
       view = `<b class="ew-view" style="left:${(((this.eye.x / EDGE + 1) / 2) * 100 - wide / 2).toFixed(1)}%;width:${wide.toFixed(1)}%"></b>`,
       map = `<div class="ew-map"><i class="ew-lane"></i><i class="ew-castle ew-d${me}" style="left:${at(me ? BASE_X : -BASE_X)}%"></i><i class="ew-castle ew-d${1 - me}" style="left:${at(me ? -BASE_X : BASE_X)}%"></i>${dots}${view}</div>`,
-      html = `<div class="ew-top">${side(left, names[0], "ew-left", this.mine === null ? 0 : me)}<div class="ew-clock${pic.left < 60 ? " late" : ""}">${mmss(pic.left)}</div>${side(right, names[1], "ew-right", this.mine === null ? 1 : 1 - me)}</div>${map}`;
+      html = `<div class="ew-top">${side(left, names[0], "ew-left", this.mine === null ? 0 : me)}<div class="ew-vs">VS</div>${side(right, names[1], "ew-right", this.mine === null ? 1 : 1 - me)}</div>${map}`;
     if (html !== this.hudKey) {
       this.hudKey = html;
       this.hud.innerHTML = html;
@@ -799,7 +797,7 @@ export class EraWarView extends TableView<State> {
     if (!s || this.bar.hidden) return;
     const era = ERAS[s.era],
       over = !!this.pic?.over || this.state?.winner !== null,
-      key = JSON.stringify([s.era, Math.floor(s.gold), s.xp, s.queue, s.turrets, Math.ceil(s.ability), Math.round(s.training * 20), this.armed, over, s.next]);
+      key = JSON.stringify([s.era, s.rank, Math.floor(s.gold), s.xp, s.queue, s.turrets, Math.ceil(s.ability), Math.round(s.training * 20), this.armed, over, s.next]);
     if (this.bar.dataset.key === key) return;
     this.bar.dataset.key = key;
     if (this.armed >= 0 && performance.now() - this.armedAt > 2500) this.armed = -1;
@@ -839,12 +837,17 @@ export class EraWarView extends TableView<State> {
     ability.classList.toggle("ready", ready && !over);
     ability.disabled = over || !ready;
     ability.setAttribute("aria-label", `특수 공격 ${era.ability.name}${ready ? "" : `, ${Math.ceil(s.ability)}초 남음`}`);
+    // In the last era the button buys a rank (강화) with gold.
     const up = this.bar.querySelector<HTMLButtonElement>(".ew-era-up")!,
-      can = s.next !== null && s.xp >= s.next;
-    up.querySelector("em")!.textContent = s.era >= LAST_ERA ? "마지막 시대" : `${ERAS[s.era + 1].name}`;
+      last = s.era >= LAST_ERA,
+      price = rankCost(s.rank),
+      can = last ? s.gold >= price : s.next !== null && s.xp >= s.next;
+    up.classList.toggle("ew-rank-up", last);
+    up.querySelector("b")!.textContent = last ? `강화 ★${s.rank + 1}` : "다음 시대";
+    up.querySelector("em")!.textContent = last ? String(price) : `${ERAS[s.era + 1].name}`;
     up.classList.toggle("ready", can && !over);
     up.disabled = over || !can;
-    up.setAttribute("aria-label", s.era >= LAST_ERA ? "마지막 시대입니다" : `다음 시대 ${ERAS[s.era + 1].name}로, 경험 ${s.xp} / ${s.next}`);
+    up.setAttribute("aria-label", last ? `강화 ${s.rank + 1}단계, ${price}골드` : `다음 시대 ${ERAS[s.era + 1].name}로, 경험 ${s.xp} / ${s.next}`);
   }
   protected spots(): Spot[] {
     return [];
@@ -856,7 +859,7 @@ export class EraWarView extends TableView<State> {
     const anew = (!this.world && !(this.live && !this.live.host)) || (state.ply === 0 && this.shown > 0);
     this.shown = state.ply;
     if (anew && !(this.live && !this.live.host)) {
-      this.world = createWorld(Math.floor(Math.random() * 2e9) + 1, state.variant);
+      this.world = createWorld(Math.floor(Math.random() * 2e9) + 1);
       if (!this.live) computerSide(this.world, 1, this.level);
       else for (const side of [0, 1] as const) if (this.live.host && this.live.control(side) === "computer") computerSide(this.world, side, "hard");
       this.minds = [freshMind(), freshMind()];
