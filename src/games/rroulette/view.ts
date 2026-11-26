@@ -1,4 +1,5 @@
 import * as T from "three";
+import { grain, grainUV } from "../../engine/grain";
 import { block, capable, glossy, planks } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
@@ -72,6 +73,8 @@ interface Toy {
 export class RRouletteView extends TableView<State> {
   onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
   private guests: Guest[] = [];
+  /** The chairs' wood, one paint for all four. */
+  private chairWood?: T.MeshStandardMaterial;
   private toy: Toy;
   private confetti: T.InstancedMesh;
   private bits: { p: T.Vector3; v: T.Vector3; r: T.Euler; w: T.Vector3; rest: boolean }[] = [];
@@ -268,7 +271,8 @@ export class RRouletteView extends TableView<State> {
     // A sideboard at the back with a stack of presents and a lamp.
     const cab = this.standard({ color: "#f4ede0", roughness: 0.55 });
     this.add(block(4.2, 1.6, 0.9, 0.05), cab, -3.6, FLOOR + 0.8, -6.5);
-    this.add(block(4.3, 0.08, 1.0, 0.03), this.standard({ color: "#c79a6a", roughness: 0.45 }), -3.6, FLOOR + 1.64, -6.5);
+    // The cabinet's top is real oak.
+    this.add(grainUV(block(4.3, 0.08, 1.0, 0.03), 1.4), this.standard({ ...grain(keep, "#c79a6a"), roughness: 0.45 }), -3.6, FLOOR + 1.64, -6.5);
     const wraps = [
       ["#ff6b8b", "#ffe066"],
       ["#4dabf7", "#ffffff"],
@@ -326,7 +330,7 @@ export class RRouletteView extends TableView<State> {
     const skirt = this.add(new T.CylinderGeometry(R + 0.02, R + 0.18, 0.75, 72, 1, true), this.standard({ map: skirtMap, roughness: 0.9, side: T.DoubleSide }), 0, -0.4, 0);
     skirt.castShadow = false;
     // The table's foot under it.
-    this.add(new T.CylinderGeometry(0.22, 0.5, Math.abs(FLOOR) - 0.7, 24), this.standard({ color: "#6b4a34", roughness: 0.5 }), 0, (FLOOR - 0.7) / 2, 0);
+    this.add(grainUV(new T.CylinderGeometry(0.22, 0.5, Math.abs(FLOOR) - 0.7, 24), 1.2, 1), this.standard({ ...grain(keep, "#6b4a34", { kind: "dark" }), roughness: 0.5 }), 0, (FLOOR - 0.7) / 2, 0);
     // The cake, cups, plates, a bowl of popcorn and party blowers round the edge, between the seats.
     const plate = this.standard({ color: "#ffffff", roughness: 0.35 });
     const diag = (k: number, r: number) => ({ x: Math.cos(Math.PI / 4 + (k * Math.PI) / 2) * r, z: Math.sin(Math.PI / 4 + (k * Math.PI) / 2) * r });
@@ -386,16 +390,17 @@ export class RRouletteView extends TableView<State> {
     // The chair: a seat, four legs and a back behind the guest.
     const chair = new T.Group();
     root.add(chair);
-    const wood = this.standard({ color: "#c58b5b", roughness: 0.55 });
-    this.add(block(1.1, 0.1, 1.0, 0.03), wood, 0, RR.FLOOR_Y + 1.15, 0.15, chair);
+    // Real wood (the photograph of oak graded to the chair's colour), its grain along each piece.
+    const wood = this.chairWood ??= this.standard({ ...grain(keep, "#c58b5b"), roughness: 0.55 });
+    this.add(grainUV(block(1.1, 0.1, 1.0, 0.03), 0.9, 0), wood, 0, RR.FLOOR_Y + 1.15, 0.15, chair);
     for (const [x, z] of [
       [-0.45, -0.25],
       [0.45, -0.25],
       [-0.45, 0.55],
       [0.45, 0.55],
     ])
-      this.add(new T.CylinderGeometry(0.04, 0.04, 1.15, 8), wood, x, RR.FLOOR_Y + 0.575, z, chair);
-    this.add(block(1.1, 1.2, 0.08, 0.03), wood, 0, RR.FLOOR_Y + 1.8, 0.66, chair);
+      this.add(grainUV(new T.CylinderGeometry(0.04, 0.04, 1.15, 8), 0.9), wood, x, RR.FLOOR_Y + 0.575, z, chair);
+    this.add(grainUV(block(1.1, 1.2, 0.08, 0.03), 0.9, 1), wood, 0, RR.FLOOR_Y + 1.8, 0.66, chair);
     const body = new T.Group();
     root.add(body);
     const shirt = this.standard({ color: SHIRTS[seat], roughness: 0.75 });

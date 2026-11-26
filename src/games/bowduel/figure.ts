@@ -1,5 +1,6 @@
 import * as T from "three";
 import { compactGroup } from "../badminton/merge";
+import { grain, grainUV } from "../../engine/grain";
 import { canvas, stream, texture, type Own } from "../goldraid/paint";
 
 /**
@@ -146,6 +147,10 @@ export function paints(own: Own, rich: boolean): Paints {
   const pics = picturesOf(own),
     make = (color: string, roughness = 0.8, metalness = 0, map?: T.Texture) =>
       own(rich ? new T.MeshStandardMaterial({ color, roughness, metalness, map }) : new T.MeshLambertMaterial({ color, map }));
+  const woody = (tone: string, roughness: number, kind: "light" | "dark") => {
+    const w = grain(own, tone, { kind, rich });
+    return own(rich ? new T.MeshStandardMaterial({ ...w, roughness }) : new T.MeshLambertMaterial({ color: w.color, map: w.map }));
+  };
   return {
     skin: make("#e0ae86", 0.62),
     hair: make("#221913", 0.55),
@@ -153,11 +158,12 @@ export function paints(own: Own, rich: boolean): Paints {
     trousers: make("#3a3128", 0.9, 0, pics.folds),
     leather: make("#6a4424", 0.55, 0, pics.hide),
     brass: make("#d0a64a", 0.32, 0.75),
-    wood: make("#7c4f25", 0.42),
+    // The bow and the arrows' shafts are real wood: its photograph graded to their colours, with relief on a graphics card.
+    wood: woody("#8a5a2c", 0.42, "dark"),
     felt: make("#17130f", 0.9),
     string: own(new T.LineBasicMaterial({ color: "#f6f0e2" })),
     steel: make("#c3cad2", 0.28, 0.85),
-    shaft: make("#cfa56f", 0.6),
+    shaft: woody("#cfa56f", 0.6, "light"),
     white: make("#f7f3ea", 0.4),
     lamellar: make("#ffffff", 0.45, 0.15, pics.plates),
     horn: make("#2a221c", 0.35),
@@ -196,7 +202,7 @@ export function arrowModel(own: Own, p: Paints, vane: T.Material) {
     L = ARROW_LENGTH;
   mesh(shape(own, "a-point", () => new T.ConeGeometry(0.017, 0.075, 4).rotateZ(-Math.PI / 2).translate(-0.0375, 0, 0)), p.steel, g);
   mesh(shape(own, "a-ferrule", () => new T.CylinderGeometry(0.0095, 0.0095, 0.03, 6).rotateZ(Math.PI / 2).translate(-0.088, 0, 0)), p.steel, g);
-  mesh(shape(own, "a-shaft", () => new T.CylinderGeometry(0.0075, 0.0075, L - 0.07, 6).rotateZ(Math.PI / 2).translate(-0.07 - (L - 0.07) / 2, 0, 0)), p.shaft, g);
+  mesh(shape(own, "a-shaft", () => grainUV(new T.CylinderGeometry(0.0075, 0.0075, L - 0.07, 6).rotateZ(Math.PI / 2).translate(-0.07 - (L - 0.07) / 2, 0, 0), 0.45)), p.shaft, g);
   mesh(shape(own, "a-crest", () => new T.CylinderGeometry(0.0082, 0.0082, 0.045, 6).rotateZ(Math.PI / 2).translate(-L + 0.215, 0, 0)), vane, g);
   mesh(shape(own, "a-nock", () => new T.CylinderGeometry(0.009, 0.009, 0.025, 6).rotateZ(Math.PI / 2).translate(-L, 0, 0)), vane, g);
   const fin = shape(own, "a-vane", () => new T.ShapeGeometry(vaneShape(0.15, 0.045), 4).translate(-L + 0.17, 0, 0));
@@ -334,7 +340,7 @@ export function buildArcher(own: Own, p: Paints, colour: string, rich: boolean):
   mesh(shape(own, `quiver${seg}`, () => new T.CylinderGeometry(0.065, 0.052, 0.58, seg)), p.leather, quiver);
   for (const y of [0.25, -0.05, -0.26]) mesh(shape(own, `qband${seg}`, () => new T.CylinderGeometry(0.068, 0.068, 0.03, seg)), p.brass, quiver, 0, y, 0);
   mesh(shape(own, `qrim${seg}`, () => new T.TorusGeometry(0.066, 0.01, 4, seg).rotateX(Math.PI / 2)), dark, quiver, 0, 0.29, 0);
-  const qshaft = shape(own, "qshaft", () => new T.CylinderGeometry(0.0075, 0.0075, 0.3, 5)),
+  const qshaft = shape(own, "qshaft", () => grainUV(new T.CylinderGeometry(0.0075, 0.0075, 0.3, 5), 0.45)),
     qnock = shape(own, "qnock", () => new T.CylinderGeometry(0.009, 0.009, 0.02, 5)),
     qvane = shape(own, "qvane", () => new T.ShapeGeometry(vaneShape(0.13, 0.04), 3).rotateZ(-Math.PI / 2).translate(0, -0.13, 0));
   const r = stream(colour.length * 7 + 3);
