@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type Page, type TestInfo } from "@playwright/test";
-import { selectGame } from "./library";
+import { selectGame, leaveTable } from "./library";
 
 /*
  * 와이파이 여럿이 on the soccer pitch: two pages of one browser, each its own device, joined by WebRTC with the pairing
@@ -121,7 +121,7 @@ test("soccer on two devices: the camps of the room, the guest's hand moving its 
   await expect(guest.locator("#pg-final")).toContainText("이겼습니다! 블루 팀이 1 대 0으로 이겼습니다.");
 
   // The host leaves: the room is gone for the guest too.
-  await host.locator("main.game-layout #back").click();
+  await leaveTable(host);
   const gone = guest.locator("dialog[open]", { hasText: "방이 없어졌습니다" });
   await expect(gone).toBeVisible({ timeout: 15000 });
   await gone.getByRole("button", { name: "확인" }).click();

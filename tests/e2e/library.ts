@@ -13,6 +13,8 @@ export async function selectGame(page: Page, name: string = "오목") {
       if (leave) return leave.click();
       document.querySelectorAll("dialog").forEach((d) => d.remove());
       document.querySelector<HTMLButtonElement>("main.game-layout #back")?.click();
+      // A game in play asks before it is left (the user asked).
+      document.querySelector<HTMLButtonElement>("dialog.leave-dialog #leave-go")?.click();
     });
   const card = page.getByRole("button", { name: `${name} 살펴보기`, exact: true });
   await expect(card).toBeVisible();
@@ -41,4 +43,11 @@ export async function fastClock(page: Page, factor = 6) {
     window.setTimeout = ((fn: TimerHandler, ms?: number, ...rest: unknown[]) => timeout(fn, (ms ?? 0) / k, ...rest)) as typeof setTimeout;
     window.setInterval = ((fn: TimerHandler, ms?: number, ...rest: unknown[]) => interval(fn, (ms ?? 0) / k, ...rest)) as typeof setInterval;
   }, factor);
+}
+
+/** Leaves a table by its 나가기, saying 나가기 again in the window a game in play asks with (the user asked for it). */
+export async function leaveTable(page: Page) {
+  await page.locator("main.game-layout #back").click();
+  const go = page.locator("dialog.leave-dialog #leave-go");
+  if (await go.count()) await go.click();
 }

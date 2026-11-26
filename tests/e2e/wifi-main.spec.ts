@@ -4,7 +4,7 @@ import { FOV, cameraDistance } from "../../src/engine/camera";
 import { cellPos, tttSubject } from "../../src/games/tictactoe/layout";
 import { APP_VERSION } from "../../src/net/protocol";
 import { roomCode } from "../../src/net/lan";
-import { selectGame } from "./library";
+import { selectGame, leaveTable } from "./library";
 import { FAKE_PORT, FakeWifi, aimCamera, attachCamera } from "./fake-app";
 
 /*
@@ -131,12 +131,12 @@ test("in the app: from the main screen the guest joins a tic-tac-toe room by its
   await agree([host, guest], 2);
 
   // Back: the collection again, and the host is told the guest left.
-  await guest.locator("main.game-layout #back").click();
+  await leaveTable(guest);
   await expect(guest.locator("#join-room")).toBeVisible();
   await expect(host.locator("#turn")).toContainText("민수 님이 나갔습니다", { timeout: 15000 });
 
   // Now a gomoku room, joined by a tap in the main screen's list.
-  await host.locator("main.game-layout #back").click();
+  await leaveTable(host);
   await hostRoom(host, "오목");
   await expect(host.locator("#net-room-code svg")).toBeVisible();
   await joinWindow(guest, "민수");
@@ -152,7 +152,7 @@ test("in the app: from the main screen the guest joins a tic-tac-toe room by its
   await agree([host, guest], 1);
   await keyed(guest, ["ArrowRight", "Enter"], 2);
   await agree([host, guest], 2);
-  await guest.locator("main.game-layout #back").click();
+  await leaveTable(guest);
   await expect(guest.locator("#join-room")).toBeVisible();
   // In its own turn gomoku's status line asks for the move: the room window tells who left.
   await host.locator("#net-room").click();
@@ -193,7 +193,7 @@ test("in a browser: the guest pastes the host's invite on the main screen and la
   await agree([host, guest], 1);
   await tap(guest, 0);
   await agree([host, guest], 2);
-  await guest.locator("main.game-layout #back").click();
+  await leaveTable(guest);
   await expect(guest.locator("#join-room")).toBeVisible();
   await expect(host.locator("#turn")).toContainText("민수 님이 나갔습니다", { timeout: 15000 });
   // The seat of the guest who left is played by the host's computer (the user asked).
@@ -219,7 +219,7 @@ test("in the app: the host leaving ends the room for everyone, and the guest is 
   for (const page of [host, guest]) await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 30000 });
   await tap(host, 4);
   await agree([host, guest], 1);
-  await host.locator("main.game-layout #back").click();
+  await leaveTable(host);
   const gone = guest.locator("dialog[open]", { hasText: "방이 없어졌습니다" });
   await expect(gone).toBeVisible({ timeout: 15000 });
   await expect(gone).toContainText("방장이 방을 나가서 이 방은 끝났습니다");

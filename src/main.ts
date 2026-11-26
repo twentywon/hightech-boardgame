@@ -2,6 +2,7 @@ import "./style.css";
 import "./ui/app";
 import { music } from "./engine/music";
 import { EDITION } from "./core/catalog";
+import { confirmLeave } from "./ui/dialog";
 
 if (EDITION === "student") document.title = "World Table Games 학생용";
 
@@ -82,5 +83,29 @@ window.addEventListener("popstate", () => {
     remember();
     return;
   }
-  document.getElementById("back")?.click();
+  // A game in play asks first (the user asked); kept, the table's history entry is made again.
+  if (inPlay()) confirmLeave(leaveTable, remember);
+  else leaveTable();
 });
+// Leaving a game in play, by 나가기 or the back button, asks first (the user asked). A table whose game has ended (its
+// finale shown) and the window a game is entered through are left at once.
+const inPlay = () => !!root.querySelector(":scope > main.game-layout") && !document.querySelector("#board .board-finale") && !document.querySelector("dialog.entry[open]");
+let leaving = false;
+const leaveTable = () => {
+  leaving = true;
+  try {
+    document.getElementById("back")?.click();
+  } finally {
+    leaving = false;
+  }
+};
+document.addEventListener(
+  "click",
+  (event) => {
+    if (leaving || !(event.target instanceof Element) || !event.target.closest("#back") || !inPlay()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    confirmLeave(leaveTable);
+  },
+  true,
+);

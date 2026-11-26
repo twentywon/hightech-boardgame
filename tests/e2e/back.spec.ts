@@ -10,6 +10,14 @@ test("the browser's back button leaves a table for the collection, not the page"
     await page.locator(".game-stage button.primary").click();
     await expect(page.locator("canvas")).toBeVisible();
     await page.goBack();
+    // A game in play asks first (the user asked): 계속하기 keeps it, and back again asks again.
+    await expect(page.locator("dialog.leave-dialog")).toBeVisible();
+    await expect(page.locator("dialog.leave-dialog .dialog-actions button")).toHaveText(["계속하기", "나가기"]);
+    await page.locator("#leave-stay").click();
+    await expect(page.locator("dialog.leave-dialog")).toHaveCount(0);
+    await expect(page.locator("canvas")).toBeVisible();
+    await page.goBack();
+    await page.locator("#leave-go").click();
     await expect(page.locator("main.library")).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
   }
@@ -23,11 +31,19 @@ test("the browser's back button leaves a table for the collection, not the page"
   await expect(page.locator("canvas")).toBeVisible();
   // Leaving by the table's own button uses the entry up: the next back does not bring the table again.
   await page.getByRole("button", { name: "나가기", exact: true }).click();
+  // Its window too: Escape is 계속하기, then 나가기 leaves.
+  await expect(page.locator("dialog.leave-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog.leave-dialog")).toHaveCount(0);
+  await expect(page.locator("canvas")).toBeVisible();
+  await page.getByRole("button", { name: "나가기", exact: true }).click();
+  await page.locator("#leave-go").click();
   await expect(page.locator("main.library")).toBeVisible();
   await selectGame(page, "리버시");
   await page.locator(".game-stage button.primary").click();
   await expect(page.locator("canvas")).toBeVisible();
   await page.goBack();
+  await page.locator("#leave-go").click();
   await expect(page.locator("main.library")).toBeVisible();
   expect(errors).toEqual([]);
 });

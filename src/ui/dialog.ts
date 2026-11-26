@@ -26,6 +26,35 @@ export function modal(
   d.showModal();
 }
 /**
+ * Asks before a game in play is left by 나가기 or the back button (the user asked): 계속하기 at the left end keeps the
+ * game, 나가기 at the right end leaves it. Escape, or a press outside, is 계속하기.
+ */
+export function confirmLeave(leave: () => void, stay: () => void = () => {}) {
+  document.querySelector("dialog.leave-dialog")?.remove();
+  const d = document.createElement("dialog");
+  d.className = "leave-dialog";
+  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>게임에서 나갈까요?</h2><div class="dialog-body"><p>지금 하던 게임은 저장되지 않고 끝납니다.</p></div><div class="dialog-actions"><button id="leave-stay">계속하기</button><button id="leave-go" class="primary">나가기</button></div>`;
+  document.body.append(d);
+  let done = false;
+  const end = (go: boolean) => {
+    if (done) return;
+    done = true;
+    if (d.open) d.close();
+    d.remove();
+    (go ? leave : stay)();
+  };
+  d.querySelector<HTMLButtonElement>("#leave-stay")!.onclick = () => end(false);
+  d.querySelector<HTMLButtonElement>("#leave-go")!.onclick = () => end(true);
+  d.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    end(false);
+  });
+  d.addEventListener("click", (event) => event.target === d && end(false));
+  d.showModal();
+  d.querySelector<HTMLButtonElement>("#leave-stay")!.focus();
+  return d;
+}
+/**
  * The setup's lists offered as rows of buttons, as the puzzles offer their stages (the user asked: no lists in the
  * settings window). Each list stays in the page, a pixel and unseen, as the control it always was (its label, its
  * value, its change event, which the setup listens to); its buttons follow it: rebuilt when its options change,
@@ -126,6 +155,28 @@ function buttonize(host: HTMLElement) {
   host.addEventListener("click", () => queueMicrotask(() => host.isConnected && sync()));
 }
 /**
+ * A setup window's start drawn at the right end of its row of actions, level with the button at its left end (다른
+ * 게임 in the entry window, 계속하기 in 새 게임: the user asked for both). It stays where the setup put it, for setups
+ * find it there by their own panel: it is only drawn in the row (`.entry-start`, placed against the window), and
+ * nothing between it and the window may be its containing block. One a setup draws anew later (the tour's form when
+ * the number of people changes) is placed the same way.
+ */
+function startInRow(d: HTMLDialogElement, host: HTMLElement) {
+  const place = () => {
+    host.querySelectorAll<HTMLButtonElement>("button.primary").forEach((button) => {
+      if (!button.classList.contains("entry-start")) button.classList.add("entry-start");
+      for (let el = button.parentElement; el && el !== host; el = el.parentElement) {
+        const look = getComputedStyle(el);
+        if (look.position !== "static") el.style.position = "static";
+        if (look.transform !== "none") el.style.transform = "none";
+      }
+    });
+    d.classList.toggle("has-start", !!host.querySelector("button.primary"));
+  };
+  place();
+  new MutationObserver(place).observe(host, { childList: true, subtree: true });
+}
+/**
  * Offers a game's own setup panel in a dialog, for starting anew from the
  * table. `fill` draws the panel into the host; its start button closes the
  * dialog once it has read the choices.
@@ -133,8 +184,9 @@ function buttonize(host: HTMLElement) {
 export function setupDialog(fill: (host: HTMLElement) => void) {
   document.querySelector("dialog")?.remove();
   const d = document.createElement("dialog");
-  d.className = "setup-dialog";
-  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>새 게임</h2><p class="setup-note">지금 하던 게임은 끝내고 처음부터 다시 시작합니다.</p><div class="dialog-body setup-host"></div><div class="dialog-actions"><button id="setup-cancel">계속하기</button></div>`;
+  // 계속하기 at the left end and 새 게임 시작 at the right end of one row (the user asked), as in the entry window.
+  d.className = "setup-dialog anew";
+  d.innerHTML = `<div class="eyebrow">WORLD TABLE GAMES</div><h2>새 게임</h2><p class="setup-note">지금 하던 게임은 끝내고 처음부터 다시 시작합니다.</p><div class="dialog-body setup-host"></div><div class="dialog-actions entry-actions"><button id="setup-cancel">계속하기</button></div>`;
   document.body.append(d);
   const close = () => {
     d.close();
@@ -144,6 +196,7 @@ export function setupDialog(fill: (host: HTMLElement) => void) {
   fill(host);
   buttonize(host);
   d.querySelector<HTMLButtonElement>("#setup-cancel")!.onclick = close;
+  startInRow(d, host);
   d.querySelectorAll<HTMLButtonElement>(".setup-host button.primary").forEach((button) => {
     const begin = button.onclick;
     button.textContent = "새 게임 시작";
@@ -193,23 +246,8 @@ export function entryDialog(title: string, label: string, content: Node[], back:
   document.body.append(d);
   buttonize(host);
   // The start (the setup's primary buttons: 테이블에 앉기, 킥오프 and the rest) is shown at the right end of the row of
-  // 다른 게임, which stays put under the setup however far it scrolls (the user asked). It stays where the setup put it,
-  // for setups find it there by their own panel: it is only drawn in the row (`.entry-start`, placed against the
-  // window), and nothing between it and the window may be its containing block. One a setup draws anew later (the
-  // tour's form when the number of people changes) is placed the same way.
-  const place = () => {
-    host.querySelectorAll<HTMLButtonElement>("button.primary").forEach((button) => {
-      if (!button.classList.contains("entry-start")) button.classList.add("entry-start");
-      for (let el = button.parentElement; el && el !== host; el = el.parentElement) {
-        const look = getComputedStyle(el);
-        if (look.position !== "static") el.style.position = "static";
-        if (look.transform !== "none") el.style.transform = "none";
-      }
-    });
-    d.classList.toggle("has-start", !!host.querySelector("button.primary"));
-  };
-  place();
-  new MutationObserver(place).observe(host, { childList: true, subtree: true });
+  // 다른 게임, which stays put under the setup however far it scrolls (the user asked).
+  startInRow(d, host);
   // The start (any primary button, also one a setup draws anew, as the tour's form when the number of people
   // changes) closes the window before its own handler runs: a table that starts under an open window holds its
   // buttons and its computer, as it does under any window. The window stays in the page while the handler runs,

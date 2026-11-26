@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type Page, type TestInfo } from "@playwright/test";
-import { selectGame } from "./library";
+import { selectGame, leaveTable } from "./library";
 
 /*
  * 와이파이 여럿이 on the slot car track: two pages of one browser, each its own device, joined by WebRTC with the
@@ -132,7 +132,7 @@ test("slot car on two devices: the guest's pedal drives its car on both screens,
   expect(await board(guest)).toEqual((await board(host)).map((name) => (name === "나" ? "빨강" : name === "파랑" ? "나" : name)));
 
   // The host leaves: the room is gone for the guest too.
-  await host.locator("main.game-layout #back").click();
+  await leaveTable(host);
   const gone = guest.locator("dialog[open]", { hasText: "방이 없어졌습니다" });
   await expect(gone).toBeVisible({ timeout: 15000 });
   await gone.getByRole("button", { name: "확인" }).click();
