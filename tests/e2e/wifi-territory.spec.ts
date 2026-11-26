@@ -119,9 +119,11 @@ test("territory on two devices: the guest steers its own mover on both screens, 
 
   // The minute runs out: the same order and shares on both devices.
   for (const page of [host, guest]) await expect(page.locator(".board-finale")).toBeVisible({ timeout: 240000 });
-  const final = await host.locator("#pg-final").innerText();
-  expect(final).toMatch(/1위 (빨강|파랑|노랑) \d+\.\d%/);
-  await expect(guest.locator("#pg-final")).toHaveText(final);
+  // Each device words the outcome its own way (이겼습니다! or whose win); the order and shares after it are the same.
+  const order = (text: string) => text.slice(text.indexOf("1위")),
+    final = order(await host.locator("#pg-final").innerText());
+  expect(final).toMatch(/^1위 (빨강|파랑|노랑) \d+\.\d% · 2위/);
+  await expect.poll(async () => order(await guest.locator("#pg-final").innerText())).toBe(final);
   for (const page of [host, guest]) await expect(canvasOf(page)).toHaveAttribute("data-phase", "over");
 
   // The host leaves: the room is gone for the guest too.
