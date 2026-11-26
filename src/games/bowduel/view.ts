@@ -1,10 +1,11 @@
 import * as T from "three";
-import { capable } from "../../engine/scene-utils";
+import { capable, realism } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { ARROW_LENGTH, arrowModel, buildArcher, paints, type Archer, type Paints } from "./figure";
-import { buildField, skyTexture, HAZE_COLOUR, worldGround, type Field } from "./field";
+import { buildField, daylight, skyTexture, HAZE_COLOUR, worldGround, type Field } from "./field";
+import { Bursts } from "./fx";
 import { KEY_STEP, pullAim, shareOf } from "./layout";
 import { ANGLE, KEEP, POWER, facing, feet, flight, ground, type Land, type Shot, type State } from "./rules";
 
@@ -41,8 +42,17 @@ export class DuelView extends TableView<State> {
   private mirror = 1;
   private flying: T.Group;
   private pool: T.Group[] = [];
-  private trail: T.Line;
+  private trail: T.Mesh;
   private trailAt: Float32Array;
+  private trailTint: Float32Array;
+  /** The path drawn so far (world), for the ribbon. */
+  private trailPath: number[] = [];
+  private bursts: Bursts;
+  private sunLight: T.DirectionalLight;
+  private skyLight: T.HemisphereLight;
+  private skies: { dispose(): void }[] = [];
+  /** Until when each archer shows it was struck (ms). */
+  private hurtUntil: [number, number] = [0, 0];
   /** Where the camera looks (world m) and where it is going; how quickly it follows (s). */
   private look = new T.Vector2(0, 2);
   private goal = new T.Vector2(0, 2);
@@ -80,8 +90,10 @@ export class DuelView extends TableView<State> {
     this.scene.background = skyTexture(keep);
     this.scene.fog = new T.Fog(HAZE_COLOUR, 140, 520);
     // A low sun from the upper left and in front, warm; the sky and the dry grass light the shadows.
-    this.scene.add(new T.HemisphereLight("#cfdcff", "#8a6a44", 1.6));
+    this.skyLight = new T.HemisphereLight("#cfdcff", "#8a6a44", 1.6);
+    this.scene.add(this.skyLight);
     const sun = new T.DirectionalLight("#ffe0b2", 2.6);
+    this.sunLight = sun;
     sun.position.set(-26, 34, 30);
     sun.castShadow = true;
     sun.shadow.mapSize.set(this.rich ? 2048 : 1024, this.rich ? 2048 : 1024);
@@ -89,6 +101,12 @@ export class DuelView extends TableView<State> {
     sun.shadow.normalBias = 0.04;
     this.own(sun.shadow);
     this.scene.add(sun, sun.target);
+    // On a graphics card: soft shadows and the light of the sky in the polished parts.
+    if (this.rich) {
+      realism(this.renderer, this.scene);
+      this.scene.environmentIntensity = 0.35;
+      sun.shadow.mapSize.set(4096, 4096);
+    }
     this.paints = paints(keep, this.rich);
     this.archers = [buildArcher(keep, this.paints, DUEL_COLOURS[0], this.rich), buildArcher(keep, this.paints, DUEL_COLOURS[1], this.rich)];
     for (const a of this.archers) {
@@ -106,14 +124,20 @@ export class DuelView extends TableView<State> {
       this.pool.push(a);
       this.scene.add(a);
     }
-    // The arrow's way through the air, a faint line behind it while it flies (gone once it has struck).
-    this.trailAt = new Float32Array(3 * 1200);
-    const trail = keep(new T.BufferGeometry());
+    // The arrow's way through the air: a faint ribbon behind it, brightest and widest at the arrow, while it flies.
+    this.trailAt = new Float32Array(3 * 2 * 1200);
+    this.trailTint = new Float32Array(4 * 2 * 1200);
+    const trail = keep(new T.BufferGeometry()),
+      quads: number[] = [];
+    for (let i = 0; i < 1199; i++) quads.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
     trail.setAttribute("position", new T.BufferAttribute(this.trailAt, 3));
+    trail.setAttribute("color", new T.BufferAttribute(this.trailTint, 4));
+    trail.setIndex(quads);
     trail.setDrawRange(0, 0);
-    this.trail = new T.Line(trail, keep(new T.LineBasicMaterial({ color: "#fffaf0", transparent: true, opacity: 0.5, depthWrite: false })));
+    this.trail = new T.Mesh(trail, keep(new T.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 1, depthWrite: false, side: T.DoubleSide, fog: false })));
     this.trail.frustumCulled = false;
     this.scene.add(this.trail);
+    this.bursts = new Bursts(this.scene, keep, this.rich);
     // The words over the table.
     host.style.position = "relative";
     this.hud = document.createElement("div");
@@ -233,6 +257,7 @@ export class DuelView extends TableView<State> {
       shooter = this.archers[s.turn];
     if (aim) shooter.aim(aim.angle, shareOf(aim.power), true);
     else if (s.winner === null) shooter.rest();
+    if (s.health[s.turn] > 0 && performance.now() > this.hurtUntil[s.turn]) shooter.mood(aim ? "focus" : "calm");
     box.hidden = !aim || capturing();
     el.dataset.aim = aim ? `${aim.angle},${aim.power}` : "";
     el.dataset.drawn = String(!!aim);
@@ -266,6 +291,19 @@ export class DuelView extends TableView<State> {
     this.field?.dispose();
     this.field = buildField(this.scene, land, mirror, DUEL_COLOURS, this.rich);
     this.fieldKey = key;
+    // The hour of the match: the sky, the haze, the sun and the sky's light.
+    const light = daylight(land);
+    for (const t of this.skies) t.dispose();
+    this.skies = [];
+    this.scene.background = skyTexture(<R extends { dispose(): void }>(t: R) => (this.skies.push(t), t), light);
+    (this.scene.fog as T.Fog).color.set(light.haze);
+    this.sunLight.color.set(light.sun.colour);
+    this.sunLight.intensity = light.sun.intensity * (this.rich ? 0.9 : 1);
+    this.sunLight.position.set(light.sun.at[0] * mirror, light.sun.at[1], light.sun.at[2]);
+    this.skyLight.color.set(light.sky_light.sky);
+    this.skyLight.groundColor.set(light.sky_light.ground);
+    this.skyLight.intensity = light.sky_light.intensity * (this.rich ? 0.56 : 1);
+    this.renderer.domElement.dataset.hour = light.name;
     return true;
   }
   /** Where the camera rests for `side`'s shot: the archer near the edge it stands at, the field ahead of it. */
@@ -313,8 +351,8 @@ export class DuelView extends TableView<State> {
         f = feet(state.land, side);
       a.root.position.set(this.wx(f.x), f.y, 0);
       a.root.scale.set(this.screenFace(side), 1, 1);
-      a.body.rotation.z = state.health[side] <= 0 ? 1.45 : 0;
-      a.body.position.y = state.health[side] <= 0 ? 0.12 : 0;
+      a.fall(state.health[side] <= 0 ? 1 : 0);
+      if (state.health[side] > 0 && performance.now() > this.hurtUntil[side]) a.mood("calm");
       if (side !== state.turn || state.winner !== null) a.rest();
     });
     // The arrows standing: in the ground, or in an archer (moving with it).
@@ -401,7 +439,8 @@ export class DuelView extends TableView<State> {
     let shown = 0,
       loosed = false;
     const from = new T.Vector2();
-    this.trailAt.fill(0);
+    this.trailPath = [];
+    shooter.mood("focus");
     this.tween(raise, flyMs, (p) => {
       if (!loosed) {
         loosed = true;
@@ -409,7 +448,7 @@ export class DuelView extends TableView<State> {
         shooter.aim(shot.angle, 0, false);
         this.onKnock?.("cushion", share);
         this.trail.visible = true;
-        (this.trail.material as T.LineBasicMaterial).opacity = 0.5;
+        (this.trail.material as T.MeshBasicMaterial).opacity = 1;
       }
       const t = p * time;
       let i = 0;
@@ -435,37 +474,42 @@ export class DuelView extends TableView<State> {
       this.lag = 0.12;
       this.aimCamera();
       while (shown < path.length && path[shown].t <= t && shown < 1198) {
-        this.trailAt.set([this.wx(path[shown].x), path[shown].y, 0], shown * 3);
+        this.trailPath.push(this.wx(path[shown].x), path[shown].y);
         shown++;
       }
-      this.trailAt.set([this.wx(x), y, 0], shown * 3);
-      this.trail.geometry.attributes.position.needsUpdate = true;
-      this.trail.geometry.setDrawRange(0, shown + 1);
+      this.layTrail(this.wx(x), y);
       if (p === 1) {
         this.arrowAt = null;
+        const dir = Math.sign(Math.cos(this.worldSlope(slope))) || 1;
         if (shot.target !== null) {
           this.flinch[shot.target] = performance.now();
+          this.hurtUntil[shot.target] = performance.now() + 1300;
+          this.archers[shot.target].mood("hurt");
+          this.bursts.hit(this.wx(x), y, dir, DUEL_COLOURS[shot.target]);
           this.onContact();
           this.onKnock?.("disc", shot.part === "head" ? 1 : shot.part === "body" ? 0.6 : 0.3);
-        } else this.onKnock?.("pocket", shot.lost ? 0 : 0.6);
+        } else {
+          if (!shot.lost) this.bursts.ground(this.wx(x), y, dir);
+          this.onKnock?.("pocket", shot.lost ? 0 : 0.6);
+        }
         // The arrow stands where it struck at once (the state is laid when the table rests).
         this.place(state);
         this.flying.visible = false;
       }
       this.wake();
     });
-    // A beaten archer falls; a struck one staggers. The trail fades while the camera holds on the landing.
+    // After the loose the bow arm follows through and the drawing hand flies back, then settles.
+    this.tween(raise + 16, 520, (p) => {
+      if (p > 0) shooter.kick(1 - p * p * (3 - 2 * p));
+    });
+    // A beaten archer sinks and falls; a struck one staggers. The trail fades while the camera holds on the landing.
     const fallen = state.winner !== null ? (state.health[0] <= 0 ? 0 : 1) : null;
     if (fallen !== null) {
-      const body = this.archers[fallen].body;
-      this.tween(raise + flyMs + 150, 900, (p) => {
-        const e = p < 0.7 ? (p / 0.7) ** 2 : 1 + Math.sin(((p - 0.7) / 0.3) * Math.PI) * 0.04;
-        body.rotation.z = 1.45 * e;
-        body.position.y = 0.12 * e;
-      });
+      const archer = this.archers[fallen];
+      this.tween(raise + flyMs + 150, 1200, (p) => archer.fall(p));
     }
-    this.tween(raise + flyMs, HOLD + (fallen !== null ? 900 : 0), (p) => {
-      (this.trail.material as T.LineBasicMaterial).opacity = 0.5 * (1 - p);
+    this.tween(raise + flyMs, HOLD + (fallen !== null ? 1200 : 0), (p) => {
+      (this.trail.material as T.MeshBasicMaterial).opacity = 1 - p;
       if (p === 1) this.trail.visible = false;
     });
     this.wake();
@@ -575,22 +619,62 @@ export class DuelView extends TableView<State> {
         more = true;
       } else if (since < 1) this.archers[side].body.rotation.z = 0;
     });
-    // The banners and the grass move only where a graphics card draws (each frame costs the processor dearly).
+    // The bursts where an arrow struck.
+    if (this.bursts.tick(dt)) more = true;
+    // A struck archer's face clears after a while.
+    ([0, 1] as const).forEach((side) => {
+      const s = this.state;
+      if (s && s.health[side] > 0 && this.hurtUntil[side] && now > this.hurtUntil[side]) {
+        this.hurtUntil[side] = 0;
+        this.archers[side].mood(s.turn === side && this.archers[side].holds.nocked ? "focus" : "calm");
+        more = true;
+      }
+    });
+    // The banners, the grass, the leaves and the archers' breath move only where a graphics card draws (each frame
+    // costs the processor dearly).
     if (this.field && this.rich && !capturing()) {
-      this.field.tick(this.clock, (this.state?.wind ?? 0) * this.mirror);
+      const wind = (this.state?.wind ?? 0) * this.mirror;
+      this.field.tick(this.clock, wind, this.look.x, dt);
+      ([0, 1] as const).forEach((side) => this.archers[side].pose(this.clock, wind * this.screenFace(side)));
       if (now - this.lastAmbient > 33 || more) {
         this.lastAmbient = now;
         this.redraw();
       }
       more = true;
-    } else if (this.field && this.clock < 0.2) this.field.tick(0.6, (this.state?.wind ?? 0) * this.mirror);
+    } else if (this.field && this.clock < 0.2) this.field.tick(0.6, (this.state?.wind ?? 0) * this.mirror, this.look.x, 0);
     this.moveEye();
     if (more) this.redraw();
     if (more || this.rich) this.frame = requestAnimationFrame(this.tick);
   };
+  /** The ribbon behind the arrow: the path so far and the arrow's place now (world), widest and brightest at the arrow. */
+  private layTrail(x: number, y: number) {
+    const pts = [...this.trailPath, x, y],
+      n = pts.length / 2,
+      at = this.trailAt,
+      tint = this.trailTint;
+    for (let i = 0; i < n; i++) {
+      const j = Math.min(n - 1, i + 1),
+        k = Math.max(0, i - 1),
+        dx = pts[j * 2] - pts[k * 2],
+        dy = pts[j * 2 + 1] - pts[k * 2 + 1],
+        len = Math.hypot(dx, dy) || 1,
+        f = n > 1 ? i / (n - 1) : 1,
+        half = 0.008 + 0.03 * f * f,
+        nx = (-dy / len) * half,
+        ny = (dx / len) * half,
+        alpha = 0.05 + 0.55 * f ** 3;
+      at.set([pts[i * 2] + nx, pts[i * 2 + 1] + ny, 0, pts[i * 2] - nx, pts[i * 2 + 1] - ny, 0], i * 6);
+      tint.set([1, 0.98, 0.92, alpha, 1, 0.98, 0.92, alpha], i * 8);
+    }
+    const g = this.trail.geometry;
+    g.attributes.position.needsUpdate = true;
+    g.attributes.color.needsUpdate = true;
+    g.setDrawRange(0, Math.max(0, n - 1) * 6);
+  }
   dispose() {
     cancelAnimationFrame(this.frame);
     this.field?.dispose();
+    for (const t of this.skies) t.dispose();
     this.hud.remove();
     super.dispose();
   }

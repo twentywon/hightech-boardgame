@@ -82,9 +82,16 @@ test("archer duel: a pull draws and shows the numbers, a short one shoots nothin
     const before = await moves(page),
       shot = await reckoned(page, 0);
     await pull(page, shot.dx, shot.dy);
-    await expect.poll(() => moves(page), { timeout: 30000 }).toBe(before + 1);
+    // (On the fast clock the computer's answer may have come too before this is read: then only the count is seen.)
+    await expect.poll(() => moves(page), { timeout: 30000 }).toBeGreaterThanOrEqual(before + 1);
+    // The count and the last arrow read together, so that the computer's answer cannot come between them.
+    const [count, told] = await page.evaluate(() => [
+      Number(/(\d+)/.exec(document.querySelector("#move-count")?.textContent ?? "")?.[1] ?? 0),
+      document.querySelector<HTMLCanvasElement>("main.game-layout canvas")?.dataset.last ?? "",
+    ]);
+    if (count !== before + 1) continue;
     // My arrow was the reckoned one, and it struck the computer's archer.
-    const last = ((await el.getAttribute("data-last")) ?? "").split(",");
+    const last = String(told).split(",");
     expect(last[0]).toBe("0");
     expect(["head", "body", "legs"]).toContain(last[1]);
   }
