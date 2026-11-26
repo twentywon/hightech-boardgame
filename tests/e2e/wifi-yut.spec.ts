@@ -170,3 +170,79 @@ test("yut nori for four on four devices: the host starts, every device lays the 
   }
   for (const d of devices) expect(d.errors).toEqual([]);
 });
+
+/** The yard as a device shows it, for three players: whose turn, the throws waiting and each side's pieces. */
+const snapshot3 = (page: Page) =>
+  page.evaluate(() => {
+    const text = (id: string) => document.getElementById(id)?.textContent ?? "";
+    return [document.getElementById("board")!.dataset.turn, text("yut-pending"), text("yut-count-0"), text("yut-count-1"), text("yut-count-2"), text("move-count")].join(" | ");
+  });
+
+test("yut nori for three: a device that leaves mid-game has its seat played by the host's computer, and comes back to it", async ({ browser }, info) => {
+  const devices = [await device(browser, info), await device(browser, info), await device(browser, info)],
+    pages = devices.map((d) => d.page),
+    [host, minsu, jia] = pages;
+  await lobby(host, "윷놀이", "방장");
+  await host.locator("#net-host").click();
+  await pair(host, minsu, "윷놀이", "민수");
+  await pair(host, jia, "윷놀이", "지아");
+  // The fourth seat is left open: it is closed when the game begins, a game of three.
+  await host.locator("#net-start").click({ noWaitAfter: true, timeout: 120000 });
+  for (const page of pages) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  for (const page of pages) await expect(page.locator(".yut-sides li")).toHaveCount(3);
+  for (const page of pages) await resting(page);
+  // 지아's page goes away (the app closed): the others are told, and the host's computer throws for 지아's seat.
+  await jia.evaluate(() => dispatchEvent(new Event("wtg-exit")));
+  await devices[2].context.close();
+  const played = async (turns: number) => {
+    for (let k = 0; k < turns; k++) {
+      await resting(host);
+      await resting(minsu);
+      const turn = Number(await host.locator("#board").getAttribute("data-turn")),
+        before = await snapshot3(host);
+      if (turn === 2) {
+        // Nobody acts: the host's computer plays the seat whose device went away.
+        await expect.poll(() => snapshot3(host), { timeout: 90000 }).not.toBe(before);
+        continue;
+      }
+      const mover = turn === 0 ? host : minsu,
+        choice = mover.locator("#yut-moves button:not([disabled])");
+      if (await choice.count()) await choice.first().evaluate((b) => (b as HTMLButtonElement).click());
+      else {
+        await expect(mover.locator("#yut-throw")).toBeEnabled({ timeout: 60000 });
+        await press(mover, "#yut-throw");
+      }
+      await expect.poll(() => snapshot3(host), { timeout: 60000 }).not.toBe(before);
+    }
+    await resting(host);
+    await resting(minsu);
+    await expect.poll(() => snapshot3(minsu), { timeout: 30000 }).toBe(await snapshot3(host));
+  };
+  await played(8);
+  const seen = Number(/(\d+)/.exec(await host.locator("#move-count").innerText())![1]);
+  // 지아 comes back on a new page by a new invite, under the same name: the same seat, the game as it stands.
+  const back = await device(browser, info);
+  await host.locator("#net-room").click();
+  await expect(host.locator("dialog.net-lobby[open]")).toBeVisible();
+  await host.locator("#net-invite").click();
+  const offer = host.locator("#net-offer");
+  await expect(offer).toBeVisible({ timeout: 20000 });
+  await lobby(back.page, "윷놀이", "지아");
+  await back.page.locator("#net-join").click();
+  await back.page.locator("#net-offer-in").fill(await offer.inputValue());
+  await back.page.locator("#net-accept").click();
+  const answer = back.page.locator("#net-answer");
+  await expect(answer).toBeVisible({ timeout: 20000 });
+  await host.locator("#net-answer-in").fill(await answer.inputValue());
+  await host.locator("#net-connect").click();
+  // The host's room says 지아 is back on the third seat; its window is closed again.
+  await expect(host.locator(".net-seat").nth(2)).toContainText("지아", { timeout: 30000 });
+  await expect(host.locator(".net-seat").nth(2)).not.toContainText("연결 끊김");
+  await host.locator("#net-cancel").click();
+  await expect(back.page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  await expect(back.page.locator(".yut-sides li")).toHaveCount(3);
+  await resting(back.page);
+  await expect.poll(() => snapshot3(back.page), { timeout: 60000 }).toBe(await snapshot3(host));
+  expect(Number(/(\d+)/.exec(await back.page.locator("#move-count").innerText())![1])).toBeGreaterThanOrEqual(seen);
+  for (const d of [devices[0], devices[1], back]) expect(d.errors).toEqual([]);
+});
