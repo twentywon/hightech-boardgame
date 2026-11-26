@@ -158,11 +158,14 @@ describe("soccer pitch", () => {
     expect(me.ground).toBe(true);
     // A jump from the ground goes up; held in the air it does not jump again.
     run(w, 1, (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true, jumpPress: true } : IDLE));
-    expect(me.vy).toBeGreaterThan(0.15);
+    expect(me.vy).toBeGreaterThan(0.18 * GRAVITY_PACE);
     // Slices scaled by the pitch's pace (a slower pitch rises and falls in more of them).
     run(w, Math.round(12 / GRAVITY_PACE), (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true } : IDLE));
     const top = me.y;
     expect(top).toBeGreaterThan(1);
+    // The goal stands well over a jumping player's head (the user asked): room left under the bar.
+    const peak = (BODY.gravity.jump * BODY.gravity.jump) / (2 * BODY.gravity.g) + me.r;
+    expect(GRAVITY.GH - (peak + me.r)).toBeGreaterThan(0.5);
     run(w, Math.round(10 / GRAVITY_PACE), (k) => (k === 0 ? { x: 0, y: 0, kick: false, jump: true, jumpPress: true } : IDLE));
     expect(me.vy).toBeLessThan(0);
     // Dropped, the ball bounces back up off the grass.
@@ -174,12 +177,21 @@ describe("soccer pitch", () => {
     }
     expect(rose).toBe(true);
     expect(w.ball.y).toBeLessThan(GRAVITY.H);
+    // There is no ceiling (the user asked): a ball sent up goes on over the top of the view and comes down again.
+    Object.assign(w.ball, { x: 0, y: GRAVITY.H - 1, vx: 0, vy: 0.2 });
+    let highest = 0;
+    for (let i = 0; i < 400; i++) {
+      run(w, 1, () => IDLE);
+      highest = Math.max(highest, w.ball.y);
+    }
+    expect(highest).toBeGreaterThan(GRAVITY.H + 1);
+    expect(w.ball.y).toBeLessThan(GRAVITY.H);
     // A kick lifts it.
     Object.assign(w.ball, { x: 0, y: w.ball.r, vx: 0, vy: 0 });
     Object.assign(me, { x: -(me.r + w.ball.r + 0.05), y: me.r, vx: 0, vy: 0, ground: true });
     run(w, 1, (k) => (k === 0 ? { x: 0, y: 0, kick: true, kickPress: true } : IDLE));
-    expect(w.ball.vy).toBeGreaterThan(0.05);
-    expect(w.ball.vx).toBeGreaterThan(0.05);
+    expect(w.ball.vy).toBeGreaterThan(0.06 * GRAVITY_PACE);
+    expect(w.ball.vx).toBeGreaterThan(0.06 * GRAVITY_PACE);
     // Over the crossbar is no goal; under it is.
     w.phase = "play";
     Object.assign(w.ball, { x: GRAVITY.GL - 0.6, y: GRAVITY.GH + 0.6, vx: 0.15, vy: 0 });

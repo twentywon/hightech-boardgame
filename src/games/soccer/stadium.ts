@@ -381,22 +381,14 @@ export function gravityStadium(scene: T.Scene, own: Own): Stadium {
   ground.receiveShadow = true;
   // A strip of grass painted brighter along the face's top, so that the edge reads.
   mesh(own, scene, new T.BoxGeometry((W + 1) * 2, 0.06, 0.02), lambert(own, { color: "#58b85c" }), 0, -0.03, front + 0.01);
-  // The end walls that keep the ball in, deep blue boards with our words, from the ground to the roof.
+  // The end walls that keep the ball in, deep blue boards with our words, rising far over the top of the view: there is
+  // no ceiling (the user asked), so a ball flown high still meets a wall it can be seen to have struck.
   const face = lambert(own, { map: boardTexture(own, ["WORLD TABLE CUP", "중력 축구"]) }),
-    edge = lambert(own, { color: "#16306b" });
+    edge = lambert(own, { color: "#16306b" }),
+    tall = H * 4;
   for (const s of [-1, 1]) {
-    const wall = mesh(own, scene, new T.BoxGeometry(0.2, H + 0.3, front - back + 0.2), [edge, edge, edge, edge, face, face] as unknown as T.Material, s * (W + 0.1), (H + 0.3) / 2, (front + back) / 2);
+    const wall = mesh(own, scene, new T.BoxGeometry(0.2, tall, front - back + 0.2), [edge, edge, edge, edge, face, face] as unknown as T.Material, s * (W + 0.1), tall / 2, (front + back) / 2);
     wall.rotation.y = 0;
-  }
-  // The roof truss over the pitch (its ceiling), with lamps under it.
-  const steel = lambert(own, { color: "#3d434d" }),
-    lamp = own(new T.MeshBasicMaterial({ color: "#fff3cf" }));
-  mesh(own, scene, new T.BoxGeometry(W * 2 + 0.4, 0.14, 0.3), steel, 0, H + 0.07, 0.1);
-  mesh(own, scene, new T.BoxGeometry(W * 2 + 0.4, 0.06, 0.06), steel, 0, H + 0.3, 0.1);
-  for (let k = -5; k <= 5; k++) {
-    const strut = mesh(own, scene, new T.BoxGeometry(0.04, 0.3, 0.04), steel, k * ((W * 2) / 11), H + 0.18, 0.1);
-    strut.rotation.z = k % 2 ? 0.6 : -0.6;
-    if (k % 2 === 0) mesh(own, scene, new T.BoxGeometry(0.34, 0.05, 0.18), lamp, k * ((W * 2) / 11), H - 0.01, 0.1);
   }
   // The goals.
   const white = lambert(own, { color: "#f6f6f2" }),
@@ -418,7 +410,8 @@ export function gravityStadium(scene: T.Scene, own: Own): Stadium {
   mesh(own, g, new T.BoxGeometry(W * 2 + 6, 0.3, 4.2), concrete, 0, 5.45, -4.2);
   if (rich) {
     // Floodlight towers over the stand's ends.
-    const mast = lambert(own, { color: "#8d939c" });
+    const mast = lambert(own, { color: "#8d939c" }),
+      lamp = own(new T.MeshBasicMaterial({ color: "#fff3cf" }));
     for (const s of [-1, 1]) {
       mesh(own, g, new T.CylinderGeometry(0.1, 0.14, 7, 8), mast, s * (W + 2.2), 3.5, -3);
       const head = mesh(own, g, new T.BoxGeometry(1.4, 0.7, 0.12), mast, s * (W + 2.2), 7, -2.9);

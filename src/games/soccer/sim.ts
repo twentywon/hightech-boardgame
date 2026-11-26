@@ -12,7 +12,7 @@ import type { Mode, Team } from "./roster";
  *  the goal line between the posts.
  *
  *  중력 축구 (`gravity`): seen from the side, gravity pulling down. Players run left and right, jump from the ground
- *  and kick (a kick lifts the ball); the ball bounces on the grass, the walls, the ceiling and the crossbars. Each goal
+ *  and kick (a kick lifts the ball); the ball bounces on the grass, the walls and the crossbars (no ceiling). Each goal
  *  stands on the ground at an end, under its crossbar; the ball scores when its centre passes the goal line under it.
  *
  * After a goal the ball rolls on for a moment, then everyone goes back for the conceding team's kickoff: until the ball
@@ -30,14 +30,19 @@ export const GOAL_PAUSE = ticks(2.6);
 export const KICKOFF_WAIT = ticks(6);
 /** 평면 축구's pitch: half its length and width (where the ball plays), the goal mouth, the net's depth, the boards round it, the posts, the centre circle. */
 export const FLAT = { HX: 7.4, HY: 3.4, GOAL: 1.28, DEPTH: 0.62, BX: 8.3, BY: 4.05, POST: 0.16, CIRCLE: 1.5 } as const;
-/** 중력 축구's pitch: half its width, its height to the ceiling, the goal line and the crossbar's height and thickness, the middle zone kept at a kickoff. */
-export const GRAVITY = { W: 7.3, H: 4.7, GL: 6.3, GH: 1.8, BAR: 0.08, ZONE: 1.7 } as const;
+/**
+ * 중력 축구's pitch: half its width, the height the view frames (there is no ceiling any more: the user asked for the
+ * unseen one to go, so the ball flies as high as it is kicked), the goal line and the crossbar's height and thickness,
+ * the middle zone kept at a kickoff. The goal stands well over a jumping player (the user asked): a jump reaches about
+ * 3.05 m at the head, the bar is at 3.7.
+ */
+export const GRAVITY = { W: 7.3, H: 4.7, GL: 6.3, GH: 3.7, BAR: 0.08, ZONE: 1.7 } as const;
 /** How fast 중력 축구 runs against its first pace (1): the user asked for it a little slower. */
-export const GRAVITY_PACE = 0.8;
+export const GRAVITY_PACE = 0.62;
 /** The bodies of each pitch: radius, inverse mass, bounce, damping, pace, a kick's push and reach. */
 export const BODY = {
   flat: { man: 0.3, ball: 0.2, manIm: 0.5, manB: 0.5, ballB: 0.5, manDamp: 0.96, ballDamp: 0.99, acc: 0.0022, kickAcc: 0.0015, kick: 0.105, reach: 0.09 },
-  // 중력 축구 runs at GRAVITY_PACE of its first pace (the user found it a little fast): speeds are scaled by the pace,
+  // 중력 축구 runs at GRAVITY_PACE of its first pace (the user found it fast, twice: 0.8, then 0.62): speeds are scaled by the pace,
   // pulls by its square and each slice's damping by its power, so every jump and arc keeps its shape, only slower.
   gravity: {
     man: 0.42,
@@ -546,9 +551,10 @@ function bounds(world: World, events: Event[]) {
       }
     }
   } else {
-    const { W, H, GL, GH, BAR } = GRAVITY,
+    const { W, GL, GH, BAR } = GRAVITY,
       body = BODY.gravity;
-    const floor = within(ball, "y", ball.r, H - ball.r, body.floorB);
+    // The grass below; nothing above (no ceiling: the user asked).
+    const floor = within(ball, "y", ball.r, Infinity, body.floorB);
     // The grass: a ball resting on it rolls to a stop; a soft landing is no knock.
     if (ball.y <= ball.r + 1e-6) {
       ball.vx *= body.roll;
@@ -558,7 +564,7 @@ function bounds(world: World, events: Event[]) {
     bump = Math.max(bump, within(ball, "x", -W + ball.r, W - ball.r, body.wallB));
     for (const sx of [-1, 1]) post = Math.max(post, offBar(ball, sx * GL, sx * W, GH, BAR, 0.6));
     for (const m of men) {
-      within(m, "y", m.r, H - m.r, 0);
+      within(m, "y", m.r, Infinity, 0);
       within(m, "x", -W + m.r, W - m.r, 0);
       for (const sx of [-1, 1]) offBar(m, sx * GL, sx * W, GH, BAR, 0);
       m.ground = m.y <= m.r + 1e-6;

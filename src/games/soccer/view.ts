@@ -8,6 +8,7 @@ import { GOAL, TIME, playerName, shirtOf, type State } from "./rules";
 import { DT, FLAT, GRAVITY, createWorld, step as stepWorld, think, ticks, timeLeft, type Event as MatchEvent, type Input, type World } from "./sim";
 import { ballTexture, flatStadium, gravityStadium, shirtTexture, tagTexture, type Stadium } from "./stadium";
 import { noZoom } from "../../engine/zoom";
+import { capturing } from "../../ui/banner";
 
 export const SOCCER_COLORS: [string, string] = TEAM_COLORS;
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -84,6 +85,8 @@ export class SoccerView extends TableView<State> {
   private tags: (T.Sprite | null)[] = [];
   private hud: HTMLElement;
   private pad: HTMLElement;
+  /** Over the top of the view, a marker where the ball is when it flies above it (there is no ceiling). */
+  private above: HTMLElement;
   private hands = [new LocalHand(), new LocalHand()];
   private netHands = new Hands();
   /** The player this screen's first person plays (null: nobody, watching), and the second's. */
@@ -122,7 +125,11 @@ export class SoccerView extends TableView<State> {
     this.hud.setAttribute("aria-hidden", "true");
     this.pad = document.createElement("div");
     this.pad.className = "so-pad";
-    host.append(this.hud, this.pad);
+    this.above = document.createElement("div");
+    this.above.className = "so-above";
+    this.above.setAttribute("aria-hidden", "true");
+    this.above.hidden = true;
+    host.append(this.hud, this.pad, this.above);
     const el = this.renderer.domElement;
     el.style.touchAction = "none";
     el.style.cursor = "default";
@@ -512,6 +519,7 @@ export class SoccerView extends TableView<State> {
     if (this.gravity) {
       ball.position.set(b.x, b.y, 0);
       ball.rotation.z -= (ball.position.x - was.x) / b.r;
+      this.markAbove(b.x, b.y);
     } else {
       ball.position.set(b.x, b.r, -b.y);
       const dx = ball.position.x - was.x,
@@ -558,6 +566,20 @@ export class SoccerView extends TableView<State> {
     data.kicks = String(world.counts.kicks);
     data.names = state.players.map((_, k) => (k === this.mine ? "나" : playerName(state, k))).join(",");
   }
+  /** The ball flown over the top of the view: an arrow at the top edge over where it is, with how high it is. */
+  private markAbove(x: number, y: number) {
+    const canvas = this.renderer.domElement,
+      top = GRAVITY.H + 0.35,
+      over = y > top && !capturing();
+    canvas.dataset.above = over ? y.toFixed(1) : "";
+    this.above.hidden = !over;
+    if (!over) return;
+    const v = new T.Vector3(x, top, 0).project(this.camera),
+      left = canvas.offsetLeft + ((v.x + 1) / 2) * canvas.clientWidth;
+    this.above.style.left = `${Math.round(left)}px`;
+    this.above.style.top = `${Math.round(canvas.offsetTop + 6)}px`;
+    this.above.textContent = `${Math.round(y)}m`;
+  }
   protected subject(aspect: number): TableSubject {
     if (this.gravity) {
       const { W, H } = GRAVITY;
@@ -598,6 +620,7 @@ export class SoccerView extends TableView<State> {
     this.onKnock?.("crowd", 0);
     this.hud.remove();
     this.pad.remove();
+    this.above.remove();
     super.dispose();
   }
 }
