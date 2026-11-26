@@ -7,41 +7,14 @@ import { FOV } from "../../engine/camera";
 import { END, TILT, aimX, follow, goldRaidFrame, goldRaidSubject, pairView, type Frame } from "./layout";
 import { TIME, depositMove, raidedMove, type State } from "./rules";
 import { BLAST, BODY, CAP, CART, DT, FUSE, LOOT_LIFE, SWING, createWorld, gateOf, step, think, timeLeft, type Bandit, type Happening, type Input, type Loot, type LootKind, type World } from "./sim";
+import { Hand, LEVER_JUMP, leverRun, type Act } from "./hands";
 import { CLOUDS, GAUGE_TALL, SIDE_COLORS, buildValley, type Valley } from "./valley";
 
 export const GOLD_RAID_COLORS: [string, string] = SIDE_COLORS;
 type Own = <R extends { dispose(): void }>(resource: R) => R;
-type Act = "left" | "right" | "jump" | "strike";
 /** The keys of the first person at the screen and of the second (against the computer both sets are mine). */
 const FIRST: Record<string, Act> = { KeyA: "left", KeyD: "right", KeyW: "jump", KeyS: "strike", KeyF: "strike", Space: "jump" };
 const SECOND: Record<string, Act> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "jump", ArrowDown: "strike", Slash: "strike", Numpad0: "strike" };
-/** A person's hands at this screen: keys and buttons held, and the presses of jump and strike counted. */
-class Hand {
-  keys = new Set<Act>();
-  touch = new Set<Act>();
-  jumps = 0;
-  strikes = 0;
-  private usedJumps = 0;
-  private usedStrikes = 0;
-  private holds(act: Act) {
-    return this.keys.has(act) || this.touch.has(act);
-  }
-  press(act: Act) {
-    if (act === "jump") this.jumps++;
-    else if (act === "strike") this.strikes++;
-  }
-  /** One slice's controls: a press counted since the last slice is a press now. */
-  input(): Input {
-    const input = { x: (this.holds("right") ? 1 : 0) - (this.holds("left") ? 1 : 0), jump: this.jumps > this.usedJumps, strike: this.strikes > this.usedStrikes };
-    this.usedJumps = this.jumps;
-    this.usedStrikes = this.strikes;
-    return input;
-  }
-  clear() {
-    this.keys.clear();
-    this.touch.clear();
-  }
-}
 /** A bandit king's figure: what of it moves. */
 interface Figure {
   group: T.Group;
@@ -71,7 +44,8 @@ const DRAWN = 1.22;
  * deposits, robberies and the clock's end as moves; a board over the canvas shows both treasuries and sacks.
  *
  * Keys: the first person A D to run, W (or Space) to jump, S or F to strike; the second ← →, ↑, and ↓ or /; against
- * the computer both sets are mine. A touch screen gets ◀ ▶ and 점프, 치기 (for two at one screen a set at each side).
+ * the computer both sets are mine. A touch screen gets a lever (sideways runs, up jumps) and 치기 (for two at one screen
+ * a lever and 치기 at each side).
  */
 export class GoldRaidView extends TableView<State> {
   private world: World | null = null;
@@ -117,7 +91,14 @@ export class GoldRaidView extends TableView<State> {
   onKnock: ((kind: string, strength: number) => void) | null = null;
   private readonly keyDown = (e: KeyboardEvent) => this.key(e, true);
   private readonly keyUp = (e: KeyboardEvent) => this.key(e, false);
-  private readonly letGo = () => this.hands.forEach((h) => h.clear());
+  private readonly letGo = () => {
+    this.hands.forEach((h) => h.clear());
+    this.pad?.querySelectorAll<HTMLElement>(".gr-stick").forEach((stick) => {
+      this.drawKnob(stick, 0, 0);
+      stick.classList.remove("on");
+    });
+    this.pad?.querySelectorAll(".gr-btn.on").forEach((b) => b.classList.remove("on"));
+  };
   private readonly hidden = () => document.hidden && this.letGo();
   constructor(
     host: HTMLElement,
@@ -237,51 +218,98 @@ export class GoldRaidView extends TableView<State> {
     } else h.keys.delete(act);
   }
   /**
-   * The touch buttons: ◀ ▶ at the lower left and 치기, 점프 at the lower right for one person; for two at one screen
-   * each has all four at its own side. Held with several fingers at once.
+   * The touch controls: a lever at the lower left (lean it sideways to run, the further the faster; up to jump) and
+   * 치기 at the lower right for one person; for two at one screen each has a lever at its own edge and 치기 beside it.
+   * Several fingers at once: two levers and two buttons.
    */
   private makePad() {
     if (!this.coarse) return;
-    const button = (side: number, act: Act, text: string, label: string) =>
-      `<button type="button" class="gr-btn gr-${act}" tabindex="-1" data-side="${side}" data-act="${act}" aria-label="${label}" style="--side:${SIDE_COLORS[side]}"><span aria-hidden="true">${text}</span></button>`;
-    const run = (side: number) => button(side, "left", "◀", "왼쪽") + button(side, "right", "▶", "오른쪽"),
-      acts = (side: number) => button(side, "strike", "치기", "치기") + button(side, "jump", "점프", "점프");
+    const strike = (side: number) =>
+        `<button type="button" class="gr-btn gr-strike" tabindex="-1" data-side="${side}" data-act="strike" aria-label="치기" style="--side:${SIDE_COLORS[side]}"><span aria-hidden="true">치기</span></button>`,
+      lever = (side: number) =>
+        `<div class="gr-stick" data-side="${side}" role="slider" aria-label="${this.two ? `${side + 1}P ` : ""}레버: 옆으로 달리기, 위로 점프" style="--side:${SIDE_COLORS[side]}"><i class="gr-ways" aria-hidden="true"><b class="gr-w-l">◀</b><b class="gr-w-u">▲</b><b class="gr-w-r">▶</b></i><span class="gr-knob"></span></div>`;
     this.pad.classList.toggle("gr-two", this.two);
     this.pad.innerHTML = this.two
-      ? `<div class="gr-cluster gr-at-left">${run(0)}${acts(0)}</div><div class="gr-cluster gr-at-right">${run(1)}${acts(1)}</div>`
-      : `<div class="gr-cluster gr-at-left">${run(0)}</div><div class="gr-cluster gr-at-right">${acts(0)}</div>`;
-    const fingers = new Map<number, { side: number; act: Act; button: HTMLElement }>();
+      ? `<div class="gr-cluster gr-at-left">${lever(0)}${strike(0)}</div><div class="gr-cluster gr-at-right">${strike(1)}${lever(1)}</div>`
+      : `<div class="gr-cluster gr-at-left">${lever(0)}</div><div class="gr-cluster gr-at-right">${strike(0)}</div>`;
+    type Finger = { side: number; el: HTMLElement } & ({ kind: "act"; act: Act } | { kind: "lever" });
+    const fingers = new Map<number, Finger>();
+    /** A lever's lean under a finger at (cx, cy), and its knob drawn there. */
+    const lean = (f: Finger, cx: number, cy: number) => {
+      const box = f.el.getBoundingClientRect(),
+        reach = box.width * 0.3;
+      let x = (cx - (box.x + box.width / 2)) / reach,
+        y = -(cy - (box.y + box.height / 2)) / reach;
+      const far = Math.hypot(x, y);
+      if (far > 1) (x /= far), (y /= far);
+      this.hands[f.side].lean(x, y);
+      this.drawKnob(f.el, x, y);
+    };
     const lift = (e: PointerEvent) => {
       const f = fingers.get(e.pointerId);
       if (!f) return;
       fingers.delete(e.pointerId);
+      const others = [...fingers.values()];
+      if (f.kind === "lever") {
+        if (others.some((o) => o.kind === "lever" && o.side === f.side)) return;
+        this.hands[f.side].lean(0, 0);
+        this.drawKnob(f.el, 0, 0);
+        f.el.classList.remove("on");
+        return;
+      }
       // Another finger may still hold the same button.
-      if (![...fingers.values()].some((o) => o.side === f.side && o.act === f.act)) {
+      if (!others.some((o) => o.kind === "act" && o.side === f.side && o.act === f.act)) {
         this.hands[f.side].touch.delete(f.act);
-        f.button.classList.remove("on");
+        f.el.classList.remove("on");
       }
     };
     this.pad.addEventListener("pointerdown", (e) => {
-      const b = (e.target as HTMLElement).closest<HTMLElement>(".gr-btn");
-      if (!b || this.disposed) return;
+      if (this.disposed) return;
+      const target = e.target as HTMLElement,
+        stick = target.closest<HTMLElement>(".gr-stick"),
+        b = stick ? null : target.closest<HTMLElement>(".gr-btn"),
+        el = stick ?? b;
+      if (!el) return;
       e.preventDefault();
-      const side = Number(b.dataset.side),
-        act = b.dataset.act as Act,
-        hand = this.hands[side];
+      const side = Number(el.dataset.side);
       try {
-        b.setPointerCapture(e.pointerId);
+        el.setPointerCapture(e.pointerId);
       } catch {
         // A pointer the page cannot capture: it is held without.
       }
-      fingers.set(e.pointerId, { side, act, button: b });
+      if (stick) {
+        const f: Finger = { side, el: stick, kind: "lever" };
+        fingers.set(e.pointerId, f);
+        stick.classList.add("on");
+        lean(f, e.clientX, e.clientY);
+        return;
+      }
+      const act = el.dataset.act as Act,
+        hand = this.hands[side];
+      fingers.set(e.pointerId, { side, el, kind: "act", act });
       if (!hand.touch.has(act)) hand.press(act);
       hand.touch.add(act);
-      b.classList.add("on");
+      el.classList.add("on");
+    });
+    this.pad.addEventListener("pointermove", (e) => {
+      const f = fingers.get(e.pointerId);
+      if (f?.kind === "lever") lean(f, e.clientX, e.clientY);
     });
     this.pad.addEventListener("pointerup", lift);
     this.pad.addEventListener("pointercancel", lift);
     this.pad.addEventListener("lostpointercapture", lift);
     this.pad.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+  /** A lever's knob where it leans, and its arrows lit the way it goes. */
+  private drawKnob(stick: HTMLElement, x: number, y: number) {
+    const box = stick.getBoundingClientRect(),
+      reach = box.width * 0.3,
+      knob = stick.querySelector<HTMLElement>(".gr-knob")!;
+    knob.style.transform = x || y ? `translate(${(x * reach).toFixed(1)}px, ${(-y * reach).toFixed(1)}px)` : "";
+    const run = leverRun(x);
+    stick.classList.toggle("gr-go-l", run < 0);
+    stick.classList.toggle("gr-go-r", run > 0);
+    stick.classList.toggle("gr-go-u", y > LEVER_JUMP);
   }
   /** A bandit king: boots and legs, a tunic in its side's colour, a bearded head under a gold crown, a club and a sack. */
   private makeFigure(own: Own, side: 0 | 1): Figure {
@@ -629,7 +657,8 @@ export class GoldRaidView extends TableView<State> {
     f.legs[0].rotation.z = !b.ground ? 0.55 : running ? Math.sin(phase) * 0.8 : 0;
     f.legs[1].rotation.z = !b.ground ? -0.45 : running ? -Math.sin(phase) * 0.8 : 0;
     f.lean.position.y = running ? Math.abs(Math.sin(phase)) * 0.05 : 0;
-    f.lean.rotation.z = stunned ? 0.55 + Math.sin(t * 20) * 0.08 : running ? -0.12 : 0;
+    // A heavy sack bows it forward (and slows it: `runOf`).
+    f.lean.rotation.z = stunned ? 0.55 + Math.sin(t * 20) * 0.08 : (running ? -0.12 : 0) - 0.16 * (b.carry / CAP);
     // The club: at rest held forward and down; a swing raises it over the head and brings it down.
     const p = b.swing < 0 ? -1 : b.swing / SWING;
     f.arm.rotation.z = p < 0 ? 0.85 + (running ? Math.sin(phase) * 0.25 : 0) : p < 0.3 ? lerp(0.85, 3.2, p / 0.3) : lerp(3.2, 1.0, (p - 0.3) / 0.7);
@@ -642,8 +671,6 @@ export class GoldRaidView extends TableView<State> {
     f.loot.scale.set(size * 0.6, size * 0.3, size * 0.6);
     f.stars.visible = stunned;
     f.stars.rotation.y = t * 7;
-    // Safe from another blow for a moment: it flickers.
-    f.lean.visible = stunned || b.safe <= 0 || !moving || Math.floor(t * 14) % 2 === 0;
     if (f.tag) f.tag.position.set(b.x, b.y + BODY.tall * DRAWN + 0.8, 0.8);
   }
   /** Everything where the valley has it, the board over the canvas, and what browser tests read. */

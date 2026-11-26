@@ -16,16 +16,16 @@
  * before the gate, to be carried home like any), and the castle answers by dropping a fire pot there.
  */
 /**
- * The valley is long (gate to gate 50 m, near three times the screen's width): the castles are far apart and the
- * view follows a bandit along it. And it is played at an easy pace: a bandit runs at 2.8 m/s and a jump hangs in
+ * The valley is long (gate to gate 35 m, near twice the screen's width; it was 50 m for a while and the user asked
+ * for it shorter): the castles are far apart and the view follows a bandit along it. And it is played at an easy pace: a bandit runs at 2.8 m/s and a jump hangs in
  * the air for over a second (the game was asked to be much slower than at first, when it ran at 5.6 and a jump
  * lasted 0.8 s; every other speed and time was scaled with it, the heights kept).
  * The sim is stepped in slices of `DT` s.
  */
 export const DT = 1 / 120;
 /** The valley: how far a bandit may go either way, and where loot bounces back. */
-export const X_MOST = 26,
-  LOOT_MOST = 25.6;
+export const X_MOST = 18.5,
+  LOOT_MOST = 18.1;
 /** A bandit: its half width and height, its run and jump, gravity (a jump rises JUMP² / 2G = 2 m). */
 export const BODY = { half: 0.32, tall: 1.15 },
   RUN = 2.8,
@@ -37,21 +37,24 @@ export const BODY = { half: 0.32, tall: 1.15 },
 /** A jump pressed up to `BUFFER` s before landing still jumps; so does one up to `COYOTE` s after walking off an edge. */
 export const BUFFER = 0.18,
   COYOTE = 0.14;
-/** The sack: how much it holds, and how much a full one slows its bearer. */
+/**
+ * The sack: how much it holds, and how much a full one slows its bearer (the user asked that the load be felt: an
+ * empty-handed bandit runs at `RUN`, one with a full sack at 60% of it, and in between by the gold carried).
+ */
 export const CAP = 20,
-  LOAD_SLOW = 0.22;
+  LOAD_SLOW = 0.4;
+/** How fast a bandit carrying `carry` runs at most. */
+export const runOf = (carry: number) => RUN * (1 - LOAD_SLOW * Math.min(1, Math.max(0, carry) / CAP));
 /** The gates: where each castle's stands (side 0 at −`GATE`), and how near counts as at it. */
-export const GATE = 25,
+export const GATE = 17.5,
   GATE_R = 1.05;
 export const gateOf = (side: number) => (side === 0 ? -GATE : GATE);
 /** The ledges, alike on both sides: stood on from above, passed through from below; a high one stands over a low one. */
 const RIGHT = [
   { x0: 4.6, x1: 7.6, y: 1.6 },
   { x0: 3.4, x1: 5.4, y: 3.2 },
-  { x0: 10.4, x1: 13, y: 1.6 },
-  { x0: 12, x1: 14.6, y: 3.2 },
-  { x0: 16.4, x1: 19.2, y: 1.6 },
-  { x0: 18, x1: 20.4, y: 3.2 },
+  { x0: 9.6, x1: 12.2, y: 1.6 },
+  { x0: 11.2, x1: 13.6, y: 3.2 },
 ];
 export const PLATFORMS = [
   { x0: -2.6, x1: 2.6, y: 1.6 },
@@ -63,10 +66,15 @@ export const SWING = 0.5,
   SWING_HIT = 0.16,
   REACH = 1.25,
   COOL = 0.9;
-/** A blow on a bandit: how long it is stunned, how long after that it cannot be struck again, and the share of its sack it drops. */
+/**
+ * A blow on a bandit: how long it is stunned (and cannot be struck or blown up again while down; once it stands it
+ * may be struck at once: the user asked for no safe time after getting up), the share of its sack it drops, and the
+ * wait before the striker's next swing (a little longer than the stun, so the one struck has a moment to get away
+ * and is not struck again the instant it stands, over and over).
+ */
 export const STUN = 1.6,
-  SAFE = 2,
-  DROP_SHARE = 0.4;
+  DROP_SHARE = 0.4,
+  HIT_COOL = STUN + 0.45;
 /** A bomb: its fuse once it lies, its blast's reach, the stun and the share of the sack lost. */
 export const FUSE = 2.4,
   BLAST = 1.6,
@@ -89,7 +97,7 @@ export const KINDS: Record<LootKind, { value: number; share: number }> = {
 };
 /** The seconds between two pieces falling (drawn between these), and where across they fall. */
 export const DROP_EVERY = [0.5, 1.15],
-  DROP_REACH = 23.4,
+  DROP_REACH = 16,
   DROP_BIAS = 1.4,
   DROP_FROM = 9.5;
 /** The merchant's cart: its gold, its pace, what a blow sheds, how many blows break it, and the seconds between two carts. */
@@ -125,9 +133,8 @@ export interface Bandit {
   face: 1 | -1;
   ground: boolean;
   carry: number;
-  /** Seconds it is still stunned, and still safe from another blow. */
+  /** Seconds it is still stunned (down, and not to be struck or blown up again till it stands). */
   stun: number;
-  safe: number;
   /** Seconds since its swing began (−1: none), whether that swing's blow has landed, and the wait before the next. */
   swing: number;
   struck: boolean;
@@ -211,7 +218,7 @@ export function draw(world: World) {
   return (world.seed - 1) / 2147483646;
 }
 const between = (world: World, [lo, hi]: number[]) => lo + (hi - lo) * draw(world);
-const bandit = (x: number, face: 1 | -1): Bandit => ({ x, y: 0, vx: 0, vy: 0, face, ground: true, carry: 0, stun: 0, safe: 0, swing: -1, struck: false, cool: 0, coyote: 0, buffer: 0, stride: 0 });
+const bandit = (x: number, face: 1 | -1): Bandit => ({ x, y: 0, vx: 0, vy: 0, face, ground: true, carry: 0, stun: 0, swing: -1, struck: false, cool: 0, coyote: 0, buffer: 0, stride: 0 });
 const mind = (): Mind => ({ wait: 0, goal: null, ready: 0 });
 /** A match to `target` gold (with `seconds` on the clock, or 0 for none), each bandit before its own gate. */
 export function createWorld(seed = 1, target = 100, seconds = 0): World {
@@ -279,13 +286,12 @@ function pickKind(world: World): LootKind {
 function explode(world: World, bomb: Loot, out: Happening[]) {
   const stunned: number[] = [];
   world.bandits.forEach((b, side) => {
-    if (b.safe > 0 || Math.hypot(b.x - bomb.x, b.y + BODY.tall / 2 - bomb.y) > BLAST) return;
+    if (b.stun > 0 || Math.hypot(b.x - bomb.x, b.y + BODY.tall / 2 - bomb.y) > BLAST) return;
     stunned.push(side);
     const lost = Math.ceil(b.carry * BOMB_SHARE);
     b.carry -= lost;
     spill(world, lost, b.x, b.y + 0.8);
     b.stun = BOMB_STUN;
-    b.safe = BOMB_STUN + SAFE;
     b.swing = -1;
     b.vx = Math.sign(b.x - bomb.x || 1) * 1.8;
     b.vy = 3.9;
@@ -300,12 +306,12 @@ function blow(world: World, side: number, out: Happening[]) {
     other = 1 - side,
     o = world.bandits[other],
     ahead = (x: number) => (x - b.x) * b.face;
-  if (o.safe <= 0 && ahead(o.x) > -0.25 && ahead(o.x) < REACH && Math.abs(o.y - b.y) < 1.1) {
+  if (o.stun <= 0 && ahead(o.x) > -0.25 && ahead(o.x) < REACH && Math.abs(o.y - b.y) < 1.1) {
     const dropped = Math.ceil(o.carry * DROP_SHARE);
     o.carry -= dropped;
     spill(world, dropped, o.x, o.y + 0.8, b.face);
     o.stun = STUN;
-    o.safe = STUN + SAFE;
+    b.cool = Math.max(b.cool, HIT_COOL);
     o.swing = -1;
     o.vx = b.face * 2.3;
     o.vy = 3.6;
@@ -343,12 +349,11 @@ function act(world: World, side: number, input: Input, out: Happening[]) {
   const b = world.bandits[side],
     stunned = b.stun > 0;
   b.stun = Math.max(0, b.stun - DT);
-  b.safe = Math.max(0, b.safe - DT);
   b.cool = Math.max(0, b.cool - DT);
   b.buffer = input.jump && !stunned ? BUFFER : Math.max(0, b.buffer - DT);
   b.coyote = b.ground ? COYOTE : Math.max(0, b.coyote - DT);
   const want = stunned ? 0 : clamp(input.x, -1, 1),
-    speed = RUN * (1 - LOAD_SLOW * (b.carry / CAP)),
+    speed = runOf(b.carry),
     grip = (b.ground ? GRIP : AIR) * (stunned ? 0.25 : 1),
     goal = want * speed;
   b.vx += clamp(goal - b.vx, -grip * DT, grip * DT);
@@ -400,7 +405,6 @@ function act(world: World, side: number, input: Input, out: Happening[]) {
   for (const item of [...world.loot]) {
     if (item.free > 0 || Math.abs(item.x - b.x) > TAKE.across || item.y < b.y + TAKE.low || item.y > b.y + TAKE.high) continue;
     if (item.kind === "bomb") {
-      if (b.safe > 0) continue;
       explode(world, item, out);
       return;
     }
@@ -577,7 +581,7 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
       const y = restOf(item);
       if (!L.climb && y > 2) continue;
       // What will be gone before it is reached is let be (the valley is long).
-      if (item.rest && LOOT_LIFE - item.age < Math.abs(item.x - b.x) / RUN + 1) continue;
+      if (item.rest && LOOT_LIFE - item.age < Math.abs(item.x - b.x) / runOf(b.carry) + 1) continue;
       // What the other will plainly reach first is left to it (the best players reckon so).
       if (level === "hard" && near(item.x, y) > 2.5 * (Math.abs(item.x - o.x) + 1.3 * Math.abs(y - o.y)) + 1 && o.stun <= 0) continue;
       // The better players weigh the way back too: with gold in the sack, loot farther from home counts for less.
@@ -594,15 +598,15 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
     // Home with a fuller sack the farther home is (the better players): the long way is not run for a little.
     const full = b.carry >= L.home + L.thrift * clamp((Math.abs(home - b.x) - 8) / 4, 0, 6) || b.carry >= CAP,
       wins = b.carry > 0 && world.treasury[side] + b.carry >= world.target,
-      late = left !== null && b.carry > 0 && left < Math.abs(home - b.x) / (RUN * 0.7) + 2,
+      late = left !== null && b.carry > 0 && left < Math.abs(home - b.x) / (runOf(b.carry) * 0.85) + 2,
       close = b.carry >= 3 && Math.abs(home - b.x) < 3 && score < 0.6,
       idle = b.carry >= 4 && score < 0.25;
     if (full || wins || late || close || idle || (homeward && score < 0.5)) best = { x: home, y: 0, what: "home" };
     else {
       // A rival robbing my gate (its club up there, or the gate just struck) is seen off; one laden and near is chased.
-      const robbing = Math.abs(o.x - home) < GATE_R + 0.8 && world.treasury[side] > 0 && o.safe <= 0 && (o.swing >= 0 || world.locked[side] > 0);
+      const robbing = Math.abs(o.x - home) < GATE_R + 0.8 && world.treasury[side] > 0 && o.stun <= 0 && (o.swing >= 0 || world.locked[side] > 0);
       if (level !== "easy" && robbing && Math.abs(o.x - b.x) < 14) best = { x: o.x, y: o.y, what: "defend" };
-      else if (o.carry >= L.chase && o.safe <= 0.3 && near(o.x, o.y) < L.chaseFar && b.cool <= 0.2) best = { x: o.x, y: o.y, what: "chase" };
+      else if (o.carry >= L.chase && o.stun <= 0.3 && near(o.x, o.y) < L.chaseFar && b.cool <= 0.2) best = { x: o.x, y: o.y, what: "chase" };
       else if (L.raid && !best && b.carry <= 6 && world.treasury[other] >= 8 && Math.abs(o.x - gateOf(other)) > 9 && Math.abs(b.x - gateOf(other)) < 14) best = { x: gateOf(other) - Math.sign(gateOf(other)) * 0.4, y: 0, what: "raid" };
     }
     // Nothing worth going for: it waits in the middle of its own half, where its share of the loot falls.
@@ -629,8 +633,8 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
     }
   // The club: what has stood within its reach long enough is struck.
   const ahead = (x: number) => (x - b.x) * b.face,
-    rival = o.safe <= 0 && o.carry >= L.strike && ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && Math.abs(o.y - b.y) < 0.9,
-    guard = goal.what === "defend" && o.safe <= 0 && ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && Math.abs(o.y - b.y) < 0.9,
+    rival = o.stun <= 0 && o.carry >= L.strike && ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && Math.abs(o.y - b.y) < 0.9,
+    guard = goal.what === "defend" && o.stun <= 0 && ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && Math.abs(o.y - b.y) < 0.9,
     cart = !!world.cart && world.cart.broken < 0 && b.y < 1 && ahead(world.cart.x) > -0.4 && ahead(world.cart.x) < REACH + CART.half - 0.3,
     gate = goal.what === "raid" && b.ground && Math.abs(b.x - gateOf(other)) < GATE_R && world.locked[other] <= 0 && world.treasury[other] > 0;
   if (rival || guard || cart || gate) {

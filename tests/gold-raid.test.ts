@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import * as L from "../src/games/goldraid/layout";
 import * as R from "../src/games/goldraid/rules";
 import * as S from "../src/games/goldraid/sim";
+import * as H from "../src/games/goldraid/hands";
 
 const hands = (a: Partial<S.Input> = {}, b: Partial<S.Input> = {}): [S.Input, S.Input] => [
   { ...S.IDLE, ...a },
@@ -186,10 +187,14 @@ describe("gold raid: the club, bombs, the cart and the gates", () => {
     expect(b.face).toBe(-1);
     expect(b.swing).toBe(-1);
     void x;
-    // Struck again while still safe: nothing.
+    // The striker's club waits a little longer than the stun.
+    expect(S.HIT_COOL).toBeGreaterThan(S.STUN);
+    // Struck again while still down: nothing.
     a.x = b.x - 0.8;
+    a.face = 1;
     a.cool = 0;
     a.swing = -1;
+    expect(b.stun).toBeGreaterThan(0);
     expect(run(w, 0.3, (_, k) => hands({ strike: k === 0 })).some((e) => e.kind === "hit")).toBe(false);
     // Out of reach, or behind my back: a swing and no blow.
     const far = facing();
@@ -392,14 +397,15 @@ describe("gold raid: the match", () => {
 describe("gold raid: the slower pace and the long valley", () => {
   /** As the game was first made: gate at 9.3 m, a run of 5.6 m/s, a jump of 10.2 m/s under 26 m/s². */
   const BEFORE = { gate: 9.3, run: 5.6, jump: 10.2, g: 26 };
-  test("the valley is near three times as long and a bandit runs at half the pace, jumping as high but more slowly", () => {
+  test("the valley is near twice as long (35 m) and a bandit runs at half the pace, jumping as high but more slowly", () => {
     const longer = S.GATE / BEFORE.gate;
-    expect(longer).toBeGreaterThanOrEqual(2.5);
-    expect(longer).toBeLessThanOrEqual(3);
+    expect(2 * S.GATE).toBe(35);
+    expect(longer).toBeGreaterThanOrEqual(1.8);
+    expect(longer).toBeLessThanOrEqual(2);
     expect(S.X_MOST).toBeGreaterThan(S.GATE);
     expect(S.RUN).toBeLessThanOrEqual(BEFORE.run / 2);
-    // From gate to gate takes over five times as long as it did.
-    expect((2 * S.GATE) / S.RUN).toBeGreaterThan((5 * (2 * BEFORE.gate)) / BEFORE.run);
+    // From gate to gate takes over three and a half times as long as it did.
+    expect((2 * S.GATE) / S.RUN).toBeGreaterThan((3.5 * (2 * BEFORE.gate)) / BEFORE.run);
     // A jump rises as high (the ledges are reached as before) and hangs in the air longer.
     expect((S.JUMP * S.JUMP) / (2 * S.G)).toBeCloseTo((BEFORE.jump * BEFORE.jump) / (2 * BEFORE.g), 1);
     expect((2 * S.JUMP) / S.G).toBeGreaterThan((1.4 * 2 * BEFORE.jump) / BEFORE.g);
@@ -413,7 +419,7 @@ describe("gold raid: the slower pace and the long valley", () => {
   });
   test("the ledges are alike on both sides, spread along the valley, and every one is reached by a jump from the road or a ledge under it", () => {
     const jump = (S.JUMP * S.JUMP) / (2 * S.G);
-    expect(S.PLATFORMS.length).toBeGreaterThanOrEqual(12);
+    expect(S.PLATFORMS.length).toBeGreaterThanOrEqual(10);
     for (const p of S.PLATFORMS) {
       expect(S.PLATFORMS.some((q) => q.y === p.y && Math.abs(q.x0 + p.x1) < 1e-9 && Math.abs(q.x1 + p.x0) < 1e-9)).toBe(true);
       const under = S.PLATFORMS.filter((q) => q.y < p.y && q.x0 < p.x1 && q.x1 > p.x0).map((q) => q.y);
@@ -424,7 +430,8 @@ describe("gold raid: the slower pace and the long valley", () => {
   });
   test("the eye follows a bandit along the valley, a little ahead the way it runs, and never past the castles", () => {
     const frame = L.goldRaidFrame(16 / 9, false);
-    expect(frame.wide).toBeLessThan(S.GATE);
+    // Only a little over half the valley is in view at once.
+    expect(frame.wide).toBeLessThan(2 * S.GATE * 0.6);
     // Standing it is near the middle of the view; running it is looked ahead of.
     expect(Math.abs(L.aimX(3, 0, 1, frame.wide) - 3)).toBeLessThan(frame.wide * 0.1);
     expect(L.aimX(3, S.RUN, 1, frame.wide)).toBeGreaterThan(L.aimX(3, 0, 1, frame.wide));
@@ -525,5 +532,119 @@ describe("gold raid: the rules", () => {
     expect(end.winner).toBe(1);
     expect(R.play(R.createGame(R.TIMED), { from: -1, to: R.TIME, extra: -1 })!.winner).toBe("draw");
     expect(R.goldRaid.reason(end)).toContain("4 대 240");
+  });
+});
+
+describe("gold raid: the lever", () => {
+  test("leaning it sideways runs, nothing in its middle, faster the further, full near its rim", () => {
+    expect(H.leverRun(0)).toBe(0);
+    expect(H.leverRun(0.15)).toBe(0);
+    expect(H.leverRun(-0.15)).toBe(0);
+    expect(H.leverRun(0.4)).toBeGreaterThan(0);
+    expect(H.leverRun(0.4)).toBeLessThan(H.leverRun(0.7));
+    expect(H.leverRun(0.9)).toBe(1);
+    expect(H.leverRun(-1)).toBe(-1);
+    expect(H.leverRun(-0.5)).toBeCloseTo(-H.leverRun(0.5));
+  });
+  test("a hand gives the lever's run, the keys outrank it, and letting go stands still", () => {
+    const h = new H.Hand();
+    h.lean(0.6, 0);
+    expect(h.input().x).toBeCloseTo(H.leverRun(0.6));
+    h.keys.add("left");
+    expect(h.input().x).toBe(-1);
+    h.keys.delete("left");
+    h.lean(0, 0);
+    expect(h.input().x).toBe(0);
+    h.lean(-1, 0);
+    h.clear();
+    expect(h.input()).toEqual({ x: 0, jump: false, strike: false });
+  });
+  test("leaning it up jumps once; it jumps again only after coming back down", () => {
+    const h = new H.Hand();
+    h.lean(0, 0.3);
+    expect(h.input().jump).toBe(false);
+    h.lean(0, 0.8);
+    expect(h.input().jump).toBe(true);
+    // Held up, and wobbling up there: no more jumps.
+    h.lean(0.1, 0.6);
+    h.lean(0, 1);
+    expect(h.input().jump).toBe(false);
+    expect(h.input().jump).toBe(false);
+    // Down past the rearm line and up again: one more.
+    h.lean(0, 0.1);
+    h.lean(0, 0.7);
+    expect(h.input().jump).toBe(true);
+    expect(h.jumps).toBe(2);
+  });
+  test("up and to the side at once runs and jumps, and a lean past the rim counts as the rim", () => {
+    const h = new H.Hand();
+    h.lean(3, 3);
+    expect(h.lever.x).toBeCloseTo(Math.SQRT1_2);
+    expect(h.lever.y).toBeCloseTo(Math.SQRT1_2);
+    const input = h.input();
+    expect(input.jump).toBe(true);
+    expect(input.x).toBeGreaterThan(0.7);
+  });
+  test("a bandit run by half a lean runs slower than by a full one", () => {
+    const pace = (lean: number) => {
+      const w = S.createWorld(7);
+      const from = w.bandits[0].x;
+      for (let i = 0; i < 120; i++) S.step(w, [{ x: H.leverRun(lean), jump: false, strike: false }, S.IDLE]);
+      return w.bandits[0].x - from;
+    };
+    expect(pace(0.5)).toBeGreaterThan(0.3);
+    expect(pace(0.5)).toBeLessThan(pace(1) * 0.75);
+  });
+});
+
+describe("gold raid: the load and getting up", () => {
+  test("the more gold in the sack, the slower its bearer runs: full speed empty, 60% with a full sack", () => {
+    expect(S.runOf(0)).toBe(S.RUN);
+    expect(S.runOf(S.CAP)).toBeCloseTo(S.RUN * 0.6, 6);
+    for (let c = 1; c <= S.CAP; c++) expect(S.runOf(c)).toBeLessThan(S.runOf(c - 1));
+    // Measured: a bandit with 15 in its sack runs a second's way shorter than an empty one, by about its share.
+    const far = (carry: number) => {
+      const w = quiet(),
+        b = w.bandits[0];
+      b.carry = carry;
+      const from = b.x;
+      run(w, 2, () => hands({ x: 1 }));
+      return b.x - from;
+    };
+    const empty = far(0),
+      laden = far(15);
+    expect(laden).toBeLessThan(empty * 0.8);
+    expect(laden / empty).toBeCloseTo(S.runOf(15) / S.RUN, 1);
+  });
+  test("down, a bandit can be neither struck nor blown up; once it stands it may be struck at once", () => {
+    const w = quiet(),
+      [a, b] = w.bandits;
+    a.x = 0;
+    a.face = 1;
+    b.x = 0.9;
+    b.carry = 10;
+    run(w, 0.2, (_, k) => hands({ strike: k === 0 }));
+    expect(b.stun).toBeGreaterThan(0);
+    // A bomb going off by it while it is down: it keeps the rest of its sack.
+    const left = b.carry;
+    a.x = b.x - 5;
+    w.loot.push({ id: 999, kind: "bomb", value: 0, x: b.x, y: b.y + 0.5, vx: 0, vy: 0, rest: true, age: S.FUSE - 0.05, free: 0 });
+    const blasts = run(w, 0.1, () => hands({})).filter((e) => e.kind === "boom");
+    expect(blasts.length).toBe(1);
+    expect(blasts[0]).toMatchObject({ stunned: [] });
+    expect(b.carry).toBe(left);
+    // It stands: the very next blow lands, with no safe time after getting up.
+    run(w, S.STUN, () => hands({}));
+    expect(b.stun).toBe(0);
+    expect(b.ground).toBe(true);
+    a.x = b.x - 0.9;
+    a.y = b.y;
+    a.face = 1;
+    a.cool = 0;
+    a.swing = -1;
+    expect(run(w, 0.25, (_, k) => hands({ strike: k === 0 })).some((e) => e.kind === "hit")).toBe(true);
+    expect(b.stun).toBeGreaterThan(0);
+    // But the one who struck must wait a little longer than the stun before its next swing.
+    expect(a.cool).toBeGreaterThan(S.STUN);
   });
 });

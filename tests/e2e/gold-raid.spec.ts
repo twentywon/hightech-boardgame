@@ -55,11 +55,12 @@ test("gold raid: against the computer the keys run, jump and strike my bandit, a
   await expect(page.locator(".gr-gold-0")).toHaveText("0/100");
   await expect(canvas(page)).toHaveAttribute("data-two", "false");
   const [start] = await men(page);
-  expect(start[0]).toBeLessThan(-20);
+  expect(start[0]).toBeLessThan(-15);
   // The valley is long: the eye is on my bandit at my end of it, and the strip under the board shows all of it.
   const eye = async () => (await canvas(page).getAttribute("data-eye"))!.split(",").map(Number);
   await expect(canvas(page)).toHaveAttribute("data-split", "false");
-  expect((await eye())[0]).toBeLessThan(-10);
+  // (A phone held sideways sees most of the 35 m valley at once; a desktop window a little over half.)
+  expect((await eye())[0]).toBeLessThan(-5);
   await expect(page.locator(".gr-map .gr-map-man")).toHaveCount(2);
   await expect(page.locator(".gr-map .gr-map-castle")).toHaveCount(2);
   await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(1);
@@ -142,7 +143,7 @@ test("gold raid: gold picked up and brought to my gate raises my treasury on the
           const bomb = loot.some((i) => i.kind === "bomb" && Math.abs(i.x - x) < 2.6 && i.y < 5),
             near = loot.filter((i) => i.kind !== "bomb" && i.rest && i.y < 0.5).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0],
             // Home with anything in the sack; away from a bomb; else to the gold; else wait near my side's middle.
-            to = carry > 0 ? -25 : bomb ? x - 3 : near ? near.x : -14,
+            to = carry > 0 ? -17.5 : bomb ? x - 3 : near ? near.x : -10,
             way = Math.abs(to - x) < 0.15 ? 0 : Math.sign(to - x);
           key("KeyD", way > 0);
           key("KeyA", way < 0);
@@ -160,48 +161,94 @@ test("gold raid: gold picked up and brought to my gate raises my treasury on the
   expect(errors).toEqual([]);
 });
 
-test("gold raid: the buttons on a touch screen run, jump and strike", async ({ page }, info) => {
-  test.skip(info.project.name !== "mobile", "the buttons are a touch screen's");
+/**
+ * A finger on a lever (or on a side's 치기) in the page, by synthetic pointers: put down at the lever's middle leaned
+ * by (x, y) of its reach (y upward), moved, or lifted.
+ */
+const lever = (page: Page, type: "pointerdown" | "pointermove" | "pointerup", id: number, x = 0, y = 0, side = 0) =>
+  page.evaluate(
+    ([t, i, lx, ly, s]) => {
+      const el = document.querySelector<HTMLElement>(`.gr-pad .gr-stick[data-side="${s}"]`)!,
+        r = el.getBoundingClientRect(),
+        reach = r.width * 0.3;
+      el.dispatchEvent(new PointerEvent(t as string, { pointerId: i as number, pointerType: "touch", bubbles: true, cancelable: true, clientX: r.x + r.width / 2 + (lx as number) * reach, clientY: r.y + r.height / 2 - (ly as number) * reach }));
+    },
+    [type, id, x, y, side] as const,
+  );
+const tap = (page: Page, side: number, id: number) =>
+  page.evaluate(
+    ([s, i]) => {
+      const b = document.querySelector<HTMLElement>(`.gr-pad .gr-btn[data-act="strike"][data-side="${s}"]`)!,
+        r = b.getBoundingClientRect();
+      for (const type of ["pointerdown", "pointerup"]) b.dispatchEvent(new PointerEvent(type, { pointerId: i as number, pointerType: "touch", bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+    },
+    [side, id] as const,
+  );
+
+test("gold raid: on a touch screen the lever runs (the further the faster) and jumps when leaned up, and 치기 strikes", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile", "the lever is a touch screen's");
   const errors = await sit(page, "ai");
-  await expect(page.locator(".gr-pad .gr-btn")).toHaveCount(4);
-  // Synthetic pointers in the page (several at once): ▶ held while 점프 and 치기 are pressed.
-  const finger = (act: string, type: "pointerdown" | "pointerup", id: number, side = 0) =>
-    page.evaluate(
-      ([a, t, i, s]) => {
-        const b = document.querySelector<HTMLElement>(`.gr-pad .gr-btn[data-act="${a}"][data-side="${s}"]`)!,
-          r = b.getBoundingClientRect();
-        b.dispatchEvent(new PointerEvent(t as string, { pointerId: i as number, pointerType: "touch", isPrimary: i === 11, bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
-      },
-      [act, type, id, side] as const,
-    );
+  await expect(page.locator(".gr-pad .gr-stick")).toHaveCount(1);
+  await expect(page.locator(".gr-pad .gr-btn")).toHaveCount(1);
+  await expect(page.locator('.gr-pad .gr-btn[data-act="strike"]')).toHaveCount(1);
   const [start] = await men(page);
-  await finger("right", "pointerdown", 11);
-  await expect(page.locator('.gr-btn[data-act="right"]')).toHaveClass(/on/);
+  // Leaned right: it runs right, and the knob and its arrow show it.
+  await lever(page, "pointerdown", 11, 0.95, 0);
+  await expect(page.locator(".gr-stick")).toHaveClass(/on/);
+  await expect(page.locator(".gr-stick")).toHaveClass(/gr-go-r/);
   await expect.poll(async () => (await men(page))[0][0], { timeout: 20_000 }).toBeGreaterThan(start[0] + 0.8);
+  expect((await counts(page, "face"))[0]).toBe(1);
+  // In its dead middle it stands.
+  await lever(page, "pointermove", 11, 0.1, 0);
+  await settle(page);
+  const stood = (await men(page))[0][0];
+  await settle(page);
+  expect((await men(page))[0][0]).toBeCloseTo(stood, 1);
+  // Leaned up: one jump, however long it is held up there.
   const jumps = (await counts(page, "jumps"))[0],
     swings = (await counts(page, "swings"))[0];
-  await finger("jump", "pointerdown", 12);
-  await finger("jump", "pointerup", 12);
+  await lever(page, "pointermove", 11, 0, 0.9);
+  await expect(page.locator(".gr-stick")).toHaveClass(/gr-go-u/);
   await expect.poll(async () => (await counts(page, "jumps"))[0]).toBe(jumps + 1);
-  await finger("strike", "pointerdown", 13);
-  await finger("strike", "pointerup", 13);
+  await expect.poll(async () => (await men(page))[0][1], { timeout: 20_000 }).toBe(0);
+  await settle(page);
+  expect((await counts(page, "jumps"))[0]).toBe(jumps + 1);
+  // Down and up again: another.
+  await lever(page, "pointermove", 11, 0, 0);
+  await lever(page, "pointermove", 11, 0, 0.9);
+  await expect.poll(async () => (await counts(page, "jumps"))[0]).toBe(jumps + 2);
+  // 치기 with another finger while the lever is held.
+  await tap(page, 0, 12);
   await expect.poll(async () => (await counts(page, "swings"))[0]).toBe(swings + 1);
-  await finger("right", "pointerup", 11);
-  await expect(page.locator('.gr-btn[data-act="right"]')).not.toHaveClass(/on/);
+  // Lifted, the knob goes home and the bandit stands; leaned left it turns back.
+  await lever(page, "pointerup", 11);
+  await expect(page.locator(".gr-stick")).not.toHaveClass(/on/);
+  await expect.poll(async () => (await men(page))[0][1], { timeout: 20_000 }).toBe(0);
   await settle(page);
-  const [after] = await men(page);
-  expect(after[0]).toBeGreaterThan(start[0] + 0.8);
-  // Let go, it stands; ◀ turns it back.
-  await settle(page);
-  expect((await men(page))[0][0]).toBeCloseTo(after[0], 1);
-  await finger("left", "pointerdown", 14);
-  await expect.poll(async () => (await men(page))[0][0], { timeout: 20_000 }).toBeLessThan(after[0] - 0.3);
-  await finger("left", "pointerup", 14);
+  const after = (await men(page))[0][0];
+  await lever(page, "pointerdown", 13, -0.95, 0);
+  await expect.poll(async () => (await men(page))[0][0], { timeout: 20_000 }).toBeLessThan(after - 0.3);
+  await lever(page, "pointerup", 13);
   expect((await counts(page, "face"))[0]).toBe(-1);
-  // The buttons stand clear of the board over the valley, inside the table.
+  // A half lean runs slower than a full one.
+  const pace = async (lean: number) => {
+    await settle(page);
+    const from = (await men(page))[0][0],
+      t0 = await page.evaluate(() => performance.now());
+    await lever(page, "pointerdown", 14, lean, 0);
+    await expect.poll(async () => (await men(page))[0][0] - from, { timeout: 20_000 }).toBeGreaterThan(0.6);
+    const ran = (await men(page))[0][0] - from,
+      t1 = await page.evaluate(() => performance.now());
+    await lever(page, "pointerup", 14);
+    return ran / (t1 - t0);
+  };
+  const half = await pace(0.45),
+    full = await pace(0.95);
+  expect(half).toBeLessThan(full);
+  // The controls stand clear of the board over the valley, inside the table.
   const box = await page.locator(".gr-hud").boundingBox(),
-    button = await page.locator('.gr-btn[data-act="jump"]').boundingBox();
-  expect(button!.y).toBeGreaterThan(box!.y + box!.height);
+    stick = await page.locator(".gr-stick").boundingBox();
+  expect(stick!.y).toBeGreaterThan(box!.y + box!.height);
   expect(errors).toEqual([]);
 });
 
@@ -211,15 +258,22 @@ test("gold raid: two at one screen each move their own bandit with their own key
   await expect(page.locator(".gr-hud .gr-s0 b")).toHaveText("1P");
   await expect(page.locator(".gr-hud .gr-s1 b")).toHaveText("2P");
   const [a, b] = await men(page);
-  expect(a[0]).toBeLessThan(-20);
-  expect(b[0]).toBeGreaterThan(20);
-  // So far apart at their gates, the screen is split: each half follows one, and the strip shows two windows.
-  await expect(canvas(page)).toHaveAttribute("data-split", "true");
-  await expect(page.locator(".gr-seam.on")).toBeVisible();
-  await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(2);
-  const halves = (await canvas(page).getAttribute("data-eye"))!.split(",").map(Number);
-  expect(halves[0]).toBeLessThan(-10);
-  expect(halves[1]).toBeGreaterThan(10);
+  expect(a[0]).toBeLessThan(-15);
+  expect(b[0]).toBeGreaterThan(15);
+  if (info.project.name === "mobile") {
+    // A phone held sideways sees most of the valley: one view drawn back holds both at their gates.
+    await expect(canvas(page)).toHaveAttribute("data-split", "false");
+    expect(Number(await canvas(page).getAttribute("data-zoom"))).toBeGreaterThan(1);
+    await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(1);
+  } else {
+    // So far apart at their gates, the screen is split: each half follows one, and the strip shows two windows.
+    await expect(canvas(page)).toHaveAttribute("data-split", "true");
+    await expect(page.locator(".gr-seam.on")).toBeVisible();
+    await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(2);
+    const halves = (await canvas(page).getAttribute("data-eye"))!.split(",").map(Number);
+    expect(halves[0]).toBeLessThan(-10);
+    expect(halves[1]).toBeGreaterThan(10);
+  }
   // The first person's D moves red alone; the second's ← moves blue alone.
   await run(page, "KeyD", 1);
   const [a1, b1] = await men(page);
@@ -240,22 +294,37 @@ test("gold raid: two at one screen each move their own bandit with their own key
   await expect.poll(() => counts(page, "swings")).toEqual([swings[0], swings[1] + 1]);
   await press(page, "KeyF");
   await expect.poll(() => counts(page, "swings")).toEqual([swings[0] + 1, swings[1] + 1]);
-  // A touch screen gives each a set of four buttons at their own side.
+  // A touch screen gives each a lever at its own edge and 치기 beside it; both levers work at once.
   if (info.project.name === "mobile") {
-    await expect(page.locator('.gr-pad .gr-btn[data-side="0"]')).toHaveCount(4);
-    await expect(page.locator('.gr-pad .gr-btn[data-side="1"]')).toHaveCount(4);
-    const left = await page.locator('.gr-btn[data-side="0"][data-act="jump"]').boundingBox(),
-      right = await page.locator('.gr-btn[data-side="1"][data-act="left"]').boundingBox();
-    expect(left!.x + left!.width).toBeLessThan(right!.x);
-    // A jump hangs in the air over a second now: blue is first let come down from the last.
-    await expect.poll(async () => (await men(page))[1][1]).toBe(0);
+    await expect(page.locator('.gr-pad .gr-stick[data-side="0"]')).toHaveCount(1);
+    await expect(page.locator('.gr-pad .gr-stick[data-side="1"]')).toHaveCount(1);
+    await expect(page.locator('.gr-pad .gr-btn[data-side="0"]')).toHaveCount(1);
+    await expect(page.locator('.gr-pad .gr-btn[data-side="1"]')).toHaveCount(1);
+    const left = await page.locator('.gr-stick[data-side="0"]').boundingBox(),
+      leftStrike = await page.locator('.gr-btn[data-side="0"]').boundingBox(),
+      right = await page.locator('.gr-stick[data-side="1"]').boundingBox(),
+      rightStrike = await page.locator('.gr-btn[data-side="1"]').boundingBox();
+    expect(left!.x).toBeLessThan(leftStrike!.x);
+    expect(leftStrike!.x + leftStrike!.width).toBeLessThan(rightStrike!.x);
+    expect(rightStrike!.x + rightStrike!.width).toBeLessThan(right!.x + 1);
+    // A jump hangs in the air over a second now: both are first let come down from the last.
+    await expect.poll(async () => (await men(page)).map((m) => m[1])).toEqual([0, 0]);
     await settle(page);
-    const before = (await counts(page, "jumps"))[1];
-    await page.evaluate(() => {
-      const b = document.querySelector<HTMLElement>('.gr-pad .gr-btn[data-act="jump"][data-side="1"]')!;
-      for (const type of ["pointerdown", "pointerup"]) b.dispatchEvent(new PointerEvent(type, { pointerId: 21, pointerType: "touch", bubbles: true, cancelable: true }));
-    });
-    await expect.poll(async () => (await counts(page, "jumps"))[1]).toBe(before + 1);
+    const [p, q] = await men(page),
+      before = await counts(page, "jumps"),
+      swung = await counts(page, "swings");
+    // Red leans right and blue leans left, at once.
+    await lever(page, "pointerdown", 21, 0.95, 0, 0);
+    await lever(page, "pointerdown", 22, -0.95, 0, 1);
+    await expect.poll(async () => (await men(page))[0][0], { timeout: 20_000 }).toBeGreaterThan(p[0] + 0.6);
+    await expect.poll(async () => (await men(page))[1][0], { timeout: 20_000 }).toBeLessThan(q[0] - 0.6);
+    // Blue leans up while red still runs: blue alone jumps.
+    await lever(page, "pointermove", 22, 0, 0.9, 1);
+    await expect.poll(() => counts(page, "jumps")).toEqual([before[0], before[1] + 1]);
+    await lever(page, "pointerup", 21, 0, 0, 0);
+    await lever(page, "pointerup", 22, 0, 0, 1);
+    await tap(page, 1, 23);
+    await expect.poll(() => counts(page, "swings")).toEqual([swung[0], swung[1] + 1]);
   }
   expect(errors).toEqual([]);
 });

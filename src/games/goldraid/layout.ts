@@ -41,7 +41,7 @@ export interface Frame {
   road: number;
 }
 export function goldRaidFrame(aspect: number, pad: boolean): Frame {
-  const road = pad ? 0.72 : aspect < 1.2 ? 0.68 : 0.78,
+  const road = pad || aspect < 1.2 ? 0.68 : 0.78,
     span = Math.max(LEAST_WIDE / aspect, ABOVE / road);
   return { span, wide: span * aspect, lookY: (road - 0.5) * span, road };
 }

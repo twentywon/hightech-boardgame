@@ -4096,19 +4096,28 @@ html[data-game="gold-raid"] .game-layout .board-area > .board-hint { display:non
 .gr-seam { position:absolute;top:0;bottom:0;left:50%;width:4px;translate:-50% 0;z-index:1;pointer-events:none;display:none;background:#1e140c;box-shadow:0 0 0 1px #b8894aa0; }
 .gr-seam.on { display:block; }
 .gr-pad { position:absolute;inset:0;z-index:3;pointer-events:none; }
-.gr-cluster { position:absolute;bottom:34px;display:flex;gap:12px;pointer-events:none; }
+.gr-cluster { position:absolute;bottom:34px;display:flex;align-items:flex-end;gap:14px;pointer-events:none; }
 .gr-at-left { left:max(16px, env(safe-area-inset-left)); }
 .gr-at-right { right:max(16px, env(safe-area-inset-right)); }
 .gr-btn { display:flex;align-items:center;justify-content:center;width:78px;height:78px;padding:0;border:3px solid #ffffffb0;border-radius:50%;background:#00000059;color:#fff;font:900 16px/1 "Pretendard","Noto Sans KR",sans-serif;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent; }
 .gr-btn span { pointer-events:none; }
 .board-area .gr-btn:hover:not(:disabled) { background:#00000059; }
-.gr-btn.gr-left, .gr-btn.gr-right { font-size:26px; }
-.gr-btn.gr-jump { background:color-mix(in srgb, var(--side, #d8352c) 55%, transparent); }
+.gr-stick { position:relative;display:grid;place-items:center;width:128px;height:128px;border-radius:50%;background:radial-gradient(circle, #00000030 0 50%, #00000066 51% 66%, #0000004d 67%);border:3px solid #ffffffb0;box-shadow:inset 0 0 0 5px color-mix(in srgb, #8a5a34 70%, transparent), 0 5px 14px #0000004d;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;cursor:grab; }
+.gr-ways { position:absolute;inset:0;font-style:normal;pointer-events:none; }
+.gr-ways b { position:absolute;font:900 15px/1 "Inter",sans-serif;color:#fff;opacity:.6;text-shadow:0 1px 2px #0008;transition:opacity .1s, color .1s; }
+.gr-w-l { left:9px;top:50%;translate:0 -50%; }
+.gr-w-r { right:9px;top:50%;translate:0 -50%; }
+.gr-w-u { left:50%;top:7px;translate:-50% 0; }
+.gr-go-l .gr-w-l, .gr-go-r .gr-w-r, .gr-go-u .gr-w-u { opacity:1;color:#ffd75a; }
+.gr-knob { width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 36% 30%, color-mix(in srgb, var(--side, #d8352c) 45%, #fff), var(--side, #d8352c) 58%, color-mix(in srgb, var(--side, #d8352c) 70%, #000));border:3px solid #ffcc33;box-shadow:0 5px 12px #00000070, inset 0 -3px 5px #0000003d;pointer-events:none;transition:transform .09s ease-out; }
+.gr-stick.on { cursor:grabbing; }
+.gr-stick.on .gr-knob { transition:none; }
 .gr-btn.gr-strike { background:color-mix(in srgb, #ffb52e 50%, transparent); }
 .gr-btn.on, .board-area .gr-btn.on:hover { background:var(--side, #d8352c);transform:scale(.94); }
 .gr-pad.gr-two .gr-cluster { gap:8px; }
 .gr-pad.gr-two .gr-btn { width:64px;height:64px;font-size:14px; }
-.gr-pad.gr-two .gr-btn.gr-left, .gr-pad.gr-two .gr-btn.gr-right { font-size:22px; }
+.gr-pad.gr-two .gr-stick { width:112px;height:112px; }
+.gr-pad.gr-two .gr-knob { width:48px;height:48px; }
 @media (max-width: 760px), (max-height: 500px) {
   .gr-hud { top:5px; }
   .gr-board { padding:3px 8px;gap:6px;border-radius:10px; }
@@ -4122,9 +4131,13 @@ html[data-game="gold-raid"] .game-layout .board-area > .board-hint { display:non
   .gr-map { height:13px;margin-top:4px; }
   .gr-map-castle { width:9px;height:10px; }
   .gr-map-man.gr-mine { width:11px;height:11px; }
-  .gr-cluster { bottom:12px;gap:9px; }
+  .gr-cluster { bottom:6px;gap:9px; }
   .gr-btn { width:68px;height:68px;font-size:14px; }
   .gr-pad.gr-two .gr-btn { width:56px;height:56px;font-size:12px; }
+  .gr-stick, .gr-pad.gr-two .gr-stick { width:88px;height:88px; }
+  .gr-knob, .gr-pad.gr-two .gr-knob { width:40px;height:40px; }
+  .gr-ways b { font-size:11px; }
+  .gr-w-l { left:6px; } .gr-w-r { right:6px; } .gr-w-u { top:4px; }
   .gr-pop { font-size:14px; }
   .gr-pop.gr-big { font-size:18px; }
 }
