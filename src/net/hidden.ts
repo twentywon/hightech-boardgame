@@ -31,8 +31,18 @@ export interface HiddenView<S> {
    * sunk, the end of the game). It is what the screen and a computer for that seat play from.
    */
   view(state: S, seat: number): S;
-  /** A move made on `view(state, seat)` (by the person at that device or by a computer for that seat), in the room's terms. */
-  move(move: Move, seat: number, state: S): Move;
+  /**
+   * A move made on `view(state, seat)` (by the person at that device or by a computer for that seat), in the room's
+   * terms. `shown` is the view the move was made on, where the screen gives it (a view changed by `local` moves: the
+   * cards picked up that a move means).
+   */
+  move(move: Move, seat: number, state: S, shown?: S): Move;
+  /**
+   * A move this device keeps to itself (훌라's cards picked up before they are laid down): the view it makes, or null
+   * for a move of the room. Nothing is sent; the next state the room tells is viewed afresh, so such a move only
+   * lasts until the next move of the room (it is only made on this seat's own turn).
+   */
+  local?(shown: S, move: Move): S | null;
   /** The room's seat that side `side` of `view(state, seat)` stands for (side 0 is `seat`); left out: two seats, side 1 the other. */
   seatOf?(state: S, side: number, seat: number): number;
   /** The status line of `seat` while it waits on others choosing at once (their fleets, their numbers); null: the usual words. */

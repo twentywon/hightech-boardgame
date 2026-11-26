@@ -4,6 +4,7 @@ import type { Marks } from "../points/view";
 import { ringMesh, type Spot, type TableSubject } from "../table/view";
 import { DeckView, type CardPose } from "../deck/view";
 import { CARD_H } from "../deck/cards";
+import { isBlind } from "../deck/blind";
 import { DISCARD, MELD_BASE, REGISTER, STOCK, THANK, myHand, nameOf, type State } from "./rules";
 import { HULA as L, handX, meldSpots, placeOf, rivalCard } from "./layout";
 
@@ -25,8 +26,9 @@ export class HulaView extends DeckView<State> {
   private cursor: T.Mesh;
   private glow: T.Mesh;
   private board: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; mesh: T.Mesh; said: string };
-  constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, 52, false);
+  /** `net`: over Wi-Fi, where the cards out of my sight are blind ones (`deck/blind.ts`). */
+  constructor(host: HTMLElement, quality: "high" | "low", net = false) {
+    super(host, quality, 52, false, net);
     this.renderer.setClearColor("#141c2c");
     this.camp();
     for (let i = 0; i < 40; i++) {
@@ -209,8 +211,11 @@ export class HulaView extends DeckView<State> {
     el.dataset.top = String(s.discard.at(-1) ?? -1);
     el.dataset.round = String(s.round);
     el.dataset.scores = s.scores.join(",");
-    // The computers' cards are never face up before a round is over.
+    // The computers' cards are never face up before a round is over. Over Wi-Fi: how many cards lie blind (out of my
+    // sight), and how many of the others' are known (none before a round is over).
     el.dataset.open = String(s.phase === "scored" || s.winner !== null ? -1 : 0);
+    el.dataset.blind = String([...s.stock, ...s.hands.flat()].filter(isBlind).length);
+    el.dataset.known = String(s.hands.slice(1).flat().filter((id) => !isBlind(id)).length);
   }
   protected spots(): Spot[] {
     const s = this.state;

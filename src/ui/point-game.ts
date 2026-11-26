@@ -1494,9 +1494,17 @@ export function mountPointGame<S>(root: HTMLElement, nav: Navigation, config: Po
       netWarn();
       return false;
     }
+    // A move this device keeps to itself (cards picked up) changes its view alone, and nothing is sent.
+    const kept = hidden?.local?.(state, move);
+    if (kept) {
+      truths.set(kept as object, truth(state));
+      sound.unlock();
+      apply(kept);
+      return true;
+    }
     const room = net!.room,
       // A move made on this seat's view goes to the room in the room's terms.
-      sent = hidden ? hidden.move(move, netViewer(), truth(state)) : move,
+      sent = hidden ? hidden.move(move, netViewer(), truth(state), state) : move,
       text = room.host ? (room as HostRoom<S>).play(sent, room.mySeat ?? HOST_ONLY) : (room as GuestRoom<S>).play(sent);
     if (text) {
       warned = { state, text: (text === "둘 수 없는 수입니다." && config.refusal?.(state, move)) || text };

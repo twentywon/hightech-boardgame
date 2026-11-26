@@ -2,6 +2,7 @@ import { cryptoRandom, type Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
 import { cardName, rankOf, shuffle, suitOf } from "../deck/cards";
+import { josa } from "../../core/josa";
 
 /**
  * 훌라 (Hula), the Korean rummy, for me and one to three computers (the user asked), with the 52 cards of a plain pack
@@ -38,7 +39,8 @@ export const STOCK = 60,
 /** Where each seat sits round the table for 2, 3 or 4 players: 0 my place (south), 1 west, 2 north, 3 east. */
 export const PLACES: Record<number, number[]> = { 2: [0, 2], 3: [0, 1, 3], 4: [0, 1, 2, 3] };
 export const PLACE_NAME = ["나", "왼쪽 컴퓨터", "맞은편 컴퓨터", "오른쪽 컴퓨터"];
-export const nameOf = (s: Pick<State, "players">, seat: number) => PLACE_NAME[PLACES[s.players][seat]];
+/** What a seat is called: over Wi-Fi a view names people (`names`, `net.ts`); else me and the computers. */
+export const nameOf = (s: Pick<State, "players" | "names">, seat: number) => s.names?.[seat] ?? PLACE_NAME[PLACES[s.players][seat]];
 export interface Meld {
   owner: number;
   cards: number[];
@@ -79,6 +81,17 @@ export interface State {
   last: { seat: number; kind: "draw" | "thank" | "register" | "attach" | "discard" | "pass" | "deal"; cards: number[]; events: string[] } | null;
   winner: Winner;
   ply: number;
+  /** Over Wi-Fi, a seat's view: what each seat is called (`nameOf`). */
+  names?: string[];
+  /** Over Wi-Fi, a seat's view: the blind number of each card in sight (`deck/blind.ts`). */
+  blinds?: Record<number, number>;
+  /**
+   * Over Wi-Fi (`net.ts`), the room's state: each card's blind number (dealt again with every round), the room's seat
+   * of each player in order of play, and how each player has its hand sorted.
+   */
+  net?: { masks: number[]; seats: number[] };
+  /** Over Wi-Fi, a seat's view: the room's seat it is seen from. */
+  me?: number;
 }
 /** What a card left in hand costs: A 1, 2–10 as marked, J Q K 10. */
 export const valueOf = (id: number) => Math.min(10, rankOf(id));
@@ -455,6 +468,7 @@ export const hula: PointGame<State> = {
     if (s.winner === "draw") return `${s.rounds}판을 마치고 동점입니다(${best}점).`;
     if (s.winner === 0) return `${s.rounds}판 합계 ${scoreText(s.scores[0])}점으로 1등입니다.`;
     const champ = s.scores.indexOf(best);
-    return `${nameOf(s, champ)}가 ${scoreText(best)}점으로 1등입니다. 나는 ${scoreText(s.scores[0])}점입니다.`;
+    const name = nameOf(s, champ);
+    return `${name}${josa(name, "이", "가")} ${scoreText(best)}점으로 1등입니다. 나는 ${scoreText(s.scores[0])}점입니다.`;
   },
 };

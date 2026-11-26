@@ -204,3 +204,46 @@ test("Indian poker by codes: each sees the other's card and never its own until 
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
+
+test("hula by codes: each holds its own hand, the other's and the stock lie blind; cards are picked on the device alone, drawn and discarded in turn", async ({ browser }, info) => {
+  const a = await device(browser, info),
+    b = await device(browser, info),
+    pages = [a.page, b.page],
+    [host, guest] = pages;
+  await pair(host, guest, "훌라", "민수");
+  await start(host, pages);
+  await expect(turn(host)).toContainText("나 (1번) 차례");
+  await expect(turn(guest)).toContainText("방장 (1번) 차례입니다");
+  for (const page of pages) {
+    // The other's seven and the stock (52 less fourteen dealt and the card turned up) lie blind; none of the other's is known.
+    await expect(canvas(page)).toHaveAttribute("data-blind", String(7 + 52 - 14 - 1));
+    await expect(canvas(page)).toHaveAttribute("data-known", "0");
+    await expect(canvas(page)).toHaveAttribute("data-hands", "7,7");
+  }
+  // Out of turn: the guest may not draw.
+  await expect(tool(guest, "한 장 가져오기")).toBeDisabled();
+  for (let step = 0; step < 4; step++) {
+    const page = await mover(pages),
+      other = pages.find((p) => p !== page)!;
+    // Drawn from the stock.
+    let count = await moveOnce(page, () => press(page, "한 장 가져오기"));
+    await agree(pages, count);
+    await expect(canvas(page)).toHaveAttribute("data-phase", "meld");
+    // A card picked up rises on this device alone: nothing is sent, the count stands.
+    await keys(page, ["ArrowRight", "Enter"]);
+    await expect(canvas(page)).toHaveAttribute("data-picked", "1");
+    await expect(canvas(other)).toHaveAttribute("data-picked", "0");
+    expect(await moves(page)).toBe(count);
+    expect(await moves(other)).toBe(count);
+    // Discarded: the card picked is the one the other device sees on the discard pile.
+    const mine = (await canvas(page).getAttribute("data-mine"))!.split(",");
+    count = await moveOnce(page, () => press(page, "버리기"));
+    await agree(pages, count);
+    const top = await canvas(other).getAttribute("data-top");
+    expect(mine).toContain(top);
+    expect(await canvas(page).getAttribute("data-top")).toBe(top);
+    for (const p of pages) await expect(canvas(p)).toHaveAttribute("data-known", "0");
+  }
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});

@@ -3,6 +3,7 @@ import type { PointConfig } from "../../ui/point-game";
 import { ATTACH, DISCARD, HAND, canClaim, MELD_BASE, NEXT, PASS, REGISTER, SORT, STOCK, THANK, hula, myHand, type State } from "./rules";
 import { HULA_COLORS, HulaView, registerSpot } from "./view";
 import { HULA as L, handX, meldSpots, placeOf } from "./layout";
+import { hulaNet } from "./net";
 
 /** Where the keyboard's points are: my hand, the stock, the discard pile, the melds on the table and my next meld's place. */
 function keyPoints(s: State) {
@@ -27,7 +28,8 @@ export const hulaConfig: PointConfig<State> = {
   game: hula,
   contact: (sound) => sound.card(),
   // The panel's words (the round and everyone's points) stand over the table's lower left (`HUD` in chrome.ts).
-  view: (host, quality) => new HulaView(host, quality),
+  // Over Wi-Fi the cards out of my sight are blind ones (`net.ts`).
+  view: (host, quality, _variant, _mode, _level, net) => new HulaView(host, quality, net),
   colors: HULA_COLORS,
   keyPoints,
   keyStart: (s) => (s.phase === "scored" ? NEXT : (myHand(s)[0] ?? STOCK)),
@@ -35,11 +37,14 @@ export const hulaConfig: PointConfig<State> = {
   // The others' hands are hidden, and a card drawn cannot be put back.
   computerOnly: true,
   noUndo: true,
+  // Over Wi-Fi each device holds its own hand, two to four round the table (`net.ts`).
+  net: hulaNet,
   showMovable: false,
   // The computer takes a moment over each card, so that its play can be followed; a claim is quick.
   ponder: (s) => (s.phase === "claim" ? 150 : s.phase === "scored" ? 0 : 320),
+  // (A move of the game moves the count; cards picked up and a sort do not, and say nothing.)
   cheer: (before, state) => {
-    const said = state.last && state.last !== before.last ? state.last.events : [];
+    const said = state.last && state.ply !== before.ply ? state.last.events : [];
     return said.length ? said.join(" ") : null;
   },
   variants: [
@@ -53,6 +58,8 @@ export const hulaConfig: PointConfig<State> = {
       id: "rivals",
       kind: "choice",
       label: "상대",
+      // Over Wi-Fi the room's seats say who plays.
+      net: false,
       value: "3",
       options: [
         { value: "1", label: "컴퓨터 1명" },
@@ -83,12 +90,13 @@ export const hulaConfig: PointConfig<State> = {
   english: "Hula",
   number: "NO. 108 — MELD AND GO OUT",
   intro: `<p>같은 숫자나 같은 무늬로 이어지는 카드를 모아 바닥에 등록하고, 남의 묶음에 붙여 가며 손을 비우는 한국식 러미.<br>캠핑장 테이블에서 컴퓨터 1~3명과 겨룹니다. 한 번에 모두 털면 <b>훌라!</b></p>`,
-  meta: `나 대 컴퓨터 1~3명 · 카드 52장 · ${HAND}장씩 · 1·3·5판`,
+  meta: `나 대 컴퓨터 1~3명 · 와이파이 여럿이 2~4명 · 카드 52장 · ${HAND}장씩 · 1·3·5판`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>MELD AND GO OUT</span>`,
   artClass: "indian-art",
   artLabel: "훌라 미리보기",
   tableLabel: "THE CAMP TABLE",
-  tableNote: (variant, options) => `${Math.min(3, Math.max(1, Number(options.rivals ?? 3))) + 1}명 · ${HAND}장씩 · ${Number(variant) || 3}판`,
+  // (Over Wi-Fi no number of rivals is given: the room's seats say how many play.)
+  tableNote: (variant, options) => `${options.rivals === undefined ? "와이파이 여럿이" : `${Math.min(3, Math.max(1, Number(options.rivals))) + 1}명`} · ${HAND}장씩 · ${Number(variant) || 3}판`,
   rulesTitle: "모아서 등록하고, 먼저 손을 비우세요",
   rules:
     part(
@@ -136,6 +144,15 @@ export const hulaConfig: PointConfig<State> = {
         ["버리기", "카드 한 장을 골라 버린 카드 더미를 누르거나 <b>버리기</b> 버튼을 누릅니다."],
         ["땡큐", "함께 등록할 카드를 골라 버린 카드 더미를 누릅니다. 붙이거나 7 한 장으로 낼 때는 고르지 않고 누릅니다."],
         ["정렬", "손의 카드를 무늬순이나 숫자순으로 바꿔 놓습니다."],
+      ),
+    ) +
+    part(
+      "와이파이 여럿이",
+      table(
+        ["자리", "기기 2~4대가 1번부터 차례로 앉습니다. 3·4번 자리는 방장이 컴퓨터로 채우거나 닫을 수 있습니다. 내 다음 차례인 사람이 내 왼쪽에 앉습니다."],
+        ["보이는 것", "내 패만 앞면이고, 다른 사람의 패와 더미는 뒷면으로만 보입니다. 바닥의 묶음과 버린 카드는 모두에게 보이고, 판이 끝나면 남은 패가 모두 펼쳐집니다."],
+        ["내 기기에서", "가져오기·등록·붙이기·버리기는 차례인 사람의 기기에서 합니다. 버린 카드를 차례가 아닌 사람이 땡큐할 수 있으면 차례 순서대로 한 사람씩 그 사람의 기기에서 묻습니다(땡큐 또는 패스). 카드를 골라 올리는 것과 정렬은 내 기기에서만 바뀝니다."],
+        ["다음 판", "한 판이 끝나면 방장이 다음 판을 누릅니다. 첫 판은 1번(방장)이, 다음 판부터는 앞 판에서 이긴 사람이 먼저 합니다."],
       ),
     ) +
     part("처음이라면", notes("7은 혼자서도 등록되니 들고 있지 말고 일찍 내려놓으세요.", "J·Q·K처럼 점수가 큰 카드는 묶음이 안 될 것 같으면 먼저 버리세요.", "남이 바로 붙일 수 있는 카드를 버리면 땡큐를 당합니다.")),
