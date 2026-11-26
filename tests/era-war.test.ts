@@ -8,14 +8,20 @@ import {
   FRONT,
   KILL_GOLD,
   KILL_XP,
+  LAST_ERA,
   LOSS_XP,
+  MOMENTUM,
   QUEUE,
+  RANK_BOOST,
   SELL_BACK,
   SPAWN,
   START_GOLD,
   XP_NEXT,
   command,
   computerSide,
+  momentum,
+  powerOf,
+  rankCost,
   createWorld,
   freshMind,
   seconds,
@@ -28,7 +34,8 @@ import {
   type World,
 } from "../src/games/erawar/sim";
 import { Inbox, Orders, blendPictures, packPicture, pictureOf, readPicture } from "../src/games/erawar/net";
-import { createGame, eraWar, fallMove, play, timeMove } from "../src/games/erawar/rules";
+import { createGame, eraWar, fallMove, play } from "../src/games/erawar/rules";
+import { LIVE_MOST } from "../src/net/protocol";
 
 /** Steps the world `s` seconds with no orders (or the given ones at the first step). */
 function run(world: World, s: number, first: [Command[], Command[]] = [[], []]) {
@@ -39,7 +46,7 @@ function run(world: World, s: number, first: [Command[], Command[]] = [[], []]) 
 /** A soldier put straight onto the lane. */
 function put(world: World, side: 0 | 1, x: number, era = 0, kind: 0 | 1 | 2 = 0): Unit {
   const t = ERAS[era].units[kind],
-    u: Unit = { id: world.nextId++, side, era, kind, x, hp: t.hp, max: t.hp, cool: 0, since: 9, walking: false };
+    u: Unit = { id: world.nextId++, side, era, kind, rank: 0, x, hp: t.hp, max: t.hp, cool: 0, since: 9, walking: false };
   world.units.push(u);
   return u;
 }
@@ -173,10 +180,51 @@ describe("era war: the lane", () => {
     expect(a.queue.map((q) => q.era)).toEqual([0, 1]);
     run(w, 4);
     expect(w.units.filter((u) => u.side === 0).map((u) => u.era)).toEqual([0, 1]);
-    // No era after the modern one.
-    a.era = 3;
+    // No era after the modern one: there the button buys a rank (강화) with gold, not with experience.
+    a.era = LAST_ERA;
     a.xp = 1e9;
+    a.gold = rankCost(0) - 1;
     expect(command(w, 0, { kind: "era" })).toBe(false);
+    expect(a.era).toBe(LAST_ERA);
+  });
+  it("in the last era buys ranks with gold, each dearer than the last; soldiers trained after one are stronger, those before keep theirs", () => {
+    const w = createWorld(19),
+      a = w.armies[0];
+    a.era = LAST_ERA;
+    a.gold = 50_000;
+    command(w, 0, { kind: "train", unit: 0 });
+    run(w, 3);
+    const plain = w.units.find((u) => u.side === 0)!;
+    expect(plain.rank).toBe(0);
+    expect(plain.max).toBe(ERAS[LAST_ERA].units[0].hp);
+    const gold = a.gold;
+    expect(command(w, 0, { kind: "era" })).toBe(true);
+    expect(command(w, 0, { kind: "era" })).toBe(true);
+    expect(a.rank).toBe(2);
+    expect(a.gold).toBeCloseTo(gold - rankCost(0) - rankCost(1), 5);
+    expect(rankCost(1)).toBeGreaterThan(rankCost(0));
+    command(w, 0, { kind: "train", unit: 0 });
+    run(w, 4);
+    const strong = w.units.find((u) => u.side === 0 && u.id !== plain.id)!;
+    expect(strong.rank).toBe(2);
+    expect(strong.max).toBe(Math.round(ERAS[LAST_ERA].units[0].hp * powerOf(2)));
+    expect(powerOf(2)).toBeCloseTo(1 + 2 * RANK_BOOST, 9);
+    expect(plain.max).toBe(ERAS[LAST_ERA].units[0].hp);
+  });
+  it("gives the last era's soldiers momentum: harder blows the further past the middle they stand, none before it", () => {
+    expect(momentum({ side: 0, era: LAST_ERA, x: -3 })).toBe(1);
+    expect(momentum({ side: 0, era: LAST_ERA, x: 0 })).toBe(1);
+    expect(momentum({ side: 0, era: LAST_ERA, x: FRONT })).toBeCloseTo(1 + MOMENTUM, 9);
+    expect(momentum({ side: 1, era: LAST_ERA, x: -FRONT / 2 })).toBeCloseTo(1 + MOMENTUM / 2, 9);
+    expect(momentum({ side: 1, era: LAST_ERA, x: FRONT / 2 })).toBe(1);
+    expect(momentum({ side: 0, era: LAST_ERA - 1, x: FRONT })).toBe(1);
+    // Struck at the enemy's base: the fighter at its front hits it that much harder.
+    const w = createWorld(20);
+    w.armies[0].era = LAST_ERA;
+    const u = put(w, 0, FRONT - 0.5, LAST_ERA, 0),
+      base = w.armies[1].hp;
+    step(w);
+    expect(base - w.armies[1].hp).toBeCloseTo(ERAS[LAST_ERA].units[0].dmg * momentum(u), 3);
   });
   it("sends the special attack down on the enemy's soldiers once it is ready, never on its base; then it waits again", () => {
     const w = createWorld(10);
@@ -191,35 +239,29 @@ describe("era war: the lane", () => {
     expect(foes.filter((f) => w.units.includes(f)).length).toBeLessThan(3);
     expect(w.armies[1].hp).toBe(base);
   });
-  it("ends at the time limit with the base that has more of its strength left, alike a draw", () => {
-    const w = createWorld(11, "quick");
-    w.tick = Math.round(w.pace.limit / DT) - 2;
-    w.armies[1].hp = w.armies[1].max * 0.5;
-    run(w, 0.2);
-    expect(w.over).toBe(true);
-    expect(w.timeUp).toBe(true);
-    expect(w.winner).toBe(0);
-    const v = createWorld(12);
-    v.tick = Math.round(v.pace.limit / DT) - 1;
-    run(v, 0.2);
-    expect(v.winner).toBeNull();
-    expect(v.timeUp).toBe(true);
+  it("has no time limit: an untouched lane is still at war long after twenty minutes", () => {
+    const w = createWorld(11);
+    w.tick = Math.round((40 * 60) / DT);
+    run(w, 1);
+    expect(w.over).toBe(false);
+    expect(w.winner).toBeNull();
   });
 });
 
 describe("era war: the computer", () => {
-  function match(a: Level, b: Level, seed: number) {
+  /** A whole match of two computers (given up, unended, after `most` minutes). */
+  function match(a: Level, b: Level, seed: number, most = 60) {
     const w = createWorld(seed),
       minds = [freshMind(), freshMind()];
     computerSide(w, 0, a);
     computerSide(w, 1, b);
-    while (!w.over) step(w, [think(w, 0, a, minds[0]), think(w, 1, b, minds[1])]);
+    while (!w.over && seconds(w) < most * 60) step(w, [think(w, 0, a, minds[0]), think(w, 1, b, minds[1])]);
     return w;
   }
   it("plays a whole match to its end: trains, opens eras, uses its special attack", () => {
     const w = match("normal", "normal", 21);
     expect(w.over).toBe(true);
-    expect(seconds(w)).toBeLessThanOrEqual(w.pace.limit + DT);
+    expect(w.winner).not.toBeNull();
     for (const a of w.armies) {
       expect(a.trained).toBeGreaterThan(40);
       expect(a.era).toBeGreaterThanOrEqual(2);
@@ -235,6 +277,18 @@ describe("era war: the computer", () => {
     }
     expect(wins).toBeGreaterThanOrEqual(6);
   }, 60_000);
+  it("ends every match with no time limit, whatever the two levels (even sides too): within half an hour of play", () => {
+    const levels: Level[] = ["easy", "normal", "hard"],
+      lengths: number[] = [];
+    for (const a of levels)
+      for (const b of levels)
+        for (const seed of [600, 611]) {
+          const w = match(a, b, seed + levels.indexOf(a) * 3 + levels.indexOf(b), 30);
+          expect(w.over, `${a} v ${b} (${seed})`).toBe(true);
+          lengths.push(seconds(w) / 60);
+        }
+    expect(Math.max(...lengths)).toBeLessThan(30);
+  }, 240_000);
 });
 
 describe("era war: over Wi-Fi", () => {
@@ -250,10 +304,40 @@ describe("era war: over Wi-Fi", () => {
     expect(back).not.toBeNull();
     expect(back.sides[0].turrets).toEqual([-1, -1, 0]);
     expect(back.sides[0].era).toBe(0);
-    expect(back.units.map((u) => [u.id, u.side, u.era, u.kind])).toEqual(p.units.map((u) => [u.id, u.side, u.era, u.kind]));
+    expect(back.units.map((u) => [u.id, u.side, u.era, u.kind, u.rank, u.walking])).toEqual(p.units.map((u) => [u.id, u.side, u.era, u.kind, u.rank, u.walking]));
+    for (const [i, u] of back.units.entries()) expect(u.since).toBeCloseTo(Math.min(9.9, p.units[i].since), 1);
+    expect(back.sides.map((s) => [s.gold, s.era, s.rank, s.hp, s.max, s.queue, s.next])).toEqual(p.sides.map((s) => [s.gold, s.era, s.rank, s.hp, s.max, s.queue, s.next]));
     for (const [i, u] of back.units.entries()) expect(u.x).toBeCloseTo(p.units[i].x, 2);
     expect(back.events.map((e) => e.code)).toEqual(p.events.map((e) => e.code));
     expect(readPicture([1, 2, 3])).toBeNull();
+  });
+  it("fits a full lane with a special attack in the air into one live message, ranks and the last era told", () => {
+    const w = createWorld(33);
+    for (const a of w.armies) {
+      a.era = LAST_ERA;
+      a.rank = 23;
+      a.gold = 123_456;
+      a.queue = [0, 1, 2, 2, 0].map((kind) => ({ era: LAST_ERA, kind: kind as 0 | 1 | 2 }));
+    }
+    for (let k = 0; k < 14; k++) {
+      put(w, 0, -12 + k * 0.8, LAST_ERA, (k % 3) as 0 | 1 | 2).rank = k;
+      put(w, 1, 12 - k * 0.8, 3, (k % 3) as 0 | 1 | 2);
+    }
+    w.armies[0].ability = 0;
+    w.armies[1].ability = 0;
+    command(w, 0, { kind: "ability" });
+    command(w, 1, { kind: "ability" });
+    run(w, 1.5);
+    const p = pictureOf(w),
+      data = packPicture(p),
+      back = readPicture(data)!;
+    expect(data.length).toBeLessThanOrEqual(LIVE_MOST);
+    expect(back.units.length).toBe(p.units.length);
+    expect(back.units.map((u) => u.rank)).toEqual(p.units.map((u) => u.rank));
+    expect(back.sides[0].rank).toBe(23);
+    expect(back.sides[0].next).toBeNull();
+    expect(back.sides[0].queue).toEqual([9, 10, 11, 11, 9]);
+    expect(back.shots.length).toBeGreaterThan(8);
   });
   it("blends two pictures soldier by soldier", () => {
     const w = createWorld(32);
@@ -283,15 +367,13 @@ describe("era war: over Wi-Fi", () => {
 });
 
 describe("era war: the match", () => {
-  it("ends with a base fallen or the time up", () => {
-    const s = createGame("quick");
-    expect(s.limit).toBe(600);
+  it("ends with a base fallen, and only so", () => {
+    const s = createGame();
     const fell = play(s, fallMove(1))!;
     expect(fell.winner).toBe(0);
     expect(eraWar.reason(fell)).toContain("무너뜨렸");
-    const draw = play(s, timeMove(null))!;
-    expect(draw.winner).toBe("draw");
+    expect(play(s, fallMove(0))!.winner).toBe(1);
     expect(play(fell, fallMove(0))).toBeNull();
-    expect(createGame("bogus").variant).toBe("normal");
+    expect(play(s, { from: -1, to: 10, extra: -1 })).toBeNull();
   });
 });

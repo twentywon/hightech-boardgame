@@ -7,7 +7,7 @@ import type { LiveGuest, LiveSession } from "../../net/live";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { Effects } from "../goldraid/fx";
 import { eraFrame, eraWarSubject, EDGE, type Frame } from "./layout";
-import { fallMove, timeMove, type State } from "./rules";
+import { fallMove, type State } from "./rules";
 import {
   ABILITY_COOL,
   BASE_X,
@@ -17,6 +17,7 @@ import {
   QUEUE,
   SLOTS,
   computerSide,
+  rankCost,
   createWorld,
   freshMind,
   step,
@@ -32,7 +33,7 @@ import {
   type World,
 } from "./sim";
 import { Inbox, Orders, blendPictures, packPicture, pictureOf, readPicture, type Picture, type SidePic } from "./net";
-import { Kit, SIDE_COLORS, makeFigure, poseFigure, type Figure } from "./models";
+import { Kit, SIDE_COLORS, poseFigure, type Figure } from "./models";
 import { MAST_Z, buildField, type Field } from "./field";
 
 export const ERA_WAR_COLORS: [string, string] = SIDE_COLORS;
@@ -44,6 +45,10 @@ interface Drawn {
   dist: number;
   x: number;
   dead: number;
+  /** Seconds since its last blow, as last drawn (a new shot is seen as this falling back). */
+  since: number;
+  /** The paints it fades with once dead (its own copies), and the shared ones to give back. */
+  fading: { mesh: T.Mesh; was: T.Material; own: T.Material }[] | null;
 }
 const UNIT_ICONS = [
   // A sword, a bow, a heavy shield.
@@ -54,7 +59,6 @@ const UNIT_ICONS = [
 const ABILITY_WORDS = ["낙석!", "화살비!", "일제 포격!", "공습!"];
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /**
  * 시대 전쟁 drawn: the lane seen from the side (the plain, the woods and mountains behind), both bases as their eras
@@ -81,7 +85,7 @@ export class EraWarView extends TableView<State> {
   private spare = new Map<string, Figure[]>();
   private shots = new Map<number, { mesh: T.Object3D; x: number; y: number; seen: number }>();
   private shotParts: Record<string, () => T.Object3D>;
-  private turrets: ({ era: number; group: T.Group } | null)[][] = [
+  private turrets: ({ era: number; group: T.Group; flash: T.Sprite; fired: number } | null)[][] = [
     [null, null, null],
     [null, null, null],
   ];
@@ -90,6 +94,10 @@ export class EraWarView extends TableView<State> {
   private planes: { mesh: T.Group; x: number; dir: number; age: number }[] = [];
   private planeModel: T.Group;
   private sun: T.DirectionalLight;
+  private hemi: T.HemisphereLight;
+  /** The era the world shows (its light and distance), and the light now, blended toward it. */
+  private age = -1;
+  private exhaust = 0;
   private flash: T.PointLight | null = null;
   private flashed = -9;
   /** This device's side (null: only watching), whether the picture is mirrored for it. */
@@ -126,7 +134,6 @@ export class EraWarView extends TableView<State> {
   constructor(
     host: HTMLElement,
     quality: "high" | "low",
-    private variant: string,
     private level: Level,
     private live: LiveSession | null = null,
   ) {
@@ -143,11 +150,12 @@ export class EraWarView extends TableView<State> {
     this.scene.add(this.root);
     const rich = capable();
     this.kit = new Kit(own, rich);
-    this.scene.add(new T.HemisphereLight("#dcecff", "#5a6a3a", 1.7));
+    this.hemi = new T.HemisphereLight("#dcecff", "#5a6a3a", 1.7);
+    this.scene.add(this.hemi);
     const sun = (this.sun = new T.DirectionalLight("#fff1d6", 2.6));
     sun.position.set(6, 14, 10);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(rich ? 2048 : 1024, rich ? 2048 : 1024);
+    sun.shadow.mapSize.set(rich ? 4096 : 1024, rich ? 4096 : 1024);
     Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 9, bottom: -4, near: 1, far: 50 });
     sun.shadow.normalBias = 0.03;
     this.own(sun.shadow);
@@ -166,7 +174,7 @@ export class EraWarView extends TableView<State> {
     // (Bases built later are added to the field's scene: they are moved under the root as they are built.)
     this.fieldScene = fieldScene;
     // (The puffs go under the root too, so that they are mirrored with the lane.)
-    this.fx = new Effects(this.root as unknown as T.Scene, own, 140);
+    this.fx = new Effects(this.root as unknown as T.Scene, own, rich ? 220 : 140);
     this.shotParts = this.makeShots();
     this.planeModel = this.makePlane();
     this.frame = eraFrame(this.shape, this.coarse);
@@ -348,10 +356,9 @@ export class EraWarView extends TableView<State> {
     if (this.pic) this.draw(real);
     this.redraw();
   }
-  /** The end, reported once as the match's move: a base fallen, or the time up. */
+  /** The end, reported once as the match's move: a base fallen (there is no time limit). */
   private end(world: World) {
-    if (world.timeUp) this.onMove(timeMove(world.winner));
-    else this.onMove(fallMove(world.winner === 0 ? 1 : 0));
+    this.onMove(fallMove(world.winner === 0 ? 1 : 0));
   }
   /** A guest's frame: my orders sent, the host's picture drawn a moment behind, its happenings heard. */
   private follow(now: number) {
@@ -408,11 +415,16 @@ export class EraWarView extends TableView<State> {
         case "impact": {
           c.impacts++;
           const kind = shotName(e.extra);
-          if (kind === "ball" || kind === "shell" || kind === "fallShell" || kind === "bomb") this.boom(x, 0.2, kind === "bomb" ? 1.3 : kind === "ball" ? 0.7 : 1);
-          else if (kind === "fallRock") {
+          if (kind === "ball" || kind === "shell" || kind === "fallShell" || kind === "bomb") {
+            const size = kind === "bomb" ? 1.3 : kind === "ball" ? 0.7 : 1;
+            this.boom(x, 0.2, size);
+            // (Shots that burst in the air over a soldier still leave their mark on the ground below.)
+            this.field.crater(x, size, false);
+          } else if (kind === "fallRock") {
             this.sound("rock", 1);
-            this.fx.emit("dust", x, 0.2, 0.3, 6, { speed: 1.8, up: 0.8, size: 0.7, life: 0.9 });
-            this.fx.emit("chip", x, 0.3, 0.3, 5, { speed: 3, up: 3, size: 0.12, life: 0.8 });
+            this.fx.emit("dust", x, 0.2, 0.3, 8, { speed: 1.8, up: 0.8, size: 0.8, life: 1 });
+            this.fx.emit("chip", x, 0.3, 0.3, 7, { speed: 3, up: 3, size: 0.12, life: 0.8 });
+            this.field.crater(x, 1, true);
           } else {
             this.sound(`hit-${kind}`, 0.4);
             this.fx.emit("dust", x, 0.25, 0.3, 2, { speed: 0.8, up: 0.4, size: 0.3, life: 0.4 });
@@ -430,6 +442,11 @@ export class EraWarView extends TableView<State> {
           if (e.extra === 3) this.fly(e.side, x);
           break;
         }
+        case "rank":
+          this.say(`강화 ★${e.extra}`, SIDE_COLORS[e.side]);
+          this.sound("era", 0.6);
+          this.fx.emit("glint", e.side ? BASE_X : -BASE_X, 3, 0.8, 8, { speed: 2.5, up: 3, size: 0.5, life: 0.9 });
+          break;
         case "era":
           c.eras++;
           this.say(`${ERAS[e.extra].name} 시대!`, SIDE_COLORS[e.side]);
@@ -464,7 +481,8 @@ export class EraWarView extends TableView<State> {
     this.sound("boom", Math.min(1, 0.4 + size * 0.4));
     this.fx.emit("fire", x, y + 0.3, 0.4, Math.round(5 * size), { speed: 2 * size, up: 1, size: 0.6 * size, grow: 1.8, life: 0.4 });
     this.fx.emit("smoke", x, y + 0.5, 0.3, Math.round(6 * size), { speed: 1.2, up: 1.2, size: 0.6 * size, grow: 2.4, life: 1.5 });
-    this.fx.emit("chip", x, y + 0.3, 0.4, Math.round(5 * size), { speed: 3.5, up: 3, size: 0.09, life: 0.9 });
+    this.fx.emit("chip", x, y + 0.3, 0.4, Math.round(6 * size), { speed: 3.5, up: 3, size: 0.09, life: 0.9 });
+    if (this.kit.rich) this.fx.emit("dust", x, 0.15, 0.4, Math.round(4 * size), { speed: 2.4 * size, up: 0.3, size: 0.7 * size, grow: 2, life: 1.2 });
     if (this.flash) {
       this.flash.position.set(x, y + 1, 1.2);
       this.flashed = this.clock;
@@ -505,6 +523,32 @@ export class EraWarView extends TableView<State> {
     const k = this.kit,
       own: Own = (r) => this.own(r),
       hot = own(new T.MeshBasicMaterial({ color: "#ffe38a" })),
+      // A streak behind what flies fast: a soft line of air (an arrow) or of light (a tracer).
+      fade = own(
+        new T.CanvasTexture(
+          (() => {
+            const c = document.createElement("canvas");
+            c.width = 64;
+            c.height = 8;
+            const ctx = c.getContext("2d")!,
+              g = ctx.createLinearGradient(0, 0, 64, 0);
+            g.addColorStop(0, "rgba(255,255,255,0)");
+            g.addColorStop(1, "rgba(255,255,255,1)");
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 2, 64, 4);
+            return c;
+          })(),
+        ),
+      ),
+      air = own(new T.MeshBasicMaterial({ map: fade, color: "#ffffff", transparent: true, opacity: 0.45, depthWrite: false, side: T.DoubleSide })),
+      light = own(new T.MeshBasicMaterial({ map: fade, color: "#ffd27a", transparent: true, opacity: 0.9, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide })),
+      streak = (g: T.Group, material: T.Material, length: number, width: number) => {
+        const m = new T.Mesh(k.g.plane, material);
+        m.scale.set(length, width, 1);
+        m.position.x = -length / 2;
+        m.renderOrder = 3;
+        g.add(m);
+      },
       group = (build: (g: T.Group) => void) => () => {
         const g = new T.Group();
         build(g);
@@ -516,17 +560,20 @@ export class EraWarView extends TableView<State> {
       arrow: group((g) => {
         k.mesh("cyl", "wood", 0, 0, 0, 0.012, 0.6, 0.012, g).rotation.z = Math.PI / 2;
         k.mesh("cone4", "iron", 0.32, 0, 0, 0.025, 0.08, 0.025, g).rotation.z = -Math.PI / 2;
-        k.mesh("box", "white", -0.27, 0, 0, 0.1, 0.05, 0.01, g);
+        for (const r of [0, Math.PI / 2]) k.mesh("box", "feather", -0.26, 0, 0, 0.1, 0.05, 0.008, g).rotation.x = r;
+        streak(g, air, 0.8, 0.03);
       }),
       fallArrow: group((g) => {
         k.mesh("cyl", "wood", 0, 0, 0, 0.016, 0.8, 0.016, g).rotation.z = Math.PI / 2;
         k.mesh("cone4", "iron", 0.42, 0, 0, 0.03, 0.1, 0.03, g).rotation.z = -Math.PI / 2;
-        k.mesh("box", "team0", -0.36, 0, 0, 0.12, 0.06, 0.01, g);
+        for (const r of [0, Math.PI / 2]) k.mesh("box", "feather", -0.35, 0, 0, 0.12, 0.06, 0.008, g).rotation.x = r;
+        streak(g, air, 1.1, 0.04);
       }),
       bullet: group((g) => {
         const m = new T.Mesh(k.g.ballLo, hot);
         m.scale.set(0.14, 0.025, 0.025);
         g.add(m);
+        streak(g, light, 0.9, 0.035);
       }),
       ball: group((g) => k.mesh("ball", "black", 0, 0, 0, 0.1, 0.1, 0.1, g)),
       shell: group((g) => {
@@ -551,26 +598,58 @@ export class EraWarView extends TableView<State> {
   private figure(era: number, kind: Kind, side: number) {
     const key = `${era}${kind}${side}`,
       spare = this.spare.get(key)?.pop();
-    const f = spare ?? makeFigure(this.kit, era, kind, side);
+    const f = spare ?? this.kit.figure(era, kind, side);
     f.root.visible = true;
     f.root.rotation.set(0, 0, 0);
+    f.root.position.y = 0;
     this.root.add(f.root);
     return { f, key };
   }
+  /** Where a point of a figure is, in the lane's own space (under the mirrored root). */
+  private at(o: T.Object3D) {
+    this.root.updateMatrixWorld();
+    const p = o.getWorldPosition(new T.Vector3());
+    return this.root.worldToLocal(p);
+  }
+  /** A dead soldier's own paints, to fade it out (the shared ones are given back when its figure is used again). */
+  private fade(d: Drawn) {
+    if (d.fading) return;
+    d.fading = [];
+    d.f.root.traverse((o) => {
+      if (!(o instanceof T.Mesh) || o === d.f.bar || o === d.f.barBack || o === (d.f.star as T.Mesh)) return;
+      const was = o.material as T.Material,
+        own = was.clone();
+      own.transparent = true;
+      o.material = own;
+      d.fading!.push({ mesh: o, was, own });
+    });
+  }
+  private unfade(d: Drawn) {
+    for (const { mesh, was, own } of d.fading ?? []) {
+      mesh.material = was;
+      own.dispose();
+    }
+    d.fading = null;
+  }
   private draw(dt: number) {
     const pic = this.pic!,
-      t = this.clock;
-    // Bases as their eras build them; a fallen one sinks and leans.
+      t = this.clock,
+      quiet = capturing();
+    // The world's age: the further era of the two sides sets its light, its sky and what stands in the distance.
+    this.atmosphere(Math.max(pic.sides[0].era, pic.sides[1].era), dt);
+    this.field.tick(t, dt);
+    // Bases as their eras build them, worn as they are hurt; a fallen one sinks and leans.
     for (const side of [0, 1] as const) {
       const s = pic.sides[side];
       if (this.shownEra[side] !== s.era) {
-        if (this.shownEra[side] >= 0) this.field.base(side, this.shownEra[side]).visible = false;
-        const b = this.field.base(side, s.era);
+        if (this.shownEra[side] >= 0) this.field.base(side, this.shownEra[side]).group.visible = false;
+        const b = this.field.base(side, s.era).group;
         if (b.parent !== this.root) this.root.add(b);
         b.visible = true;
         this.shownEra[side] = s.era;
       }
-      const base = this.field.base(side, s.era),
+      const made = this.field.base(side, s.era),
+        base = made.group,
         down = s.hp <= 0;
       if (down && !this.fallen[side]) this.fallen[side] = true;
       if (this.fallen[side]) {
@@ -581,18 +660,21 @@ export class EraWarView extends TableView<State> {
         base.rotation.z = 0;
       }
       base.traverse((o) => {
-        if (o.userData.flicker) o.scale.y = 0.5 + 0.12 * Math.sin(t * 17 + o.id) + 0.06 * Math.sin(t * 31);
+        if (o.userData.flicker) o.scale.y = (o.userData.sy ??= o.scale.y) * (0.82 + 0.2 * Math.sin(t * 17 + o.id) + 0.08 * Math.sin(t * 31));
         if (o.userData.spin) o.rotation.y = t * 0.8;
         if (o.userData.flag) o.rotation.y = Math.sin(t * 3 + side) * 0.18;
+        if (o.userData.blink) o.visible = Math.sin(t * 5 + side) > 0.3;
       });
-      // A base hurt smokes, and burns when badly hurt.
-      const hurt = 1 - s.hp / s.max;
-      if (hurt > 0.45 && !capturing() && Math.random() < dt * (hurt > 0.75 ? 7 : 3)) {
-        const x = (side ? 1 : -1) * (BASE_X - 0.5 + Math.random() * 1.5);
-        this.fx.emit("smoke", x, 2.6 + Math.random(), -0.2, 1, { speed: 0.4, up: 1.2, size: 0.9, grow: 2.5, life: 2.2 });
-        if (hurt > 0.75) this.fx.emit("fire", x, 2.2 + Math.random() * 0.8, 0.2, 1, { speed: 0.3, up: 0.8, size: 0.6, life: 0.5 });
-      }
-      // The turrets.
+      // A base hurt is scorched and smokes, then breaks and burns, then is ablaze.
+      const hurt = 1 - s.hp / s.max,
+        fires = made.wear(this.fallen[side] ? 1 : hurt);
+      if (!quiet)
+        for (const p of fires)
+          if (Math.random() < dt * (hurt > 0.85 ? 6 : 3)) {
+            this.fx.emit("smoke", p.x, p.y + 0.4, p.z, 1, { speed: 0.4, up: 1.2, size: 0.8, grow: 2.6, life: 2.4 });
+            if (hurt > 0.6) this.fx.emit("fire", p.x, p.y + 0.2, p.z + 0.1, 1, { speed: 0.3, up: 0.9, size: 0.5, life: 0.45 });
+          }
+      // The turrets: each with a flash at its mouth and a kick when it fires.
       for (let slot = 0; slot < SLOTS; slot++) {
         const era = s.turrets[slot],
           have = this.turrets[side][slot];
@@ -602,28 +684,41 @@ export class EraWarView extends TableView<State> {
         }
         if (era >= 0 && !this.turrets[side][slot]) {
           const group = this.field.turret(era),
-            at = turretAt(side, slot);
+            at = turretAt(side, slot),
+            flash = new T.Sprite(this.kit.flashMat);
           group.position.set(at.x, at.y - 0.06, MAST_Z);
           group.scale.x = side ? -1 : 1;
+          flash.position.copy(group.userData.muzzle as T.Vector3);
+          flash.scale.setScalar(era >= 2 ? 0.8 : 0.35);
+          flash.visible = false;
+          group.add(flash);
           this.root.add(group);
-          this.turrets[side][slot] = { era, group };
+          this.turrets[side][slot] = { era, group, flash, fired: 9 };
         }
         const tur = this.turrets[side][slot];
         if (tur) {
-          const kick = s.fired[slot] < 0.25 ? 1 - s.fired[slot] / 0.25 : 0,
+          const fired = s.fired[slot],
+            kick = fired < 0.25 ? 1 - fired / 0.25 : 0,
             barrel = tur.group.userData.barrel as T.Group;
           barrel.position.x = (barrel.userData.x ?? (barrel.userData.x = barrel.position.x)) - kick * 0.12;
+          tur.flash.visible = era >= 2 && fired < 0.08;
+          if (fired < tur.fired && era >= 2 && !quiet && this.kit.rich) {
+            const m = this.at(tur.flash);
+            this.fx.emit("smoke", m.x, m.y, m.z, era === 2 ? 3 : 1, { speed: 0.5, up: 0.5, size: 0.4, grow: 2.2, life: 1.1 });
+          }
+          tur.fired = fired;
         }
       }
     }
-    // The soldiers: each drawn where the picture has it, walking or striking; the dead fall and sink, then go.
+    // The soldiers: each drawn where the picture has it, walking or fighting (a flash and smoke at a gun's mouth); the
+    // dead fall, fade and sink, then go.
     const seen = new Set<number>();
     for (const u of pic.units) {
       seen.add(u.id);
       let d = this.drawn.get(u.id);
       if (!d) {
         const { f, key } = this.figure(u.era, u.kind, u.side);
-        d = { f, key, dist: 0, x: u.x, dead: -1 };
+        d = { f, key, dist: 0, x: u.x, dead: -1, since: 9, fading: null };
         this.drawn.set(u.id, d);
       }
       d.dist += Math.abs(u.x - d.x);
@@ -631,26 +726,47 @@ export class EraWarView extends TableView<State> {
       const depth = ((u.id * 37) % 7) - 3,
         big = u.kind === 2;
       d.f.root.position.set(u.x, 0, big ? -0.25 : depth * 0.07);
-      poseFigure(d.f, d.dist, u.walking, u.since, u.life, t + u.id);
+      poseFigure(d.f, d.dist, u.walking, u.since, u.life, t + u.id, u.rank);
+      // A new shot from a gun: smoke at its mouth.
+      // (Where the processor draws, every puff is a draw: only the big guns smoke there.)
+      if (u.since < d.since && d.f.muzzle && u.era >= 2 && !quiet && (big || this.kit.rich)) {
+        const m = this.at(d.f.muzzle);
+        this.fx.emit("smoke", m.x, m.y, m.z, big ? 4 : 1, { speed: big ? 0.9 : 0.4, up: 0.4, size: big ? 0.55 : 0.25, grow: 2.4, life: big ? 1.4 : 0.8 });
+        if (big) this.fx.emit("dust", u.x, 0.1, 0.2, 3, { speed: 1.4, up: 0.2, size: 0.5, life: 0.8 });
+      }
+      d.since = u.since;
+      // A tank breathes exhaust as it rolls.
+      if (big && u.era === 3 && u.walking && !quiet && this.kit.rich && (this.exhaust += dt) > 0.35) {
+        this.exhaust = 0;
+        this.fx.emit("smoke", u.x - (u.side ? -1 : 1) * 1.0, 0.75, -0.2, 1, { speed: 0.3, up: 0.6, size: 0.3, grow: 2.5, life: 1.2 });
+      }
     }
     for (const [id, d] of this.drawn) {
       if (seen.has(id)) continue;
-      if (d.dead < 0) d.dead = 0;
+      if (d.dead < 0) {
+        d.dead = 0;
+        if (d.f.flash) d.f.flash.visible = false;
+        this.fade(d);
+      }
       d.dead += dt;
-      const p = Math.min(1, d.dead / 0.35);
-      // Over backward, away from the way it went.
-      d.f.root.rotation.z = (d.key.endsWith("1") ? -1 : 1) * p * 1.35;
-      d.f.root.position.y = -Math.max(0, d.dead - 0.6) * 0.9;
-      d.f.bar.visible = d.f.barBack.visible = false;
+      const p = Math.min(1, d.dead / 0.35),
+        big = d.key[1] === "2";
+      // Over backward, away from the way it went (a machine settles where it stopped); then fading into the ground.
+      d.f.root.rotation.z = big && d.key[0] >= "2" ? 0 : (d.key.endsWith("1") ? -1 : 1) * p * (big ? 0.5 : 1.35);
+      d.f.root.position.y = -Math.max(0, d.dead - 0.9) * 0.5;
+      const left = 1 - Math.max(0, (d.dead - 0.6) / 1.2);
+      for (const f of d.fading ?? []) (f.own as T.MeshLambertMaterial).opacity = Math.max(0, left);
+      d.f.bar.visible = d.f.barBack.visible = d.f.star.visible = false;
       if (d.dead > 1.8) {
         this.root.remove(d.f.root);
+        this.unfade(d);
         const list = this.spare.get(d.key) ?? [];
         list.push(d.f);
         this.spare.set(d.key, list);
         this.drawn.delete(id);
       }
     }
-    // The shots in the air, each pointed the way it flies.
+    // The shots in the air, each pointed the way it flies; shells, balls and bombs trail smoke.
     const flying = new Set<number>();
     for (const s of pic.shots) {
       flying.add(s.id);
@@ -666,6 +782,11 @@ export class EraWarView extends TableView<State> {
       else if (s.kind.startsWith("fall") || s.kind === "bomb") held.mesh.rotation.z = -Math.PI / 2;
       if (s.kind === "rock" || s.kind === "fallRock" || s.kind === "ball") held.mesh.rotation.z += t * 9;
       held.mesh.position.set(s.x, s.y, s.kind === "bomb" || s.kind.startsWith("fall") ? 0.1 : 0.15);
+      held.seen += dt;
+      if (!quiet && this.kit.rich && (s.kind === "ball" || s.kind === "shell" || s.kind === "fallShell" || s.kind === "bomb") && held.seen > 0.05) {
+        held.seen = 0;
+        this.fx.emit("smoke", s.x, s.y, 0.1, 1, { speed: 0.1, up: 0.15, size: s.kind === "bomb" ? 0.3 : 0.18, grow: 2.2, life: 0.7 });
+      }
       held.x = s.x;
       held.y = s.y;
     }
@@ -674,23 +795,42 @@ export class EraWarView extends TableView<State> {
         this.root.remove(held.mesh);
         this.shots.delete(id);
       }
-    // Bombers over the lane.
+    // Bombers over the lane, and the trails of their engines.
     this.planes = this.planes.filter((p) => {
       p.age += dt;
       p.x += p.dir * 11 * dt;
       p.mesh.position.set(p.x, 9 + Math.sin(p.age * 2) * 0.2, -1.5);
       p.mesh.visible = p.age >= 0;
+      if (p.age >= 0 && !quiet && this.kit.rich && Math.random() < dt * 8) this.fx.emit("smoke", p.x - p.dir * 1.2, 9, -1.5, 1, { speed: 0.05, up: 0, size: 0.25, grow: 3, life: 1.6 });
       if (p.age > 4) {
         this.root.remove(p.mesh);
         return false;
       }
       return true;
     });
-    for (const c of this.field.clouds) c.position.x = ((c.position.x + 50 + dt * 0.4) % 110) - 50;
+    for (const c of this.field.clouds) c.position.x = ((c.position.x + 60 + dt * 0.4) % 130) - 60;
     if (this.flash) this.flash.intensity = Math.max(0, 1 - (this.clock - this.flashed) / 0.35) * 26;
     this.aim(dt);
     this.describe();
   }
+  /** The light and sky blended toward the world's age (its sky and distance switched at once, the light over a while). */
+  private atmosphere(era: number, dt: number) {
+    const a = this.field.age(era),
+      k = this.age < 0 ? 1 : 1 - Math.exp(-dt * 1.2);
+    if (era !== this.age) {
+      this.age = era;
+      this.scene.background = a.sky;
+    }
+    const fog = this.scene.fog as T.Fog;
+    fog.color.lerp(a.fog, k);
+    this.hemi.color.lerp(a.hemiSky, k);
+    this.hemi.groundColor.lerp(a.hemiGround, k);
+    this.hemi.intensity += (a.hemi - this.hemi.intensity) * k;
+    this.sun.color.lerp(a.sun, k);
+    this.sun.intensity += (a.sunPower - this.sun.intensity) * k;
+    this.sunAt.lerp(a.sunAt, k);
+  }
+  private sunAt = new T.Vector3(6, 14, 10);
   /** The eye: on the fighting (the two foremost soldiers' middle), unless a drag looked elsewhere a moment ago. */
   private aim(dt: number) {
     const pic = this.pic!,
@@ -726,7 +866,7 @@ export class EraWarView extends TableView<State> {
     }
     camera.position.set(x, f.lookY + Math.sin(f.tilt) * distance, Math.cos(f.tilt) * distance);
     camera.lookAt(x, f.lookY, 0);
-    this.sun.position.set(x + 6, 14, 10);
+    this.sun.position.set(x + this.sunAt.x, this.sunAt.y, this.sunAt.z);
     this.sun.target.position.set(x, 0, 0);
     this.sun.target.updateMatrixWorld();
   }
@@ -760,13 +900,13 @@ export class EraWarView extends TableView<State> {
       right = pic.sides[1 - me],
       names = this.live ? (this.mine === null ? ["1번", "2번"] : ["나", "상대"]) : ["나", "컴퓨터"],
       side = (s: SidePic, who: string, cls: string, team: number) =>
-        `<div class="ew-side ${cls}" style="--team:${SIDE_COLORS[team]}"><span class="ew-era">${ERAS[s.era].name}</span><b>${who}</b><span class="ew-hp"><i style="width:${Math.max(0, Math.min(100, (s.hp / s.max) * 100)).toFixed(1)}%"></i><em>${Math.max(0, Math.ceil(s.hp))}</em></span></div>`,
+        `<div class="ew-side ${cls}" style="--team:${SIDE_COLORS[team]}"><span class="ew-era">${ERAS[s.era].name}${s.rank ? `<small>★${s.rank}</small>` : ""}</span><b>${who}</b><span class="ew-hp"><i style="width:${Math.max(0, Math.min(100, (s.hp / s.max) * 100)).toFixed(1)}%"></i><em>${Math.max(0, Math.ceil(s.hp))}</em></span></div>`,
       at = (x: number) => (((x * this.flip) / EDGE + 1) / 2) * 100,
       dots = pic.units.map((u) => `<i class="ew-dot ew-d${u.side}${u.kind === 2 ? " ew-big" : ""}" style="left:${at(u.x).toFixed(1)}%"></i>`).join(""),
       wide = (this.frame.wide / (2 * EDGE)) * 100,
       view = `<b class="ew-view" style="left:${(((this.eye.x / EDGE + 1) / 2) * 100 - wide / 2).toFixed(1)}%;width:${wide.toFixed(1)}%"></b>`,
       map = `<div class="ew-map"><i class="ew-lane"></i><i class="ew-castle ew-d${me}" style="left:${at(me ? BASE_X : -BASE_X)}%"></i><i class="ew-castle ew-d${1 - me}" style="left:${at(me ? -BASE_X : BASE_X)}%"></i>${dots}${view}</div>`,
-      html = `<div class="ew-top">${side(left, names[0], "ew-left", this.mine === null ? 0 : me)}<div class="ew-clock${pic.left < 60 ? " late" : ""}">${mmss(pic.left)}</div>${side(right, names[1], "ew-right", this.mine === null ? 1 : 1 - me)}</div>${map}`;
+      html = `<div class="ew-top">${side(left, names[0], "ew-left", this.mine === null ? 0 : me)}<div class="ew-vs">VS</div>${side(right, names[1], "ew-right", this.mine === null ? 1 : 1 - me)}</div>${map}`;
     if (html !== this.hudKey) {
       this.hudKey = html;
       this.hud.innerHTML = html;
@@ -792,6 +932,7 @@ export class EraWarView extends TableView<State> {
     d.mine = String(this.mine);
     d.eye = this.eye.x.toFixed(2);
     d.time = (pic.tick * DT).toFixed(1);
+    d.draws = String(this.renderer.info.render.calls);
   }
   /** My commands as the picture has my side: costs, what can be paid for, the queue, the slots, the powers. */
   private commands() {
@@ -799,7 +940,7 @@ export class EraWarView extends TableView<State> {
     if (!s || this.bar.hidden) return;
     const era = ERAS[s.era],
       over = !!this.pic?.over || this.state?.winner !== null,
-      key = JSON.stringify([s.era, Math.floor(s.gold), s.xp, s.queue, s.turrets, Math.ceil(s.ability), Math.round(s.training * 20), this.armed, over, s.next]);
+      key = JSON.stringify([s.era, s.rank, Math.floor(s.gold), s.xp, s.queue, s.turrets, Math.ceil(s.ability), Math.round(s.training * 20), this.armed, over, s.next]);
     if (this.bar.dataset.key === key) return;
     this.bar.dataset.key = key;
     if (this.armed >= 0 && performance.now() - this.armedAt > 2500) this.armed = -1;
@@ -839,12 +980,17 @@ export class EraWarView extends TableView<State> {
     ability.classList.toggle("ready", ready && !over);
     ability.disabled = over || !ready;
     ability.setAttribute("aria-label", `특수 공격 ${era.ability.name}${ready ? "" : `, ${Math.ceil(s.ability)}초 남음`}`);
+    // In the last era the button buys a rank (강화) with gold.
     const up = this.bar.querySelector<HTMLButtonElement>(".ew-era-up")!,
-      can = s.next !== null && s.xp >= s.next;
-    up.querySelector("em")!.textContent = s.era >= LAST_ERA ? "마지막 시대" : `${ERAS[s.era + 1].name}`;
+      last = s.era >= LAST_ERA,
+      price = rankCost(s.rank),
+      can = last ? s.gold >= price : s.next !== null && s.xp >= s.next;
+    up.classList.toggle("ew-rank-up", last);
+    up.querySelector("b")!.textContent = last ? `강화 ★${s.rank + 1}` : "다음 시대";
+    up.querySelector("em")!.textContent = last ? String(price) : `${ERAS[s.era + 1].name}`;
     up.classList.toggle("ready", can && !over);
     up.disabled = over || !can;
-    up.setAttribute("aria-label", s.era >= LAST_ERA ? "마지막 시대입니다" : `다음 시대 ${ERAS[s.era + 1].name}로, 경험 ${s.xp} / ${s.next}`);
+    up.setAttribute("aria-label", last ? `강화 ${s.rank + 1}단계, ${price}골드` : `다음 시대 ${ERAS[s.era + 1].name}로, 경험 ${s.xp} / ${s.next}`);
   }
   protected spots(): Spot[] {
     return [];
@@ -856,7 +1002,7 @@ export class EraWarView extends TableView<State> {
     const anew = (!this.world && !(this.live && !this.live.host)) || (state.ply === 0 && this.shown > 0);
     this.shown = state.ply;
     if (anew && !(this.live && !this.live.host)) {
-      this.world = createWorld(Math.floor(Math.random() * 2e9) + 1, state.variant);
+      this.world = createWorld(Math.floor(Math.random() * 2e9) + 1);
       if (!this.live) computerSide(this.world, 1, this.level);
       else for (const side of [0, 1] as const) if (this.live.host && this.live.control(side) === "computer") computerSide(this.world, side, "hard");
       this.minds = [freshMind(), freshMind()];

@@ -4228,8 +4228,8 @@ html[data-game="era-war"] .game-layout .board-area .board-bottom { visibility:hi
 .ew-right { direction:rtl; }
 .ew-right > * { direction:ltr; }
 .ew-right .ew-hp i { margin-left:auto; }
-.ew-clock { min-width:48px;padding:4px 8px;border-radius:8px;background:#000a;font:800 15px/1 var(--mono, ui-monospace, monospace);color:#ffe9b0;text-align:center;letter-spacing:.04em; }
-.ew-clock.late { color:#ff8a6a; }
+.ew-vs { min-width:34px;padding:4px 7px;border-radius:8px;background:#000a;font:900 13px/1 "Inter",sans-serif;color:#ffe9b0;text-align:center;letter-spacing:.06em;font-style:italic; }
+.ew-era small { margin-left:4px;font-size:.92em;color:#ffe27a;text-shadow:0 1px 2px #0008; }
 .ew-map { position:relative;height:16px;margin:6px 6px 0;border-radius:8px;background:#15181ec8;box-shadow:inset 0 0 0 1.5px #9aa4b499, 0 3px 10px #0006;pointer-events:auto;cursor:pointer; }
 .ew-map > * { position:absolute;top:50%;translate:-50% -50%; }
 .ew-map > .ew-lane { left:6px;right:6px;height:2px;translate:0 -50%;background:#c9a36a99;border-radius:1px; }
@@ -4276,6 +4276,8 @@ html[data-game="era-war"] .game-layout .board-area .board-bottom { visibility:hi
 .ew-ability .ew-cool { position:absolute;left:0;right:0;bottom:0;background:#00000070;pointer-events:none; }
 .ew-ability.ready { background:linear-gradient(#ff8a3a, #c2401a);border-color:#ffd2a0;animation:ew-ready 1.2s ease-in-out infinite; }
 .ew-era-up.ready { background:linear-gradient(#a37bff, #5a2fc4);border-color:#dccbff;animation:ew-ready 1.2s ease-in-out infinite; }
+.ew-era-up.ew-rank-up.ready { background:linear-gradient(#ffd25a, #c58a12);border-color:#fff0b8;color:#2a1a00; }
+.ew-era-up.ew-rank-up.ready em { color:#2a1a00; }
 .ew-ability b, .ew-era-up b { position:relative; }
 .ew-ability em, .ew-era-up em { position:relative;color:#fff; }
 @keyframes ew-ready { 50% { box-shadow:0 0 14px #ffffffaa; } }
@@ -4286,7 +4288,7 @@ html[data-game="era-war"] .game-layout .board-area .board-bottom { visibility:hi
   .ew-side b { font-size:11.5px; }
   .ew-era { font-size:10px;padding:1px 6px; }
   .ew-hp { height:13px; }
-  .ew-clock { min-width:40px;font-size:13px;padding:3px 5px; }
+  .ew-vs { min-width:30px;font-size:11px;padding:3px 5px; }
   .ew-map { height:13px;margin-top:4px; }
   .ew-bar { bottom:4px;gap:5px;padding:4px;border-radius:12px; }
   .ew-money { min-width:66px; }

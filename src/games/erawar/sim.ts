@@ -10,15 +10,18 @@
  * stronger base, a new turret and a new special attack. Up to three turrets stand on a base and shoot what comes near;
  * a turret is sold back for half. The special attack, once it is ready, rains rocks, arrows, shells or bombs on the
  * enemy's soldiers. A base brought to nothing loses the match.
+ * There is no time limit (the user asked for it gone). So that no match stands still for ever, the last era has two
+ * things more: its gold, which piles up faster than soldiers can be trained, buys ranks (강화), each making the soldiers
+ * trained afterwards (and the special attack) stronger, so that the side winning its fights (whose kills pay) grows
+ * stronger still; and its soldiers fight with momentum (기세), harder the further past the middle they have pushed.
  *
  * x runs along the lane: side 0's base at the left (−), side 1's at the right (+). Everything is reckoned in fixed
  * steps (`DT`); the random draws (where the special attack falls, the computer's whims) come from the world's own
  * seeded stream, so that one seed plays one match.
  */
 export const DT = 1 / 30;
-/** Seconds of play a world has run, and left before its time limit. */
+/** Seconds of play a world has run. */
 export const seconds = (world: World) => world.tick * DT;
-export const timeLeft = (world: World) => Math.max(0, world.pace.limit - seconds(world));
 /** Where each base stands (its middle) and where its front is (what is struck, and where soldiers come out). */
 export const BASE_X = 15.2,
   FRONT = 13.2,
@@ -39,6 +42,14 @@ export const KILL_GOLD = 0.9,
 export const ABILITY_COOL = 50,
   ABILITY_FIRST = 25;
 export const START_GOLD = 175;
+/**
+ * Momentum (기세), in the last era: a soldier past the lane's middle strikes harder the further it has pushed (up to
+ * this share more at the enemy's front), so that two even sides do not stand for ever in the middle of the lane.
+ */
+export const MOMENTUM = 0.8;
+/** How much harder a soldier strikes where it stands (its era's momentum). */
+export const momentum = (u: { side: number; era: number; x: number }) => (u.era >= LAST_ERA ? 1 + MOMENTUM * Math.max(0, Math.min(1, ahead(u.side, u.x) / FRONT)) : 1);
+
 export type Kind = 0 | 1 | 2;
 export type ShotKind = "rock" | "arrow" | "bullet" | "ball" | "shell" | "fallRock" | "fallArrow" | "fallShell" | "bomb";
 export const SHOT_KINDS: ShotKind[] = ["rock", "arrow", "bullet", "ball", "shell", "fallRock", "fallArrow", "fallShell", "bomb"];
@@ -120,26 +131,25 @@ export const ERAS: EraType[] = [
 /** The experience that opens the next era (from era k to k + 1). */
 export const XP_NEXT = [1100, 5200, 22000];
 export const LAST_ERA = ERAS.length - 1;
-/** The two kinds of match: 보통, and 빠른 판 (more gold for a kill, eras opened sooner, more to start with). */
-export interface Pace {
-  gold: number;
-  xp: number;
-  start: number;
-  trickle: number;
-  /** The match's length in seconds: then the base with more of its strength left wins (alike: a draw). */
-  limit: number;
-}
-export const PACES: Record<string, Pace> = {
-  normal: { gold: 1, xp: 1, start: START_GOLD, trickle: 1, limit: 20 * 60 },
-  quick: { gold: 1.5, xp: 0.5, start: 400, trickle: 2, limit: 10 * 60 },
-};
-export const paceOf = (variant: string): Pace => PACES[variant] ?? PACES.normal;
+/**
+ * The ranks of the last era (강화), bought with gold: the first's price and how much more each further one costs, and
+ * how much stronger (life and blows) each makes the soldiers trained after it and the special attack.
+ */
+export const RANK_GOLD = 1500,
+  RANK_MORE = 100,
+  RANK_BOOST = 0.15;
+/** The gold rank `r + 1` costs. */
+export const rankCost = (r: number) => RANK_GOLD + RANK_MORE * r;
+/** How much stronger a soldier of a rank is. */
+export const powerOf = (rank: number) => 1 + RANK_BOOST * rank;
 
 export interface Unit {
   id: number;
   side: 0 | 1;
   era: number;
   kind: Kind;
+  /** Its side's rank (강화) when it was trained: its life and blows are `powerOf(rank)` times its kind's. */
+  rank: number;
   x: number;
   hp: number;
   max: number;
@@ -181,6 +191,8 @@ export interface Army {
   era: number;
   hp: number;
   max: number;
+  /** The ranks bought in the last era (강화). */
+  rank: number;
   /** What is being trained, in order (each with the era it was ordered in), and how far the first one is along (s). */
   queue: { era: number; kind: Kind }[];
   training: number;
@@ -195,8 +207,8 @@ export interface Army {
   kills: number;
 }
 /** What happened in a step, for the screen (sounds, words, sparks) and for the devices that only watch. */
-export type EventCode = "die" | "melee" | "shoot" | "impact" | "base" | "ability" | "era" | "turret" | "sell" | "spawn" | "fall";
-export const EVENT_CODES: EventCode[] = ["die", "melee", "shoot", "impact", "base", "ability", "era", "turret", "sell", "spawn", "fall"];
+export type EventCode = "die" | "melee" | "shoot" | "impact" | "base" | "ability" | "era" | "turret" | "sell" | "spawn" | "fall" | "rank";
+export const EVENT_CODES: EventCode[] = ["die", "melee", "shoot", "impact", "base", "ability", "era", "turret", "sell", "spawn", "fall", "rank"];
 export interface Happening {
   seq: number;
   code: EventCode;
@@ -210,24 +222,22 @@ export interface World {
   armies: [Army, Army];
   units: Unit[];
   shots: Shot[];
-  pace: Pace;
   nextId: number;
   seed: number;
   /** The happenings of the last steps (kept for a while, so that devices that only watch hear them too). */
   events: Happening[];
   seq: number;
   over: boolean;
-  /** Who won (null: not yet, or a draw at the time limit). */
+  /** Who won (null: not yet). */
   winner: 0 | 1 | null;
-  /** The match ended at its time limit (`winner` null: the bases were alike). */
-  timeUp: boolean;
 }
 export type Command = { kind: "train"; unit: Kind } | { kind: "turret"; slot: number } | { kind: "sell"; slot: number } | { kind: "ability" } | { kind: "era" };
 
-const army = (pace: Pace): Army => ({
-  gold: pace.start,
+const army = (): Army => ({
+  gold: START_GOLD,
   xp: 0,
   era: 0,
+  rank: 0,
   hp: ERAS[0].base,
   max: ERAS[0].base,
   queue: [],
@@ -239,9 +249,8 @@ const army = (pace: Pace): Army => ({
   lost: 0,
   kills: 0,
 });
-export function createWorld(seed = 1, variant = "normal"): World {
-  const pace = paceOf(variant);
-  return { tick: 0, armies: [army(pace), army(pace)], units: [], shots: [], pace, nextId: 1, seed: seed >>> 0 || 1, events: [], seq: 0, over: false, winner: null, timeUp: false };
+export function createWorld(seed = 1): World {
+  return { tick: 0, armies: [army(), army()], units: [], shots: [], nextId: 1, seed: seed >>> 0 || 1, events: [], seq: 0, over: false, winner: null };
 }
 /** The world's own random stream (mulberry32). */
 export function rand(world: World) {
@@ -258,14 +267,16 @@ export const spawnOf = (side: number) => (side === 0 ? -SPAWN : SPAWN);
 export const typeOf = (u: { era: number; kind: number }) => ERAS[u.era].units[u.kind];
 /** How far along the lane toward the enemy a place is, for a side. */
 const ahead = (side: number, x: number) => x * way(side);
-/** The xp the next era needs for a side (with the match's pace), or null in the last era. */
+/** The xp (all told) the next era needs for a side, or null in the last era. */
 export function nextEra(world: World, side: number) {
   const era = world.armies[side].era;
-  return era >= LAST_ERA ? null : Math.round(XP_NEXT[era] * world.pace.xp);
+  return era >= LAST_ERA ? null : XP_NEXT[era];
 }
+/** Whether a side may open its next era, or in the last era buy its next rank (강화). */
 export const canEra = (world: World, side: number) => {
-  const need = nextEra(world, side);
-  return need !== null && world.armies[side].xp >= need && !world.over;
+  const a = world.armies[side],
+    need = nextEra(world, side);
+  return !world.over && (need === null ? a.gold >= rankCost(a.rank) : a.xp >= need);
 };
 export const turretCost = (era: number) => ERAS[era].turret.cost;
 /** Whether a side may order that (gold, room in the queue, an empty slot, the special attack ready…). */
@@ -321,12 +332,19 @@ export function command(world: World, side: 0 | 1, c: Command): boolean {
         span = 8;
       for (let k = 0; k < ab.count; k++) {
         const tx = Math.max(-FRONT + 0.5, Math.min(FRONT - 0.5, from - way(foe) * span * ((k + rand(world)) / ab.count)));
-        world.shots.push({ id: world.nextId++, side, kind: ab.shot, x0: tx + way(side) * 2.5, y0: 13, x: tx + way(side) * 2.5, y: 13, target: -2, tx, ty: 0, t: 0, time: 0.9, arc: 0, dmg: ab.dmg, splash: ab.radius, wait: k * 0.13 + rand(world) * 0.25 });
+        world.shots.push({ id: world.nextId++, side, kind: ab.shot, x0: tx + way(side) * 2.5, y0: 13, x: tx + way(side) * 2.5, y: 13, target: -2, tx, ty: 0, t: 0, time: 0.9, arc: 0, dmg: ab.dmg * powerOf(a.rank), splash: ab.radius, wait: k * 0.13 + rand(world) * 0.25 });
       }
       emit(world, "ability", lead, side, a.era);
       return true;
     }
     case "era": {
+      // In the last era, a rank: the soldiers trained from now on are stronger.
+      if (a.era >= LAST_ERA) {
+        a.gold -= rankCost(a.rank);
+        a.rank++;
+        emit(world, "rank", baseX(side), side, a.rank);
+        return true;
+      }
       const before = a.max;
       a.era++;
       a.max = ERAS[a.era].base;
@@ -356,7 +374,7 @@ function hurt(world: World, u: Unit, dmg: number, by: 0 | 1) {
     const t = typeOf(u),
       mine = world.armies[u.side],
       theirs = world.armies[by];
-    theirs.gold += Math.round(t.cost * KILL_GOLD * world.pace.gold * theirs.bonus);
+    theirs.gold += Math.round(t.cost * KILL_GOLD * theirs.bonus);
     theirs.xp += Math.round(t.cost * KILL_XP);
     theirs.kills++;
     mine.xp += Math.round(t.cost * LOSS_XP);
@@ -402,7 +420,7 @@ export function step(world: World, orders: [Command[], Command[]] = [[], []]): H
   for (const side of [0, 1] as const) for (const c of orders[side]) command(world, side, c);
   for (const side of [0, 1] as const) {
     const a = world.armies[side];
-    a.gold += ERAS[a.era].trickle * world.pace.trickle * a.bonus * DT;
+    a.gold += ERAS[a.era].trickle * a.bonus * DT;
     if (a.ability > 0) a.ability = Math.max(0, a.ability - DT);
     // Training: the first in the queue, then out at the base's door when there is room there.
     const head = a.queue[0];
@@ -416,7 +434,8 @@ export function step(world: World, orders: [Command[], Command[]] = [[], []]): H
         a.queue.shift();
         a.training = 0;
         a.trained++;
-        world.units.push({ id: world.nextId++, side, era: head.era, kind: head.kind, x: door, hp: t.hp, max: t.hp, cool: 0.3, since: 9, walking: false });
+        const hp = Math.round(t.hp * powerOf(a.rank));
+        world.units.push({ id: world.nextId++, side, era: head.era, kind: head.kind, rank: a.rank, x: door, hp, max: hp, cool: 0.3, since: 9, walking: false });
         emit(world, "spawn", door, side, head.era * 3 + head.kind);
       }
     } else a.training = 0;
@@ -446,12 +465,13 @@ export function step(world: World, orders: [Command[], Command[]] = [[], []]): H
           u.cool = t.cool;
           u.since = 0;
           const target = reachEnemy ? enemy : null;
-          if (t.shot) fire(world, side, { x: u.x + dir * 0.3, y: HAND + (t.size > 1.2 ? 0.2 : 0) }, t.shot, t.dmg, t.splash ?? 0, target);
+          const dmg = t.dmg * powerOf(u.rank) * momentum(u);
+          if (t.shot) fire(world, side, { x: u.x + dir * 0.3, y: HAND + (t.size > 1.2 ? 0.2 : 0) }, t.shot, dmg, t.splash ?? 0, target);
           else if (target) {
-            hurt(world, target, t.dmg, side);
+            hurt(world, target, dmg, side);
             emit(world, "melee", (u.x + target.x) / 2, side, u.era);
           } else {
-            hitBase(world, foe, t.dmg);
+            hitBase(world, foe, dmg);
             emit(world, "melee", wall, side, u.era);
           }
         }
@@ -512,14 +532,6 @@ export function step(world: World, orders: [Command[], Command[]] = [[], []]): H
   }
   world.shots = world.shots.filter((s) => s.t < s.time);
   world.units = world.units.filter((u) => u.hp > 0);
-  // The time limit: the base with more of its strength left wins (to a hundredth), alike a draw.
-  if (!world.over && seconds(world) >= world.pace.limit) {
-    const [p, q] = world.armies.map((a) => Math.round((a.hp / a.max) * 100));
-    world.over = true;
-    world.timeUp = true;
-    world.winner = p === q ? null : p > q ? 0 : 1;
-    emit(world, "fall", 0, world.winner ?? 0, -1);
-  }
   return world.events.filter((e) => e.seq > from);
 }
 
@@ -532,10 +544,10 @@ export type Level = "easy" | "normal" | "hard";
  * new era once it may, and how often it lets a moment pass doing nothing; `income` is what its gold is multiplied by
  * (set on its army when the match begins, `computerSide`).
  */
-export const LEVELS: Record<Level, { income: number; think: number; queue: number; mix: "smart" | "rough" | "whim"; turretAt: number; abilityAt: number; eraDelay: number; idle: number; renew: boolean }> = {
-  easy: { income: 0.8, think: 1.6, queue: 2, mix: "whim", turretAt: 3.5, abilityAt: 1, eraDelay: 35, idle: 0.45, renew: false },
-  normal: { income: 1, think: 0.8, queue: 3, mix: "rough", turretAt: 2, abilityAt: 3, eraDelay: 6, idle: 0.12, renew: false },
-  hard: { income: 1.2, think: 0.4, queue: 4, mix: "smart", turretAt: 1.4, abilityAt: 3, eraDelay: 0, idle: 0, renew: true },
+export const LEVELS: Record<Level, { income: number; think: number; queue: number; mix: "smart" | "rough" | "whim"; turretAt: number; abilityAt: number; eraDelay: number; idle: number; renew: boolean; rankAt: number }> = {
+  easy: { income: 0.8, think: 1.6, queue: 2, mix: "whim", turretAt: 3.5, abilityAt: 1, eraDelay: 35, idle: 0.45, renew: false, rankAt: 4 },
+  normal: { income: 1, think: 0.8, queue: 3, mix: "rough", turretAt: 2, abilityAt: 3, eraDelay: 6, idle: 0.12, renew: false, rankAt: 2.5 },
+  hard: { income: 1.2, think: 0.4, queue: 4, mix: "smart", turretAt: 1.4, abilityAt: 3, eraDelay: 0, idle: 0, renew: true, rankAt: 1.5 },
 };
 export interface Mind {
   wait: number;
@@ -562,7 +574,7 @@ export function think(world: World, side: 0 | 1, level: Level, mind: Mind): Comm
     mine = world.units.filter((u) => u.side === side),
     theirs = world.units.filter((u) => u.side === foe),
     worth = (list: Unit[]) => list.reduce((n, u) => n + typeOf(u).cost * (u.era + 1) * (u.hp / u.max), 0);
-  if (canEra(world, side) && mind.could >= L.eraDelay) out.push({ kind: "era" });
+  if (a.era < LAST_ERA && canEra(world, side) && mind.could >= L.eraDelay) out.push({ kind: "era" });
   // The special attack: on a crowd of enemies (or, the easy computer, on anything), or on any near its base.
   if (a.ability <= 0 && theirs.length) {
     const lead = foremost(world, foe)!,
@@ -584,8 +596,11 @@ export function think(world: World, side: 0 | 1, level: Level, mind: Mind): Comm
           behind = worth(theirs) > worth(mine) * 1.2,
           bigFoe = theirs.some((u) => u.kind === 2 && u.era >= a.era);
         if (L.mix === "smart") {
-          const crowded = mine.length + a.queue.length >= ARMY - 2;
-          if (afford.includes(2) && (bigFoe || behind || crowded || gold > eraUnits[2].cost * 1.6)) pick = 2;
+          const crowded = mine.length + a.queue.length >= ARMY - 2,
+            // Big ones jam the lane behind one another (only the foremost can fight): a few at a time, a line in front.
+            bigs = mine.filter((u) => u.kind === 2).length + a.queue.filter((q) => q.kind === 2).length,
+            room = bigs < 2 || (bigs < 3 && fighters > bigs * 2);
+          if (afford.includes(2) && room && (bigFoe || behind || crowded || gold > eraUnits[2].cost * 1.6)) pick = 2;
           // Near the lane's limit it saves for the big one rather than send another small one.
           else if (crowded && eraUnits[2].cost < a.gold * 3) pick = null;
           else if (shooters * 2 < fighters && afford.includes(1)) pick = 1;
@@ -600,6 +615,13 @@ export function think(world: World, side: 0 | 1, level: Level, mind: Mind): Comm
       out.push({ kind: "train", unit: pick });
       gold -= eraUnits[pick].cost;
     }
+  }
+  // In the last era, a rank (강화) with the gold the soldiers leave over: the queue kept full (more gold than one
+  // soldier can be trained with), or plenty of it.
+  const price = rankCost(a.rank);
+  if (a.era >= LAST_ERA && gold >= price && ((L.renew && a.queue.length >= L.queue - 1) || gold >= price * L.rankAt)) {
+    out.push({ kind: "era" });
+    gold -= price;
   }
   // Turrets: with gold to spare; the hard computer also replaces one of an older era.
   const cost = turretCost(a.era),
