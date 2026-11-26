@@ -1,6 +1,6 @@
 import * as T from "three";
 import { grain, grainUV } from "../../engine/grain";
-import { block, capable, glossy, planks } from "../../engine/scene-utils";
+import { block, capable, glossy, planks, stuff } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -58,9 +58,10 @@ interface Toy {
 }
 
 /**
- * 러시안 룰렛's party: a round table with a chequered cloth in a room hung with bunting, balloons and fairy lights, a
- * cake and snacks round the edge, and up to four guests in party hats round it (me near, my left, across, my right; a
- * closed seat an empty chair). The toy is a bright plastic cap revolver (blue frame, yellow cylinder, red grip, the
+ * 러시안 룰렛's back room at night (the user asked for a dark mood): brick walls, a red neon sign and wall lamps
+ * glowing in the dark, one lamp hanging low over a round table of reddish wood with a pale ring on it, a candle, nuts
+ * and glasses of pop round the edge, and up to four players in felt hats round it (me near, my left, across, my right;
+ * a closed seat an empty chair). The toy is a bright plastic cap revolver (blue frame, yellow cylinder, red grip, the
  * orange tip toys carry), held up in front of whoever's turn it is, pointing up over the table, never at anyone. A pull
  * cocks the hammer and squeezes the trigger slowly while a heart beats; a click turns the cylinder a chamber on; a 펑
  * springs a "펑!" flag out of the barrel and bursts confetti over the one holding it, whose hair stands on end and
@@ -88,7 +89,7 @@ export class RRouletteView extends TableView<State> {
   private heartAt = 0;
   private rich = capable();
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#f6e3cf");
+    super(host, quality, "#0b0706");
     const keep: Own = (r) => this.own(r);
     this.floor = new T.Plane(new T.Vector3(0, 1, 0), -0.0);
     this.lights();
@@ -115,6 +116,8 @@ export class RRouletteView extends TableView<State> {
     disc.rotation.y = Math.PI / 2;
     disc.castShadow = false;
     this.begin();
+    // The photographic look's reflected room is a bright one: in the dark back room it is only a hint.
+    if (this.rich) this.scene.environmentIntensity = 0.08;
   }
   protected photographic() {
     return true;
@@ -124,258 +127,224 @@ export class RRouletteView extends TableView<State> {
     return aspect < 1 ? { ...RR.SUBJECT, half: 4.7, halfZ: 4.4 } : RR.SUBJECT;
   }
   // ── The room ──────────────────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * The back room at night (the user asked for a dark mood like a picture of a smoky bar): one hanging lamp pools warm
+   * light on the table, a red neon sign and two wall lamps glow against brick in the dark, and a low warm light off the
+   * table lights the faces from below. One light casts shadows (the lamp), as the room's sun did before.
+   */
   private lights() {
-    this.scene.add(new T.HemisphereLight("#fff4e6", "#8a6a58", 1.55));
-    const sun = new T.DirectionalLight("#fff1dc", 1.9);
-    sun.position.set(-5, 12, 7);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = sun.shadow.camera.bottom = -8;
-    sun.shadow.camera.right = sun.shadow.camera.top = 8;
-    sun.shadow.normalBias = 0.02;
-    this.own(sun.shadow);
-    this.scene.add(sun);
-    // A warm lamp over the table, and the glow of the fairy lights at the back.
-    const lamp = new T.PointLight("#ffd9a0", 9, 9, 1.6);
-    lamp.position.set(0, 4.2, 0.4);
-    this.scene.add(lamp);
-    const back = new T.PointLight("#ffb6d6", 4, 9, 1.8);
-    back.position.set(0, 3, -6);
-    this.scene.add(back);
+    this.scene.fog = new T.Fog("#0d0807", 11, 24);
+    this.scene.add(new T.HemisphereLight("#5e4a54", "#1c120e", 0.78));
+    const lamp = new T.SpotLight("#ffc48a", 80, 18, 0.62, 0.6, 1.25);
+    lamp.position.set(0, 6.4, 0.2);
+    lamp.target.position.set(0, -0.4, 0.2);
+    lamp.castShadow = true;
+    lamp.shadow.mapSize.set(2048, 2048);
+    lamp.shadow.camera.near = 1;
+    lamp.shadow.camera.far = 14;
+    lamp.shadow.normalBias = 0.02;
+    this.own(lamp.shadow);
+    this.scene.add(lamp, lamp.target);
+    // The neon's red on the back wall, a wall lamp's orange at the left, and the table's warm glow from below.
+    const neon = new T.PointLight("#ff3a2e", 10, 11, 1.5);
+    neon.position.set(3.4, RR.FLOOR_Y + 2.8, -6.2);
+    const sconce = new T.PointLight("#ff8a3c", 6, 10, 1.6);
+    sconce.position.set(-6.4, RR.FLOOR_Y + 3.1, -5.6);
+    const under = new T.PointLight("#ff9b5c", 3.4, 6.5, 1.5);
+    under.position.set(0, 0.45, 0.2);
+    this.scene.add(neon, under);
+    // Each lamp costs every lit pixel its sum: where the processor draws, the wall lamps' orange is their halos alone,
+    // so that the room has as many lights as the party had and draws as fast.
+    if (this.rich) this.scene.add(sconce);
+  }
+  /** A soft round glow (a lamp's halo in the haze), drawn over everything else and never fogged. */
+  private halo(color: string, size: number, x: number, y: number, z: number) {
+    const { c, ctx } = canvasOf(128, 128),
+      g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, color);
+    g.addColorStop(0.25, color.replace(/[\d.]+\)$/, "0.35)"));
+    g.addColorStop(1, color.replace(/[\d.]+\)$/, "0)"));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    const map = this.own(new T.CanvasTexture(c));
+    map.colorSpace = T.SRGBColorSpace;
+    const glow = new T.Sprite(this.own(new T.SpriteMaterial({ map, transparent: true, depthWrite: false, blending: T.AdditiveBlending, fog: false })));
+    glow.scale.set(size, size, 1);
+    glow.position.set(x, y, z);
+    this.scene.add(glow);
+    return glow;
   }
   private room(keep: Own) {
     const FLOOR = RR.FLOOR_Y;
-    const floor = this.add(new T.PlaneGeometry(30, 22), this.standard(planks(5, keep, 3.6)), 0, FLOOR, 0);
+    // Old dark boards underfoot, and a worn maroon rug under the table.
+    const floor = this.add(new T.PlaneGeometry(30, 22), this.standard({ ...planks(5, keep, 3.6), color: "#6b5546" }), 0, FLOOR, 0);
     floor.rotation.x = -Math.PI / 2;
     floor.castShadow = false;
-    // A round rug under the table.
     const { c: rugC, ctx: rug } = canvasOf(512, 512);
-    for (let r = 256; r > 0; r -= 32) {
-      rug.fillStyle = (r / 32) % 2 ? "#e9637a" : "#ffd3a8";
+    rug.fillStyle = "#3a1416";
+    rug.beginPath();
+    rug.arc(256, 256, 256, 0, Math.PI * 2);
+    rug.fill();
+    rug.strokeStyle = "#7a4a2a";
+    rug.lineWidth = 10;
+    for (const r of [236, 214]) {
       rug.beginPath();
       rug.arc(256, 256, r, 0, Math.PI * 2);
-      rug.fill();
+      rug.stroke();
+    }
+    // Wear: lighter scuffs where chairs are drawn back and forth.
+    for (let k = 0; k < 900; k++) {
+      const a = (k * 2.399) % (Math.PI * 2),
+        r = 60 + ((k * 97) % 180);
+      rug.fillStyle = `rgba(120, 70, 60, ${0.05 + (k % 5) * 0.02})`;
+      rug.fillRect(256 + Math.cos(a) * r, 256 + Math.sin(a) * r, 3, 3);
     }
     const rugMap = keep(new T.CanvasTexture(rugC));
     rugMap.colorSpace = T.SRGBColorSpace;
     const mat = this.add(new T.CircleGeometry(5.4, 64), this.standard({ map: rugMap, roughness: 1 }), 0, FLOOR + 0.01, 0);
     mat.rotation.x = -Math.PI / 2;
     mat.castShadow = false;
-    // Striped wallpaper behind and at the sides, a white skirting board.
-    const { c: wallC, ctx: wall } = canvasOf(512, 512);
-    for (let x = 0; x < 512; x += 64) {
-      wall.fillStyle = "#fbe6ef";
-      wall.fillRect(x, 0, 32, 512);
-      wall.fillStyle = "#fff6e9";
-      wall.fillRect(x + 32, 0, 32, 512);
-      wall.fillStyle = "rgba(240, 150, 180, 0.35)";
-      for (let y = 16; y < 512; y += 64) {
-        wall.beginPath();
-        wall.arc(x + 48, y + ((x / 64) % 2) * 32, 5, 0, Math.PI * 2);
-        wall.fill();
-      }
-    }
-    const paper = keep(new T.CanvasTexture(wallC));
-    paper.colorSpace = T.SRGBColorSpace;
-    paper.wrapS = paper.wrapT = T.RepeatWrapping;
-    paper.repeat.set(8, 3);
-    const papered = this.standard({ map: paper, roughness: 0.95 }),
-      side = this.standard({ map: paper.clone(), roughness: 0.95 });
-    keep((side as T.MeshStandardMaterial).map!);
-    const back = this.add(new T.PlaneGeometry(26, 10), papered, 0, FLOOR + 5, -7.2);
+    // Brick walls behind and at the sides, and a low ceiling's beams lost in the dark.
+    const brick = this.standard({ ...stuff("brick", "#6a3a2c", 6, keep, 2.4), roughness: 0.95 }),
+      sideBrick = this.standard({ ...stuff("brick", "#5a3226", 4.2, keep, 2.4), roughness: 0.95 });
+    const back = this.add(new T.PlaneGeometry(26, 10), brick, 0, FLOOR + 5, -7.2);
     back.castShadow = false;
     for (const s of [-1, 1]) {
-      const w = this.add(new T.PlaneGeometry(18, 10), side, s * 9.5, FLOOR + 5, 1.8);
+      const w = this.add(new T.PlaneGeometry(18, 10), sideBrick, s * 9.5, FLOOR + 5, 1.8);
       w.rotation.y = -s * Math.PI / 2;
       w.castShadow = false;
     }
-    const skirt = this.standard({ color: "#ffffff", roughness: 0.5 });
-    this.add(new T.BoxGeometry(26, 0.3, 0.06), skirt, 0, FLOOR + 0.15, -7.15).castShadow = false;
-    // A banner over the back wall: 게임의 밤.
-    const { c: banC, ctx: ban } = canvasOf(1024, 192);
-    ban.fillStyle = "#3b2a6b";
-    ban.fillRect(0, 0, 1024, 192);
-    const letters = "즐거운 게임의 밤";
-    ban.font = `900 104px ${FONT}`;
-    ban.textAlign = "center";
-    ban.textBaseline = "middle";
-    const width = ban.measureText(letters).width;
-    let x = 512 - width / 2;
-    [...letters].forEach((ch, i) => {
-      const w = ban.measureText(ch).width;
-      ban.fillStyle = ["#ffd43b", "#ff8fab", "#74c0fc", "#8ce99a"][i % 4];
-      ban.fillText(ch, x + w / 2, 100);
-      x += w;
-    });
-    const banMap = keep(new T.CanvasTexture(banC));
-    banMap.colorSpace = T.SRGBColorSpace;
-    this.add(new T.PlaneGeometry(6.4, 1.2), this.standard({ map: banMap, roughness: 0.8 }), 0, FLOOR + 6.3, -7.1).castShadow = false;
-    // Bunting: two strings of little flags sagging across the back wall.
-    const flagGeo = keep(new T.BufferGeometry().setFromPoints([new T.Vector3(-0.22, 0, 0), new T.Vector3(0.22, 0, 0), new T.Vector3(0, -0.42, 0)]));
-    flagGeo.computeVertexNormals();
-    const flagMats = ["#ff6b6b", "#ffd43b", "#4dabf7", "#69db7c", "#da77f2"].map((color) => this.standard({ color, side: T.DoubleSide, roughness: 0.7 })),
-      cord = this.own(new T.LineBasicMaterial({ color: "#7a5a48" }));
-    for (const [y0, sag, from, to] of [
-      [FLOOR + 7.6, 1.0, -11, 11],
-      [FLOOR + 7.2, 0.7, -10, 10],
+    const beam = this.standard({ ...grain(keep, "#3a2618", { kind: "dark" }), roughness: 0.8 });
+    for (const z of [-5.5, -2.5, 0.5]) this.add(grainUV(block(19, 0.4, 0.5, 0.03), 1.6, 0), beam, 0, FLOOR + 8.2, z).castShadow = false;
+    // A brick pillar at the back right.
+    this.add(new T.BoxGeometry(1.3, 10, 1.3), this.standard({ ...stuff("brick", "#5e3428", 1, keep, 7), roughness: 0.95 }), 6.6, FLOOR + 5, -6.4).castShadow = false;
+    // The red neon sign: 행운의 6, its tube drawn glowing on the dark wall.
+    const { c: neonC, ctx: n } = canvasOf(1024, 256);
+    n.font = `800 132px ${FONT}`;
+    n.textAlign = "center";
+    n.textBaseline = "middle";
+    for (const [blur, colour, width] of [
+      [38, "rgba(255, 50, 40, 0.9)", 18],
+      [16, "rgba(255, 90, 70, 1)", 9],
+      [0, "rgba(255, 220, 210, 1)", 3],
     ] as const) {
-      const pts: T.Vector3[] = [];
-      for (let k = 0; k <= 40; k++) {
-        const u = k / 40,
-          x = from + (to - from) * u;
-        pts.push(new T.Vector3(x, y0 - sag * 4 * u * (1 - u), -7.0));
-      }
-      this.scene.add(new T.Line(keep(new T.BufferGeometry().setFromPoints(pts)), cord));
-      for (let k = 1; k < 40; k += 2) {
-        const f = new T.Mesh(flagGeo, flagMats[(k + (y0 > FLOOR + 7.4 ? 0 : 2)) % flagMats.length]);
-        f.position.copy(pts[k]);
-        f.rotation.z = Math.sin(k) * 0.08;
-        this.scene.add(f);
-      }
+      n.shadowColor = "rgba(255, 40, 30, 1)";
+      n.shadowBlur = blur;
+      n.strokeStyle = colour;
+      n.lineWidth = width;
+      n.lineJoin = "round";
+      n.strokeText("행운의 6", 512, 132);
     }
-    // Fairy lights: little glowing bulbs along a lower string.
-    const bulb = keep(new T.SphereGeometry(0.07, 10, 8)),
-      glows = ["#fff3b0", "#ffc9de", "#bde0fe"].map((color) => this.own(new T.MeshBasicMaterial({ color })));
-    for (let k = 0; k <= 30; k++) {
-      const u = k / 30,
-        b = new T.Mesh(bulb, glows[k % 3]);
-      b.position.set(-11 + 22 * u, FLOOR + 6.7 - 1.3 * 4 * u * (1 - u), -7.05);
-      this.scene.add(b);
+    const neonMap = keep(new T.CanvasTexture(neonC));
+    neonMap.colorSpace = T.SRGBColorSpace;
+    const sign = this.add(new T.PlaneGeometry(3.4, 0.85), this.own(new T.MeshBasicMaterial({ map: neonMap, transparent: true, depthWrite: false, fog: false, blending: T.AdditiveBlending })), 3.4, FLOOR + 2.75, -7.12);
+    sign.castShadow = sign.receiveShadow = false;
+    this.halo("rgba(255, 60, 40, 0.4)", 5, 3.4, FLOOR + 2.75, -7.0);
+    // Wall lamps: a shade on a bracket, its bulb glowing, a halo in the haze.
+    const metal = this.standard({ color: "#2c2a28", metalness: 0.7, roughness: 0.4 }),
+      bulbLit = this.own(new T.MeshBasicMaterial({ color: "#ffd0a0", fog: false }));
+    for (const [x, z, rot] of [
+      [-6.4, -7.0, 0],
+      [-9.35, -1.0, Math.PI / 2],
+      [9.35, -2.6, -Math.PI / 2],
+    ] as const) {
+      const lampGroup = new T.Group();
+      lampGroup.position.set(x, FLOOR + 3.1, z);
+      lampGroup.rotation.y = rot;
+      this.scene.add(lampGroup);
+      this.add(new T.BoxGeometry(0.1, 0.5, 0.1), metal, 0, 0, 0.05, lampGroup).castShadow = false;
+      this.add(new T.CylinderGeometry(0.12, 0.3, 0.32, 20, 1, true), this.standard({ color: "#7a1e18", roughness: 0.6, side: T.DoubleSide, emissive: "#ff5a2a", emissiveIntensity: 0.35 }), 0, 0.12, 0.3, lampGroup).castShadow = false;
+      this.add(new T.SphereGeometry(0.08, 12, 10), bulbLit, 0, 0.04, 0.3, lampGroup).castShadow = false;
     }
-    // Balloons in clusters at the back corners and one bunch tied to my left's chair side.
-    const balloon = keep(new T.SphereGeometry(0.42, 24, 18)),
-      knot = keep(new T.ConeGeometry(0.06, 0.1, 8)),
-      string = this.own(new T.LineBasicMaterial({ color: "#cfcfcf" }));
-    const balloonMats = ["#ff5c7a", "#ffd43b", "#5cc8ff", "#9b6bff", "#5fd38a", "#ff9f43"].map((color) => keep(glossy({ color, roughness: 0.25 }, 0.8)));
-    const bunch = (x: number, z: number, base: number, n: number, seed: number) => {
-      for (let k = 0; k < n; k++) {
-        const a = seed + k * 2.1,
-          px = x + Math.cos(a) * 0.45 * (k % 3),
-          pz = z + Math.sin(a) * 0.35 * (k % 2),
-          py = base + 1.6 + (k % 3) * 0.55,
-          m = new T.Mesh(balloon, balloonMats[(k + seed) % balloonMats.length]);
-        m.scale.set(1, 1.2, 1);
-        m.position.set(px, py, pz);
-        m.castShadow = true;
-        this.scene.add(m);
-        const kn = new T.Mesh(knot, balloonMats[(k + seed) % balloonMats.length]);
-        kn.position.set(px, py - 0.52, pz);
-        kn.rotation.x = Math.PI;
-        this.scene.add(kn);
-        this.scene.add(new T.Line(keep(new T.BufferGeometry().setFromPoints([new T.Vector3(px, py - 0.56, pz), new T.Vector3(x, base, z)])), string));
-      }
-    };
-    bunch(-7.6, -5.8, FLOOR + 0.6, 6, 0);
-    bunch(7.4, -5.6, FLOOR + 0.6, 5, 3);
-    bunch(-8.4, 1.2, FLOOR + 0.3, 4, 1);
-    // A sideboard at the back with a stack of presents and a lamp.
-    const cab = this.standard({ color: "#f4ede0", roughness: 0.55 });
-    this.add(block(4.2, 1.6, 0.9, 0.05), cab, -3.6, FLOOR + 0.8, -6.5);
-    // The cabinet's top is real oak.
-    this.add(grainUV(block(4.3, 0.08, 1.0, 0.03), 1.4), this.standard({ ...grain(keep, "#c79a6a"), roughness: 0.45 }), -3.6, FLOOR + 1.64, -6.5);
-    const wraps = [
-      ["#ff6b8b", "#ffe066"],
-      ["#4dabf7", "#ffffff"],
-      ["#8ce99a", "#ff6b6b"],
-    ];
-    [
-      [-4.7, 0.5, 0.6, 0.5],
-      [-4.1, 0.38, 0.42, 0.4],
-      [-4.45, 0.3, 0.3, 0.3],
-    ].forEach(([x, w, h, d], i) => {
-      const y = FLOOR + 1.68 + (i === 2 ? 0.6 : 0) + h / 2;
-      this.add(block(w, h, d, 0.02), this.standard({ color: wraps[i][0], roughness: 0.6 }), x, y, -6.45);
-      this.add(new T.BoxGeometry(w + 0.01, h + 0.01, 0.07), this.standard({ color: wraps[i][1], roughness: 0.5 }), x, y, -6.45);
-      this.add(new T.BoxGeometry(0.07, h + 0.01, d + 0.01), this.standard({ color: wraps[i][1], roughness: 0.5 }), x, y, -6.45);
-    });
-    const lampShade = this.add(new T.CylinderGeometry(0.28, 0.42, 0.5, 24, 1, true), this.own(new T.MeshStandardMaterial({ color: "#fff0d2", emissive: "#ffcf80", emissiveIntensity: 0.6, side: T.DoubleSide })), -2.2, FLOOR + 2.55, -6.5);
-    lampShade.castShadow = false;
-    this.add(new T.CylinderGeometry(0.04, 0.04, 0.8, 10), this.standard({ color: "#b08a5a", metalness: 0.5, roughness: 0.4 }), -2.2, FLOOR + 2.05, -6.5);
-    // A tall plant at the right.
-    const pot = this.standard({ color: "#d9774f", roughness: 0.7 }),
-      leaf = this.standard({ color: "#3f8f4f", roughness: 0.6, side: T.DoubleSide });
-    this.add(new T.CylinderGeometry(0.45, 0.35, 0.8, 24), pot, 6.8, FLOOR + 0.4, -5.6);
-    const leafGeo = keep(new T.SphereGeometry(0.5, 12, 8).scale(0.4, 1, 0.12));
-    for (let k = 0; k < 11; k++) {
-      const m = new T.Mesh(leafGeo, leaf),
-        a = k * 2.4;
-      m.position.set(6.8 + Math.cos(a) * 0.25, FLOOR + 1.3 + (k % 4) * 0.35, -5.6 + Math.sin(a) * 0.25);
-      m.rotation.set(Math.sin(a) * 0.7, a, Math.cos(a) * 0.7);
-      m.castShadow = true;
-      this.scene.add(m);
+    this.halo("rgba(255, 130, 60, 0.55)", 2.6, -6.4, FLOOR + 3.15, -6.7);
+    this.halo("rgba(255, 130, 60, 0.55)", 2.6, -9.05, FLOOR + 3.15, -1.0);
+    this.halo("rgba(255, 130, 60, 0.55)", 2.6, 9.05, FLOOR + 3.15, -2.6);
+    // A dark sideboard at the back with crates, bottles of fizzy pop and an old radio.
+    const cab = this.standard({ ...grain(keep, "#3b261a", { kind: "dark" }), roughness: 0.6 });
+    this.add(grainUV(block(4.2, 1.6, 0.9, 0.05), 1.4), cab, -3.6, FLOOR + 0.8, -6.5);
+    this.add(grainUV(block(4.3, 0.08, 1.0, 0.03), 1.4), this.standard({ ...grain(keep, "#5a3a24"), roughness: 0.45 }), -3.6, FLOOR + 1.64, -6.5);
+    const crate = this.standard({ ...grain(keep, "#8a6440"), roughness: 0.8 });
+    this.add(grainUV(block(0.9, 0.6, 0.6, 0.02), 0.8), crate, -4.9, FLOOR + 1.98, -6.45);
+    this.add(grainUV(block(0.7, 0.45, 0.5, 0.02), 0.8), crate, -4.75, FLOOR + 2.51, -6.45).rotation.y = 0.2;
+    const glass = ["#1f4a2a", "#5a2a14", "#1c2a44"].map((color) => keep(glossy({ color, roughness: 0.15, transparent: true, opacity: 0.85 }, 0.6)));
+    for (let k = 0; k < 7; k++) {
+      const x = -3.7 + k * 0.28,
+        m = this.add(new T.CylinderGeometry(0.08, 0.1, 0.5, 14), glass[k % 3], x, FLOOR + 1.93, -6.55 + (k % 2) * 0.12);
+      this.add(new T.CylinderGeometry(0.03, 0.06, 0.18, 10), glass[k % 3], x, FLOOR + 2.27, m.position.z);
     }
+    const radio = this.standard({ ...grain(keep, "#6a4426"), roughness: 0.5 });
+    this.add(grainUV(block(1.0, 0.62, 0.45, 0.06), 0.8), radio, -2.0, FLOOR + 1.99, -6.45);
+    this.add(new T.CircleGeometry(0.18, 20), this.standard({ color: "#c79a5a", emissive: "#ff9a3c", emissiveIntensity: 0.5 }), -2.2, FLOOR + 2.02, -6.22).castShadow = false;
+    // Stacked crates and a barrel in the dark at the right.
+    this.add(grainUV(block(1.2, 0.9, 1.0, 0.03), 0.8), crate, 7.6, FLOOR + 0.45, -4.6);
+    this.add(grainUV(block(1.0, 0.8, 0.9, 0.03), 0.8), crate, 7.5, FLOOR + 1.3, -4.5).rotation.y = -0.25;
+    this.add(grainUV(new T.CylinderGeometry(0.62, 0.62, 1.5, 24), 1.2, 1), this.standard({ ...grain(keep, "#5a3a22", { kind: "dark" }), roughness: 0.7 }), 8.0, FLOOR + 0.75, -2.2);
   }
   private table(keep: Own) {
     const R = RR.TABLE_R,
       FLOOR = RR.FLOOR_Y;
-    // A chequered cloth over a round top, falling in a skirt.
-    const { c, ctx } = canvasOf(512, 512);
-    for (let y = 0; y < 8; y++)
-      for (let x = 0; x < 8; x++) {
-        ctx.fillStyle = (x + y) % 2 ? "#ffffff" : "#e8465c";
-        ctx.fillRect(x * 64, y * 64, 64, 64);
-      }
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    for (let y = 0; y < 512; y += 4) ctx.fillRect(0, y, 512, 1);
-    const cloth = keep(new T.CanvasTexture(c));
-    cloth.colorSpace = T.SRGBColorSpace;
-    cloth.wrapS = cloth.wrapT = T.RepeatWrapping;
-    cloth.repeat.set(2.2, 2.2);
-    const clothMat = this.standard({ map: cloth, roughness: 0.9 });
-    const top = this.add(new T.CylinderGeometry(R, R, 0.06, 72), clothMat, 0, -0.03, 0);
+    // A round top of reddish wood with a pale ring painted on it, a dark rim round its edge.
+    const topMat = this.standard({ ...grain(keep, "#8e3a26", { kind: "light", contrast: 1.2 }), roughness: 0.42 });
+    const top = this.add(grainUV(new T.CylinderGeometry(R, R, 0.08, 72), 1.8, 0), topMat, 0, -0.04, 0);
     top.receiveShadow = true;
-    const skirtMap = cloth.clone();
-    keep(skirtMap);
-    skirtMap.repeat.set(10, 1);
-    const skirt = this.add(new T.CylinderGeometry(R + 0.02, R + 0.18, 0.75, 72, 1, true), this.standard({ map: skirtMap, roughness: 0.9, side: T.DoubleSide }), 0, -0.4, 0);
-    skirt.castShadow = false;
+    const ring = this.add(new T.RingGeometry(1.55, 1.6, 96), this.standard({ color: "#e9dcc4", roughness: 0.6 }), 0, 0.002, 0);
+    ring.rotation.x = -Math.PI / 2;
+    ring.castShadow = false;
+    const rimMat = this.standard({ ...grain(keep, "#3a1e14", { kind: "dark" }), roughness: 0.5 });
+    const rim = this.add(new T.TorusGeometry(R, 0.07, 10, 96), rimMat, 0, -0.03, 0);
+    rim.rotation.x = Math.PI / 2;
+    this.add(new T.CylinderGeometry(R - 0.05, R - 0.3, 0.16, 72, 1, true), rimMat, 0, -0.16, 0).castShadow = false;
     // The table's foot under it.
-    this.add(grainUV(new T.CylinderGeometry(0.22, 0.5, Math.abs(FLOOR) - 0.7, 24), 1.2, 1), this.standard({ ...grain(keep, "#6b4a34", { kind: "dark" }), roughness: 0.5 }), 0, (FLOOR - 0.7) / 2, 0);
-    // The cake, cups, plates, a bowl of popcorn and party blowers round the edge, between the seats.
-    const plate = this.standard({ color: "#ffffff", roughness: 0.35 });
+    this.add(grainUV(new T.CylinderGeometry(0.22, 0.5, Math.abs(FLOOR) - 0.25, 24), 1.2, 1), this.standard({ ...grain(keep, "#3e2618", { kind: "dark" }), roughness: 0.5 }), 0, (FLOOR - 0.25) / 2, 0);
+    // The hanging lamp over the table: a cord into the dark, a deep metal shade and its bright bulb.
+    const lampY = 6.5;
+    this.add(new T.CylinderGeometry(0.015, 0.015, 4, 6), this.standard({ color: "#141414" }), 0, lampY + 2.1, 0.2).castShadow = false;
+    this.add(new T.CylinderGeometry(0.22, 1.05, 0.62, 40, 1, true), this.standard({ color: "#263022", metalness: 0.6, roughness: 0.45, side: T.FrontSide }), 0, lampY, 0.2).castShadow = false;
+    this.add(new T.CylinderGeometry(0.21, 1.03, 0.6, 40, 1, true), this.own(new T.MeshBasicMaterial({ color: "#ffd9a8", side: T.BackSide, fog: false })), 0, lampY, 0.2).castShadow = false;
+    this.add(new T.SphereGeometry(0.2, 16, 12), this.own(new T.MeshBasicMaterial({ color: "#fff3dc", fog: false })), 0, lampY - 0.25, 0.2).castShadow = false;
+    this.halo("rgba(255, 200, 140, 0.7)", 3.2, 0, lampY - 0.3, 0.2);
+    // A soft shaft of light in the haze under the lamp: only where a graphics card draws (see-through and large).
+    if (this.rich) {
+      const shaftGeo = keep(new T.CylinderGeometry(1.0, R + 0.2, lampY - 0.3, 48, 1, true)),
+        colours: number[] = [],
+        pos = shaftGeo.getAttribute("position");
+      for (let i = 0; i < pos.count; i++) {
+        const u = (pos.getY(i) + (lampY - 0.3) / 2) / (lampY - 0.3);
+        colours.push(0.05 * u * u, 0.036 * u * u, 0.022 * u * u);
+      }
+      shaftGeo.setAttribute("color", new T.Float32BufferAttribute(colours, 3));
+      const shaft = new T.Mesh(shaftGeo, this.own(new T.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false })));
+      shaft.position.set(0, (lampY - 0.3) / 2, 0.2);
+      shaft.renderOrder = 5;
+      this.scene.add(shaft);
+    }
+    // Round the edge, between the seats: a candle in a glass, a bowl of peanuts, glasses of fizzy pop.
     const diag = (k: number, r: number) => ({ x: Math.cos(Math.PI / 4 + (k * Math.PI) / 2) * r, z: Math.sin(Math.PI / 4 + (k * Math.PI) / 2) * r });
-    // Cake (back left).
-    const ck = diag(2, R - 0.75);
-    this.add(new T.CylinderGeometry(0.62, 0.62, 0.04, 40), plate, ck.x, 0.02, ck.z);
-    this.add(new T.CylinderGeometry(0.5, 0.5, 0.36, 40), this.standard({ color: "#fff3e3", roughness: 0.7 }), ck.x, 0.22, ck.z);
-    this.add(new T.CylinderGeometry(0.51, 0.51, 0.07, 40), this.standard({ color: "#ff8fab", roughness: 0.6 }), ck.x, 0.38, ck.z);
-    const candle = keep(new T.CylinderGeometry(0.025, 0.025, 0.22, 8)),
-      flame = keep(new T.SphereGeometry(0.035, 8, 6).scale(1, 1.7, 1)),
-      flameMat = this.own(new T.MeshBasicMaterial({ color: "#ffcf5a" }));
-    ["#74c0fc", "#ffd43b", "#8ce99a", "#da77f2", "#ff8787"].forEach((color, k) => {
-      const a = (k / 5) * Math.PI * 2,
-        cx = ck.x + Math.cos(a) * 0.28,
-        cz = ck.z + Math.sin(a) * 0.28;
-      const m = new T.Mesh(candle, this.standard({ color, roughness: 0.5 }));
-      m.position.set(cx, 0.52, cz);
-      this.scene.add(m);
-      const f = new T.Mesh(flame, flameMat);
-      f.position.set(cx, 0.66, cz);
-      this.scene.add(f);
-    });
-    // Popcorn (back right).
+    const ck = diag(2, R - 0.65),
+      clearGlass = keep(glossy({ color: "#d8c8b0", roughness: 0.1, transparent: true, opacity: 0.35 }, 0.9));
+    this.add(new T.CylinderGeometry(0.17, 0.15, 0.3, 20, 1, true), clearGlass, ck.x, 0.15, ck.z).castShadow = false;
+    this.add(new T.CylinderGeometry(0.12, 0.12, 0.16, 16), this.standard({ color: "#efe3cc", roughness: 0.8 }), ck.x, 0.08, ck.z);
+    this.add(new T.SphereGeometry(0.04, 8, 6).scale(1, 1.8, 1), this.own(new T.MeshBasicMaterial({ color: "#ffcf5a", fog: false })), ck.x, 0.22, ck.z).castShadow = false;
+    this.halo("rgba(255, 180, 80, 0.6)", 0.9, ck.x, 0.24, ck.z);
     const pc = diag(3, R - 0.7);
-    this.add(new T.CylinderGeometry(0.42, 0.3, 0.32, 24, 1, true), this.standard({ color: "#e03131", roughness: 0.6, side: T.DoubleSide }), pc.x, 0.16, pc.z);
-    const kernel = keep(new T.IcosahedronGeometry(0.06, 0)),
-      corn = this.standard({ color: "#fff4cf", roughness: 0.9 });
-    for (let k = 0; k < 40; k++) {
+    this.add(new T.CylinderGeometry(0.4, 0.28, 0.22, 24, 1, true), this.standard({ color: "#2a2624", metalness: 0.6, roughness: 0.35, side: T.DoubleSide }), pc.x, 0.11, pc.z);
+    const kernel = keep(new T.SphereGeometry(0.05, 6, 5).scale(1, 0.75, 1.4)),
+      nut = this.standard({ color: "#b98a52", roughness: 0.8 });
+    for (let k = 0; k < 34; k++) {
       const a = k * 2.39,
-        r = 0.32 * Math.sqrt((k % 20) / 20),
-        m = new T.Mesh(kernel, corn);
-      m.position.set(pc.x + Math.cos(a) * r, 0.3 + (k % 3) * 0.04 + (k < 20 ? 0 : 0.06), pc.z + Math.sin(a) * r);
+        r = 0.3 * Math.sqrt((k % 17) / 17),
+        m = new T.Mesh(kernel, nut);
+      m.position.set(pc.x + Math.cos(a) * r, 0.2 + (k % 3) * 0.03 + (k < 17 ? 0 : 0.05), pc.z + Math.sin(a) * r);
       m.rotation.set(k, k * 2, k * 3);
       this.scene.add(m);
     }
-    // Cups of juice (front left and right).
     for (const k of [0, 1]) {
       const at = diag(k, R - 0.55);
       for (const d of [-0.25, 0.25]) {
         const x = at.x + d * (k ? 1 : -1) * 0.7,
           z = at.z + d * 0.7;
-        this.add(new T.CylinderGeometry(0.13, 0.1, 0.32, 20, 1, true), this.own(new T.MeshStandardMaterial({ color: k ? "#ffd43b" : "#74c0fc", roughness: 0.4, side: T.DoubleSide })), x, 0.16, z);
-        this.add(new T.CylinderGeometry(0.12, 0.12, 0.02, 20), this.standard({ color: k ? "#ff922b" : "#e64980", roughness: 0.2 }), x, 0.26, z);
-        const straw = this.add(new T.CylinderGeometry(0.012, 0.012, 0.42, 6), this.standard({ color: "#ffffff" }), x + 0.04, 0.4, z);
-        straw.rotation.z = 0.25;
+        this.add(new T.CylinderGeometry(0.12, 0.1, 0.3, 20, 1, true), clearGlass, x, 0.15, z).castShadow = false;
+        this.add(new T.CylinderGeometry(0.11, 0.095, 0.2, 18), this.standard({ color: k ? "#c26a1e" : "#6a2a1a", roughness: 0.15, emissive: k ? "#5a2a08" : "#2a0a04", emissiveIntensity: 0.6 }), x, 0.1, z);
       }
     }
   }
@@ -442,27 +411,17 @@ export class RRouletteView extends TableView<State> {
       spikes.add(m);
     }
     spikes.visible = false;
-    // The party hat: a striped cone with a pompom, a little to one side.
-    const { c, ctx } = canvasOf(256, 256);
-    ctx.fillStyle = HATS[seat];
-    ctx.fillRect(0, 0, 256, 256);
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    for (let k = -256; k < 512; k += 64) {
-      ctx.beginPath();
-      ctx.moveTo(k, 256);
-      ctx.lineTo(k + 28, 256);
-      ctx.lineTo(k + 28 + 120, 0);
-      ctx.lineTo(k + 120, 0);
-      ctx.fill();
-    }
-    const hatMap = keep(new T.CanvasTexture(c));
-    hatMap.colorSpace = T.SRGBColorSpace;
+    // A felt hat in the seat's colour, a dark band round its crown, a little to one side.
     const hat = new T.Group();
     hat.position.set(0.06, 0.36, 0);
     hat.rotation.z = -0.18;
     head.add(hat);
-    this.add(new T.ConeGeometry(0.22, 0.6, 24, 1, true), this.standard({ map: hatMap, roughness: 0.6, side: T.DoubleSide }), 0, 0.3, 0, hat);
-    this.add(new T.SphereGeometry(0.08, 12, 10), this.standard({ color: "#ffffff", roughness: 0.9 }), 0, 0.62, 0, hat);
+    const felt = this.standard({ color: HATS[seat], roughness: 0.85 });
+    this.add(new T.CylinderGeometry(0.4, 0.42, 0.03, 32), felt, 0, 0.0, 0, hat);
+    this.add(new T.CylinderGeometry(0.22, 0.26, 0.28, 28), felt, 0, 0.15, 0, hat);
+    this.add(new T.CylinderGeometry(0.265, 0.265, 0.07, 28), this.standard({ color: "#1a1416", roughness: 0.6 }), 0, 0.05, 0, hat);
+    const dent = this.add(new T.SphereGeometry(0.2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), felt, 0, 0.28, 0, hat);
+    dent.scale.set(1, 0.3, 1.2);
     // Dizzy stars round the head after a 펑.
     const stars = new T.Group();
     stars.position.y = 0.62;
@@ -491,7 +450,7 @@ export class RRouletteView extends TableView<State> {
     const { c: tagC, ctx: _tag } = canvasOf(512, 160),
       tagMap = keep(new T.CanvasTexture(tagC));
     tagMap.colorSpace = T.SRGBColorSpace;
-    const sprite = new T.Sprite(this.own(new T.SpriteMaterial({ map: tagMap, depthWrite: false, transparent: true })));
+    const sprite = new T.Sprite(this.own(new T.SpriteMaterial({ map: tagMap, depthWrite: false, transparent: true, fog: false })));
     sprite.scale.set(1.6, 0.5, 1);
     sprite.position.set(way.x * RR.SEAT_R, RR.HEAD_Y + 1.15, way.z * RR.SEAT_R);
     // Mine stands at my left, low: over my head it would cover the toy held up before me.
