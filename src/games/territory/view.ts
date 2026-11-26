@@ -1,6 +1,7 @@
 import * as T from "three";
 import { FOV } from "../../engine/camera";
 import { bark, grain, grainUV } from "../../engine/grain";
+import { Grove, leafPaint } from "../../engine/foliage";
 import { capable, glossy } from "../../engine/scene-utils";
 import { noZoom } from "../../engine/zoom";
 import type { LiveGuest, LiveHost, LiveSession } from "../../net/live";
@@ -380,19 +381,32 @@ export class TerritoryView extends TableView<State> {
         const out = half + 2.2 + (hr() - 0.5) * 0.3;
         clumps.push({ x: side < 2 ? i : side === 2 ? -out : out, z: side < 2 ? (side === 0 ? -out : out) : i, s: 0.75 + hr() * 0.35 });
       }
-    const hedge = new T.InstancedMesh(own(new T.IcosahedronGeometry(1, 2)), this.standard({ color: "#ffffff", roughness: 0.95, flatShading: true }), clumps.length),
+    // The hedge in leaves: with a graphics card, clipped-box crowns of leaf cards round a dark core (`Grove`); where the
+    // processor draws, the same round clumps as before painted with the small leaves laid thick (solid, no cut-out cards).
+    const hedge = this.rich ? null : new T.InstancedMesh(own(new T.IcosahedronGeometry(1, 2)), leafPaint("box", own).core, clumps.length),
+      hedges = this.rich ? new Grove(this.scene, own, { bright: 1.75, lift: 1.6 }) : null,
       hm = new T.Matrix4(),
       hq = new T.Quaternion(),
       hv = new T.Vector3(),
       hsc = new T.Vector3(),
       ht = new T.Color();
     clumps.forEach((c, i) => {
-      hq.setFromEuler(new T.Euler(hr() * 3, hr() * 3, hr() * 3));
-      hedge.setMatrixAt(i, hm.compose(hv.set(c.x, 0.55 * c.s, c.z), hq, hsc.set(0.85 * c.s, 0.7 * c.s, 0.85 * c.s)));
-      hedge.setColorAt(i, ht.set("#3f8a35").offsetHSL((hr() - 0.5) * 0.03, 0, (hr() - 0.5) * 0.1));
+      const turn = hr() * 3;
+      hq.setFromEuler(new T.Euler(turn, hr() * 3, hr() * 3));
+      hv.set(c.x, 0.55 * c.s, c.z);
+      hsc.set(0.85 * c.s, 0.7 * c.s, 0.85 * c.s);
+      ht.set("#3f8a35").offsetHSL((hr() - 0.5) * 0.03, 0, (hr() - 0.5) * 0.1);
+      if (hedges) hedges.crown("box", hv, [hsc.x * 1.12, hsc.y * 1.12, hsc.z * 1.12], ht, turn);
+      else {
+        hedge!.setMatrixAt(i, hm.compose(hv, hq, hsc));
+        hedge!.setColorAt(i, ht.clone().multiplyScalar(1.7));
+      }
     });
-    hedge.castShadow = hedge.receiveShadow = true;
-    this.scene.add(hedge);
+    if (hedge) {
+      hedge.castShadow = hedge.receiveShadow = true;
+      this.scene.add(hedge);
+    }
+    hedges?.build();
     // Trees and flowers in the grass beyond, scattered from a fixed seed.
     let seed = 31;
     const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -405,7 +419,9 @@ export class TerritoryView extends TableView<State> {
     };
     const trees = this.rich ? 150 : 70,
       trunk = new T.InstancedMesh(own(new T.CylinderGeometry(0.16, 0.24, 1.6, 7)), this.standard({ ...bark(own, { around: 1, up: 1.5, tone: "#d8c8b4" }), roughness: 0.95 }), trees),
-      crown = new T.InstancedMesh(own(new T.IcosahedronGeometry(1, 1)), this.standard({ color: "#4f9a3c", roughness: 0.85, flatShading: true }), trees * 2),
+      // Crowns of painted leaves (`Grove`: leaf cards round a dark core, alpha-tested, a few instanced meshes in all;
+      // where the processor draws, every crown has the fewer cards of a far one).
+      grove = new Grove(this.scene, own, { near: this.rich ? undefined : 0, receive: this.rich, bright: 1.45, lift: 1.2 }),
       q = new T.Quaternion(),
       s = new T.Vector3(),
       v = new T.Vector3(),
@@ -416,13 +432,16 @@ export class TerritoryView extends TableView<State> {
       trunk.setMatrixAt(i, m4.compose(v.set(at.x, 0.8 * size, at.z), q.identity(), s.set(size, size, size)));
       for (let j = 0; j < 2; j++) {
         const lift = 1.9 + j * 0.9;
-        q.setFromEuler(new T.Euler(r(), r() * 6, r()));
-        crown.setMatrixAt(i * 2 + j, m4.compose(v.set(at.x + (r() - 0.5) * 0.4, lift * size, at.z + (r() - 0.5) * 0.4), q, s.setScalar((1.15 - j * 0.3) * size)));
-        crown.setColorAt(i * 2 + j, tint.set(r() < 0.5 ? "#4f9a3c" : "#5fae46").offsetHSL(0, 0, (r() - 0.5) * 0.08));
+        r();
+        const turn = r() * 6;
+        r();
+        v.set(at.x + (r() - 0.5) * 0.4, lift * size, at.z + (r() - 0.5) * 0.4);
+        grove.crown(i % 4 ? "broad" : "oak", v, (1.15 - j * 0.3) * size, tint.set(r() < 0.5 ? "#4f9a3c" : "#5fae46").offsetHSL(0, 0, (r() - 0.5) * 0.08), turn);
       }
     }
-    trunk.castShadow = crown.castShadow = true;
-    this.scene.add(trunk, crown);
+    trunk.castShadow = true;
+    this.scene.add(trunk);
+    grove.build();
     const flowers = this.rich ? 420 : 160,
       bloom = new T.InstancedMesh(own(new T.SphereGeometry(0.13, 6, 4)), own(new T.MeshLambertMaterial({ color: "#ffffff" })), flowers),
       palette = ["#ff7aa8", "#ffd84a", "#ffffff", "#b98cff", "#ff9b4a"];
