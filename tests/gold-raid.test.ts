@@ -86,7 +86,7 @@ describe("gold raid: running and jumping", () => {
     expect(b.x).toBeGreaterThan(ledge.x1);
     expect(S.surfaceUnder(0, 10)).toBe(high.y);
     expect(S.surfaceUnder(0, 2)).toBe(ledge.y);
-    expect(S.surfaceUnder(9, 10)).toBe(0);
+    expect(S.surfaceUnder(7.4, 10)).toBe(0);
   });
 });
 
@@ -94,7 +94,7 @@ describe("gold raid: loot, the sack and the gate", () => {
   test("loot falls, lands on the ledge or the road under it, lies a while and is gone", () => {
     const w = quiet();
     w.loot.push({ id: 1, kind: "coin", value: 1, x: 0, y: S.DROP_FROM, vx: 0, vy: 0, rest: false, age: 0, free: 0 });
-    w.loot.push({ id: 2, kind: "gem", value: 5, x: 8.5, y: S.DROP_FROM, vx: 0, vy: 0, rest: false, age: 0, free: 0 });
+    w.loot.push({ id: 2, kind: "gem", value: 5, x: 7.4, y: S.DROP_FROM, vx: 0, vy: 0, rest: false, age: 0, free: 0 });
     w.bandits[0].x = -3.5;
     w.bandits[1].x = 3;
     run(w, 5);
@@ -327,20 +327,21 @@ describe("gold raid: the match", () => {
     expect(w.over).toBe(true);
     expect(S.timeLeft(quiet())).toBeNull();
   });
-  test("loot falls in mirrored pairs, of every kind, a chest only now and then", () => {
+  test("loot falls in mirrored pairs, of every kind but a chest (none falls from the sky), less often than before", () => {
     const w = S.createWorld(11);
     w.nextCart = 1e9;
     w.bandits[0].y = w.bandits[1].y = 50;
     const drops = run(w, 240).filter((e): e is Extract<S.Happening, { kind: "drop" }> => e.kind === "drop");
-    expect(drops.length).toBeGreaterThan(180);
+    expect(drops.length).toBeGreaterThan(150);
+    expect(drops.length).toBeLessThan(240 / 1.2);
     for (let k = 0; k + 1 < drops.length; k += 2) {
       expect(drops[k + 1].what).toBe(drops[k].what);
       expect(drops[k + 1].x).toBeCloseTo(-drops[k].x, 9);
     }
     const count = (what: S.LootKind) => drops.filter((d) => d.what === what).length;
-    for (const kind of Object.keys(S.KINDS) as S.LootKind[]) expect(count(kind), kind).toBeGreaterThan(0);
+    for (const kind of Object.keys(S.KINDS) as S.LootKind[]) if (kind !== "chest") expect(count(kind), kind).toBeGreaterThan(0);
     expect(count("coin")).toBeGreaterThan(count("pouch"));
-    expect(count("chest")).toBeLessThan(count("gem") + 6);
+    expect(count("chest")).toBe(0);
     expect(Math.max(...drops.map((d) => Math.abs(d.x)))).toBeLessThanOrEqual(S.DROP_REACH);
     // All along the long valley, out to the castles, the more often toward its middle where the two meet.
     const near = drops.filter((d) => Math.abs(d.x) < S.DROP_REACH / 2).length;
@@ -397,15 +398,15 @@ describe("gold raid: the match", () => {
 describe("gold raid: the slower pace and the long valley", () => {
   /** As the game was first made: gate at 9.3 m, a run of 5.6 m/s, a jump of 10.2 m/s under 26 m/s². */
   const BEFORE = { gate: 9.3, run: 5.6, jump: 10.2, g: 26 };
-  test("the valley is near twice as long (35 m) and a bandit runs at half the pace, jumping as high but more slowly", () => {
+  test("the valley is 25 m (a third longer than the first) and a bandit runs at half the pace, jumping as high but more slowly", () => {
     const longer = S.GATE / BEFORE.gate;
-    expect(2 * S.GATE).toBe(35);
-    expect(longer).toBeGreaterThanOrEqual(1.8);
-    expect(longer).toBeLessThanOrEqual(2);
+    expect(2 * S.GATE).toBe(25);
+    expect(longer).toBeGreaterThanOrEqual(1.25);
+    expect(longer).toBeLessThanOrEqual(1.45);
     expect(S.X_MOST).toBeGreaterThan(S.GATE);
     expect(S.RUN).toBeLessThanOrEqual(BEFORE.run / 2);
-    // From gate to gate takes over three and a half times as long as it did.
-    expect((2 * S.GATE) / S.RUN).toBeGreaterThan((3.5 * (2 * BEFORE.gate)) / BEFORE.run);
+    // From gate to gate takes over two and a half times as long as it did.
+    expect((2 * S.GATE) / S.RUN).toBeGreaterThan((2.5 * (2 * BEFORE.gate)) / BEFORE.run);
     // A jump rises as high (the ledges are reached as before) and hangs in the air longer.
     expect((S.JUMP * S.JUMP) / (2 * S.G)).toBeCloseTo((BEFORE.jump * BEFORE.jump) / (2 * BEFORE.g), 1);
     expect((2 * S.JUMP) / S.G).toBeGreaterThan((1.4 * 2 * BEFORE.jump) / BEFORE.g);
@@ -419,7 +420,7 @@ describe("gold raid: the slower pace and the long valley", () => {
   });
   test("the ledges are alike on both sides, spread along the valley, and every one is reached by a jump from the road or a ledge under it", () => {
     const jump = (S.JUMP * S.JUMP) / (2 * S.G);
-    expect(S.PLATFORMS.length).toBeGreaterThanOrEqual(10);
+    expect(S.PLATFORMS.length).toBeGreaterThanOrEqual(8);
     for (const p of S.PLATFORMS) {
       expect(S.PLATFORMS.some((q) => q.y === p.y && Math.abs(q.x0 + p.x1) < 1e-9 && Math.abs(q.x1 + p.x0) < 1e-9)).toBe(true);
       const under = S.PLATFORMS.filter((q) => q.y < p.y && q.x0 < p.x1 && q.x1 > p.x0).map((q) => q.y);
@@ -430,8 +431,8 @@ describe("gold raid: the slower pace and the long valley", () => {
   });
   test("the eye follows a bandit along the valley, a little ahead the way it runs, and never past the castles", () => {
     const frame = L.goldRaidFrame(16 / 9, false);
-    // Only a little over half the valley is in view at once.
-    expect(frame.wide).toBeLessThan(2 * S.GATE * 0.6);
+    // Not the whole valley with its castles is in view at once.
+    expect(frame.wide).toBeLessThan(2 * L.END * 0.6);
     // Standing it is near the middle of the view; running it is looked ahead of.
     expect(Math.abs(L.aimX(3, 0, 1, frame.wide) - 3)).toBeLessThan(frame.wide * 0.1);
     expect(L.aimX(3, S.RUN, 1, frame.wide)).toBeGreaterThan(L.aimX(3, 0, 1, frame.wide));
@@ -462,8 +463,11 @@ describe("gold raid: the slower pace and the long valley", () => {
       const wide = L.goldRaidFrame(aspect, aspect > 2).wide,
         half = L.goldRaidFrame(aspect / 2, aspect > 2).wide;
       expect(half).toBeGreaterThan(8);
-      // At the start, at their gates: split.
-      expect(L.pairView(-S.GATE + 1.6, S.GATE - 1.6, wide, false).split).toBe(true);
+      // At the start, at their gates: split if one view drawn back as far as it goes can't hold both (a desktop),
+      // one view if it can (a phone held sideways sees most of the short valley).
+      const start = (2 * (S.GATE - 1.6) + 2 * L.ROOM) / wide > L.ZOOM_MOST,
+        ever = (2 * S.X_MOST + 2 * L.ROOM) / wide > L.ZOOM_MOST;
+      expect(L.pairView(-S.GATE + 1.6, S.GATE - 1.6, wide, false).split).toBe(start);
       // Together: one view of the usual width.
       expect(L.pairView(-1, 1, wide, false)).toMatchObject({ split: false, zoom: 1 });
       let split = false,
@@ -482,8 +486,9 @@ describe("gold raid: the slower pace and the long valley", () => {
             for (const x of [a, b]) expect(Math.abs(x - pair.x)).toBeLessThanOrEqual(reach - L.ROOM + 1e-9);
           }
         }
-      // Once apart and once together again, and not to and fro.
-      expect(splits).toBe(2);
+      // Once apart and once together again, and not to and fro (or never, where one view always holds both).
+      expect(splits).toBe(ever ? 2 : 0);
+      if (aspect < 2) expect(start).toBe(true);
       // Between where it splits and where it is one again, it stays as it is.
       const gap = wide * L.ZOOM_MOST * 0.93 - 2 * L.ROOM;
       expect(L.pairView(-gap / 2, gap / 2, wide, true).split).toBe(true);

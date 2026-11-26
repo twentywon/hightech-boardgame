@@ -8,7 +8,7 @@
  *
  * How it is played (the user asked for a game of the kind of two bandits filling their castles with gold: falling
  * loot, a caravan to rob, each other to rob; the rules in detail are our own): a bandit runs, jumps and swings a club.
- * Loot (`KINDS`: a coin 1, a pouch 3, a gem 5, a chest 12) falls now and then and is taken by touching it, in the air
+ * Loot (`KINDS`: a coin 1, a pouch 3, a gem 5; a chest 12 no longer falls from the sky, the user asked) falls now and then and is taken by touching it, in the air
  * or where it lies, into a sack that holds `CAP`; a full sack slows its bearer. Gold counts only once it is carried
  * to one's own gate. A blow of the club makes the other bandit drop part of its sack and stuns it a moment; a bomb
  * (it falls with the loot) does the same to whoever is near when it goes off. The merchant's cart sheds gold at each
@@ -16,16 +16,16 @@
  * before the gate, to be carried home like any), and the castle answers by dropping a fire pot there.
  */
 /**
- * The valley is long (gate to gate 35 m, near twice the screen's width; it was 50 m for a while and the user asked
- * for it shorter): the castles are far apart and the view follows a bandit along it. And it is played at an easy pace: a bandit runs at 2.8 m/s and a jump hangs in
+ * The valley is long (gate to gate 25 m; it was 50 m, then 35 m, and the user asked
+ * for it shorter each time): the castles are far apart and the view follows a bandit along it. And it is played at an easy pace: a bandit runs at 2.8 m/s and a jump hangs in
  * the air for over a second (the game was asked to be much slower than at first, when it ran at 5.6 and a jump
  * lasted 0.8 s; every other speed and time was scaled with it, the heights kept).
  * The sim is stepped in slices of `DT` s.
  */
 export const DT = 1 / 120;
 /** The valley: how far a bandit may go either way, and where loot bounces back. */
-export const X_MOST = 18.5,
-  LOOT_MOST = 18.1;
+export const X_MOST = 13.5,
+  LOOT_MOST = 13.1;
 /** A bandit: its half width and height, its run and jump, gravity (a jump rises JUMP² / 2G = 2 m). */
 export const BODY = { half: 0.32, tall: 1.15 },
   RUN = 2.8,
@@ -46,15 +46,14 @@ export const CAP = 20,
 /** How fast a bandit carrying `carry` runs at most. */
 export const runOf = (carry: number) => RUN * (1 - LOAD_SLOW * Math.min(1, Math.max(0, carry) / CAP));
 /** The gates: where each castle's stands (side 0 at −`GATE`), and how near counts as at it. */
-export const GATE = 17.5,
+export const GATE = 12.5,
   GATE_R = 1.05;
 export const gateOf = (side: number) => (side === 0 ? -GATE : GATE);
 /** The ledges, alike on both sides: stood on from above, passed through from below; a high one stands over a low one. */
 const RIGHT = [
-  { x0: 4.6, x1: 7.6, y: 1.6 },
-  { x0: 3.4, x1: 5.4, y: 3.2 },
-  { x0: 9.6, x1: 12.2, y: 1.6 },
-  { x0: 11.2, x1: 13.6, y: 3.2 },
+  { x0: 4.4, x1: 6.9, y: 1.6 },
+  { x0: 3.4, x1: 5.2, y: 3.2 },
+  { x0: 7.9, x1: 9.4, y: 1.6 },
 ];
 export const PLATFORMS = [
   { x0: -2.6, x1: 2.6, y: 1.6 },
@@ -89,15 +88,15 @@ export const LOOT_G = 5.5,
 export type LootKind = "coin" | "pouch" | "gem" | "chest" | "bomb";
 /** What each kind is worth, and how often it falls (shares of a hundred). */
 export const KINDS: Record<LootKind, { value: number; share: number }> = {
-  coin: { value: 1, share: 50 },
+  coin: { value: 1, share: 54 },
   pouch: { value: 3, share: 22 },
   gem: { value: 5, share: 9 },
-  chest: { value: 12, share: 4 },
+  chest: { value: 12, share: 0 },
   bomb: { value: 0, share: 15 },
 };
 /** The seconds between two pieces falling (drawn between these), and where across they fall. */
-export const DROP_EVERY = [0.5, 1.15],
-  DROP_REACH = 16,
+export const DROP_EVERY = [0.85, 1.75],
+  DROP_REACH = 11.4,
   DROP_BIAS = 1.4,
   DROP_FROM = 9.5;
 /** The merchant's cart: its gold, its pace, what a blow sheds, how many blows break it, and the seconds between two carts. */
