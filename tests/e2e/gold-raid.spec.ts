@@ -58,11 +58,11 @@ test("gold raid: against the computer the keys run, jump and strike my bandit, a
   await expect(page.locator(".gr-gold-0")).toHaveText("0/100");
   await expect(canvas(page)).toHaveAttribute("data-two", "false");
   const [start] = await men(page);
-  expect(start[0]).toBeLessThan(-10);
+  expect(start[0]).toBeLessThan(-7);
   // The valley is long: the eye is on my bandit at my end of it, and the strip under the board shows all of it.
   const eye = async () => (await canvas(page).getAttribute("data-eye"))!.split(",").map(Number);
   await expect(canvas(page)).toHaveAttribute("data-split", "false");
-  // (A phone held sideways sees near all of the 25 m valley at once, so its eye hardly moves; a desktop window less.)
+  // (A phone held sideways sees near all of the 20 m valley at once, so its eye hardly moves; a desktop window less.)
   expect((await eye())[0]).toBeLessThan(phone ? 0.01 : -3);
   await expect(page.locator(".gr-map .gr-map-man")).toHaveCount(2);
   await expect(page.locator(".gr-map .gr-map-castle")).toHaveCount(2);
@@ -90,13 +90,18 @@ test("gold raid: against the computer the keys run, jump and strike my bandit, a
   await press(page, "KeyW");
   await expect.poll(async () => (await counts(page, "jumps"))[0]).toBe(jumps + 1);
   const swings = (await counts(page, "swings"))[0];
-  await press(page, "KeyS");
-  await expect.poll(async () => (await counts(page, "swings"))[0]).toBe(swings + 1);
+  // (In the short valley the computer may come and club mine first: a press while down is lost, so it is asked again.)
+  await expect(async () => {
+    await press(page, "KeyS");
+    await settle(page);
+    expect((await counts(page, "swings"))[0]).toBeGreaterThan(swings);
+  }).toPass({ timeout: 30_000 });
+  const swung = (await counts(page, "swings"))[0];
   // F strikes too, once the club is ready again (a press while it is not is lost: the page here is slow, so it is asked again).
   await expect(async () => {
     await press(page, "KeyF");
     await settle(page);
-    expect((await counts(page, "swings"))[0]).toBeGreaterThan(swings + 1);
+    expect((await counts(page, "swings"))[0]).toBeGreaterThan(swung);
   }).toPass({ timeout: 30_000 });
   // The computer plays its own bandit: it leaves its gate for the loot.
   await expect.poll(async () => (await men(page))[1][0], { timeout: 30_000 }).toBeLessThan(21);
@@ -147,7 +152,7 @@ test("gold raid: gold picked up and brought to my gate raises my treasury on the
           const bomb = loot.some((i) => i.kind === "bomb" && Math.abs(i.x - x) < 2.6 && i.y < 5),
             near = loot.filter((i) => i.kind !== "bomb" && i.rest && i.y < 0.5).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0],
             // Home with anything in the sack; away from a bomb; else to the gold; else wait near my side's middle.
-            to = carry > 0 ? -12.5 : bomb ? x - 3 : near ? near.x : -10,
+            to = carry > 0 ? -10 : bomb ? x - 3 : near ? near.x : -10,
             way = Math.abs(to - x) < 0.15 ? 0 : Math.sign(to - x);
           key("KeyD", way > 0);
           key("KeyA", way < 0);
@@ -263,22 +268,14 @@ test("gold raid: two at one screen each move their own bandit with their own key
   await expect(page.locator(".gr-hud .gr-s0 b")).toHaveText("1P");
   await expect(page.locator(".gr-hud .gr-s1 b")).toHaveText("2P");
   const [a, b] = await men(page);
-  expect(a[0]).toBeLessThan(-10);
-  expect(b[0]).toBeGreaterThan(10);
-  if (info.project.name === "mobile") {
-    // A phone held sideways sees most of the valley: one view drawn back holds both at their gates.
-    await expect(canvas(page)).toHaveAttribute("data-split", "false");
-    expect(Number(await canvas(page).getAttribute("data-zoom"))).toBeGreaterThanOrEqual(1);
-    await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(1);
-  } else {
-    // So far apart at their gates, the screen is split: each half follows one, and the strip shows two windows.
-    await expect(canvas(page)).toHaveAttribute("data-split", "true");
-    await expect(page.locator(".gr-seam.on")).toBeVisible();
-    await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(2);
-    const halves = (await canvas(page).getAttribute("data-eye"))!.split(",").map(Number);
-    expect(halves[0]).toBeLessThan(-8);
-    expect(halves[1]).toBeGreaterThan(8);
-  }
+  expect(a[0]).toBeLessThan(-7);
+  expect(b[0]).toBeGreaterThan(7);
+  // The valley is short: a phone held sideways holds both at their gates in one view, drawn back; a narrower desktop
+  // window may split the screen, and then the strip shows a window for each half.
+  if (info.project.name === "mobile") await expect(canvas(page)).toHaveAttribute("data-split", "false");
+  const split = (await canvas(page).getAttribute("data-split")) === "true";
+  await expect(page.locator(".gr-map .gr-map-eye:not([hidden])")).toHaveCount(split ? 2 : 1);
+  if (!split) expect(Number(await canvas(page).getAttribute("data-zoom"))).toBeGreaterThanOrEqual(1);
   // The first person's D moves red alone; the second's ← moves blue alone.
   await run(page, "KeyD", 1);
   const [a1, b1] = await men(page);

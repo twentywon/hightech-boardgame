@@ -16,7 +16,7 @@
  * before the gate, to be carried home like any), and the castle answers by dropping a fire pot there.
  */
 /**
- * The valley is long (gate to gate 25 m; it was 50 m, then 35 m, and the user asked
+ * The valley (gate to gate 20 m; it was 50 m, then 35 m, then 25 m, and the user asked
  * for it shorter each time): the castles are far apart and the view follows a bandit along it. And it is played at an easy pace: a bandit runs at 2.8 m/s and a jump hangs in
  * the air for over a second (the game was asked to be much slower than at first, when it ran at 5.6 and a jump
  * lasted 0.8 s; every other speed and time was scaled with it, the heights kept).
@@ -24,8 +24,8 @@
  */
 export const DT = 1 / 120;
 /** The valley: how far a bandit may go either way, and where loot bounces back. */
-export const X_MOST = 13.5,
-  LOOT_MOST = 13.1;
+export const X_MOST = 11,
+  LOOT_MOST = 10.6;
 /** A bandit: its half width and height, its run and jump, gravity (a jump rises JUMP² / 2G = 2 m). */
 export const BODY = { half: 0.32, tall: 1.15 },
   RUN = 2.8,
@@ -46,14 +46,13 @@ export const CAP = 20,
 /** How fast a bandit carrying `carry` runs at most. */
 export const runOf = (carry: number) => RUN * (1 - LOAD_SLOW * Math.min(1, Math.max(0, carry) / CAP));
 /** The gates: where each castle's stands (side 0 at −`GATE`), and how near counts as at it. */
-export const GATE = 12.5,
+export const GATE = 10,
   GATE_R = 1.05;
 export const gateOf = (side: number) => (side === 0 ? -GATE : GATE);
 /** The ledges, alike on both sides: stood on from above, passed through from below; a high one stands over a low one. */
 const RIGHT = [
-  { x0: 4.4, x1: 6.9, y: 1.6 },
-  { x0: 3.4, x1: 5.2, y: 3.2 },
-  { x0: 7.9, x1: 9.4, y: 1.6 },
+  { x0: 3.9, x1: 6.5, y: 1.6 },
+  { x0: 3.0, x1: 4.7, y: 3.2 },
 ];
 export const PLATFORMS = [
   { x0: -2.6, x1: 2.6, y: 1.6 },
@@ -96,7 +95,7 @@ export const KINDS: Record<LootKind, { value: number; share: number }> = {
 };
 /** The seconds between two pieces falling (drawn between these), and where across they fall. */
 export const DROP_EVERY = [0.85, 1.75],
-  DROP_REACH = 11.4,
+  DROP_REACH = 9.1,
   DROP_BIAS = 1.4,
   DROP_FROM = 9.5;
 /** The merchant's cart: its gold, its pace, what a blow sheds, how many blows break it, and the seconds between two carts. */
