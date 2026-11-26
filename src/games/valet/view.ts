@@ -7,16 +7,19 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
 import { VALET_SUBJECT } from "./layout";
 import { ANGRY, BUMP, END, parkedMove, returnedMove, type State } from "./rules";
-import { ANGRY_FINE, BUMP_FINE, CAR_L, CAR_W, DT, MAX_STEER, SHIFT, TIDY, V_MOST, createWorld, freeBays, jobs, nextJob, standing, step, take, type Car, type Happening, type Input, type Lot, type World } from "./sim";
+import { ANGRY_FINE, BUMP_FINE, CAR_L, CAR_W, DT, MAX_STEER, SHIFT, TIDY, V_MOST, alight, board, canAlight, createWorld, freeBays, jobs, reachable, standing, step, type Car, type Happening, type Input, type Lot, type World } from "./sim";
 
 export const VALET_COLORS: [string, string] = ["#e8452e", "#2f62c0"];
 /**
  * The lot is drawn a little to the right of the table's middle, so that the street outside its entrance is in view;
- * less so on a wide, low screen (a phone on its side), where the pedals at the lower right would lie over its bays.
+ * less so on a wide, low screen (a phone on its side), where the lever and the pedals at the lower corners would lie
+ * over its bays.
  */
 const offset = (aspect: number) => (aspect > 1.9 ? 0.7 : 2.6);
 const PAINTS = ["#d43a2f", "#2f62c0", "#f2f2ee", "#22262c", "#e0a52a", "#2f8a5a", "#8a8f98"];
 const mod = (a: number, b: number) => ((a % b) + b) % b;
+/** How long the customer's word (the bay's number) stays over the car once the valet is in, in seconds. */
+const SAYING = 3.2;
 /** Seconds as m:ss. */
 export const clock = (s: number) => {
   const t = Math.max(0, Math.ceil(s));
@@ -32,6 +35,13 @@ interface CarModel {
   dents: T.Mesh[];
   spin: number;
 }
+/** A bubble drawn on a little canvas, over something in the lot. */
+interface Bubble {
+  sprite: T.Sprite;
+  canvas: HTMLCanvasElement;
+  texture: T.CanvasTexture;
+  said: string;
+}
 interface Customer {
   root: T.Group;
   sprite: T.Sprite;
@@ -44,9 +54,9 @@ interface Customer {
 /**
  * Valet parking (주차 요원): a car park seen from above at an angle (asphalt with painted, numbered bays, kerbs, a booth
  * by the entrance on the left with its barrier, the way out on the right), customers' cars that queue in the street
- * outside, and the one car I drive. The view runs the lot in real time (see `sim.ts`) and reports the pay, the fines
- * and the shift's end as moves; the money, the clock, the customers' patience, the gear and the driving controls
- * stand over the canvas.
+ * outside, the valet I walk about, and the one car I drive. The view runs the lot in real time (see `sim.ts`) and
+ * reports the pay, the fines and the shift's end as moves; the money, the clock, the customers' patience, the gear and
+ * the controls (a lever at the lower left; 탑승·하차 and the pedals at the lower right) stand over the canvas.
  */
 export class ValetView extends TableView<State> {
   private world: World;
@@ -56,6 +66,13 @@ export class ValetView extends TableView<State> {
   private cars = new Map<number, CarModel>();
   private customers: Customer[] = [];
   private valet!: T.Group;
+  private feet!: T.Mesh;
+  private halo!: T.Mesh;
+  private haloGlow!: T.MeshBasicMaterial;
+  /** The customer's word over the car just taken (its bay's number), and the badge with the number over that bay. */
+  private bubble!: Bubble;
+  private badge!: Bubble;
+  private saying = { car: -1, until: 0, text: "" };
   private glows: T.MeshBasicMaterial[] = [];
   private exitGlow!: T.MeshBasicMaterial;
   private arrow!: T.Mesh;
@@ -68,8 +85,14 @@ export class ValetView extends TableView<State> {
   private gearText: HTMLElement;
   private word: HTMLElement;
   private pad: HTMLElement;
+  private stick: HTMLElement;
+  private knob: HTMLElement;
+  private act: HTMLButtonElement;
   private keys = { up: false, down: false, left: false, right: false, hand: false };
-  private held = { up: false, down: false, left: false, right: false };
+  private held = { up: false, down: false };
+  /** The lever's lean: x to the right, y down the screen, each -1 to 1. */
+  private lever = { x: 0, y: 0 };
+  private clock = 0;
   private paused = false;
   private shown = 0;
   private last = performance.now();
@@ -101,27 +124,39 @@ export class ValetView extends TableView<State> {
     this.grounds();
     this.markers();
     this.valet = this.person("#e8452e", true);
+    // (A little larger than life, to be followed at a glance on a phone.)
+    this.valet.scale.setScalar(1.2);
+    // A ring at the valet's feet, so that it is found at a glance.
+    this.feet = new T.Mesh(this.own(new T.RingGeometry(0.42, 0.6, 28)), this.own(new T.MeshBasicMaterial({ color: "#ffe14a", transparent: true, opacity: 0.85, depthWrite: false })));
+    this.feet.rotation.x = -Math.PI / 2;
+    this.feet.position.y = 0.03;
+    this.valet.add(this.feet);
     this.root.add(this.valet);
     // The money at the top left, the clock at the top right, the customers who wait in a row at the top, the words of
     // what has just happened in the middle (decoration over the canvas: the status line tells the money too).
     this.hud = document.createElement("div");
     this.hud.className = "vp-hud";
     this.hud.setAttribute("aria-hidden", "true");
-    this.hud.innerHTML = `<span class="vp-money"></span><span class="vp-clock"></span><div class="vp-jobs"></div><span class="vp-word"></span><span class="vp-gear"></span>`;
+    this.hud.innerHTML = `<span class="vp-money"></span><span class="vp-clock"></span><div class="vp-jobs"></div><span class="vp-word"></span>`;
     this.moneyText = this.hud.querySelector(".vp-money")!;
     this.clockText = this.hud.querySelector(".vp-clock")!;
     this.jobList = this.hud.querySelector(".vp-jobs")!;
     this.word = this.hud.querySelector(".vp-word")!;
-    this.gearText = this.hud.querySelector(".vp-gear")!;
     host.append(this.hud);
-    // The driving controls on the screen: the wheel's two buttons at the lower left, the pedals at the lower right
-    // (the same as ← →, ↓ and ↑; held with several fingers at once).
+    // The controls on the screen, for a thumb at each lower corner (held with several fingers at once): the lever at the
+    // lower left (on foot it leads the valet, at the wheel it steers), and at the lower right the 탑승·하차 button with
+    // the pedals under it while driving (the same as ↑ and ↓).
     this.pad = document.createElement("div");
     this.pad.className = "vp-pad";
     this.pad.innerHTML =
-      `<div class="vp-wheel"><button type="button" class="vp-btn" data-act="left" aria-label="왼쪽으로 핸들">◀</button><button type="button" class="vp-btn" data-act="right" aria-label="오른쪽으로 핸들">▶</button></div>` +
-      `<div class="vp-pedals"><button type="button" class="vp-pedal vp-back" data-act="down" aria-label="후진·브레이크"><em>후진</em></button><button type="button" class="vp-pedal vp-go" data-act="up" aria-label="가속"><em>가속</em></button></div>`;
+      `<div class="vp-stick" role="slider" aria-label="레버" aria-valuetext="가운데"><i class="vp-ways"><b>◀</b><b>▶</b></i><span class="vp-knob"></span></div>` +
+      `<div class="vp-side"><span class="vp-gear"></span><button type="button" class="vp-act" aria-label="탑승"><em>탑승</em><small>E</small></button>` +
+      `<button type="button" class="vp-pedal vp-back" data-act="down" aria-label="후진·브레이크"><em>후진</em></button><button type="button" class="vp-pedal vp-go" data-act="up" aria-label="가속"><em>가속</em></button></div>`;
     host.append(this.pad);
+    this.gearText = this.pad.querySelector(".vp-gear")!;
+    this.stick = this.pad.querySelector(".vp-stick")!;
+    this.knob = this.pad.querySelector(".vp-knob")!;
+    this.act = this.pad.querySelector(".vp-act")!;
     this.controls();
     this.begin();
     const tick = () => {
@@ -189,6 +224,93 @@ export class ValetView extends TableView<State> {
     tip.position.x = 3.3;
     this.pointer.add(tip);
     this.root.add(this.pointer);
+    // A glowing frame on the ground round the car the valet may get into now.
+    const frame = this.own(
+      this.painted(256, 128, (pen) => {
+        pen.strokeStyle = "#ffe14a";
+        pen.shadowColor = "#ffe14a";
+        pen.shadowBlur = 14;
+        pen.lineWidth = 10;
+        pen.beginPath();
+        pen.roundRect(14, 14, 228, 100, 22);
+        pen.stroke();
+      }),
+    );
+    this.haloGlow = this.own(new T.MeshBasicMaterial({ map: frame, transparent: true, opacity: 0, depthWrite: false }));
+    this.halo = new T.Mesh(this.own(new T.PlaneGeometry(CAR_L + 1.4, CAR_W + 1.2)), this.haloGlow);
+    this.halo.rotation.x = -Math.PI / 2;
+    this.root.add(this.halo);
+    this.bubble = this.sign(512, 200, 5.6, 2.2);
+    this.badge = this.sign(128, 128, 1.7, 1.7);
+  }
+  /** A bubble (or a badge) on a canvas of its own, drawn when it has something new to say. */
+  private sign(w: number, h: number, sw: number, sh: number): Bubble {
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const texture = this.own(new T.CanvasTexture(canvas));
+    texture.colorSpace = T.SRGBColorSpace;
+    const sprite = new T.Sprite(this.own(new T.SpriteMaterial({ map: texture, depthTest: false, transparent: true })));
+    sprite.scale.set(sw, sh, 1);
+    sprite.renderOrder = 6;
+    sprite.visible = false;
+    this.root.add(sprite);
+    return { sprite, canvas, texture, said: "" };
+  }
+  /** The customer's word over the car: the bay's number big, and what to do with it under. */
+  private drawBubble(big: string, small: string) {
+    const b = this.bubble,
+      said = `${big}|${small}`;
+    if (b.said === said) return;
+    b.said = said;
+    const pen = b.canvas.getContext("2d")!,
+      [w, h] = [b.canvas.width, b.canvas.height];
+    pen.clearRect(0, 0, w, h);
+    pen.fillStyle = "#ffffff";
+    pen.strokeStyle = "#1c2430";
+    pen.lineWidth = 7;
+    pen.beginPath();
+    pen.roundRect(8, 8, w - 16, h - 46, 34);
+    pen.moveTo(w / 2 - 26, h - 40);
+    pen.lineTo(w / 2, h - 6);
+    pen.lineTo(w / 2 + 26, h - 40);
+    pen.fill();
+    pen.beginPath();
+    pen.roundRect(8, 8, w - 16, h - 46, 34);
+    pen.stroke();
+    pen.fillStyle = "#ffffff";
+    pen.fillRect(w / 2 - 22, h - 44, 44, 8);
+    pen.textAlign = "center";
+    pen.textBaseline = "middle";
+    pen.fillStyle = "#d4302a";
+    pen.font = "900 78px 'Noto Sans KR', Inter, sans-serif";
+    pen.fillText(big, w / 2, 62);
+    pen.fillStyle = "#1c2430";
+    pen.font = "800 34px 'Noto Sans KR', Inter, sans-serif";
+    pen.fillText(small, w / 2, 124);
+    b.texture.needsUpdate = true;
+  }
+  /** The badge with the named bay's number over that bay. */
+  private drawBadge(n: number) {
+    const b = this.badge,
+      said = String(n);
+    if (b.said === said) return;
+    b.said = said;
+    const pen = b.canvas.getContext("2d")!;
+    pen.clearRect(0, 0, 128, 128);
+    pen.fillStyle = "#ffe14a";
+    pen.strokeStyle = "#1c2430";
+    pen.lineWidth = 7;
+    pen.beginPath();
+    pen.arc(64, 64, 56, 0, Math.PI * 2);
+    pen.fill();
+    pen.stroke();
+    pen.fillStyle = "#1c2430";
+    pen.font = `900 ${n >= 10 ? 58 : 70}px Inter, Arial, sans-serif`;
+    pen.textAlign = "center";
+    pen.textBaseline = "middle";
+    pen.fillText(said, 64, 68);
+    b.texture.needsUpdate = true;
   }
   /** A picture drawn on a little canvas, as a texture. */
   private painted(w: number, h: number, draw: (pen: CanvasRenderingContext2D) => void) {
@@ -467,37 +589,82 @@ export class ValetView extends TableView<State> {
   private controls() {
     const el = this.renderer.domElement;
     noZoom(el);
-    const fingers = new Map<number, keyof ValetView["held"]>();
-    const mark = () => {
-      const on = [...fingers.values()];
-      this.held = { up: on.includes("up"), down: on.includes("down"), left: on.includes("left"), right: on.includes("right") };
-      for (const b of this.pad.querySelectorAll<HTMLElement>("[data-act]")) b.classList.toggle("on", on.includes(b.dataset.act as keyof ValetView["held"]));
-    };
-    this.pad.addEventListener("pointerdown", (e) => {
-      const button = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
-      if (!button || this.disposed || (e.pointerType === "mouse" && e.button !== 0)) return;
-      e.preventDefault();
+    const capture = (target: HTMLElement, e: PointerEvent) => {
       try {
-        button.setPointerCapture(e.pointerId);
+        target.setPointerCapture(e.pointerId);
       } catch {
         // A pointer the page cannot capture (it is held without).
       }
+    };
+    // The pedals: held while a finger is on them.
+    const fingers = new Map<number, keyof ValetView["held"]>();
+    const mark = () => {
+      const on = [...fingers.values()];
+      this.held = { up: on.includes("up"), down: on.includes("down") };
+      for (const b of this.pad.querySelectorAll<HTMLElement>("[data-act]")) b.classList.toggle("on", on.includes(b.dataset.act as keyof ValetView["held"]));
+    };
+    // The lever: a finger put down on it and moved leans it that way, as far as its rim; let go, it stands up again.
+    let leaning = -1;
+    const lean = (e: PointerEvent) => {
+      const box = this.stick.getBoundingClientRect(),
+        reach = box.width * 0.36,
+        dx = (e.clientX - (box.x + box.width / 2)) / reach,
+        dy = (e.clientY - (box.y + box.height / 2)) / reach,
+        far = Math.hypot(dx, dy),
+        k = far > 1 ? 1 / far : 1;
+      this.lever = { x: dx * k, y: dy * k };
+      this.leverShown();
+    };
+    this.pad.addEventListener("pointerdown", (e) => {
+      if (this.disposed || (e.pointerType === "mouse" && e.button !== 0)) return;
+      const target = e.target as HTMLElement;
+      if (target.closest(".vp-stick")) {
+        e.preventDefault();
+        capture(this.stick, e);
+        leaning = e.pointerId;
+        this.stick.classList.add("on");
+        lean(e);
+        return;
+      }
+      if (target.closest(".vp-act")) {
+        e.preventDefault();
+        this.use();
+        return;
+      }
+      const button = target.closest<HTMLElement>("[data-act]");
+      if (!button) return;
+      e.preventDefault();
+      capture(button, e);
       fingers.set(e.pointerId, button.dataset.act as keyof ValetView["held"]);
       mark();
     });
+    this.pad.addEventListener("pointermove", (e) => {
+      if (e.pointerId === leaning) lean(e);
+    });
     const lift = (e: PointerEvent) => {
+      if (e.pointerId === leaning) {
+        leaning = -1;
+        this.lever = { x: 0, y: 0 };
+        this.stick.classList.remove("on");
+        this.leverShown();
+      }
       if (fingers.delete(e.pointerId)) mark();
     };
     for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) this.pad.addEventListener(type, lift);
     this.pad.addEventListener("contextmenu", (e) => e.preventDefault());
     this.pad.addEventListener("touchstart", (e) => e.cancelable && e.preventDefault(), { passive: false });
+    // A click without a pointer before it (the keyboard's Enter or Space on the focused button).
+    this.act.addEventListener("click", (e) => {
+      if (e.detail === 0) this.use();
+    });
     const KEYS: Record<string, keyof ValetView["keys"]> = { ArrowUp: "up", w: "up", W: "up", ArrowDown: "down", s: "down", S: "down", ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", " ": "hand" };
     const key = (down: boolean) => (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      // Tab (or Q) goes to the next customer, while the car in hand has not yet moved.
-      if (down && (e.key === "Tab" || e.key === "q" || e.key === "Q")) {
+      // E (or Enter): 탑승 on foot, 하차 at the wheel.
+      if (e.key === "e" || e.key === "E" || e.key === "Enter") {
         e.preventDefault();
-        if (!e.repeat && this.running()) nextJob(this.world);
+        e.stopPropagation();
+        if (down && !e.repeat) this.use();
         return;
       }
       const which = KEYS[e.key];
@@ -510,13 +677,49 @@ export class ValetView extends TableView<State> {
     el.addEventListener("keyup", key(false));
     el.addEventListener("blur", () => (this.keys = { up: false, down: false, left: false, right: false, hand: false }));
   }
-  /** What the keys and the buttons hold, as the car's controls. */
+  /** The lever's knob where it leans (only sideways at the wheel, where it steers). */
+  private leverShown() {
+    const driving = this.world.hand >= 0,
+      { x, y } = this.lever,
+      box = this.stick.getBoundingClientRect(),
+      reach = (box.width || 120) * 0.36;
+    this.knob.style.transform = `translate(${(x * reach).toFixed(1)}px, ${(driving ? 0 : y * reach).toFixed(1)}px)`;
+  }
+  /** 탑승 or 하차 (the button, E or Enter): into the car next to the valet, or out of the car in hand. */
+  private use() {
+    if (!this.running()) return;
+    const w = this.world;
+    if (w.hand < 0) {
+      const events = board(w);
+      if (!events.length) this.say(jobs(w).length ? "타려는 차 옆으로 가세요" : "손님을 기다려요", "#ffffff");
+      this.report(events);
+    } else {
+      const events = alight(w);
+      if (!events.length) this.say("차를 먼저 세우세요", "#ffffff");
+      this.report(events);
+    }
+    // Getting in or out lets go of what was held: the car does not lurch, nor the valet run off.
+    this.keys = { up: false, down: false, left: false, right: false, hand: false };
+    this.leverShown();
+  }
+  /** What the keys and the controls on the screen hold: the valet's way on foot, or the car's controls at the wheel. */
   private input(): Input {
     const up = this.keys.up || this.held.up,
       down = this.keys.down || this.held.down,
-      left = this.keys.left || this.held.left,
-      right = this.keys.right || this.held.right;
-    return { gas: up === down ? 0 : up ? 1 : -1, steer: left === right ? 0 : right ? 1 : -1, handbrake: this.keys.hand };
+      left = this.keys.left,
+      right = this.keys.right,
+      sideways = left === right ? 0 : right ? 1 : -1;
+    if (this.world.hand < 0) {
+      // On foot: the arrows (or WASD) or the lever, the way they lead on the screen (up the screen is into the lot).
+      const kx = sideways,
+        kz = this.keys.up === this.keys.down ? 0 : this.keys.down ? 1 : -1,
+        far = Math.hypot(kx, kz);
+      if (far > 0) return { gas: 0, steer: 0, handbrake: false, walkX: kx / far, walkZ: kz / far };
+      const lean = Math.hypot(this.lever.x, this.lever.y);
+      return lean > 0.15 ? { gas: 0, steer: 0, handbrake: false, walkX: this.lever.x, walkZ: this.lever.y } : { gas: 0, steer: 0, handbrake: false };
+    }
+    const steer = sideways !== 0 ? sideways : Math.abs(this.lever.x) > 0.12 ? Math.max(-1, Math.min(1, (this.lever.x - Math.sign(this.lever.x) * 0.12) / 0.7)) : 0;
+    return { gas: up === down ? 0 : up ? 1 : -1, steer, handbrake: this.keys.hand };
   }
   protected subject() {
     return VALET_SUBJECT;
@@ -525,15 +728,11 @@ export class ValetView extends TableView<State> {
     // (Called from the table's own making too, before the lot is there.)
     this.root?.position.setX(offset(aspect));
   }
-  /** A tap on a car that waits sends the valet to it (while the car in hand has not yet moved). */
+  /** Nothing on the lot is tapped: the valet is walked by the lever or the keys. */
   protected spots(): Spot[] {
-    if (!this.running()) return [];
-    return jobs(this.world)
-      .filter((c) => c.id !== this.world.hand)
-      .map((c) => ({ x: c.x + this.root.position.x, y: 0.8, z: c.z, r: 2.4, point: c.id }));
+    return [];
   }
-  protected dragStart(point: number) {
-    if (point >= 0 && this.running()) take(this.world, point);
+  protected dragStart() {
     // The press is taken whole: nothing on the lot is a move of the screen's.
     return true;
   }
@@ -577,14 +776,33 @@ export class ValetView extends TableView<State> {
       } else if (e.kind === "ask") {
         knock("ask");
         this.say(`${bayOf(e.bay)}번 칸 손님이 차를 찾으러 왔어요`, "#ffe14a");
+      } else if (e.kind === "take") {
+        knock("door");
+        const car = this.world.cars.find((c) => c.id === e.car);
+        // The customer's word, over the car for a moment: the bay it is to go in, or the way out.
+        this.talk(e.car, car?.state === "requested" ? "출구로!" : e.bay >= 0 ? `${bayOf(e.bay)}번 칸` : "빈칸 아무 데나", car?.state === "requested" ? "차를 출구로 가져다 주세요" : "여기에 주차해 주세요");
+      } else if (e.kind === "wrong") {
+        knock("ask");
+        if (e.at !== e.bay) {
+          this.say(`여기는 ${bayOf(e.at)}번 칸! 손님은 ${e.bay >= 0 ? `${bayOf(e.bay)}번 칸` : "빈칸"}이에요`, "#ffe14a");
+          if (e.bay >= 0) this.talk(e.car, `${bayOf(e.bay)}번 칸`, `${bayOf(e.at)}번 칸이 아니에요!`);
+        } else this.say(`${bayOf(e.bay)}번 칸 안에 반듯하게 세우세요`, "#ffe14a");
+      } else if (e.kind === "out") {
+        knock("door");
+        const car = this.world.cars.find((c) => c.id === e.car);
+        this.say(car?.state === "requested" ? "차를 세워 두었어요 · 다시 타서 출구로" : car && car.want >= 0 ? `차를 세워 두었어요 · ${bayOf(car.want)}번 칸에 대야 해요` : "차를 세워 두었어요", "#ffffff");
       } else if (e.kind === "arrive") knock("arrive");
-      else if (e.kind === "take") knock("door");
       else if (e.kind === "end") {
         this.hush();
         this.onMove({ from: -1, to: END, extra: -1 });
       }
       if (this.state?.winner !== null) break;
     }
+  }
+  /** The customer's word over car `id` for `SAYING` seconds. */
+  private talk(id: number, big: string, small: string) {
+    this.saying = { car: id, until: this.clock + SAYING, text: big };
+    this.drawBubble(big, small);
   }
   /** A word over the lot for a moment. */
   private say(text: string, colour: string) {
@@ -601,6 +819,7 @@ export class ValetView extends TableView<State> {
     if (this.running()) {
       this.left += real;
       const input = this.input();
+      this.clock += real;
       while (this.left >= DT && this.state?.winner === null && !this.world.over) {
         this.left -= DT;
         this.report(step(this.world, input));
@@ -613,10 +832,11 @@ export class ValetView extends TableView<State> {
   private queued(lot: Lot, turn: number) {
     return turn === 0 ? { x: lot.minX - 4, z: lot.entrance.z, heading: 0 } : { x: lot.minX - 5.4, z: lot.entrance.z - 1.6 - turn * 5.4, heading: Math.PI / 2 };
   }
-  /** The bay the arrow shows for the car in hand: the one it stands rightly in, else the nearest free one. */
+  /** The bay the arrow shows for the car in hand: the one its customer named, else (none named) the one it stands rightly in or the nearest free one. */
   private goal(car: Car) {
     const w = this.world,
       free = freeBays(w);
+    if (car.want >= 0) return car.want;
     let best = -1,
       near = Infinity;
     for (const k of free) {
@@ -670,7 +890,7 @@ export class ValetView extends TableView<State> {
       c.root.position.set(booth.x - booth.hx + 0.5 + k * 2.45, 0, booth.z + booth.hz + 0.9 + (k % 2) * 0.5);
       c.shirt.color.set(PAINTS[car.colour % PAINTS.length]);
       const share = Math.max(0, car.patience / car.patience0),
-        text = car.state === "requested" ? `${lot.bays[car.bay]?.n ?? "?"}번` : "주차",
+        text = car.state === "requested" ? `출차 ${lot.bays[car.bay]?.n ?? ""}`.trim() : car.want >= 0 ? `주차 ${lot.bays[car.want].n}` : "주차",
         said = `${text}|${Math.ceil(share * 14)}|${car.late}`;
       c.root.position.y = car.late ? Math.abs(Math.sin(t * 9)) * 0.12 : 0;
       if (said === c.said) return;
@@ -687,41 +907,73 @@ export class ValetView extends TableView<State> {
       pen.lineTo(96, 72);
       pen.fill();
       pen.fillStyle = "#1c2430";
-      pen.font = "900 34px 'Noto Sans KR', Inter, sans-serif";
+      pen.font = "900 32px 'Noto Sans KR', Inter, sans-serif";
       pen.textAlign = "center";
       pen.textBaseline = "middle";
-      pen.fillText(car.late ? `${text} 😠` : text, 80, 30);
+      pen.fillText(car.late ? `${text} 😠` : text, 80, 30, 140);
       pen.fillStyle = "#d9dde2";
       pen.fillRect(16, 52, 128, 12);
       pen.fillStyle = share > 0.5 ? "#3fb96a" : share > 0.22 ? "#f0a92e" : "#e2432f";
       pen.fillRect(16, 52, 128 * share, 12);
       c.texture.needsUpdate = true;
     });
-    // The valet on foot (in a car, it is not seen).
+    // The valet on foot, facing the way it goes and bobbing as it runs (in a car, it is not seen).
+    const near = !hand && this.running() ? reachable(w) : null;
     this.valet.visible = !hand;
-    this.valet.position.set(w.valet.x, w.valet.to >= 0 ? Math.abs(Math.sin(t * 14)) * 0.18 : 0, w.valet.z);
-    // Where to go: free bays glow while a car left with me is in hand (the one it stands rightly in, brightly), the
-    // exit while one asked for is; an arrow bobs over the place and a pointer before the car turns toward it.
+    this.valet.position.set(w.valet.x, w.valet.speed > 0.1 ? Math.abs(Math.sin(t * 14)) * 0.16 : 0, w.valet.z);
+    this.valet.rotation.y = -w.valet.heading + Math.PI / 2;
+    this.feet.visible = !capturing();
+    // The car it may get into now glows round its feet.
+    this.halo.visible = !!near;
+    if (near) {
+      this.halo.position.set(near.x, 0.03, near.z);
+      this.halo.rotation.z = -near.heading;
+      this.haloGlow.opacity = 0.75 + 0.25 * Math.sin(t * 6);
+    }
+    // Where to go: the bay its customer named glows (brightly once the car stands rightly in it), with its number on a
+    // badge over it; the exit glows while a car asked for is in hand; an arrow bobs over the place and a pointer before
+    // the car turns toward it. On foot, the arrow is over the car of the customer with the least patience left.
     const parking = !!hand && hand.state === "waiting",
       leaving = !!hand && hand.state === "requested",
       goal = parking ? this.goal(hand!) : -1,
       pulse = 0.5 + 0.5 * Math.sin(t * 5),
-      free = parking ? freeBays(w) : [];
+      free = parking ? (hand!.want >= 0 ? [hand!.want] : freeBays(w)) : [];
     this.glows.forEach((glow, k) => {
       const inside = k === goal && standing(lot.bays[k], hand!.x, hand!.z, hand!.heading).inside;
-      glow.opacity = !free.includes(k) ? 0 : inside ? 0.6 + 0.3 * pulse : k === goal ? 0.25 + 0.2 * pulse : 0.12;
+      glow.opacity = !free.includes(k) ? 0 : inside ? 0.6 + 0.3 * pulse : k === goal ? 0.3 + 0.25 * pulse : 0.12;
       glow.color.set(inside ? "#ffe14a" : "#4be08a");
     });
     this.exitGlow.opacity = leaving ? 0.18 + 0.22 * pulse : 0;
-    const target = leaving ? lot.exit : goal >= 0 ? lot.bays[goal] : null;
-    this.arrow.visible = this.pointer.visible = !!target && !capturing();
-    if (target && hand) {
-      this.arrow.position.set(target.x, 3 + 0.35 * Math.sin(t * 4), target.z);
+    const urgent = !hand ? (jobs(w).sort((a, b) => a.patience / a.patience0 - b.patience / b.patience0)[0] ?? null) : null,
+      target = leaving ? lot.exit : goal >= 0 ? lot.bays[goal] : urgent;
+    this.arrow.visible = !!target && !capturing();
+    this.pointer.visible = false;
+    if (target) {
+      this.arrow.position.set(target.x, (urgent ? 3.4 : 3) + 0.35 * Math.sin(t * 4), target.z);
       this.arrow.rotation.y = t * 2;
+    }
+    if (target && hand) {
       const far = Math.hypot(target.x - hand.x, target.z - hand.z);
       this.pointer.visible = far > 6 && !capturing();
       this.pointer.position.set(hand.x, 0.07, hand.z);
       this.pointer.rotation.y = -Math.atan2(target.z - hand.z, target.x - hand.x);
+    }
+    const named = parking && hand!.want >= 0 ? lot.bays[hand!.want] : null;
+    this.badge.sprite.visible = !!named && !capturing();
+    if (named) {
+      this.drawBadge(named.n);
+      this.badge.sprite.position.set(named.x, 0.7, named.z);
+    }
+    // The customer's word over the car just taken, for a few seconds.
+    const talking = !!hand && this.saying.car === hand.id && this.clock < this.saying.until;
+    this.bubble.sprite.visible = talking && !capturing();
+    if (talking) {
+      const left = this.saying.until - this.clock,
+        grow = Math.min(1, (SAYING - left) / 0.18),
+        fade = Math.min(1, left / 0.35);
+      this.bubble.sprite.position.set(hand!.x, 3.9, hand!.z);
+      this.bubble.sprite.scale.set(5.6 * (0.7 + 0.3 * grow), 2.2 * (0.7 + 0.3 * grow), 1);
+      this.bubble.sprite.material.opacity = fade;
     }
     // The barriers lift for a car going through its gate.
     const through = [w.cars.some((c) => c.state === "arriving" || (c.state === "leaving" && c.v < 0)), w.cars.some((c) => c.state === "leaving" && c.v > 0) || (leaving && hand!.x > lot.exit.x - lot.exit.hx - 3)];
@@ -747,19 +999,51 @@ export class ValetView extends TableView<State> {
     const gear = !hand ? "" : input.handbrake ? "P" : hand.v < -0.05 || (input.gas < 0 && hand.v <= 0.05) ? "R" : hand.v > 0.05 || input.gas > 0 ? "D" : "N";
     if (this.gearText.textContent !== gear) this.gearText.textContent = gear;
     this.gearText.dataset.gear = gear;
-    const list = waiting.map((c) => `${c.id}|${c.state}|${c.bay}|${Math.ceil((c.patience / c.patience0) * 20)}|${c.id === w.hand || c.id === w.valet.to}|${c.late}`).join(",");
+    const list = waiting.map((c) => `${c.id}|${c.state}|${c.bay}|${c.want}|${Math.ceil((c.patience / c.patience0) * 20)}|${c.id === w.hand}|${c.late}`).join(",");
     if (list !== this.said.jobs) {
       this.said.jobs = list;
       this.jobList.innerHTML = waiting
         .map((c) => {
           const share = Math.max(0, c.patience / c.patience0);
-          return `<span class="vp-job${c.id === w.hand || c.id === w.valet.to ? " mine" : ""}${c.late ? " late" : ""}"><i style="background:${PAINTS[c.colour % PAINTS.length]}"></i><b>${c.state === "requested" ? `${lot.bays[c.bay]?.n ?? "출"}번 출차` : "주차"}</b><u><s style="width:${Math.round(share * 100)}%;background:${share > 0.5 ? "#3fb96a" : share > 0.22 ? "#f0a92e" : "#e2432f"}"></s></u></span>`;
+          const what = c.state === "requested" ? (lot.bays[c.bay] ? `${lot.bays[c.bay].n}번 출차` : "출차") : c.want >= 0 ? `${lot.bays[c.want].n}번 칸 주차` : "주차";
+          return `<span class="vp-job${c.id === w.hand ? " mine" : ""}${c.late ? " late" : ""}"><i style="background:${PAINTS[c.colour % PAINTS.length]}"></i><b>${what}</b><u><s style="width:${Math.round(share * 100)}%;background:${share > 0.5 ? "#3fb96a" : share > 0.22 ? "#f0a92e" : "#e2432f"}"></s></u></span>`;
         })
         .join("");
     }
+    // The controls: the pedals only at the wheel; 탑승 lit next to a car the valet may take, 하차 once the car stands.
+    const driving = !!hand,
+      ready = driving ? canAlight(w) : !!near,
+      label = driving ? "하차" : "탑승";
+    if (this.pad.classList.contains("vp-driving") !== driving) {
+      this.pad.classList.toggle("vp-driving", driving);
+      this.leverShown();
+    }
+    this.act.classList.toggle("ready", ready);
+    if (this.act.getAttribute("aria-label") !== label) {
+      this.act.setAttribute("aria-label", label);
+      this.act.querySelector("em")!.textContent = label;
+    }
+    const aim = this.lever.x === 0 && this.lever.y === 0 ? "가운데" : `${Math.round(this.lever.x * 100)},${Math.round(this.lever.y * 100)}`;
+    if (this.stick.getAttribute("aria-valuetext") !== aim) this.stick.setAttribute("aria-valuetext", aim);
     // For browser tests: where things stand.
     const d = this.renderer.domElement.dataset;
-    d.phase = this.state?.winner !== null || w.over ? "over" : hand ? "drive" : w.valet.to >= 0 ? "walk" : "idle";
+    d.phase = this.state?.winner !== null || w.over ? "over" : hand ? "drive" : "walk";
+    d.valet = `${w.valet.x.toFixed(3)},${w.valet.z.toFixed(3)}`;
+    d.near = near ? String(near.id) : "";
+    // The cars the valet may get into: id, place, heading, state, the share of patience left, and the bay it stands in.
+    d.takes = JSON.stringify(
+      waiting
+        .filter((c) => c !== hand)
+        .map((c) => {
+          const bay = c.state === "requested" ? lot.bays[c.bay] : null;
+          return [c.id, +c.x.toFixed(3), +c.z.toFixed(3), +c.heading.toFixed(4), c.state, +(c.patience / c.patience0).toFixed(3), bay ? [bay.x, bay.z, +bay.angle.toFixed(4)] : null];
+        }),
+    );
+    // The bay the car in hand is to go in (its number, and for the driver its place), and whether the customer's word is over it.
+    const want = parking ? (hand!.want >= 0 ? hand!.want : (freeBays(w)[0] ?? -1)) : -1;
+    d.bay = parking && hand!.want >= 0 ? String(lot.bays[hand!.want].n) : "";
+    d.want = want >= 0 ? JSON.stringify([want, lot.bays[want].x, lot.bays[want].z, +lot.bays[want].angle.toFixed(4)]) : "";
+    d.said = talking ? this.saying.text : "";
     d.car = hand ? [hand.x, hand.z, hand.heading, hand.v, hand.steer].map((n) => n.toFixed(3)).join(",") : "";
     d.job = hand ? hand.state : "";
     d.from = hand?.state === "requested" && lot.bays[hand.bay] ? [lot.bays[hand.bay].x, lot.bays[hand.bay].z, lot.bays[hand.bay].angle].map((n) => n.toFixed(4)).join(",") : "";
@@ -779,6 +1063,8 @@ export class ValetView extends TableView<State> {
       this.world = createWorld(state.stage, Math.floor(cryptoRandom() * 2e9));
       if (this.built !== state.stage) this.build(this.world.lot, state.stage);
       this.keys = { up: false, down: false, left: false, right: false, hand: false };
+      this.lever = { x: 0, y: 0 };
+      this.saying = { car: -1, until: 0, text: "" };
       this.said = { jobs: "", money: "" };
       this.word.classList.remove("vp-show");
     }

@@ -8,12 +8,14 @@
  *
  * How it is played (the user asked for a game of the kind where a parking attendant drives customers' cars into bays
  * against the clock; the lot, the cars and the rules are our own): customers leave their cars at the entrance on the
- * left, one at a time, and wait with a patience that runs down. The valet runs to a car (by itself: to the customer
- * who has waited longest for his patience), and I drive it: into any free bay for a car left with me, to the exit on
- * the right for a car its owner has come back for. A car is parked once it stands nearly still inside a bay, along
- * it; the straighter and the more in the middle, the better the tip. A bump costs a fine and the job's tips. A
- * customer whose patience runs out costs a fine too (one still waiting at the entrance drives off). A shift lasts
- * `SHIFT` seconds.
+ * left, one at a time, and wait with a patience that runs down. I walk the valet about the lot (by a lever or the
+ * keys; it cannot walk through cars, kerbs, pillars or the booth), get into a car standing next to it that it may
+ * drive (`board`), and drive it: into the one bay its customer named (as the keys are handed over) for a car left
+ * with me, to the exit on the right for a car its owner has come back for. A car left with me is parked when I get out
+ * of it (`alight`) standing still in its bay, along it; the straighter and the more in the middle, the better the tip.
+ * A car asked for is handed over as it is driven into the exit's zone, and the valet steps out there. A bump costs a
+ * fine and the job's tips. A customer whose patience runs out costs a fine too (one whose car has not yet been taken
+ * drives off). A shift lasts `SHIFT` seconds.
  */
 export const DT = 1 / 120;
 /** A car: its length and width, the distance between its axles, and how far its front wheels turn. */
@@ -21,8 +23,10 @@ export const CAR_L = 4.2,
   CAR_W = 1.8,
   WHEELBASE = 2.6,
   MAX_STEER = 0.62;
-/** How far from the middle of a car its driver stands, out of the door. */
-const DOOR = CAR_W / 2 + 0.45;
+/** The valet on foot: the round of its body, how fast it runs at full lever (m/s), and how near to a car (from its middle to the car's side) it must stand to get in. */
+export const BODY = 0.3,
+  WALK = 6,
+  REACH = 1.2;
 /** Driving: the most speed forward and back (m/s), the engine's pull, the brakes, rolling to rest, the handbrake, and how fast the wheels are turned. */
 export const V_MOST = 6.5,
   V_BACK = 3.2,
@@ -31,13 +35,11 @@ export const V_MOST = 6.5,
   ROLL = 1.9,
   HANDBRAKE = 14,
   STEER_RATE = 2.6;
-/** The shift's length, how fast the valet runs, and how long a car takes to roll in through the entrance. */
+/** The shift's length, and how long a car takes to roll in through the entrance. */
 export const SHIFT = 180,
-  RUN = 8,
   ROLL_IN = 1.2;
-/** A car is parked once it has stood slower than `STILL` for `SETTLE` seconds inside a bay, within `ANGLE_OK` of its direction. */
+/** The valet gets out only of a car slower than `STILL`; a car is parked inside its bay within `ANGLE_OK` of its direction. */
 export const STILL = 0.2,
-  SETTLE = 0.35,
   ANGLE_OK = 0.24;
 /** Money: a job's pay, the most its quick-service tip and its tidy-parking bonus add, a late job's pay, and the fines. */
 export const PAY = 20,
@@ -119,9 +121,9 @@ export function lotOf(stage: number): Lot {
       blocks,
       entrance: { x: -HALF + 3.4, z: 0 },
       exit: { x: HALF - 2.4, z: 0, hx: 2.4, hz: 3.4 },
-      gap: [17, 22],
-      patience: 52,
-      returnPatience: 56,
+      gap: [19, 25],
+      patience: 60,
+      returnPatience: 60,
       stay: [22, 48],
     },
     add = (x: number, z: number, angle: number, w: number, l: number) => bays.push({ x, z, angle, w, l, n: bays.length + 1 });
@@ -176,6 +178,10 @@ export interface Car {
   state: CarState;
   /** The bay it is parked in (while parked or asked for), else -1. */
   bay: number;
+  /** The bay its customer named when the valet first got in (-1 before, or when none was free: then any free bay will do). */
+  want: number;
+  /** Whether the valet has got into it yet (a customer whose car has not been taken drives off when out of patience). */
+  taken: boolean;
   /** Its customer's patience left and at first (seconds), and whether it has already run out. */
   patience: number;
   patience0: number;
@@ -186,8 +192,6 @@ export interface Car {
   /** Seconds in its present state (rolling in, driving off), and when its owner comes back for it. */
   t: number;
   backAt: number;
-  /** How long it has stood still in a bay (toward `SETTLE`). */
-  rest: number;
 }
 export interface Input {
   /** 1 forward, -1 back (the brakes first while it still rolls forward), 0 neither. */
@@ -195,11 +199,19 @@ export interface Input {
   /** -1 left to 1 right. */
   steer: number;
   handbrake: boolean;
+  /** On foot: where the lever (or the keys) leads the valet, along x and z; at full speed at a length of 1. */
+  walkX?: number;
+  walkZ?: number;
 }
 export const IDLE: Input = { gas: 0, steer: 0, handbrake: false };
 export type Happening =
   | { kind: "arrive"; car: number }
-  | { kind: "take"; car: number }
+  /** Got into a car: for one left with me, the bay its customer named (-1 none); for one asked for, its bay. */
+  | { kind: "take"; car: number; bay: number }
+  /** Got out of a car left standing where it is (still the customer's job). */
+  | { kind: "out"; car: number }
+  /** Not let out: the car left with me stands in bay `at`, which is not (or not rightly) its named bay `bay`. */
+  | { kind: "wrong"; car: number; bay: number; at: number }
   | { kind: "bump"; car: number; strength: number; fined: boolean }
   | { kind: "parked"; car: number; bay: number; pay: number; tip: number; tidy: number }
   | { kind: "ask"; car: number; bay: number }
@@ -213,10 +225,8 @@ export interface World {
   cars: Car[];
   /** The car I am driving, or -1. */
   hand: number;
-  /** How far the car in hand has gone since it was taken (a job may be changed before it has moved). */
-  gone: number;
-  /** The valet on foot: where, the car run to (-1 none) and the seconds left to it. */
-  valet: { x: number; z: number; to: number; left: number; fromX: number; fromZ: number; whole: number };
+  /** The valet on foot: where, which way it faces, and how fast it goes. */
+  valet: { x: number; z: number; heading: number; speed: number };
   nextArrival: number;
   nextId: number;
   lastBump: number;
@@ -248,8 +258,7 @@ export function createWorld(stage: number, seed = 1): World {
       time: 0,
       cars: [],
       hand: -1,
-      gone: 0,
-      valet: { x: lot.entrance.x, z: lot.minZ + 4.6, to: -1, left: 0, fromX: 0, fromZ: 0, whole: 0 },
+      valet: { x: lot.entrance.x, z: lot.minZ + 4.6, heading: Math.PI / 2, speed: 0 },
       nextArrival: 1,
       nextId: 1,
       lastBump: -9,
@@ -360,33 +369,166 @@ export const jobs = (world: World) => world.cars.filter((c) => c.state === "wait
 /** What a quick job's tip is: the share of the customer's patience left, of `TIP`. */
 const tipOf = (car: Car) => (car.late || car.bumped ? 0 : Math.round(TIP * clamp(car.patience / car.patience0, 0, 1)));
 
-/** The valet is sent to car `id` (one that waits): at once when on foot, and from a car in hand only before it has moved. */
-export function take(world: World, id: number) {
-  const car = carOf(world, id);
-  if (world.over || !car || (car.state !== "waiting" && car.state !== "requested") || world.hand === id || world.valet.to === id) return false;
-  if (world.hand >= 0) {
-    const held = carOf(world, world.hand)!;
-    if (world.gone > 0.5 || Math.abs(held.v) > 0.1) return false;
-    world.valet.x = held.x + Math.sin(held.heading) * DOOR;
-    world.valet.z = held.z - Math.cos(held.heading) * DOOR;
-    world.hand = -1;
-  }
-  const v = world.valet,
-    far = Math.hypot(car.x - v.x, car.z - v.z);
-  Object.assign(v, { to: id, left: Math.max(0.3, far / RUN), fromX: v.x, fromZ: v.z });
-  v.whole = v.left;
+/** The cars the valet on foot meets: every one standing or rolling in the lot. */
+const solid = (c: Car) => c.state !== "gone" && c.state !== "leaving" && c.state !== "queue";
+/** How far a point is from a turned box's side (0 inside it). */
+function fromBox(x: number, z: number, b: Box) {
+  const c = Math.cos(b.heading),
+    s = Math.sin(b.heading),
+    along = (x - b.x) * c + (z - b.z) * s,
+    across = -(x - b.x) * s + (z - b.z) * c;
+  return Math.hypot(along - clamp(along, -b.l / 2, b.l / 2), across - clamp(across, -b.w / 2, b.w / 2));
+}
+/** The valet's body put out of a turned box it overlaps: along the shortest way out. */
+function outOfBox(v: { x: number; z: number }, b: Box) {
+  const c = Math.cos(b.heading),
+    s = Math.sin(b.heading),
+    along = (v.x - b.x) * c + (v.z - b.z) * s,
+    across = -(v.x - b.x) * s + (v.z - b.z) * c,
+    na = clamp(along, -b.l / 2, b.l / 2),
+    nc = clamp(across, -b.w / 2, b.w / 2),
+    far = Math.hypot(along - na, across - nc);
+  if (far >= BODY) return false;
+  let a = along,
+    k = across;
+  if (far > 1e-9) {
+    a = na + ((along - na) / far) * BODY;
+    k = nc + ((across - nc) / far) * BODY;
+  } else if (b.l / 2 - Math.abs(along) < b.w / 2 - Math.abs(across)) a = (along >= 0 ? 1 : -1) * (b.l / 2 + BODY);
+  else k = (across >= 0 ? 1 : -1) * (b.w / 2 + BODY);
+  v.x = b.x + a * c - k * s;
+  v.z = b.z + a * s + k * c;
   return true;
 }
-/** The next car waiting, after the one in hand or run to (for a key that changes the job). */
-export function nextJob(world: World) {
-  const list = jobs(world),
-    now = world.hand >= 0 ? world.hand : world.valet.to,
-    at = list.findIndex((c) => c.id === now);
-  for (let k = 1; k <= list.length; k++) {
-    const car = list[(at + k) % list.length];
-    if (car.id !== now) return take(world, car.id);
+/** The valet's body kept out of the walls, the pillars, the blocks and the cars (a car rolling in pushes it aside). */
+function shove(world: World) {
+  const v = world.valet,
+    lot = world.lot;
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    v.x = clamp(v.x, lot.minX + BODY, lot.maxX - BODY);
+    v.z = clamp(v.z, lot.minZ + BODY, lot.maxZ - BODY);
+    for (const p of lot.pillars) {
+      const d = Math.hypot(v.x - p.x, v.z - p.z);
+      if (d >= p.r + BODY) continue;
+      const [ux, uz] = d > 1e-9 ? [(v.x - p.x) / d, (v.z - p.z) / d] : [0, 1];
+      v.x = p.x + ux * (p.r + BODY);
+      v.z = p.z + uz * (p.r + BODY);
+      moved = true;
+    }
+    for (const b of lot.blocks) moved = outOfBox(v, { x: b.x, z: b.z, heading: 0, l: b.hx * 2, w: b.hz * 2 }) || moved;
+    for (const c of world.cars) if (solid(c) && c.id !== world.hand && Math.hypot(c.x - v.x, c.z - v.z) < CAR_L) moved = outOfBox(v, { x: c.x, z: c.z, heading: c.heading, l: CAR_L, w: CAR_W }) || moved;
+    if (!moved) break;
   }
-  return false;
+}
+/** Whether the valet's body could stand at (x, z): inside the walls and clear of everything. */
+function room(world: World, x: number, z: number) {
+  const lot = world.lot;
+  if (x < lot.minX + BODY || x > lot.maxX - BODY || z < lot.minZ + BODY || z > lot.maxZ - BODY) return false;
+  if (lot.pillars.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + BODY)) return false;
+  if (lot.blocks.some((b) => fromBox(x, z, { x: b.x, z: b.z, heading: 0, l: b.hx * 2, w: b.hz * 2 }) < BODY)) return false;
+  return !world.cars.some((c) => solid(c) && fromBox(x, z, { x: c.x, z: c.z, heading: c.heading, l: CAR_L, w: CAR_W }) < BODY + 0.02);
+}
+/** Where the valet stands as it gets out of `car`: by the driver's door (the left), else the other, else by the nose or the tail; the first with room. */
+function doorOf(world: World, car: Car) {
+  const c = Math.cos(car.heading),
+    s = Math.sin(car.heading),
+    side = CAR_W / 2 + BODY + 0.06,
+    end = CAR_L / 2 + BODY + 0.06,
+    spots = [
+      [0.3, -side],
+      [0.3, side],
+      [-0.6, -side],
+      [-0.6, side],
+      [end, 0],
+      [-end, 0],
+    ].map(([a, k]) => ({ x: car.x + a * c - k * s, z: car.z + a * s + k * c }));
+  // (A spot by a car's own side is clear of it: the car itself is set aside while the spots are tried.)
+  const hand = world.hand;
+  world.hand = -1;
+  const keep = car.state;
+  car.state = "gone";
+  const spot = spots.find((p) => room(world, p.x, p.z)) ?? null;
+  car.state = keep;
+  world.hand = hand;
+  return spot;
+}
+/** The cars the valet may get into: a customer's car not yet parked (at the entrance, or left by me on the way) and a car asked for by its owner. */
+export const mayDrive = (c: Car) => c.state === "waiting" || c.state === "requested";
+/** The car the valet on foot may get into now: the nearest within `REACH` of those it may drive, or null. */
+export function reachable(world: World) {
+  if (world.over || world.hand >= 0) return null;
+  const v = world.valet;
+  let best: Car | null = null,
+    near = REACH;
+  for (const c of world.cars) {
+    if (!mayDrive(c)) continue;
+    const far = fromBox(v.x, v.z, { x: c.x, z: c.z, heading: c.heading, l: CAR_L, w: CAR_W });
+    if (far <= near) [best, near] = [c, far];
+  }
+  return best;
+}
+/** Whether a car (its middle) stands within a bay's lines, at whatever angle. */
+const within = (bay: Bay, car: Car) => {
+  const how = standing(bay, car.x, car.z, car.heading);
+  return Math.abs(how.across) < bay.w / 2 && Math.abs(how.along) < bay.l / 2;
+};
+/** The bay a customer names: one that is free, that no other customer has named, and that no car stands in. */
+function nameBay(world: World, car: Car) {
+  const named = new Set(world.cars.filter((c) => c !== car && c.state === "waiting" && c.want >= 0).map((c) => c.want)),
+    open = freeBays(world).filter((k) => !named.has(k) && !world.cars.some((c) => c !== car && solid(c) && within(world.lot.bays[k], c)));
+  return open.length ? open[Math.floor(draw(world) * open.length)] : -1;
+}
+/** 탑승: the valet gets into the car within its reach (a customer's car is handed over then, and its bay named). */
+export function board(world: World): Happening[] {
+  const car = reachable(world);
+  if (!car) return [];
+  if (car.state === "waiting" && !car.taken) {
+    car.taken = true;
+    car.want = nameBay(world, car);
+  }
+  world.hand = car.id;
+  world.valet.speed = 0;
+  return [{ kind: "take", car: car.id, bay: car.state === "waiting" ? car.want : car.bay }];
+}
+/** Whether the valet may get out of the car in hand now: it stands (nearly) still. */
+export const canAlight = (world: World) => {
+  const car = world.hand >= 0 ? carOf(world, world.hand) : null;
+  return !!car && !world.over && Math.abs(car.v) < STILL;
+};
+/** The valet steps out of `car` (by its door, or where there is room) and is on foot again. */
+function stepOut(world: World, car: Car) {
+  const spot = doorOf(world, car) ?? { x: car.x - Math.sin(car.heading) * (CAR_W / 2 + BODY), z: car.z + Math.cos(car.heading) * (CAR_W / 2 + BODY) };
+  world.hand = -1;
+  Object.assign(world.valet, { x: spot.x, z: spot.z, heading: car.heading - Math.PI / 2, speed: 0 });
+  shove(world);
+}
+/**
+ * 하차: the valet gets out of the car in hand, which must stand still. A car left with me standing rightly in its
+ * named bay is parked and paid; one standing in another bay, or not rightly in its own, keeps the valet at the wheel
+ * (told by `wrong`); anywhere else it is left standing, still the customer's job.
+ */
+export function alight(world: World): Happening[] {
+  const car = world.hand >= 0 ? carOf(world, world.hand) : null;
+  if (!car || !canAlight(world)) return [];
+  const lot = world.lot;
+  if (car.state === "waiting") {
+    const k = bayAt(world, car.id, car.x, car.z, car.heading);
+    if (k >= 0 && (car.want < 0 || k === car.want)) {
+      const how = standing(lot.bays[k], car.x, car.z, car.heading),
+        tip = tipOf(car),
+        tidy = car.bumped ? 0 : Math.min(TIDY, Math.round(TIDY * clamp(1 - how.worst, 0, 1) * 1.25)),
+        pay = car.late ? LATE_PAY : PAY + tip + tidy;
+      Object.assign(car, { state: "parked", bay: k, v: 0, steer: 0, backAt: world.time + between(world, lot.stay) });
+      stepOut(world, car);
+      return [{ kind: "parked", car: car.id, bay: k, pay, tip: car.late ? 0 : tip, tidy: car.late ? 0 : tidy }];
+    }
+    const at = lot.bays.findIndex((bay) => within(bay, car));
+    if (at >= 0) return [{ kind: "wrong", car: car.id, bay: car.want, at }];
+  }
+  car.v = 0;
+  stepOut(world, car);
+  return [{ kind: "out", car: car.id }];
 }
 
 /** One slice of the car in hand: the engine, the brakes, the wheels, and what it meets. */
@@ -416,7 +558,6 @@ function drive(world: World, car: Car, input: Input, out: Happening[]) {
     x = rx + (WHEELBASE / 2) * Math.cos(heading),
     z = rz + (WHEELBASE / 2) * Math.sin(heading);
   if (clear(world, car.id, x, z, heading)) {
-    world.gone += Math.hypot(x - car.x, z - car.z);
     car.x = x;
     car.z = z;
     car.heading = wrap(heading);
@@ -453,7 +594,7 @@ export function step(world: World, input: Input = IDLE): Happening[] {
     if (world.cars.filter((c) => c.state === "queue").length < QUEUE_MOST) {
       const style = Math.floor(draw(world) * STYLES),
         colour = Math.floor(draw(world) * COLOURS);
-      world.cars.push({ id: world.nextId++, x: lot.minX - 4, z: lot.entrance.z, heading: 0, v: 0, steer: 0, style, colour, state: "queue", bay: -1, patience: lot.patience, patience0: lot.patience, late: false, bumped: false, dents: 0, t: 0, backAt: 0, rest: 0 });
+      world.cars.push({ id: world.nextId++, x: lot.minX - 4, z: lot.entrance.z, heading: 0, v: 0, steer: 0, style, colour, state: "queue", bay: -1, want: -1, taken: false, patience: lot.patience, patience0: lot.patience, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
     }
   }
   // The first in the queue rolls in once the entrance is clear.
@@ -487,65 +628,47 @@ export function step(world: World, input: Input = IDLE): Happening[] {
       if (car.patience <= 0) {
         car.patience = 0;
         car.late = true;
-        // A customer still waiting at the entrance, not yet served, takes the car and drives off.
-        const left = car.state === "waiting" && world.hand !== car.id;
-        if (left) {
-          if (world.valet.to === car.id) world.valet.to = -1;
-          Object.assign(car, { state: "leaving", t: 0, v: -5 });
-        }
+        // A customer whose car has not yet been taken takes it back and drives off.
+        const left = car.state === "waiting" && !car.taken && world.hand !== car.id;
+        if (left) Object.assign(car, { state: "leaving", t: 0, v: -5 });
         out.push({ kind: "angry", car: car.id, left });
       }
     }
   }
-  // The valet on foot: to the car it was sent to, else to whoever has the least patience left.
-  const v = world.valet;
-  if (world.hand < 0) {
-    const target = v.to >= 0 ? carOf(world, v.to) : null;
-    if (!target || (target.state !== "waiting" && target.state !== "requested")) {
-      v.to = -1;
-      const waiting = jobs(world).sort((a, b) => a.patience / a.patience0 - b.patience / b.patience0)[0];
-      if (waiting) take(world, waiting.id);
-    } else {
-      v.left -= DT;
-      const p = 1 - Math.max(0, v.left) / v.whole;
-      v.x = v.fromX + (target.x - v.fromX) * p;
-      v.z = v.fromZ + (target.z - v.fromZ) * p;
-      if (v.left <= 0) {
-        world.hand = target.id;
-        world.gone = 0;
-        v.to = -1;
-        target.rest = 0;
-        out.push({ kind: "take", car: target.id });
-      }
+  // The valet on foot goes where the lever leads it, and is kept out of everything (a car rolling in pushes it aside).
+  const v = world.valet,
+    car = world.hand >= 0 ? carOf(world, world.hand) : null;
+  if (!car) {
+    const wx = input.walkX ?? 0,
+      wz = input.walkZ ?? 0,
+      much = Math.hypot(wx, wz);
+    v.speed = 0;
+    if (much > 0.05) {
+      const k = (Math.min(1, much) * WALK * DT) / much;
+      v.x += wx * k;
+      v.z += wz * k;
+      v.heading = Math.atan2(wz, wx);
+      v.speed = Math.min(1, much) * WALK;
     }
+    shove(world);
+    return out;
   }
-  const car = world.hand >= 0 ? carOf(world, world.hand) : null;
-  if (!car) return out;
   drive(world, car, input, out);
-  // On foot again, the valet stands at the driver's door.
-  v.x = car.x + Math.sin(car.heading) * DOOR;
-  v.z = car.z - Math.cos(car.heading) * DOOR;
-  if (car.state === "waiting") {
-    // Left with me: parked once it stands still, rightly, in a free bay.
-    const k = Math.abs(car.v) < STILL ? bayAt(world, car.id, car.x, car.z, car.heading) : -1;
-    car.rest = k >= 0 ? car.rest + DT : 0;
-    if (k >= 0 && car.rest >= SETTLE) {
-      const how = standing(lot.bays[k], car.x, car.z, car.heading),
-        tip = tipOf(car),
-        tidy = car.bumped ? 0 : Math.round(TIDY * clamp(1 - how.worst, 0, 1) * 1.25),
-        pay = car.late ? LATE_PAY : PAY + tip + Math.min(TIDY, tidy);
-      Object.assign(car, { state: "parked", bay: k, v: 0, steer: 0, backAt: world.time + between(world, lot.stay) });
-      world.hand = -1;
-      out.push({ kind: "parked", car: car.id, bay: k, pay, tip: car.late ? 0 : tip, tidy: car.late ? 0 : Math.min(TIDY, tidy) });
-    }
-  } else if (car.state === "requested") {
+  // At the wheel, the valet is where the driver's seat is.
+  v.x = car.x + Math.sin(car.heading) * 0.35;
+  v.z = car.z - Math.cos(car.heading) * 0.35;
+  if (car.state === "requested") {
     // Asked for: its bay is free again once it is out of it; handed over in the exit's zone.
     if (car.bay >= 0 && Math.hypot(car.x - lot.bays[car.bay].x, car.z - lot.bays[car.bay].z) > 3) car.bay = -1;
     if (Math.abs(car.x - lot.exit.x) <= lot.exit.hx && Math.abs(car.z - lot.exit.z) <= lot.exit.hz) {
       const tip = tipOf(car),
         pay = car.late ? LATE_PAY : PAY + tip;
+      const at = doorOf(world, car) ?? { x: car.x - Math.sin(car.heading) * 1.3, z: car.z + Math.cos(car.heading) * 1.3 };
       Object.assign(car, { state: "leaving", bay: -1, t: 0, v: Math.max(4, Math.abs(car.v)), heading: wrap(car.heading), steer: 0 });
+      // The owner drives off; the valet is left standing where the door was.
       world.hand = -1;
+      Object.assign(v, { x: at.x, z: at.z, speed: 0 });
+      shove(world);
       out.push({ kind: "returned", car: car.id, pay, tip: car.late ? 0 : tip });
     }
   }
