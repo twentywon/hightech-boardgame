@@ -8,7 +8,7 @@
  *
  * How it is played (the user asked for a game of the kind of two bandits filling their castles with gold: falling
  * loot, a caravan to rob, each other to rob; the rules in detail are our own): a bandit runs, jumps and swings a club.
- * Loot (`KINDS`: a coin 1, a pouch 3, a gem 5; a chest 12 no longer falls from the sky, the user asked) falls now and then and is taken by touching it, in the air
+ * Loot (`KINDS`: only pouches of 3 fall from the sky now, with bombs; coins, gems and chests no longer do, the user asked) falls now and then and is taken by touching it, in the air
  * or where it lies, into a sack that holds `CAP`; a full sack slows its bearer. Gold counts only once it is carried
  * to one's own gate. A blow of the club makes the other bandit drop part of its sack and stuns it a moment; a bomb
  * (it falls with the loot) does the same to whoever is near when it goes off. The merchant's cart sheds gold at each
@@ -87,14 +87,14 @@ export const LOOT_G = 5.5,
 export type LootKind = "coin" | "pouch" | "gem" | "chest" | "bomb";
 /** What each kind is worth, and how often it falls (shares of a hundred). */
 export const KINDS: Record<LootKind, { value: number; share: number }> = {
-  coin: { value: 1, share: 54 },
-  pouch: { value: 3, share: 22 },
-  gem: { value: 5, share: 9 },
+  coin: { value: 1, share: 0 },
+  pouch: { value: 3, share: 80 },
+  gem: { value: 5, share: 0 },
   chest: { value: 12, share: 0 },
-  bomb: { value: 0, share: 15 },
+  bomb: { value: 0, share: 20 },
 };
 /** The seconds between two pieces falling (drawn between these), and where across they fall. */
-export const DROP_EVERY = [0.85, 1.75],
+export const DROP_EVERY = [1.5, 2.8],
   DROP_REACH = 9.1,
   DROP_BIAS = 1.4,
   DROP_FROM = 9.5;
@@ -261,14 +261,17 @@ function spawn(world: World, kind: LootKind, x: number, y: number, vx = 0, vy = 
   world.loot.push(item);
   return item;
 }
-/** Gold thrown out from (x, y) as pouches and coins, flying up and to the sides (toward `way` when it is set). */
+/**
+ * Gold thrown out from (x, y) as pouches (of 3, the last one holding what is left), flying up and to the sides
+ * (toward `way` when it is set). There are no loose coins: the user asked for pouches alone.
+ */
 export function spill(world: World, amount: number, x: number, y: number, way = 0) {
   let left = amount;
   while (left > 0) {
-    const kind: LootKind = left >= 3 && draw(world) < 0.5 ? "pouch" : "coin",
+    const value = Math.min(KINDS.pouch.value, left),
       side = way ? way * (0.4 + draw(world)) : draw(world) * 2 - 1;
-    spawn(world, kind, clamp(x, -LOOT_MOST, LOOT_MOST), y, side * 1.8, 2.8 + draw(world) * 2.2, 0.6);
-    left -= KINDS[kind].value;
+    spawn(world, "pouch", clamp(x, -LOOT_MOST, LOOT_MOST), y, side * 1.8, 2.8 + draw(world) * 2.2, 0.6, value);
+    left -= value;
   }
 }
 /** The kind of the next piece to fall, by the kinds' shares. */
@@ -278,7 +281,7 @@ function pickKind(world: World): LootKind {
     r -= KINDS[kind].share;
     if (r < 0) return kind;
   }
-  return "coin";
+  return "pouch";
 }
 /** A bomb goes off: whoever is within its blast is stunned and loses part of its sack. */
 function explode(world: World, bomb: Loot, out: Happening[]) {
@@ -481,8 +484,8 @@ function supply(world: World, out: Happening[]) {
     world.nextCart -= DT;
     if (world.nextCart <= 0) {
       world.cart = { x: -world.cartFrom * (X_MOST + 2.2), dir: world.cartFrom, gold: CART.gold, blows: 0, shaken: 9, broken: -1 };
+      // Every cart of a match comes from the same end (drawn at the start): the user asked for one side only.
       out.push({ kind: "cart", dir: world.cartFrom });
-      world.cartFrom = -world.cartFrom as 1 | -1;
     }
     return;
   }
