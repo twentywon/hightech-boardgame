@@ -1,12 +1,12 @@
 import * as T from "three";
-import { aim, capable, glossy } from "../../engine/scene-utils";
+import { aim, capable, glossy, realism } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { noZoom } from "../../engine/zoom";
 import { blend, type LiveGuest, type LiveSession } from "../../net/live";
 import { inputOf, noCounts, readInput, readSnap, snapOf, takeInput, type Counts } from "./net";
-import { featherPicture, hall } from "./court";
+import { featherPicture, hall, type Hall } from "./court";
 import { SHOULDER, aimArm, figure, pose, type Figure } from "./figure";
 import { courtCamera, lookToward, restingLook } from "./layout";
 import { SlideReader, type Slide } from "./swipe";
@@ -60,6 +60,8 @@ export class BadmintonView extends TableView<State> {
   private world: World = this.newWorld();
   private figures: [Figure, Figure];
   private shuttle: T.Group;
+  /** The hall's moving parts (the advertising boards) and its scoreboard. */
+  private hall: Hall;
   private shadow: T.Mesh;
   private ring: T.Mesh;
   private landMark: T.Mesh;
@@ -135,19 +137,26 @@ export class BadmintonView extends TableView<State> {
     const fill = new T.DirectionalLight("#dfe8ff", 0.7);
     fill.position.set(-6, 8, -8);
     this.scene.add(fill);
-    hall(this.scene, keep_);
-    this.figures = [figure(keep_, "#d8322a", "#2a1d14", "#e23b2a"), figure(keep_, "#2363d0", "#121418", "#1f8adf")];
+    const rich = capable();
+    this.hall = hall(this.scene, keep_, rich);
+    this.figures = [figure(keep_, "#d8322a", "#2a1d14", "#e23b2a", "7"), figure(keep_, "#2363d0", "#121418", "#1f8adf", "11")];
     for (const f of this.figures) this.scene.add(f.root);
     this.dress();
+    // On a graphics card: a reflected room in the varnished floor and the rackets, soft shadows, a second lit edge.
+    realism(this.renderer, this.scene);
     // The shuttle: a white cork at its nose and a skirt of feathers, made along -y (the nose) so that it can be turned along its way.
     this.shuttle = new T.Group();
     const cork = new T.Mesh(keep_(new T.SphereGeometry(0.014, 16, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2)), this.standard({ color: "#f7f5ee", roughness: 0.55 })),
       band = new T.Mesh(keep_(new T.CylinderGeometry(0.0142, 0.0142, 0.008, 16)), this.standard({ color: "#2a4fb0", roughness: 0.5 })),
-      skirt = new T.Mesh(keep_(new T.CylinderGeometry(0.033, 0.0135, 0.062, 24, 1, true)), keep_(glossy({ map: keep_(featherPicture(keep_)), transparent: true, alphaTest: 0.3, side: T.DoubleSide, roughness: 0.7 }, 0)));
+      feathers = keep_(glossy({ map: keep_(featherPicture(keep_)), transparent: true, alphaTest: 0.3, side: T.DoubleSide, roughness: 0.7 }, 0)),
+      skirt = new T.Mesh(keep_(new T.CylinderGeometry(0.033, 0.0135, 0.062, 32, 1, true)), feathers),
+      // A second skirt just inside the first, turned half a feather: the feathers overlap as real ones do.
+      inner = new T.Mesh(keep_(new T.CylinderGeometry(0.031, 0.0128, 0.058, 32, 1, true).rotateY(Math.PI / 16)), feathers);
     cork.position.y = 0;
     band.position.y = 0.004;
     skirt.position.y = 0.039;
-    for (const part of [cork, band, skirt]) {
+    inner.position.y = 0.038;
+    for (const part of [cork, band, skirt, inner]) {
       part.castShadow = true;
       this.shuttle.add(part);
     }
@@ -455,6 +464,7 @@ export class BadmintonView extends TableView<State> {
   private pose(now: number, real: number) {
     const w = this.world,
       s = w.shuttle;
+    this.hall.tick(now / 1000);
     // The shuttle, nose first along its way (at rest, nose down); drawn larger far off so that it never shrinks to a speck.
     this.shuttle.position.set(s.x, Math.max(0.012, s.y), s.z);
     const far = this.camera.position.distanceTo(this.shuttle.position),
@@ -633,6 +643,7 @@ export class BadmintonView extends TableView<State> {
     // A guest's court ends no rally itself: the point the host told is said over the net here.
     if (this.live && !this.live.host && state.ply > this.shown && state.last !== null && state.why >= 0) this.say(WHY[state.why], state.last === this.mine ? "#ffd34a" : "#9fd0ff", performance.now(), 0, sideOfWord(this.world));
     this.shown = state.ply;
+    this.hall.score(this.live ? ["빨강", "파랑"] : ["나", "컴퓨터"], state.score, state.games);
     this.pose(performance.now(), 0);
   }
   protected animate() {
