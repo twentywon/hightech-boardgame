@@ -43,11 +43,14 @@ export class Hand {
       this.press("jump");
     } else if (y < LEVER_REARM) this.lever.armed = true;
   }
+  /** The way it runs now (−1 to 1): the keys, if held, outrank the lever. */
+  way() {
+    const keys = (this.holds("right") ? 1 : 0) - (this.holds("left") ? 1 : 0);
+    return this.holds("right") || this.holds("left") ? keys : leverRun(this.lever.x);
+  }
   /** One slice's controls: a press counted since the last slice is a press now. The keys, if held, outrank the lever. */
   input(): Input {
-    const keys = (this.holds("right") ? 1 : 0) - (this.holds("left") ? 1 : 0),
-      held = this.holds("right") || this.holds("left");
-    const input = { x: held ? keys : leverRun(this.lever.x), jump: this.jumps > this.usedJumps, strike: this.strikes > this.usedStrikes };
+    const input = { x: this.way(), jump: this.jumps > this.usedJumps, strike: this.strikes > this.usedStrikes };
     this.usedJumps = this.jumps;
     this.usedStrikes = this.strikes;
     return input;

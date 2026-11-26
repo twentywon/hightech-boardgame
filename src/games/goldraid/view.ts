@@ -12,6 +12,8 @@ import { CLOUDS, GAUGE_TALL, SIDE_COLORS, SUNLIGHT, buildValley, type Valley } f
 import { capable } from "../../engine/scene-utils";
 import { Effects } from "./fx";
 import { glint, glow, painted, stream } from "./paint";
+import type { LiveGuest, LiveSession } from "../../net/live";
+import { Log, follow as followSnap, hostInputs, inputOf, readSnap, snapOf, type Taken } from "./net";
 
 export const GOLD_RAID_COLORS: [string, string] = SIDE_COLORS;
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -56,6 +58,11 @@ const DRAWN = 1.22;
  * Keys: the first person A D to run, W (or Space) to jump, S or F to strike; the second ← →, ↑, and ↓ or /; against
  * the computer both sets are mine. A touch screen gets a lever (sideways runs, up jumps) and 치기 (for two at one screen
  * a lever and 치기 at each side).
+ *
+ * Over Wi-Fi (`live`, 와이파이 여럿이) two devices each run a bandit: the host's view runs the one valley (its own hand on
+ * its side, the guest's hands as the room feeds them, the computer on a side whose person is away) and tells it to all
+ * with what happened lately (`net.ts`); a guest's view runs no valley: it draws the host's a moment behind, hears and
+ * sees what happened in it, and sends its hands. Each device follows its own bandit (no split screen).
  */
 export class GoldRaidView extends TableView<State> {
   private world: World | null = null;
@@ -103,6 +110,20 @@ export class GoldRaidView extends TableView<State> {
   private flashed = [-9, -9];
   private shook = -9;
   private rang = -9;
+  /**
+   * Over Wi-Fi: the side this device plays (read from the room every frame: it may be known only once the valley is
+   * built), the host's log of what happened, what of a guest's presses the host has taken, and the last happening a
+   * guest has heard.
+   */
+  private mine: 0 | 1 = 0;
+  private seatKnown = false;
+  private log = new Log();
+  private taken: [Taken, Taken] = [
+    { jumps: 0, strikes: 0 },
+    { jumps: 0, strikes: 0 },
+  ];
+  private heard = -1;
+  private heardYet = false;
   /** The sounds of the valley (set by the screen from the game's `knock`). */
   onKnock: ((kind: string, strength: number) => void) | null = null;
   private readonly keyDown = (e: KeyboardEvent) => this.key(e, true);
@@ -121,6 +142,7 @@ export class GoldRaidView extends TableView<State> {
     quality: "high" | "low",
     private two: boolean,
     private level: Level,
+    private live: LiveSession | null = null,
   ) {
     super(host, quality, "#a9d8f2");
     const own: Own = (r) => this.own(r);
@@ -186,7 +208,7 @@ export class GoldRaidView extends TableView<State> {
       [0, 1].map((side) => `<i class="gr-map-castle gr-s${side}"></i>`).join("") +
       `<i class="gr-map-cart"></i>` +
       `<i class="gr-map-chest"></i>`.repeat(4) +
-      [1, 0].map((side) => `<i class="gr-map-man gr-s${side}${side === 0 || this.two ? " gr-mine" : ""}"></i>`).join("");
+      [1, 0].map((side) => `<i class="gr-map-man gr-s${side}${(side === 0 && !live) || this.two ? " gr-mine" : ""}"></i>`).join("");
     this.hud.append(this.board, this.map);
     this.seam = el("gr-seam");
     this.word = el("gr-word");
@@ -221,7 +243,33 @@ export class GoldRaidView extends TableView<State> {
     if (paused) this.letGo();
   }
   private running() {
-    return !!this.world && !!this.state && this.state.winner === null && !this.paused && !document.hidden && !document.querySelector("dialog[open]");
+    // Over Wi-Fi a window open on one device does not stop the valley for the other (a pause does, for both).
+    return !!this.world && !!this.state && this.state.winner === null && !this.paused && !document.hidden && (!!this.live || !document.querySelector("dialog[open]"));
+  }
+  /** Whether this device draws the host's valley instead of running one (a guest over Wi-Fi). */
+  private get guest() {
+    return !!this.live && !this.live.host;
+  }
+  /** Whether this device runs a bandit (one watching over Wi-Fi does not). */
+  private get playing() {
+    return !this.live || this.live.seat === 0 || this.live.seat === 1;
+  }
+  /** Over Wi-Fi, my side read from the room: my name over my bandit, my colour on my lever and 치기, my mark on the strip. */
+  private sideCheck() {
+    const live = this.live;
+    if (!live) return;
+    const mine: 0 | 1 = live.seat === 1 ? 1 : 0;
+    if (mine === this.mine && this.seatKnown) return;
+    this.seatKnown = true;
+    this.mine = mine;
+    this.figures.forEach((f) => {
+      f.tag?.removeFromParent();
+      f.tag = null;
+    });
+    if (this.playing) this.figures[mine].tag = this.makeTag((r) => this.own(r), "나", SIDE_COLORS[mine]);
+    this.pad.querySelectorAll<HTMLElement>(".gr-stick, .gr-btn").forEach((el) => el.style.setProperty("--side", SIDE_COLORS[mine]));
+    this.map.querySelectorAll(".gr-map-man").forEach((el) => el.classList.toggle("gr-mine", this.playing && el.classList.contains(`gr-s${mine}`)));
+    this.eye.set = false;
   }
   /** A key for a person's hand, from anywhere on the page but a field, a window or another button. */
   private key(e: KeyboardEvent, down: boolean) {
@@ -896,6 +944,7 @@ export class GoldRaidView extends TableView<State> {
     this.word.classList.add("gr-show");
   }
   private names(): [string, string] {
+    if (this.live) return this.playing ? (this.mine === 0 ? ["나", "상대"] : ["상대", "나"]) : ["빨강", "파랑"];
     return this.two ? ["1P", "2P"] : ["나", "컴퓨터"];
   }
   /** What a slice did, told to the screen (moves), the ear and the eye. */
@@ -925,7 +974,7 @@ export class GoldRaidView extends TableView<State> {
         this.sparkle(gateOf(e.side), 1, 10 + e.amount, 4);
         this.fx.emit("glint", gateOf(e.side), 1.4, 0.7, 4 + Math.min(8, e.amount / 2), { speed: 2.4, up: 2.2, size: 0.55, life: 0.7 });
         this.pop(`금화 +${e.amount}`, gateOf(e.side), 2.6, `gr-big gr-s${e.side}`);
-        this.onMove(depositMove(e.side, e.amount));
+        if (!this.guest) this.onMove(depositMove(e.side, e.amount));
       } else if (e.kind === "hit") {
         c.hits++;
         knock("hit");
@@ -974,24 +1023,57 @@ export class GoldRaidView extends TableView<State> {
         c.raids++;
         knock("raid");
         this.say("성문 습격!", SIDE_COLORS[e.by]);
-        this.onMove(raidedMove(1 - e.by, e.amount));
-      } else if (e.kind === "time") this.onMove({ from: -1, to: TIME, extra: -1 });
+        if (!this.guest) this.onMove(raidedMove(1 - e.by, e.amount));
+      } else if (e.kind === "time" && !this.guest) this.onMove({ from: -1, to: TIME, extra: -1 });
       if (this.state?.winner !== null) break;
     }
   }
   private advance(now: number) {
     const real = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
-    const world = this.world;
+    this.sideCheck();
+    const world = this.world,
+      live = this.live;
+    if (live && !live.host) return this.followHost(now, real);
     if (world && this.running()) {
       this.left += real;
       while (this.left >= DT && this.running()) {
         this.left -= DT;
-        const second: Input = this.two ? this.hands[1].input() : think(world, 1, this.level);
-        this.tell(step(world, [this.hands[0].input(), second]));
+        const inputs: [Input, Input] = live
+          ? hostInputs(world, (seat) => live.control(seat), (seat) => live.latest(seat), () => this.hands[0].input(), this.taken, this.level)
+          : [this.hands[0].input(), this.two ? this.hands[1].input() : think(world, 1, this.level)];
+        const events = step(world, inputs);
+        if (live) this.log.add(events, world.tick);
+        this.tell(events);
       }
     } else this.left = 0;
+    // The host tells its valley to the guest, paused or not (so that one coming back sees it).
+    if (live?.host && world && this.state) live.tick(() => snapOf(world, this.log), now);
     if (world) this.pose(now, this.running() ? real : 0);
+    this.redraw();
+  }
+  /**
+   * A guest's frame: my hands are sent to the host (the way I run, and my presses of jump and strike as counts), and
+   * the host's valley is drawn a moment behind; what happened in it is heard and seen here once each. The moves
+   * (gold brought home, a gate robbed, the clock's end) come from the room.
+   */
+  private followHost(now: number, real: number) {
+    const live = this.live as LiveGuest,
+      world = this.world,
+      hand = this.hands[0],
+      on = this.playing && this.running() && !live.paused;
+    live.tick(() => (this.playing ? inputOf(on ? hand.way() : 0, hand.jumps, hand.strikes) : null), now);
+    const frame = live.frame(now),
+      a = frame && readSnap(frame.a.data),
+      b = frame && readSnap(frame.b.data);
+    if (world && frame && a && b) {
+      followSnap(world, a, b, frame.t);
+      const fresh = this.heardYet ? b.events.filter((e) => e.serial > this.heard) : [];
+      this.heardYet = true;
+      if (b.events.length) this.heard = Math.max(this.heard, b.events[b.events.length - 1].serial);
+      if (fresh.length) this.tell(fresh.map((e) => e.happening));
+    }
+    if (world) this.pose(now, !live.paused && this.state?.winner === null ? real : 0);
     this.redraw();
   }
   /** A bandit's figure where the valley has it: its run, its jump, its swing, its sack, its daze. */
@@ -1118,7 +1200,7 @@ export class GoldRaidView extends TableView<State> {
       (castle.ring.material as T.MeshBasicMaterial).opacity = since < 0.6 ? 1 : world.bandits[side].carry > 0 ? 0.55 + 0.3 * Math.sin(t * 6) : 0.4;
       castle.ring.scale.setScalar(since < 0.6 ? 1 + 0.5 * (since / 0.6) : 1);
       const arrow = this.arrows[side];
-      arrow.visible = (side === 0 || this.two) && world.bandits[side].carry > 0 && !world.over;
+      arrow.visible = (this.live ? this.playing && side === this.mine : side === 0 || this.two) && world.bandits[side].carry > 0 && !world.over;
       arrow.position.y = 2.75 + Math.sin(t * 5) * 0.14;
       arrow.rotation.y = t * 2;
     });
@@ -1187,6 +1269,7 @@ export class GoldRaidView extends TableView<State> {
       c = this.counts;
     d.phase = state.winner !== null || world.over ? "over" : this.paused ? "paused" : "play";
     d.two = String(this.two);
+    d.mine = String(this.live && !this.playing ? -1 : this.mine);
     d.men = b.map((m) => `${m.x.toFixed(2)},${m.y.toFixed(2)}`).join(";");
     d.face = b.map((m) => m.face).join(",");
     d.carry = b.map((m) => m.carry).join(",");
@@ -1243,7 +1326,8 @@ export class GoldRaidView extends TableView<State> {
     // A new match starts with the eye where it belongs; after that it follows (and stands while the valley is still).
     const to = (from: number, at: number) => (eye.set ? follow(from, at, Math.max(0, dt)) : at);
     if (!this.two) {
-      eye.x = to(eye.x, aimX(a.x, a.vx, a.face, full.wide));
+      const me = world!.bandits[this.mine];
+      eye.x = to(eye.x, aimX(me.x, me.vx, me.face, full.wide));
       eye.zoom = 1;
       this.look(this.camera, full, this.shape, eye.x);
     } else {
@@ -1344,7 +1428,7 @@ export class GoldRaidView extends TableView<State> {
       this.eye.split = false;
       this.counts = { jumps: [0, 0], swings: [0, 0], pickups: [0, 0], deposits: [0, 0], hits: 0, booms: 0, carts: 0, raids: 0 };
       this.letGo();
-      if (!this.figures[0].tag) {
+      if (!this.figures[0].tag && !this.live) {
         const own: Own = (r) => this.own(r),
           names = this.names();
         this.figures[0].tag = this.makeTag(own, names[0], SIDE_COLORS[0]);
