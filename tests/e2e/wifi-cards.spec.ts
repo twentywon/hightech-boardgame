@@ -93,19 +93,24 @@ async function keys(page: Page, list: string[]) {
     await page.waitForTimeout(60);
   }
 }
-/** Tries `attempt` (its number given) until the page's move count goes up; the new count. */
+/**
+ * Tries `attempt` (its number given) until the page's move count goes up; the new count. A try counts as refused only
+ * once the page has come to rest with its own seat still to move: a move taken shows its count only after its cards
+ * have flown (and a guest's after the host's answer), which on a slow machine can take far longer than a few seconds,
+ * and a second try then would be made out of turn.
+ */
 async function moveOnce(page: Page, attempt: (tries: number) => Promise<void>) {
   const before = await moves(page);
   for (let tries = 0; tries < 10; tries++) {
     await attempt(tries);
-    const moved = await expect
-      .poll(() => moves(page), { timeout: 4000 })
-      .toBeGreaterThan(before)
-      .then(
-        () => true,
-        () => false,
-      );
-    if (moved) return moves(page);
+    const from = Date.now();
+    while (Date.now() - from < 90000) {
+      if ((await moves(page)) > before) return moves(page);
+      const text = await turn(page).innerText(),
+        still = (await page.locator("#board").getAttribute("data-animating")) === "false";
+      if (still && /나 \(/.test(text) && !text.includes("보내는 중") && Date.now() - from > 3000) break;
+      await page.waitForTimeout(250);
+    }
   }
   throw new Error("no move was made");
 }

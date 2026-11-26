@@ -117,6 +117,26 @@ describe("원카드 over Wi-Fi", () => {
     // Out of turn a seat is refused.
     expect((devices[2] as GuestRoom<OneState>).play({ from: -1, to: DRAW, extra: -1 })).not.toBeNull();
   });
+  test("the pile run out over Wi-Fi: the discards are turned over and the game goes on on every device, to its end (the user found it stuck)", async () => {
+    let turnedOver = 0,
+      dry = 0;
+    for (let round = 0; round < 12 && (turnedOver < 3 || round < 4); round++) {
+      const { host, devices } = await room(oneCardConfig, 3);
+      let before = host.match!.state;
+      const moves = await playOut(oneCardConfig, host, devices, 3000, (view, seat, real) => {
+        secret(view, seat, real);
+        if (seat !== 0 || real === before) return;
+        // The pile grew without a seat going out: the discards were turned over into a new one.
+        if (real.pile.length > before.pile.length && real.out.filter(Boolean).length === before.out.filter(Boolean).length) turnedOver++;
+        if (!real.pile.length && real.discard.length <= 1) dry++;
+        before = real;
+      });
+      // Every game comes to its end: nobody is left unable to move it on.
+      expect(host.match!.toMove, `round ${round} after ${moves} moves`).toBe(NOBODY);
+    }
+    expect(turnedOver).toBeGreaterThan(0);
+    void dry;
+  });
   test("played out by three devices and a computer, each from its own view; turns go round in the room's order", async () => {
     const { host, devices } = await room(oneCardConfig, 2);
     let last = host.match!.state;
