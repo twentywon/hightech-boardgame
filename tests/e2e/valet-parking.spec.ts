@@ -205,6 +205,30 @@ test("valet parking: walked to the car, driven into the bay its customer named a
   expect(errors).toEqual([]);
 });
 
+test("valet parking: each lot has its own setting: the mart by day, the burger restaurant's lot at night, the car park under the ground", async ({ page }) => {
+  test.setTimeout(180000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  for (const [k, name, scene] of [
+    [1, "햄버거 가게 주차장", "burger-night"],
+    [2, "지하 주차장", "underground"],
+    [0, "마트 주차장", "mart"],
+  ] as const) {
+    await selectGame(page, "주차 요원");
+    const cards = page.locator("dialog[open] .stage-card");
+    await expect(cards).toHaveCount(3);
+    await expect(cards.nth(k)).toContainText(name);
+    // (Choosing a lot sits down at it.)
+    await cards.nth(k).click();
+    await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 30000 });
+    await expect(canvas(page)).toHaveAttribute("data-scene", scene, { timeout: 30000 });
+    // The lot works as ever: a customer's car rolls in to be taken.
+    await expect.poll(async () => JSON.parse((await canvas(page).getAttribute("data-takes")) || "[]").length, { timeout: 40000 }).toBe(1);
+  }
+  expect(errors).toEqual([]);
+});
+
 test("valet parking: a whole shift: cars parked, asked for again and driven out by the exit, and at the end of the three minutes the day's takings @alone", async ({ page }, info) => {
   // Three minutes of the shift's own clock (which a slowly drawn page stretches), once: in a small window, where the
   // page is drawn fastest.
