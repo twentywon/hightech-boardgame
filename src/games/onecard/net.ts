@@ -86,6 +86,7 @@ const viewed: PointGame<State> = {
   reason: (s) => {
     const c = s.champion;
     if (c === null) return "모두 파산했습니다.";
+    if (s.drained) return c === 0 ? "더미가 바닥나 더 받을 카드가 없습니다. 카드가 가장 적은 내가 이겼습니다." : `더미가 바닥나 더 받을 카드가 없습니다. 카드가 가장 적은 ${named(c)} 이겼습니다.`;
     const emptied = s.hands[c].length === 0;
     if (c === 0) return emptied ? "카드를 모두 냈습니다." : "다른 사람이 모두 파산했습니다.";
     return emptied ? `${named(c)} 먼저 카드를 모두 냈습니다.` : `${PEOPLE[c]}만 남고 모두 파산했습니다.`;

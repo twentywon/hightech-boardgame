@@ -1,7 +1,16 @@
 import { cryptoRandom, type Random } from "../../core/random";
 import type { Effect, Move, PointGame, Winner } from "../points/types";
 import type { Level } from "../points/ai";
-import { BLACK_JOKER, COLOUR_JOKER, isJoker, rankOf, red, shuffle, suitOf, SUIT_NAME } from "../deck/cards";
+import {
+  BLACK_JOKER,
+  COLOUR_JOKER,
+  isJoker,
+  rankOf,
+  red,
+  shuffle,
+  suitOf,
+  SUIT_NAME,
+} from "../deck/cards";
 
 /**
  * One Card (원카드), the Korean game of the Crazy Eights family, for me and
@@ -24,7 +33,12 @@ export const DRAW = 60,
   BUST = 20,
   SEATS = 4;
 /** The seats as I see them: me, then the computers at my left, across and at my right. */
-export const SEAT_NAME = ["나", "왼쪽 컴퓨터", "맞은편 컴퓨터", "오른쪽 컴퓨터"];
+export const SEAT_NAME = [
+  "나",
+  "왼쪽 컴퓨터",
+  "맞은편 컴퓨터",
+  "오른쪽 컴퓨터",
+];
 export interface State {
   pile: number[];
   /** The discard pile, the top card last. */
@@ -41,11 +55,23 @@ export interface State {
   suit: number | null;
   /** Cards the player to move must draw unless it passes the attack on. */
   attack: number;
-  last: { seat: number; played: number | null; drew: number[]; events: string[] } | null;
+  last: {
+    seat: number;
+    played: number | null;
+    drew: number[];
+    events: string[];
+  } | null;
   /** The seat that went out first, once the game is over (null when the computers all went bankrupt). */
   champion: number | null;
   winner: Winner;
   ply: number;
+  /**
+   * Draws in a row that found nothing to draw (the pile and the discards under the top both empty: with three or four
+   * round the bed the hands can hold every card). When every seat still in has so drawn nothing, nobody can ever move
+   * the game on again, so it ends: the fewest cards win (`drained`). The user found a Wi-Fi game stuck there.
+   */
+  dry?: number;
+  drained?: boolean;
   /** Over Wi-Fi (`net.ts`): the blind number of each card (`deck/blind.ts`); a device's view leaves it out. */
   net?: { masks: number[] };
   /** A view over Wi-Fi: the blind card each card in sight stands for when out of sight (`deck/blind.ts`). */
@@ -59,17 +85,37 @@ export function power(id: number) {
   if (r === 1) return suitOf(id) === 0 ? 5 : 3;
   return r === 2 ? 2 : 0;
 }
-const plain = (id: number) => !isJoker(id) && power(id) === 0 && ![7, 11, 12, 13].includes(rankOf(id));
+const plain = (id: number) =>
+  !isJoker(id) && power(id) === 0 && ![7, 11, 12, 13].includes(rankOf(id));
 export function createGame(random: Random = cryptoRandom): State {
-  const deck = shuffle(Array.from({ length: 54 }, (_, i) => i), random),
-    hands = Array.from({ length: SEATS }, (_, k) => deck.slice(k * HAND, (k + 1) * HAND));
+  const deck = shuffle(
+      Array.from({ length: 54 }, (_, i) => i),
+      random,
+    ),
+    hands = Array.from({ length: SEATS }, (_, k) =>
+      deck.slice(k * HAND, (k + 1) * HAND),
+    );
   let pile = deck.slice(SEATS * HAND);
   // The card turned up to begin with is a plain one; others go back under the pile.
   let k = pile.length - 1;
   while (!plain(pile[k])) k--;
   const top = pile[k];
   pile = pile.filter((_, i) => i !== k);
-  return { pile, discard: [top], hands, seat: 0, dir: 1, out: hands.map(() => false), phase: "play", suit: null, attack: 0, last: null, champion: null, winner: null, ply: 0 };
+  return {
+    pile,
+    discard: [top],
+    hands,
+    seat: 0,
+    dir: 1,
+    out: hands.map(() => false),
+    phase: "play",
+    suit: null,
+    attack: 0,
+    last: null,
+    champion: null,
+    winner: null,
+    ply: 0,
+  };
 }
 /** The seat `steps` places on from `seat` in the order of play, passing over those who are out. */
 export function onward(s: Pick<State, "out" | "dir">, seat: number, steps = 1) {
@@ -90,7 +136,11 @@ export function playable(s: State, id: number) {
     if (!power(id)) return false;
     if (isJoker(id)) return true;
     if (isJoker(t)) return power(id) >= power(t);
-    return suitOf(id) === suitOf(t) || rankOf(id) === rankOf(t) || power(id) >= power(t);
+    return (
+      suitOf(id) === suitOf(t) ||
+      rankOf(id) === rankOf(t) ||
+      power(id) >= power(t)
+    );
   }
   if (isJoker(id)) return true;
   // After a joker anything goes; after a 7 its named suit; else suit or rank.
@@ -100,8 +150,15 @@ export function playable(s: State, id: number) {
 }
 export function moves(s: State): Move[] {
   if (s.winner !== null) return [];
-  if (s.phase === "suit") return [0, 1, 2, 3].map((i) => ({ from: -1, to: SUIT_BASE + i, extra: -1 }));
-  return [...s.hands[s.seat].filter((id) => playable(s, id)), DRAW].map((to) => ({ from: -1, to, extra: -1 }));
+  if (s.phase === "suit")
+    return [0, 1, 2, 3].map((i) => ({
+      from: -1,
+      to: SUIT_BASE + i,
+      extra: -1,
+    }));
+  return [...s.hands[s.seat].filter((id) => playable(s, id)), DRAW].map(
+    (to) => ({ from: -1, to, extra: -1 }),
+  );
 }
 /** Draws `n` from the pile, turning the discards (but the top) over into a new pile when it runs out. */
 function draw(s: State, side: number, n: number, random: Random) {
@@ -128,25 +185,81 @@ export function bankrupt(s: State, side: number): State {
   if (side === 0) return { ...s, winner: 1 };
   const out = s.out.map((o, i) => o || i === side),
     hands = s.hands.map((h, i) => (i === side ? [] : h)),
-    next = { ...s, out, hands, pile: [...s.hands[side], ...s.pile], last: s.last && { ...s.last, events: [...s.last.events, `${SEAT_NAME[side]} 파산!`] } };
+    next = {
+      ...s,
+      out,
+      hands,
+      pile: [...s.hands[side], ...s.pile],
+      last: s.last && {
+        ...s.last,
+        events: [...s.last.events, `${SEAT_NAME[side]} 파산!`],
+      },
+    };
   // With every computer gone I am the only one left.
   if (out.slice(1).every(Boolean)) return { ...next, winner: 0 };
   return next.seat === side ? { ...next, seat: onward(next, side) } : next;
 }
 /** `bust` is what a hand of twenty does (over Wi-Fi any seat only leaves the table: `net.ts`). */
-export function play(s: State, move: Move, random: Random = cryptoRandom, bust: (s: State, side: number) => State = bankrupt): State | null {
+export function play(
+  s: State,
+  move: Move,
+  random: Random = cryptoRandom,
+  bust: (s: State, side: number) => State = bankrupt,
+): State | null {
   if (s.winner !== null || move.extra !== -1 || move.from !== -1) return null;
   const side = s.seat;
   if (s.phase === "suit") {
     const suit = move.to - SUIT_BASE;
     if (suit < 0 || suit > 3) return null;
-    return { ...s, suit, phase: "play", seat: onward(s, side), ply: s.ply + 1, last: { seat: side, played: null, drew: [], events: [`${SUIT_NAME[suit]}!`] } };
+    return {
+      ...s,
+      suit,
+      phase: "play",
+      seat: onward(s, side),
+      ply: s.ply + 1,
+      last: {
+        seat: side,
+        played: null,
+        drew: [],
+        events: [`${SUIT_NAME[suit]}!`],
+      },
+    };
   }
   if (move.to === DRAW) {
     const n = Math.max(1, s.attack),
       drawn = draw(s, side, n, random),
       { drew, ...rest } = drawn,
-      next: State = { ...rest, attack: 0, seat: onward(s, side), ply: s.ply + 1, last: { seat: side, played: null, drew, events: s.attack ? [`${drew.length}장 받기`] : [] } };
+      dry = drew.length ? 0 : (s.dry ?? 0) + 1,
+      events = drew.length
+        ? s.attack
+          ? [`${drew.length}장 받기`]
+          : []
+        : ["받을 카드가 없습니다"],
+      next: State = {
+        ...rest,
+        dry,
+        attack: 0,
+        seat: onward(s, side),
+        ply: s.ply + 1,
+        last: { seat: side, played: null, drew, events },
+      };
+    // Nothing left to draw for anyone, round the whole table: the game cannot go on, and the fewest cards win.
+    const still = s.out.flatMap((o, k) => (o ? [] : [k]));
+    if (dry >= still.length) {
+      const fewest = Math.min(...still.map((k) => next.hands[k].length)),
+        champion =
+          [0, 1, 2, 3]
+            .map((k) => onward(s, side, k + 1))
+            .find((k) => !s.out[k] && next.hands[k].length === fewest) ??
+          still[0];
+      return {
+        ...next,
+        champion,
+        winner: champion === 0 ? 0 : 1,
+        drained: true,
+        last: { ...next.last!, events: [...events, "더미가 바닥났습니다!"] },
+      };
+    }
     return next.hands[side].length >= BUST ? bust(next, side) : next;
   }
   const id = move.to;
@@ -155,9 +268,20 @@ export function play(s: State, move: Move, random: Random = cryptoRandom, bust: 
   hands[side] = hands[side].filter((c) => c !== id);
   const r = rankOf(id),
     events: string[] = [];
-  let next: State = { ...s, hands, discard: [...s.discard, id], suit: null, ply: s.ply + 1, seat: onward(s, side), attack: s.attack + power(id), last: { seat: side, played: id, drew: [], events } };
+  let next: State = {
+    ...s,
+    dry: 0,
+    hands,
+    discard: [...s.discard, id],
+    suit: null,
+    ply: s.ply + 1,
+    seat: onward(s, side),
+    attack: s.attack + power(id),
+    last: { seat: side, played: id, drew: [], events },
+  };
   if (power(id)) events.push(`+${next.attack}`);
-  if (hands[side].length === 0) return { ...next, champion: side, winner: side === 0 ? 0 : 1 };
+  if (hands[side].length === 0)
+    return { ...next, champion: side, winner: side === 0 ? 0 : 1 };
   if (hands[side].length === 1) events.push("원카드!");
   if (r === 7 && !isJoker(id)) return { ...next, phase: "suit", seat: side };
   if (!isJoker(id) && r === 11) {
@@ -167,7 +291,7 @@ export function play(s: State, move: Move, random: Random = cryptoRandom, bust: 
   } else if (!isJoker(id) && r === 12) {
     // A queen turns the order of play round.
     events.push("방향 바꾸기!");
-    const dir = (-s.dir) as 1 | -1;
+    const dir = -s.dir as 1 | -1;
     next = { ...next, dir, seat: onward({ ...s, dir }, side) };
   } else if (!isJoker(id) && r === 13) {
     events.push("한 번 더!");
@@ -179,16 +303,31 @@ export function play(s: State, move: Move, random: Random = cryptoRandom, bust: 
  * The computer's card, from its own hand, the pile's top and how many cards I hold: it passes attacks on when it
  * can, attacks harder when I am close to going out, keeps jokers for defence, and plays the suit it holds most of.
  */
-export function chooseMove(s: State, level: Level, random: Random = Math.random): Move | null {
+export function chooseMove(
+  s: State,
+  level: Level,
+  random: Random = Math.random,
+): Move | null {
   const side = s.seat,
     hand = s.hands[side];
   if (s.phase === "suit") {
-    const counts = [0, 1, 2, 3].map((suit) => hand.filter((c) => suitOf(c) === suit).length);
-    return { from: -1, to: SUIT_BASE + counts.indexOf(Math.max(...counts)), extra: -1 };
+    const counts = [0, 1, 2, 3].map(
+      (suit) => hand.filter((c) => suitOf(c) === suit).length,
+    );
+    return {
+      from: -1,
+      to: SUIT_BASE + counts.indexOf(Math.max(...counts)),
+      extra: -1,
+    };
   }
   const options = hand.filter((c) => playable(s, c));
   if (!options.length) return { from: -1, to: DRAW, extra: -1 };
-  if (level === "easy" && random() < 0.4) return { from: -1, to: options[Math.floor(random() * options.length)], extra: -1 };
+  if (level === "easy" && random() < 0.4)
+    return {
+      from: -1,
+      to: options[Math.floor(random() * options.length)],
+      extra: -1,
+    };
   // The next player is the one an attack falls on.
   const theirs = s.hands[onward(s, side)].length,
     held = (suit: number) => hand.filter((c) => suitOf(c) === suit).length;
@@ -221,7 +360,15 @@ export const oneCard: PointGame<State> = {
   owners: () => [],
   effect,
   ply: (s) => s.ply,
-  evaluate: (s, p) => (p === 0 ? Math.min(...s.hands.slice(1).filter((_, i) => !s.out[i + 1]).map((h) => h.length)) - s.hands[0].length : 0),
+  evaluate: (s, p) =>
+    p === 0
+      ? Math.min(
+          ...s.hands
+            .slice(1)
+            .filter((_, i) => !s.out[i + 1])
+            .map((h) => h.length),
+        ) - s.hands[0].length
+      : 0,
   hint: (s) =>
     s.phase === "suit"
       ? s.seat === 0
@@ -234,15 +381,25 @@ export const oneCard: PointGame<State> = {
           : s.suit !== null
             ? `${SUIT_NAME[s.suit]}로 바뀌었습니다. 낼 카드를 고르거나 더미에서 한 장 받으세요.`
             : "낼 카드를 고르거나 더미에서 한 장 받으세요.",
-  tally: (s) => [`카드 ${s.hands[0].length}장`, `카드 ${s.hands.slice(1).map((h, i) => (s.out[i + 1] ? "파산" : h.length)).join(" · ")}장`],
+  tally: (s) => [
+    `카드 ${s.hands[0].length}장`,
+    `카드 ${s.hands
+      .slice(1)
+      .map((h, i) => (s.out[i + 1] ? "파산" : h.length))
+      .join(" · ")}장`,
+  ],
   reason: (s) =>
-    s.winner === 0
+    s.drained
       ? s.champion === 0
-        ? "카드를 모두 냈습니다."
-        : "컴퓨터가 모두 파산했습니다."
-      : s.champion !== null
-        ? `${SEAT_NAME[s.champion]}가 먼저 카드를 모두 냈습니다.`
-        : `카드가 ${BUST}장이 되어 파산했습니다.`,
+        ? "더미가 바닥나 더 받을 카드가 없습니다. 카드가 가장 적은 내가 이겼습니다."
+        : `더미가 바닥나 더 받을 카드가 없습니다. 카드가 가장 적은 ${SEAT_NAME[s.champion ?? 1]}가 이겼습니다.`
+      : s.winner === 0
+        ? s.champion === 0
+          ? "카드를 모두 냈습니다."
+          : "컴퓨터가 모두 파산했습니다."
+        : s.champion !== null
+          ? `${SEAT_NAME[s.champion]}가 먼저 카드를 모두 냈습니다.`
+          : `카드가 ${BUST}장이 되어 파산했습니다.`,
 };
 /** Whether a card shows red, for the table. */
 export const shownRed = red;
