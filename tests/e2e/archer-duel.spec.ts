@@ -75,6 +75,8 @@ test("archer duel: a pull draws and shows the numbers, a short one shoots nothin
   for (let k = 0; k < 30 && !(await page.locator(".board-finale").count()); k++) {
     await resting(page);
     if (await page.locator(".board-finale").count()) break;
+    // A fallen archer ends it, though the finale waits for the fall to be shown.
+    if (((await el.getAttribute("data-health")) ?? "").split(",").map(Number).some((h) => h <= 0)) break;
     if ((await turnOf(page)) !== 0) {
       await expect.poll(() => turnOf(page), { timeout: 90000 }).toBe(0);
       continue;
