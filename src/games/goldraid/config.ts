@@ -2,7 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { HOST_ONLY } from "../../net/match";
 import { TARGETS, TIMED, TIMED_SECONDS, goldRaid, type State } from "./rules";
-import { BOMB_SHARE, CAP, CART, DROP_SHARE, KINDS, LOAD_SLOW, RAID } from "./sim";
+import { BOMB_SHARE, CAP, CART, KINDS, LOAD_SLOW, RAID } from "./sim";
 import { GOLD_RAID_COLORS, GoldRaidView } from "./view";
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
@@ -53,6 +53,7 @@ export const goldRaidConfig: PointConfig<State> = {
       sound.chime();
       sound.ding(0.7);
     } else if (kind === "bell") sound.ding(strength);
+    else if (kind === "thump") sound.boardKnock(0.6);
     else if (kind === "shed") {
       sound.hollow(0.8);
       sound.coin(0.7);
@@ -106,8 +107,8 @@ export const goldRaidConfig: PointConfig<State> = {
     part(
       "검",
       table(
-        ["상대를 치기", `가까이서 치면 상대가 잠깐 기절하고 자루의 ${percent(DROP_SHARE)}를 길에 흘립니다('강탈!'). 흘린 금화는 먼저 줍는 사람이 임자입니다. 쓰러져 있는 동안은 다시 맞지 않고 폭탄에도 휘말리지 않지만, 일어나면 곧바로 다시 맞을 수 있습니다. 대신 친 쪽은 검을 다시 휘두르기까지 상대가 일어나는 것보다 조금 더 걸립니다.`],
-        ["대상의 수레", `가끔 '대상 행렬!'과 함께 방울 소리를 내며 소 수레가 길을 지나갑니다. 한 판 동안 수레는 늘 같은 쪽 끝에서 옵니다(어느 쪽인지는 판마다 정해짐). 금화 ${CART.gold}을 싣고 있고, 한 번 칠 때마다 ${CART.shed}씩 떨어집니다. ${CART.blows}번 치면 수레가 부서져 남은 금화가 모두 쏟아집니다.`],
+        ["상대를 치기", `가까이서 치면 상대가 잠깐 기절하고 자루의 금화를 모두 길에 흘립니다('강탈!'). 흘린 금화는 먼저 줍는 사람이 임자입니다. 쓰러져 있는 동안은 다시 맞지 않고 폭탄에도 휘말리지 않지만, 일어나면 곧바로 다시 맞을 수 있습니다. 대신 친 쪽은 검을 다시 휘두르기까지 상대가 일어나는 것보다 조금 더 걸립니다.`],
+        ["대상의 수레", `가끔 방울 소리를 내며 소 수레가 길을 지나갑니다(알림 글은 뜨지 않으니 띠 지도를 보세요). 한 판 동안 수레는 늘 같은 쪽 끝에서 옵니다(어느 쪽인지는 판마다 정해짐). 금화 ${CART.gold}을 싣고 있고, ${CART.per[0]}~${CART.per[1]}번 칠 때마다 금화 ${CART.shed}이 떨어집니다. 마지막 금화가 떨어지면 수레가 부서집니다.`],
         ["상대의 성문", `상대 성문을 치면 금고에서 금화 ${RAID}을 꺼내 옵니다('성문 습격!'). 대신 성에서 불단지가 떨어지니 얼른 피하세요. 성문은 잠시 잠깁니다.`],
       ),
     ) +
@@ -138,7 +139,7 @@ export const goldRaidConfig: PointConfig<State> = {
       "처음이라면",
       notes(
         "자루를 다 채우려고 욕심내지 마세요. 성과 가까울 때 자주 넣어 두면 맞거나 폭탄에 휘말려도 잃는 것이 적습니다.",
-        "수레는 한 번에 판을 뒤집습니다. 알림이 뜨면 위치를 먼저 보세요.",
+        "수레는 한 번에 판을 뒤집습니다. 방울 소리가 나면 띠 지도에서 위치를 먼저 보세요.",
         "상대의 자루가 불룩하면 쳐 볼 만합니다. 내 자루가 불룩하면 상대와 거리를 두세요.",
         "검은 폭탄과 성에서 떨어지는 불단지는 터지기 전에 멀리 떨어지면 됩니다.",
       ),

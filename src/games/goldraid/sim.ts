@@ -71,7 +71,8 @@ export const SWING = 0.5,
  * and is not struck again the instant it stands, over and over).
  */
 export const STUN = 1.6,
-  DROP_SHARE = 0.4,
+  // A blow on the sword makes the one struck drop all it carries (the user asked for it).
+  DROP_SHARE = 1,
   HIT_COOL = STUN + 0.45;
 /** A bomb: its fuse once it lies, its blast's reach, the stun and the share of the sack lost. */
 export const FUSE = 2.4,
@@ -98,8 +99,12 @@ export const DROP_EVERY = [5, 9],
   DROP_REACH = 9.1,
   DROP_BIAS = 1.4,
   DROP_FROM = 9.5;
-/** The merchant's cart: its gold, its pace, what a blow sheds, how many blows break it, and the seconds between two carts. */
-export const CART = { gold: 24, pace: 0.9, shed: 3, blows: 5, half: 1.05, first: 22, every: [36, 50] };
+/**
+ * The merchant's cart: its gold, its pace, what it sheds, how many blows (3 or 4, drawn anew each time) shake that out
+ * (the user asked: not gold at every blow, but 10 after three or four), and the seconds between two carts. It breaks
+ * open when its last gold falls.
+ */
+export const CART = { gold: 30, pace: 0.9, shed: 10, per: [3, 4] as const, half: 1.05, first: 22, every: [36, 50] };
 /** A raid on the other's gate: what a blow takes from its treasury, and how long the gate is then shut against the next. */
 export const RAID = 2,
   RAID_LOCK = 5;
@@ -163,7 +168,9 @@ export interface Cart {
   x: number;
   dir: 1 | -1;
   gold: number;
+  /** Blows since it last shed gold, and how many it takes to shed again (on a guest, both 0: the host keeps them). */
   blows: number;
+  need: number;
   /** Seconds since it was last struck (it shakes), and since it broke open (−1: whole). */
   shaken: number;
   broken: number;
@@ -302,6 +309,8 @@ function explode(world: World, bomb: Loot, out: Happening[]) {
   world.loot.splice(world.loot.indexOf(bomb), 1);
   out.push({ kind: "boom", x: bomb.x, y: bomb.y, stunned });
 }
+/** The blows the cart takes before it sheds again: three or four. */
+const needOf = (world: World) => (draw(world) < 0.5 ? CART.per[0] : CART.per[1]);
 /** A swing's blow: the other bandit, else the cart, else the other's gate. */
 function blow(world: World, side: number, out: Happening[]) {
   const b = world.bandits[side],
@@ -325,11 +334,17 @@ function blow(world: World, side: number, out: Happening[]) {
   if (cart && cart.broken < 0 && b.y < 1.2 && ahead(cart.x) > -CART.half && ahead(cart.x) < REACH + CART.half) {
     cart.blows++;
     cart.shaken = 0;
-    const last = cart.blows >= CART.blows || cart.gold <= CART.shed,
-      amount = last ? cart.gold : CART.shed;
+    // Only every third or fourth blow shakes gold out; a blow between only rocks it.
+    if (cart.blows < cart.need) {
+      out.push({ kind: "shed", by: side, amount: 0, x: cart.x });
+      return;
+    }
+    const amount = Math.min(CART.shed, cart.gold);
     cart.gold -= amount;
+    cart.blows = 0;
+    cart.need = needOf(world);
     spill(world, amount, cart.x, 1.1);
-    if (last) {
+    if (cart.gold <= 0) {
       cart.broken = 0;
       out.push({ kind: "broken", by: side, x: cart.x });
     } else out.push({ kind: "shed", by: side, amount, x: cart.x });
@@ -484,7 +499,7 @@ function supply(world: World, out: Happening[]) {
   if (!cart) {
     world.nextCart -= DT;
     if (world.nextCart <= 0) {
-      world.cart = { x: -world.cartFrom * (X_MOST + 2.2), dir: world.cartFrom, gold: CART.gold, blows: 0, shaken: 9, broken: -1 };
+      world.cart = { x: -world.cartFrom * (X_MOST + 2.2), dir: world.cartFrom, gold: CART.gold, blows: 0, need: needOf(world), shaken: 9, broken: -1 };
       // Every cart of a match comes from the same end (drawn at the start): the user asked for one side only.
       out.push({ kind: "cart", dir: world.cartFrom });
     }

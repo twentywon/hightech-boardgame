@@ -1007,7 +1007,10 @@ export class GoldRaidView extends TableView<State> {
       } else if (e.kind === "cart") {
         c.carts++;
         knock("bells");
-        this.say("대상 행렬!", "#ffffff");
+      } else if (e.kind === "shed" && e.amount === 0) {
+        // A blow that only rocks the cart: a knock on its boards and a few splinters.
+        knock("thump");
+        this.fx.emit("chip", e.x, 0.9, 0.2, 2, { speed: 2, up: 1.6, size: 0.06, life: 0.5 });
       } else if (e.kind === "shed") {
         knock("shed");
         this.sparkle(e.x, 1, 8, 3);
@@ -1032,6 +1035,7 @@ export class GoldRaidView extends TableView<State> {
     const real = Math.min(0.25, (now - this.last) / 1000);
     this.last = now;
     this.sideCheck();
+    if (this.running()) this.hands.forEach((h) => h.repeat(now));
     const world = this.world,
       live = this.live;
     if (live && !live.host) return this.followHost(now, real);

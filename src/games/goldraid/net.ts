@@ -176,7 +176,7 @@ export function readSnap(data: number[]): Snap | null {
     treasury: [t0, t1],
     locked: [l0, l1],
     bandits,
-    cart: has === 1 ? { x: cx, dir: dir < 0 ? -1 : 1, gold, blows: 0, shaken, broken } : null,
+    cart: has === 1 ? { x: cx, dir: dir < 0 ? -1 : 1, gold, blows: 0, need: 0, shaken, broken } : null,
     events,
     loot,
   };

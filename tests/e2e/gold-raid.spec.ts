@@ -217,20 +217,24 @@ test("gold raid: on a touch screen the lever runs (the further the faster) and j
   const stood = (await men(page))[0][0];
   await settle(page);
   expect((await men(page))[0][0]).toBeCloseTo(stood, 1);
-  // Leaned up: one jump, however long it is held up there.
+  // Leaned up: it jumps at once, and held up there it jumps again on each landing (the user asked for it).
   const jumps = (await counts(page, "jumps"))[0],
     swings = (await counts(page, "swings"))[0];
   await lever(page, "pointermove", 11, 0, 0.9);
   await expect(page.locator(".gr-stick")).toHaveClass(/gr-go-u/);
-  await expect.poll(async () => (await counts(page, "jumps"))[0]).toBe(jumps + 1);
-  // Landed (on the road, or on a low ledge if it stood under one: the valley is short and ledges are near the gates).
+  await expect.poll(async () => (await counts(page, "jumps"))[0]).toBeGreaterThanOrEqual(jumps + 1);
+  await expect.poll(async () => (await counts(page, "jumps"))[0], { timeout: 30_000 }).toBeGreaterThanOrEqual(jumps + 3);
+  // Let down: it lands (on the road, or on a low ledge if it stood under one) and jumps no more.
+  await lever(page, "pointermove", 11, 0, 0);
   await expect.poll(async () => LANDS.includes((await men(page))[0][1]), { timeout: 20_000 }).toBe(true);
   await settle(page);
-  expect((await counts(page, "jumps"))[0]).toBe(jumps + 1);
-  // Down and up again: another.
-  await lever(page, "pointermove", 11, 0, 0);
+  const landed = (await counts(page, "jumps"))[0];
+  await settle(page);
+  expect((await counts(page, "jumps"))[0]).toBe(landed);
+  // Up again: another at once.
   await lever(page, "pointermove", 11, 0, 0.9);
-  await expect.poll(async () => (await counts(page, "jumps"))[0]).toBe(jumps + 2);
+  await expect.poll(async () => (await counts(page, "jumps"))[0]).toBeGreaterThanOrEqual(landed + 1);
+  await lever(page, "pointermove", 11, 0, 0);
   // 치기 with another finger while the lever is held.
   await tap(page, 0, 12);
   await expect.poll(async () => (await counts(page, "swings"))[0]).toBe(swings + 1);

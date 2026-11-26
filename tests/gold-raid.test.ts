@@ -171,16 +171,16 @@ describe("gold raid: the club, bombs, the cart and the gates", () => {
     a.face = 1;
     return w;
   }
-  test("a blow makes the other drop part of its sack and stuns it a moment; it cannot be struck again at once", () => {
+  test("a blow makes the other drop all its sack and stuns it a moment; it cannot be struck again at once", () => {
     const w = facing(),
       [a, b] = w.bandits;
     b.carry = 10;
     const seen = run(w, 0.2, (_, k) => hands({ strike: k === 0 }));
-    expect(seen.find((e) => e.kind === "hit")).toEqual({ kind: "hit", by: 0, on: 1, dropped: 4 });
-    expect(b.carry).toBe(6);
+    expect(seen.find((e) => e.kind === "hit")).toEqual({ kind: "hit", by: 0, on: 1, dropped: 10 });
+    expect(b.carry).toBe(0);
     expect(b.stun).toBeGreaterThan(0.5);
     // The dropped gold flies out as loot worth what was dropped.
-    expect(w.loot.reduce((sum, i) => sum + i.value, 0)).toBe(4);
+    expect(w.loot.reduce((sum, i) => sum + i.value, 0)).toBe(10);
     // Stunned, its hands do nothing.
     const x = b.x;
     run(w, 0.3, () => hands({}, { x: -1, jump: true, strike: true }));
@@ -227,7 +227,7 @@ describe("gold raid: the club, bombs, the cart and the gates", () => {
     expect(c.carry).toBe(6);
     expect(v.loot).toEqual([]);
   });
-  test("the merchant's cart comes in its time, sheds gold at each blow and breaks open at the last", () => {
+  test("the merchant's cart comes in its time, sheds 10 gold every third or fourth blow and breaks open with its last", () => {
     const w = S.createWorld(3);
     w.nextDrop = 1e9;
     w.bandits[1].x = 10;
@@ -244,8 +244,23 @@ describe("gold raid: the club, bombs, the cart and the gates", () => {
       a.carry = 0;
       seen.push(...S.step(w, hands({ strike: true })));
     }
-    expect(seen.filter((e) => e.kind === "shed")).toHaveLength(S.CART.blows - 1);
-    expect(seen.filter((e) => e.kind === "shed").every((e) => e.kind === "shed" && e.amount === S.CART.shed)).toBe(true);
+    // Three or four blows to each 10, the last 10 breaking it open: 30 gold in 9 to 12 blows.
+    const sheds = seen.filter((e) => e.kind === "shed"),
+      paid = sheds.filter((e) => e.kind === "shed" && e.amount > 0),
+      blows = sheds.length + 1;
+    expect(paid).toHaveLength(S.CART.gold / S.CART.shed - 1);
+    expect(paid.every((e) => e.kind === "shed" && e.amount === S.CART.shed)).toBe(true);
+    expect(blows).toBeGreaterThanOrEqual(9);
+    expect(blows).toBeLessThanOrEqual(12);
+    // Between two payouts two or three blows only rock it.
+    let since = 0;
+    for (const e of sheds) {
+      if (e.kind === "shed" && e.amount > 0) {
+        expect(since + 1).toBeGreaterThanOrEqual(3);
+        expect(since + 1).toBeLessThanOrEqual(4);
+        since = 0;
+      } else since++;
+    }
     expect(seen.filter((e) => e.kind === "broken")).toHaveLength(1);
     expect(cart.gold).toBe(0);
     // All its gold is out on the road, or was caught by the striker as it flew.
@@ -391,7 +406,7 @@ describe("gold raid: the match", () => {
       expect(Math.max(...w.treasury), level).toBeGreaterThanOrEqual(60);
       expect(Math.min(...w.treasury), level).toBeGreaterThan(15);
       expect(seen.deposit, level).toBeGreaterThan(4);
-      expect(seen.pickup, level).toBeGreaterThan(20);
+      expect(seen.pickup, level).toBeGreaterThan(10);
       // A match to 60 between two computers takes a minute or two (a person's match to 100, some minutes).
       expect(seconds, level).toBeGreaterThan(40);
       expect(seconds, level).toBeLessThan(200);
@@ -610,6 +625,37 @@ describe("gold raid: the lever", () => {
     h.lean(0, 0.7);
     expect(h.input().jump).toBe(true);
     expect(h.jumps).toBe(2);
+  });
+  test("held up, it jumps again and again (each landing leaps anew); let down, it stops", () => {
+    const h = new H.Hand();
+    h.lean(0, 0.9);
+    h.repeat(0);
+    expect(h.input().jump).toBe(true);
+    // Held: a fresh press every LEVER_REPEAT seconds, under the sim's jump buffer so it leaps as it lands.
+    expect(H.LEVER_REPEAT).toBeLessThan(S.BUFFER);
+    let pressed = 0;
+    for (let t = 16; t <= 1000; t += 16) {
+      h.repeat(t);
+      if (h.input().jump) pressed++;
+    }
+    expect(pressed).toBeGreaterThanOrEqual(Math.floor(1 / H.LEVER_REPEAT) - 1);
+    // Let down: no more.
+    h.lean(0, 0);
+    for (let t = 1016; t <= 1500; t += 16) {
+      h.repeat(t);
+      expect(h.input().jump).toBe(false);
+    }
+    // In the valley: held up, a bandit on the ground hops on and on.
+    const w = S.createWorld(5);
+    w.nextDrop = 1e9;
+    const hand = new H.Hand();
+    hand.lean(0, 1);
+    let jumps = 0;
+    for (let k = 0; k < 4 / S.DT; k++) {
+      hand.repeat(k * S.DT * 1000);
+      jumps += S.step(w, [hand.input(), { x: 0, jump: false, strike: false }]).filter((e) => e.kind === "jump" && e.side === 0).length;
+    }
+    expect(jumps).toBeGreaterThanOrEqual(3);
   });
   test("up and to the side at once runs and jumps, and a lean past the rim counts as the rim", () => {
     const h = new H.Hand();

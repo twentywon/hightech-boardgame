@@ -6,7 +6,9 @@ export type Act = "left" | "right" | "jump" | "strike";
 export const LEVER_DEAD = 0.2,
   LEVER_FULL = 0.85,
   LEVER_JUMP = 0.5,
-  LEVER_REARM = 0.25;
+  LEVER_REARM = 0.25,
+  /** Held up, the lever presses jump again every this many seconds (under the sim's jump buffer), so a bandit hops on and on while it is held. */
+  LEVER_REPEAT = 0.12;
 /** The run a lever's sideways lean asks: nothing in its dead middle, then more the further, full near its rim. */
 export function leverRun(x: number) {
   const a = Math.abs(x);
@@ -21,6 +23,7 @@ export class Hand {
   jumps = 0;
   strikes = 0;
   private usedJumps = 0;
+  private repeated = -Infinity;
   private usedStrikes = 0;
   private holds(act: Act) {
     return this.keys.has(act) || this.touch.has(act);
@@ -30,8 +33,8 @@ export class Hand {
     else if (act === "strike") this.strikes++;
   }
   /**
-   * The lever leaned to (x, y). Leaning it up past `LEVER_JUMP` jumps once; it jumps again only once it has come back
-   * under `LEVER_REARM`, so a thumb resting high while running does not hop on every landing.
+   * The lever leaned to (x, y). Leaning it up past `LEVER_JUMP` jumps at once; held there, `repeat` keeps jumping; let
+   * down under `LEVER_REARM` and up again, it jumps at once again.
    */
   lean(x: number, y: number) {
     const far = Math.hypot(x, y);
@@ -42,6 +45,22 @@ export class Hand {
       this.lever.armed = false;
       this.press("jump");
     } else if (y < LEVER_REARM) this.lever.armed = true;
+  }
+  /**
+   * Once a frame (`now` in ms): while the lever is held up (the user asked for jumping on and on while it is held), it
+   * presses jump again every `LEVER_REPEAT` s, so the bandit leaps anew each time it lands. Counted presses, so a guest's
+   * jumps travel the same way.
+   */
+  repeat(now: number) {
+    if (this.lever.y <= LEVER_JUMP) {
+      this.repeated = -Infinity;
+      return;
+    }
+    if (this.repeated === -Infinity) this.repeated = now;
+    else if (now - this.repeated >= LEVER_REPEAT * 1000) {
+      this.repeated = now;
+      this.press("jump");
+    }
   }
   /** The way it runs now (−1 to 1): the keys, if held, outrank the lever. */
   way() {
@@ -60,5 +79,6 @@ export class Hand {
     this.touch.clear();
     this.lever.x = this.lever.y = 0;
     this.lever.armed = true;
+    this.repeated = -Infinity;
   }
 }
