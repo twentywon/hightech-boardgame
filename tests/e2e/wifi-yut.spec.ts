@@ -263,8 +263,8 @@ test("yut nori with the third seat closed: the one on the fourth seat plays as �
   for (const page of pages) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
   for (const page of pages) {
     await expect(page.locator(".yut-sides li")).toHaveCount(3);
-    // The third player is 지아, in the fourth seat's colour and name: 황, never 녹.
-    await expect(page.locator("#yut-side-2")).toContainText("지아 (황)");
+    // The third player is 지아 (나 on 지아's own device), in the fourth seat's colour and name: 황, never 녹.
+    await expect(page.locator("#yut-side-2")).toContainText(page === jia ? "나 (황)" : "지아 (황)");
     await expect(page.locator("#yut-side-2 .yut-dot")).toHaveClass(/\bp3\b/);
     await expect(page.locator("#yut-side-1 .yut-dot")).toHaveClass(/\bp1\b/);
   }
