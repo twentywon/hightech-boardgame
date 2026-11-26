@@ -928,6 +928,16 @@ const play = {
     await page.keyboard.up("KeyD");
     await page.keyboard.press("p");
   },
+  // 시대 전쟁: a fighter, a shooter and a mammoth rider sent out, the computer's coming; paused with both lines met in
+  // the middle of the lane (the page draws slowly here: the wait is the lane's own clock).
+  "era-war": async () => {
+    for (const k of [0, 1, 0, 2]) {
+      await page.evaluate((n) => document.querySelector(`.ew-unit[data-unit="${n}"]`)?.click(), k);
+      await wait(200);
+    }
+    await page.waitForFunction(() => Number(document.querySelector("#board canvas")?.dataset.time) > 24, null, { timeout: 280000 });
+    await page.keyboard.press("p");
+  },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
   // the picture is not taken after it has run into a fence (the capture style below undoes the paused dimming).
   snake: async () => {

@@ -33,7 +33,7 @@ import {
 } from "./sim";
 import { Inbox, Orders, blendPictures, packPicture, pictureOf, readPicture, type Picture, type SidePic } from "./net";
 import { Kit, SIDE_COLORS, makeFigure, poseFigure, type Figure } from "./models";
-import { buildField, type Field } from "./field";
+import { MAST_Z, buildField, type Field } from "./field";
 
 export const ERA_WAR_COLORS: [string, string] = SIDE_COLORS;
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -603,7 +603,7 @@ export class EraWarView extends TableView<State> {
         if (era >= 0 && !this.turrets[side][slot]) {
           const group = this.field.turret(era),
             at = turretAt(side, slot);
-          group.position.set(at.x, at.y - 0.06, -0.25);
+          group.position.set(at.x, at.y - 0.06, MAST_Z);
           group.scale.x = side ? -1 : 1;
           this.root.add(group);
           this.turrets[side][slot] = { era, group };
@@ -806,7 +806,7 @@ export class EraWarView extends TableView<State> {
     this.bar.querySelector(".ew-gold")!.textContent = String(Math.floor(s.gold));
     const xp = this.bar.querySelector<HTMLElement>(".ew-xp")!;
     xp.querySelector("i")!.style.width = `${s.next ? Math.min(100, (s.xp / s.next) * 100) : 100}%`;
-    xp.querySelector("em")!.textContent = s.next ? `경험 ${s.xp} / ${s.next}` : `경험 ${s.xp}`;
+    xp.querySelector("em")!.textContent = s.next ? `경험 ${s.xp}/${s.next}` : `경험 ${s.xp}`;
     this.bar.querySelectorAll<HTMLButtonElement>(".ew-unit").forEach((b, k) => {
       const u = era.units[k];
       b.querySelector("b")!.textContent = u.name;

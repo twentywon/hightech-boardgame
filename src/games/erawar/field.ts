@@ -18,6 +18,8 @@ export interface Field {
   clouds: T.Sprite[];
 }
 const rnd = stream(77);
+/** How far in front of a base (toward the eye) its turrets stand. */
+export const MAST_Z = 1.15;
 function grassTexture(own: Own) {
   return painted(
     own,
@@ -231,21 +233,21 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     cloth.userData.flag = true;
     return cloth;
   };
-  /** The mast at a base's back where its turrets stand: a ledge for each slot, its stuff by era. */
+  /**
+   * The mast at a base's front corner where its turrets stand (in front of the building, nearer the eye, so that they
+   * are seen): two posts and a ledge for each slot, of the era's stuff.
+   */
   const mast = (parent: T.Object3D, era: number) => {
-    const top = turretAt(0, SLOTS - 1).y + 0.5,
-      mat = era === 0 ? kit.m.wood : era === 1 ? wall : era === 2 ? bricks : kit.m.dark;
-    if (era === 0 || era === 3)
-      for (const x of [-0.15, 1.05]) for (const z of [-0.45, 0.45]) add(parent, g.cyl, mat, x, top / 2, z - 0.6, era ? 0.05 : 0.07, top, era ? 0.05 : 0.07);
-    else add(parent, g.box, mat, 0.45, top / 2, -0.6, 1.4, top, 1.1);
+    const top = turretAt(0, SLOTS - 1).y + 0.3,
+      mat = era === 0 ? kit.m.wood : era === 1 ? wall : era === 2 ? bricks : kit.m.dark,
+      thick = era === 0 ? 0.08 : era === 3 ? 0.06 : 0.16;
+    for (const x of [-0.15, 1.15]) for (const z of [MAST_Z - 0.32, MAST_Z + 0.32]) add(parent, era === 0 || era === 3 ? g.cyl : g.box, mat, x, top / 2, z, thick, top, thick);
     for (let s = 0; s < SLOTS; s++) {
       const at = turretAt(0, s);
-      add(parent, g.box, era === 0 ? kit.m.woodDark : era === 3 ? concreteDark : mat, at.x + BASE_X, at.y - 0.12, -0.25, 0.7, 0.12, 0.9);
+      add(parent, g.box, era === 0 ? kit.m.woodDark : era === 3 ? concreteDark : mat, at.x + BASE_X, at.y - 0.12, MAST_Z, 0.75, 0.12, 0.85);
     }
-    if (era === 3) {
-      // Cross braces of a steel lattice.
-      for (let y = 0.6; y < top; y += 1.1) add(parent, g.box, kit.m.dark, 0.45, y, -0.15, 1.3, 0.04, 0.04).rotation.z = 0.7;
-    }
+    // Cross braces.
+    for (let y = 0.7; y < top - 0.3; y += 1.15) for (const z of [MAST_Z - 0.32, MAST_Z + 0.32]) add(parent, g.box, era === 3 ? kit.m.dark : kit.m.woodDark, 0.5, y, z, 1.45, 0.04, 0.04).rotation.z = 0.65;
   };
   const built = new Map<string, T.Group>();
   function buildBase(side: number, era: number) {

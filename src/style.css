@@ -4167,6 +4167,8 @@ dialog.leave-dialog .dialog-actions button { flex:none;min-width:120px; }
    look there), a word called out, and my commands along the bottom (soldiers and their queue, turret slots, the special
    attack, the next era). */
 html[data-game="era-war"] .game-layout .board-area > .board-hint { display:none !important; }
+/* (The command bar stands where the table's foot line is: that line is left out.) */
+html[data-game="era-war"] .game-layout .board-area .board-bottom { visibility:hidden; }
 .ew-hud { position:absolute;left:50%;top:10px;translate:-50% 0;z-index:2;width:min(760px, calc(100% - 150px));user-select:none;-webkit-user-select:none;font-family:"Inter","Noto Sans KR",sans-serif;color:#fff;pointer-events:none; }
 .ew-top { display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;padding:5px 10px;border-radius:12px;background:linear-gradient(#2b2f38e6, #15181ef2);border:2px solid #9aa4b4;box-shadow:0 6px 18px #0006, inset 0 1px 0 #ffffff22; }
 .ew-side { display:grid;grid-template-columns:auto auto 1fr;align-items:center;column-gap:7px;min-width:0; }

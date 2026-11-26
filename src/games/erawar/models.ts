@@ -89,6 +89,8 @@ export class Kit {
     g.cone4 = own(new T.ConeGeometry(1, 1, 4));
     g.limb = own(new T.CylinderGeometry(1, 0.85, 1, 8).translate(0, -0.5, 0));
     g.wheel = own(new T.TorusGeometry(1, 0.16, 6, 16));
+    /** Half a ring: a bow's limbs, a tusk's curve. */
+    g.arc = own(new T.TorusGeometry(1, 0.07, 6, 14, Math.PI));
     g.disc = own(new T.CylinderGeometry(1, 1, 1, 16));
     g.plane = own(new T.PlaneGeometry(1, 1));
     g.cap = own(new T.SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2));
@@ -239,13 +241,12 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
       k.mesh("ball", "iron", 0, -0.02, 0, 0.05, 0.03, 0.05, shield);
     } else if (kind === 1) {
       const bow = pivot(p.far, 0.05, -0.38, 0.02);
-      const arc = new T.Mesh(k.g.wheel, k.m.wood);
-      arc.scale.set(0.42, 0.42, 0.12);
-      arc.rotation.set(0, 0, 0);
-      // Only the front half of the ring shows as the bow (the back half hidden behind a thin string).
+      // A half ring bent forward as the bow, its string straight behind.
+      const arc = new T.Mesh(k.g.arc, k.m.wood);
+      arc.scale.set(0.2, 0.4, 0.5);
+      arc.rotation.z = -Math.PI / 2;
       bow.add(arc);
-      arc.position.x = -0.32;
-      k.mesh("cyl", "rope", 0.05, 0, 0, 0.005, 0.8, 0.005, bow);
+      k.mesh("cyl", "rope", 0, 0, 0, 0.005, 0.8, 0.005, bow);
       k.mesh("cyl", "leather", -0.08, 0.83, -0.17, 0.05, 0.3, 0.05, b).rotation.z = 0.4;
     } else {
       const lance = pivot(hand, 0, 0, 0);
@@ -315,9 +316,10 @@ export function makeFigure(k: Kit, era: number, kind: Kind, side: number): Figur
     for (const z of [-0.2, 0.2]) {
       k.mesh("ball", "furDark", -0.05, 0.02, z * 1.35, 0.06, 0.2, 0.16, head);
       k.mesh("ball", "black", 0.25, 0.08, z * 0.8, 0.035, 0.035, 0.035, head);
-      const tusk = new T.Mesh(k.g.wheel, k.m.tusk);
-      tusk.scale.set(0.28, 0.28, 0.25);
-      tusk.position.set(0.3, -0.22, z * 0.75);
+      const tusk = new T.Mesh(k.g.arc, k.m.tusk);
+      tusk.scale.set(0.3, 0.3, 0.9);
+      tusk.rotation.z = Math.PI;
+      tusk.position.set(0.32, -0.18, z * 0.75);
       head.add(tusk);
     }
     const trunk = pivot(head, 0.3, -0.05, 0);
