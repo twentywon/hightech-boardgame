@@ -19,6 +19,8 @@ async function sit(page: Page) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await selectGame(page, "시대 전쟁");
+  // No kinds of match to choose: there is no time limit (the user asked for it gone).
+  await expect(page.locator("#pg-variant")).toHaveCount(0);
   await page.locator("#pg-level").selectOption("easy");
   await page.locator(".game-stage button.primary").click();
   await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 60_000 });
@@ -33,6 +35,10 @@ test("era war against the computer: soldiers trained by the buttons and the keys
   await expect(page.locator(".ew-right b")).toHaveText("컴퓨터");
   await expect(page.locator(".ew-left .ew-era")).toHaveText("석기");
   await expect(page.locator(".ew-left .ew-hp em")).toHaveText("600");
+  // No clock between the two bases: the match lasts until a base falls.
+  await expect(page.locator(".ew-top .ew-vs")).toHaveText("VS");
+  await expect(page.locator(".ew-clock")).toHaveCount(0);
+  await expect(page.locator(".ew-era-up b")).toHaveText("다음 시대");
   await expect(page.locator(".ew-unit")).toHaveCount(3);
   await expect(page.locator(".ew-unit").first()).toContainText("몽둥이 전사");
   await expect(page.locator(".ew-unit").first()).toContainText("15");
