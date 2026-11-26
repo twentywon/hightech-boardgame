@@ -361,3 +361,58 @@ test("badminton on two devices: the guest stands behind the far end, its strokes
   expect(a.errors).toEqual([]);
   expect(b.errors).toEqual([]);
 });
+
+test("gold raid on two devices: the guest's keys run, jump and strike its blue bandit on the host, each follows its own bandit, and both see the same valley", async ({ browser }, info) => {
+  const a = await device(browser, info),
+    b = await device(browser, info),
+    host = a.page,
+    guest = b.page;
+  await begin(host, guest, "금화 쟁탈전");
+  const data = (page: Page) => page.evaluate(() => ({ ...document.querySelector<HTMLCanvasElement>("main.game-layout canvas")!.dataset }));
+  const men = async (page: Page) => ((await data(page)).men ?? "NaN,NaN;NaN,NaN").split(";").map((m) => m.split(",").map(Number));
+  const counts = async (page: Page, key: string) => ((await data(page))[key] ?? "NaN,NaN").split(",").map(Number);
+  /** A key held (or let go) on a device, as its document hears it. */
+  const key = (page: Page, code: string, down: boolean) => page.evaluate(([c, d]) => void document.dispatchEvent(new KeyboardEvent(d ? "keydown" : "keyup", { code: c as string, bubbles: true })), [code, down] as const);
+  // Each device knows its own bandit: the host red (seat 0), the guest blue; the board names 나 and 상대.
+  await expect(canvasOf(host)).toHaveAttribute("data-mine", "0");
+  await expect(canvasOf(guest)).toHaveAttribute("data-mine", "1");
+  await expect(host.locator(".gr-hud .gr-s0 b")).toHaveText("나");
+  await expect(host.locator(".gr-hud .gr-s1 b")).toHaveText("상대");
+  await expect(guest.locator(".gr-hud .gr-s1 b")).toHaveText("나");
+  await expect(guest.locator(".gr-hud .gr-s0 b")).toHaveText("상대");
+  await expect(guest.locator("#turn")).toContainText("내 산적은 파랑");
+  for (const page of [host, guest]) await expect(page.locator(".gr-map .gr-map-castle")).toHaveCount(2);
+  // No split screen over Wi-Fi: each eye is on its own end of the valley (the guest's at the right).
+  await expect(canvasOf(guest)).toHaveAttribute("data-split", "false");
+  await expect.poll(async () => Number((await data(guest)).eye), { timeout: 15000 }).toBeGreaterThanOrEqual(Number((await data(host)).eye));
+  // The guest's ← runs blue toward the middle on the host's valley, and its own screen shows it there.
+  const blue = (await men(host))[1][0];
+  await key(guest, "ArrowLeft", true);
+  await expect.poll(async () => (await men(host))[1][0], { timeout: 60000 }).toBeLessThan(blue - 1.2);
+  await key(guest, "ArrowLeft", false);
+  await expect.poll(async () => Math.abs((await men(guest))[1][0] - (await men(host))[1][0]), { timeout: 15000 }).toBeLessThan(0.3);
+  // Its jump and its strike happen on the host (and are heard back on the guest).
+  await key(guest, "ArrowUp", true);
+  await key(guest, "ArrowUp", false);
+  await expect.poll(async () => (await counts(host, "jumps"))[1], { timeout: 15000 }).toBeGreaterThan(0);
+  await key(guest, "ArrowDown", true);
+  await key(guest, "ArrowDown", false);
+  await expect.poll(async () => (await counts(host, "swings"))[1], { timeout: 15000 }).toBeGreaterThan(0);
+  await expect.poll(async () => (await counts(guest, "swings"))[1], { timeout: 15000 }).toBeGreaterThan(0);
+  // The host's own D runs red, and the guest sees it run.
+  const red = (await men(guest))[0][0];
+  await key(host, "KeyD", true);
+  await expect.poll(async () => (await men(guest))[0][0], { timeout: 60000 }).toBeGreaterThan(red + 1.2);
+  await key(host, "KeyD", false);
+  // Both valleys agree on the treasuries and the target.
+  await expect.poll(async () => (await data(guest)).gold, { timeout: 15000 }).toBe((await data(host)).gold);
+  expect((await data(guest)).target).toBe((await data(host)).target);
+  // On a touch screen each has one lever and 치기, in its own colour.
+  if (info.project.name === "mobile") {
+    await expect(guest.locator(".gr-pad .gr-stick")).toHaveCount(1);
+    expect(await guest.locator(".gr-pad .gr-stick").evaluate((el) => (el as HTMLElement).style.getPropertyValue("--side"))).not.toBe(await host.locator(".gr-pad .gr-stick").evaluate((el) => (el as HTMLElement).style.getPropertyValue("--side")));
+  }
+  if (process.env.SHOT_DIR) for (const [name, page] of [["host", host], ["guest", guest]] as const) await page.screenshot({ path: `${process.env.SHOT_DIR}/gr-wifi-${name}-${info.project.name}.png` });
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
+});

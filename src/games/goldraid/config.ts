@@ -1,5 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
+import { HOST_ONLY } from "../../net/match";
 import { TARGETS, TIMED, TIMED_SECONDS, goldRaid, type State } from "./rules";
 import { BOMB_SHARE, CAP, CART, DROP_SHARE, KINDS, LOAD_SLOW, RAID } from "./sim";
 import { GOLD_RAID_COLORS, GoldRaidView } from "./view";
@@ -12,7 +13,20 @@ export const goldRaidConfig: PointConfig<State> = {
   noUndo: true,
   // Both treasuries, the sacks and the clock stand over the valley (the view's own board).
   noPanel: true,
-  view: (host, quality, _variant, mode, level) => new GoldRaidView(host, quality, mode === "local", level),
+  view: (host, quality, _variant, mode, level, _net, live) => new GoldRaidView(host, quality, mode === "local" && !live, level, live),
+  // Over Wi-Fi (와이파이 여럿이, the user asked) two devices run a bandit each, the valley run by the host's
+  // (`src/net/live.ts`, `net.ts`); gold brought home, a gate robbed and the clock's end are the host's moves alone. A
+  // dropped player's bandit is the host's computer's until they come back.
+  net: {
+    seats: () => (["빨강", "파랑"] as const).map((label, p) => ({ label, color: GOLD_RAID_COLORS[p], kinds: ["computer"] })),
+    toMove: () => HOST_ONLY,
+    hint: (s, seat) => {
+      const room = s.seconds ? "" : ` / ${s.target}`,
+        score = `금화 ${s.gold[0]}${room} 대 ${s.gold[1]}${room}`;
+      if (seat !== 0 && seat !== 1) return `${score}. 구경하는 중입니다.`;
+      return `${score}. 내 산적은 ${seat === 0 ? "빨강, 왼쪽" : "파랑, 오른쪽"} 성입니다. 금화를 주워 내 성문으로 가져가세요.`;
+    },
+  },
   colors: GOLD_RAID_COLORS,
   // Coins and gems taken, a chest, gold poured into the treasury, the sword through the air and on a head, a bomb, the
   // cart's bells and its boards breaking, the blow on a gate.
@@ -62,7 +76,7 @@ export const goldRaidConfig: PointConfig<State> = {
   english: "Gold Raid",
   number: "NO. 113 — FILL YOUR CASTLE",
   intro: `<p>두 산적 왕이 골짜기에서 금화를 다툽니다.<br>하늘에서 떨어지는 돈주머니를 자루에 담아 내 성문으로 나르세요. 지나가는 대상의 수레를 털고, 상대를 검으로 쳐서 금화를 떨어뜨리게 할 수도 있습니다. 내 성을 먼저 채우면 이깁니다.</p>`,
-  meta: "컴퓨터 대전 · 로컬 2인 · 실시간",
+  meta: "컴퓨터 대전 · 로컬 2인 · 와이파이 여럿이 · 실시간",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>FILL YOUR CASTLE</span>`,
   artClass: "foosball-art",
   artLabel: "금화 쟁탈전 골짜기 미리보기",
@@ -114,6 +128,7 @@ export const goldRaidConfig: PointConfig<State> = {
       table(
         ["컴퓨터 대전", "내가 빨강, 컴퓨터가 파랑입니다."],
         ["로컬 2인", "한 화면(한 키보드, 또는 한 휴대폰의 양쪽 버튼)에서 둘이 겨룹니다."],
+        ["와이파이 여럿이", "같은 와이파이의 두 기기가 산적을 하나씩 맡습니다. 방장이 빨강(왼쪽 성), 들어온 사람이 파랑(오른쪽 성)이고, 저마다 화면이 자기 산적을 따라갑니다. 조작은 혼자 할 때와 같습니다. 한 사람이 일시정지하면 두 기기 모두 멈춥니다. 연결이 끊긴 사람의 산적은 다시 들어올 때까지 방장 기기의 컴퓨터가 움직입니다(방장이 고른 레벨)."],
         ["쉬움", "컴퓨터가 느리게 반응하고 폭탄을 잘 피하지 못합니다. 내 자루에 금화가 있으면 줍기보다 먼저 쫓아와 검으로 칩니다."],
         ["보통", "내 자루에 금화가 있으면 어디서든 먼저 쫓아와 검으로 치고, 흘린 금화를 주워 갑니다. 발판에 올라가 줍고 폭탄을 피합니다."],
         ["어려움", "빠르게 쫓아와 내 자루를 털고, 수레를 쫓으며, 내 금고가 차면 성문을 습격하기도 합니다."],
