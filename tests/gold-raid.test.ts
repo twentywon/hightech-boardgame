@@ -109,11 +109,11 @@ describe("gold raid: loot, the sack and the gate", () => {
     const w = quiet(),
       b = w.bandits[0];
     lay(w, "pouch", b.x + 1.5);
-    lay(w, "chest", b.x + 3);
+    lay(w, "gem", b.x + 3);
     const seen = run(w, 1.5, () => hands({ x: 1 }));
     expect(seen.filter((e) => e.kind === "pickup")).toMatchObject([
-      { side: 0, value: 3, what: "pouch" },
-      { side: 0, value: 12, what: "chest" },
+      { side: 0, value: 10, what: "pouch" },
+      { side: 0, value: 5, what: "gem" },
     ]);
     expect(b.carry).toBe(15);
     expect(w.loot).toEqual([]);
@@ -332,9 +332,10 @@ describe("gold raid: the match", () => {
     const w = S.createWorld(11);
     w.nextCart = 1e9;
     w.bandits[0].y = w.bandits[1].y = 50;
-    const drops = run(w, 240).filter((e): e is Extract<S.Happening, { kind: "drop" }> => e.kind === "drop");
-    expect(drops.length).toBeGreaterThan(90);
-    expect(drops.length).toBeLessThan(240 / 1.9);
+    const drops = run(w, 720).filter((e): e is Extract<S.Happening, { kind: "drop" }> => e.kind === "drop");
+    // Seldom now (the user asked): one every 5 to 9 s.
+    expect(drops.length).toBeGreaterThan(720 / 9);
+    expect(drops.length).toBeLessThan(720 / 5);
     for (let k = 0; k + 1 < drops.length; k += 2) {
       expect(drops[k + 1].what).toBe(drops[k].what);
       expect(drops[k + 1].x).toBeCloseTo(-drops[k].x, 9);
@@ -343,16 +344,39 @@ describe("gold raid: the match", () => {
     for (const kind of ["coin", "gem", "chest"] as const) expect(count(kind), kind).toBe(0);
     expect(count("pouch")).toBeGreaterThan(2 * count("bomb"));
     expect(count("bomb")).toBeGreaterThan(0);
-    // Gold thrown out is pouches of 3, the last holding what is left.
+    // Gold thrown out is pouches of 10, the last holding what is left.
     const spilt = S.createWorld(3);
     spilt.loot = [];
     S.spill(spilt, 8, 0, 1);
-    expect(spilt.loot.map((i) => [i.kind, i.value])).toEqual([["pouch", 3], ["pouch", 3], ["pouch", 2]]);
+    expect(spilt.loot.map((i) => [i.kind, i.value])).toEqual([["pouch", 8]]);
+    spilt.loot = [];
+    S.spill(spilt, 24, 0, 1);
+    expect(spilt.loot.map((i) => [i.kind, i.value])).toEqual([["pouch", 10], ["pouch", 10], ["pouch", 4]]);
     expect(Math.max(...drops.map((d) => Math.abs(d.x)))).toBeLessThanOrEqual(S.DROP_REACH);
     // All along the long valley, out to the castles, the more often toward its middle where the two meet.
     const near = drops.filter((d) => Math.abs(d.x) < S.DROP_REACH / 2).length;
     expect(drops.filter((d) => Math.abs(d.x) > S.GATE * 0.75).length).toBeGreaterThan(5);
     expect(near).toBeGreaterThan(drops.length - near);
+  });
+  test("the computer goes first for the other's sack, the valley over, before the loot by it (the user asked)", () => {
+    for (const level of ["easy", "normal", "hard"] as const) {
+      const w = quiet(),
+        me = w.bandits[0],
+        cpu = w.bandits[1];
+      me.x = -7;
+      me.carry = 10;
+      cpu.x = 6;
+      lay(w, "pouch", 4.5);
+      S.think(w, 1, level);
+      expect(w.minds[1].goal?.what, level).toBe("chase");
+      // With nothing in my sack it picks up the loot instead.
+      const v = quiet();
+      v.bandits[0].x = -7;
+      v.bandits[1].x = 6;
+      lay(v, "pouch", 4.5);
+      S.think(v, 1, level);
+      expect(v.minds[1].goal?.what, level).toBe("loot");
+    }
   });
   test("the computer plays a whole match at every level, at the slower pace over the long valley: a few minutes, both castles filling; the better level wins more", () => {
     const play = (a: S.Level, b: S.Level, seed: number, target = 60) => {

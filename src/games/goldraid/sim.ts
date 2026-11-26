@@ -8,7 +8,7 @@
  *
  * How it is played (the user asked for a game of the kind of two bandits filling their castles with gold: falling
  * loot, a caravan to rob, each other to rob; the rules in detail are our own): a bandit runs, jumps and swings a club.
- * Loot (`KINDS`: only pouches of 3 fall from the sky now, with bombs; coins, gems and chests no longer do, the user asked) falls now and then and is taken by touching it, in the air
+ * Loot (`KINDS`: only pouches of 10 fall from the sky now, seldom, with bombs; coins, gems and chests no longer do, the user asked) falls now and then and is taken by touching it, in the air
  * or where it lies, into a sack that holds `CAP`; a full sack slows its bearer. Gold counts only once it is carried
  * to one's own gate. A blow of the club makes the other bandit drop part of its sack and stuns it a moment; a bomb
  * (it falls with the loot) does the same to whoever is near when it goes off. The merchant's cart sheds gold at each
@@ -88,13 +88,13 @@ export type LootKind = "coin" | "pouch" | "gem" | "chest" | "bomb";
 /** What each kind is worth, and how often it falls (shares of a hundred). */
 export const KINDS: Record<LootKind, { value: number; share: number }> = {
   coin: { value: 1, share: 0 },
-  pouch: { value: 3, share: 80 },
+  pouch: { value: 10, share: 80 },
   gem: { value: 5, share: 0 },
   chest: { value: 12, share: 0 },
   bomb: { value: 0, share: 20 },
 };
 /** The seconds between two pieces falling (drawn between these), and where across they fall. */
-export const DROP_EVERY = [1.5, 2.8],
+export const DROP_EVERY = [5, 9],
   DROP_REACH = 9.1,
   DROP_BIAS = 1.4,
   DROP_FROM = 9.5;
@@ -111,9 +111,10 @@ export const RAID = 2,
  * raids a gate left alone.
  */
 export const LEVELS = {
-  easy: { pace: 0.8, think: 0.8, react: 0.8, home: 14, thrift: 0, dodge: 0, strike: Infinity, chase: Infinity, chaseFar: 0, climb: false, raid: false },
-  normal: { pace: 0.9, think: 0.5, react: 0.42, home: 10, thrift: 0.4, dodge: 0.7, strike: 5, chase: 10, chaseFar: 3.5, climb: true, raid: false },
-  hard: { pace: 1, think: 0.24, react: 0.2, home: 8, thrift: 0.6, dodge: 1, strike: 3, chase: 7, chaseFar: 4, climb: true, raid: true },
+  // Every level goes first for the other's sack (the user asked: robbing before picking up), the whole valley over.
+  easy: { pace: 0.8, think: 0.8, react: 0.8, home: 14, thrift: 0, dodge: 0, strike: 1, chase: 1, chaseFar: Infinity, climb: false, raid: false },
+  normal: { pace: 0.9, think: 0.5, react: 0.42, home: 10, thrift: 0.4, dodge: 0.7, strike: 1, chase: 1, chaseFar: Infinity, climb: true, raid: false },
+  hard: { pace: 1, think: 0.24, react: 0.2, home: 10, thrift: 0.6, dodge: 1, strike: 1, chase: 1, chaseFar: Infinity, climb: true, raid: true },
 };
 export type Level = keyof typeof LEVELS;
 /** A player's controls for one slice: the way it runs (−1 to 1), and whether jump and strike were pressed in it. */
@@ -262,7 +263,7 @@ function spawn(world: World, kind: LootKind, x: number, y: number, vx = 0, vy = 
   return item;
 }
 /**
- * Gold thrown out from (x, y) as pouches (of 3, the last one holding what is left), flying up and to the sides
+ * Gold thrown out from (x, y) as pouches (of 10, the last one holding what is left), flying up and to the sides
  * (toward `way` when it is set). There are no loose coins: the user asked for pouches alone.
  */
 export function spill(world: World, amount: number, x: number, y: number, way = 0) {
