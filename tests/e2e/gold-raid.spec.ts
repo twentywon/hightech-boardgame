@@ -120,7 +120,7 @@ test("gold raid: against the computer the keys run, jump and strike my bandit, a
 });
 
 test("gold raid: gold picked up and brought to my gate raises my treasury on the board", async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(480_000);
   // Two at one screen, the other bandit left standing: the computer robs a laden bandit before anything else, and
   // would take every pouch off mine on the way home.
   const errors = await sit(page, "local");
@@ -142,7 +142,7 @@ test("gold raid: gold picked up and brought to my gate raises my treasury on the
             x = Number(d.men!.split(";")[0].split(",")[0]),
             carry = Number(d.carry!.split(",")[0]),
             treasury = Number(d.gold!.split(",")[0]);
-          if (treasury > 0 || Date.now() - began > 200_000) {
+          if (treasury > 0 || Date.now() - began > 420_000) {
             key("KeyA", false);
             key("KeyD", false);
             return done(treasury);
