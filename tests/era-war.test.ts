@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ABILITY_COOL,
   ABILITY_FIRST,
+  FALL_TIME,
+  VOLLEY,
   ARMY,
   DT,
   ERAS,
@@ -80,7 +82,7 @@ describe("era war: the lane", () => {
     expect(u.x).toBeGreaterThan(-SPAWN - 0.01);
     const x = u.x;
     run(w, 2);
-    expect(u.x).toBeGreaterThan(x + 1.5);
+    expect(u.x).toBeCloseTo(x + club.speed * 2, 1);
     // The other side's go the other way.
     command(w, 1, { kind: "train", unit: 0 });
     run(w, club.train + 0.5);
@@ -178,7 +180,7 @@ describe("era war: the lane", () => {
     expect(a.hp).toBe(400 + ERAS[1].base - ERAS[0].base);
     command(w, 0, { kind: "train", unit: 0 });
     expect(a.queue.map((q) => q.era)).toEqual([0, 1]);
-    run(w, 4);
+    run(w, ERAS[0].units[0].train + ERAS[1].units[0].train + 1);
     expect(w.units.filter((u) => u.side === 0).map((u) => u.era)).toEqual([0, 1]);
     // No era after the modern one: there the button buys a rank (강화) with gold, not with experience.
     a.era = LAST_ERA;
@@ -193,7 +195,7 @@ describe("era war: the lane", () => {
     a.era = LAST_ERA;
     a.gold = 50_000;
     command(w, 0, { kind: "train", unit: 0 });
-    run(w, 3);
+    run(w, ERAS[LAST_ERA].units[0].train + 0.5);
     const plain = w.units.find((u) => u.side === 0)!;
     expect(plain.rank).toBe(0);
     expect(plain.max).toBe(ERAS[LAST_ERA].units[0].hp);
@@ -204,7 +206,7 @@ describe("era war: the lane", () => {
     expect(a.gold).toBeCloseTo(gold - rankCost(0) - rankCost(1), 5);
     expect(rankCost(1)).toBeGreaterThan(rankCost(0));
     command(w, 0, { kind: "train", unit: 0 });
-    run(w, 4);
+    run(w, ERAS[LAST_ERA].units[0].train + 1);
     const strong = w.units.find((u) => u.side === 0 && u.id !== plain.id)!;
     expect(strong.rank).toBe(2);
     expect(strong.max).toBe(Math.round(ERAS[LAST_ERA].units[0].hp * powerOf(2)));
@@ -235,9 +237,48 @@ describe("era war: the lane", () => {
     const base = w.armies[1].hp;
     expect(command(w, 0, { kind: "ability" })).toBe(true);
     expect(w.armies[0].ability).toBe(ABILITY_COOL);
-    run(w, 4);
+    run(w, VOLLEY + FALL_TIME + 0.5);
     expect(foes.filter((f) => w.units.includes(f)).length).toBeLessThan(3);
     expect(w.armies[1].hp).toBe(base);
+  });
+  it("lets the special attack fall slowly over the whole lane, each piece striking one soldier only (no splash)", () => {
+    for (const [era, ab] of ERAS.map((e, k) => [k, e.ability] as const)) {
+      const w = createWorld(40 + era);
+      w.armies[0].era = era;
+      w.armies[0].ability = 0;
+      // Two soldiers standing together (one big enough to take every piece), never killed, never striking.
+      const twins = [put(w, 1, 0, era, 0), put(w, 1, 0, era, 0)];
+      for (const t of twins) {
+        t.hp = t.max = 1e9;
+        t.cool = 1e9;
+      }
+      command(w, 0, { kind: "ability" });
+      const pieces = w.shots.filter((s) => s.kind === ab.shot);
+      expect(pieces).toHaveLength(ab.count);
+      for (const p of pieces) expect(p.time).toBe(FALL_TIME);
+      const spots = pieces.map((p) => p.tx);
+      // Base to base: from near one front to near the other.
+      expect(Math.min(...spots)).toBeLessThan(-FRONT + 3);
+      expect(Math.max(...spots)).toBeGreaterThan(FRONT - 3);
+      // Still in the air a second into its fall, and only slowly lower.
+      run(w, 1);
+      for (const p of w.shots.filter((s) => s.kind === ab.shot && s.t > 0)) expect(p.y).toBeGreaterThan(5);
+      run(w, VOLLEY + FALL_TIME);
+      const taken = twins.map((t) => 1e9 - t.hp),
+        strikes = taken.reduce((n, d) => n + d, 0) / ab.dmg;
+      // Each piece that struck took its whole blow from one of the two, never from both.
+      expect(Number.isInteger(Math.round(strikes * 1000) / 1000)).toBe(true);
+      expect(strikes).toBeGreaterThan(0);
+      expect(strikes).toBeLessThan(ab.count);
+      for (const d of taken) expect(d / ab.dmg).toBeCloseTo(Math.round(d / ab.dmg), 6);
+    }
+  });
+  it("trains slowly and walks slowly (the user asked): every soldier takes seconds to train, and none hurries", () => {
+    for (const e of ERAS)
+      for (const u of e.units) {
+        expect(u.train).toBeGreaterThanOrEqual(2.5);
+        expect(u.speed).toBeLessThanOrEqual(0.7);
+      }
   });
   it("has no time limit: an untouched lane is still at war long after twenty minutes", () => {
     const w = createWorld(11);
@@ -338,6 +379,13 @@ describe("era war: over Wi-Fi", () => {
     expect(back.sides[0].next).toBeNull();
     expect(back.sides[0].queue).toEqual([9, 10, 11, 11, 9]);
     expect(back.shots.length).toBeGreaterThan(8);
+    // At the volleys' fullest, every falling piece is told (soldiers' quick shots wait when there is no room).
+    run(w, 2);
+    const full = pictureOf(w),
+      told = readPicture(packPicture(full))!,
+      falling = (list: { kind: string }[]) => list.filter((s) => s.kind === "bomb" || s.kind.startsWith("fall")).length;
+    expect(falling(full.shots)).toBeGreaterThan(20);
+    expect(falling(told.shots)).toBe(falling(full.shots));
   });
   it("blends two pictures soldier by soldier", () => {
     const w = createWorld(32);

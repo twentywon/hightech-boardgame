@@ -95,7 +95,12 @@ export function pictureOf(world: World): Picture {
     over: world.over,
     sides: [sidePic(world, 0), sidePic(world, 1)],
     units: world.units.map((u) => ({ id: u.id, side: u.side, era: u.era, kind: u.kind, rank: u.rank, x: u.x, life: Math.max(0, u.hp / u.max), since: u.since, walking: u.walking })),
-    shots: world.shots.filter((s) => s.wait <= 0).map((s) => ({ id: s.id, kind: s.kind, x: s.x, y: s.y })),
+    // The special attack's pieces first (they fall for seconds; a soldier's shot is gone in a moment), so that when the
+    // message has no room for every shot it is the quick ones that wait.
+    shots: world.shots
+      .filter((s) => s.wait <= 0)
+      .sort((p, q) => Number(q.target === -2) - Number(p.target === -2))
+      .map((s) => ({ id: s.id, kind: s.kind, x: s.x, y: s.y })),
     events: world.events.slice(-HEARD),
   };
 }
