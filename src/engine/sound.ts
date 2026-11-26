@@ -767,6 +767,14 @@ export class Sound {
     this.noise(0, 0.05, 0.14, 2400, "bandpass", 900);
     this.noise(0.02, 0.34, 0.05, 5200, "highpass", 3000);
   }
+  /** An archer struck (활잡이 결투): a short, low grunt, louder and higher for a harder blow (`strength` 0 to 1); made by the page. */
+  grunt(strength = 0.6) {
+    const s = Math.max(0.2, Math.min(1, strength)),
+      f = 150 + s * 60;
+    this.tone("sawtooth", f, f * 0.7, 0.02, 0.2, 0.035 * s);
+    this.tone("triangle", f * 0.75, f * 0.55, 0.02, 0.24, 0.07 * s);
+    this.noise(0.02, 0.14, 0.03 * s, 900, "bandpass", 600);
+  }
   /** Bamboo striking bronze (투호): a dry wooden clack with a short metallic ping over it; made by the page. */
   clack(strength = 0.6) {
     const s = Math.max(0.15, Math.min(1, strength));
