@@ -247,3 +247,26 @@ test("yut nori for three: a device that leaves mid-game has its seat played by t
   expect(Number(/(\d+)/.exec(await back.page.locator("#move-count").innerText())![1])).toBeGreaterThanOrEqual(seen);
   for (const d of [devices[0], devices[1], back]) expect(d.errors).toEqual([]);
 });
+
+test("yut nori with the third seat closed: the one on the fourth seat plays as 황 (yellow) on every device, as the room said", async ({ browser }, info) => {
+  const devices = [await device(browser, info), await device(browser, info), await device(browser, info)],
+    pages = devices.map((d) => d.page),
+    [host, minsu, jia] = pages;
+  await lobby(host, "윷놀이", "방장");
+  await host.locator("#net-host").click();
+  await pair(host, minsu, "윷놀이", "민수");
+  // The third seat (녹) closed before 지아 comes: 지아 sits on the fourth (황).
+  await host.locator('.net-kind[data-seat="2"][data-kind="closed"]').click();
+  await pair(host, jia, "윷놀이", "지아");
+  await expect(host.locator(".net-seat").nth(3)).toContainText("지아");
+  await host.locator("#net-start").click({ noWaitAfter: true, timeout: 120000 });
+  for (const page of pages) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  for (const page of pages) {
+    await expect(page.locator(".yut-sides li")).toHaveCount(3);
+    // The third player is 지아, in the fourth seat's colour and name: 황, never 녹.
+    await expect(page.locator("#yut-side-2")).toContainText("지아 (황)");
+    await expect(page.locator("#yut-side-2 .yut-dot")).toHaveClass(/\bp3\b/);
+    await expect(page.locator("#yut-side-1 .yut-dot")).toHaveClass(/\bp1\b/);
+  }
+  for (const d of devices) expect(d.errors).toEqual([]);
+});

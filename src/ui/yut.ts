@@ -101,6 +101,8 @@ export function mountYut(
   const mineNow = () => !!played && net.mine(played);
   const computerTurn = (s: State = state) => (wifi() ? s.winner === null && !mineNow() : mode === "ai" && s.turn === 1 && s.winner === null);
   /** The player this device throws for over Wi-Fi, or -1. */
+  /** A player's colour (0 청 … 3 황): over Wi-Fi its room seat's, so a closed seat does not shift the later ones' colours. */
+  const sideOf = (player: number) => (mode === "net" && played ? (played.seats[player] ?? player) : player);
   const myPlayer = () => (played && net.seat !== null ? played.seats.indexOf(net.seat) : -1);
   const net: NetTable<Seated<State>> = new NetTable<Seated<State>>({
     net: yutNet,
@@ -124,6 +126,7 @@ export function mountYut(
       thinking = false;
       timers.forEach(clearTimeout);
       timers.clear();
+      view?.dress(state.pieces.map((_, p) => sideOf(p)));
       if (view) view.sync(model(state), false);
       present();
     },
@@ -142,7 +145,7 @@ export function mountYut(
   let names: string[] = [];
   const who = (player: number) =>
     wifi()
-      ? `${net.room?.nameOf(played!.seats[player]) || "빈자리"} (${SIDES[player]})`
+      ? `${net.room?.nameOf(played!.seats[player]) || "빈자리"} (${SIDES[sideOf(player)]})`
       : mode === "local" ? (names[player] ? `${names[player]} (${SIDES[player]})` : `${SIDES[player]} (플레이어 ${player + 1})`) : player === 0 ? "나 (청)" : "컴퓨터 (홍)";
   function stop() {
     generation++;
@@ -218,7 +221,7 @@ export function mountYut(
   function screen() {
     stop();
     const side = (p: number) =>
-      `<li id="yut-side-${p}"><i class="yut-dot p${p}"></i><b>${escape(who(p))}</b><span id="yut-count-${p}"></span></li>`;
+      `<li id="yut-side-${p}"><i class="yut-dot p${sideOf(p)}"></i><b>${escape(who(p))}</b><span id="yut-count-${p}"></span></li>`;
     root.innerHTML =
       nav.header() +
       `<main class="game-layout yacht-game yut-game"><div class="game-top"><div><button class="text-button" id="back">← 컬렉션</button><h1>윷놀이 <small>YUT NORI</small></h1></div><div class="game-actions"><button id="rules">게임 방법</button><button id="restart">새 게임</button></div></div><div class="table-layout"><section class="board-area"><div class="board-label"><span>THE YARD</span><span>말 4개 · 윷가락 4개</span></div><div id="board"></div><div class="board-bottom"><span>✦ WORLD TABLE GAMES</span><span id="move-count">0수</span></div></section><aside class="game-sidebar yd-sidebar yut-sidebar"><div id="turn" role="status" aria-live="polite"></div><ul class="yut-sides">${state.pieces.map((_, p) => side(p)).join("")}</ul><div class="yd-controls"><button id="yut-throw" class="primary sr-only">윷 던지기</button><div id="yut-pending" class="yut-pending" aria-label="쓸 수 있는 윷패"></div><div id="yut-moves" class="yut-moves tap-only" role="group" aria-label="옮길 수 있는 말"></div><p id="yut-note" class="input-help"></p></div><div id="yut-result" class="yd-result" hidden><p id="yut-final"></p><button id="yut-again" class="primary">다시 플레이</button></div></aside></div></main>`;
@@ -240,6 +243,7 @@ export function mountYut(
       view.onSettled = present;
       view.onPick = pick;
       view.onThrow = () => act((s) => throwSticks(s, random), yutThrow());
+      view.dress(state.pieces.map((_, p) => sideOf(p)));
       view.sync(model(state), false);
     } catch {
       view?.dispose();
@@ -481,6 +485,7 @@ export function mountYut(
   const show = (e: PageTransitionEvent) => {
     if (e.persisted && document.getElementById("yut-throw")) {
       lockedUntil = 0;
+      view?.dress(state.pieces.map((_, p) => sideOf(p)));
       if (view) view.sync(model(state), false);
       present();
     }

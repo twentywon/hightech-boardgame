@@ -110,6 +110,9 @@ export class YutView {
   private cancelReady: (() => void) | null = null;
   private owned: { dispose(): void }[] = [];
   private pieces: T.Group[][] = COLORS.map(() => []);
+  /** Each colour's lacquer and inlay, by colour (청 홍 녹 황): `dress` gives a player the colour of its room seat. */
+  private lacquers: T.Material[] = [];
+  private pearls: T.Material[] = [];
   private sticks: T.Group[] = [];
   private stickYaw = [0.2, -0.3, 0.1, -0.15];
   /** Where each stick came to rest after the last throw. */
@@ -211,6 +214,8 @@ export class YutView {
             polygonOffsetFactor: -2,
           }),
         );
+      this.lacquers.push(lacquer);
+      this.pearls.push(pearl);
       for (let i = 0; i < PIECES; i++) {
         const piece = new T.Group(),
           wood = new T.Mesh(body, lacquer),
@@ -703,6 +708,20 @@ export class YutView {
    * Shows `model`. A new throw tosses the sticks; a new move walks the moved
    * pieces along their road, and every other piece slides to its place.
    */
+  /**
+   * Each player's colour by its index in `look` (0 청, 1 홍, 2 녹, 3 황). Over Wi-Fi a player wears its room seat's
+   * colour, so that with a seat closed the fourth seat is still 황 (by default a player wears its own index's).
+   */
+  dress(look: number[]) {
+    this.pieces.forEach((pieces, player) => {
+      const c = look[player] ?? player;
+      for (const piece of pieces) {
+        (piece.children[0] as T.Mesh).material = this.lacquers[c];
+        (piece.children[2] as T.Mesh).material = this.pearls[c];
+      }
+    });
+    this.dirty = true;
+  }
   sync(model: YardModel, animate = true) {
     if (this.disposed) return;
     const before = this.model,
