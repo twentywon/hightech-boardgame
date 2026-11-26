@@ -594,7 +594,10 @@ export class TerritoryView extends TableView<State> {
     const heard = this.heard,
       start = ticks(COUNTDOWN);
     if (heard) {
-      for (const n of [1, 2]) if (heard.tick < ticks(n) && world.tick >= ticks(n) && world.tick < start) this.tell({ kind: "count", n });
+      for (const n of [0, 1, 2]) {
+        const at = Math.max(1, ticks(n));
+        if (heard.tick < at && world.tick >= at && world.tick < start) this.tell({ kind: "count", n });
+      }
       if (heard.tick < start && world.tick >= start) this.tell({ kind: "go" });
       world.movers.forEach((m, k) => {
         if (heard.alive[k] && !m.alive) this.tell({ kind: "out", who: k, by: m.outs > heard.outs[k] ? this.cutter(heard.kos, world) : -1, how: "cut" }, true);

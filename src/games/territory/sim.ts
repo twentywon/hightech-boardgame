@@ -285,7 +285,8 @@ export function step(world: World, wants: (number | null)[]): Event[] {
   world.tick++;
   const start = ticks(COUNTDOWN);
   if (world.tick < start) {
-    for (const n of [1, 2]) if (world.tick === ticks(n)) events.push({ kind: "count", n });
+    // 3, 2, 1: a second each.
+    for (const n of [0, 1, 2]) if (world.tick === Math.max(1, ticks(n))) events.push({ kind: "count", n });
     return events;
   }
   if (world.tick === start) events.push({ kind: "go" });

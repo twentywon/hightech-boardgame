@@ -51,7 +51,7 @@ describe("territory (땅따먹기): the field", () => {
       events: Event[] = [];
     while (world.tick < ticks(COUNTDOWN) - 1) events.push(...step(world, []));
     world.movers.forEach((m, k) => expect(m.x).toBe(at[k].x));
-    expect(events.filter((e) => e.kind === "count")).toHaveLength(2);
+    expect(events.filter((e) => e.kind === "count")).toHaveLength(3);
     events.push(...step(world, []), ...step(world, []));
     expect(events.some((e) => e.kind === "go")).toBe(true);
     for (let i = 0; i < 60; i++) step(world, []);
