@@ -1,5 +1,6 @@
 import * as T from "three";
 import { FOV } from "../../engine/camera";
+import { bark, grain, grainUV } from "../../engine/grain";
 import { capable, glossy } from "../../engine/scene-utils";
 import { noZoom } from "../../engine/zoom";
 import type { LiveGuest, LiveHost, LiveSession } from "../../net/live";
@@ -337,8 +338,8 @@ export class TerritoryView extends TableView<State> {
     turf.position.y = -0.04;
     turf.receiveShadow = true;
     this.scene.add(turf);
-    // The rail: posts and a rounded white bar, each side, and a strip of pale stone under it.
-    const white = this.standard({ color: "#fbfaf4", roughness: 0.45 }),
+    // The rail: posts and a bar of real oak (the photograph graded to a weathered tone), each side, and a strip of pale stone under it.
+    const white = this.standard({ ...grain(own, "#c8a678", { contrast: 1.5 }), roughness: 0.7 }),
       stone = this.standard({ color: "#d9d2c1", roughness: 0.9 }),
       half = N / 2;
     for (const [x, z, w, d] of [
@@ -349,10 +350,10 @@ export class TerritoryView extends TableView<State> {
     ]) {
       const kerb = this.add(new T.BoxGeometry(w, 0.12, d), stone, x, 0.02, z);
       kerb.castShadow = false;
-      const bar = this.add(new T.BoxGeometry(w > d ? w : 0.18, 0.16, w > d ? 0.18 : d), white, x, 0.42, z);
+      const bar = this.add(grainUV(new T.BoxGeometry(w > d ? w : 0.18, 0.16, w > d ? 0.18 : d), 1.6), white, x, 0.42, z);
       bar.castShadow = true;
     }
-    const post = own(new T.CylinderGeometry(0.09, 0.11, 0.5, 8)),
+    const post = own(grainUV(new T.CylinderGeometry(0.09, 0.11, 0.5, 8), 0.8, 1)),
       posts = new T.InstancedMesh(post, white, Math.ceil((N / 4) * 4) + 8);
     let p = 0;
     const m4 = new T.Matrix4();
@@ -403,7 +404,7 @@ export class TerritoryView extends TableView<State> {
       }
     };
     const trees = this.rich ? 150 : 70,
-      trunk = new T.InstancedMesh(own(new T.CylinderGeometry(0.16, 0.24, 1.6, 7)), this.standard({ color: "#7a5434", roughness: 0.9 }), trees),
+      trunk = new T.InstancedMesh(own(new T.CylinderGeometry(0.16, 0.24, 1.6, 7)), this.standard({ ...bark(own, { around: 1, up: 1.5, tone: "#d8c8b4" }), roughness: 0.95 }), trees),
       crown = new T.InstancedMesh(own(new T.IcosahedronGeometry(1, 1)), this.standard({ color: "#4f9a3c", roughness: 0.85, flatShading: true }), trees * 2),
       q = new T.Quaternion(),
       s = new T.Vector3(),

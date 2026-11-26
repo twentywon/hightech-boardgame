@@ -2,6 +2,7 @@ import * as T from "three";
 import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
+import { bark, grain, grained } from "../../engine/grain";
 import type { Kind } from "./sim";
 
 /**
@@ -122,6 +123,24 @@ export class Kit {
       rubber: ["#1d1e20", { roughness: 0.95 }],
     };
     for (const [name, [color, o]] of Object.entries(colors)) this.m[name] = mat(color, o);
+    // Wood is real wood (its photograph graded to the colour, with relief) where a graphics card draws; there each wooden
+    // part gets its own shape with the picture laid along it (`mesh`). Where the processor draws, a figure's wood stays
+    // a plain colour baked with its other plain parts (a picture would cost a draw of its own on every soldier); the
+    // bases' still wood (`timber`) and the trees' bark have their pictures all the same, being few.
+    const woodOf = (tone: string, kind: "light" | "dark", roughness: number) => {
+      const w = grain(own, tone, { kind, rich, contrast: 2.1 });
+      const m = own(rich ? new T.MeshStandardMaterial({ ...w, roughness }) : new T.MeshLambertMaterial({ color: w.color, map: w.map }));
+      m.userData.grain = true;
+      return m;
+    };
+    if (rich) {
+      this.m.wood = woodOf("#8a6038", "light", 0.8);
+      this.m.woodDark = woodOf("#5a3c22", "dark", 0.85);
+    }
+    this.m.timber = rich ? this.m.wood : woodOf("#8a6038", "light", 0.8);
+    this.m.timberDark = rich ? this.m.woodDark : woodOf("#5a3c22", "dark", 0.85);
+    const skin = bark(own, { around: 1, up: 2, tone: "#c7b6a2", rich });
+    this.m.bark = own(rich ? new T.MeshStandardMaterial({ ...skin, roughness: 0.95 }) : new T.MeshLambertMaterial({ color: skin.color, map: skin.map }));
     // The tank's tracks: links painted along a strip (each tank gets its own copy, so its tracks run).
     const links = texture(
       own,
@@ -188,9 +207,12 @@ export class Kit {
     g.star = own(new T.ShapeGeometry(star));
   }
   mesh(geometry: string, material: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, parent: T.Object3D) {
-    const m = new T.Mesh(this.g[geometry], this.m[material]);
+    const paint = this.m[material],
+      // Real wood: a shape of its own at its size, the grain laid along it (built once per template).
+      wood = paint.userData.grain === true,
+      m = new T.Mesh(wood ? this.own(grained(this.g[geometry], sx, sy, sz, 0.3)) : this.g[geometry], paint);
     m.position.set(x, y, z);
-    m.scale.set(sx, sy, sz);
+    if (!wood) m.scale.set(sx, sy, sz);
     m.castShadow = true;
     parent.add(m);
     return m;

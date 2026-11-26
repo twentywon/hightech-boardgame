@@ -2,6 +2,7 @@ import * as T from "three";
 import { canvas, painted, puff, stream, normalFrom, texture, type Own } from "../goldraid/paint";
 import { compactStill } from "../badminton/merge";
 import { bakeAll } from "./bake";
+import { grained } from "../../engine/grain";
 import { BASE_X, SLOTS, turretAt } from "./sim";
 import type { Kit } from "./models";
 
@@ -401,7 +402,7 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
   const spots: { x: number; z: number; s: number; pine: boolean }[] = [];
   for (let k = 0; k < (rich ? 90 : 66); k++) spots.push({ x: -50 + rnd() * 100, z: -4.5 - rnd() * 14, s: 0.8 + rnd() * 0.9, pine: rnd() < 0.55 });
   for (let k = 0; k < 12; k++) spots.push({ x: (rnd() < 0.5 ? -1 : 1) * (BASE_X + 4 + rnd() * 10), z: -2 + rnd() * 5, s: 0.8 + rnd() * 0.5, pine: rnd() < 0.5 });
-  const trunk = new T.InstancedMesh(g.cyl, kit.m.woodDark, spots.length),
+  const trunk = new T.InstancedMesh(g.cyl, kit.m.bark, spots.length),
     pines = spots.filter((p) => p.pine),
     rounds = spots.filter((p) => !p.pine),
     tiers = rich ? 3 : 2,
@@ -465,10 +466,15 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     lamp = own(new T.MeshBasicMaterial({ color: "#fff4c8" })),
     red = own(new T.MeshBasicMaterial({ color: "#ff3a2a" })),
     city = own(new T.MeshLambertMaterial({ color: "#ffffff", map: windowsTexture(own), emissive: "#ffffff", emissiveMap: null, emissiveIntensity: 0 }));
+  /** The groups whose wood takes its picture even where the processor draws: the bases' still parts (few draws, seen near). */
+  const timbered = new Set<T.Object3D>();
   const add = (parent: T.Object3D, geometry: T.BufferGeometry, material: T.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number) => {
-    const m = new T.Mesh(geometry, material);
+    // Wood in a base's still parts is real wood everywhere; elsewhere where a graphics card draws.
+    if (timbered.has(parent) && (material === kit.m.wood || material === kit.m.woodDark)) material = material === kit.m.wood ? kit.m.timber : kit.m.timberDark;
+    const wood = material.userData.grain === true,
+      m = new T.Mesh(wood ? own(grained(geometry, sx, sy, sz, 0.4)) : geometry, material);
     m.position.set(x, y, z);
-    m.scale.set(sx, sy, sz);
+    if (!wood) m.scale.set(sx, sy, sz);
     m.castShadow = true;
     m.receiveShadow = true;
     parent.add(m);
@@ -640,6 +646,7 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
       live = new T.Group();
     group.add(b);
     b.add(still, live);
+    timbered.add(still);
     /**
      * What falls as it is hurt: the parts that stand while it is whole are dealt out to fall when it breaks (one in
      * three, and a tower's roof) or when it is ablaze (one in three more), the rest stay; what lies about once it is

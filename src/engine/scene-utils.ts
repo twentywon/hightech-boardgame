@@ -206,6 +206,8 @@ export function weave(across: number, down = across, keep: Keep = (r) => r, dept
 }
 /** Veneer for inlaid squares: pale maple and brown walnut (Poly Haven, CC0). */
 export const veneer = (dark: boolean) => surface(dark ? walnutUrl : mapleUrl);
+/** The relief of the wood photographs (a normal map), tiled `across` by `down`. */
+export const woodRelief = (across = 1, down = across) => surface(woodNormalUrl, across, down, true);
 /** One of the wood photographs itself, for a view that paints it into a picture of its own: `ready` as soon as it is decoded. */
 export function woodPhoto(kind: "light" | "dark" | "maple" | "walnut", ready: (image: HTMLImageElement) => void) {
   if (typeof document === "undefined") return;

@@ -2,6 +2,7 @@ import * as T from "three";
 import { canvas, glow, normalFrom, painted, puff, stream, texture, type Own } from "../goldraid/paint";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { compactStill } from "../badminton/merge";
+import { bark as barkSkin, grain, grainUV } from "../../engine/grain";
 import { ground, standX, type Land } from "./rules";
 
 /**
@@ -269,7 +270,9 @@ export function buildField(scene: T.Scene, land: Land, mirror: number, colours: 
     clouds.push(c);
   }
   // ── Trees behind the line: dark pines and a persimmon heavy with fruit; stones and a cairn. ──
-  const bark = own(new T.MeshLambertMaterial({ color: "#4a3527" })),
+  // Trunks in real bark (furrowed, with relief where a graphics card draws), round each trunk once and up it twice.
+  const barkParams = barkSkin(own, { around: 1, up: 2, tone: "#b9a894", rich }),
+    bark = own(rich ? new T.MeshStandardMaterial({ ...barkParams, roughness: 0.95 }) : new T.MeshLambertMaterial({ color: barkParams.color, map: barkParams.map })),
     needles = own(new T.MeshLambertMaterial({ color: "#35503a", side: T.DoubleSide })),
     leaves = own(new T.MeshLambertMaterial({ color: "#b5662e" })),
     fruit = own(new T.MeshLambertMaterial({ color: "#f07a1c", emissive: "#3a1400" })),
@@ -577,8 +580,9 @@ export function buildField(scene: T.Scene, land: Land, mirror: number, colours: 
   tufts.receiveShadow = true;
   group.add(tufts);
   // ── The banners on the mounds, each in its archer's colour, streaming with the wind. ──
-  const poleG = own(new T.CylinderGeometry(0.025, 0.03, 2.6, 8).translate(0, 1.3, 0)),
-    poleMat = own(new T.MeshLambertMaterial({ color: "#3a2a1c" })),
+  const poleG = own(grainUV(new T.CylinderGeometry(0.025, 0.03, 2.6, 8).translate(0, 1.3, 0), 0.9, 1)),
+    poleWood = grain(own, "#4a3423", { kind: "dark", rich }),
+    poleMat = own(new T.MeshLambertMaterial({ color: poleWood.color, map: poleWood.map })),
     cloths: { geometry: T.BufferGeometry; rest: Float32Array; top: T.Vector3 }[] = [];
   [0, 1].forEach((s) => {
     const x = standX(land, s as 0 | 1) * mirror,
