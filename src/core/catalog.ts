@@ -904,6 +904,14 @@ export const allGames = [
     icon: "➹",
     available: true,
   },
+  {
+    name: "시대 전쟁",
+    en: "ERA WAR",
+    category: "아케이드게임",
+    players: "2인용",
+    icon: "⚔",
+    available: true,
+  },
 ];
 
 /**

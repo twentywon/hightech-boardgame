@@ -403,6 +403,7 @@ const OWN: Record<string, Piece> = {
   // A party: the arcade's upbeat pop.
   "russian-roulette": ARCADE,
   "archer-duel": ARCADE,
+  "era-war": ARCADE,
 };
 /** How long a bar of a piece lasts, in seconds. */
 const barLength = (piece: Piece) => ("tempo" in piece ? (60 / piece.tempo) * 4 : piece.beat * 4);
