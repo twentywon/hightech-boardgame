@@ -887,6 +887,13 @@ export const allGames = [
     players: "2인용",
     icon: "♛",
     available: true,
+  },  {
+    name: "땅따먹기",
+    en: "TERRITORY",
+    category: "아케이드게임",
+    players: "2인용",
+    icon: "▦",
+    available: true,
   },
 ];
 

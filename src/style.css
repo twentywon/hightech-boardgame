@@ -4163,3 +4163,39 @@ html[data-capture] :is(.gr-hud, .gr-pad, .gr-word, .gr-pops, .gr-seam) { display
 dialog.leave-dialog { max-width:min(92vw, 420px); }
 dialog.leave-dialog .dialog-actions { display:flex;flex-wrap:nowrap;justify-content:space-between;gap:10px; }
 dialog.leave-dialog .dialog-actions button { flex:none;min-width:120px; }
+/* 땅따먹기: the clock and my share (upper left), the shares of all (upper right), the field's map (lower right), the lever. */
+html[data-game="territory"] .game-layout .board-area > .board-hint { display:none !important; }
+.ld-hud { position:absolute;inset:0;z-index:2;pointer-events:none;user-select:none;-webkit-user-select:none;font-family:"Inter","Noto Sans KR",sans-serif;color:#fff; }
+.ld-clock { position:absolute;left:max(60px, calc(env(safe-area-inset-left) + 60px));top:10px;display:flex;align-items:center;gap:8px;padding:5px 12px 5px 10px;border-radius:12px;background:#1d2a1ccc;box-shadow:0 4px 14px #0005, inset 0 0 0 1.5px #ffffff40; }
+.ld-clock b { font:900 22px/1 "Inter",sans-serif;letter-spacing:.02em;font-variant-numeric:tabular-nums; }
+.ld-clock span { font:900 15px/1 "Inter",sans-serif;padding:4px 8px;border-radius:8px;background:var(--me, #e5483d);box-shadow:inset 0 -2px 0 #0003;font-variant-numeric:tabular-nums; }
+.ld-board { position:absolute;right:max(60px, calc(env(safe-area-inset-right) + 60px));top:10px;margin:0;padding:6px 8px;list-style:none;display:grid;gap:3px;min-width:150px;border-radius:12px;background:#1d2a1ccc;box-shadow:0 4px 14px #0005, inset 0 0 0 1.5px #ffffff40; }
+.ld-board li { display:grid;grid-template-columns:16px 12px 1fr auto;align-items:center;gap:6px;font:700 13px/1.25 "Pretendard","Noto Sans KR",sans-serif; }
+.ld-board li b { font:900 12px/1 "Inter",sans-serif;opacity:.8;text-align:center; }
+.ld-board li i { width:12px;height:12px;border-radius:3px;box-shadow:0 0 0 1.5px #fff8; }
+.ld-board li em { font:800 13px/1 "Inter",sans-serif;font-style:normal;font-variant-numeric:tabular-nums; }
+.ld-board li.ld-me span { font-weight:900;color:#ffe27a; }
+.ld-board li.ld-out { opacity:.45; }
+.ld-map { position:absolute;right:max(12px, env(safe-area-inset-right));bottom:14px;width:124px;height:124px;border-radius:10px;border:3px solid #ffffffd0;box-shadow:0 5px 14px #0006;background:#eeeadc center/100% 100% no-repeat;image-rendering:pixelated; }
+.ld-pops { position:absolute;inset:0;overflow:hidden; }
+.ld-pop { position:absolute;translate:-50% -50%;font:900 18px/1 "Inter",sans-serif;color:#fff;text-shadow:0 2px 0 #0007, 0 0 8px #0006;animation:ld-rise 1.3s ease-out forwards;white-space:nowrap; }
+.ld-pop.ld-big { font-size:26px;color:#ffe27a; }
+@keyframes ld-rise { from { opacity:0;transform:translateY(8px) scale(.8); } 15% { opacity:1;transform:translateY(0) scale(1.08); } to { opacity:0;transform:translateY(-46px) scale(1); } }
+.ld-pad { position:absolute;inset:0;z-index:3;pointer-events:none; }
+.ld-stick { position:absolute;left:max(16px, env(safe-area-inset-left));bottom:30px;display:grid;place-items:center;width:128px;height:128px;border-radius:50%;background:radial-gradient(circle, #00000030 0 50%, #00000066 51% 66%, #0000004d 67%);border:3px solid #ffffffb0;box-shadow:0 5px 14px #0000004d;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent; }
+.ld-knob { width:56px;height:56px;border-radius:50%;background:radial-gradient(circle at 36% 30%, #ffd2cc, #e5483d 58%, #a5261c);border:3px solid #fff;box-shadow:0 5px 12px #00000070;pointer-events:none;transition:transform .09s ease-out; }
+.ld-stick.on .ld-knob { transition:none; }
+@media (max-width: 760px), (max-height: 500px) {
+  .ld-clock { top:6px;padding:4px 9px 4px 8px; }
+  .ld-clock b { font-size:17px; }
+  .ld-clock span { font-size:12px;padding:3px 6px; }
+  .ld-board { top:6px;min-width:118px;padding:4px 6px;gap:1px; }
+  .ld-board li { font-size:11px;grid-template-columns:12px 10px 1fr auto;gap:4px; }
+  .ld-board li em { font-size:11px; }
+  .ld-map { width:88px;height:88px;bottom:8px; }
+  .ld-stick { width:96px;height:96px;bottom:10px; }
+  .ld-knob { width:42px;height:42px; }
+  .ld-pop { font-size:15px; }
+  .ld-pop.ld-big { font-size:20px; }
+}
+html[data-capture] :is(.ld-hud, .ld-pad) { display:none !important; }
