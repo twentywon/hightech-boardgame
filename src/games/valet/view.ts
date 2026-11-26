@@ -1,5 +1,6 @@
 import * as T from "three";
 import { cryptoRandom } from "../../core/random";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block, capable } from "../../engine/scene-utils";
 import { noZoom } from "../../engine/zoom";
 import { capturing } from "../../ui/banner";
@@ -7,6 +8,8 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
 import { VALET_SUBJECT } from "./layout";
 import { dress, type Look } from "./scenery";
+import { carKit, makeCar, makeFigure, modelOf, paintOf, peopleKit, walk, type CarKit, type Figure, type PeopleKit } from "./models";
+import { WHEEL_LOCK, centred, fingerAngle, steerOf, turnWheel } from "./wheel";
 import { ANGRY, BUMP, END, parkedMove, returnedMove, type State } from "./rules";
 import { ANGRY_FINE, BUMP_FINE, CAR_L, CAR_W, DT, MAX_STEER, SHIFT, TIDY, V_MOST, alight, board, canAlight, createWorld, freeBays, jobs, reachable, standing, step, type Car, type Happening, type Input, type Lot, type World } from "./sim";
 
@@ -34,7 +37,9 @@ interface CarModel {
   beam: T.Mesh;
   flares: T.Sprite[];
   front: T.Group[];
-  wheels: T.Mesh[];
+  /** Each wheel's spinning part (turned about its axle), and the wheels' radius. */
+  wheels: T.Group[];
+  radius: number;
   brake: T.MeshStandardMaterial;
   back: T.MeshStandardMaterial;
   dents: T.Mesh[];
@@ -54,6 +59,7 @@ interface Customer {
   texture: T.CanvasTexture;
   said: string;
   shirt: T.MeshStandardMaterial;
+  figure: Figure;
 }
 
 /**
@@ -71,6 +77,13 @@ export class ValetView extends TableView<State> {
   private cars = new Map<number, CarModel>();
   private customers: Customer[] = [];
   private valet!: T.Group;
+  private walker!: Figure;
+  /** The shared shapes of the cars and of the people (see `models.ts`). */
+  private carParts!: CarKit;
+  private peopleParts!: PeopleKit;
+  /** The steering wheel on the screen (at the wheel): how far it is turned (radians, clockwise +), and the finger turning it. */
+  private wheel = { angle: 0, finger: -1, last: null as number | null, shown: NaN };
+  private wheelArt!: HTMLElement;
   private feet!: T.Mesh;
   private halo!: T.Mesh;
   private haloGlow!: T.MeshBasicMaterial;
@@ -124,7 +137,12 @@ export class ValetView extends TableView<State> {
     sun.position.set(-10, 26, 12);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 16, bottom: -16, near: 1, far: 70 });
+    Object.assign(sun.shadow.camera, { left: -30, right: 30, top: 22, bottom: -22, near: 1, far: 80 });
+    // Soft-edged shadows where a graphics card draws them (software drawing keeps the cheaper hard ones).
+    if (capable()) {
+      this.renderer.shadowMap.type = T.PCFSoftShadowMap;
+      sun.shadow.mapSize.set(4096, 4096);
+    }
     sun.shadow.normalBias = 0.03;
     sun.shadow.bias = -0.0005;
     this.own(sun.shadow);
@@ -134,7 +152,10 @@ export class ValetView extends TableView<State> {
     this.root.add(this.lot);
     this.makeKit();
     this.markers();
-    this.valet = this.person("#e8452e", true);
+    this.carParts = carKit((r) => this.own(r), capable());
+    this.peopleParts = peopleKit((r) => this.own(r));
+    this.walker = this.person("#d8352a", "#2b1d14", true);
+    this.valet = this.walker.root;
     // (A little larger than life, to be followed at a glance on a phone.)
     this.valet.scale.setScalar(1.2);
     // A ring at the valet's feet, so that it is found at a glance.
@@ -160,13 +181,14 @@ export class ValetView extends TableView<State> {
     this.pad = document.createElement("div");
     this.pad.className = "vp-pad";
     this.pad.innerHTML =
-      `<div class="vp-stick" role="slider" aria-label="레버" aria-valuetext="가운데"><i class="vp-ways"><b>◀</b><b>▶</b></i><span class="vp-knob"></span></div>` +
+      `<div class="vp-stick" role="slider" aria-label="레버" aria-valuetext="가운데"><i class="vp-ways"><b>◀</b><b>▶</b></i><span class="vp-knob"></span><span class="vp-wheel"><svg viewBox="-50 -50 100 100" aria-hidden="true"><defs><radialGradient id="vpHub" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#5a5f69"/><stop offset="1" stop-color="#1b1d22"/></radialGradient><linearGradient id="vpRim" x1="0" y1="-1" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop offset="0" stop-color="#4a4f58"/><stop offset=".5" stop-color="#22252b"/><stop offset="1" stop-color="#121417"/></linearGradient></defs><circle r="42" fill="none" stroke="url(#vpRim)" stroke-width="12"/><circle r="42" fill="none" stroke="#000" stroke-opacity=".35" stroke-width="12" stroke-dasharray="1.2 3.2"/><circle r="47.5" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1"/><path d="M-7-6.5L-36-3.5-36 6.5-8 9M7-6.5L36-3.5 36 6.5 8 9M-7 10L-6 37 6 37 7 10Z" fill="#2a2d33" stroke="#4b5059" stroke-width="1.5" stroke-linejoin="round"/><circle r="15" fill="url(#vpHub)" stroke="#5b606a" stroke-width="1.5"/><circle r="7" fill="#e8452e" stroke="#ffd34a" stroke-width="1.5"/><rect x="-3.2" y="-48" width="6.4" height="12" rx="1.6" fill="#ffd34a"/></svg></span></div>` +
       `<div class="vp-side"><span class="vp-gear"></span><button type="button" class="vp-act" aria-label="탑승"><em>탑승</em><small>E</small></button>` +
       `<button type="button" class="vp-pedal vp-back" data-act="down" aria-label="후진·브레이크"><em>후진</em></button><button type="button" class="vp-pedal vp-go" data-act="up" aria-label="가속"><em>가속</em></button></div>`;
     host.append(this.pad);
     this.gearText = this.pad.querySelector(".vp-gear")!;
     this.stick = this.pad.querySelector(".vp-stick")!;
     this.knob = this.pad.querySelector(".vp-knob")!;
+    this.wheelArt = this.pad.querySelector(".vp-wheel")!;
     this.act = this.pad.querySelector(".vp-act")!;
     this.controls();
     this.begin();
@@ -184,13 +206,6 @@ export class ValetView extends TableView<State> {
   private makeKit() {
     const keep = <R extends { dispose(): void }>(r: R) => this.own(r);
     this.kit = {
-      wheel: keep(new T.CylinderGeometry(0.33, 0.33, 0.24, 16)),
-      hub: keep(new T.CylinderGeometry(0.17, 0.17, 0.25, 10)),
-      lamp: keep(new T.BoxGeometry(0.08, 0.14, 0.34)),
-      dent: keep(new T.BoxGeometry(0.5, 0.05, 0.36)),
-      tyre: keep(new T.MeshStandardMaterial({ color: "#17181b", roughness: 0.9 })),
-      rim: keep(new T.MeshStandardMaterial({ color: "#c9ccd2", roughness: 0.35, metalness: 0.7 })),
-      glass: keep(new T.MeshStandardMaterial({ color: "#1d2a36", roughness: 0.15, metalness: 0.4 })),
       beam: keep(new T.PlaneGeometry(7.5, 4.2)),
       beamLight: keep(
         new T.MeshBasicMaterial({
@@ -240,13 +255,6 @@ export class ValetView extends TableView<State> {
           toneMapped: false,
         }),
       ),
-      scratch: keep(new T.MeshStandardMaterial({ color: "#2a2623", roughness: 1 })),
-      skin: keep(new T.MeshStandardMaterial({ color: "#f0c8a4", roughness: 0.8 })),
-      trousers: keep(new T.MeshStandardMaterial({ color: "#2b3140", roughness: 0.8 })),
-      torso: keep(new T.CylinderGeometry(0.26, 0.3, 0.8, 12)),
-      legs: keep(new T.BoxGeometry(0.4, 0.62, 0.3)),
-      face: keep(new T.SphereGeometry(0.24, 14, 10)),
-      cap: keep(new T.CylinderGeometry(0.25, 0.26, 0.12, 12)),
     };
   }
   /** What shows where to go: a glow on each free bay and on the exit, an arrow bobbing over the place, a pointer on the ground before the car. */
@@ -400,7 +408,7 @@ export class ValetView extends TableView<State> {
       d = lot.maxZ - lot.minZ,
       cz = (lot.maxZ + lot.minZ) / 2;
     // What is round the lot, and how it is lit (the mart by day, the burger restaurant by night, under the ground).
-    const look = (this.look = dress(stage, lot, this.lot));
+    const look = (this.look = dress(stage, lot, this.lot, capable()));
     this.renderer.setClearColor(look.clear);
     this.sky.color.set(look.sky[0]);
     this.sky.groundColor.set(look.sky[1]);
@@ -478,12 +486,24 @@ export class ValetView extends TableView<State> {
       wall(lot.minX - 0.18, s * 2.7, lot.minX - 0.18, s === 1 ? lot.maxZ : lot.minZ);
       wall(lot.maxX + 0.18, s * (lot.exit.hz + 0.2), lot.maxX + 0.18, s === 1 ? lot.maxZ : lot.minZ);
     }
-    // The booth by the entrance (the first block), planters (the others), and the pillars.
-    const [booth, ...planters] = lot.blocks;
-    add(block(booth.hx * 2, 2.5, booth.hz * 2, 0.08), std({ color: "#f3efe4" }), booth.x, 1.25, booth.z);
-    add(block(booth.hx * 2 + 0.5, 0.22, booth.hz * 2 + 0.5, 0.06), std({ color: "#e8452e" }), booth.x, 2.6, booth.z);
-    // Its window (lit from within in the dark).
-    add(new T.BoxGeometry(booth.hx * 1.5, 0.9, 0.06), std(look.dark ? { color: "#ffe2b0", emissive: "#ffcf8a", emissiveIntensity: 0.9, roughness: 0.3 } : { color: "#22313f", roughness: 0.2, metalness: 0.3 }), booth.x, 1.55, booth.z + booth.hz + 0.02, false);
+    // The booth by the entrance (the first block): a little kiosk with a glass band all round under a red roof with a
+    // white edge, corner posts, its name leaning toward the eye; planters (the other blocks); and the pillars.
+    const [booth, ...planters] = lot.blocks,
+      bw = booth.hx * 2,
+      bd = booth.hz * 2,
+      cream = std({ color: "#f1ede2", roughness: 0.7 }),
+      post = std({ color: "#3b3f46", roughness: 0.5, metalness: 0.4 }),
+      pane = look.dark
+        ? std({ color: "#ffe2b0", emissive: "#ffcf8a", emissiveIntensity: 0.85, roughness: 0.25 })
+        : std({ color: "#2a3a4a", roughness: 0.08, metalness: 0.55 });
+    add(block(bw, 0.95, bd, 0.06), cream, booth.x, 0.475, booth.z);
+    add(new T.BoxGeometry(bw - 0.1, 1.25, bd - 0.1), pane, booth.x, 1.55, booth.z);
+    add(block(bw, 0.32, bd, 0.05), cream, booth.x, 2.33, booth.z);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(new T.BoxGeometry(0.12, 1.3, 0.12), post, booth.x + sx * (booth.hx - 0.04), 1.55, booth.z + sz * (booth.hz - 0.04), false);
+    add(block(bw + 0.5, 0.22, bd + 0.5, 0.06), std({ color: "#e8452e", roughness: 0.55 }), booth.x, 2.62, booth.z);
+    add(block(bw + 0.54, 0.07, bd + 0.54, 0.02), std({ color: "#ffffff", roughness: 0.5 }), booth.x, 2.49, booth.z, false);
+    // A counter at the window, and the attendant's lamp.
+    add(block(bw * 0.7, 0.06, 0.4, 0.02), post, booth.x, 0.98, booth.z + booth.hz + 0.12, false);
     const board = this.painted(256, 64, (pen) => {
       pen.fillStyle = "#e8452e";
       pen.fillRect(0, 0, 256, 64);
@@ -495,9 +515,21 @@ export class ValetView extends TableView<State> {
     });
     const name = add(new T.PlaneGeometry(3, 0.75), new T.MeshBasicMaterial({ map: board }), booth.x, 3.15, booth.z + booth.hz, false);
     name.rotation.x = -0.5;
+    // Planters: dressed stone with soil, shrubs of a few greens, flowers among them.
+    const stoneP = std({ color: "#cfc8bb", roughness: 0.85 }),
+      soilP = std({ color: "#4a3324", roughness: 1 }),
+      shrub = new T.IcosahedronGeometry(1, 1),
+      greens = ["#3f8a4a", "#4f9a52", "#367a3e"].map((c) => std({ color: c, roughness: 1 })),
+      blooms = ["#f2c230", "#e8452e", "#f4f1e8", "#d86aa8"].map((c) => std({ color: c, roughness: 0.8 }));
     for (const p of planters) {
-      add(block(p.hx * 2, 0.5, p.hz * 2, 0.06), std({ color: "#8d6a4a" }), p.x, 0.25, p.z);
-      for (let k = 0; k < 4; k++) add(new T.SphereGeometry(0.62, 10, 8), std({ color: k % 2 ? "#3f8a4a" : "#4f9a52", roughness: 1 }), p.x - p.hx + 0.6 + k * ((p.hx * 2 - 1.2) / 3), 0.85, p.z + (k % 2 ? 0.12 : -0.12));
+      add(block(p.hx * 2, 0.5, p.hz * 2, 0.08), stoneP, p.x, 0.25, p.z);
+      add(new T.BoxGeometry(p.hx * 2 - 0.3, 0.04, p.hz * 2 - 0.3), soilP, p.x, 0.51, p.z, false);
+      const n = Math.max(3, Math.round(p.hx * 2));
+      for (let k = 0; k < n; k++) {
+        const bush = add(shrub, greens[k % 3], p.x - p.hx + 0.55 + k * ((p.hx * 2 - 1.1) / (n - 1)), 0.85, p.z + (k % 2 ? 0.15 : -0.15));
+        bush.scale.set(0.55, 0.45 + (k % 3) * 0.08, 0.55);
+        for (let f = 0; f < 3; f++) add(new T.SphereGeometry(0.07, 6, 5), blooms[(k + f) % 4], bush.position.x + Math.cos(f * 2.1 + k) * 0.42, 1.12 + (f % 2) * 0.08, bush.position.z + Math.sin(f * 2.1 + k) * 0.32, false);
+      }
     }
     const concrete = std({ color: "#c2c4c8", roughness: 0.7 }),
       stripe = std({ color: "#f2c230", roughness: 0.6 });
@@ -534,8 +566,55 @@ export class ValetView extends TableView<State> {
         piece.castShadow = true;
         pivot.add(piece);
       }
+      pivot.userData.moving = true;
       this.arms.push({ pivot, open: 0 });
     }
+    this.mergeStill();
+  }
+  /**
+   * The lot's still things merged: every mesh that never moves is put together with the others of its material into
+   * one, so that the lot is drawn in few strokes (a drawing done by the processor alone, as the browser tests are,
+   * pays for every separate thing; a graphics card hardly notices either way).
+   */
+  private mergeStill() {
+    const KEEP = ["position", "normal", "uv"],
+      groups = new Map<string, T.Mesh[]>();
+    this.lot.updateMatrixWorld(true);
+    const back = new T.Matrix4().copy(this.lot.matrixWorld).invert();
+    this.lot.traverse((o) => {
+      const mesh = o as T.Mesh;
+      if (!mesh.isMesh || Array.isArray(mesh.material) || !mesh.visible) return;
+      for (let p: T.Object3D | null = mesh; p && p !== this.lot; p = p.parent) if (p.userData.moving) return;
+      const names = Object.keys(mesh.geometry.attributes).filter((n) => KEEP.includes(n));
+      if (names.length !== 3) return;
+      const key = [(mesh.material as T.Material).uuid, mesh.castShadow, mesh.receiveShadow, mesh.renderOrder].join("|");
+      groups.set(key, [...(groups.get(key) ?? []), mesh]);
+    });
+    const dropped = new Set<T.BufferGeometry>();
+    for (const meshes of groups.values()) {
+      if (meshes.length < 2) continue;
+      const parts = meshes.map((mesh) => {
+        const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+        for (const name of Object.keys(g.attributes)) if (!KEEP.includes(name)) g.deleteAttribute(name);
+        g.morphAttributes = {};
+        return g.applyMatrix4(new T.Matrix4().multiplyMatrices(back, mesh.matrixWorld));
+      });
+      const merged = mergeGeometries(parts, false);
+      for (const g of parts) g.dispose();
+      if (!merged) continue;
+      const first = meshes[0],
+        one = new T.Mesh(merged, first.material);
+      Object.assign(one, { castShadow: first.castShadow, receiveShadow: first.receiveShadow, renderOrder: first.renderOrder });
+      this.lot.add(one);
+      for (const mesh of meshes) {
+        mesh.removeFromParent();
+        dropped.add(mesh.geometry);
+      }
+    }
+    // The shapes no mesh uses any more.
+    const used = new Set<T.BufferGeometry>();
+    this.lot.traverse((o) => (o as T.Mesh).isMesh && used.add((o as T.Mesh).geometry));
+    for (const g of dropped) if (!used.has(g)) g.dispose();
   }
   /** Shiny things (paint, glass, a polished floor) reflect the lot's surroundings, where a graphics card draws them. */
   private reflect(look: Look) {
@@ -556,30 +635,15 @@ export class ValetView extends TableView<State> {
     this.scene.environment = this.room;
     this.scene.environmentIntensity = intensity;
   }
-  /** A little person: legs, a body in `colour`, a head; the valet wears a cap. */
-  private person(colour: string, cap = false) {
-    const k = this.kit,
-      g = new T.Group(),
-      shirt = this.standard({ color: colour, roughness: 0.7 });
-    const legs = new T.Mesh(k.legs as T.BufferGeometry, k.trousers as T.Material);
-    legs.position.y = 0.31;
-    const torso = new T.Mesh(k.torso as T.BufferGeometry, shirt);
-    torso.position.y = 1;
-    const head = new T.Mesh(k.face as T.BufferGeometry, k.skin as T.Material);
-    head.position.y = 1.62;
-    g.add(legs, torso, head);
-    if (cap) {
-      const hat = new T.Mesh(k.cap as T.BufferGeometry, shirt);
-      hat.position.y = 1.86;
-      g.add(hat);
-    }
-    g.traverse((o) => (o.castShadow = true));
-    g.userData.shirt = shirt;
-    return g;
+  /** A person (see `models.ts`): a shirt in `colour`, hair in `hair`; the valet in uniform with its cap. */
+  private person(colour: string, hair: string, uniform = false) {
+    return makeFigure(this.peopleParts, this.standard({ color: colour, roughness: 0.75 }), this.standard({ color: hair, roughness: 0.9 }), uniform);
   }
   /** A customer at the booth: a figure and a bubble over it that says what it wants and how patient it still is. */
   private customer(): Customer {
-    const root = this.person("#888"),
+    const hairs = ["#2b1d14", "#4a2f1c", "#111111", "#7a5a32", "#9a9a98"],
+      figure = this.person("#888", hairs[this.customers.length % hairs.length]),
+      root = figure.root,
       canvas = document.createElement("canvas");
     canvas.width = 160;
     canvas.height = 96;
@@ -591,71 +655,26 @@ export class ValetView extends TableView<State> {
     sprite.renderOrder = 5;
     root.add(sprite);
     this.root.add(root);
-    return { root, sprite, canvas, texture, said: "", shirt: root.userData.shirt };
+    return { root, sprite, canvas, texture, said: "", shirt: figure.shirt, figure };
   }
-  /** A car of a body style and colour: body, cabin, wheels (the front ones steer), lamps, and dents that show once it is bumped. */
+  /** A car of its kind and colour (see `models.ts`), its lamps lit one by one, the glare of its headlamps and their beam on the ground. */
   private car(car: Car): CarModel {
     const k = this.kit,
-      root = new T.Group(),
-      paint = this.standard({ color: PAINTS[car.colour % PAINTS.length], roughness: 0.35, metalness: 0.25 }),
-      put = (g: T.BufferGeometry, m: T.Material, x: number, y: number, z: number, shadow = true) => {
-        const mesh = new T.Mesh(g, m);
-        mesh.position.set(x, y, z);
-        mesh.castShadow = shadow;
-        root.add(mesh);
-        return mesh;
-      };
-    // The styles: a saloon, a hatchback with a taller cabin to the tail, and a van.
-    const [cabL, cabX, cabH] = [
-      [2.0, -0.25, 0.5],
-      [2.5, -0.5, 0.56],
-      [3.3, -0.3, 0.78],
-    ][car.style % 3];
-    put(this.own(block(CAR_L, 0.52, CAR_W, 0.12)), paint, 0, 0.56, 0);
-    put(this.own(block(cabL, cabH, CAR_W - 0.22, 0.14)), k.glass as T.Material, cabX, 0.8 + cabH / 2, 0);
-    put(this.own(block(cabL - 0.3, 0.08, CAR_W - 0.3, 0.03)), paint, cabX, 0.82 + cabH, 0, false);
-    const front: T.Group[] = [],
-      wheels: T.Mesh[] = [];
-    for (const x of [1.3, -1.3])
-      for (const z of [-0.84, 0.84]) {
-        const pivot = new T.Group();
-        pivot.position.set(x, 0.33, z);
-        const wheel = new T.Mesh(k.wheel as T.BufferGeometry, k.tyre as T.Material);
-        wheel.rotation.x = Math.PI / 2;
-        const hub = new T.Mesh(k.hub as T.BufferGeometry, k.rim as T.Material);
-        hub.rotation.x = Math.PI / 2;
-        pivot.add(wheel, hub);
-        root.add(pivot);
-        wheels.push(wheel);
-        if (x > 0) front.push(pivot);
-      }
-    const brake = this.standard({ color: "#7a1612", emissive: "#ff2a1a", emissiveIntensity: 0.15 }),
-      back = this.standard({ color: "#8a8a86", emissive: "#ffffff", emissiveIntensity: 0 });
-    const head = this.standard({ color: "#fff6c8", emissive: "#ffe9a0", emissiveIntensity: 0.6 }),
+      brake = this.standard({ color: "#7a1612", emissive: "#ff2a1a", emissiveIntensity: 0.15, roughness: 0.3 }),
+      back = this.standard({ color: "#c9c9c4", emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.3 }),
+      head = this.standard({ color: "#fff6c8", emissive: "#ffe9a0", emissiveIntensity: 0.6, roughness: 0.2 }),
+      parts = makeCar(this.carParts, modelOf(car.style, car.colour), paintOf(this.carParts, (r) => this.own(r), PAINTS[car.colour % PAINTS.length]), { head, brake, back }),
+      root = parts.root,
       flares: T.Sprite[] = [];
     for (const z of [-0.6, 0.6]) {
-      put(k.lamp as T.BufferGeometry, head, CAR_L / 2 - 0.02, 0.62, z, false);
       const flare = new T.Sprite(k.flare as T.SpriteMaterial);
-      flare.position.set(CAR_L / 2 + 0.12, 0.64, z);
+      flare.position.set(CAR_L / 2 + 0.12, parts.spec.lamp, z);
       flare.scale.setScalar(0.95);
       flare.renderOrder = 3;
       flare.visible = false;
       root.add(flare);
       flares.push(flare);
-      put(k.lamp as T.BufferGeometry, brake, -CAR_L / 2 + 0.02, 0.66, z, false);
-      put(k.lamp as T.BufferGeometry, back, -CAR_L / 2 + 0.02, 0.66, z * 0.45, false).scale.z = 0.5;
     }
-    // Dents: dark scrapes on the bonnet and the corners, hidden until it is bumped.
-    const dents = [
-      [1.75, 0.83, 0.5],
-      [1.6, 0.83, -0.55],
-      [-1.75, 0.83, 0.3],
-    ].map(([x, y, z]) => {
-      const mesh = put(k.dent as T.BufferGeometry, k.scratch as T.Material, x, y, z, false);
-      mesh.rotation.y = x * 0.4;
-      mesh.visible = false;
-      return mesh;
-    });
     const beam = new T.Mesh(k.beam as T.BufferGeometry, k.beamLight as T.Material);
     beam.rotation.x = -Math.PI / 2;
     beam.position.set(CAR_L / 2 + 3.7, 0.05, 0);
@@ -663,7 +682,7 @@ export class ValetView extends TableView<State> {
     beam.visible = false;
     root.add(beam);
     this.root.add(root);
-    return { root, head, beam, flares, front, wheels, brake, back, dents, spin: 0 };
+    return { root, head, beam, flares, front: parts.front, wheels: parts.wheels, radius: parts.spec.wheel, brake, back, dents: parts.dents, spin: 0 };
   }
   private controls() {
     const el = this.renderer.domElement;
@@ -700,9 +719,15 @@ export class ValetView extends TableView<State> {
       if (target.closest(".vp-stick")) {
         e.preventDefault();
         capture(this.stick, e);
-        leaning = e.pointerId;
         this.stick.classList.add("on");
-        lean(e);
+        // At the wheel the thumb takes hold of the steering wheel and turns it; on foot it leans the lever.
+        if (this.world.hand >= 0) {
+          this.wheel.finger = e.pointerId;
+          this.wheel.last = this.wheelAt(e);
+        } else {
+          leaning = e.pointerId;
+          lean(e);
+        }
         return;
       }
       if (target.closest(".vp-act")) {
@@ -719,6 +744,13 @@ export class ValetView extends TableView<State> {
     });
     this.pad.addEventListener("pointermove", (e) => {
       if (e.pointerId === leaning) lean(e);
+      if (e.pointerId === this.wheel.finger) {
+        // Turned on by however far the finger has gone round the wheel's middle since the last move (held at the lock).
+        const at = this.wheelAt(e);
+        if (at !== null && this.wheel.last !== null) this.wheel.angle = turnWheel(this.wheel.angle, this.wheel.last, at);
+        if (at !== null) this.wheel.last = at;
+        this.leverShown();
+      }
     });
     const lift = (e: PointerEvent) => {
       if (e.pointerId === leaning) {
@@ -726,6 +758,12 @@ export class ValetView extends TableView<State> {
         this.lever = { x: 0, y: 0 };
         this.stick.classList.remove("on");
         this.leverShown();
+      }
+      if (e.pointerId === this.wheel.finger) {
+        // Let go, the wheel comes back to the middle by itself (in `pose`).
+        this.wheel.finger = -1;
+        this.wheel.last = null;
+        this.stick.classList.remove("on");
       }
       if (fingers.delete(e.pointerId)) mark();
     };
@@ -756,13 +794,25 @@ export class ValetView extends TableView<State> {
     el.addEventListener("keyup", key(false));
     el.addEventListener("blur", () => (this.keys = { up: false, down: false, left: false, right: false, hand: false }));
   }
-  /** The lever's knob where it leans (only sideways at the wheel, where it steers). */
+  /** The lever's knob where it leans (on foot), and the steering wheel turned as far as it is (at the wheel). */
   private leverShown() {
     const driving = this.world.hand >= 0,
       { x, y } = this.lever,
       box = this.stick.getBoundingClientRect(),
       reach = (box.width || 120) * 0.36;
-    this.knob.style.transform = `translate(${(x * reach).toFixed(1)}px, ${(driving ? 0 : y * reach).toFixed(1)}px)`;
+    this.knob.style.transform = driving ? "" : `translate(${(x * reach).toFixed(1)}px, ${(y * reach).toFixed(1)}px)`;
+    // The wheel shows the finger's turn while it is held or coming back; else, steered by the keys, the car's own.
+    const hand = driving ? this.world.cars.find((c) => c.id === this.world.hand) : null,
+      angle = this.wheel.finger >= 0 || this.wheel.angle !== 0 || !hand ? this.wheel.angle : (hand.steer / MAX_STEER) * WHEEL_LOCK;
+    if (Math.abs(angle - this.wheel.shown) > 0.002 || Number.isNaN(this.wheel.shown)) {
+      this.wheel.shown = angle;
+      this.wheelArt.style.transform = `rotate(${angle.toFixed(4)}rad)`;
+    }
+  }
+  /** A finger's angle round the steering wheel's middle (null too near the middle to tell). */
+  private wheelAt(e: PointerEvent) {
+    const box = this.stick.getBoundingClientRect();
+    return fingerAngle(e.clientX - (box.x + box.width / 2), e.clientY - (box.y + box.height / 2), box.width / 2);
   }
   /** 탑승 or 하차 (the button, E or Enter): into the car next to the valet, or out of the car in hand. */
   private use() {
@@ -779,6 +829,7 @@ export class ValetView extends TableView<State> {
     }
     // Getting in or out lets go of what was held: the car does not lurch, nor the valet run off.
     this.keys = { up: false, down: false, left: false, right: false, hand: false };
+    this.wheel.angle = 0;
     this.leverShown();
   }
   /** What the keys and the controls on the screen hold: the valet's way on foot, or the car's controls at the wheel. */
@@ -797,7 +848,8 @@ export class ValetView extends TableView<State> {
       const lean = Math.hypot(this.lever.x, this.lever.y);
       return lean > 0.15 ? { gas: 0, steer: 0, handbrake: false, walkX: this.lever.x, walkZ: this.lever.y } : { gas: 0, steer: 0, handbrake: false };
     }
-    const steer = sideways !== 0 ? sideways : Math.abs(this.lever.x) > 0.12 ? Math.max(-1, Math.min(1, (this.lever.x - Math.sign(this.lever.x) * 0.12) / 0.7)) : 0;
+    // The keys, else the steering wheel on the screen (turned by a thumb, or coming back to the middle once let go).
+    const steer = sideways !== 0 ? sideways : steerOf(this.wheel.angle);
     return { gas: up === down ? 0 : up ? 1 : -1, steer, handbrake: this.keys.hand };
   }
   protected subject() {
@@ -927,6 +979,9 @@ export class ValetView extends TableView<State> {
   }
   /** Everything where the lot has it: cars, customers, the valet, the marks, the barriers, the words, the sounds. */
   private pose(now: number, dt: number) {
+    // The steering wheel let go comes back to the middle, smoothly; held, it stays where the thumb has turned it.
+    if (this.wheel.finger < 0 && this.wheel.angle !== 0) this.wheel.angle = centred(this.wheel.angle, dt);
+    if (this.world.hand >= 0) this.leverShown();
     (this.kit.beamLight as T.MeshBasicMaterial).opacity = this.look?.beams ?? 0;
     this.look?.tick?.(now / 1000);
     const w = this.world,
@@ -946,8 +1001,8 @@ export class ValetView extends TableView<State> {
       model.root.position.set(at.x, 0, at.z);
       model.root.rotation.y = -at.heading;
       for (const pivot of model.front) pivot.rotation.y = -car.steer;
-      model.spin += (car.v * dt) / 0.33;
-      for (const wheel of model.wheels) wheel.rotation.y = -model.spin;
+      model.spin += (car.v * dt) / model.radius;
+      for (const wheel of model.wheels) wheel.rotation.z = -model.spin;
       const mine = car === hand,
         braking = mine && ((input.gas < 0 && car.v > 0.05) || (input.gas > 0 && car.v < -0.05) || input.handbrake);
       // In the dark a car that runs (rolling in, in hand, driving off) has its lights on; one left standing has them off.
@@ -979,6 +1034,9 @@ export class ValetView extends TableView<State> {
         text = car.state === "requested" ? `출차 ${lot.bays[car.bay]?.n ?? ""}`.trim() : car.want >= 0 ? `주차 ${lot.bays[car.want].n}` : "주차",
         said = `${text}|${Math.ceil(share * 14)}|${car.late}`;
       c.root.position.y = car.late ? Math.abs(Math.sin(t * 9)) * 0.12 : 0;
+      // Standing, it shifts its weight now and then; an angry one stamps.
+      c.figure.stride = t * (car.late ? 9 : 1.3) + k;
+      walk(c.figure, car.late ? 0.5 : 0.08);
       if (said === c.said) return;
       c.said = said;
       const pen = c.canvas.getContext("2d")!;
@@ -1006,7 +1064,11 @@ export class ValetView extends TableView<State> {
     // The valet on foot, facing the way it goes and bobbing as it runs (in a car, it is not seen).
     const near = !hand && this.running() ? reachable(w) : null;
     this.valet.visible = !hand;
-    this.valet.position.set(w.valet.x, w.valet.speed > 0.1 ? Math.abs(Math.sin(t * 14)) * 0.16 : 0, w.valet.z);
+    // Its legs and arms swing with its stride, faster and wider the faster it goes.
+    const pace = Math.min(1, w.valet.speed / 4);
+    this.walker.stride += dt * w.valet.speed * 2.4;
+    walk(this.walker, pace);
+    this.valet.position.set(w.valet.x, pace > 0.02 ? Math.abs(Math.cos(this.walker.stride)) * 0.06 * pace : 0, w.valet.z);
     this.valet.rotation.y = -w.valet.heading + Math.PI / 2;
     this.feet.visible = !capturing();
     // The car it may get into now glows round its feet.
@@ -1102,6 +1164,7 @@ export class ValetView extends TableView<State> {
       label = driving ? "하차" : "탑승";
     if (this.pad.classList.contains("vp-driving") !== driving) {
       this.pad.classList.toggle("vp-driving", driving);
+      this.stick.setAttribute("aria-label", driving ? "핸들" : "레버");
       this.leverShown();
     }
     this.act.classList.toggle("ready", ready);
@@ -1115,6 +1178,8 @@ export class ValetView extends TableView<State> {
     const d = this.renderer.domElement.dataset;
     d.phase = this.state?.winner !== null || w.over ? "over" : hand ? "drive" : "walk";
     d.valet = `${w.valet.x.toFixed(3)},${w.valet.z.toFixed(3)}`;
+    // How far the steering wheel on the screen is turned, in degrees (clockwise +).
+    d.wheel = ((this.wheel.angle * 180) / Math.PI).toFixed(1);
     d.near = near ? String(near.id) : "";
     // The cars the valet may get into: id, place, heading, state, the share of patience left, and the bay it stands in.
     d.takes = JSON.stringify(
@@ -1151,6 +1216,7 @@ export class ValetView extends TableView<State> {
       if (this.built !== state.stage) this.build(this.world.lot, state.stage);
       this.keys = { up: false, down: false, left: false, right: false, hand: false };
       this.lever = { x: 0, y: 0 };
+      this.wheel.angle = 0;
       this.saying = { car: -1, until: 0, text: "" };
       this.said = { jobs: "", money: "" };
       this.word.classList.remove("vp-show");

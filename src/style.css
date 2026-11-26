@@ -4013,10 +4013,16 @@ html[data-capture] .rl-bar, html[data-capture] .rl-history { display:none !impor
 .vp-stick::before { content:"";position:absolute;inset:50% 16px auto;height:6px;margin-top:-3px;border-radius:3px;background:rgba(255,255,255,.4);opacity:0;transition:opacity .15s; }
 .vp-ways { position:absolute;inset:0;display:flex;justify-content:space-between;align-items:center;padding:0 9px;font:900 15px/1 "Inter",sans-serif;font-style:normal;color:#fff;opacity:0;pointer-events:none;transition:opacity .15s; }
 .vp-ways b { font-weight:900; }
-.vp-driving .vp-stick::before, .vp-driving .vp-ways { opacity:.85; }
 .vp-knob { width:58px;height:58px;border-radius:50%;background:radial-gradient(circle at 38% 32%, #ff8a6c, #e8452e 58%, #b52f1d);border:3px solid #fff;box-shadow:0 5px 12px rgba(10,20,30,.45);pointer-events:none;transition:transform .09s ease-out; }
 .vp-stick.on { cursor:grabbing; }
 .vp-stick.on .vp-knob { transition:none; }
+/* 주차 요원 at the wheel: the lever becomes a steering wheel the thumb turns round its middle (lock to lock 1½ turns). */
+.vp-wheel { position:absolute;inset:3px;display:block;opacity:0;pointer-events:none;transition:opacity .15s;filter:drop-shadow(0 4px 6px rgba(0,0,0,.45)); }
+.vp-wheel svg { display:block;width:100%;height:100%; }
+.vp-driving .vp-wheel { opacity:1; }
+.vp-driving .vp-knob { opacity:0; }
+.vp-driving .vp-stick { background:radial-gradient(circle, rgba(24,32,44,.18) 0 60%, rgba(24,32,44,.32) 61%); }
+.vp-driving .vp-stick::before, .vp-driving .vp-ways { opacity:0; }
 .vp-side { display:grid;grid-template-columns:auto auto;grid-template-areas:"gear act" "back go";gap:10px 12px;align-items:end;justify-items:center;pointer-events:none; }
 .vp-pad:not(.vp-driving) .vp-side { grid-template-columns:auto;grid-template-areas:"act"; }
 .vp-pad:not(.vp-driving) .vp-pedal, .vp-pad:not(.vp-driving) .vp-gear { display:none; }

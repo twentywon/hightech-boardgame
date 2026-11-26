@@ -48,8 +48,8 @@ const finger = (page: Page, type: "pointerdown" | "pointermove" | "pointerup", p
 const inside = (inner: { x: number; y: number; width: number; height: number }, outer: { x: number; y: number; width: number; height: number }) =>
   inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5 && inner.x + inner.width <= outer.x + outer.width + 0.5 && inner.y + inner.height <= outer.y + outer.height + 0.5;
 
-test("valet parking: I walk the valet by the lever and the keys, get in by 탑승 next to the car (its bay named in a bubble), drive by the keys, the pedals and the lever, and get out by 하차 once it stands", async ({ page }) => {
-  test.setTimeout(240000);
+test("valet parking: I walk the valet by the lever and the keys, get in by 탑승 next to the car (its bay named in a bubble), drive by the keys, the pedals and the steering wheel, and get out by 하차 once it stands", async ({ page }) => {
+  test.setTimeout(360000);
   const errors = await sit(page);
   // The shift's clock, the money (none yet) and the customer waiting are on the table.
   await expect(page.locator(".vp-clock")).toHaveText(/^[0-3]:\d\d$/);
@@ -97,8 +97,9 @@ test("valet parking: I walk the valet by the lever and the keys, get in by 탑�
   await expect(canvas(page)).toHaveAttribute("data-said", `${bay}번 칸`);
   await expect(page.locator(".vp-job.mine")).toHaveText(`${bay}번 칸 주차`);
   expect(JSON.parse((await canvas(page).getAttribute("data-free"))!).map((b: number[]) => b[0])).toContain(JSON.parse((await canvas(page).getAttribute("data-want"))!)[0]);
-  // The bubble goes after a few seconds; the bay's number stays at the top.
-  await expect(canvas(page)).toHaveAttribute("data-said", "", { timeout: 30000 });
+  // The bubble goes after a few seconds of the lot's own clock (which a slowly drawn page stretches: at a frame a
+  // second it runs a tenth of the time); the bay's number stays at the top.
+  await expect(canvas(page)).toHaveAttribute("data-said", "", { timeout: 90000 });
   await expect(page.locator(".vp-job.mine")).toHaveText(`${bay}번 칸 주차`);
   // At the wheel: 하차 instead of 탑승, and the pedals.
   await expect(page.getByRole("button", { name: "하차", exact: true })).toBeVisible();
@@ -131,13 +132,39 @@ test("valet parking: I walk the valet by the lever and the keys, get in by 탑�
   await key(page, "keydown", " ");
   await expect.poll(async () => Math.abs((await car(page)).v), { timeout: 20000 }).toBeLessThan(0.02);
   await key(page, "keyup", " ");
-  // The pedal and the lever held by two fingers at once: the lever leaned left steers left while the pedal stays down.
+  // At the wheel the lever is a steering wheel, turned like a real one: a thumb taking it at the top and going round
+  // clockwise turns it to the right (the wheel drawn turned with it) and the car's wheels right; let go, it comes back
+  // to the middle by itself, not at once.
+  await expect(page.locator(".vp-stick")).toHaveAttribute("aria-label", "핸들");
+  await expect(page.locator(".vp-wheel")).toBeVisible();
+  const wheel = async () => Number(await canvas(page).getAttribute("data-wheel"));
+  await finger(page, "pointerdown", ".vp-stick", 4, 0, -46);
+  await finger(page, "pointermove", ".vp-stick", 4, 33, -33);
+  await finger(page, "pointermove", ".vp-stick", 4, 46, 0);
+  await finger(page, "pointermove", ".vp-stick", 4, 33, 33);
+  await finger(page, "pointermove", ".vp-stick", 4, 0, 46);
+  await finger(page, "pointermove", ".vp-stick", 4, -33, 33);
+  await expect.poll(wheel).toBeGreaterThan(200);
+  expect(await page.locator(".vp-wheel").evaluate((el) => getComputedStyle(el).transform)).not.toBe("none");
+  await expect.poll(async () => (await car(page)).steer, { timeout: 20000 }).toBeGreaterThan(0.2);
+  await finger(page, "pointerup", ".vp-stick", 4);
+  const letGo = await wheel();
+  await expect.poll(wheel, { timeout: 20000 }).toBe(0);
+  expect(letGo).toBeGreaterThan(0);
+  await expect.poll(async () => Math.abs((await car(page)).steer), { timeout: 20000 }).toBeLessThan(0.05);
+  // The pedal and the wheel held by two fingers at once: the wheel turned the other way round steers left while the
+  // pedal stays down.
   const before = await car(page);
   await finger(page, "pointerdown", ".vp-go", 1);
   await expect(go).toHaveClass(/\bon\b/);
-  await finger(page, "pointerdown", ".vp-stick", 2);
-  await finger(page, "pointermove", ".vp-stick", 2, -60, -30);
+  await finger(page, "pointerdown", ".vp-stick", 2, 0, -46);
+  await finger(page, "pointermove", ".vp-stick", 2, -33, -33);
+  await finger(page, "pointermove", ".vp-stick", 2, -46, 0);
+  await finger(page, "pointermove", ".vp-stick", 2, -33, 33);
+  await finger(page, "pointermove", ".vp-stick", 2, 0, 46);
+  await finger(page, "pointermove", ".vp-stick", 2, 33, 33);
   await expect(go).toHaveClass(/\bon\b/);
+  await expect.poll(wheel).toBeLessThan(-200);
   await expect.poll(async () => (await car(page)).steer, { timeout: 20000 }).toBeLessThan(-0.3);
   await expect.poll(async () => (await car(page)).v, { timeout: 20000 }).toBeGreaterThan(0.5);
   await expect.poll(async () => (await car(page)).heading, { timeout: 20000 }).toBeLessThan(before.heading - 0.03);

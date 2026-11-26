@@ -339,14 +339,14 @@ class Layer {
 }
 
 /** The sky light, the sun and the floor of the lot of `stage`, with all that is round it laid into `into`. */
-export function dress(stage: number, lot: Lot, into: T.Group): Look {
+export function dress(stage: number, lot: Lot, into: T.Group, rich = false): Look {
   seed = 0x2f6e2b1 + stage;
   const layer = new Layer(into);
   return stage === 2
     ? burgerNight(lot, layer)
     : stage === 3
       ? underground(lot, layer)
-      : mart(lot, layer);
+      : mart(lot, layer, rich);
 }
 
 /** Asphalt: aggregate speckled light and dark, patched, stained by oil; `wet` how much of it shines from rain. */
@@ -429,44 +429,472 @@ function asphalt(
   return { map, normal: normals(bump, 2.2, rx, ry), rough };
 }
 
-/** The supermarket's lot by day: grass, the street past the entrance, the road the exit leads to. */
-function mart(lot: Lot, layer: Layer): Look {
+/**
+ * The supermarket's lot by day (the made-up 해바라기마트 SUNNY MART): the store behind the lot with its glass front, a
+ * canopy over the sliding doors, its name on the roof's edge and the plant on its roof; the pavement before it with a
+ * trolley shelter, trees in round planters and benches; a sunlit asphalt lot with oil stains under the bays and tyre
+ * marks where cars turn; the street past the entrance with a zebra crossing, the road the exit leads to, grass and trees.
+ */
+function mart(lot: Lot, layer: Layer, rich: boolean): Look {
   const w = lot.maxX - lot.minX,
     d = lot.maxZ - lot.minZ;
-  const grass = new T.MeshStandardMaterial({ color: "#6a9550", roughness: 1 }),
-    road = new T.MeshStandardMaterial({ color: "#44474d", roughness: 0.95 }),
-    walk = new T.MeshStandardMaterial({ color: "#b9b5ab", roughness: 0.9 });
-  layer.flat(160, 120, grass, 0, 0, -0.04).receiveShadow = true;
-  // The street runs past the entrance; cars turn in from it.
-  layer.flat(9, 120, road, -16 - 5.2, 0, -0.02).receiveShadow = true;
-  layer.flat(1.4, 120, walk, -16 - 0.3, 0, -0.012).receiveShadow = true;
-  layer.flat(30, 7.4, road, 16 + 15, 0, -0.02).receiveShadow = true;
-  const dash = new T.MeshStandardMaterial({ color: "#e8e4d2", roughness: 0.8 });
-  for (let k = -8; k <= 8; k++)
-    layer.flat(0.16, 2.2, dash, -16 - 5.2, k * 5, -0.012);
-  // Asphalt, speckled like the real thing.
-  const speckle = picture(256, 256, (pen) => {
-    pen.fillStyle = "#54585f";
-    pen.fillRect(0, 0, 256, 256);
-    for (let k = 0; k < 2600; k++) {
-      pen.fillStyle = `rgba(${k % 2 ? "255,255,255" : "0,0,0"},${0.04 + rand() * 0.07})`;
-      pen.fillRect(rand() * 256, rand() * 256, 1 + rand() * 2, 1 + rand() * 2);
+  // Grass round it all, mown in stripes, with clover and bare patches.
+  const grassTex = picture(
+    256,
+    256,
+    (pen, gw, gh) => {
+      pen.fillStyle = "#6f9a4f";
+      pen.fillRect(0, 0, gw, gh);
+      for (let k = 0; k < 8; k++) {
+        pen.fillStyle = k % 2 ? "rgba(255,255,220,0.05)" : "rgba(0,40,0,0.05)";
+        pen.fillRect(0, (k * gh) / 8, gw, gh / 8);
+      }
+      blotches(pen, gw, gh, 18, (a) => `rgba(60,90,30,${a})`, 40, 0.35);
+      blotches(pen, gw, gh, 6, (a) => `rgba(150,140,90,${a})`, 20, 0.25);
+      grit(pen, gw, gh, 9000, 0.12, 1.6);
+    },
+    40,
+    30,
+  );
+  layer.flat(160, 120, new T.MeshStandardMaterial({ map: grassTex, roughness: 1 }), 0, 0, -0.05).receiveShadow = true;
+  // The street past the entrance, the road out from the exit: asphalt with its marks.
+  const street = asphalt(512, "#3d4046", 1.4, 16, 0);
+  const roadOf = (t: { map: T.Texture; normal: T.Texture; rough: T.Texture }) =>
+    new T.MeshStandardMaterial({ map: t.map, normalMap: rich ? t.normal : null, normalScale: new T.Vector2(0.5, 0.5), roughnessMap: t.rough, roughness: 0.95 });
+  layer.flat(9, 120, roadOf(street), -21.2, 0, -0.02).receiveShadow = true;
+  layer.flat(30, 7.4, roadOf(asphalt(512, "#3d4046", 4.5, 1.1, 0)), 31, 0, -0.02).receiveShadow = true;
+  const paint = new T.MeshStandardMaterial({ color: "#efece0", roughness: 0.7 }),
+    yellow = new T.MeshStandardMaterial({ color: "#e9bd2c", roughness: 0.7 });
+  for (let k = -8; k <= 8; k++) if (Math.abs(k * 5 - 6.5) > 3) layer.flat(0.16, 2.2, paint, -21.2, k * 5, -0.012);
+  layer.flat(0.12, 120, yellow, -21.2 - 4.2, 0, -0.012);
+  // Zebra crossings: over the street below the entrance, and over the road the exit leads to.
+  for (let k = 0; k < 8; k++) layer.flat(0.5, 2.8, paint, -25.2 + k * 1.05, 6.5, -0.011);
+  for (let k = 0; k < 6; k++) layer.flat(2.4, 0.45, paint, 19.2, -3.05 + k * 1.15, -0.011);
+  // Paving: the pavement along the street, the forecourt before the store, edged by kerbs.
+  const paving = picture(256, 256, (pen, pw, ph) => {
+    pen.fillStyle = "#c9c3b6";
+    pen.fillRect(0, 0, pw, ph);
+    for (let y = 0; y < 8; y++)
+      for (let x = 0; x < 4; x++) {
+        const v = 196 + rand() * 30;
+        pen.fillStyle = `rgb(${v},${v - 6},${v - 16})`;
+        pen.fillRect(x * 64 + (y % 2) * 32 + 1, y * 32 + 1, 62, 30);
+      }
+    grit(pen, pw, ph, 4000, 0.1);
+    blotches(pen, pw, ph, 4, (a) => `rgba(80,70,60,${a})`, 30, 0.15);
+  });
+  paving.wrapS = paving.wrapT = T.RepeatWrapping;
+  const walk = (pw: number, pd: number, x: number, z: number) => {
+    const t = paving.clone();
+    t.repeat.set(pw / 2, pd / 1);
+    t.needsUpdate = true;
+    layer.flat(pw, pd, new T.MeshStandardMaterial({ map: t, roughness: 0.85 }), x, z, -0.01).receiveShadow = true;
+  };
+  walk(1.4, 120, -16.3, 0);
+  const front = lot.minZ - 3.4;
+  walk(44, 3.2, 4, lot.minZ - 1.8);
+  const kerbStone = new T.MeshStandardMaterial({ color: "#bdb8ad", roughness: 0.8 });
+  layer.mesh(block(44, 0.14, 0.22, 0.04), kerbStone, 4, 0.06, lot.minZ - 0.28);
+
+  // The store: a long box, a flat roof with its plant, a glass front with the shop seen through it.
+  const width = 30,
+    depth = 12,
+    height = 5.6,
+    cx = 1.5;
+  const wallTex = picture(
+    256,
+    128,
+    (pen, pw, ph) => {
+      pen.fillStyle = "#ece7dc";
+      pen.fillRect(0, 0, pw, ph);
+      pen.strokeStyle = "rgba(0,0,0,0.12)";
+      for (let x = 0; x <= pw; x += 32) {
+        pen.beginPath();
+        pen.moveTo(x, 0);
+        pen.lineTo(x, ph);
+        pen.stroke();
+      }
+      grit(pen, pw, ph, 2000, 0.06);
+    },
+    6,
+    1,
+  );
+  const wall = new T.MeshStandardMaterial({ map: wallTex, roughness: 0.85 });
+  const roofTex = picture(
+    256,
+    256,
+    (pen, rw, rh) => {
+      pen.fillStyle = "#8d9096";
+      pen.fillRect(0, 0, rw, rh);
+      blotches(pen, rw, rh, 12, (a) => `rgba(40,40,40,${a})`, 40, 0.2);
+      grit(pen, rw, rh, 12000, 0.2, 1.4);
+    },
+    4,
+    2,
+  );
+  const roof = new T.MeshStandardMaterial({ map: roofTex, roughness: 1 });
+  layer.mesh(new T.BoxGeometry(width, height, depth), [wall, wall, roof, wall, wall, wall], cx, height / 2, front - depth / 2);
+  // The roof's edge: a band in the store's green with a yellow line, the plant and skylights on the roof.
+  const green = new T.MeshStandardMaterial({ color: "#2f8f4e", roughness: 0.55 }),
+    sunny = new T.MeshStandardMaterial({ color: "#f4c21d", roughness: 0.45 }),
+    steel = new T.MeshStandardMaterial({ color: "#a9aeb5", roughness: 0.35, metalness: 0.65 }),
+    dark = new T.MeshStandardMaterial({ color: "#2a2d32", roughness: 0.6 });
+  layer.mesh(block(width + 0.4, 0.9, 0.4, 0.06), green, cx, height + 0.1, front + 0.05);
+  layer.mesh(block(width + 0.42, 0.12, 0.42, 0.03), sunny, cx, height - 0.32, front + 0.06, false);
+  for (const s of [-1, 1]) layer.mesh(block(0.4, 0.9, depth, 0.06), green, cx + s * (width / 2 + 0.0), height + 0.1, front - depth / 2);
+  for (const [x, z, sx, sz] of [
+    [cx - 9, front - 5, 2.4, 1.6],
+    [cx - 5.6, front - 7.5, 1.8, 1.4],
+    [cx + 8, front - 6, 3, 1.8],
+  ]) {
+    layer.mesh(block(sx, 1.0, sz, 0.08), steel, x, height + 0.5, z);
+    for (let k = 0; k < Math.floor(sx / 0.9); k++) {
+      const fan = layer.mesh(new T.CylinderGeometry(0.34, 0.34, 0.05, 18), dark, x - sx / 2 + 0.5 + k * 0.9, height + 1.03, z, false);
+      fan.receiveShadow = false;
+    }
+  }
+  const sky = new T.MeshStandardMaterial({ color: "#9fc4e2", roughness: 0.1, metalness: 0.5 });
+  for (let k = 0; k < 4; k++) layer.mesh(block(1.4, 0.3, 4.5, 0.05), sky, cx - 4 + k * 3.2, height + 0.15, front - 7.5);
+  // The front: shelves of goods and ceiling lights seen through the glass, the sliding doors, a canopy over them.
+  const fw = 2048,
+    fh = Math.round((fw * height) / width),
+    px = fw / width,
+    glassTop = 3.6,
+    glassBottom = 0.35,
+    door = { x: 3.5, w: 3.4 };
+  const frontMap = picture(fw, fh, (pen) => {
+    pen.fillStyle = "#ece7dc";
+    pen.fillRect(0, 0, fw, fh);
+    const top = fh - glassTop * px,
+      bottom = fh - glassBottom * px;
+    // Inside: a bright hall, rows of shelves stacked with goods, lights on the ceiling.
+    const hall = pen.createLinearGradient(0, top, 0, bottom);
+    hall.addColorStop(0, "#f7f5ee");
+    hall.addColorStop(1, "#d6d2c6");
+    pen.fillStyle = hall;
+    pen.fillRect(0.3 * px, top, fw - 0.6 * px, bottom - top);
+    for (let x = 0.6 * px; x < fw - 0.6 * px; x += 1.4 * px) {
+      pen.fillStyle = "rgba(255,255,255,0.9)";
+      pen.fillRect(x, top + 0.12 * px, 0.9 * px, 0.07 * px);
+    }
+    const goods = ["#e2432f", "#f2b02e", "#3fa45b", "#2f6fc0", "#f4efe2", "#a0522d", "#e86aa0", "#7b4fc0"];
+    for (let x = 0.5 * px; x < fw - 0.8 * px; x += 2.3 * px) {
+      const sw = 1.9 * px,
+        sTop = top + 0.75 * px;
+      pen.fillStyle = "#b9bcc2";
+      pen.fillRect(x, sTop, sw, bottom - sTop);
+      for (let r = 0; r < 4; r++) {
+        const y = sTop + 0.08 * px + r * 0.6 * px;
+        pen.fillStyle = "#8d9097";
+        pen.fillRect(x, y + 0.42 * px, sw, 0.05 * px);
+        for (let g = x + 0.04 * px; g < x + sw - 0.12 * px; g += 0.13 * px + rand() * 0.06 * px) {
+          pen.fillStyle = goods[Math.floor(rand() * goods.length)];
+          const gh = (0.22 + rand() * 0.18) * px;
+          pen.fillRect(g, y + 0.42 * px - gh, 0.1 * px, gh);
+        }
+      }
+    }
+    // People shopping, a trolley.
+    for (let k = 0; k < 7; k++) {
+      const x = (1.5 + rand() * (width - 3)) * px;
+      if (Math.abs(x / px - (door.x - cx + width / 2)) < door.w) continue;
+      pen.fillStyle = ["#3b5ea8", "#c94a3a", "#2f8a5a", "#444"][k % 4];
+      pen.fillRect(x - 0.18 * px, bottom - 1.25 * px, 0.36 * px, 0.75 * px);
+      pen.fillStyle = "#f0c8a4";
+      pen.beginPath();
+      pen.arc(x, bottom - 1.45 * px, 0.17 * px, 0, Math.PI * 2);
+      pen.fill();
+      pen.fillStyle = "#2b3140";
+      pen.fillRect(x - 0.16 * px, bottom - 0.5 * px, 0.32 * px, 0.5 * px);
+    }
+    // The glass: a sheen down it, the frames between the panes.
+    const sheen = pen.createLinearGradient(0, top, fw, bottom);
+    sheen.addColorStop(0, "rgba(170,210,240,0.35)");
+    sheen.addColorStop(0.45, "rgba(255,255,255,0.08)");
+    sheen.addColorStop(0.55, "rgba(255,255,255,0.3)");
+    sheen.addColorStop(1, "rgba(150,190,220,0.3)");
+    pen.fillStyle = sheen;
+    pen.fillRect(0.3 * px, top, fw - 0.6 * px, bottom - top);
+    pen.fillStyle = "#5d646d";
+    for (let x = 0.3 * px; x <= fw - 0.25 * px; x += 1.5 * px) pen.fillRect(x - 0.05 * px, top, 0.1 * px, bottom - top);
+    pen.fillRect(0.3 * px, top - 0.08 * px, fw - 0.6 * px, 0.14 * px);
+    pen.fillRect(0.3 * px, bottom - 0.04 * px, fw - 0.6 * px, 0.1 * px);
+    // The sliding doors (their middle line), the store's hours on the glass.
+    const dx = (door.x - cx + width / 2) * px;
+    pen.fillStyle = "#3d434b";
+    pen.fillRect(dx - (door.w / 2) * px, top, 0.12 * px, bottom - top);
+    pen.fillRect(dx + (door.w / 2) * px - 0.12 * px, top, 0.12 * px, bottom - top);
+    pen.fillRect(dx - 0.03 * px, top + 0.3 * px, 0.06 * px, bottom - top - 0.3 * px);
+    pen.fillStyle = "rgba(255,255,255,0.85)";
+    pen.font = `800 ${Math.round(0.28 * px)}px 'Noto Sans KR', Inter, sans-serif`;
+    pen.textAlign = "center";
+    pen.fillText("영업시간 09:00 - 23:00", dx, top + 0.55 * px);
+    // Banners in the windows: today's offers.
+    for (const [bx, text, colour] of [
+      [5, "오늘의 특가", "#e2432f"],
+      [23, "신선 과일 1+1", "#2f8f4e"],
+    ] as const) {
+      pen.fillStyle = colour;
+      pen.fillRect(bx * px, top + 0.25 * px, 3.2 * px, 0.6 * px);
+      pen.fillStyle = "#fff";
+      pen.font = `900 ${Math.round(0.36 * px)}px 'Noto Sans KR', Inter, sans-serif`;
+      pen.fillText(text, (bx + 1.6) * px, top + 0.67 * px);
     }
   });
-  speckle.wrapS = speckle.wrapT = T.RepeatWrapping;
-  speckle.repeat.set(w / 8, d / 8);
-  const kerb = new T.MeshStandardMaterial({ color: "#c9c5ba", roughness: 0.8 });
+  layer.upright(width, height, new T.MeshStandardMaterial({ map: frontMap, roughness: 0.25, metalness: rich ? 0.2 : 0 }), cx, height / 2, front + 0.01);
+  // The canopy over the doors, on two posts, with the word over them.
+  layer.mesh(block(door.w + 2.2, 0.22, 2.2, 0.06), green, door.x, 3.85, front + 1.05);
+  layer.mesh(block(door.w + 2.24, 0.06, 2.24, 0.02), sunny, door.x, 3.72, front + 1.05, false);
+  for (const s of [-1, 1]) layer.mesh(new T.CylinderGeometry(0.07, 0.07, 3.8, 10), steel, door.x + s * (door.w / 2 + 0.9), 1.9, front + 2.0);
+  // The name on the roof's edge, leaning back a little toward the eye: a sunflower and 해바라기마트, SUNNY MART under.
+  const signMap = picture(1024, 160, (pen, sw, sh) => {
+    pen.clearRect(0, 0, sw, sh);
+    void sw;
+    void sh;
+    const r = 62,
+      fx = 90,
+      fy = 80;
+    pen.fillStyle = "#f4c21d";
+    for (let k = 0; k < 14; k++) {
+      const a = (k / 14) * Math.PI * 2;
+      pen.beginPath();
+      pen.ellipse(fx + Math.cos(a) * r * 0.62, fy + Math.sin(a) * r * 0.62, r * 0.36, r * 0.15, a, 0, Math.PI * 2);
+      pen.fill();
+    }
+    pen.fillStyle = "#6b3b17";
+    pen.beginPath();
+    pen.arc(fx, fy, r * 0.42, 0, Math.PI * 2);
+    pen.fill();
+    pen.fillStyle = "rgba(0,0,0,0.25)";
+    for (let k = 0; k < 30; k++) pen.fillRect(fx - 18 + rand() * 36, fy - 18 + rand() * 36, 3, 3);
+    pen.fillStyle = "#ffffff";
+    pen.font = "900 92px 'Noto Sans KR', Inter, sans-serif";
+    pen.textAlign = "left";
+    pen.textBaseline = "middle";
+    pen.shadowColor = "rgba(0,0,0,0.35)";
+    pen.shadowBlur = 6;
+    pen.fillText("해바라기마트", 180, 68);
+    pen.font = "800 34px Inter, Arial, sans-serif";
+    pen.fillStyle = "#f4c21d";
+    pen.fillText("SUNNY MART", 186, 132);
+  });
+  // On the front over the glass, on a green board; and on a tall pylon sign by the road out, seen from the street.
+  const signMat = new T.MeshBasicMaterial({ map: signMap, transparent: true, depthWrite: false });
+  layer.mesh(block(11, 1.7, 0.16, 0.05), green, cx + 6.5, (glassTop + height) / 2 + 0.05, front + 0.1);
+  layer.upright(10.4, 1.62, signMat, cx + 6.5, (glassTop + height) / 2 + 0.05, front + 0.19);
+  const px0 = 17.6,
+    pz0 = -7;
+  layer.mesh(block(0.32, 5.2, 0.32, 0.04), steel, px0, 2.6, pz0);
+  layer.mesh(block(3.9, 1.3, 0.3, 0.08), green, px0, 5.6, pz0);
+  layer.mesh(block(3.95, 0.1, 0.32, 0.02), sunny, px0, 4.92, pz0, false);
+  layer.upright(3.7, 0.58, signMat, px0, 5.62, pz0 + 0.16);
+  // Before the store: a trolley shelter with its trolleys, round planters with trees, benches, bollards.
+  const shelterX = -6.5,
+    shelterZ = lot.minZ - 2.0;
+  layer.mesh(block(5.4, 0.08, 1.8, 0.03), new T.MeshStandardMaterial({ color: "#2f8f4e", roughness: 0.4, transparent: true, opacity: 0.85 }), shelterX, 2.25, shelterZ);
+  for (const s of [-1, 1]) for (const t of [-1, 1]) layer.mesh(new T.CylinderGeometry(0.05, 0.05, 2.25, 8), steel, shelterX + s * 2.6, 1.12, shelterZ + t * 0.8);
+  const basket = picture(128, 64, (pen, bw, bh) => {
+    pen.clearRect(0, 0, bw, bh);
+    pen.strokeStyle = "#d8dce2";
+    pen.lineWidth = 3;
+    for (let x = 2; x < bw; x += 10) {
+      pen.beginPath();
+      pen.moveTo(x, 0);
+      pen.lineTo(x, bh);
+      pen.stroke();
+    }
+    for (let y = 2; y < bh; y += 10) {
+      pen.beginPath();
+      pen.moveTo(0, y);
+      pen.lineTo(bw, y);
+      pen.stroke();
+    }
+  });
+  const mesh = new T.MeshStandardMaterial({ map: basket, transparent: true, alphaTest: 0.3, side: T.DoubleSide, roughness: 0.3, metalness: 0.6 }),
+    handle = new T.MeshStandardMaterial({ color: "#e2432f", roughness: 0.5 });
+  for (let k = 0; k < 7; k++) {
+    const x = shelterX - 2.1 + k * 0.62;
+    layer.mesh(new T.BoxGeometry(0.55, 0.45, 0.95), mesh, x, 0.78, shelterZ, false);
+    layer.mesh(new T.BoxGeometry(0.58, 0.05, 0.05), handle, x, 1.05, shelterZ + 0.55, false);
+    for (const t of [-0.38, 0.38]) layer.mesh(new T.CylinderGeometry(0.02, 0.02, 0.5, 6), steel, x, 0.3, shelterZ + t, false);
+  }
+  // Trees: trunks with round crowns of leaves, in planters before the store and on the grass about.
+  const bark = new T.MeshStandardMaterial({ color: "#6b4a32", roughness: 1 }),
+    leaves = ["#3f7f3b", "#4f9446", "#5a9f4a", "#386e36"].map((c) => new T.MeshStandardMaterial({ color: c, roughness: 0.95 })),
+    stone = new T.MeshStandardMaterial({ color: "#d4cfc4", roughness: 0.85 }),
+    soil = new T.MeshStandardMaterial({ color: "#4a3324", roughness: 1 });
+  const crown = new T.IcosahedronGeometry(1, 1);
+  const tree = (x: number, z: number, size: number, planter: boolean) => {
+    if (planter) {
+      layer.mesh(new T.CylinderGeometry(0.95, 0.95, 0.5, 20), stone, x, 0.25, z);
+      layer.mesh(new T.CylinderGeometry(0.85, 0.85, 0.04, 20), soil, x, 0.5, z, false);
+    }
+    layer.mesh(new T.CylinderGeometry(0.1 * size, 0.15 * size, 2.2 * size, 8), bark, x, 1.1 * size, z);
+    for (let k = 0; k < (rich ? 4 : 3); k++) {
+      const c = layer.mesh(crown, leaves[(k + Math.floor(x)) & 3], x + (rand() - 0.5) * 0.9 * size, (2.3 + rand() * 0.9) * size, z + (rand() - 0.5) * 0.9 * size, rich);
+      c.scale.setScalar((0.75 + rand() * 0.45) * size);
+    }
+  };
+  for (const x of [-11, 9.5, 15]) tree(x, lot.minZ - 2.3, 0.9, true);
+  for (const [x, z, s] of [
+    [19.5, -9, 1.2],
+    [22, -4.5, 1],
+    [24, 7.5, 1.2],
+    [-28, -8, 1.3],
+    [-28.5, 4, 1.1],
+  ])
+    if (rich || x > -20) tree(x, z, s, false);
+  // Hedges along the lot's lower edge.
+  const hedge = new T.MeshStandardMaterial({ color: "#3f7a3a", roughness: 1 });
+  for (let k = 0; k < 9; k++) layer.mesh(block(3.2, 0.6, 0.8, 0.3), hedge, -10 + k * 3.4, 0.3, lot.maxZ + 1.0, rich);
+  // Benches and bollards on the forecourt.
+  const wood = new T.MeshStandardMaterial({ color: "#9a6a3f", roughness: 0.8 });
+  for (const x of [-1, 12.5]) {
+    layer.mesh(block(1.8, 0.08, 0.5, 0.03), wood, x, 0.48, lot.minZ - 2.6);
+    layer.mesh(block(1.8, 0.4, 0.06, 0.02), wood, x, 0.72, lot.minZ - 2.85);
+    for (const s of [-0.75, 0.75]) layer.mesh(new T.BoxGeometry(0.06, 0.45, 0.5), dark, x + s, 0.23, lot.minZ - 2.6, false);
+  }
+  for (let k = 0; k < 6; k++) {
+    layer.mesh(new T.CylinderGeometry(0.11, 0.11, 0.8, 10), sunny, door.x - 3 + k * 1.2, 0.4, lot.minZ - 0.75);
+  }
+  // Lamp posts: tall, double-armed, along the back of the lot (none before it, where they would stand over the bays).
+  const pole = new T.MeshStandardMaterial({ color: "#5a5f66", roughness: 0.4, metalness: 0.6 }),
+    led = new T.MeshStandardMaterial({ color: "#fdfbf2", emissive: "#fff6d8", emissiveIntensity: 0.6 });
+  for (const [x, z] of [
+    [-8, lot.minZ - 0.6],
+    [3, lot.minZ - 0.6],
+    [14, lot.minZ - 0.6],
+  ]) {
+    layer.mesh(new T.CylinderGeometry(0.08, 0.12, 6, 10), pole, x, 3, z);
+    for (const s of [-1, 1]) {
+      const arm = layer.mesh(new T.BoxGeometry(1.2, 0.07, 0.07), pole, x + s * 0.55, 5.9, z, false);
+      arm.rotation.z = s * 0.12;
+      layer.mesh(block(0.55, 0.1, 0.28, 0.03), pole, x + s * 1.15, 5.95, z, false);
+      layer.mesh(new T.BoxGeometry(0.46, 0.02, 0.2), led, x + s * 1.15, 5.89, z, false);
+    }
+  }
+  // The lot's asphalt: speckled aggregate with relief, and over it what cars leave: oil under the bays, tyre marks.
+  const floorT = asphalt(512, "#575a60", w / 8, d / 8, 0);
+  const marks = picture(1024, Math.round((1024 * d) / w), (pen, mw, mh) => {
+    pen.clearRect(0, 0, mw, mh);
+    const sx = mw / w,
+      sz = mh / d,
+      at = (x: number, z: number) => [(x - lot.minX) * sx, (z - lot.minZ) * sz];
+    for (const bay of lot.bays) {
+      const [x, y] = at(bay.x, bay.z);
+      for (let k = 0; k < 2; k++) {
+        const r = (0.5 + rand() * 0.6) * sx,
+          ox = (rand() - 0.5) * 1.2 * sx,
+          oy = (rand() - 0.5) * 1.2 * sz,
+          g = pen.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+        g.addColorStop(0, `rgba(14,12,10,${0.18 + rand() * 0.16})`);
+        g.addColorStop(1, "rgba(14,12,10,0)");
+        pen.fillStyle = g;
+        pen.beginPath();
+        pen.ellipse(x + ox, y + oy, r, r * (0.6 + rand() * 0.4), rand() * 3, 0, Math.PI * 2);
+        pen.fill();
+      }
+    }
+    // Tyre marks curving through the aisle where cars swing in and out.
+    pen.lineCap = "round";
+    for (let k = 0; k < 9; k++) {
+      const [x0, y0] = at(-10 + rand() * 22, -2.5 + rand() * 5),
+        bend = (rand() - 0.5) * 6 * sx,
+        len = (4 + rand() * 6) * sx,
+        turn = (rand() - 0.5) * 1.2;
+      pen.strokeStyle = `rgba(20,18,16,${0.08 + rand() * 0.1})`;
+      pen.lineWidth = 0.2 * sx;
+      for (const off of [-0.8, 0.8]) {
+        pen.beginPath();
+        pen.moveTo(x0, y0 + off * sz);
+        pen.quadraticCurveTo(x0 + len / 2, y0 + off * sz + bend, x0 + len * Math.cos(turn), y0 + off * sz + len * Math.sin(turn));
+        pen.stroke();
+      }
+    }
+    // Patched and sealed cracks.
+    pen.strokeStyle = "rgba(15,15,15,0.45)";
+    pen.lineWidth = 2;
+    for (let k = 0; k < 7; k++) {
+      let x = rand() * mw,
+        y = rand() * mh;
+      pen.beginPath();
+      pen.moveTo(x, y);
+      for (let s = 0; s < 10; s++) pen.lineTo((x += (rand() - 0.5) * 40), (y += (rand() - 0.5) * 30));
+      pen.stroke();
+    }
+    // A patch or two of newer asphalt, a little darker, its edges sealed.
+    for (let k = 0; k < 2; k++) {
+      const x = rand() * mw * 0.8,
+        y = rand() * mh * 0.8,
+        pw = 50 + rand() * 60,
+        ph = 30 + rand() * 40;
+      pen.fillStyle = "rgba(30,32,36,0.18)";
+      pen.fillRect(x, y, pw, ph);
+      pen.strokeStyle = "rgba(10,10,10,0.3)";
+      pen.lineWidth = 2;
+      pen.strokeRect(x, y, pw, ph);
+    }
+  });
+  // Baked into one picture of the whole lot (the asphalt's grain repeated, what cars left over it), so that nothing
+  // is laid over the floor to be drawn twice.
+  const markCanvas = marks.image as HTMLCanvasElement,
+    whole = canvas(markCanvas.width * 2, markCanvas.height * 2),
+    wp = whole.getContext("2d")!,
+    grain = wp.createPattern(floorT.map.image as HTMLCanvasElement, "repeat")!;
+  grain.setTransform(new DOMMatrix().scale(whole.width / (w / 8) / (floorT.map.image as HTMLCanvasElement).width));
+  wp.fillStyle = grain;
+  wp.fillRect(0, 0, whole.width, whole.height);
+  wp.drawImage(markCanvas, 0, 0, whole.width, whole.height);
+  floorT.map.dispose();
+  marks.dispose();
+  const floorMap = wrap(new T.CanvasTexture(whole), 1, 1, true);
+  // Kerbs: cast concrete, a little weathered.
+  const kerbTex = picture(256, 32, (pen, kw, kh) => {
+    pen.fillStyle = "#cdc8bd";
+    pen.fillRect(0, 0, kw, kh);
+    grit(pen, kw, kh, 1500, 0.12);
+    pen.fillStyle = "rgba(0,0,0,0.25)";
+    for (let x = 0; x < kw; x += 64) pen.fillRect(x, 0, 2, kh);
+  });
   return {
     name: "mart",
     dark: false,
     beams: 0,
-    clear: "#8fb4d8",
-    sky: ["#eaf3ff", "#5a6a4a", 1.7],
-    sun: { color: "#fff1d6", intensity: 2.2, at: [-10, 26, 12] },
-    floor: new T.MeshStandardMaterial({ map: speckle, roughness: 0.95 }),
-    line: new T.MeshStandardMaterial({ color: "#f1efe6", roughness: 0.7 }),
-    kerb: () => kerb,
-    lamps: true,
+    clear: "#a9cbe8",
+    sky: ["#eef5ff", "#6a7a52", 1.45],
+    sun: { color: "#fff0d2", intensity: 2.6, at: [-12, 28, 14] },
+    floor: new T.MeshStandardMaterial({ map: floorMap, normalMap: rich ? floorT.normal : null, normalScale: new T.Vector2(0.6, 0.6), roughnessMap: floorT.rough, roughness: 0.95 }),
+    line: new T.MeshStandardMaterial({ color: "#f4f2ea", roughness: 0.6 }),
+    kerb: (length: number) => {
+      const t = kerbTex.clone();
+      t.wrapS = T.RepeatWrapping;
+      t.repeat.set(Math.max(1, length / 2), 1);
+      t.needsUpdate = true;
+      return new T.MeshStandardMaterial({ map: t, roughness: 0.85 });
+    },
+    lamps: false,
+    room: () => {
+      // A sky over the lot, the ground under it, a store and trees about: what the paint and the glass reflect.
+      const scene = new T.Scene();
+      scene.background = new T.Color("#9cc6ee");
+      const ground = new T.Mesh(new T.PlaneGeometry(80, 80), new T.MeshBasicMaterial({ color: "#5d6a52", side: T.DoubleSide }));
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -1;
+      scene.add(ground);
+      const sun = new T.Mesh(new T.SphereGeometry(1.2, 12, 8), new T.MeshBasicMaterial({ color: "#fff8e0" }));
+      sun.position.set(-8, 14, 6);
+      scene.add(sun);
+      for (const [x, z, h, c] of [
+        [0, -10, 4, "#ece7dc"],
+        [12, 4, 3, "#4f8a45"],
+        [-12, 6, 3, "#4f8a45"],
+      ] as const) {
+        const b = new T.Mesh(new T.BoxGeometry(8, h, 2), new T.MeshBasicMaterial({ color: c }));
+        b.position.set(x, h / 2 - 1, z);
+        scene.add(b);
+      }
+      return { scene, intensity: 0.55 };
+    },
   };
 }
 
