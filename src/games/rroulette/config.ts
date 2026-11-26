@@ -65,7 +65,7 @@ export const rRouletteConfig: PointConfig<State> = {
   ],
   firstNote: "내가 먼저 장난감을 듭니다. 와이파이 여럿이에서는 1번(방장)부터 돌아갑니다.",
   tools: [
-    { label: "원통 돌리기", point: SPIN, show: (s) => mine(s), text: (s) => `원통 돌리기 (${s.spins[0]})` },
+    { label: "원통 돌리기", point: SPIN, show: (s) => mine(s) && s.spins[0] > 0, text: (s) => `원통 돌리기 (${s.spins[0]})` },
     { label: "그냥 당기기", point: PULL, show: (s) => mine(s) },
   ],
   tallyHtml: (s) => [`<span>돌리기 ${s.spins[0]}번</span>`, `<span>남은 사람 ${still(s).length}</span>`],

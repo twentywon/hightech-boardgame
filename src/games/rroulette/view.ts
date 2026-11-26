@@ -741,8 +741,13 @@ export class RRouletteView extends TableView<State> {
     this.dataset(s);
     this.redraw();
   }
+  /** Every pull of this game as it was shown ("seat,spun,bang,odds"), for tests to read back after the computers go on. */
+  private shots: string[] = [];
   private dataset(s: State) {
     const d = this.renderer.domElement.dataset;
+    if (s.ply === 0) this.shots = [];
+    else if (s.last && s.ply === this.shots.length + 1) this.shots.push(`${s.last.seat},${s.last.spun ? 1 : 0},${s.last.bang ? 1 : 0},${s.last.odds}`);
+    d.shots = this.shots.join(";");
     d.seat = String(s.seat);
     d.left = String(s.left);
     d.out = s.out.map((o) => (o ? 1 : 0)).join("");

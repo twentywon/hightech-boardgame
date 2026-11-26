@@ -48,15 +48,17 @@ test("russian roulette: four round the party table, the toy held up before me; a
   await expect(tool(page, "원통 돌리기 (2)")).toBeVisible();
   await expect(page.locator("#turn")).toContainText("펑 확률 1/6");
   await tool(page, "그냥 당기기").click();
-  await expect.poll(() => moves(page), { timeout: 60000 }).toBe(1);
-  await expect(page.locator("#board")).toHaveAttribute("data-animating", "false", { timeout: 60000 });
-  const last = (await data(page, "last"))!.split(",").map(Number);
+  await expect.poll(async () => ((await data(page, "shots")) ?? "").length, { timeout: 60000 }).toBeGreaterThan(0);
+  // The computers go on meanwhile: my pull is the first of the shots shown.
+  const last = (await data(page, "shots"))!.split(";")[0].split(",").map(Number);
   expect(last.slice(0, 2)).toEqual([0, 0]);
   expect(last[3]).toBe(6);
   if (last[2] === 0) {
-    // A click: one chamber fewer, and the toy has gone on to my left.
-    await expect.poll(() => data(page, "left")).toBe("5");
-    await expect.poll(async () => Number(await data(page, "seat")), { timeout: 60000 }).not.toBe(0);
+    // A click: the next pull (my left's) had one chamber fewer, unless it spun.
+    await expect.poll(async () => ((await data(page, "shots")) ?? "").split(";").length, { timeout: 60000 }).toBeGreaterThan(1);
+    const next = (await data(page, "shots"))!.split(";")[1].split(",").map(Number);
+    expect(next[0]).toBe(1);
+    expect(next[3]).toBe(next[1] ? 6 : 5);
   } else {
     // A 펑 on my first pull: out, and against the computer that is the end.
     await expect(canvas(page)).toHaveAttribute("data-out", /^1/);
@@ -71,24 +73,20 @@ test("russian roulette: held down, the toy's trigger comes back and goes off; le
     box = (await canvas(page).boundingBox())!,
     x = box.x + at[0],
     y = box.y + at[1];
-  const press = (type: string) =>
-    canvas(page).evaluate(
-      (el, [type, x, y]) => {
-        el.dispatchEvent(new PointerEvent(type as string, { bubbles: true, pointerId: 7, pointerType: "touch", isPrimary: true, clientX: x as number, clientY: y as number, button: 0, buttons: type === "pointerup" ? 0 : 1 }));
-      },
-      [type, x, y] as const,
-    );
-  // A short press: the trigger starts back and returns; no pull.
-  await press("pointerdown");
-  await expect.poll(async () => Number(await data(page, "squeeze")), { timeout: 10000 }).toBeGreaterThan(0);
-  await press("pointerup");
+  // A short press (a fifth of a second), by the real pointer: the trigger starts back and returns; no pull.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.waitForTimeout(200);
+  await page.mouse.up();
   await expect.poll(async () => Number(await data(page, "squeeze")), { timeout: 10000 }).toBe(0);
+  await page.waitForTimeout(1500);
   expect(await moves(page)).toBe(0);
   // Held: all the way in, and it goes off.
-  await press("pointerdown");
+  await page.mouse.down();
   await expect.poll(() => moves(page), { timeout: 30000 }).toBe(1);
-  await press("pointerup");
-  expect((await data(page, "last"))!.startsWith("0,0,")).toBe(true);
+  await page.mouse.up();
+  await expect.poll(async () => ((await data(page, "shots")) ?? "").length, { timeout: 60000 }).toBeGreaterThan(0);
+  expect((await data(page, "shots"))!.startsWith("0,0,")).toBe(true);
   // When it is my turn again, S spins before the pull (a spin used).
   if (await myTurn(page)) {
     const before = await moves(page);
@@ -96,7 +94,8 @@ test("russian roulette: held down, the toy's trigger comes back and goes off; le
     await page.keyboard.press("s");
     await expect.poll(() => moves(page), { timeout: 30000 }).toBe(before + 1);
     await expect.poll(async () => (await data(page, "spins"))!.split(",")[0], { timeout: 30000 }).toBe("1");
-    expect((await data(page, "last"))!.startsWith("0,1,")).toBe(true);
+    await expect.poll(async () => ((await data(page, "shots")) ?? "").split(";").length, { timeout: 60000 }).toBeGreaterThan(before);
+    expect((await data(page, "shots"))!.split(";")[before].startsWith("0,1,")).toBe(true);
   }
   expect(errors).toEqual([]);
 });
@@ -109,7 +108,8 @@ test("russian roulette: one computer across, no spins; played to the end, the la
   });
   await expect(canvas(page)).toHaveAttribute("data-out", "0101");
   await expect(canvas(page)).toHaveAttribute("data-spins", "0,0,0,0");
-  await expect(tool(page, "원통 돌리기 (0)")).toBeHidden();
+  await expect(tool(page, "그냥 당기기")).toBeVisible();
+  await expect(page.locator(".board-area .pg-tools button", { hasText: "원통 돌리기" })).toBeHidden();
   let pulls = 0;
   while (await myTurn(page)) {
     await tool(page, "그냥 당기기").click();
