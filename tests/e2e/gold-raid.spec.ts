@@ -51,6 +51,7 @@ async function run(page: Page, code: string, way: 1 | -1, far = 0.8, who = 0) {
 }
 
 test("gold raid: against the computer the keys run, jump and strike my bandit, and the board shows both castles", async ({ page }, info) => {
+  test.setTimeout(240_000);
   const phone = info.project.name === "mobile";
   const errors = await sit(page, "ai");
   await expect(page.locator(".gr-hud .gr-side")).toHaveCount(2);

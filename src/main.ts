@@ -102,7 +102,9 @@ const leaveTable = () => {
 document.addEventListener(
   "click",
   (event) => {
-    if (leaving || !(event.target instanceof Element) || !event.target.closest("#back") || !inPlay()) return;
+    // Only a press of the person's own asks: the app's own presses (the room gone, a game chosen from a room code) leave
+    // at once.
+    if (leaving || !event.isTrusted || !(event.target instanceof Element) || !event.target.closest("#back") || !inPlay()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     confirmLeave(leaveTable);
