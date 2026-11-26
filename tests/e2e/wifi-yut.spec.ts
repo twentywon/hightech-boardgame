@@ -216,7 +216,8 @@ test("yut nori for three: a device that leaves mid-game has its seat played by t
     }
     await resting(host);
     await resting(minsu);
-    await expect.poll(() => snapshot3(minsu), { timeout: 30000 }).toBe(await snapshot3(host));
+    // The host's computer may move on for the seat that left while this is read, so both are read on every try.
+    await expect.poll(async () => (await snapshot3(minsu)) === (await snapshot3(host)), { timeout: 60000 }).toBe(true);
   };
   await played(8);
   const seen = Number(/(\d+)/.exec(await host.locator("#move-count").innerText())![1]);
