@@ -7,7 +7,7 @@ import { selectGame, leaveTable } from "./library";
  * heading it wants and draws what the host tells it, the field laid from the host's slices. The real clock is kept.
  * The round is the shortest (one minute).
  */
-test.setTimeout(360_000);
+test.setTimeout(480_000);
 
 const open: { close(): Promise<void> }[] = [];
 test.afterEach(async () => {
@@ -64,7 +64,7 @@ test("territory on two devices: the guest steers its own mover on both screens, 
     b = await device(browser, info),
     host = a.page,
     guest = b.page;
-  await lobby(host, "방장", "60");
+  await lobby(host, "방장", "180");
   await host.locator("#net-host").click();
   await pair(host, guest, "민수");
   // Four seats: the host at red, the guest at blue; the host makes yellow the computer's, green stays out.
@@ -76,7 +76,7 @@ test("territory on two devices: the guest steers its own mover on both screens, 
   await host.locator("#net-start").click();
   for (const page of [host, guest]) await expect(canvasOf(page)).toHaveAttribute("data-ready", "true", { timeout: 60000 });
 
-  // Three movers on both; each device's own is 나 on its board; the host's round (one minute).
+  // Three movers on both; each device's own is 나 on its board; the host's round (3분판, the shortest now).
   for (const page of [host, guest]) {
     await expect(canvasOf(page)).toHaveAttribute("data-movers", "3");
     await expect(page.locator(".ld-board li")).toHaveCount(3);
@@ -87,7 +87,7 @@ test("territory on two devices: the guest steers its own mover on both screens, 
   await expect(guest.locator(".ld-board")).toContainText("빨강");
   await expect(host.locator(".ld-board")).toContainText("파랑");
   for (const page of [host, guest]) await expect(canvasOf(page)).toHaveAttribute("data-phase", "play", { timeout: 60000 });
-  await expect.poll(async () => Number(await canvasOf(guest).getAttribute("data-left")), { timeout: 30000 }).toBeLessThanOrEqual(60);
+  await expect.poll(async () => Number(await canvasOf(guest).getAttribute("data-left")), { timeout: 30000 }).toBeLessThanOrEqual(180);
 
   // The guest holds ← : its blue mover turns left on the host's round and on its own screen; the host's red does not.
   await key(guest, "ArrowLeft", true);
@@ -117,8 +117,8 @@ test("territory on two devices: the guest steers its own mover on both screens, 
   await host.keyboard.press("p");
   for (const page of [host, guest]) await expect(page.locator("#board")).toHaveAttribute("data-paused", "false", { timeout: 10000 });
 
-  // The minute runs out: the same order and shares on both devices.
-  for (const page of [host, guest]) await expect(page.locator(".board-finale")).toBeVisible({ timeout: 240000 });
+  // The three minutes run out: the same order and shares on both devices.
+  for (const page of [host, guest]) await expect(page.locator(".board-finale")).toBeVisible({ timeout: 330000 });
   // Each device words the outcome its own way (이겼습니다! or whose win); the order and shares after it are the same.
   const order = (text: string) => text.slice(text.indexOf("1위")),
     final = order(await host.locator("#pg-final").innerText());

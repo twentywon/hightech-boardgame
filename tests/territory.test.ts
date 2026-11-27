@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FieldSender, SLICES, follow, hostWants, inputOf, laySlice, readInput, readSnap, snapOf } from "../src/games/territory/net";
-import { END, OUT, createGame, createNet, packEnd, play as playMove, territory, unpackEnd } from "../src/games/territory/rules";
+import { DEATHMATCH, END, MODES, OUT, createFromOptions, createGame, createNet, packEnd, play as playMove, secondsOf, territory, unpackEnd } from "../src/games/territory/rules";
 import { CELLS, COUNTDOWN, DT, G, N, PATCH, R as FINE, autopilot, cellOf, cellX, cellY, createWorld, ranking, shares, step, ticks, type Event, type Level, type World } from "../src/games/territory/sim";
 
 /** Runs the countdown off, so that the movers go. */
@@ -207,6 +207,81 @@ describe("territory (땅따먹기): the field", () => {
   });
 });
 
+describe("territory: the deathmatch (데스매치)", () => {
+  /** Puts mover k out as `by` running over its trail would (as in the test above); the others stand frozen. */
+  const cut = (world: World, k: number, by: number) => {
+    const m = world.movers[k],
+      o = world.movers[by],
+      events: Event[] = [],
+      frozen = (f: () => void) => {
+        const keep = world.movers.map((x) => ({ x: x.x, y: x.y, cell: x.cell }));
+        f();
+        world.movers.forEach((x, j) => {
+          if (j !== k && j !== by) Object.assign(x, keep[j]);
+        });
+      };
+    m.heading = R;
+    for (let i = 0; i < ticks(1.2); i++) frozen(() => events.push(...step(world, world.movers.map((_, j) => (j === k ? R : null)))));
+    // (The cutter held in place meanwhile.)
+    const c = m.trail[Math.floor(m.trail.length / 2)];
+    o.x = cellX(c);
+    o.y = cellY(c) - 2;
+    o.cell = cellOf(o.x, o.y);
+    o.heading = D;
+    for (let i = 0; i < 40 && m.alive; i++) frozen(() => events.push(...step(world, world.movers.map((_, j) => (j === k ? R : j === by ? D : null)))));
+    return events;
+  };
+  it("has no clock, and a mover put out does not come back; its land is nobody's", () => {
+    const world = started(createWorld(3, 0, 5));
+    expect(world.death).toBe(true);
+    expect(world.end).toBe(Infinity);
+    cut(world, 0, 1);
+    expect(world.movers[0].alive).toBe(false);
+    expect(world.movers[0].land).toBe(0);
+    expect(world.fell[0]).toBeGreaterThan(0);
+    // Two are still in: it goes on.
+    expect(world.closed).toBeNull();
+    // Long past the timed rounds' wait to come back, it is still out (the others held in place meanwhile).
+    for (let i = 0; i < ticks(10); i++) {
+      const keep = world.movers.map((x) => ({ x: x.x, y: x.y, cell: x.cell }));
+      step(world, [null, null, null]);
+      world.movers.forEach((x, j) => Object.assign(x, keep[j]));
+    }
+    expect(world.movers[0].alive).toBe(false);
+    expect([...world.owner].filter((o) => o === 1)).toHaveLength(0);
+    expect(world.closed).toBeNull();
+  });
+  it("ends when one mover is left: it first, then the fallen, the last to fall the higher", () => {
+    const world = started(createWorld(3, 0, 6)),
+      events: Event[] = [];
+    events.push(...cut(world, 2, 0));
+    for (let i = 0; i < 30; i++) step(world, [null, null, null]);
+    events.push(...cut(world, 1, 0));
+    expect(world.closed).not.toBeNull();
+    const end = events.find((e) => e.kind === "end");
+    expect(end && end.kind === "end" && end.ranking).toEqual([0, 1, 2]);
+    expect(ranking(world)).toEqual([0, 1, 2]);
+  });
+  it("against the computer it ends as soon as my mover is out (the people's movers are watched)", () => {
+    const world = started(createWorld(3, 0, 7, [0]));
+    const events = cut(world, 0, 1);
+    expect(world.closed).not.toBeNull();
+    const end = events.find((e) => e.kind === "end")!;
+    expect(end.kind === "end" && end.ranking.at(-1)).toBe(0);
+  });
+  it("the computers in a deathmatch come to an end among themselves, and seldom put themselves out", () => {
+    let selfOuts = 0;
+    for (const seed of [1, 2, 3, 4]) {
+      const world = createWorld(4, 0, seed),
+        events: Event[] = [];
+      while (world.closed === null && world.tick < ticks(15 * 60)) events.push(...step(world, world.movers.map((_, k) => autopilot(world, k, "normal"))));
+      expect(world.closed).not.toBeNull();
+      selfOuts += events.filter((e) => e.kind === "out" && e.how === "self").length;
+    }
+    expect(selfOuts).toBeLessThanOrEqual(2);
+  }, 120000);
+});
+
 describe("territory: the computer's movers", () => {
   const play = (level: Level, seed: number, seconds = 120) => {
     const world = createWorld(4, seconds, seed),
@@ -266,10 +341,20 @@ describe("territory: the round as moves", () => {
     expect(playMove(won, { from: -1, to: OUT, extra: -1 })).toBeNull();
   });
   it("over Wi-Fi a mover for each seat taken, in seat order", () => {
-    const s = createNet("120", [true, true, false, true]);
+    const s = createNet("300", [true, true, false, true]);
     expect(s.movers).toBe(3);
     expect(s.seats).toEqual([0, 1, 3]);
-    expect(s.seconds).toBe(120);
+    expect(s.seconds).toBe(300);
+    expect(createNet("death", [true, true]).seconds).toBe(DEATHMATCH);
+  });
+  it("offers 3분판, 5분판 and 데스매치; an older 1- or 2-minute choice plays three minutes", () => {
+    expect(MODES.map((m) => m.label)).toEqual(["3분판", "5분판", "데스매치"]);
+    expect(MODES.map((m) => secondsOf(m.value))).toEqual([180, 300, DEATHMATCH]);
+    expect(createFromOptions("60").seconds).toBe(180);
+    expect(createFromOptions("120").seconds).toBe(180);
+    expect(createFromOptions("death").seconds).toBe(0);
+    const won = playMove(createFromOptions("death", { computers: "2" }), { from: -1, to: END, extra: packEnd([0, 1, 2], [0.1, 0.05, 0]) })!;
+    expect(territory.reason(won)).toContain("마지막까지 살아남은 쪽이 이깁니다");
   });
 });
 

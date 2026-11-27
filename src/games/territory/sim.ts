@@ -8,6 +8,11 @@
  * put out whichever of them stands off its own land. The field's edge is a low wall: a mover slides along it. The
  * round runs for a number of seconds; the most land wins, and land over `WIN_SHARE` of the field wins at once.
  *
+ * 데스매치 (the user asked for 3분판, 5분판 and a deathmatch): a round made with no seconds has no clock. A mover put
+ * out stays out (no `RESPAWN`; its land is wiped to nobody's as always), and the round ends when one mover is left —
+ * or when none of the movers in `World.watch` (the people's) is left. The order is the living first (by land), then
+ * the fallen, the last to fall the higher. Land over `WIN_SHARE` still wins at once, as in the timed rounds.
+ *
  * Fixed slices of `DT`; free of Three.js and the page (the host's view runs it, the tests run it bare).
  */
 export const N = 64,
@@ -88,8 +93,14 @@ export interface World {
   trail: Uint8Array;
   movers: Mover[];
   tick: number;
-  /** The tick the round runs out at. */
+  /** The tick the round runs out at (`Infinity` in a deathmatch). */
   end: number;
+  /** A deathmatch: no clock, no coming back; the last mover left wins. */
+  death: boolean;
+  /** The tick each mover fell for good in a deathmatch (-1: still in). */
+  fell: number[];
+  /** A deathmatch's people: when none of these is left the round ends (null: only the last mover left ends it). */
+  watch: number[] | null;
   /** The tick the round was closed at, or null while it runs. */
   closed: number | null;
   seed: number;
@@ -131,14 +142,19 @@ function settle(world: World, k: number, cx: number, cy: number) {
   m.trail = [];
   m.plan = null;
 }
-export function createWorld(count: number, seconds: number, seed: number): World {
-  const n = clamp(Math.round(count), 2, 4);
+/** A round of `seconds` (0: a deathmatch, with no clock). */
+export function createWorld(count: number, seconds: number, seed: number, watch: number[] | null = null): World {
+  const n = clamp(Math.round(count), 2, 4),
+    death = !(seconds > 0);
   const world: World = {
     owner: new Uint8Array(CELLS),
     trail: new Uint8Array(CELLS),
     movers: Array.from({ length: n }, () => ({ x: 0, y: 0, heading: 0, alive: true, wait: 0, cell: 0, trail: [], land: 0, outs: 0, kos: 0, plan: null })),
     tick: 0,
-    end: ticks(COUNTDOWN + seconds),
+    end: death ? Infinity : ticks(COUNTDOWN + seconds),
+    death,
+    fell: Array(n).fill(-1),
+    watch: death && watch ? watch.filter((k) => k >= 0 && k < n) : null,
     closed: null,
     seed: seed | 0,
     changed: new Set(),
@@ -158,7 +174,14 @@ function setOwner(world: World, cell: number, who: number) {
 export const shares = (world: World) => world.movers.map((m) => m.land / CELLS);
 /** The movers by land, most first (fewer times out, then the lower number, before a tie). */
 export const ranking = (world: World) =>
-  world.movers.map((_, k) => k).sort((a, b) => world.movers[b].land - world.movers[a].land || world.movers[a].outs - world.movers[b].outs || a - b);
+  world.movers
+    .map((_, k) => k)
+    .sort((a, b) =>
+      world.death
+        ? // A deathmatch: the living first (by land), then the fallen, the last to fall the higher.
+          Number(world.movers[b].alive) - Number(world.movers[a].alive) || world.fell[b] - world.fell[a] || world.movers[b].land - world.movers[a].land || a - b
+        : world.movers[b].land - world.movers[a].land || world.movers[a].outs - world.movers[b].outs || a - b,
+    );
 
 function knockOut(world: World, k: number, by: number, how: "cut" | "self" | "bump" | "engulfed", events: Event[]) {
   const m = world.movers[k];
@@ -167,7 +190,9 @@ function knockOut(world: World, k: number, by: number, how: "cut" | "self" | "bu
   m.trail = [];
   for (let c = 0; c < CELLS; c++) if (world.owner[c] === k + 1) setOwner(world, c, 0);
   m.alive = false;
-  m.wait = RESPAWN;
+  // In a deathmatch it does not come back.
+  m.wait = world.death ? 0 : RESPAWN;
+  if (world.death) world.fell[k] = world.tick;
   m.plan = null;
   m.outs++;
   if (by >= 0 && by !== k) world.movers[by].kos++;
@@ -309,7 +334,7 @@ export function step(world: World, wants: (number | null)[]): Event[] {
   }
   if (world.tick === start) events.push({ kind: "go" });
   world.movers.forEach((m, k) => {
-    if (m.alive) return;
+    if (m.alive || world.death) return;
     m.wait -= DT;
     if (m.wait <= 0) respawn(world, k, events);
   });
@@ -328,7 +353,11 @@ export function step(world: World, wants: (number | null)[]): Event[] {
       if (!aSafe) knockOut(world, a, b, "bump", events);
       if (!bSafe) knockOut(world, b, a, "bump", events);
     }
-  const over = world.tick >= world.end || ms.some((m) => m.land >= WIN_SHARE * CELLS);
+  const left = ms.filter((m) => m.alive).length,
+    over =
+      world.tick >= world.end ||
+      ms.some((m) => m.land >= WIN_SHARE * CELLS) ||
+      (world.death && (left <= 1 || (!!world.watch?.length && world.watch.every((k) => !ms[k].alive))));
   if (over) {
     world.closed = world.tick;
     events.push({ kind: "end", ranking: ranking(world), shares: shares(world) });
@@ -336,7 +365,7 @@ export function step(world: World, wants: (number | null)[]): Event[] {
   return events;
 }
 /** Seconds left in the round (the countdown included at its start). */
-export const secondsLeft = (world: World) => Math.max(0, (world.end - world.tick) * DT);
+export const secondsLeft = (world: World) => (world.death ? Infinity : Math.max(0, (world.end - world.tick) * DT));
 
 // ── The computer's movers ──────────────────────────────────────────────────────────────────────────────────────────
 
@@ -418,7 +447,7 @@ function threat(world: World, k: number) {
  * looking `AHEAD` seconds on: `AHEAD` when it never does.
  */
 const AHEAD = 0.75;
-function clearFor(world: World, k: number, want: number) {
+function clearFor(world: World, k: number, want: number, ahead = AHEAD) {
   const m = world.movers[k],
     recent = new Set(m.trail.slice(-SAFE_TAIL)),
     slice = DT * 3;
@@ -426,7 +455,7 @@ function clearFor(world: World, k: number, want: number) {
     y = m.y,
     h = m.heading,
     last = m.cell;
-  for (let t = slice; t <= AHEAD; t += slice) {
+  for (let t = slice; t <= ahead; t += slice) {
     h = wrap(h + clamp(wrap(want - h), -TURN * slice, TURN * slice));
     x += Math.cos(h) * SPEED * slice;
     y += Math.sin(h) * SPEED * slice;
@@ -437,15 +466,19 @@ function clearFor(world: World, k: number, want: number) {
       last = c;
     }
   }
-  return AHEAD;
+  return ahead;
 }
+/** The levels in a deathmatch: home sooner (`margin`), shorter trails (`most`). */
+const CAREFUL = Object.fromEntries((Object.keys(LEVELS) as Level[]).map((l) => [l, { ...LEVELS[l], margin: LEVELS[l].margin * 1.6, most: Math.round(LEVELS[l].most * 0.6) }])) as typeof LEVELS;
 /** A heading toward `want` that does not run into my own trail: the nearest turn either way that stays clear longest. */
 function safeHeading(world: World, k: number, want: number) {
+  // In a deathmatch it looks further ahead (a crossing there is the end of it).
+  const ahead = world.death ? AHEAD * 1.8 : AHEAD;
   let best = { h: want, clear: -1 };
   for (const turn of [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, 2.8, -2.8]) {
     const h = wrap(want + turn),
-      clear = clearFor(world, k, h);
-    if (clear >= AHEAD) return h;
+      clear = clearFor(world, k, h, ahead);
+    if (clear >= ahead) return h;
     if (clear > best.clear + 0.05) best = { h, clear };
   }
   return best.h;
@@ -507,7 +540,8 @@ function planLoop(world: World, k: number, level: Level): Plan {
 export function autopilot(world: World, k: number, level: Level): number | null {
   const m = world.movers[k];
   if (!m.alive || world.closed !== null || world.tick < ticks(COUNTDOWN)) return null;
-  const L = LEVELS[level];
+  // In a deathmatch there is no coming back: it heads home sooner and keeps its trail shorter.
+  const L = world.death ? CAREFUL[level] : LEVELS[level];
   const plan = (m.plan ??= planLoop(world, k, level)),
     home = world.owner[m.cell] === k + 1;
   // Thinking: how far home, and who could cut me first.

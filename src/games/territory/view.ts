@@ -300,7 +300,11 @@ export class TerritoryView extends TableView<State> {
       const k = this.live.seat === null ? -1 : (state.seats ?? []).indexOf(this.live.seat);
       this.mine = k >= 0 ? k : null;
     } else this.mine = 0;
-    this.world = createWorld(state.movers, state.seconds, Math.floor(Math.random() * 2 ** 31));
+    // In a deathmatch the round ends once none of the people's movers is left (against the computer, mine).
+    const live = this.live,
+      host = live?.host ? (live as LiveHost) : null,
+      people = !live ? [0] : host ? (state.seats ?? []).flatMap((seat, k) => (host.control(seat) === "me" || host.control(seat) === "remote" ? [k] : [])) : null;
+    this.world = createWorld(state.movers, state.seconds, Math.floor(Math.random() * 2 ** 31), people);
     if (this.live && !this.live.host) {
       // A guest's field is what the host tells; nothing of its own is laid.
       this.world.owner.fill(0);
@@ -842,9 +846,11 @@ export class TerritoryView extends TableView<State> {
     const world = this.world!,
       state = this.state!,
       over = world.closed !== null || state.ranking !== null,
-      left = Math.ceil(secondsLeft(world) - (world.tick < ticks(COUNTDOWN) ? COUNTDOWN : 0)),
+      death = state.seconds === 0,
+      left = death ? 0 : Math.ceil(secondsLeft(world) - (world.tick < ticks(COUNTDOWN) ? COUNTDOWN : 0)),
       shown = Math.max(0, Math.min(state.seconds, left)),
-      clock = `${Math.floor(shown / 60)}:${String(shown % 60).padStart(2, "0")}`,
+      // A deathmatch has no clock: how many are still in instead.
+      clock = death ? `생존 ${world.movers.filter((m) => m.alive).length}` : `${Math.floor(shown / 60)}:${String(shown % 60).padStart(2, "0")}`,
       share = (k: number) => world.movers[k].land / CELLS,
       mine = this.mine,
       order = world.movers.map((_, k) => k).sort((a, b) => world.movers[b].land - world.movers[a].land || a - b),
@@ -878,7 +884,8 @@ export class TerritoryView extends TableView<State> {
     data.pos = world.movers.map((m) => `${m.x.toFixed(2)},${m.y.toFixed(2)}`).join(";");
     data.heading = world.movers.map((m) => m.heading.toFixed(2)).join(",");
     data.claims = String(this.counts.claims);
-    data.left = String(shown);
+    data.left = death ? "" : String(shown);
+    data.mode = death ? "death" : String(state.seconds);
   }
   /** The whole field small: each cell its owner's colour, the movers as dots (mine ringed), what is in view as a frame. */
   private drawMap() {

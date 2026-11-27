@@ -9,13 +9,25 @@ import type { Effect, GameOptions, Move, PointGame, Winner } from "../points/typ
  */
 export const OUT = 0,
   END = 10;
-/** The rounds' lengths, in seconds (the variants). */
-export const ROUNDS = [60, 120, 180, 300];
-export const DEFAULT_ROUND = 180;
+/**
+ * The rounds (the variants; the user asked for 3분판, 5분판 and 데스매치): a timed round's seconds, or `DEATHMATCH`
+ * (0 seconds: no clock, no coming back, the last one left wins). An older 1- or 2-minute choice plays the 3-minute round.
+ */
+export const ROUNDS = [180, 300];
+export const DEFAULT_ROUND = 180,
+  DEATHMATCH = 0;
+export const MODES: { value: string; label: string }[] = [
+  { value: "180", label: "3분판" },
+  { value: "300", label: "5분판" },
+  { value: "death", label: "데스매치" },
+];
+/** A variant's seconds: a timed round's, or 0 for the deathmatch. */
+export const secondsOf = (variant: string) => (variant === "death" ? DEATHMATCH : Number(variant) || DEFAULT_ROUND);
 /** The movers' colours and names, seat by seat. */
 export const COLORS = ["#e5483d", "#2f7fe2", "#f0b62a", "#2ea55e"];
 export const COLOR_NAMES = ["빨강", "파랑", "노랑", "초록"];
 export interface State {
+  /** The round's length (0: a deathmatch). */
   seconds: number;
   movers: number;
   /** How many movers people drive: 1 against the computer; over Wi-Fi every one (the room says who). */
@@ -34,7 +46,7 @@ export interface State {
 export function createGame(seconds: number, movers: number, people = 1): State {
   const n = Math.max(2, Math.min(4, Math.round(movers)));
   return {
-    seconds: ROUNDS.includes(seconds) ? seconds : DEFAULT_ROUND,
+    seconds: seconds === DEATHMATCH || ROUNDS.includes(seconds) ? seconds : DEFAULT_ROUND,
     movers: n,
     people: Math.max(1, Math.min(n, people)),
     outs: Array(n).fill(0),
@@ -46,11 +58,11 @@ export function createGame(seconds: number, movers: number, people = 1): State {
   };
 }
 /** Against the computer: `computers` computers beside me (1 to 3). */
-export const createFromOptions = (variant: string, options: GameOptions = {}) => createGame(Number(variant) || DEFAULT_ROUND, 1 + (Number(options.computers) || 3), 1);
+export const createFromOptions = (variant: string, options: GameOptions = {}) => createGame(secondsOf(variant), 1 + (Number(options.computers) || 3), 1);
 /** Over Wi-Fi: a mover for every seat a person or the computer took, in seat order. */
 export function createNet(variant: string, seated: boolean[]): State {
   const seats = seated.map((on, k) => (on ? k : -1)).filter((k) => k >= 0).slice(0, 4);
-  return { ...createGame(Number(variant) || DEFAULT_ROUND, seats.length, seats.length), seats };
+  return { ...createGame(secondsOf(variant), seats.length, seats.length), seats };
 }
 export const seatOfMover = (state: State, k: number) => state.seats?.[k] ?? k;
 /** What a mover is called: against the computer 나 and 컴퓨터 1, 2, 3; over Wi-Fi its seat's colour. */
@@ -117,6 +129,8 @@ export const territory: PointGame<State> = {
   reason: (s) => {
     if (!s.ranking || !s.shares) return "";
     const shares = s.shares;
-    return `${s.ranking.map((k, i) => `${i + 1}위 ${moverName(s, k)} ${percent(shares[k])}`).join(" · ")}. ${shares[s.ranking[0]] >= 0.5 ? "땅의 절반을 먼저 차지했습니다." : "시간이 끝났을 때 땅이 가장 넓은 쪽이 이깁니다."}`;
+    const why =
+      shares[s.ranking[0]] >= 0.5 ? "땅의 절반을 먼저 차지했습니다." : s.seconds === DEATHMATCH ? "마지막까지 살아남은 쪽이 이깁니다." : "시간이 끝났을 때 땅이 가장 넓은 쪽이 이깁니다.";
+    return `${s.ranking.map((k, i) => `${i + 1}위 ${moverName(s, k)} ${percent(shares[k])}`).join(" · ")}. ${why}`;
   },
 };
