@@ -171,31 +171,49 @@ describe("gold raid: the club, bombs, the cart and the gates", () => {
     a.face = 1;
     return w;
   }
-  test("a blow makes the other drop all its sack and stuns it a moment; it cannot be struck again at once", () => {
+  test("a blow makes the other drop all its sack and throws it up (no stun); in the air it has no say and is struck on, each time a little lower, till it lands", () => {
     const w = facing(),
       [a, b] = w.bandits;
     b.carry = 10;
-    const seen = run(w, 0.2, (_, k) => hands({ strike: k === 0 }));
-    expect(seen.find((e) => e.kind === "hit")).toEqual({ kind: "hit", by: 0, on: 1, dropped: 10 });
+    const seen = run(w, 0.12, (_, k) => hands({ strike: k === 0 }));
+    expect(seen.find((e) => e.kind === "hit")).toEqual({ kind: "hit", by: 0, on: 1, dropped: 10, combo: 1 });
     expect(b.carry).toBe(0);
-    expect(b.stun).toBeGreaterThan(0.5);
+    expect(b.stun).toBe(0);
+    expect(b.flung).toBe(1);
+    expect(b.ground).toBe(false);
+    expect(b.vy).toBeGreaterThan(0);
     // The dropped gold flies out as loot worth what was dropped.
     expect(w.loot.reduce((sum, i) => sum + i.value, 0)).toBe(10);
-    // Stunned, its hands do nothing.
-    const x = b.x;
-    run(w, 0.3, () => hands({}, { x: -1, jump: true, strike: true }));
+    // In the air its hands do nothing.
+    run(w, 0.15, () => hands({}, { x: -1, jump: true, strike: true }));
     expect(b.face).toBe(-1);
     expect(b.swing).toBe(-1);
-    void x;
-    // The striker's club waits a little longer than the stun.
-    expect(S.HIT_COOL).toBeGreaterThan(S.STUN);
-    // Struck again while still down: nothing.
-    a.x = b.x - 0.8;
-    a.face = 1;
-    a.cool = 0;
-    a.swing = -1;
-    expect(b.stun).toBeGreaterThan(0);
-    expect(run(w, 0.3, (_, k) => hands({ strike: k === 0 })).some((e) => e.kind === "hit")).toBe(false);
+    // The striker is not held back: as soon as its sword is ready it strikes the flung one again, and again.
+    const heights: number[] = [];
+    let top = 0;
+    for (let n = 0; n < 4 && !b.ground; n++) {
+      a.x = b.x - 0.8;
+      a.face = 1;
+      // The sword held ready: it swings the moment it may.
+      let hit: S.Happening | undefined;
+      for (let k = 0; k < S.COOL / S.DT + 2 && !hit && !b.ground; k++) hit = S.step(w, hands({ strike: true })).find((e) => e.kind === "hit");
+      if (!hit) break;
+      expect(hit).toMatchObject({ on: 1, dropped: 0, combo: n + 2 });
+      // Where this throw takes it: over the road, a little lower each time.
+      heights.push(b.y + (b.vy * b.vy) / (2 * S.G));
+      top = Math.max(top, b.y);
+    }
+    expect(heights.length).toBeGreaterThanOrEqual(2);
+    // Each throw a little lower than the last.
+    for (let k = 1; k < heights.length; k++) expect(heights[k]).toBeLessThanOrEqual(heights[k - 1] + 0.02);
+    expect(Math.max(...heights)).toBeLessThan(S.LAUNCH.up + S.LAUNCH.pop + 0.05);
+    expect(top).toBeGreaterThan(0.3);
+    // Once down it is on its feet at once, and its hands work again.
+    run(w, 1.2, () => hands({}));
+    expect(b.ground).toBe(true);
+    expect(b.flung).toBe(0);
+    run(w, 0.2, () => hands({}, { x: 1, jump: false, strike: false }));
+    expect(b.face).toBe(1);
     // Out of reach, or behind my back: a swing and no blow.
     const far = facing();
     far.bandits[1].x = 2.5;
@@ -453,9 +471,9 @@ describe("gold raid: the slower pace and the long valley", () => {
     expect(S.RUN).toBeLessThanOrEqual(BEFORE.run / 2);
     // From gate to gate takes over twice as long as it did.
     expect((2 * S.GATE) / S.RUN).toBeGreaterThan((2 * (2 * BEFORE.gate)) / BEFORE.run);
-    // A jump rises as high (the ledges are reached as before) and hangs in the air longer.
+    // A jump rises as high (the ledges are reached as before); it was made quick again (the user asked): under 0.9 s.
     expect((S.JUMP * S.JUMP) / (2 * S.G)).toBeCloseTo((BEFORE.jump * BEFORE.jump) / (2 * BEFORE.g), 1);
-    expect((2 * S.JUMP) / S.G).toBeGreaterThan((1.4 * 2 * BEFORE.jump) / BEFORE.g);
+    expect((2 * S.JUMP) / S.G).toBeLessThan(0.9);
     // Measured: a bandit running for a second goes half as far as before, at most.
     const w = quiet(),
       b = w.bandits[0],
@@ -697,35 +715,28 @@ describe("gold raid: the load and getting up", () => {
     expect(laden).toBeLessThan(empty * 0.8);
     expect(laden / empty).toBeCloseTo(S.runOf(15) / S.RUN, 1);
   });
-  test("down, a bandit can be neither struck nor blown up; once it stands it may be struck at once", () => {
+  test("a bandit dazed by a bomb may be struck all the same (and is thrown up); the striker swings again as soon as its sword is ready", () => {
     const w = quiet(),
       [a, b] = w.bandits;
-    a.x = 0;
-    a.face = 1;
-    b.x = 0.9;
-    b.carry = 10;
-    run(w, 0.2, (_, k) => hands({ strike: k === 0 }));
-    expect(b.stun).toBeGreaterThan(0);
-    // A bomb going off by it while it is down: it keeps the rest of its sack.
-    const left = b.carry;
     a.x = b.x - 5;
+    b.carry = 10;
     w.loot.push({ id: 999, kind: "bomb", value: 0, x: b.x, y: b.y + 0.5, vx: 0, vy: 0, rest: true, age: S.FUSE - 0.05, free: 0 });
-    const blasts = run(w, 0.1, () => hands({})).filter((e) => e.kind === "boom");
-    expect(blasts.length).toBe(1);
-    expect(blasts[0]).toMatchObject({ stunned: [] });
-    expect(b.carry).toBe(left);
-    // It stands: the very next blow lands, with no safe time after getting up.
-    run(w, S.STUN, () => hands({}));
-    expect(b.stun).toBe(0);
+    expect(run(w, 0.1, () => hands({})).filter((e) => e.kind === "boom")).toHaveLength(1);
+    expect(b.stun).toBeGreaterThan(0);
+    run(w, 0.7, () => hands({}));
     expect(b.ground).toBe(true);
+    expect(b.stun).toBeGreaterThan(0);
     a.x = b.x - 0.9;
     a.y = b.y;
     a.face = 1;
     a.cool = 0;
     a.swing = -1;
-    expect(run(w, 0.25, (_, k) => hands({ strike: k === 0 })).some((e) => e.kind === "hit")).toBe(true);
-    expect(b.stun).toBeGreaterThan(0);
-    // But the one who struck must wait a little longer than the stun before its next swing.
-    expect(a.cool).toBeGreaterThan(S.STUN);
+    const told = run(w, 0.12, (_, k) => hands({ strike: k === 0 }));
+    expect(told.find((e) => e.kind === "hit")).toMatchObject({ on: 1, dropped: 5, combo: 1 });
+    expect(b.flung).toBe(1);
+    // No wait after a hit beyond the sword's own.
+    expect(a.cool).toBeLessThanOrEqual(S.COOL);
+    expect(S.SWING).toBeLessThan(0.35);
+    expect(S.COOL).toBeLessThan(0.45);
   });
 });

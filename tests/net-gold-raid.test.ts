@@ -24,7 +24,7 @@ describe("gold raid's valley as numbers", () => {
       { kind: "swing", side: 0 },
       { kind: "pickup", side: 1, value: 10, what: "pouch", x: -3.25, y: 1.6 },
       { kind: "deposit", side: 0, amount: 17 },
-      { kind: "hit", by: 1, on: 0, dropped: 4 },
+      { kind: "hit", by: 1, on: 0, dropped: 4, combo: 2 },
       { kind: "boom", x: 2.5, y: 0.12, stunned: [0, 1] },
       { kind: "boom", x: -1, y: 3.32, stunned: [] },
       { kind: "drop", what: "bomb", x: 6.4 },

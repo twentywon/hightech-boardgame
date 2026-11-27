@@ -270,6 +270,58 @@ test("gold raid: on a touch screen the lever runs (the further the faster) and j
   expect(errors).toEqual([]);
 });
 
+test("gold raid: a blow throws the other up into the air (no stun), and it is struck on while it is up", async ({ page }) => {
+  test.setTimeout(480_000);
+  // The page's clock is held and run on by the test: a throw lasts well under a second, and a slow software-drawn
+  // page would otherwise let it pass between two looks.
+  await page.clock.install();
+  const errors = await sit(page, "local");
+  await page.clock.pauseAt(Date.now() + 3000);
+  const tick = (ms: number) => page.clock.runFor(ms);
+  const state = () => page.evaluate(() => {
+    const d = document.querySelector<HTMLCanvasElement>("#board canvas")!.dataset;
+    return { men: (d.men ?? "").split(";").map((p) => p.split(",").map(Number)), flung: (d.flung ?? "").split(",").map(Number), stun: d.stun, swings: (d.swings ?? "").split(",").map(Number) };
+  });
+  await tick(200);
+  // The second walks to the middle, the first up to it (facing it).
+  await key(page, "ArrowLeft", true);
+  for (let k = 0; k < 40 && (await state()).men[1][0] > 1.2; k++) await tick(200);
+  await key(page, "ArrowLeft", false);
+  await tick(300);
+  const bx = (await state()).men[1][0];
+  await key(page, "KeyD", true);
+  for (let k = 0; k < 120 && (await state()).men[0][0] < bx - 1.05; k++) await tick(50);
+  await key(page, "KeyD", false);
+  await tick(300);
+  const [a, b] = (await state()).men;
+  expect(b[0] - a[0]).toBeGreaterThan(0.3);
+  expect(b[0] - a[0]).toBeLessThan(1.2);
+  // The first strikes as fast as its sword allows (the sword is not held back by the other being struck).
+  let most = 0,
+    high = 0;
+  const swings = (await state()).swings[0];
+  for (let k = 0; k < 28; k++) {
+    if (k % 4 === 0) {
+      await key(page, "KeyF", true);
+      await tick(16);
+      await key(page, "KeyF", false);
+    }
+    await tick(34);
+    const now = await state();
+    most = Math.max(most, now.flung[1]);
+    if (now.flung[1] > 0) high = Math.max(high, now.men[1][1]);
+    // No one is ever stunned by the sword.
+    expect(now.stun).toBe("0,0");
+  }
+  expect(most).toBeGreaterThanOrEqual(2);
+  expect(high).toBeGreaterThan(0.6);
+  expect((await state()).swings[0]).toBeGreaterThanOrEqual(swings + 3);
+  // It comes down again.
+  for (let k = 0; k < 20 && (await state()).flung[1] > 0; k++) await tick(200);
+  expect((await state()).flung).toEqual([0, 0]);
+  expect(errors).toEqual([]);
+});
+
 test("gold raid: two at one screen each move their own bandit with their own keys", async ({ page }, info) => {
   const errors = await sit(page, "local");
   await expect(canvas(page)).toHaveAttribute("data-two", "true");

@@ -10,7 +10,8 @@
  * loot, a caravan to rob, each other to rob; the rules in detail are our own): a bandit runs, jumps and swings a club.
  * Loot (`KINDS`: only pouches of 10 fall from the sky now, seldom, with bombs; coins, gems and chests no longer do, the user asked) falls now and then and is taken by touching it, in the air
  * or where it lies, into a sack that holds `CAP`; a full sack slows its bearer. Gold counts only once it is carried
- * to one's own gate. A blow of the club makes the other bandit drop part of its sack and stuns it a moment; a bomb
+ * to one's own gate. A blow of the sword makes the other bandit drop its sack and throws it up into the air, where it
+ * can be struck again and again (the user asked: no stun, a juggle); a bomb
  * (it falls with the loot) does the same to whoever is near when it goes off. The merchant's cart sheds gold at each
  * blow and breaks open at the last. A blow on the other's gate takes a little from its treasury (the coins fall out
  * before the gate, to be carried home like any), and the castle answers by dropping a fire pot there.
@@ -19,7 +20,8 @@
  * The valley (gate to gate 20 m; it was 50 m, then 35 m, then 25 m, and the user asked
  * for it shorter each time): the castles are far apart and the view follows a bandit along it. And it is played at an easy pace: a bandit runs at 2.8 m/s and a jump hangs in
  * the air for over a second (the game was asked to be much slower than at first, when it ran at 5.6 and a jump
- * lasted 0.8 s; every other speed and time was scaled with it, the heights kept).
+ * lasted 0.8 s; every other speed and time was scaled with it, the heights kept). The jump and the swing were later
+ * made snappy again (the user asked: 공격이랑 점프는 빠르게): a jump rises as high but is over in under 0.9 s.
  * The sim is stepped in slices of `DT` s.
  */
 export const DT = 1 / 120;
@@ -29,8 +31,8 @@ export const X_MOST = 11,
 /** A bandit: its half width and height, its run and jump, gravity (a jump rises JUMP² / 2G = 2 m). */
 export const BODY = { half: 0.32, tall: 1.15 },
   RUN = 2.8,
-  JUMP = 6.6,
-  G = 10.9,
+  JUMP = 9.2,
+  G = 21.2,
   /** How quickly it comes to its speed on the ground and in the air (m/s²). */
   GRIP = 18,
   AIR = 9;
@@ -59,21 +61,32 @@ export const PLATFORMS = [
   { x0: -1.3, x1: 1.3, y: 3.2 },
   ...RIGHT.flatMap((p) => [{ x0: -p.x1, x1: -p.x0, y: p.y }, p]),
 ];
-/** The club: how long a swing lasts, when in it the blow lands, how far it reaches, and the wait before the next. */
-export const SWING = 0.5,
-  SWING_HIT = 0.16,
-  REACH = 1.25,
-  COOL = 0.9;
 /**
- * A blow on a bandit: how long it is stunned (and cannot be struck or blown up again while down; once it stands it
- * may be struck at once: the user asked for no safe time after getting up), the share of its sack it drops, and the
- * wait before the striker's next swing (a little longer than the stun, so the one struck has a moment to get away
- * and is not struck again the instant it stands, over and over).
+ * The sword: how long a swing lasts, when in it the blow lands, how far it reaches (ahead, and up and down), and the
+ * wait before the next. Quick (the user asked): a swing is 0.28 s and the next may follow 0.36 s after it began.
  */
-export const STUN = 1.6,
-  // A blow on the sword makes the one struck drop all it carries (the user asked for it).
-  DROP_SHARE = 1,
-  HIT_COOL = STUN + 0.45;
+export const SWING = 0.28,
+  SWING_HIT = 0.08,
+  REACH = 1.25,
+  REACH_UP = 1.5,
+  REACH_DOWN = 1.1,
+  /** How much further the sword's arc reaches a bandit thrown up in the air (so that a juggle need not chase). */
+  REACH_AIR = 0.35,
+  COOL = 0.36;
+/**
+ * A blow on a bandit (the user asked: no stun, it is thrown up into the air and may be struck on and on): it drops
+ * what it carries (`DROP_SHARE`, all: the user asked for it) and is thrown up `LAUNCH.up` m, a little forward; till it
+ * comes down it has no say over itself. Struck again in the air it is thrown up anew, each time a little lower
+ * (`LAUNCH.fade`, down to `LAUNCH.least`), so that a juggle ends with it on its feet again. The striker is not held
+ * back after a hit: it may swing again as soon as its sword is ready, whether the other is down, flung or dazed.
+ */
+export const DROP_SHARE = 1,
+  LAUNCH = { up: 1.05, fade: 0.8, least: 0.22, pop: 0.12, push: 0.9 },
+  /**
+   * Once a flung bandit is down again it has this long on its feet before the next blow can throw it up (it may run,
+   * jump and strike in it), so that a juggle ends and two bandits are never caught in a lock.
+   */
+  RISE = 0.45;
 /** A bomb: its fuse once it lies, its blast's reach, the stun and the share of the sack lost. */
 export const FUSE = 2.4,
   BLAST = 1.6,
@@ -137,8 +150,12 @@ export interface Bandit {
   face: 1 | -1;
   ground: boolean;
   carry: number;
-  /** Seconds it is still stunned (down, and not to be struck or blown up again till it stands). */
+  /** Seconds it is still stunned by a bomb (down, and not to be blown up again till it stands). */
   stun: number;
+  /** The blows it has taken since it was thrown up (0: on its feet, or in the air by its own jump); it has no say till it lands. */
+  flung: number;
+  /** Seconds since it came down from a throw that blows still pass it by (`RISE`). */
+  rise: number;
   /** Seconds since its swing began (−1: none), whether that swing's blow has landed, and the wait before the next. */
   swing: number;
   struck: boolean;
@@ -207,7 +224,7 @@ export type Happening =
   | { kind: "swing"; side: number }
   | { kind: "pickup"; side: number; value: number; what: LootKind; x: number; y: number }
   | { kind: "deposit"; side: number; amount: number }
-  | { kind: "hit"; by: number; on: number; dropped: number }
+  | { kind: "hit"; by: number; on: number; dropped: number; combo: number }
   | { kind: "boom"; x: number; y: number; stunned: number[] }
   | { kind: "drop"; what: LootKind; x: number }
   | { kind: "cart"; dir: 1 | -1 }
@@ -224,7 +241,7 @@ export function draw(world: World) {
   return (world.seed - 1) / 2147483646;
 }
 const between = (world: World, [lo, hi]: number[]) => lo + (hi - lo) * draw(world);
-const bandit = (x: number, face: 1 | -1): Bandit => ({ x, y: 0, vx: 0, vy: 0, face, ground: true, carry: 0, stun: 0, swing: -1, struck: false, cool: 0, coyote: 0, buffer: 0, stride: 0 });
+const bandit = (x: number, face: 1 | -1): Bandit => ({ x, y: 0, vx: 0, vy: 0, face, ground: true, carry: 0, stun: 0, flung: 0, rise: 0, swing: -1, struck: false, cool: 0, coyote: 0, buffer: 0, stride: 0 });
 const mind = (): Mind => ({ wait: 0, goal: null, ready: 0 });
 /** A match to `target` gold (with `seconds` on the clock, or 0 for none), each bandit before its own gate. */
 export function createWorld(seed = 1, target = 100, seconds = 0): World {
@@ -317,17 +334,22 @@ function blow(world: World, side: number, out: Happening[]) {
     other = 1 - side,
     o = world.bandits[other],
     ahead = (x: number) => (x - b.x) * b.face;
-  if (o.stun <= 0 && ahead(o.x) > -0.25 && ahead(o.x) < REACH && Math.abs(o.y - b.y) < 1.1) {
+  // Down, dazed or flung, the other may be struck all the same.
+  if (o.rise <= 0 && ahead(o.x) > -0.25 && ahead(o.x) < REACH + (o.flung > 0 ? REACH_AIR : 0) && o.y - b.y < REACH_UP && b.y - o.y < REACH_DOWN) {
     const dropped = Math.ceil(o.carry * DROP_SHARE);
     o.carry -= dropped;
     spill(world, dropped, o.x, o.y + 0.8, b.face);
-    o.stun = STUN;
-    b.cool = Math.max(b.cool, HIT_COOL);
+    o.flung++;
+    // It is thrown up to a height over the ground under it (lower each time), not on from where it is struck, so
+    // that a juggle stays within the sword's reach and comes down.
+    const up = Math.max(LAUNCH.least, LAUNCH.up * LAUNCH.fade ** (o.flung - 1)),
+      rise = Math.max(LAUNCH.pop, surfaceUnder(o.x, o.y + 0.01) + up - o.y);
     o.swing = -1;
-    o.vx = b.face * 2.3;
-    o.vy = 3.6;
+    o.buffer = 0;
+    o.vx = b.face * LAUNCH.push;
+    o.vy = Math.sqrt(2 * G * rise);
     o.ground = false;
-    out.push({ kind: "hit", by: side, on: other, dropped });
+    out.push({ kind: "hit", by: side, on: other, dropped, combo: o.flung });
     return;
   }
   const cart = world.cart;
@@ -364,8 +386,10 @@ function blow(world: World, side: number, out: Happening[]) {
 /** One slice of a bandit: its hands, its run and jump, its club, what it takes and what it brings home. */
 function act(world: World, side: number, input: Input, out: Happening[]) {
   const b = world.bandits[side],
-    stunned = b.stun > 0;
+    // Dazed by a bomb or thrown up by a blow: no say over itself.
+    stunned = b.stun > 0 || b.flung > 0;
   b.stun = Math.max(0, b.stun - DT);
+  b.rise = Math.max(0, b.rise - DT);
   b.cool = Math.max(0, b.cool - DT);
   b.buffer = input.jump && !stunned ? BUFFER : Math.max(0, b.buffer - DT);
   b.coyote = b.ground ? COYOTE : Math.max(0, b.coyote - DT);
@@ -414,6 +438,8 @@ function act(world: World, side: number, input: Input, out: Happening[]) {
         b.y = top;
         b.vy = 0;
         b.ground = true;
+        if (b.flung > 0) b.rise = RISE;
+        b.flung = 0;
       }
     }
   }
@@ -582,7 +608,7 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
     o = world.bandits[other],
     m = world.minds[side],
     home = gateOf(side);
-  if (b.stun > 0 || world.over) return IDLE;
+  if (b.stun > 0 || b.flung > 0 || world.over) return IDLE;
   m.wait -= DT;
   if (m.wait <= 0 || !m.goal) {
     m.wait = L.think * (0.7 + 0.6 * draw(world));
@@ -623,7 +649,7 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
       // A rival robbing my gate (its club up there, or the gate just struck) is seen off; one laden and near is chased.
       const robbing = Math.abs(o.x - home) < GATE_R + 0.8 && world.treasury[side] > 0 && o.stun <= 0 && (o.swing >= 0 || world.locked[side] > 0);
       if (level !== "easy" && robbing && Math.abs(o.x - b.x) < 14) best = { x: o.x, y: o.y, what: "defend" };
-      else if (o.carry >= L.chase && o.stun <= 0.3 && near(o.x, o.y) < L.chaseFar && b.cool <= 0.2) best = { x: o.x, y: o.y, what: "chase" };
+      else if (o.carry >= L.chase && near(o.x, o.y) < L.chaseFar && b.cool <= 0.2) best = { x: o.x, y: o.y, what: "chase" };
       else if (L.raid && !best && b.carry <= 6 && world.treasury[other] >= 8 && Math.abs(o.x - gateOf(other)) > 9 && Math.abs(b.x - gateOf(other)) < 14) best = { x: gateOf(other) - Math.sign(gateOf(other)) * 0.4, y: 0, what: "raid" };
     }
     // Nothing worth going for: it waits in the middle of its own half, where its share of the loot falls.
@@ -649,20 +675,30 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
       break;
     }
   // The club: what has stood within its reach long enough is struck.
+  // A rival in reach is struck whether it stands, lies dazed or is in the air (a flung one again and again: a juggle).
   const ahead = (x: number) => (x - b.x) * b.face,
-    rival = o.stun <= 0 && o.carry >= L.strike && ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && Math.abs(o.y - b.y) < 0.9,
-    guard = goal.what === "defend" && o.stun <= 0 && ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && Math.abs(o.y - b.y) < 0.9,
+    reach = ahead(o.x) > 0 && ahead(o.x) < REACH + (o.flung > 0 ? REACH_AIR : 0) - 0.15 && o.y - b.y < REACH_UP - 0.2 && b.y - o.y < REACH_DOWN - 0.2,
+    // (The easy one does not juggle: it strikes only a rival with gold.)
+    rival = (o.carry >= L.strike || (o.flung > 0 && level !== "easy")) && o.rise <= 0 && reach,
+    guard = goal.what === "defend" && reach,
     cart = !!world.cart && world.cart.broken < 0 && b.y < 1 && ahead(world.cart.x) > -0.4 && ahead(world.cart.x) < REACH + CART.half - 0.3,
     gate = goal.what === "raid" && b.ground && Math.abs(b.x - gateOf(other)) < GATE_R && world.locked[other] <= 0 && world.treasury[other] > 0;
   if (rival || guard || cart || gate) {
     m.ready += DT;
-    if (m.ready >= L.react && b.cool <= 0 && b.swing < 0) {
+    // A rival in the air is struck the quicker (a juggle waits for no one).
+    if (m.ready >= (o.flung > 0 && rival ? L.react * 0.5 : L.react) && b.cool <= 0 && b.swing < 0) {
       input.strike = true;
       m.ready = 0;
       // After a raid's blow it runs from the fire pot.
       if (gate) [m.goal, m.wait] = [{ x: b.x - Math.sign(gateOf(other)) * (BLAST + 2), y: 0, what: "flee" }, 1.6];
     }
   } else m.ready = 0;
+  // A rival it has thrown up is kept under its sword: it steps after it and stands to strike again (not the easy one).
+  if (level !== "easy" && o.flung > 0 && Math.abs(o.x - b.x) < 2.6 && b.ground && o.y - b.y < REACH_UP + 0.5) {
+    const d = (o.x - b.x) * Math.sign(o.x - b.x || b.face);
+    input.x = d > REACH - 0.45 || ahead(o.x) < 0 ? Math.sign(o.x - b.x || b.face) * L.pace : 0;
+    input.jump = false;
+  }
   // Beside the cart it stands and strikes rather than walk through it.
   if (goal.what === "cart" && cart) input.x = 0;
   // Turned the wrong way for the rival it means to strike: it turns.
