@@ -2,6 +2,7 @@ import type { GameOptions, Move } from "../games/points/types";
 import { HOST_ONLY, Match, type NetRules } from "./match";
 import { APP_VERSION, PROTOCOL, decode, encode, type LiveMessage, type Message, type NetMove, type PersonInfo, type Request, type SeatInfo, type SeatKind, type StartInfo } from "./protocol";
 import { newSeed } from "./random";
+import { keepAwake, letGo } from "./awake";
 
 /**
  * A room of devices on one Wi-Fi: one host and up to seven guests, each guest joined to the host alone (a star).
@@ -95,6 +96,7 @@ abstract class Room<S> {
     readonly rules: NetRules<S>,
   ) {
     OPEN.add(this);
+    keepAwake(this);
   }
   /** The seat a person sits on, or null. */
   seatOf(id: string): number | null {
@@ -488,6 +490,7 @@ export class HostRoom<S> extends Room<S> {
   }
   leave() {
     OPEN.delete(this);
+    letGo(this);
     if (this.closed) return;
     this.closed = true;
     // The host leaving ends the room for everyone: no guest waits for it to come back.
@@ -772,6 +775,7 @@ export class GuestRoom<S> extends Room<S> {
   }
   leave() {
     OPEN.delete(this);
+    letGo(this);
     this.quit = true;
     this.stopRedial();
     if (this.link) {

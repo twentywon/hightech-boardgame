@@ -332,3 +332,74 @@ test("yut nori with the host's page put away: the guest still plays, the host's 
   await expect(host.locator("#yut-throw")).toBeEnabled({ timeout: 30000 });
   await done();
 });
+
+/** The browser's screen wake lock, counted (test-only): let go by the "browser" whenever the page is hidden. */
+function countLocks() {
+  const w = window as unknown as { locks: { asked: number; held: number } };
+  w.locks = { asked: 0, held: 0 };
+  let current: { released: boolean; release(): Promise<void> } | null = null;
+  const make = () => {
+    const s = {
+      released: false,
+      release: async () => {
+        if (s.released) return;
+        s.released = true;
+        w.locks.held--;
+      },
+    };
+    return s;
+  };
+  Object.defineProperty(navigator, "wakeLock", {
+    configurable: true,
+    value: {
+      request: async () => {
+        w.locks.asked++;
+        w.locks.held++;
+        current = make();
+        return current;
+      },
+    },
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) void current?.release();
+  });
+}
+test("yut nori over Wi-Fi keeps the screens on while in the room (a phone gone dark drops out), takes the lock again when shown, and lets it go on leaving", async ({ browser }, info) => {
+  const use = info.project.use,
+    devices = await Promise.all(
+      [0, 1].map(async () => {
+        const context = await browser.newContext({ baseURL: use.baseURL, viewport: use.viewport, deviceScaleFactor: use.deviceScaleFactor, isMobile: use.isMobile, hasTouch: use.hasTouch, userAgent: use.userAgent });
+        await context.addInitScript(countLocks);
+        const page = await context.newPage(),
+          errors: string[] = [];
+        page.on("pageerror", (e) => errors.push(e.message));
+        await page.goto("/");
+        return { page, errors, context };
+      }),
+    ),
+    [host, guest] = devices.map((d) => d.page);
+  const locks = (page: Page) => page.evaluate(() => (window as unknown as { locks: { asked: number; held: number } }).locks);
+  // Nothing is held in the collection.
+  expect(await locks(host)).toEqual({ asked: 0, held: 0 });
+  await lobby(host, "윷놀이", "방장");
+  await host.locator("#net-host").click();
+  await pair(host, guest, "윷놀이", "민수");
+  for (const page of [host, guest]) await expect.poll(async () => (await locks(page)).held).toBe(1);
+  await host.locator("#net-start").click({ noWaitAfter: true, timeout: 120000 });
+  for (const page of [host, guest]) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  // Put away and shown again: the browser let the lock go, and it is taken again.
+  await hide(guest);
+  await expect.poll(async () => (await locks(guest)).held).toBe(0);
+  await show(guest);
+  await expect.poll(async () => locks(guest)).toEqual({ asked: 2, held: 1 });
+  // Leaving the table (and the room) lets it go.
+  await guest.evaluate(() => {
+    document.querySelector<HTMLButtonElement>("main.game-layout #back")?.click();
+    document.querySelector<HTMLButtonElement>("dialog.leave-dialog #leave-go")?.click();
+  });
+  await expect.poll(async () => (await locks(guest)).held, { timeout: 15000 }).toBe(0);
+  for (const d of devices) {
+    expect(d.errors).toEqual([]);
+    await d.context.close();
+  }
+});
