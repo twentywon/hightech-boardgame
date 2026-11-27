@@ -270,3 +270,65 @@ test("yut nori with the third seat closed: the one on the fourth seat plays as �
   }
   for (const d of devices) expect(d.errors).toEqual([]);
 });
+
+/** A page put away (another app over it, its tab in the background): hidden, and no animation frames come. */
+const hide = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { shownFrame?: typeof requestAnimationFrame };
+    w.shownFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = () => 0;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+const show = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { shownFrame?: typeof requestAnimationFrame };
+    if (w.shownFrame) window.requestAnimationFrame = w.shownFrame;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+/** One step of the player to move on `page`: a move where one is offered, else a throw. */
+async function step(page: Page) {
+  const choice = page.locator("#yut-moves button:not([disabled])");
+  if (await choice.count()) await choice.first().evaluate((b) => (b as HTMLButtonElement).click());
+  else {
+    await expect(page.locator("#yut-throw")).toBeEnabled({ timeout: 60000 });
+    await press(page, "#yut-throw");
+  }
+}
+
+test("yut nori with the host's page put away: the guest still plays, the host's computer still plays its seat, and the host catches up when shown", async ({ browser }, info) => {
+  const { host, guest, done } = await table(browser, info, "윷놀이", (h) => h.locator('.net-kind[data-seat="2"][data-kind="computer"]').click());
+  for (const page of [host, guest]) await expect(page.locator(".yut-sides li")).toHaveCount(3);
+  // The host plays its own first turn.
+  for (let k = 0; k < 12 && (await host.locator("#board").getAttribute("data-turn")) === "0"; k++) {
+    await resting(host);
+    const before = await snapshot3(host);
+    await step(host);
+    await expect.poll(() => snapshot3(host), { timeout: 60000 }).not.toBe(before);
+  }
+  for (const page of [host, guest]) {
+    await expect(page.locator("#board")).toHaveAttribute("data-turn", "1", { timeout: 60000 });
+    await resting(page);
+  }
+  // The host's tablet is put away: the guest plays its turn ...
+  await hide(host);
+  for (let k = 0; k < 12 && (await guest.locator("#board").getAttribute("data-turn")) === "1"; k++) {
+    await resting(guest);
+    const before = await snapshot3(guest);
+    await step(guest);
+    await expect.poll(() => snapshot3(guest), { timeout: 60000 }).not.toBe(before);
+  }
+  // ... and the computer's seat is played all the same: its turn passes back to the host.
+  await expect(guest.locator("#board")).toHaveAttribute("data-turn", "2", { timeout: 60000 });
+  await expect(guest.locator("#board")).toHaveAttribute("data-turn", "0", { timeout: 120000 });
+  // Shown again, the host's yard is the guest's at once, and the host may throw.
+  await show(host);
+  await resting(host);
+  await resting(guest);
+  await expect.poll(async () => (await snapshot3(guest)) === (await snapshot3(host)), { timeout: 30000 }).toBe(true);
+  await expect(host.locator("#yut-throw")).toBeEnabled({ timeout: 30000 });
+  await done();
+});

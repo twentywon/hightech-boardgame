@@ -127,6 +127,19 @@ export class YutView {
   private ground = new T.Plane(new T.Vector3(0, 1, 0), 0);
   private reducedMotion =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /**
+   * A page put away (the screen off, another app or tab over it) gets no animation frames, so a throw or a walk would
+   * never come to rest there: over Wi-Fi its table would hold every move told meanwhile, and a host's computer would
+   * stop playing its seats for everyone. While hidden the yard is laid at once, and what was moving is finished.
+   */
+  private hidden = () => typeof document !== "undefined" && document.hidden;
+  private onVisibility = () => {
+    this.dirty = true;
+    if (!this.hidden() || !this.tweens.length) return;
+    this.finish();
+    this.drawMarks();
+    this.onSettled();
+  };
   /** A stick or a piece touched the ground. */
   onContact: (stick: boolean, strength?: number) => void = () => {};
   /** Every animation has finished. */
@@ -243,6 +256,7 @@ export class YutView {
       this.scene.add(group);
     }
     this.placeSticks([false, false, false, false], true);
+    document.addEventListener("visibilitychange", this.onVisibility);
     const canvas = this.renderer.domElement;
     let down: { pointer: number; x: number; y: number } | null = null;
     canvas.addEventListener("pointerdown", (e) => {
@@ -727,7 +741,7 @@ export class YutView {
     const before = this.model,
       thrown = !!before && model.throwId !== before.throwId,
       walked = !!before && model.moveId !== before.moveId && !!model.walk,
-      quick = !animate || this.reducedMotion,
+      quick = !animate || this.reducedMotion || this.hidden(),
       now = performance.now();
     this.model = model;
     this.dirty = true;
@@ -863,6 +877,7 @@ export class YutView {
     this.disposed = true;
     this.cancelReady?.();
     cancelAnimationFrame(this.raf);
+    document.removeEventListener("visibilitychange", this.onVisibility);
     this.observer.disconnect();
     this.tweens = [];
     for (const resource of this.owned) resource.dispose();
