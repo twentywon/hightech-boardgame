@@ -4,7 +4,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 // file) under plain Node, which knows neither the pictures nor `import.meta.glob`: there, with no page, none are asked for.
 const pictures: Record<string, string> =
   typeof document === "undefined" ? {} : import.meta.glob<string>("../assets/tex/*.webp", { query: "?inline", import: "default", eager: true });
-const picture = (name: string) => pictures[`../assets/tex/${name}.webp`] ?? "",
+export const picture = (name: string) => pictures[`../assets/tex/${name}.webp`] ?? "",
   woodDarkUrl = picture("wood-dark"),
   woodLightUrl = picture("wood-light"),
   woodNormalUrl = picture("wood-normal"),

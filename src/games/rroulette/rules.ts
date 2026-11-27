@@ -166,12 +166,12 @@ export const rRoulette: PointGame<State> = {
   },
   hint: (s) => {
     if (s.seat !== 0) return `${PEOPLE[s.seat]} 차례`;
-    return s.spins[0] > 0 ? `원통을 돌리거나 그냥 당기세요 (펑 확률 1/${s.left})` : `방아쇠를 당기세요 (펑 확률 1/${s.left})`;
+    return s.spins[0] > 0 ? `원통을 돌리거나 그냥 당기세요 (탕 확률 1/${s.left})` : `방아쇠를 당기세요 (탕 확률 1/${s.left})`;
   },
   tally: (s) => [`돌리기 ${s.spins[0]}번`, `남은 사람 ${still(s).length}`],
   reason: (s) => {
     const c = s.champion;
-    if (c === null) return s.out[0] ? "펑! 내가 탈락했습니다." : "모두 펑!";
-    return c === 0 ? "끝까지 펑을 피했습니다." : `${named(c)} 끝까지 펑을 피했습니다.`;
+    if (c === null) return s.out[0] ? "탕! 내가 탈락했습니다." : "모두 탈락!";
+    return c === 0 ? "끝까지 살아남았습니다." : `${named(c)} 끝까지 살아남았습니다.`;
   },
 };

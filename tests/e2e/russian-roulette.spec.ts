@@ -46,7 +46,7 @@ test("russian roulette: four round the party table, the toy at my temple; a pull
   await expect(canvas(page)).toHaveAttribute("data-spins", "2,2,2,2");
   await expect(tool(page, "그냥 당기기")).toBeVisible();
   await expect(tool(page, "원통 돌리기 (2)")).toBeVisible();
-  await expect(page.locator("#turn")).toContainText("펑 확률 1/6");
+  await expect(page.locator("#turn")).toContainText("탕 확률 1/6");
   // No words tell a pull (the user asked): every word shouted over the table is kept here, and there must be none.
   await page.evaluate(() => {
     const said: string[] = ((window as unknown as { said: string[] }).said = []);

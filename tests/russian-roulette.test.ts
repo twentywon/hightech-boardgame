@@ -130,7 +130,7 @@ describe("러시안 룰렛 rules", () => {
     s = play(s, pullMove, () => 0)!;
     expect(s.winner).toBe(1);
     expect(s.champion).toBeNull();
-    expect(rRoulette.reason(s)).toBe("펑! 내가 탈락했습니다.");
+    expect(rRoulette.reason(s)).toBe("탕! 내가 탈락했습니다.");
     let n = rRouletteNet.create!("", {}, [true, true, true, true], SAFE);
     n = netPlay(n, pullMove, () => 0, 0)!;
     expect(n.winner).toBeNull();

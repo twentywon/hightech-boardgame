@@ -39,7 +39,7 @@ const named = (k: number) => `${PEOPLE[k]}${josa(PEOPLE[k], "이", "가")}`;
 const viewed: PointGame<State> = {
   ...rRoulette,
   hint: (s) => (s.seat === 0 ? rRoulette.hint(s) : `${PEOPLE[s.seat]} 차례`),
-  reason: (s) => (s.champion === null ? "모두 펑!" : s.champion === 0 ? "끝까지 펑을 피했습니다." : `${named(s.champion)} 끝까지 펑을 피했습니다.`),
+  reason: (s) => (s.champion === null ? "모두 탈락!" : s.champion === 0 ? "끝까지 살아남았습니다." : `${named(s.champion)} 끝까지 살아남았습니다.`),
 };
 
 /** The seats' colours, for the room's window (the party hats of the table). */

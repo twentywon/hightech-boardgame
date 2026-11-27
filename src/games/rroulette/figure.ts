@@ -1,5 +1,6 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { DETAIL, made, skin as skinRelief } from "../../engine/lifelike";
 
 /*
  * 러시안 룰렛's players (the user asked for them as good as can be, not blocky): sculpted heads (a skull narrowing to
@@ -468,27 +469,6 @@ function jacketPicture(own: Own, look: Look, seed: number) {
     ctx.fillRect(0, 0, w, h);
   });
 }
-/** A grey of the same weave, as relief, for the graphics card's look. */
-function weaveRelief(own: Own) {
-  return painted(
-    own,
-    256,
-    256,
-    (ctx, w, h) => {
-      ctx.fillStyle = "#808080";
-      ctx.fillRect(0, 0, w, h);
-      for (let y = 0; y < h; y += 2) {
-        ctx.fillStyle = y % 4 ? "#909090" : "#6c6c6c";
-        ctx.fillRect(0, y, w, 1);
-      }
-      for (let x = 0; x < w; x += 2) {
-        ctx.fillStyle = x % 4 ? "rgba(150,150,150,0.5)" : "rgba(100,100,100,0.5)";
-        ctx.fillRect(x, 0, 1, h);
-      }
-    },
-    false,
-  );
-}
 /** Felt: fine fibres, and the dark band round the crown (where the hat's lathe has it: v 0.5 to 0.54). */
 function feltPicture(own: Own, colour: string, seed: number) {
   return painted(own, 256, 256, (ctx, w, h) => {
@@ -623,19 +603,22 @@ function torsoGeometry() {
 
 /** One player: a body group (its torso, legs, neck and head) and the parts the view moves. */
 export function buildPerson(body: T.Group, look: Look, seed: number, own: Own, rich: boolean, headY: number, shoulderY: number): Person {
-  FINE = rich ? 1 : 0.48;
+  // The lifelike look cuts every shape much finer (`DETAIL`); the cheap one coarser than the old full cut.
+  FINE = rich ? DETAIL : 0.48;
   const cloth = (map: T.Texture, colour = "#ffffff", roughness = 0.85): T.MeshStandardMaterial =>
     own(
       rich
-        ? new T.MeshPhysicalMaterial({ map, color: colour, roughness, sheen: 0.6, sheenRoughness: 0.55, sheenColor: new T.Color(colour).lerp(new T.Color("#ffffff"), 0.5), bumpMap: weave, bumpScale: 0.6 })
+        ? new T.MeshPhysicalMaterial({ map, color: colour, roughness, sheen: 0.6, sheenRoughness: 0.55, sheenColor: new T.Color(colour).lerp(new T.Color("#ffffff"), 0.5), ...wool })
         : new T.MeshStandardMaterial({ map, color: colour, roughness }),
     );
-  const weave = rich ? weaveRelief(own) : null;
+  // The cloth's weave: a photographed wool's relief and roughness (Poly Haven, CC0) over the painted jacket.
+  const wool = rich ? (({ normalMap, normalScale, roughnessMap }) => ({ normalMap, normalScale, roughnessMap }))(made(own, "wool", "#ffffff", 3, 3, { figure: false, relief: 0.9 })) : {};
   // The skin: a warm glow under it on the graphics card's look (as light under skin), a little sheen at its edges.
-  const skinMap = skinPicture(own, seed);
+  const skinMap = skinPicture(own, seed),
+    pores = skinRelief(own, look.skin, 5);
   const face = own(
     rich
-      ? new T.MeshPhysicalMaterial({ map: skinMap, color: look.skin, roughness: 0.55, sheen: 0.35, sheenRoughness: 0.5, sheenColor: new T.Color("#ff9d86"), emissive: new T.Color(look.skin).multiplyScalar(0.06) })
+      ? new T.MeshPhysicalMaterial({ map: skinMap, color: look.skin, roughness: 0.55, sheen: 0.35, sheenRoughness: 0.5, sheenColor: new T.Color("#ff9d86"), emissive: new T.Color(look.skin).multiplyScalar(0.06), normalMap: pores.normalMap, normalScale: pores.normalScale })
       : new T.MeshStandardMaterial({ map: skinMap, color: look.skin, roughness: 0.6 }),
   ) as T.MeshStandardMaterial;
   // Where the processor draws, only the large parts cast shadows (the torso, the head, the hat).
@@ -673,7 +656,7 @@ export function buildPerson(body: T.Group, look: Look, seed: number, own: Own, r
     paint(along([new T.Vector3(s * 0.21, knee, -0.55), new T.Vector3(s * 0.22, -1.3, -0.62), new T.Vector3(s * 0.22, -1.78, -0.62)], 0.09, q(10), q(12)).toNonIndexed(), look.trousers);
     paint(placed(new T.SphereGeometry(1, q(16), q(10)), s * 0.22, -1.83, -0.72, 0, 0, 0, [0.085, 0.06, 0.17]).toNonIndexed(), "#1c1512");
   }
-  mesh(mergeGeometries(still)!, own(new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, side: T.DoubleSide })), body);
+  mesh(mergeGeometries(still)!, own(new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, side: T.DoubleSide, ...wool })), body);
   still.forEach((g) => g.dispose());
   if (!rich) neck.dispose();
 

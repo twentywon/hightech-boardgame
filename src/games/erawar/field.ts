@@ -1,4 +1,5 @@
 import * as T from "three";
+import { smooth } from "../../engine/lifelike";
 import { canvas, painted, puff, stream, normalFrom, texture, type Own } from "../goldraid/paint";
 import { compactStill } from "../badminton/merge";
 import { bakeAll } from "./bake";
@@ -330,6 +331,45 @@ function windowsTexture(own: Own) {
   t.wrapS = t.wrapT = T.RepeatWrapping;
   return t;
 }
+/**
+ * A mountain for the far range, its foot a unit across and a unit high like the cone it replaces: a cone cut finely
+ * and pushed in and out by ridges and gullies running down it and a few rough bumps, painted grey-blue rock with snow
+ * lying above a ragged line, its normals smooth. `seed` varies the ridges.
+ */
+function rugged(seed: number) {
+  const around = 72,
+    up = 36,
+    g = new T.ConeGeometry(0.5, 1, around, up, true),
+    pos = g.getAttribute("position") as T.BufferAttribute,
+    colours = new Float32Array(pos.count * 3),
+    rock = new T.Color("#7d8ba0"),
+    dark = new T.Color("#5d6a7c"),
+    white = new T.Color("#f3f6fa"),
+    c = new T.Color();
+  const wave = (a: number, k: number, ph: number) => Math.sin(a * k + ph + seed);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i),
+      y = pos.getY(i),
+      z = pos.getZ(i),
+      h = y + 0.5,
+      a = Math.atan2(z, x),
+      // Ridges running down the slopes, finer ones on them, and a lumpy foot.
+      ridge = 0.5 * Math.abs(wave(a, 5, 0.3)) + 0.3 * Math.abs(wave(a, 11, 1.7 + h * 2)) + 0.2 * Math.abs(wave(a, 23, h * 5)),
+      lump = 0.06 * wave(a, 3, h * 3) * (1 - h),
+      r = Math.hypot(x, z) * (0.82 + 0.3 * ridge + lump),
+      top = h > 0.985 ? 0 : 1;
+    pos.setXYZ(i, Math.cos(a) * r * top, y + 0.04 * wave(a, 7, 0) * (1 - h) * h, Math.sin(a) * r * top);
+    // Snow above a ragged line, deeper in the gullies; dark rock on the ridges below it.
+    const line = 0.62 + 0.08 * wave(a, 9, 0.5) - 0.12 * (ridge - 0.5),
+      snowy = Math.min(1, Math.max(0, (h - line) / 0.06));
+    c.copy(rock).lerp(dark, Math.min(1, ridge * 0.9)).lerp(white, snowy);
+    colours.set([c.r, c.g, c.b], i * 3);
+  }
+  g.setAttribute("color", new T.BufferAttribute(colours, 3));
+  g.computeVertexNormals();
+  return smooth(g, 1.2);
+}
+
 export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): Field {
   const skies = [0, 1, 2, 3].map((e) => skyTexture(own, e));
   scene.background = skies[1];
@@ -384,15 +424,20 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
   }
   scene.add(hills, hillsFar);
   // (The far range only with a graphics card: where the processor draws, every layer of sky-filling shapes costs.)
-  const peaks = new T.InstancedMesh(g.cone, mountain, 8),
-    peaksFar = new T.InstancedMesh(g.cone, mountainFar, rich ? 9 : 0),
-    caps = new T.InstancedMesh(g.cone, snow, 8);
+  // With the lifelike look a mountain is a rugged peak (ridges, gullies, snow lying on its upper slopes, shaded smooth)
+  // instead of a faceted cone with a snow cone on it.
+  const range = rich ? own(rugged(7)) : g.cone,
+    rocky = rich ? std({ vertexColors: true, roughness: 0.95 }) : mountain,
+    rockyFar = rich ? std({ vertexColors: true, roughness: 1, color: "#d4dcea" }) : mountainFar;
+  const peaks = new T.InstancedMesh(range, rocky, 8),
+    peaksFar = new T.InstancedMesh(range, rockyFar, rich ? 9 : 0),
+    caps = new T.InstancedMesh(g.cone, snow, rich ? 0 : 8);
   for (let k = 0; k < 8; k++) {
     const tall = 14 + rnd() * 12,
       x = -60 + k * 17 + rnd() * 6,
       z = -55 - rnd() * 8;
     peaks.setMatrixAt(k, one(x, tall / 2 - 1, z, tall * 1.1, tall, tall * 0.6, rnd()));
-    caps.setMatrixAt(k, one(x, tall - 1 - tall * 0.15, z + 0.2, tall * 0.33, tall * 0.3, tall * 0.18));
+    if (caps.count) caps.setMatrixAt(k, one(x, tall - 1 - tall * 0.15, z + 0.2, tall * 0.33, tall * 0.3, tall * 0.18));
   }
   for (let k = 0; k < peaksFar.count; k++) {
     const tall = 18 + rnd() * 14;

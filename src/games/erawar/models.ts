@@ -3,6 +3,7 @@ import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
 import { bark, grain, grained } from "../../engine/grain";
+import { made, skin as poreRelief, smooth } from "../../engine/lifelike";
 import type { Kind } from "./sim";
 import { caparison, cannonBarrel, cheeks, cupola, hoof, horseBody, horseHead, horseLower, horseMane, horseNeck, horseTail, horseUpper, hull, mammothBody, mammothHead, mammothTail, mantlet, pillarLower, pillarUpper, roadWheel, spokedWheel, sprocket, tankGun, trackLoop, trunk, turretShape, tusk, tyre, tyreTank } from "./beasts";
 import { boot, cuts, ellipsoid, garment, lathe, merge, rounded, slab, tube, fist, forearm, GROW, headGeometry, neck, noseGeometry, onFace, pelvis, shellGeometry, shin, thigh, torso, upperArm } from "./sculpt";
@@ -74,13 +75,16 @@ export class Kit {
   readonly tinted: T.Material;
   readonly blob: T.Material;
   private templates = new Map<string, Figure>();
-  /** How finely sculpted shapes are cut: in full with a graphics card, about half where the processor draws. */
+  /**
+   * How finely sculpted shapes are cut: with the lifelike look a quarter finer than the old full cut (a lane holds some
+   * thirty soldiers, so not as fine as 러시안 룰렛's four), without it under half.
+   */
   readonly fine: number;
   constructor(
     readonly own: Own,
     readonly rich: boolean,
   ) {
-    this.fine = rich ? 1 : 0.4;
+    this.fine = rich ? 1.25 : 0.4;
     const mat = (color: string, o: T.MeshStandardMaterialParameters = {}) =>
       own(rich ? new T.MeshStandardMaterial({ color, roughness: 0.75, ...o }) : new T.MeshLambertMaterial({ color, map: o.map ?? null, emissive: (o.emissive as T.ColorRepresentation) ?? 0x000000, emissiveIntensity: o.emissiveIntensity ?? 1 }));
     const colors: Record<string, [string, T.MeshStandardMaterialParameters?]> = {
@@ -154,6 +158,29 @@ export class Kit {
       dress(["green", "hood", "cloth", "white", "khaki", "webbing"], pictures.weave(), [4, 3], 0.4);
       dress(["olive", "oliveDark"], pictures.camo(), [2, 2], 0.3);
       dress(["mane", "hair", "hairRed", "beard"], pictures.strands(), [4, 2], 0.6);
+      // The lifelike look: the photographed stuffs' relief and roughness (Poly Haven, CC0) instead of the painted
+      // bumps — linen for the tunics and webbing, wool for the coats, leather, steel — and pores in the skin.
+      const stuff = (names: string[], kind: "wool" | "linen" | "leather" | "metal", across: number, relief = 1) => {
+        const { normalMap, normalScale, roughnessMap } = made(own, kind, "#ffffff", across, across, { figure: false, relief });
+        for (const name of names) {
+          const m = this.m[name] as T.MeshStandardMaterial;
+          m.bumpMap = null;
+          m.normalMap = normalMap!;
+          m.normalScale = normalScale!;
+          if (kind !== "metal") m.roughnessMap = roughnessMap!;
+          m.needsUpdate = true;
+        }
+      };
+      stuff(["green", "hood", "cloth", "white", "khaki", "webbing", "olive", "oliveDark"], "linen", 3);
+      stuff(["hide", "leather", "leatherDark", "boot"], "leather", 2);
+      stuff(["iron", "steel", "dark", "black", "mail"], "metal", 2, 0.2);
+      for (const name of ["skin", "skin2", "skin3"]) {
+        const m = this.m[name] as T.MeshStandardMaterial,
+          pores = poreRelief(own, m.color, 4);
+        m.normalMap = pores.normalMap!;
+        m.normalScale = pores.normalScale!;
+        m.needsUpdate = true;
+      }
     }
     // Wood is real wood (its photograph graded to the colour, with relief) where a graphics card draws; there each wooden
     // part gets its own shape with the picture laid along it (`mesh`). Where the processor draws, a figure's wood stays
@@ -198,6 +225,14 @@ export class Kit {
       this.m[`teamGlow${side}`] = mat(c, { emissive: c, emissiveIntensity: 0.25 });
       this.m[`bar${side}`] = own(new T.MeshBasicMaterial({ color: side ? "#6fb0ff" : "#ff7a5a", depthTest: false }));
     });
+    // The sides' coats and tabards: wool's relief where the lifelike look is drawn.
+    if (rich) {
+      const { normalMap, normalScale, roughnessMap } = made(own, "wool", "#ffffff", 3, 3, { figure: false });
+      for (const side of [0, 1]) {
+        const m = this.m[`team${side}`] as T.MeshStandardMaterial;
+        Object.assign(m, { normalMap, normalScale, roughnessMap, needsUpdate: true });
+      }
+    }
     this.tinted = own(new T.MeshLambertMaterial({ vertexColors: true }));
     // A soft dark patch on the ground under a figure, for its shadow where the processor draws.
     this.blob = own(new T.MeshBasicMaterial({ map: glow(own, 64, 0.1), color: "#000000", transparent: true, opacity: 0.32, depthWrite: false }));
@@ -240,7 +275,8 @@ export class Kit {
   }
   /** A sculpted shape by name, made once (at this kit's fineness) and shared by every figure. */
   shape(name: string, make: (fine: number) => T.BufferGeometry) {
-    if (!this.g[name]) this.g[name] = this.own(make(this.fine));
+    // (With the lifelike look a shape is shaded as one smooth skin, its sharp creases kept.)
+    if (!this.g[name]) this.g[name] = this.own(this.rich ? smooth(make(this.fine), 0.95) : make(this.fine));
     return name;
   }
   mesh(geometry: string, material: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, parent: T.Object3D) {

@@ -805,9 +805,18 @@ export class Sound {
   }
   /**
    * 사격, made by the page: a BB rifle's spring-air pop, a shotgun's deep boom or a rifle's sharp crack, each with its
-   * echo rolling away over the range or the wood.
+   * echo rolling away over the range or the wood; and 러시안 룰렛's revolver in a room.
    */
-  gunshot(kind: "bb" | "shotgun" | "rifle") {
+  gunshot(kind: "bb" | "shotgun" | "rifle" | "revolver") {
+    if (kind === "revolver") {
+      // A revolver fired in a small room (러시안 룰렛's 탕): a hard crack, a short boom, the walls answering at once.
+      this.noise(0, 0.025, 0.55, 5600, "highpass", 2800);
+      this.noise(0, 0.11, 0.48, 1700, "lowpass", 260);
+      this.tone("sine", 140, 38, 0, 0.2, 0.36);
+      this.noise(0.035, 0.05, 0.16, 2600, "bandpass", 1400);
+      this.noise(0.07, 0.45, 0.07, 900, "lowpass", 220);
+      return;
+    }
     if (kind === "bb") {
       this.noise(0, 0.05, 0.22, 2600, "bandpass", 1200);
       this.tone("square", 900, 500, 0, 0.03, 0.035);

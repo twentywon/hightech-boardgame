@@ -1,6 +1,7 @@
 import * as T from "three";
 import { grain, grainUV } from "../../engine/grain";
-import { block, capable, glossy, planks, stuff } from "../../engine/scene-utils";
+import { block, glossy, planks, stuff } from "../../engine/scene-utils";
+import { lifelike, place, smooth as smoothed } from "../../engine/lifelike";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -20,7 +21,6 @@ const LOOKS: Look[] = [
   { skin: "#9c6646", hair: "#d8ad5c", style: 3, eyes: "#5b6a3a", jacket: "#2d6b3c", shirt: "#efe8dc", hat: HATS[3], neck: 1, trousers: "#26261f" },
 ];
 const PEOPLE = ["나", "왼쪽", "맞은편", "오른쪽"];
-const CONFETTI = 180;
 /** Where the felt hat sits on a head, and its tilt. */
 const HAT = { x: 0.03, y: 0.27, z: 0.02, tilt: -0.14 };
 const FONT = '"Inter", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
@@ -60,7 +60,13 @@ interface Toy {
   drum: T.Group;
   hammer: T.Group;
   trigger: T.Group;
-  flag: T.Group;
+  /** The crane the cylinder swings out on to be loaded, and the cartridge that goes in. */
+  crane: T.Group;
+  round: T.Group;
+  /** The muzzle's flash (and the cylinder gap's), its light, and the puffs of smoke. */
+  flash: T.Group;
+  light: T.PointLight;
+  smoke: T.Sprite[];
   tip: T.Object3D;
 }
 
@@ -68,17 +74,19 @@ interface Toy {
  * 러시안 룰렛's back room at night (the user asked for a dark mood): brick walls, a red neon sign and wall lamps
  * glowing in the dark, one lamp hanging low over a round table of reddish wood with a pale ring on it, a candle, nuts
  * and glasses of pop round the edge, and up to four players in felt hats round it (me near, my left, across, my right;
- * a closed seat an empty chair). The toy is a bright plastic cap revolver (blue frame, yellow cylinder, red grip, the
- * orange tip toys carry), which whoever's turn it is holds to the right temple (the user asked). A pull cocks the
- * hammer and squeezes the trigger slowly while a heart beats; a click (철컥) turns the cylinder a chamber on and the toy
- * goes on; a 펑 springs a "펑!" flag out of the barrel, bursts confetti, and flings the one holding it off the chair
- * like a rag doll, tumbling through the air limp and landing flat on the floor with its legs in the air (slapstick,
- * the user asked; no harm: the hair stands on end and the face goes sooty), where it lies for the rest of the game.
- * No words tell each pull (the user asked): the toy and the faces do; only the game's end is said.
+ * a closed seat an empty chair). The gun is a real revolver (the user asked for a real bullet instead of the toy's
+ * 펑): blued steel, a fluted cylinder of six chambers on a crane, hammer, trigger guard and a walnut grip. At the start
+ * of a round the cylinder swings out, a brass cartridge goes into a chamber, and it swings back and is spun. Whoever's
+ * turn it is holds it to the right temple (the user asked). A pull cocks the hammer and squeezes the trigger slowly
+ * while a heart beats; a click (철컥) turns the cylinder a chamber on; a shot (탕) flashes at the muzzle and the
+ * cylinder gap, kicks the gun up and leaves smoke curling, and flings the one holding it off the chair like a rag doll,
+ * tumbling through the air limp and landing flat on the floor with its legs in the air, where it lies for the rest of
+ * the game. Nothing is shown on the head: no blood, no wound (kept non-graphic on purpose); the flash and the fling tell it.
+ * No words tell each pull (the user asked): the gun and the faces do; only the game's end is said.
  *
- * I may also press and hold the toy itself: the trigger comes back as I hold, and goes off when it is all the way in
+ * I may also press and hold the gun itself: the trigger comes back as I hold, and goes off when it is all the way in
  * (let go before, and nothing happens). In the middle of the table a card shows the chambers fired since the last
- * spin, so the chance of a 펑 can be read off it.
+ * spin, so the chance of a shot can be read off it.
  */
 export class RRouletteView extends TableView<State> {
   onKnock: ((kind: "disc" | "cushion" | "pocket", strength: number) => void) | null = null;
@@ -86,8 +94,6 @@ export class RRouletteView extends TableView<State> {
   /** The chairs' wood, one paint for all four. */
   private chairWood?: T.MeshStandardMaterial;
   private toy: Toy;
-  private confetti: T.InstancedMesh;
-  private bits: { p: T.Vector3; v: T.Vector3; r: T.Euler; w: T.Vector3; rest: boolean }[] = [];
   private card: { ctx: CanvasRenderingContext2D; texture: T.CanvasTexture; said: string };
   private dummy = new T.Object3D();
   /** The trigger held in, 0 to 1, while I press the toy; the move it makes then needs no squeeze of its own. */
@@ -96,7 +102,8 @@ export class RRouletteView extends TableView<State> {
   private heldPull = false;
   private holdFrame = 0;
   private heartAt = 0;
-  private rich = capable();
+  /** The lifelike look (fine shapes, photographed stuffs, a real room's light), on every device for now (`lifelike`). */
+  private rich = lifelike();
   constructor(host: HTMLElement, quality: "high" | "low") {
     super(host, quality, "#0b0706");
     const keep: Own = (r) => this.own(r);
@@ -106,16 +113,6 @@ export class RRouletteView extends TableView<State> {
     this.table(keep);
     for (let seat = 0; seat < SEATS; seat++) this.guests.push(this.guest(seat, keep));
     this.toy = this.makeToy(keep);
-    const bit = keep(new T.PlaneGeometry(0.07, 0.11));
-    this.confetti = new T.InstancedMesh(bit, keep(new T.MeshStandardMaterial({ side: T.DoubleSide, roughness: 0.6, metalness: 0.1 })), CONFETTI);
-    const palette = ["#ff4f6d", "#ffd43b", "#3bc9db", "#69db7c", "#b197fc", "#ff922b", "#ffffff"];
-    for (let i = 0; i < CONFETTI; i++) {
-      this.confetti.setColorAt(i, new T.Color(palette[i % palette.length]));
-      this.bits.push({ p: new T.Vector3(), v: new T.Vector3(), r: new T.Euler(), w: new T.Vector3(), rest: false });
-    }
-    this.confetti.count = 0;
-    this.confetti.frustumCulled = false;
-    this.scene.add(this.confetti);
     const { c, ctx } = canvasOf(512, 512),
       texture = keep(new T.CanvasTexture(c));
     texture.colorSpace = T.SRGBColorSpace;
@@ -125,10 +122,10 @@ export class RRouletteView extends TableView<State> {
     disc.rotation.y = Math.PI / 2;
     disc.castShadow = false;
     this.begin();
+    // The lifelike look: the light of a warm wooden bar room, low (the back room stays dark), film-like tone.
+    if (this.rich) place(this.renderer, this.scene, "saloon", 0.22, { exposure: 1.15 });
     // Now and then someone blinks (two frames drawn, no tween, so nothing waits on it).
     this.blinker = setInterval(() => this.blinkSome(), 250);
-    // The photographic look's reflected room is a bright one: in the dark back room it is only a hint.
-    if (this.rich) this.scene.environmentIntensity = 0.08;
   }
   private blinker: ReturnType<typeof setInterval>;
   private blinkSome() {
@@ -144,8 +141,9 @@ export class RRouletteView extends TableView<State> {
       }, 110 + Math.random() * 60);
     }
   }
+  // The lifelike look brings its own light (`place`); the plain look keeps the tables' photographic one.
   protected photographic() {
-    return true;
+    return !this.rich;
   }
   protected subject(aspect: number): TableSubject {
     // A tall screen (a phone held upright) has the guests at the sides close in; a wide one shows the room round them.
@@ -347,13 +345,14 @@ export class RRouletteView extends TableView<State> {
     const diag = (k: number, r: number) => ({ x: Math.cos(Math.PI / 4 + (k * Math.PI) / 2) * r, z: Math.sin(Math.PI / 4 + (k * Math.PI) / 2) * r });
     const ck = diag(2, R - 0.65),
       clearGlass = keep(glossy({ color: "#d8c8b0", roughness: 0.1, transparent: true, opacity: 0.35 }, 0.9));
-    this.add(new T.CylinderGeometry(0.17, 0.15, 0.3, 20, 1, true), clearGlass, ck.x, 0.15, ck.z).castShadow = false;
-    this.add(new T.CylinderGeometry(0.12, 0.12, 0.16, 16), this.standard({ color: "#efe3cc", roughness: 0.8 }), ck.x, 0.08, ck.z);
-    this.add(new T.SphereGeometry(0.04, 8, 6).scale(1, 1.8, 1), this.own(new T.MeshBasicMaterial({ color: "#ffcf5a", fog: false })), ck.x, 0.22, ck.z).castShadow = false;
+    const cut = (n: number) => (this.rich ? n * 2 : n);
+    this.add(new T.CylinderGeometry(0.17, 0.15, 0.3, cut(20), 1, true), clearGlass, ck.x, 0.15, ck.z).castShadow = false;
+    this.add(new T.CylinderGeometry(0.12, 0.12, 0.16, cut(16)), this.standard({ color: "#efe3cc", roughness: 0.8 }), ck.x, 0.08, ck.z);
+    this.add(new T.SphereGeometry(0.04, cut(8), cut(6)).scale(1, 1.8, 1), this.own(new T.MeshBasicMaterial({ color: "#ffcf5a", fog: false })), ck.x, 0.22, ck.z).castShadow = false;
     this.halo("rgba(255, 180, 80, 0.6)", 0.9, ck.x, 0.24, ck.z);
     const pc = diag(3, R - 0.7);
-    this.add(new T.CylinderGeometry(0.4, 0.28, 0.22, 24, 1, true), this.standard({ color: "#2a2624", metalness: 0.6, roughness: 0.35, side: T.DoubleSide }), pc.x, 0.11, pc.z);
-    const kernel = keep(new T.SphereGeometry(0.05, 6, 5).scale(1, 0.75, 1.4)),
+    this.add(new T.CylinderGeometry(0.4, 0.28, 0.22, cut(24), 1, true), this.standard({ color: "#2a2624", metalness: 0.6, roughness: 0.35, side: T.DoubleSide }), pc.x, 0.11, pc.z);
+    const kernel = keep(new T.SphereGeometry(0.05, cut(6) + 2, cut(5)).scale(1, 0.75, 1.4)),
       nut = this.standard({ color: "#b98a52", roughness: 0.8 });
     for (let k = 0; k < 34; k++) {
       const a = k * 2.39,
@@ -368,8 +367,8 @@ export class RRouletteView extends TableView<State> {
       for (const d of [-0.25, 0.25]) {
         const x = at.x + d * (k ? 1 : -1) * 0.7,
           z = at.z + d * 0.7;
-        this.add(new T.CylinderGeometry(0.12, 0.1, 0.3, 20, 1, true), clearGlass, x, 0.15, z).castShadow = false;
-        this.add(new T.CylinderGeometry(0.11, 0.095, 0.2, 18), this.standard({ color: k ? "#c26a1e" : "#6a2a1a", roughness: 0.15, emissive: k ? "#5a2a08" : "#2a0a04", emissiveIntensity: 0.6 }), x, 0.1, z);
+        this.add(new T.CylinderGeometry(0.12, 0.1, 0.3, cut(20), 1, true), clearGlass, x, 0.15, z).castShadow = false;
+        this.add(new T.CylinderGeometry(0.11, 0.095, 0.2, cut(18)), this.standard({ color: k ? "#c26a1e" : "#6a2a1a", roughness: 0.15, emissive: k ? "#5a2a08" : "#2a0a04", emissiveIntensity: 0.6 }), x, 0.1, z);
       }
     }
   }
@@ -431,7 +430,7 @@ export class RRouletteView extends TableView<State> {
     const at = g.root.worldToLocal(this.toy.grip.getWorldPosition(new T.Vector3()));
     this.reach(g, [new T.Vector3(-0.5, 0.1, -1.05), at], true);
   }
-  /** How one flung off by a 펑 lies on the floor: on its back with its head away to its left, its legs in the air. */
+  /** How one flung off by a shot lies on the floor: on its back with its head away to its left, its legs in the air. */
   private static readonly LYING = new T.Quaternion()
     .setFromAxisAngle(new T.Vector3(0, 1, 0), -Math.PI / 2)
     .multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), Math.PI / 2));
@@ -478,11 +477,11 @@ export class RRouletteView extends TableView<State> {
     const out = s.out[seat],
       empty = !s.seated[seat];
     g.body.visible = !empty;
-    g.spikes.scale.setScalar(1);
     g.tag.sprite.visible = !empty && !capturing();
-    g.face.color.copy(out ? g.skin.clone().lerp(new T.Color("#4a4a52"), 0.72) : g.skin);
-    g.spikes.visible = out;
-    g.stars.visible = out && s.last?.seat === seat && s.last.bang;
+    // (Nothing is shown on the head of one who was shot: no soot, no wound; only the fall tells it.)
+    g.face.color.copy(g.skin);
+    g.spikes.visible = false;
+    g.stars.visible = false;
     g.mouth.visible = !out;
     g.gasp.visible = out;
     g.hat.rotation.z = out ? -1.15 : HAT.tilt;
@@ -491,7 +490,7 @@ export class RRouletteView extends TableView<State> {
     g.head.rotation.set(0, 0, 0);
     g.body.position.set(0, 0, 0);
     g.body.quaternion.identity();
-    // One who went 펑 lies where the fling left it, on the floor beside its chair.
+    // One who was shot lies where the fling left it, on the floor beside its chair.
     if (out && !empty) this.lie(g, 1);
     else if (s.seat === seat && s.winner === null) this.holdHands(g);
     else this.resting(g);
@@ -532,92 +531,162 @@ export class RRouletteView extends TableView<State> {
     const gun = new T.Group();
     gun.rotation.z = 1.05;
     pivot.add(gun);
-    const blue = keep(glossy({ color: "#2f7fd8", roughness: 0.28 }, 0.7)),
-      yellow = keep(glossy({ color: "#ffc61a", roughness: 0.3 }, 0.6)),
-      red = keep(glossy({ color: "#e8434f", roughness: 0.35 }, 0.5)),
-      white = this.standard({ color: "#f8f8f8", roughness: 0.4 }),
-      orange = this.standard({ color: "#ff7a1a", roughness: 0.45, emissive: "#ff5a00", emissiveIntensity: 0.15 }),
-      dark = this.standard({ color: "#20242c", roughness: 0.6 });
+    const rich = this.rich,
+      fine = (n: number) => (rich ? n : Math.max(8, Math.round(n * 0.5))),
+      // Blued steel, worn a little; the bore and the chambers' dark insides; brass and the lead of a round.
+      // (Smooth blued steel: the room's light gives it its sheen; a photographed plate's relief read as engraving.)
+      steel = this.standard({ color: rich ? "#5b626e" : "#4a505a", metalness: rich ? 0.95 : 0.85, roughness: rich ? 0.3 : 0.35 }),
+      bright = this.standard({ color: "#8d939c", metalness: 1, roughness: 0.22 }),
+      bore = this.standard({ color: "#050506", roughness: 0.9 }),
+      brass = this.standard({ color: "#c9973a", metalness: 1, roughness: 0.28 }),
+      lead = this.standard({ color: "#8a8478", metalness: 0.6, roughness: 0.45 }),
+      walnut = this.standard({ ...grain(keep, "#4a2a18", { kind: "walnut", rich, contrast: 1.6 }), roughness: 0.38 });
     const along = (geo: T.BufferGeometry) => geo.rotateZ(-Math.PI / 2);
-    // Barrel with a rib and sight, and the orange tip.
-    this.add(along(new T.CylinderGeometry(0.07, 0.075, 0.6, 20)), blue, 0.44, 0.1, 0, gun);
-    this.add(new T.BoxGeometry(0.56, 0.05, 0.05), blue, 0.44, 0.17, 0, gun);
-    this.add(new T.BoxGeometry(0.04, 0.06, 0.03), white, 0.7, 0.2, 0, gun);
-    const tip = this.add(along(new T.CylinderGeometry(0.085, 0.085, 0.08, 20)), orange, 0.77, 0.1, 0, gun);
-    this.add(along(new T.CylinderGeometry(0.035, 0.035, 0.09, 12)), dark, 0.78, 0.1, 0, gun);
-    // The frame and the top strap over the cylinder.
-    this.add(block(0.42, 0.24, 0.13, 0.04), blue, -0.02, 0.0, 0, gun);
-    this.add(new T.BoxGeometry(0.34, 0.05, 0.1), blue, 0.0, 0.17, 0, gun);
-    // The cylinder: six chambers round its axis, below the barrel's line.
+    const part = (geo: T.BufferGeometry, m: T.Material, x: number, y: number, z: number, parent: T.Object3D = gun) => this.add(rich ? smoothed(geo, 0.9) : geo, m, x, y, z, parent);
+    // The barrel: a round tube with a rib on top, the front sight, the muzzle's dark bore, the ejector rod's shroud under it.
+    part(along(new T.CylinderGeometry(0.05, 0.054, 0.56, fine(32))), steel, 0.43, 0.085, 0);
+    part(block(0.54, 0.035, 0.05, 0.012), steel, 0.43, 0.135, 0);
+    part(block(0.035, 0.05, 0.016, 0.006), steel, 0.69, 0.16, 0);
+    part(along(new T.CylinderGeometry(0.029, 0.029, 0.4, fine(24))), steel, 0.38, 0.015, 0);
+    part(along(new T.CylinderGeometry(0.018, 0.018, 0.02, fine(16))), bright, 0.585, 0.015, 0);
+    const tip = part(along(new T.CylinderGeometry(0.056, 0.056, 0.012, fine(32))), steel, 0.715, 0.085, 0);
+    part(along(new T.CylinderGeometry(0.022, 0.022, 0.016, fine(16))), bore, 0.719, 0.085, 0);
+    // The frame round the cylinder: its window, the top strap over it, the recoil shield behind it.
+    part(block(0.44, 0.07, 0.11, 0.025), steel, -0.02, -0.105, 0);
+    part(block(0.34, 0.05, 0.1, 0.02), steel, 0.0, 0.155, 0);
+    part(block(0.08, 0.3, 0.11, 0.03), steel, 0.17, 0.02, 0);
+    part(along(new T.CylinderGeometry(0.15, 0.15, 0.06, fine(36))), steel, -0.165, 0.0, 0);
+    part(block(0.12, 0.24, 0.11, 0.03), steel, -0.23, 0.02, 0);
+    // The cylinder on its crane (it swings out to the left to be loaded): six chambers, fluted between them.
+    const crane = new T.Group();
+    crane.position.set(0, -0.085, 0);
+    gun.add(crane);
     const drum = new T.Group();
-    drum.position.set(0.0, -0.01, 0);
-    gun.add(drum);
-    this.add(along(new T.CylinderGeometry(0.155, 0.155, 0.26, 30)), yellow, 0, 0, 0, drum);
+    drum.position.set(0, 0.075, 0);
+    crane.add(drum);
+    const outline = new T.Shape(),
+      R = 0.142,
+      cut = 0.036,
+      steps = fine(96);
+    for (let i = 0; i <= steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      // A flute between each two chambers: a shallow round groove along the cylinder.
+      let r = R;
+      for (let k = 0; k < CHAMBERS; k++) {
+        const f = ((k + 0.5) / CHAMBERS) * Math.PI * 2,
+          d = Math.atan2(Math.sin(a - f), Math.cos(a - f));
+        if (Math.abs(d) < 0.2) r = Math.min(r, R - cut * Math.cos((d / 0.2) * (Math.PI / 2)));
+      }
+      const x = Math.cos(a) * r,
+        y = Math.sin(a) * r;
+      if (i) outline.lineTo(x, y);
+      else outline.moveTo(x, y);
+    }
+    for (let k = 0; k < CHAMBERS; k++) {
+      const a = (k / CHAMBERS) * Math.PI * 2,
+        hole = new T.Path();
+      hole.absarc(Math.cos(a) * 0.088, Math.sin(a) * 0.088, 0.031, 0, Math.PI * 2, true);
+      outline.holes.push(hole);
+    }
+    const body = new T.ExtrudeGeometry(outline, { depth: 0.24, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.01, bevelSegments: rich ? 3 : 1, curveSegments: fine(24) })
+      .translate(0, 0, -0.12)
+      .rotateY(Math.PI / 2);
+    // (The shape lies in y and -z: turned so that its first chamber stands at the top, like the old cylinder's.)
+    body.rotateX(Math.PI / 2);
+    part(body, steel, 0, 0, 0, drum);
     for (let k = 0; k < CHAMBERS; k++) {
       const a = (k / CHAMBERS) * Math.PI * 2;
-      this.add(along(new T.CylinderGeometry(0.036, 0.036, 0.265, 12)), dark, 0, Math.cos(a) * 0.1, Math.sin(a) * 0.1, drum);
-      // Flutes between the chambers.
-      const flute = this.add(new T.BoxGeometry(0.2, 0.03, 0.02), this.standard({ color: "#e0a800", roughness: 0.4 }), 0, Math.cos(a + Math.PI / CHAMBERS) * 0.15, Math.sin(a + Math.PI / CHAMBERS) * 0.15, drum);
-      flute.rotation.x = a + Math.PI / CHAMBERS;
+      // The chambers' dark insides.
+      part(along(new T.CylinderGeometry(0.03, 0.03, 0.2, fine(16))), bore, 0, Math.cos(a) * 0.088, Math.sin(a) * 0.088, drum);
     }
-    // The hammer at the back, a pivot at its foot.
+    part(along(new T.CylinderGeometry(0.03, 0.03, 0.27, fine(16))), bright, 0, 0, 0, drum);
+    // The cartridge that is loaded: a brass case with its rim, the lead bullet's round nose. Hidden once loaded.
+    const round = new T.Group();
+    drum.add(round);
+    part(along(new T.CylinderGeometry(0.028, 0.028, 0.2, fine(20))), brass, 0, 0, 0, round);
+    part(along(new T.CylinderGeometry(0.035, 0.035, 0.014, fine(20))), brass, -0.105, 0, 0, round);
+    part(new T.SphereGeometry(0.027, fine(20), fine(12), 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-Math.PI / 2).scale(1.6, 1, 1), lead, 0.1, 0, 0, round);
+    round.visible = false;
+    // The hammer at the back, on its pivot: its body and the chequered spur.
     const hammer = new T.Group();
-    hammer.position.set(-0.2, 0.12, 0);
+    hammer.position.set(-0.24, 0.12, 0);
     gun.add(hammer);
-    this.add(block(0.06, 0.16, 0.06, 0.015), white, -0.02, 0.07, 0, hammer).rotation.z = 0.35;
-    this.add(new T.BoxGeometry(0.08, 0.035, 0.08), white, -0.06, 0.15, 0, hammer);
+    part(block(0.05, 0.13, 0.045, 0.015), steel, -0.01, 0.055, 0, hammer).rotation.z = 0.4;
+    part(block(0.085, 0.03, 0.06, 0.012), steel, -0.06, 0.115, 0, hammer).rotation.z = 0.25;
     // The trigger guard and the trigger, on a pivot.
-    const guard = this.add(new T.TorusGeometry(0.1, 0.018, 8, 24, Math.PI * 1.25), blue, -0.04, -0.15, 0, gun);
-    guard.rotation.z = Math.PI * 0.95;
+    const guard = part(new T.TorusGeometry(0.085, 0.014, fine(12), fine(32), Math.PI * 1.2), steel, -0.06, -0.19, 0);
+    guard.rotation.z = Math.PI * 0.98;
+    guard.scale.set(1.15, 0.9, 1.2);
     const trigger = new T.Group();
-    trigger.position.set(-0.01, -0.11, 0);
+    trigger.position.set(-0.04, -0.14, 0);
     gun.add(trigger);
-    const t = this.add(new T.TorusGeometry(0.07, 0.022, 8, 12, Math.PI * 0.55), white, 0.04, -0.06, 0, trigger);
+    const t = part(new T.TorusGeometry(0.07, 0.011, fine(10), fine(16), Math.PI * 0.5), bright, 0.03, -0.06, 0, trigger);
     t.rotation.z = Math.PI * 0.95;
-    // The grip, raked back and down, with a star.
+    t.scale.set(1, 1, 2.2);
+    // The grip: the frame's backstrap and two walnut panels, raked back and down, a steel butt.
     const grip = new T.Group();
-    grip.position.set(-0.21, -0.06, 0);
-    grip.rotation.z = 0.4;
+    grip.position.set(-0.24, -0.08, 0);
+    grip.rotation.z = 0.32;
     gun.add(grip);
-    this.add(block(0.17, 0.48, 0.15, 0.06), red, -0.02, -0.22, 0, grip);
-    this.add(new T.CylinderGeometry(0.1, 0.1, 0.03, 20), red, -0.02, -0.47, 0, grip);
+    part(grainUV(block(0.15, 0.4, 0.13, 0.05), 0.4, 1), walnut, -0.015, -0.2, 0, grip);
+    part(block(0.04, 0.41, 0.09, 0.015), steel, -0.085, -0.2, 0, grip);
+    part(block(0.16, 0.035, 0.12, 0.015), steel, -0.02, -0.41, 0, grip);
+    // A screw through the panels.
+    for (const z of [-0.066, 0.066]) part(new T.CylinderGeometry(0.012, 0.012, 0.006, fine(12)).rotateX(Math.PI / 2), bright, -0.01, -0.18, z, grip);
     const hold = new T.Object3D();
-    hold.position.set(-0.02, -0.25, 0);
+    hold.position.set(-0.02, -0.23, 0);
     grip.add(hold);
-    const starShape = new T.Shape();
-    for (let k = 0; k < 10; k++) {
-      const a = (k / 10) * Math.PI * 2 - Math.PI / 2,
-        r = k % 2 ? 0.025 : 0.06;
-      if (!k) starShape.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-      else starShape.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    // The shot: a flash at the muzzle and at the cylinder's gap, a burst of light, and puffs of smoke.
+    const flash = new T.Group();
+    gun.add(flash);
+    const { c, ctx } = canvasOf(128, 128),
+      burst = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    burst.addColorStop(0, "rgba(255,250,225,1)");
+    burst.addColorStop(0.18, "rgba(255,214,120,0.95)");
+    burst.addColorStop(0.45, "rgba(255,140,40,0.45)");
+    burst.addColorStop(1, "rgba(255,90,20,0)");
+    ctx.fillStyle = burst;
+    ctx.beginPath();
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2,
+        r = k % 2 ? 26 : 64;
+      ctx.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r);
     }
-    for (const s of [-1, 1]) {
-      const st = this.add(new T.ShapeGeometry(starShape), this.standard({ color: "#ffe066", roughness: 0.4, side: T.DoubleSide }), -0.02, -0.2, s * 0.077, grip);
-      st.castShadow = false;
+    ctx.fill();
+    const flashMap = keep(new T.CanvasTexture(c));
+    flashMap.colorSpace = T.SRGBColorSpace;
+    const flashMat = this.own(new T.SpriteMaterial({ map: flashMap, transparent: true, depthWrite: false, blending: T.AdditiveBlending, fog: false }));
+    for (const [x, y, size] of [
+      [0.8, 0.085, 0.36],
+      [0.15, 0.06, 0.3],
+    ]) {
+      const sprite = new T.Sprite(flashMat);
+      sprite.position.set(x, y, 0);
+      sprite.scale.setScalar(size);
+      flash.add(sprite);
     }
-    // The "펑!" flag on its spring, folded inside the barrel until it goes off.
-    const flag = new T.Group();
-    flag.position.set(0.8, 0.1, 0);
-    gun.add(flag);
-    this.add(new T.CylinderGeometry(0.016, 0.016, 0.75, 6).rotateZ(-Math.PI / 2), this.standard({ color: "#bfbfbf", metalness: 0.7, roughness: 0.3 }), 0.37, 0, 0, flag);
-    const { c, ctx } = canvasOf(256, 160);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, 256, 160);
-    ctx.strokeStyle = "#e8434f";
-    ctx.lineWidth = 14;
-    ctx.strokeRect(7, 7, 242, 146);
-    ctx.fillStyle = "#e8434f";
-    ctx.font = `900 104px ${FONT}`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("펑!", 128, 86);
-    const flagMap = keep(new T.CanvasTexture(c));
-    flagMap.colorSpace = T.SRGBColorSpace;
-    const banner = this.add(new T.PlaneGeometry(0.85, 0.53), this.standard({ map: flagMap, side: T.DoubleSide, roughness: 0.7 }), 0.5, -0.29, 0, flag);
-    banner.rotation.z = -Math.PI / 2;
-    flag.visible = false;
+    flash.visible = false;
+    const light = new T.PointLight("#ffb860", 0, 5, 1.8);
+    light.position.set(0.9, 0.1, 0);
+    gun.add(light);
+    const { c: sc, ctx: sx } = canvasOf(64, 64),
+      puff = sx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    puff.addColorStop(0, "rgba(210,205,200,0.55)");
+    puff.addColorStop(0.6, "rgba(180,175,170,0.22)");
+    puff.addColorStop(1, "rgba(160,160,160,0)");
+    sx.fillStyle = puff;
+    sx.fillRect(0, 0, 64, 64);
+    const smokeMap = keep(new T.CanvasTexture(sc));
+    smokeMap.colorSpace = T.SRGBColorSpace;
+    const smoke: T.Sprite[] = [];
+    for (let k = 0; k < 7; k++) {
+      const sprite = new T.Sprite(this.own(new T.SpriteMaterial({ map: smokeMap, transparent: true, depthWrite: false, opacity: 0 })));
+      sprite.visible = false;
+      this.scene.add(sprite);
+      smoke.push(sprite);
+    }
     pivot.scale.setScalar(RR.TOY_SCALE);
-    return { grip: hold, pivot, gun, drum, hammer, trigger, flag, tip };
+    return { grip: hold, pivot, gun, drum, hammer, trigger, crane, round, flash, light, smoke, tip };
   }
   /** The toy's turn in a holder's frame at the temple: the barrel into the head from the front right, its top up. */
   private static readonly AT_HEAD = (() => {
@@ -657,7 +726,7 @@ export class RRouletteView extends TableView<State> {
     this.toy.drum.rotation.x = was.drum;
     return pose;
   }
-  /** Where the toy lies once a 펑 has flung its holder away: dropped onto the empty chair, tipped on its side. */
+  /** Where the gun lies once a shot has flung its holder away: dropped onto the empty chair, tipped on its side. */
   private dropped(seat: number, s: State) {
     const held = this.poseOf(seat, s),
       g = this.guests[seat];
@@ -682,9 +751,11 @@ export class RRouletteView extends TableView<State> {
   private restToy(s: State) {
     this.toy.hammer.rotation.z = 0;
     this.toy.trigger.rotation.z = 0;
-    this.toy.flag.visible = false;
-    this.toy.flag.scale.setScalar(1);
-    this.toy.flag.position.x = 0.8;
+    this.toy.flash.visible = false;
+    this.toy.light.intensity = 0;
+    this.toy.crane.rotation.x = 0;
+    this.toy.round.visible = false;
+    for (const puff of this.toy.smoke) puff.visible = false;
     if (s.winner !== null) {
       // Laid down in the middle once the game is over.
       const p = this.toy.pivot;
@@ -732,7 +803,6 @@ export class RRouletteView extends TableView<State> {
   }
   // ── Laying out ────────────────────────────────────────────────────────────────────────────────────────────────
   protected place(s: State) {
-    if (s.ply === 0) this.clearConfetti();
     this.restToy(s);
     this.guests.forEach((g, seat) => this.dress(g, seat, s));
     this.writeCard(s);
@@ -821,6 +891,73 @@ export class RRouletteView extends TableView<State> {
     this.toy.pivot.position.x += Math.sin(performance.now() * 0.05) * shake;
   }
   // ── The move ──────────────────────────────────────────────────────────────────────────────────────────────────
+  /**
+   * The round loaded (the start of a game, and after a shot): the cylinder swings out to the left on its crane, a brass
+   * cartridge slides into a chamber, the cylinder swings back in and is spun, ticking. It ends turned to `turn`, as the
+   * rules have it (where the round lies, nobody knows: the rules draw each pull's chance). Returns how long it takes.
+   */
+  private load(t: number, turn: number, once: (delay: number, act: () => void) => void) {
+    const toy = this.toy,
+      out = -1.35,
+      end = Math.PI * 4 + (turn * Math.PI * 2) / CHAMBERS;
+    once(t, () => {
+      toy.round.visible = true;
+      toy.round.position.set(-0.5, 0.088, 0);
+      toy.drum.rotation.x = 0;
+    });
+    this.tween(t, 260, (p) => (toy.crane.rotation.x = out * smooth(p)));
+    // The cartridge into the chamber standing at the top, rim last.
+    this.tween(t + 240, 340, (p) => {
+      toy.round.visible = true;
+      toy.round.position.set(-0.5 + 0.5 * smooth(p), 0.088, 0);
+    });
+    once(t + 580, () => this.onKnock?.("cushion", 0.2));
+    this.tween(t + 620, 200, (p) => (toy.crane.rotation.x = out * (1 - smooth(p))));
+    once(t + 820, () => {
+      this.onKnock?.("cushion", 0.2);
+      toy.round.visible = false;
+    });
+    this.tween(t + 860, 760, (p) => (toy.drum.rotation.x = end * (1 - (1 - p) * (1 - p))));
+    for (let k = 0; k < 7; k++) once(t + 860 + 760 * (1 - Math.sqrt(1 - k / 7)), () => this.onKnock?.("disc", 0.22 + (7 - k) * 0.03));
+    return 1680;
+  }
+  /** The shot: flashes at the muzzle and the cylinder's gap, a burst of light, the gun kicked up, smoke curling away. */
+  private fire(t: number, seat: number, before: State) {
+    const toy = this.toy,
+      puffs: { at: T.Vector3; up: T.Vector3 }[] = [];
+    this.tween(t, 90, (p) => {
+      toy.flash.visible = p < 1;
+      toy.flash.scale.setScalar(0.6 + p * 0.8);
+      toy.flash.rotation.x = p * 2;
+      toy.light.intensity = 22 * (1 - p);
+      if (p >= 1) toy.light.intensity = 0;
+    });
+    // The kick: the muzzle thrown up and out, coming back down as it falls from the hand.
+    this.tween(t, 260, (p) => {
+      const k = Math.sin(Math.min(1, p * 1.6) * Math.PI) * (1 - p * 0.4);
+      this.aimToy(seat, before, 0.05 * k);
+      toy.pivot.rotateZ(0.45 * k);
+      toy.hammer.rotation.z = 0;
+    });
+    // Smoke from the muzzle and the gap, rising and spreading, then gone.
+    this.tween(t + 30, 1600, (p) => {
+      if (!puffs.length) {
+        toy.pivot.updateMatrixWorld(true);
+        const muzzle = toy.tip.getWorldPosition(new T.Vector3()),
+          gap = toy.drum.getWorldPosition(new T.Vector3());
+        toy.smoke.forEach((_, k) =>
+          puffs.push({ at: (k < 4 ? muzzle : gap).clone(), up: new T.Vector3(Math.sin(k * 2.1) * 0.25, 0.55 + (k % 3) * 0.12, Math.cos(k * 1.7) * 0.25) }),
+        );
+      }
+      toy.smoke.forEach((puff, k) => {
+        const q = Math.max(0, p - k * 0.04);
+        puff.visible = q > 0 && p < 1;
+        puff.position.copy(puffs[k].at).addScaledVector(puffs[k].up, Math.sqrt(q) * 1.2);
+        puff.scale.setScalar(0.18 + q * (0.9 + (k % 2) * 0.4));
+        (puff.material as T.SpriteMaterial).opacity = 0.85 * (1 - q) * Math.min(1, q * 12);
+      });
+    });
+  }
   protected animate(before: State, s: State): boolean {
     const shot = s.last;
     if (!shot || s.ply !== before.ply + 1) {
@@ -841,10 +978,12 @@ export class RRouletteView extends TableView<State> {
         act();
       });
     };
-    const turnBefore = (before.turn * Math.PI * 2) / CHAMBERS;
-    // The toy stays before the holder all through; its pose is set again by each step.
+    // The gun stays at the holder's temple all through; its pose is set again by each step.
     this.aimToy(seat, before);
     this.holdHands(g);
+    // The first pull of a game: the round is loaded first (a held pull has already squeezed: it goes straight on).
+    if (before.ply === 0 && !held) t += this.load(t, before.turn, once);
+    const turnBefore = (before.turn * Math.PI * 2) / CHAMBERS;
     if (shot.spun) {
       // The cylinder whirls and slows, ticking.
       const end = Math.PI * 6 + (((s.turn - 1 + CHAMBERS) % CHAMBERS) * Math.PI * 2) / CHAMBERS;
@@ -873,7 +1012,7 @@ export class RRouletteView extends TableView<State> {
       t += squeeze;
     }
     if (!shot.bang) {
-      // Click: the hammer falls, the cylinder steps a chamber on.
+      // Click (철컥): the hammer falls, the cylinder steps a chamber on.
       once(t, () => this.onKnock?.("pocket", 0.3));
       this.tween(t, 160, (p) => {
         this.toy.hammer.rotation.z = 0.75 * (1 - p);
@@ -887,54 +1026,40 @@ export class RRouletteView extends TableView<State> {
       });
       t += 600;
     } else {
-      // 펑: the flag springs out, confetti bursts over the holder, whose hair stands up and face goes sooty.
+      // 탕: the hammer falls, the flash and the kick, smoke; the one holding it is flung off the chair (the user
+      // asked), limp, onto the floor; the gun, let go, drops onto the empty chair. Nothing is shown on the head.
       once(t, () => {
         this.onKnock?.("pocket", 0.7);
-        this.burst(seat);
-        this.toy.flag.visible = true;
         this.toy.hammer.rotation.z = 0;
       });
-      this.tween(t, 360, (p) => {
-        const e = 1 - Math.pow(1 - p, 3),
-          over = Math.sin(p * Math.PI) * 0.25;
-        this.toy.flag.position.x = 0.8 + 0.05 * e;
-        this.toy.flag.scale.setScalar(Math.max(0.01, e + over * 0.4));
-      });
-      this.tween(t, 1900, (p) => this.fly(p));
-      // Flung off the chair (the user asked), limp, onto the floor; the toy, let go, drops onto the empty chair.
+      this.fire(t, seat, before);
       this.tween(t, RR.FLING_MS, (p) => this.fling(g, p));
       const held = this.poseOf(seat, before),
         fallen = this.dropped(seat, before);
-      this.tween(t + 220, 520, (p) => {
+      this.tween(t + 260, 520, (p) => {
         const e = p * p,
           pivot = this.toy.pivot;
         pivot.position.lerpVectors(held.at, fallen.at, e);
         pivot.quaternion.slerpQuaternions(held.turn, fallen.turn, e);
       });
       this.tween(t + 60, 700, (p) => {
-        if (p > 0.05) {
-          g.face.color.copy(g.skin.clone().lerp(new T.Color("#4a4a52"), 0.72 * Math.min(1, p * 3)));
-          g.spikes.visible = true;
-          g.spikes.scale.setScalar(0.3 + 0.7 * Math.min(1, p * 2.5));
-          g.mouth.visible = false;
-          g.gasp.visible = true;
-          g.stars.visible = true;
-        }
-        g.stars.rotation.y = p * 7;
+        g.mouth.visible = p < 0.05;
+        g.gasp.visible = p >= 0.05;
+        // The hat flies off in the fall.
         g.hat.position.set(HAT.x + 0.27 * p, HAT.y + Math.sin(p * Math.PI) * 0.6 - 0.11 * p, HAT.z);
         g.hat.rotation.z = HAT.tilt - 0.76 * p;
         if (p > 0.05) feel(g.person, { shock: Math.min(1, p * 3) * (1 - 0.4 * p) });
       });
       t += 1900;
-      once(t - 10, () => this.settleConfetti());
     }
     if (s.winner === null) {
-      // Pass it on round the table: the toy floats over from one's temple to the next one's.
+      // Pass it on round the table: the gun floats over from one's temple to the next one's; after a shot a new round
+      // is loaded on the way (the rules spin it for whoever is next).
       const to = this.poseOf(s.seat, s),
         from = shot.bang ? this.dropped(seat, before) : this.poseOf(seat, before),
         next = this.guests[s.seat];
       once(t, () => {
-        this.toy.flag.visible = false;
+        this.toy.flash.visible = false;
         if (!shot.bang) this.resting(g);
       });
       this.tween(t, RR.PASS_MS, (p) => {
@@ -944,17 +1069,17 @@ export class RRouletteView extends TableView<State> {
         pivot.position.y += Math.sin(e * Math.PI) * 0.7;
         pivot.quaternion.slerpQuaternions(from.turn, to.turn, e);
         pivot.scale.setScalar(RR.TEMPLE_SCALE);
-        this.toy.drum.rotation.x = (s.turn * Math.PI * 2) / CHAMBERS;
+        if (!shot.bang) this.toy.drum.rotation.x = (s.turn * Math.PI * 2) / CHAMBERS;
         this.toy.hammer.rotation.z = 0;
         this.toy.trigger.rotation.z = 0;
         if (p > 0.6) this.holdHands(next);
       });
-      t += RR.PASS_MS;
+      if (shot.bang) t += Math.max(RR.PASS_MS, this.load(t, s.turn, once));
+      else t += RR.PASS_MS;
     } else {
       const champ = s.champion;
       once(t, () => {
         this.onKnock?.("pocket", 1);
-        this.toy.flag.visible = false;
         this.restToy(s);
       });
       if (champ !== null) {
@@ -967,75 +1092,6 @@ export class RRouletteView extends TableView<State> {
       }
     }
     return true;
-  }
-  // ── Confetti ──────────────────────────────────────────────────────────────────────────────────────────────────
-  private burstFrom = new T.Vector3();
-  private burst(seat: number) {
-    const way = seatWay(seat);
-    this.toy.pivot.updateMatrixWorld(true);
-    this.toy.tip.getWorldPosition(this.burstFrom);
-    let seed = (seat + 1) * 7919 + (this.state?.ply ?? 0) * 104729;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    this.bits.forEach((b) => {
-      b.p.copy(this.burstFrom);
-      // Mostly up and over the holder (a party popper turned back on its owner), spreading wide.
-      const a = rnd() * Math.PI * 2,
-        r = 1.2 + rnd() * 2.8;
-      b.v.set(Math.cos(a) * r + way.x * 1.4, 3.6 + rnd() * 3.2, Math.sin(a) * r + way.z * 1.4);
-      b.r.set(rnd() * 6, rnd() * 6, rnd() * 6);
-      b.w.set(rnd() * 14 - 7, rnd() * 14 - 7, rnd() * 14 - 7);
-      b.rest = false;
-    });
-    this.confetti.count = CONFETTI;
-    this.flyTime = 0;
-  }
-  private flyTime = 0;
-  private fly(p: number) {
-    const t = p * 1.9,
-      dt = Math.max(0, Math.min(0.1, t - this.flyTime));
-    this.flyTime = t;
-    this.bits.forEach((b, i) => {
-      if (!b.rest) {
-        // Air slows a paper bit fast; it flutters down.
-        b.v.y -= 9.8 * dt * 0.55;
-        b.v.multiplyScalar(Math.pow(0.32, dt));
-        b.v.y = Math.max(b.v.y, -1.3);
-        b.p.addScaledVector(b.v, dt);
-        b.r.x += b.w.x * dt;
-        b.r.y += b.w.y * dt;
-        b.r.z += b.w.z * dt;
-        const ground = Math.hypot(b.p.x, b.p.z) < RR.TABLE_R ? 0.012 : RR.FLOOR_Y + 0.02;
-        if (b.p.y <= ground) {
-          b.p.y = ground;
-          b.rest = true;
-          b.r.set(-Math.PI / 2, b.r.y, 0);
-        }
-      }
-      this.dummy.position.copy(b.p);
-      this.dummy.rotation.copy(b.r);
-      this.dummy.updateMatrix();
-      this.confetti.setMatrixAt(i, this.dummy.matrix);
-    });
-    this.confetti.instanceMatrix.needsUpdate = true;
-  }
-  /** Brings every bit still in the air down where it would fall, so that it lies on the table or floor. */
-  private settleConfetti() {
-    this.bits.forEach((b, i) => {
-      if (!b.rest) {
-        const ground = Math.hypot(b.p.x, b.p.z) < RR.TABLE_R ? 0.012 : RR.FLOOR_Y + 0.02;
-        b.p.y = ground;
-        b.rest = true;
-        b.r.set(-Math.PI / 2, b.r.y, 0);
-      }
-      this.dummy.position.copy(b.p);
-      this.dummy.rotation.copy(b.r);
-      this.dummy.updateMatrix();
-      this.confetti.setMatrixAt(i, this.dummy.matrix);
-    });
-    this.confetti.instanceMatrix.needsUpdate = true;
-  }
-  private clearConfetti() {
-    this.confetti.count = 0;
   }
   dispose() {
     cancelAnimationFrame(this.holdFrame);

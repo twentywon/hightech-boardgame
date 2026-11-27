@@ -1,6 +1,6 @@
 import * as T from "three";
 import { noZoom } from "../../engine/zoom";
-import { capable } from "../../engine/scene-utils";
+import { lifelike, place } from "../../engine/lifelike";
 import { FOV } from "../../engine/camera";
 import { capturing } from "../../ui/banner";
 import type { LiveGuest, LiveSession } from "../../net/live";
@@ -150,7 +150,8 @@ export class EraWarView extends TableView<State> {
     this.flip = this.mine === 1 ? -1 : 1;
     this.root.scale.x = this.flip;
     this.scene.add(this.root);
-    const rich = capable();
+    // The lifelike look (finer shapes, photographed stuffs, a real sky's light), on every device for now (`lifelike`).
+    const rich = lifelike();
     this.kit = new Kit(own, rich);
     this.hemi = new T.HemisphereLight("#dcecff", "#5a6a3a", 1.7);
     this.scene.add(this.hemi);
@@ -163,7 +164,6 @@ export class EraWarView extends TableView<State> {
     this.own(sun.shadow);
     this.scene.add(sun, sun.target);
     if (rich) {
-      this.renderer.shadowMap.type = T.PCFSoftShadowMap;
       this.flash = new T.PointLight("#ffb060", 0, 9, 2);
       this.root.add(this.flash);
     }
@@ -223,6 +223,8 @@ export class EraWarView extends TableView<State> {
     document.addEventListener("keydown", this.keyDown);
     document.addEventListener("keyup", this.keyUp);
     this.begin();
+    // The light of a real sky over open country for the shaded sides and every sheen, film-like tone, soft shadows.
+    if (rich) place(this.renderer, this.scene, "sky", 0.55, { exposure: 0.95 });
     const tick = () => {
       if (this.disposed) return;
       this.ticker = requestAnimationFrame(tick);
@@ -828,7 +830,7 @@ export class EraWarView extends TableView<State> {
     fog.color.lerp(a.fog, k);
     this.hemi.color.lerp(a.hemiSky, k);
     this.hemi.groundColor.lerp(a.hemiGround, k);
-    this.hemi.intensity += (a.hemi - this.hemi.intensity) * k;
+    this.hemi.intensity += (a.hemi * (this.kit.rich ? 0.6 : 1) - this.hemi.intensity) * k;
     this.sun.color.lerp(a.sun, k);
     this.sun.intensity += (a.sunPower - this.sun.intensity) * k;
     this.sunAt.lerp(a.sunAt, k);
