@@ -396,8 +396,8 @@ interface Track {
   gain: number;
 }
 const ERA_WAR: Track = { style: "track", url: eraWarTrack, gain: 0.17 };
-/** The collection's music (the user gave it, and asked for it soft): kept low, under the made music's level. */
-const HOME: Track = { style: "track", url: homeTrack, gain: 0.12 };
+/** The collection's music (the user gave it; first asked soft, then louder): about the arcade pop's level. */
+const HOME: Track = { style: "track", url: homeTrack, gain: 0.24 };
 /** The Korean tables' music (the user gave it in place of the made gugak, `KOREA`, which is no longer heard). */
 const KOREAN: Track = { style: "track", url: koreaTrack, gain: 0.28 };
 type Piece = Jazz | Gugak | Raga | Arcade | Rock | Track;
