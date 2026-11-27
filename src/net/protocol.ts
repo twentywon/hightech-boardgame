@@ -34,7 +34,7 @@ import type { GameOptions, Move } from "../games/points/types";
  */
 export const PROTOCOL = 1;
 /** Bumped whenever a rule or a move changes meaning, so that devices of different builds do not play together. */
-export const APP_VERSION = "2026.11-net13";
+export const APP_VERSION = "2026.11-net14";
 
 /** A seat: waiting for a person, taken by a person, played by the host's computer, or left out (an empty corner). */
 export type SeatKind = "open" | "person" | "computer" | "closed";
