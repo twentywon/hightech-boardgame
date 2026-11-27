@@ -268,7 +268,8 @@ export class NetTable<S> {
   line(state: S): string | null {
     const room = this.room;
     if (!room) return null;
-    if (!this.online) return `${this.lost || "방장과 연결되어 있지 않습니다."} 방 버튼으로 다시 참가할 수 있습니다.`;
+    if (!this.online)
+      return (room as GuestRoom<S>).redialing ? this.lost || "방장과 다시 연결하는 중…" : `${this.lost || "방장과 연결되어 있지 않습니다."} 방 버튼으로 다시 참가할 수 있습니다.`;
     if (room.pending) {
       const kind = room.pending.kind === "undo" ? "무르기" : "새 게임";
       if (room.mustAnswer) return `${kind} 요청 — 수락이나 거절을 누르세요.`;

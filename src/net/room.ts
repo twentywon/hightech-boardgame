@@ -2,6 +2,7 @@ import type { GameOptions, Move } from "../games/points/types";
 import { HOST_ONLY, Match, type NetRules } from "./match";
 import { APP_VERSION, PROTOCOL, decode, encode, type LiveMessage, type Message, type NetMove, type PersonInfo, type Request, type SeatInfo, type SeatKind, type StartInfo } from "./protocol";
 import { newSeed } from "./random";
+import { keepAwake, letGo } from "./awake";
 
 /**
  * A room of devices on one Wi-Fi: one host and up to seven guests, each guest joined to the host alone (a star).
@@ -50,6 +51,13 @@ export const MOST_PEOPLE = 8;
  */
 const PING = 5000,
   SILENT = 45000;
+/**
+ * A guest that can open a channel to its host again by itself (the app's Wi-Fi: the host's address) tries after a
+ * drop, every few seconds for a couple of minutes: a Wi-Fi blip or a phone put away a while costs no tap.
+ */
+const REDIAL_FIRST = 1000,
+  REDIAL_EVERY = 3000,
+  REDIAL_TRIES = 40;
 /** Whether this page's own clock ran late since `last` (or the page is hidden): no one is judged silent then. */
 const late = (last: number, now: number) => now - last > PING * 2.5 || (typeof document !== "undefined" && document.hidden);
 /** The request's name with its object particle (무르기를, 새 게임을). */
@@ -88,6 +96,7 @@ abstract class Room<S> {
     readonly rules: NetRules<S>,
   ) {
     OPEN.add(this);
+    keepAwake(this);
   }
   /** The seat a person sits on, or null. */
   seatOf(id: string): number | null {
@@ -481,6 +490,7 @@ export class HostRoom<S> extends Room<S> {
   }
   leave() {
     OPEN.delete(this);
+    letGo(this);
     if (this.closed) return;
     this.closed = true;
     // The host leaving ends the room for everyone: no guest waits for it to come back.
@@ -519,6 +529,16 @@ export class GuestRoom<S> extends Room<S> {
   connected = false;
   /** Why the host was lost, in words ("" while connected). */
   reason = "";
+  /**
+   * How to open a new channel to the same host, where the page can (the app's Wi-Fi: the host's address); with it a
+   * dropped guest comes back by itself. Null on the QR way, which needs the host's new invite.
+   */
+  redial: (() => Promise<Link>) | null = null;
+  /** Whether a return by `redial` is under way. */
+  redialing = false;
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  /** I left the room: nothing is tried again. */
+  private quit = false;
   private readonly quiet: boolean;
   constructor(setup: GuestSetup, rules: NetRules<S>, me = personId()) {
     super(me, rules);
@@ -535,6 +555,8 @@ export class GuestRoom<S> extends Room<S> {
       this.link.close();
     }
     this.left = false;
+    this.quit = false;
+    this.stopRedial();
     this.link = link;
     this.heard = Date.now();
     link.onmessage = (text) => this.receive(text);
@@ -566,11 +588,47 @@ export class GuestRoom<S> extends Room<S> {
     this.link.close();
     this.link = null;
     this.connected = false;
-    this.reason = reason;
+    // A channel that failed (not the host leaving, nor refusing this device) is opened again by itself where it can.
+    const back = !!this.redial && !this.left && !this.ended && !this.quit && !this.quiet && typeof setTimeout !== "undefined";
+    this.reason = back ? `${reason} 다시 연결하는 중…` : reason;
     for (const p of this.people) if (p.host) p.connected = false;
     this.pending = null;
-    this.events.lost?.(reason);
+    if (back) this.comeBack(0);
+    this.events.lost?.(this.reason);
     this.events.changed?.();
+  }
+  /** One more try at the host by `redial`, a while after the last. */
+  private comeBack(tries: number) {
+    this.redialing = true;
+    this.retry = setTimeout(
+      () => {
+        this.retry = null;
+        const redial = this.redial;
+        if (!redial || this.link || this.quit || this.left || this.ended) return this.stopRedial();
+        const failed = () => {
+          if (this.link || this.quit) return;
+          if (tries + 1 >= REDIAL_TRIES) {
+            this.stopRedial();
+            this.reason = this.reason.replace(" 다시 연결하는 중…", "");
+            this.events.lost?.(this.reason);
+            return this.events.changed?.();
+          }
+          this.comeBack(tries + 1);
+        };
+        redial().then((link) => {
+          // Back in the meantime (a tap in the room's list) or gone: this channel is not needed.
+          if (this.link || this.quit) return link.close();
+          this.connect(link);
+          this.events.changed?.();
+        }, failed);
+      },
+      tries ? REDIAL_EVERY : REDIAL_FIRST,
+    );
+  }
+  private stopRedial() {
+    if (this.retry) clearTimeout(this.retry);
+    this.retry = null;
+    this.redialing = false;
   }
   private lastBeat = Date.now();
   private beat() {
@@ -589,6 +647,8 @@ export class GuestRoom<S> extends Room<S> {
       case "hello":
         if (m.v !== PROTOCOL || m.app !== APP_VERSION) {
           this.say({ t: "bye", reason: "버전이 다릅니다." });
+          // Not a channel that failed: nothing is tried again.
+          this.left = true;
           return this.lose(`방장의 기기와 버전이 다릅니다(방장 ${m.app}, 이 기기 ${APP_VERSION}). 두 기기 모두 업데이트하세요.`);
         }
         this.hostName = m.name;
@@ -715,6 +775,9 @@ export class GuestRoom<S> extends Room<S> {
   }
   leave() {
     OPEN.delete(this);
+    letGo(this);
+    this.quit = true;
+    this.stopRedial();
     if (this.link) {
       this.say({ t: "bye", reason: `${this.name} 님이 나갔습니다.` });
       this.link.onclose = null;

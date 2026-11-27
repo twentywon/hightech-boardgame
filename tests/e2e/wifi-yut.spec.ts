@@ -270,3 +270,136 @@ test("yut nori with the third seat closed: the one on the fourth seat plays as �
   }
   for (const d of devices) expect(d.errors).toEqual([]);
 });
+
+/** A page put away (another app over it, its tab in the background): hidden, and no animation frames come. */
+const hide = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { shownFrame?: typeof requestAnimationFrame };
+    w.shownFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = () => 0;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+const show = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { shownFrame?: typeof requestAnimationFrame };
+    if (w.shownFrame) window.requestAnimationFrame = w.shownFrame;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+/** One step of the player to move on `page`: a move where one is offered, else a throw. */
+async function step(page: Page) {
+  const choice = page.locator("#yut-moves button:not([disabled])");
+  if (await choice.count()) await choice.first().evaluate((b) => (b as HTMLButtonElement).click());
+  else {
+    await expect(page.locator("#yut-throw")).toBeEnabled({ timeout: 60000 });
+    await press(page, "#yut-throw");
+  }
+}
+
+test("yut nori with the host's page put away: the guest still plays, the host's computer still plays its seat, and the host catches up when shown", async ({ browser }, info) => {
+  const { host, guest, done } = await table(browser, info, "윷놀이", (h) => h.locator('.net-kind[data-seat="2"][data-kind="computer"]').click());
+  for (const page of [host, guest]) await expect(page.locator(".yut-sides li")).toHaveCount(3);
+  // The host plays its own first turn.
+  for (let k = 0; k < 30 && (await host.locator("#board").getAttribute("data-turn")) === "0"; k++) {
+    await resting(host);
+    const before = await snapshot3(host);
+    await step(host);
+    await expect.poll(() => snapshot3(host), { timeout: 60000 }).not.toBe(before);
+  }
+  for (const page of [host, guest]) {
+    await expect(page.locator("#board")).toHaveAttribute("data-turn", "1", { timeout: 60000 });
+    await resting(page);
+  }
+  // The host's tablet is put away: the guest plays its turn ...
+  await hide(host);
+  for (let k = 0; k < 30 && (await guest.locator("#board").getAttribute("data-turn")) === "1"; k++) {
+    await resting(guest);
+    const before = await snapshot3(guest);
+    await step(guest);
+    await expect.poll(() => snapshot3(guest), { timeout: 60000 }).not.toBe(before);
+  }
+  // ... and the computer's seat is played all the same: its turn passes back to the host.
+  await expect(guest.locator("#board")).toHaveAttribute("data-turn", "2", { timeout: 60000 });
+  await expect(guest.locator("#board")).toHaveAttribute("data-turn", "0", { timeout: 120000 });
+  // Shown again, the host's yard is the guest's at once, and the host may throw.
+  await show(host);
+  await resting(host);
+  await resting(guest);
+  await expect.poll(async () => (await snapshot3(guest)) === (await snapshot3(host)), { timeout: 30000 }).toBe(true);
+  await expect(host.locator("#yut-throw")).toBeEnabled({ timeout: 30000 });
+  await done();
+});
+
+/** The browser's screen wake lock, counted (test-only): let go by the "browser" whenever the page is hidden. */
+function countLocks() {
+  const w = window as unknown as { locks: { asked: number; held: number } };
+  w.locks = { asked: 0, held: 0 };
+  let current: { released: boolean; release(): Promise<void> } | null = null;
+  const make = () => {
+    const s = {
+      released: false,
+      release: async () => {
+        if (s.released) return;
+        s.released = true;
+        w.locks.held--;
+      },
+    };
+    return s;
+  };
+  Object.defineProperty(navigator, "wakeLock", {
+    configurable: true,
+    value: {
+      request: async () => {
+        w.locks.asked++;
+        w.locks.held++;
+        current = make();
+        return current;
+      },
+    },
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) void current?.release();
+  });
+}
+test("yut nori over Wi-Fi keeps the screens on while in the room (a phone gone dark drops out), takes the lock again when shown, and lets it go on leaving", async ({ browser }, info) => {
+  const use = info.project.use,
+    devices = await Promise.all(
+      [0, 1].map(async () => {
+        const context = await browser.newContext({ baseURL: use.baseURL, viewport: use.viewport, deviceScaleFactor: use.deviceScaleFactor, isMobile: use.isMobile, hasTouch: use.hasTouch, userAgent: use.userAgent });
+        await context.addInitScript(countLocks);
+        const page = await context.newPage(),
+          errors: string[] = [];
+        page.on("pageerror", (e) => errors.push(e.message));
+        await page.goto("/");
+        return { page, errors, context };
+      }),
+    ),
+    [host, guest] = devices.map((d) => d.page);
+  const locks = (page: Page) => page.evaluate(() => (window as unknown as { locks: { asked: number; held: number } }).locks);
+  // Nothing is held in the collection.
+  expect(await locks(host)).toEqual({ asked: 0, held: 0 });
+  await lobby(host, "윷놀이", "방장");
+  await host.locator("#net-host").click();
+  await pair(host, guest, "윷놀이", "민수");
+  for (const page of [host, guest]) await expect.poll(async () => (await locks(page)).held).toBe(1);
+  await host.locator("#net-start").click({ noWaitAfter: true, timeout: 120000 });
+  for (const page of [host, guest]) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  // Put away and shown again: the browser let the lock go, and it is taken again.
+  await hide(guest);
+  await expect.poll(async () => (await locks(guest)).held).toBe(0);
+  await show(guest);
+  await expect.poll(async () => locks(guest)).toEqual({ asked: 2, held: 1 });
+  // Leaving the table (and the room) lets it go.
+  await guest.evaluate(() => {
+    document.querySelector<HTMLButtonElement>("main.game-layout #back")?.click();
+    document.querySelector<HTMLButtonElement>("dialog.leave-dialog #leave-go")?.click();
+  });
+  await expect.poll(async () => (await locks(guest)).held, { timeout: 15000 }).toBe(0);
+  for (const d of devices) {
+    expect(d.errors).toEqual([]);
+    await d.context.close();
+  }
+});
