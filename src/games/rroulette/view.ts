@@ -69,10 +69,12 @@ interface Toy {
  * glowing in the dark, one lamp hanging low over a round table of reddish wood with a pale ring on it, a candle, nuts
  * and glasses of pop round the edge, and up to four players in felt hats round it (me near, my left, across, my right;
  * a closed seat an empty chair). The toy is a bright plastic cap revolver (blue frame, yellow cylinder, red grip, the
- * orange tip toys carry), held up in front of whoever's turn it is, pointing up over the table, never at anyone. A pull
- * cocks the hammer and squeezes the trigger slowly while a heart beats; a click turns the cylinder a chamber on; a 펑
- * springs a "펑!" flag out of the barrel and bursts confetti over the one holding it, whose hair stands on end and
- * face goes sooty (comic, no harm), and who is out. Then the toy goes on to the next round the table.
+ * orange tip toys carry), which whoever's turn it is holds to the right temple (the user asked). A pull cocks the
+ * hammer and squeezes the trigger slowly while a heart beats; a click (철컥) turns the cylinder a chamber on and the toy
+ * goes on; a 펑 springs a "펑!" flag out of the barrel, bursts confetti, and flings the one holding it off the chair
+ * like a rag doll, tumbling through the air limp and landing flat on the floor with its legs in the air (slapstick,
+ * the user asked; no harm: the hair stands on end and the face goes sooty), where it lies for the rest of the game.
+ * No words tell each pull (the user asked): the toy and the faces do; only the game's end is said.
  *
  * I may also press and hold the toy itself: the trigger comes back as I hold, and goes off when it is all the way in
  * (let go before, and nothing happens). In the middle of the table a card shows the chambers fired since the last
@@ -422,20 +424,54 @@ export class RRouletteView extends TableView<State> {
   private resting(g: Guest) {
     this.reach(g, [new T.Vector3(-0.5, 0.1, -1.05), new T.Vector3(0.5, 0.1, -1.05)]);
   }
-  /**
-   * Where the toy is held up for a seat (in the room): before the guest and off to its right hand, so that it stands
-   * clear of the guest's head (mine is between the toy and the camera otherwise).
-   */
-  private held(seat: number) {
-    const way = seatWay(seat);
-    return { x: way.x * RR.HOLD_R + way.z * RR.HOLD_SIDE, y: RR.HOLD_Y, z: way.z * RR.HOLD_R - way.x * RR.HOLD_SIDE };
-  }
   /** The right hand on the toy's grip (wherever the toy now stands), the left resting on the table. */
   private holdHands(g: Guest) {
     this.toy.pivot.updateMatrixWorld(true);
     g.root.updateMatrixWorld(true);
     const at = g.root.worldToLocal(this.toy.grip.getWorldPosition(new T.Vector3()));
     this.reach(g, [new T.Vector3(-0.5, 0.1, -1.05), at], true);
+  }
+  /** How one flung off by a 펑 lies on the floor: on its back with its head away to its left, its legs in the air. */
+  private static readonly LYING = new T.Quaternion()
+    .setFromAxisAngle(new T.Vector3(0, 1, 0), -Math.PI / 2)
+    .multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), Math.PI / 2));
+  private static readonly LIE_AT = new T.Vector3(RR.LIE_X, RR.FLOOR_Y + 0.3, RR.LIE_Z);
+  /** Lays a guest flat on the floor beside its chair, arms flung wide and the head lolled (`k` 1); less of the loll as `k` is less. */
+  private lie(g: Guest, k: number) {
+    g.body.position.copy(RRouletteView.LIE_AT);
+    g.body.quaternion.copy(RRouletteView.LYING);
+    g.head.rotation.set(0.25 * k, 0.5 * k, 0.3 * k);
+    this.reach(g, [new T.Vector3(-1.0, 0.75, -0.35), new T.Vector3(1.0, 0.95, 0.05)]);
+  }
+  /**
+   * The fling (the user asked: flung away limp, as if shot): off the chair to its left and back, cartwheeling once
+   * through the air with its arms and head flopping loose, then flat on its back on the floor with a bounce (`p` 0 to 1).
+   */
+  private fling(g: Guest, p: number) {
+    const LAND = 0.78,
+      end = RRouletteView.LIE_AT,
+      body = g.body;
+    if (p < LAND) {
+      const u = p / LAND;
+      // Thrown hard: fast off the chair, slowing as it goes; up in an arc and down onto the floor.
+      const h = 1 - (1 - u) * (1 - u) * 0.6 - 0.4 * (1 - u);
+      body.position.set(end.x * h, end.y * u + 4 * 1.25 * u * (1 - u), end.z * h);
+      const spin = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 0, 1), Math.PI * 2 * smooth(u));
+      body.quaternion.identity().slerp(RRouletteView.LYING, smooth(u)).multiply(spin);
+      // Loose as a rag doll: the arms flail and the head flops.
+      this.reach(g, [
+        new T.Vector3(-0.8 + 0.3 * Math.sin(u * 19), 0.85 + 0.45 * Math.cos(u * 23), -0.15 + 0.35 * Math.sin(u * 13)),
+        new T.Vector3(0.8 + 0.3 * Math.cos(u * 17), 0.95 + 0.45 * Math.sin(u * 21), 0.1 + 0.35 * Math.cos(u * 11)),
+      ]);
+      g.head.rotation.set(Math.cos(u * 17) * 0.35, Math.sin(u * 13) * 0.3, Math.sin(u * 21) * 0.5);
+      return;
+    }
+    // Down: a bounce off the floor, the limbs settling.
+    const v = (p - LAND) / (1 - LAND),
+      bob = Math.sin(Math.PI * Math.min(1, v * 1.4)) * (1 - v);
+    this.lie(g, smooth(v));
+    body.position.y += bob * 0.25;
+    body.quaternion.multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), -bob * 0.3));
   }
   /** A guest's look: in the game or out (sooty, hair on end), and its name tag. */
   private dress(g: Guest, seat: number, s: State) {
@@ -454,7 +490,10 @@ export class RRouletteView extends TableView<State> {
     feel(g.person, out ? { shock: 0.6 } : {});
     g.head.rotation.set(0, 0, 0);
     g.body.position.set(0, 0, 0);
-    if (s.seat === seat && s.winner === null) this.holdHands(g);
+    g.body.quaternion.identity();
+    // One who went 펑 lies where the fling left it, on the floor beside its chair.
+    if (out && !empty) this.lie(g, 1);
+    else if (s.seat === seat && s.winner === null) this.holdHands(g);
     else this.resting(g);
     this.tagOf(g, seat, s);
   }
@@ -462,7 +501,7 @@ export class RRouletteView extends TableView<State> {
     const out = s.out[seat],
       turn = s.seat === seat && s.winner === null,
       champ = s.champion === seat,
-      line = champ ? "우승!" : out ? "펑! 탈락" : `돌리기 ${s.spins[seat]}번`,
+      line = champ ? "우승!" : out ? "탈락" : `돌리기 ${s.spins[seat]}번`,
       said = `${PEOPLE[seat]}|${line}|${turn}|${out}`;
     if (said === g.tag.said) return;
     g.tag.said = said;
@@ -580,16 +619,65 @@ export class RRouletteView extends TableView<State> {
     pivot.scale.setScalar(RR.TOY_SCALE);
     return { grip: hold, pivot, gun, drum, hammer, trigger, flag, tip };
   }
-  /** Sets the toy before `seat`, pointing up over the table (leaning away from the holder), turned a little to show its side. */
+  /** The toy's turn in a holder's frame at the temple: the barrel into the head from the front right, its top up. */
+  private static readonly AT_HEAD = (() => {
+    const x = new T.Vector3(-0.86, -0.06, 0.5).normalize(),
+      y = new T.Vector3(0, 1, 0).sub(x.clone().multiplyScalar(x.y)).normalize(),
+      z = new T.Vector3().crossVectors(x, y);
+    return { barrel: x, turn: new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(x, y, z)) };
+  })();
+  /**
+   * Sets the toy at `seat`'s right temple (the user asked for it put to the head): its muzzle on the temple, the barrel
+   * pointing in, the gun standing out to the front right where the right hand holds its grip. `lift` raises it.
+   */
   private aimToy(seat: number, s: State, lift = 0) {
-    const at = this.held(seat),
-      way = seatWay(seat),
-      p = this.toy.pivot;
-    p.position.set(at.x, at.y + lift, at.z);
-    // Local +x (where the barrel leans) away from the holder, over the table; then a turn to show its side.
-    const face = Math.atan2(way.z, -way.x);
-    p.rotation.set(0, face + 0.55, 0);
+    const g = this.guests[seat],
+      p = this.toy.pivot,
+      at = RRouletteView.AT_HEAD;
+    g.root.updateMatrixWorld(true);
+    p.scale.setScalar(RR.TEMPLE_SCALE);
+    p.quaternion.copy(g.root.quaternion).multiply(at.turn).multiply(this.toy.gun.quaternion.clone().invert());
+    p.position.set(0, 0, 0);
+    p.updateMatrixWorld(true);
+    // The muzzle's middle a little out from the temple along the barrel.
+    const tip = this.toy.tip.getWorldPosition(new T.Vector3()),
+      temple = g.root.localToWorld(at.barrel.clone().multiplyScalar(-0.06 * RR.TEMPLE_SCALE).add(new T.Vector3(RR.TEMPLE_X, RR.HEAD_Y + RR.TEMPLE_UP + lift, RR.TEMPLE_Z)));
+    p.position.copy(temple.sub(tip));
     this.toy.drum.rotation.x = (s.turn * Math.PI * 2) / CHAMBERS;
+  }
+  /** The toy's place and turn held at `seat`'s temple (the toy put back as it was). */
+  private poseOf(seat: number, s: State) {
+    const p = this.toy.pivot,
+      was = { at: p.position.clone(), turn: p.quaternion.clone(), size: p.scale.x, drum: this.toy.drum.rotation.x };
+    this.aimToy(seat, s);
+    const pose = { at: p.position.clone(), turn: p.quaternion.clone() };
+    p.position.copy(was.at);
+    p.quaternion.copy(was.turn);
+    p.scale.setScalar(was.size);
+    this.toy.drum.rotation.x = was.drum;
+    return pose;
+  }
+  /** Where the toy lies once a 펑 has flung its holder away: dropped onto the empty chair, tipped on its side. */
+  private dropped(seat: number, s: State) {
+    const held = this.poseOf(seat, s),
+      g = this.guests[seat];
+    g.root.updateMatrixWorld(true);
+    const seatTop = g.root.localToWorld(new T.Vector3(0.15, RR.FLOOR_Y + 1.2 + 0.12, 0.2));
+    return { at: new T.Vector3(held.at.x + (seatTop.x - held.at.x) * 0.6, seatTop.y, held.at.z + (seatTop.z - held.at.z) * 0.6), turn: held.turn.clone().multiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), 1.35)) };
+  }
+  /** Where the toy's cylinder is, held at `seat`'s temple (the toy put back as it was). */
+  private toyAt(seat: number, s: State) {
+    const p = this.toy.pivot,
+      was = { at: p.position.clone(), turn: p.quaternion.clone(), size: p.scale.x, drum: this.toy.drum.rotation.x };
+    this.aimToy(seat, s);
+    p.updateMatrixWorld(true);
+    const at = this.toy.drum.getWorldPosition(new T.Vector3());
+    p.position.copy(was.at);
+    p.quaternion.copy(was.turn);
+    p.scale.setScalar(was.size);
+    this.toy.drum.rotation.x = was.drum;
+    p.updateMatrixWorld(true);
+    return at;
   }
   private restToy(s: State) {
     this.toy.hammer.rotation.z = 0;
@@ -600,6 +688,8 @@ export class RRouletteView extends TableView<State> {
     if (s.winner !== null) {
       // Laid down in the middle once the game is over.
       const p = this.toy.pivot;
+      p.scale.setScalar(RR.TOY_SCALE);
+      p.quaternion.identity();
       p.position.set(0.15, 0.11, 0.1);
       p.rotation.set(0, 0.4, 0);
       p.rotateX(-Math.PI / 2);
@@ -664,15 +754,14 @@ export class RRouletteView extends TableView<State> {
     d.champion = s.champion === null ? "" : String(s.champion);
     // Where my toy is on the canvas (CSS pixels), for a press to be aimed at it (tests).
     this.camera.updateMatrixWorld();
-    const at = this.held(0),
-      v = new T.Vector3(at.x, at.y, at.z).project(this.camera),
+    const v = this.toyAt(0, s).project(this.camera),
       el = this.renderer.domElement;
     d.toy = `${Math.round(((v.x + 1) / 2) * el.clientWidth)},${Math.round(((1 - v.y) / 2) * el.clientHeight)}`;
   }
   protected spots(): Spot[] {
     const s = this.state;
     if (!s || s.winner !== null || s.seat !== 0) return [];
-    const at = this.held(0);
+    const at = this.toyAt(0, s);
     return [{ x: at.x, y: at.y, z: at.z, r: 0.8, point: PULL }];
   }
   protected mark(_marks: Marks) {
@@ -812,6 +901,16 @@ export class RRouletteView extends TableView<State> {
         this.toy.flag.scale.setScalar(Math.max(0.01, e + over * 0.4));
       });
       this.tween(t, 1900, (p) => this.fly(p));
+      // Flung off the chair (the user asked), limp, onto the floor; the toy, let go, drops onto the empty chair.
+      this.tween(t, RR.FLING_MS, (p) => this.fling(g, p));
+      const held = this.poseOf(seat, before),
+        fallen = this.dropped(seat, before);
+      this.tween(t + 220, 520, (p) => {
+        const e = p * p,
+          pivot = this.toy.pivot;
+        pivot.position.lerpVectors(held.at, fallen.at, e);
+        pivot.quaternion.slerpQuaternions(held.turn, fallen.turn, e);
+      });
       this.tween(t + 60, 700, (p) => {
         if (p > 0.05) {
           g.face.color.copy(g.skin.clone().lerp(new T.Color("#4a4a52"), 0.72 * Math.min(1, p * 3)));
@@ -822,8 +921,6 @@ export class RRouletteView extends TableView<State> {
           g.stars.visible = true;
         }
         g.stars.rotation.y = p * 7;
-        g.body.position.y = Math.sin(Math.min(1, p * 2) * Math.PI) * 0.35;
-        g.head.rotation.z = Math.sin(p * Math.PI * 4) * 0.12 * (1 - p);
         g.hat.position.set(HAT.x + 0.27 * p, HAT.y + Math.sin(p * Math.PI) * 0.6 - 0.11 * p, HAT.z);
         g.hat.rotation.z = HAT.tilt - 0.76 * p;
         if (p > 0.05) feel(g.person, { shock: Math.min(1, p * 3) * (1 - 0.4 * p) });
@@ -832,19 +929,22 @@ export class RRouletteView extends TableView<State> {
       once(t - 10, () => this.settleConfetti());
     }
     if (s.winner === null) {
-      // Pass it on round the table: the toy floats over to the next one up.
-      const from = this.held(seat),
-        to = this.held(s.seat),
+      // Pass it on round the table: the toy floats over from one's temple to the next one's.
+      const to = this.poseOf(s.seat, s),
+        from = shot.bang ? this.dropped(seat, before) : this.poseOf(seat, before),
         next = this.guests[s.seat];
       once(t, () => {
         this.toy.flag.visible = false;
-        this.resting(g);
+        if (!shot.bang) this.resting(g);
       });
       this.tween(t, RR.PASS_MS, (p) => {
         const e = smooth(p),
-          q = new T.Vector3(from.x + (to.x - from.x) * e, from.y + Math.sin(e * Math.PI) * 0.7, from.z + (to.z - from.z) * e);
-        this.aimToy(e < 0.5 ? seat : s.seat, s);
-        this.toy.pivot.position.copy(q);
+          pivot = this.toy.pivot;
+        pivot.position.lerpVectors(from.at, to.at, e);
+        pivot.position.y += Math.sin(e * Math.PI) * 0.7;
+        pivot.quaternion.slerpQuaternions(from.turn, to.turn, e);
+        pivot.scale.setScalar(RR.TEMPLE_SCALE);
+        this.toy.drum.rotation.x = (s.turn * Math.PI * 2) / CHAMBERS;
         this.toy.hammer.rotation.z = 0;
         this.toy.trigger.rotation.z = 0;
         if (p > 0.6) this.holdHands(next);
@@ -871,9 +971,9 @@ export class RRouletteView extends TableView<State> {
   // ── Confetti ──────────────────────────────────────────────────────────────────────────────────────────────────
   private burstFrom = new T.Vector3();
   private burst(seat: number) {
-    const way = seatWay(seat),
-      at = this.held(seat);
-    this.burstFrom.set(at.x, at.y + 0.9 * RR.TOY_SCALE, at.z);
+    const way = seatWay(seat);
+    this.toy.pivot.updateMatrixWorld(true);
+    this.toy.tip.getWorldPosition(this.burstFrom);
     let seed = (seat + 1) * 7919 + (this.state?.ply ?? 0) * 104729;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     this.bits.forEach((b) => {

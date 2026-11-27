@@ -822,6 +822,17 @@ export class Sound {
     this.noise(0.38, 0.7, 0.04, 520, "lowpass", 160);
   }
   /** The trigger pulled on nothing (out, or reloading): a dry metallic click. */
+  /**
+   * A toy revolver's hammer falling on an empty chamber (러시안 룰렛's 철컥, the user asked): a hard metal snap (the
+   * claw's clasp recording, pitched up) and the cylinder stepping on a beat later with a lower clack.
+   */
+  hammerFall() {
+    this.recording("clasp-1", 0.34, 1.55);
+    this.noise(0, 0.018, 0.2, 4600, "highpass", 3800);
+    this.tone("square", 2100, 1300, 0, 0.025, 0.04);
+    this.noise(0.085, 0.035, 0.17, 2300, "bandpass", 1500);
+    this.tone("triangle", 880, 560, 0.085, 0.05, 0.08);
+  }
   dryFire() {
     this.tone("square", 2400, 1800, 0, 0.02, 0.045);
     this.noise(0, 0.025, 0.14, 3500, "bandpass", 3000);
