@@ -12,11 +12,12 @@ export const rRouletteConfig: PointConfig<State> = {
   view: (host, quality) => new RRouletteView(host, quality),
   colors: RR_COLORS,
   // The toy's sounds: the cylinder's ratchet as it spins, the hammer cocked, a heartbeat as the trigger comes back,
-  // then a click, or the 펑 of a party popper; cheering for whoever is left.
+  // then the hammer falling on an empty chamber (철컥, the user asked), or the 펑 of a party popper; cheering for
+  // whoever is left.
   knock: (sound, kind, strength) => {
     if (kind === "disc") sound.clack(Math.min(0.7, strength));
     else if (kind === "cushion") (strength < 0.5 ? sound.clasp(0.6) : sound.thud());
-    else if (strength < 0.5) sound.dryFire();
+    else if (strength < 0.5) sound.hammerFall();
     else if (strength < 0.9) {
       sound.pop();
       sound.sparkle();
@@ -42,12 +43,8 @@ export const rRouletteConfig: PointConfig<State> = {
     if (key === " " || key === "Enter") return pullMove;
     return null;
   },
-  cheer: (_before, s) => {
-    const shot = s.last;
-    if (!shot || shot === _before.last) return null;
-    if (s.winner !== null) return s.champion === 0 ? "끝까지 살아남았다!" : "펑!";
-    return shot.bang ? "펑!" : "찰칵… 휴!";
-  },
+  // No words tell each pull (the user asked): the toy and the faces do, and a 펑 flings its holder off the chair;
+  // only the game's end is said (the finale).
   settings: [
     {
       id: "rivals",
@@ -72,7 +69,7 @@ export const rRouletteConfig: PointConfig<State> = {
   name: "러시안 룰렛",
   english: "Russian Roulette",
   number: "NO. 114 — DON'T GO POP",
-  intro: `<p>장난감 리볼버를 돌려 가며 방아쇠를 당기는 파티 게임.<br>여섯 칸 중 한 칸에만 "펑!" 딱총이 들어 있습니다. 펑이 터지면 색종이를 뒤집어쓰고 탈락, 끝까지 남은 사람이 이깁니다.</p>`,
+  intro: `<p>장난감 리볼버를 돌려 가며 방아쇠를 당기는 파티 게임.<br>여섯 칸 중 한 칸에만 "펑!" 딱총이 들어 있습니다. 펑이 터지면 의자에서 날아가 탈락, 끝까지 남은 사람이 이깁니다.</p>`,
   meta: `2~4명 · ${CHAMBERS}칸 중 1칸 · 원통 돌리기 ${SPINS}번`,
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>DON'T GO POP</span>`,
   artClass: "indian-art",
@@ -85,9 +82,9 @@ export const rRouletteConfig: PointConfig<State> = {
       "기본 규칙",
       steps(
         `장난감 리볼버의 원통에는 칸이 ${CHAMBERS}개 있고, 그중 <b>한 칸에만</b> "펑!" 딱총이 들어 있습니다. 어느 칸인지는 아무도 모릅니다.`,
-        "나 → 왼쪽 → 맞은편 → 오른쪽 차례로 장난감을 넘겨 가며, 자기 차례에 방아쇠를 한 번 당깁니다.",
-        "<b>찰칵</b>이면 무사합니다. 원통이 한 칸 돌아가고 다음 사람에게 넘어갑니다.",
-        "<b>펑!</b>이면 색종이를 뒤집어쓰고 탈락합니다. 새 딱총을 넣고 원통을 돌려 다음 사람부터 이어 갑니다.",
+        "나 → 왼쪽 → 맞은편 → 오른쪽 차례로 장난감을 넘겨 가며, 자기 차례에 장난감을 머리에 대고 방아쇠를 한 번 당깁니다.",
+        "<b>철컥</b>이면 무사합니다. 원통이 한 칸 돌아가고 다음 사람에게 넘어갑니다.",
+        "<b>펑!</b>이면 색종이가 터지며 의자에서 날아가 바닥에 뻗고 탈락합니다. 새 딱총을 넣고 원통을 돌려 다음 사람부터 이어 갑니다.",
         "마지막까지 남은 한 사람이 이깁니다.",
       ),
     ) +
