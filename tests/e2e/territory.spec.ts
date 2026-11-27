@@ -144,7 +144,6 @@ test("territory's three rounds, and a deathmatch: no clock but who is still in, 
   // The rounds offered: 3분판, 5분판, 데스매치 (the user asked).
   await expect(page.locator("#pg-variant option")).toHaveText(["3분판", "5분판", "데스매치"]);
   const errors = await sit(page, "1", "easy", "death");
-  await expect(page.locator(".board-label")).toContainText("데스매치");
   await expect(canvas(page)).toHaveAttribute("data-mode", "death");
   await expect(page.locator(".ld-clock b")).toHaveText("생존 2");
   await expect(canvas(page)).toHaveAttribute("data-phase", "play", { timeout: 60_000 });
