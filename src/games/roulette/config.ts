@@ -42,7 +42,10 @@ export const rouletteConfig: PointConfig<State> = {
     if (kind === "roll") sound.rolling(strength);
     else if (kind === "diamond") sound.tile(2);
     else if (kind === "fret") sound.marble();
+    else if (kind === "drop") sound.tile(1);
     else if (kind === "rest") sound.tile(4);
+    // The croupier sweeping the lost chips off, and counting out the winnings.
+    else if (kind === "sweep" || kind === "pay") sound.chips();
     else if (kind === "win") sound.sparkle();
   },
   cheer: (before, state) => (state.spins === before.spins + 1 && state.result ? `${said(state.result)}${state.result.paid ? ` · +${state.result.paid}` : ""}` : null),

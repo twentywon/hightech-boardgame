@@ -1,35 +1,31 @@
 import * as T from "three";
 import { cameraDistance } from "../../engine/camera";
-import { block, capable, glossy, weave, wood } from "../../engine/scene-utils";
+import { capable } from "../../engine/scene-utils";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot as TapSpot, type TableSubject } from "../table/view";
-import { FELT, H, ROW, SPOTS, W, cellOf, spotAt } from "./bets";
-import { FELT_AT, FELT_Y, TABLE, WHEEL_AT, WHEEL_BASE, WHEEL_SCALE, WHEEL_SUBJECT, betCamera, betSubject, spotPlace } from "./layout";
+import { FELT, H, ROW, SPOTS, W, cellOf, payoutOf, spotAt } from "./bets";
+import { CHIP_H, CHIP_R, ChipKit, ChipPile } from "./chips";
+import { FELT_AT, FELT_Y, WHEEL_AT, WHEEL_BASE, WHEEL_SCALE, WHEEL_SUBJECT, betCamera, betSubject, spotPlace } from "./layout";
+import { buildRoom } from "./room";
 import { CASH, CHIP, CHIPS, CLEAR, REBET, SPIN, UNDO, canBet, canRebet, staked, type State } from "./rules";
-import { BALL_R, CONE_OUT, DIAMONDS, DIAMOND_R, DIAMOND_SIZE, ORDER, POCKET_IN, RIM, SLOT, TRACK_R, colourOf, runSpin, type Frame } from "./sim";
+import { BALL_R, ORDER, POCKET_IN, SLOT, colourOf, runSpin, type Frame } from "./sim";
+import { ballMaterial, buildWheel, floorY, metal } from "./wheel";
 
 export const ROULETTE_COLORS: [string, string] = ["#c9a13b", "#1d6b3f"];
-/** The chips' paint by value: body, the inserts round the rim, the ink of the value. */
-const CHIP_PAINT: Record<number, { body: string; stripe: string; ink: string }> = {
-  1: { body: "#f2efe6", stripe: "#2f63c4", ink: "#2f63c4" },
-  5: { body: "#c8312b", stripe: "#f4efe2", ink: "#c8312b" },
-  25: { body: "#2c8a4f", stripe: "#f4efe2", ink: "#2c8a4f" },
-  100: { body: "#1d1d22", stripe: "#e8c25a", ink: "#1d1d22" },
-};
-const CHIP_R = 0.105,
-  CHIP_H = 0.026,
-  /** The most chips a stack shows (a bigger bet is told by its top chip and its height). */
-  STACK_MOST = 8;
-/** How long the camera takes to come down to the wheel and to go back, and how long the result is looked at first. */
+/** The most chips a stack shows (a bigger bet is told by its top chips and its height); more go into a second stack beside it. */
+const STACK_MOST = 10;
+/** How long the camera takes to come down to the wheel and to go back, how long the result is looked at, and how long the croupier takes to settle the bets. */
 const TO_WHEEL = 700,
-  LOOK = 1500,
-  BACK = 800;
+  LOOK = 1700,
+  BACK = 800,
+  SETTLE = 1500;
 const RED = "#b52a24",
   BLACK = "#1b1b1f",
   GREEN = "#13804a";
 const paintOf = (n: number) => (colourOf(n) === "red" ? RED : colourOf(n) === "black" ? BLACK : GREEN);
 const ease = (p: number) => p * p * (3 - 2 * p);
+const clamp01 = (p: number) => Math.max(0, Math.min(1, p));
 type Keep = <R extends { dispose(): void }>(r: R) => R;
 
 function canvasTexture(keep: Keep, w: number, h: number, paint: (pen: CanvasRenderingContext2D) => void) {
@@ -42,32 +38,47 @@ function canvasTexture(keep: Keep, w: number, h: number, paint: (pen: CanvasRend
   texture.anisotropy = 8;
   return texture;
 }
-/** The printed felt: the numbers in their red and black cells, 0, the columns' 2 to 1, the dozens and the even chances. */
+/** The printed felt: the numbers in their red and black cells, 0, the columns' 2 to 1, the dozens and the even chances, in cream and gold on green baize. */
 function feltTexture(keep: Keep) {
-  const PX = 480,
+  const PX = 560,
     width = (FELT.right - FELT.left) * PX,
     depth = (FELT.near - FELT.far) * PX,
     px = (x: number) => (x - FELT.left) * PX,
     pz = (z: number) => (z - FELT.far) * PX;
   return canvasTexture(keep, Math.round(width), Math.round(depth), (pen) => {
-    pen.fillStyle = "#11613a";
+    pen.fillStyle = "#0f5a36";
     pen.fillRect(0, 0, width, depth);
-    const line = "#efe4c0",
+    // The baize's nap: faint flecks, lighter and darker.
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let k = 0; k < 26000; k++) {
+      pen.fillStyle = rnd() > 0.5 ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.05)";
+      pen.fillRect(rnd() * width, rnd() * depth, 2, 2);
+    }
+    const line = "#f1e3b6",
+      gold = "#d5ae55",
       box = (x0: number, z0: number, x1: number, z1: number, fill?: string) => {
         if (fill) {
-          pen.fillStyle = fill;
-          pen.fillRect(px(x0) + 7, pz(z0) + 7, (x1 - x0) * PX - 14, (z1 - z0) * PX - 14);
+          const g = pen.createLinearGradient(0, pz(z0), 0, pz(z1)),
+            c = new T.Color(fill);
+          g.addColorStop(0, `#${c.clone().lerp(new T.Color("#ffffff"), 0.08).getHexString()}`);
+          g.addColorStop(1, `#${c.clone().multiplyScalar(0.86).getHexString()}`);
+          pen.fillStyle = g;
+          pen.fillRect(px(x0) + 9, pz(z0) + 9, (x1 - x0) * PX - 18, (z1 - z0) * PX - 18);
         }
         pen.strokeStyle = line;
-        pen.lineWidth = 5;
+        pen.lineWidth = 6;
         pen.strokeRect(px(x0), pz(z0), (x1 - x0) * PX, (z1 - z0) * PX);
       },
-      write = (text: string, x: number, z: number, size: number, colour = line, turn = 0) => {
+      write = (text: string, x: number, z: number, size: number, colour = line, turn = 0, serif = true) => {
         pen.save();
         pen.translate(px(x), pz(z));
         pen.rotate(turn);
         pen.fillStyle = colour;
-        pen.font = `800 ${size}px "Inter", "Noto Sans KR", sans-serif`;
+        pen.shadowColor = "rgba(0,0,0,0.45)";
+        pen.shadowBlur = 4;
+        pen.shadowOffsetY = 2;
+        pen.font = serif ? `700 ${size}px "Georgia", "Times New Roman", serif` : `800 ${size}px "Inter", "Noto Sans KR", sans-serif`;
         pen.textAlign = "center";
         pen.textBaseline = "middle";
         pen.fillText(text, 0, 0);
@@ -79,7 +90,7 @@ function feltTexture(keep: Keep) {
     for (let n = 1; n <= 36; n++) {
       const c = cellOf(n);
       box(c.x - W / 2, c.z - H / 2, c.x + W / 2, c.z + H / 2, paintOf(n));
-      write(String(n), c.x, c.z, 86, "#fbf5e3");
+      write(String(n), c.x, c.z, 104, "#fbf3dc");
     }
     // 0: a tall cell with a pointed end.
     pen.fillStyle = GREEN;
@@ -92,108 +103,42 @@ function feltTexture(keep: Keep) {
     pen.closePath();
     pen.fill();
     pen.strokeStyle = line;
-    pen.lineWidth = 5;
+    pen.lineWidth = 6;
     pen.stroke();
-    write("0", left - W * 0.45, 0, 96, "#fbf5e3");
+    write("0", left - W * 0.45, 0, 120, "#fbf3dc");
     for (let r = 0; r < 3; r++) {
       box(-left, far + r * H, -left + W, far + (r + 1) * H);
-      write("2:1", -left + W / 2, far + (r + 0.5) * H, 62, line, -Math.PI / 2);
+      write("2 to 1", -left + W / 2, far + (r + 0.5) * H, 50, gold, -Math.PI / 2);
     }
-    ["1~12", "13~24", "25~36"].forEach((text, d) => {
+    ["1st 12", "2nd 12", "3rd 12"].forEach((text, d) => {
       box(left + 4 * d * W, near, left + 4 * (d + 1) * W, near + ROW);
-      write(text, left + (4 * d + 2) * W, near + ROW / 2, 78);
+      write(text, left + (4 * d + 2) * W, near + ROW / 2, 84, gold);
     });
     ["1~18", "짝수", "", "", "홀수", "19~36"].forEach((text, k) => {
       const x0 = left + 2 * k * W;
       box(x0, near + ROW, x0 + 2 * W, near + 2 * ROW);
-      if (text) write(text, x0 + W, near + ROW * 1.5, 70);
+      if (text) write(text, x0 + W, near + ROW * 1.5, 76, line, 0, false);
       else {
         // The red and black diamonds.
         const cx = px(x0 + W),
           cz = pz(near + ROW * 1.5);
         pen.fillStyle = k === 2 ? RED : BLACK;
         pen.beginPath();
-        pen.moveTo(cx - 92, cz);
-        pen.lineTo(cx, cz - 52);
-        pen.lineTo(cx + 92, cz);
-        pen.lineTo(cx, cz + 52);
+        pen.moveTo(cx - 108, cz);
+        pen.lineTo(cx, cz - 60);
+        pen.lineTo(cx + 108, cz);
+        pen.lineTo(cx, cz + 60);
         pen.closePath();
         pen.fill();
-        pen.strokeStyle = line;
-        pen.lineWidth = 4;
+        pen.strokeStyle = gold;
+        pen.lineWidth = 5;
         pen.stroke();
       }
     });
-  });
-}
-/** The rotor's ring of pockets seen from above: each pocket's colour, and its number on the band round them. */
-function pocketTexture(keep: Keep) {
-  const size = 1024,
-    c = size / 2,
-    scale = c / RIM,
-    band = RIM - 0.022;
-  return canvasTexture(keep, size, size, (pen) => {
-    ORDER.forEach((n, k) => {
-      const a0 = k * SLOT,
-        a1 = (k + 1) * SLOT;
-      pen.fillStyle = paintOf(n);
-      pen.beginPath();
-      // The canvas's y runs down, the wheel's angles anticlockwise seen from above: angles are drawn negated.
-      pen.arc(c, c, RIM * scale, -a1, -a0);
-      pen.arc(c, c, POCKET_IN * scale * 0.96, -a0, -a1, true);
-      pen.closePath();
-      pen.fill();
-      const mid = (a0 + a1) / 2,
-        r = ((band + RIM) / 2) * scale;
-      pen.save();
-      pen.translate(c + Math.cos(mid) * r, c - Math.sin(mid) * r);
-      pen.rotate(Math.PI / 2 - mid);
-      pen.fillStyle = "#fbf3dc";
-      pen.font = `800 ${Math.round(0.016 * scale)}px "Inter", sans-serif`;
-      pen.textAlign = "center";
-      pen.textBaseline = "middle";
-      pen.fillText(String(n), 0, 0);
-      pen.restore();
-    });
-    // The gold line between the pockets and the band of numbers.
-    pen.strokeStyle = "#d9b45a";
-    pen.lineWidth = 3;
-    pen.beginPath();
-    pen.arc(c, c, band * scale, 0, Math.PI * 2);
-    pen.stroke();
-  });
-}
-/** A chip's face: its colour, the inserts round its rim and its value in an inlay. */
-function chipFace(keep: Keep, value: number) {
-  const p = CHIP_PAINT[value];
-  return canvasTexture(keep, 256, 256, (pen) => {
-    pen.fillStyle = p.body;
-    pen.beginPath();
-    pen.arc(128, 128, 128, 0, Math.PI * 2);
-    pen.fill();
-    pen.fillStyle = p.stripe;
-    for (let k = 0; k < 6; k++) {
-      pen.save();
-      pen.translate(128, 128);
-      pen.rotate((k * Math.PI) / 3);
-      pen.fillRect(-14, -128, 28, 34);
-      pen.restore();
-    }
-    pen.fillStyle = "#f6f1e4";
-    pen.beginPath();
-    pen.arc(128, 128, 70, 0, Math.PI * 2);
-    pen.fill();
-    pen.strokeStyle = p.stripe === "#f4efe2" ? p.body : p.stripe;
-    pen.lineWidth = 5;
-    pen.setLineDash([10, 8]);
-    pen.beginPath();
-    pen.arc(128, 128, 84, 0, Math.PI * 2);
-    pen.stroke();
-    pen.fillStyle = p.ink;
-    pen.font = `900 ${value >= 100 ? 60 : 72}px "Inter", sans-serif`;
-    pen.textAlign = "center";
-    pen.textBaseline = "middle";
-    pen.fillText(String(value), 128, 132);
+    // A fine gold line round the whole layout.
+    pen.strokeStyle = gold;
+    pen.lineWidth = 4;
+    pen.strokeRect(3, 3, width - 6, depth - 6);
   });
 }
 /** The chips that make up `amount`, largest first. */
@@ -209,44 +154,52 @@ export function chipsOf(amount: number) {
 }
 
 /**
- * The roulette table (see `rules.ts` and `sim.ts`): a casino's green table, the betting layout printed on its felt and
- * the wheel at its left end, under warm lamps. A tap on the layout bets the chosen chip there (the spot under it, by
- * `spotAt`); the chips, the bets' buttons and the recent numbers stand over the table's foot (the page's own controls,
- * which play their moves through `onMove`). A spin is shown from the state's seed: the camera comes down over the
- * wheel, the rotor turns and the ball runs round, drops, clicks over the frets and rests in the pocket the rules have
- * already counted; then the camera goes back to the layout, where a marker stands on the number and the winning bets
- * glow.
+ * The roulette table (see `rules.ts` and `sim.ts`): a casino's table at night, the betting layout printed on its
+ * baize and the wheel (`wheel.ts`) at its left end, under a long lamp (`room.ts`). A tap on the layout bets the chosen
+ * chip there (the spot under it, by `spotAt`); the chips, the bets' buttons and the recent numbers stand over the
+ * table's foot (the page's own controls, which play their moves through `onMove`). A spin is shown from the state's
+ * seed: the camera comes down over the wheel and drifts round it while the rotor turns and the ball runs round,
+ * drops, clicks over the diamonds and frets and comes to rest in the pocket the rules have already counted; the
+ * camera leans in to the pocket, then goes back to the layout, where the dolly is set on the number, the losing chips
+ * are swept to the chip float and the winnings are paid out beside the winning bets.
  */
 export class RouletteView extends TableView<State> {
   private wheel = new T.Group();
-  private rotor = new T.Group();
+  private rotor: T.Group;
   private ball: T.Mesh;
-  private chips = new T.Group();
-  private chipGeometry: T.CylinderGeometry;
-  private chipMaterials = new Map<number, T.Material[]>();
+  private kit: ChipKit;
+  private pile: ChipPile;
+  private bank: ChipPile;
   private dolly: T.Group;
   private glow: T.Mesh;
+  private rings = new T.Group();
   private ghost: T.Mesh;
   private cursor: T.Mesh;
   private hovered = -1;
-  /** 0 over the layout, 1 down over the wheel. */
+  /** 0 over the layout, 1 down over the wheel; `close` leans in to the ball's pocket, `swing` turns round the wheel. */
   private focus = 0;
+  private close = 0;
+  private swing = 0;
   private tablePose = { position: new T.Vector3(), target: new T.Vector3() };
   private rotorAngle = 0;
   private ballSlot = -1;
   private spinning = false;
   /** While the ball runs: the state before the spin, which the table and the bar keep showing (the number is not told before it is seen). */
   private spinFrom: State | null = null;
+  /** Where the croupier's float keeps its columns of chips (lost chips go to them, winnings come from them). */
+  private float: { x: number; z: number; w: number; d: number };
   private bar: HTMLElement;
   private history: HTMLElement;
   onKnock?: ((kind: string, strength: number) => void) | null;
   constructor(host: HTMLElement, quality: "high" | "low") {
-    super(host, quality, "#140e0b");
+    super(host, quality, "#120c0a");
     const rich = capable(),
       keep: Keep = (r) => this.own(r);
-    this.scene.add(new T.HemisphereLight("#ffe9cf", "#2b1a12", 1.35));
-    const lamp = new T.DirectionalLight("#fff0d8", 2.1);
-    lamp.position.set(-1.5, 9, 4.5);
+    // The far room fades into the dark (where a graphics card draws; the processor is spared the per-pixel fog).
+    if (rich) this.scene.fog = new T.Fog("#120c0a", 14, 30);
+    this.scene.add(new T.HemisphereLight("#ffe7c8", "#2a1410", 1.25));
+    const lamp = new T.DirectionalLight("#fff0d8", 2.0);
+    lamp.position.set(-1.5, 9, 3.5);
     lamp.castShadow = rich;
     lamp.shadow.mapSize.set(2048, 2048);
     lamp.shadow.camera.left = -6;
@@ -256,38 +209,103 @@ export class RouletteView extends TableView<State> {
     lamp.shadow.normalBias = 0.02;
     this.own(lamp.shadow);
     this.scene.add(lamp);
-    if (!rich) this.renderer.shadowMap.enabled = false;
-    this.room(keep, rich);
-    this.table(keep);
-    this.buildWheel(keep, rich);
-    this.chipGeometry = keep(new T.CylinderGeometry(CHIP_R, CHIP_R, CHIP_H, rich ? 40 : 24));
-    for (const value of CHIPS) {
-      const face = keep(glossy({ map: chipFace(keep, value), roughness: 0.4 }, 0.4)),
-        rim = keep(new T.MeshStandardMaterial({ color: CHIP_PAINT[value].body, roughness: 0.5 }));
-      this.chipMaterials.set(value, [rim, face, face]);
-    }
-    this.scene.add(this.chips);
-    // The marker on the winning number: a little glass column with a gold cap; and the cell's glow under it.
+    if (rich) {
+      // The lamp's pools of light on the wheel and on the layout.
+      for (const [x, z, power] of [
+        [WHEEL_AT.x, WHEEL_AT.z, 26],
+        [FELT_AT.x, FELT_AT.z + 0.1, 18],
+      ] as const) {
+        const spot = new T.SpotLight("#ffe2b4", power, 9, 0.55, 0.65, 1.4);
+        spot.position.set(x, 4.2, z + 0.4);
+        spot.target.position.set(x, 0, z);
+        this.scene.add(spot, spot.target);
+      }
+    } else this.renderer.shadowMap.enabled = false;
+    const room = buildRoom(this.scene, keep, rich);
+    this.float = room.float;
+    // The wheel.
+    this.wheel.position.set(WHEEL_AT.x, WHEEL_BASE, WHEEL_AT.z);
+    this.wheel.scale.setScalar(WHEEL_SCALE);
+    const wheel = buildWheel(keep, rich, -WHEEL_BASE / WHEEL_SCALE);
+    this.rotor = wheel.rotor;
+    this.wheel.add(wheel.stator, wheel.rotor);
+    this.scene.add(this.wheel);
+    // The layout printed on the baize.
+    const print = new T.Mesh(keep(new T.PlaneGeometry(FELT.right - FELT.left, FELT.near - FELT.far)), keep(new T.MeshStandardMaterial({ map: feltTexture(keep), roughness: 0.92 })));
+    print.rotation.x = -Math.PI / 2;
+    print.position.set(FELT_AT.x + (FELT.left + FELT.right) / 2, FELT_Y - 0.001, FELT_AT.z + (FELT.far + FELT.near) / 2);
+    print.receiveShadow = true;
+    this.scene.add(print);
+    if (!rich)
+      // Where the processor draws, a picture seen at a slant is not filtered more finely than the old table's were
+      // (anisotropic filtering costs it dearly): only the layout keeps its fine filtering.
+      this.scene.traverse((thing) => {
+        const material = (thing as T.Mesh).material as T.MeshStandardMaterial | undefined;
+        for (const m of Array.isArray(material) ? material : material ? [material] : []) if (m.map && thing !== print) m.map.anisotropy = 1;
+      });
+    // The chips: those on the layout (and on their way), and the float's columns.
+    this.kit = new ChipKit(keep, rich);
+    this.pile = new ChipPile(this.kit, keep, rich, 260);
+    this.bank = new ChipPile(this.kit, keep, false, 120);
+    this.scene.add(this.pile.group, this.bank.group, this.rings);
+    this.bank.begin();
+    room.columns.forEach((c, k) => {
+      const value = CHIPS[3 - Math.floor(k / 2)],
+        high = (rich ? 9 : 6) + ((k * 5) % 4);
+      for (let n = 0; n < high; n++) this.bank.put(value, c.x + Math.sin(n * 2.1 + k) * 0.003, 0.03 + CHIP_H * (n + 0.5), c.z + Math.cos(n * 1.3 + k) * 0.003, n * 0.7 + k);
+    });
+    this.bank.end();
+    this.pile.begin();
+    this.pile.end();
+    // The dolly on the winning number: a cut-glass column under a gold crown; and the cell's glow under it.
     this.dolly = new T.Group();
-    const glass = new T.Mesh(keep(new T.CylinderGeometry(0.06, 0.075, 0.2, 24)), keep(new T.MeshStandardMaterial({ color: "#e8f4ff", transparent: true, opacity: 0.55, roughness: 0.05, metalness: 0.1 })));
-    glass.position.y = 0.1;
-    const cap = new T.Mesh(keep(new T.CylinderGeometry(0.068, 0.06, 0.04, 24)), keep(new T.MeshStandardMaterial({ color: "#e2b64c", metalness: 0.85, roughness: 0.25 })));
-    cap.position.y = 0.22;
-    this.dolly.add(glass, cap);
+    const glassShape = [
+        [0.0, 0.0],
+        [0.07, 0.0],
+        [0.075, 0.012],
+        [0.055, 0.03],
+        [0.05, 0.16],
+        [0.062, 0.18],
+        [0.062, 0.19],
+        [0.0, 0.19],
+      ].map(([r, y]) => new T.Vector2(r, y)),
+      glass = new T.Mesh(
+        keep(new T.LatheGeometry(glassShape, rich ? 12 : 8)),
+        keep(new T.MeshStandardMaterial({ color: "#e4f0ff", transparent: true, opacity: 0.55, roughness: 0.06, metalness: 0.2, flatShading: true })),
+      ),
+      crown = new T.Mesh(
+        keep(
+          new T.LatheGeometry(
+            [
+              [0.0, 0.19],
+              [0.064, 0.19],
+              [0.068, 0.2],
+              [0.05, 0.215],
+              [0.03, 0.225],
+              [0.02, 0.245],
+              [0.0, 0.25],
+            ].map(([r, y]) => new T.Vector2(r, y)),
+            rich ? 24 : 12,
+          ),
+        ),
+        metal(keep, rich, "#e2b64c", 0.22),
+      );
+    glass.castShadow = crown.castShadow = rich;
+    this.dolly.add(glass, crown);
     this.dolly.visible = false;
     this.scene.add(this.dolly);
     this.glow = new T.Mesh(keep(new T.PlaneGeometry(W * 0.92, H * 0.92)), keep(new T.MeshBasicMaterial({ color: "#ffe680", transparent: true, opacity: 0.35, depthWrite: false })));
     this.glow.rotation.x = -Math.PI / 2;
     this.glow.visible = false;
     this.scene.add(this.glow);
-    this.ghost = new T.Mesh(this.chipGeometry, keep(new T.MeshBasicMaterial({ color: "#fff6cf", transparent: true, opacity: 0.45, depthWrite: false })));
+    this.ghost = new T.Mesh(this.kit.geometry, keep(new T.MeshBasicMaterial({ color: "#fff6cf", transparent: true, opacity: 0.45, depthWrite: false })));
     this.ghost.visible = false;
     this.scene.add(this.ghost);
     this.cursor = new T.Mesh(keep(new T.RingGeometry(CHIP_R * 1.15, CHIP_R * 1.45, 32)), keep(new T.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.9, depthWrite: false, side: T.DoubleSide })));
     this.cursor.rotation.x = -Math.PI / 2;
     this.cursor.visible = false;
     this.scene.add(this.cursor);
-    this.ball = new T.Mesh(keep(new T.SphereGeometry(BALL_R * WHEEL_SCALE, 20, 14)), keep(glossy({ color: "#f8f6f0", roughness: 0.18 }, 0.8)));
+    this.ball = new T.Mesh(keep(new T.SphereGeometry(BALL_R * WHEEL_SCALE, rich ? 28 : 18, rich ? 18 : 12)), ballMaterial(keep, rich));
     this.ball.castShadow = rich;
     this.ball.visible = false;
     this.scene.add(this.ball);
@@ -310,132 +328,6 @@ export class RouletteView extends TableView<State> {
     this.history.setAttribute("aria-label", "최근 나온 숫자");
     host.append(this.bar, this.history);
     this.begin();
-  }
-  private room(keep: Keep, rich: boolean) {
-    // A dark carpet and a panelled wall, warm lamps hanging over the table.
-    const carpet = new T.Mesh(keep(new T.PlaneGeometry(40, 30)), keep(new T.MeshStandardMaterial({ color: "#3a1418", roughness: 0.95 })));
-    carpet.rotation.x = -Math.PI / 2;
-    carpet.position.y = -1.0;
-    carpet.receiveShadow = true;
-    this.scene.add(carpet);
-    const wall = new T.Mesh(keep(new T.PlaneGeometry(40, 12)), keep(new T.MeshStandardMaterial({ color: "#4a2a1c", roughness: 0.85 })));
-    wall.position.set(0, 4, -7);
-    this.scene.add(wall);
-    const brass = keep(new T.MeshStandardMaterial({ color: "#c9a04a", metalness: 0.8, roughness: 0.3 })),
-      shade = keep(new T.MeshStandardMaterial({ color: "#1f4a33", roughness: 0.6, side: T.DoubleSide, emissive: "#3a2a10", emissiveIntensity: 0.3 })),
-      bulb = keep(new T.MeshBasicMaterial({ color: "#ffe2a8" }));
-    for (const x of [-3.6, -0.6, 1.9]) {
-      const hood = new T.Mesh(keep(new T.ConeGeometry(0.55, 0.32, 24, 1, true)), shade);
-      hood.position.set(x, 4.3, -0.6);
-      const glow = new T.Mesh(keep(new T.SphereGeometry(0.12, 12, 8)), bulb);
-      glow.position.set(x, 4.15, -0.6);
-      const rod = new T.Mesh(keep(new T.CylinderGeometry(0.015, 0.015, 3, 6)), brass);
-      rod.position.set(x, 5.9, -0.6);
-      this.scene.add(hood, glow, rod);
-      if (rich) {
-        const light = new T.PointLight("#ffd9a0", 4, 7, 1.6);
-        light.position.set(x, 4.0, -0.6);
-        this.scene.add(light);
-      }
-    }
-  }
-  private table(keep: Keep) {
-    const w = TABLE.right - TABLE.left,
-      d = TABLE.near - TABLE.far,
-      cx = (TABLE.left + TABLE.right) / 2,
-      cz = (TABLE.far + TABLE.near) / 2;
-    const felt = new T.Mesh(keep(new T.BoxGeometry(w, 0.2, d)), keep(new T.MeshStandardMaterial({ color: "#0f5a35", roughness: 0.92, ...weave(w / 2, d / 2, keep, 0.6) })));
-    felt.position.set(cx, -0.1, cz);
-    felt.receiveShadow = true;
-    this.scene.add(felt);
-    // The padded rail round it, and the wooden apron under it.
-    const rail = keep(glossy({ color: "#3a2014", roughness: 0.35 }, 0.6)),
-      apron = keep(new T.MeshStandardMaterial({ map: keep(wood(true)), roughness: 0.6 }));
-    const side = (sx: number, sz: number, x: number, z: number) => {
-      const mesh = new T.Mesh(keep(block(sx, 0.16, sz, 0.07)), rail);
-      mesh.position.set(x, 0.04, z);
-      mesh.castShadow = true;
-      this.scene.add(mesh);
-    };
-    side(w + 0.5, 0.25, cx, TABLE.near + 0.12);
-    side(w + 0.5, 0.25, cx, TABLE.far - 0.12);
-    side(0.25, d, TABLE.left - 0.12, cz);
-    side(0.25, d, TABLE.right + 0.12, cz);
-    const body = new T.Mesh(keep(new T.BoxGeometry(w + 0.4, 0.8, d + 0.4)), apron);
-    body.position.set(cx, -0.6, cz);
-    this.scene.add(body);
-    const print = new T.Mesh(keep(new T.PlaneGeometry(FELT.right - FELT.left, FELT.near - FELT.far)), keep(new T.MeshStandardMaterial({ map: feltTexture(keep), roughness: 0.9, transparent: false })));
-    print.rotation.x = -Math.PI / 2;
-    print.position.set(FELT_AT.x + (FELT.left + FELT.right) / 2, FELT_Y - 0.001, FELT_AT.z + (FELT.far + FELT.near) / 2);
-    print.receiveShadow = true;
-    this.scene.add(print);
-  }
-  /** The wheel in its own metres (`sim.ts`): the wooden bowl, the track, the cone with its diamonds, the rotor with its pockets, frets and turret. */
-  private buildWheel(keep: Keep, rich: boolean) {
-    const g = this.wheel;
-    g.position.set(WHEEL_AT.x, WHEEL_BASE, WHEEL_AT.z);
-    g.scale.setScalar(WHEEL_SCALE);
-    this.scene.add(g);
-    const base = -WHEEL_BASE / WHEEL_SCALE,
-      bowl = keep(new T.MeshStandardMaterial({ map: keep(wood(true)), roughness: 0.45, side: T.DoubleSide })),
-      track = keep(glossy({ color: "#5b3420", roughness: 0.28, side: T.DoubleSide }, 0.7)),
-      cone = keep(new T.MeshStandardMaterial({ color: "#d9c7a4", roughness: 0.5, side: T.DoubleSide })),
-      chrome = keep(new T.MeshStandardMaterial({ color: "#e8e8ec", metalness: 0.95, roughness: 0.18 }));
-    const lathe = (points: [number, number][], material: T.Material) => {
-      const mesh = new T.Mesh(keep(new T.LatheGeometry(points.map(([r, y]) => new T.Vector2(r, y)), rich ? 96 : 56)), material);
-      mesh.receiveShadow = true;
-      g.add(mesh);
-      return mesh;
-    };
-    // The bowl: from the table up its outside, over the rim and down its inner wall to the track.
-    lathe([[0.47, base], [0.475, 0.04], [0.468, 0.08], [0.448, 0.088], [0.43, 0.085], [0.392, 0.078]], bowl).castShadow = true;
-    // The track (where the ball runs), banked toward the cone.
-    lathe([[0.392, 0.078], [0.388, 0.06], [TRACK_R, 0.05 - BALL_R * 0.4], [CONE_OUT + 0.004, 0.042]], track);
-    // The cone down to the rotor.
-    lathe([[CONE_OUT + 0.004, 0.042], [CONE_OUT, 0.04], [RIM + 0.004, 0.006], [RIM + 0.003, -0.002]], cone);
-    for (const [k, a] of DIAMONDS.entries()) {
-      const diamond = new T.Mesh(keep(new T.OctahedronGeometry(DIAMOND_SIZE, 0)), chrome),
-        y = 0.004 + (0.036 * (DIAMOND_R - RIM)) / (CONE_OUT - RIM);
-      diamond.position.set(Math.cos(a) * DIAMOND_R, y + 0.004, -Math.sin(a) * DIAMOND_R);
-      diamond.scale.set(k % 2 ? 1.6 : 0.8, 0.5, k % 2 ? 0.8 : 1.6);
-      diamond.rotation.y = a;
-      g.add(diamond);
-    }
-    // The rotor, turned by the spin.
-    g.add(this.rotor);
-    const pockets = new T.Mesh(keep(new T.RingGeometry(POCKET_IN * 0.96, RIM, rich ? 148 : 74, 1)), keep(new T.MeshStandardMaterial({ map: pocketTexture(keep), roughness: 0.45 })));
-    pockets.rotation.x = -Math.PI / 2;
-    pockets.position.y = -0.012;
-    this.rotor.add(pockets);
-    const rimWall = new T.Mesh(keep(new T.CylinderGeometry(RIM + 0.002, RIM + 0.002, 0.016, rich ? 96 : 56, 1, true)), chrome);
-    rimWall.position.y = -0.004;
-    this.rotor.add(rimWall);
-    const fretGeometry = keep(new T.BoxGeometry(RIM - POCKET_IN, 0.011, 0.0022));
-    for (let k = 0; k < ORDER.length; k++) {
-      const a = k * SLOT,
-        fret = new T.Mesh(fretGeometry, chrome),
-        r = (RIM + POCKET_IN) / 2;
-      fret.position.set(Math.cos(a) * r, -0.0065, -Math.sin(a) * r);
-      fret.rotation.y = a;
-      this.rotor.add(fret);
-    }
-    // The turret: a polished dome in the middle, a spindle and a cross with knobs.
-    const dome = new T.Mesh(keep(new T.CylinderGeometry(0.05, POCKET_IN, 0.04, rich ? 64 : 40)), keep(glossy({ map: keep(wood(false)), roughness: 0.3 }, 0.6)));
-    dome.position.y = 0.008;
-    this.rotor.add(dome);
-    const spindle = new T.Mesh(keep(new T.CylinderGeometry(0.012, 0.03, 0.09, 20)), chrome);
-    spindle.position.y = 0.07;
-    this.rotor.add(spindle);
-    for (let k = 0; k < 4; k++) {
-      const arm = new T.Mesh(keep(new T.CylinderGeometry(0.005, 0.005, 0.14, 10)), chrome),
-        a = (k * Math.PI) / 2;
-      arm.rotation.z = Math.PI / 2;
-      arm.rotation.y = a;
-      arm.position.set(Math.cos(a) * 0.07, 0.09, -Math.sin(a) * 0.07);
-      const knob = new T.Mesh(keep(new T.SphereGeometry(0.012, 12, 8)), chrome);
-      knob.position.set(Math.cos(a) * 0.14, 0.09, -Math.sin(a) * 0.14);
-      this.rotor.add(arm, knob);
-    }
   }
   protected subject(aspect: number): TableSubject {
     return betSubject(aspect);
@@ -464,7 +356,14 @@ export class RouletteView extends TableView<State> {
       this.ghost.position.set(p.x, p.y + CHIP_H * (height + 0.5), p.z);
     }
   }
-  /** The camera between its pose over the layout and its pose over the wheel. */
+  /** The ball's place in the world now. */
+  private ballAt() {
+    return this.ball.position.clone();
+  }
+  /**
+   * The camera between its pose over the layout and its pose over the wheel: over the wheel it stands where
+   * `swing` turns it round the wheel's middle, and `close` brings it down toward the ball in its pocket.
+   */
   private aimCamera() {
     const p = ease(this.focus);
     this.renderer.domElement.dataset.focus = this.focus.toFixed(2);
@@ -475,8 +374,14 @@ export class RouletteView extends TableView<State> {
     }
     const aspect = this.camera.aspect,
       d = cameraDistance(aspect, false, WHEEL_SUBJECT),
-      target = new T.Vector3(WHEEL_AT.x, WHEEL_BASE + WHEEL_SUBJECT.lookY, WHEEL_AT.z),
-      position = new T.Vector3(WHEEL_AT.x, WHEEL_BASE + Math.sin(WHEEL_SUBJECT.tilt) * d, WHEEL_AT.z + Math.cos(WHEEL_SUBJECT.tilt) * d);
+      c = ease(this.close),
+      // The middle a little toward the viewer, so the wheel stands clear above the bar of chips at the foot.
+      middle = new T.Vector3(WHEEL_AT.x + Math.sin(this.swing) * 0.2, WHEEL_BASE + WHEEL_SUBJECT.lookY, WHEEL_AT.z + Math.cos(this.swing) * 0.2),
+      target = middle.clone().lerp(this.ballAt(), c * 0.85),
+      tilt = WHEEL_SUBJECT.tilt + c * 0.22,
+      reach = d * (1 - 0.42 * c),
+      way = new T.Vector3(Math.sin(this.swing) * Math.cos(tilt), Math.sin(tilt), Math.cos(this.swing) * Math.cos(tilt)),
+      position = target.clone().addScaledVector(way, reach);
     this.camera.position.lerpVectors(this.tablePose.position, position, p);
     this.camera.lookAt(new T.Vector3().lerpVectors(this.tablePose.target, target, p));
   }
@@ -497,7 +402,7 @@ export class RouletteView extends TableView<State> {
     const a = this.rotorAngle + (slot + 0.5) * SLOT,
       r = POCKET_IN + BALL_R;
     this.ball.visible = true;
-    this.ball.position.set(WHEEL_AT.x + Math.cos(a) * r * WHEEL_SCALE, WHEEL_BASE + (-0.012 + BALL_R) * WHEEL_SCALE, WHEEL_AT.z - Math.sin(a) * r * WHEEL_SCALE);
+    this.ball.position.set(WHEEL_AT.x + Math.cos(a) * r * WHEEL_SCALE, WHEEL_BASE + (floorY(r) + BALL_R) * WHEEL_SCALE, WHEEL_AT.z - Math.sin(a) * r * WHEEL_SCALE);
   }
   private poseFrame(f: Frame) {
     this.renderer.domElement.dataset.ball = f.phase;
@@ -506,51 +411,59 @@ export class RouletteView extends TableView<State> {
     this.ball.visible = true;
     this.ball.position.set(WHEEL_AT.x + f.x * WHEEL_SCALE, WHEEL_BASE + (f.y + BALL_R) * WHEEL_SCALE, WHEEL_AT.z + f.z * WHEEL_SCALE);
   }
-  /** The chips on the layout, as `bets` has them (glowing for the bets that won, after a spin). */
+  /** Where the chips of a stack at a spot go: the bet at the spot, the winnings in a stack just right of it. */
+  private stackAt(id: number, winnings = false) {
+    const p = spotPlace(id);
+    return winnings ? { x: p.x + CHIP_R * 1.55, z: p.z + CHIP_R * 0.55 } : { x: p.x, z: p.z };
+  }
+  /** Lays `amount` as chips in a stack (and another beside it when tall) at (x, z); `jitter` keeps each stack its own. */
+  private lay(amount: number, x: number, z: number, key: number) {
+    const list = chipsOf(amount);
+    list.forEach((value, k) => {
+      const column = Math.floor(k / STACK_MOST),
+        n = k % STACK_MOST;
+      if (column > 1) return;
+      this.pile.put(value, x + column * CHIP_R * 2.05 + Math.sin(k * 2.3 + key) * 0.005, FELT_Y + CHIP_H * (n + 0.5), z + Math.cos(k * 1.7 + key) * 0.005, k * 0.9 + key);
+    });
+  }
+  /** The chips on the layout, as `bets` has them (with the winnings beside the bets that won, after a spin). */
   private stack(bets: number[], won: Set<number> | null) {
-    for (const child of [...this.chips.children]) child.removeFromParent();
+    this.pile.begin();
+    for (const child of [...this.rings.children]) child.removeFromParent();
     bets.forEach((amount, id) => {
       if (amount <= 0) return;
-      const p = spotPlace(id),
-        // Largest at the bottom; only the top `STACK_MOST` are shown.
-        list = chipsOf(amount).slice(-STACK_MOST);
-      list.forEach((value, k) => {
-        const chip = new T.Mesh(this.chipGeometry, this.chipMaterials.get(value)!);
-        chip.position.set(p.x + Math.sin(k * 2.3 + id) * 0.006, p.y + CHIP_H * (k + 0.5), p.z + Math.cos(k * 1.7 + id) * 0.006);
-        chip.rotation.y = k * 0.9 + id;
-        chip.castShadow = true;
-        this.chips.add(chip);
-      });
+      const at = this.stackAt(id);
+      this.lay(amount, at.x, at.z, id);
       if (won?.has(id)) {
+        const pay = this.stackAt(id, true);
+        this.lay(amount * payoutOf(SPOTS[id].numbers.length), pay.x, pay.z, id + 7);
         const ring = new T.Mesh(this.cursor.geometry, this.glow.material);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(p.x, p.y + 0.002, p.z);
+        ring.position.set(at.x, FELT_Y + 0.002, at.z);
         ring.scale.setScalar(1.05);
-        this.chips.add(ring);
+        this.rings.add(ring);
       }
     });
+    this.pile.end();
   }
   protected place(now: State) {
     // A spin whose animation was cut off (the table laid out afresh while it ran) is over: the ball goes to its pocket.
     if (this.spinning && !this.animating) {
       this.spinning = false;
       this.spinFrom = null;
+      this.close = 0;
+      this.swing = 0;
       this.onKnock?.("roll", 0);
     }
     const state = this.spinning && this.spinFrom ? this.spinFrom : now,
       r = state.result,
       showing = !!r && staked(state) === 0;
-    // After a spin the losing chips are swept away; the winning bets stay, glowing, until the next bet is laid.
+    // After a spin the losing chips are gone to the float; the winning bets stay, glowing, their winnings beside them, until the next bet is laid.
     const won = new Set(r?.won ?? []);
     this.stack(showing ? (state.lastBets ?? state.bets).map((amount, id) => (won.has(id) ? amount : 0)) : state.bets, showing ? won : null);
-    // The marker stays on the last number until then too.
+    // The dolly stays on the last number until then too.
     this.dolly.visible = this.glow.visible = showing;
-    if (showing) {
-      const c = cellOf(r!.number);
-      this.dolly.position.set(c.x + FELT_AT.x, FELT_Y, c.z + FELT_AT.z);
-      this.glow.position.set(c.x + FELT_AT.x, FELT_Y + 0.001, c.z + FELT_AT.z);
-      this.glow.scale.set(r!.number === 0 ? 1 : 1, r!.number === 0 ? 3 : 1, 1);
-    }
+    if (showing) this.setDolly(r!.number, 1);
     if (!this.spinning) {
       this.focus = 0;
       this.aimCamera();
@@ -562,6 +475,18 @@ export class RouletteView extends TableView<State> {
     canvas.dataset.phase = this.spinning ? "spin" : "bet";
     canvas.dataset.result = r ? String(r.number) : "";
     canvas.dataset.spins = String(now.spins);
+  }
+  /** The dolly over `number`'s cell, `p` of the way down onto it (it is set down from above). */
+  private setDolly(number: number, p: number) {
+    const c = cellOf(number),
+      x = c.x + FELT_AT.x,
+      z = c.z + FELT_AT.z,
+      fall = 1 - ease(clamp01(p));
+    this.dolly.position.set(x, FELT_Y + 0.9 * fall, z);
+    this.dolly.visible = true;
+    this.glow.visible = p >= 1;
+    this.glow.position.set(x, FELT_Y + 0.001, z);
+    this.glow.scale.set(1, number === 0 ? 3 : 1, 1);
   }
   /** The bar's buttons, the balance and the recent numbers, as the state has them. */
   private controls(state: State) {
@@ -586,21 +511,77 @@ export class RouletteView extends TableView<State> {
     this.bar.querySelector(".rl-purse")!.innerHTML = `<span>칩 <b>${state.balance}</b></span><span>건 칩 <b>${on}</b></span>`;
     this.history.innerHTML = state.history.map((n, k) => `<i class="rl-n rl-${colourOf(n)}${k === 0 ? " rl-last" : ""}">${n}</i>`).join("");
   }
+  /**
+   * The croupier's settling, `ms` into it: the losing chips swept off to the float (one bet after another), the
+   * winnings counted out of the float and slid beside the bets that won, the dolly set down on the number.
+   */
+  private settle(ms: number, bets: number[], won: Set<number>, number: number) {
+    const float = this.float;
+    this.pile.begin();
+    let lost = 0,
+      paid = 0;
+    bets.forEach((amount, id) => {
+      if (amount <= 0) return;
+      const at = this.stackAt(id);
+      if (won.has(id)) {
+        this.lay(amount, at.x, at.z, id);
+        // The winnings: chip by chip out of the float, on an arc, onto their stack.
+        const pay = this.stackAt(id, true),
+          list = chipsOf(amount * payoutOf(SPOTS[id].numbers.length));
+        list.forEach((value, k) => {
+          const column = Math.floor(k / STACK_MOST),
+            n = k % STACK_MOST;
+          if (column > 1) return;
+          const start = 520 + paid * 45 + k * 32,
+            p = ease(clamp01((ms - start) / 420)),
+            from = { x: float.x - float.w / 2 + ((1 + 2 * (3 - CHIPS.indexOf(value))) / 8) * float.w, y: 0.3, z: float.z },
+            to = { x: pay.x + column * CHIP_R * 2.05, y: FELT_Y + CHIP_H * (n + 0.5), z: pay.z };
+          if (ms < start) return;
+          this.pile.put(value, from.x + (to.x - from.x) * p, from.y + (to.y - from.y) * p + Math.sin(Math.PI * p) * 0.35, from.z + (to.z - from.z) * p, k * 0.9 + id + 7);
+        });
+        paid++;
+        return;
+      }
+      // The lost bet: swept as one stack over the felt to the float, shrinking into it.
+      const start = lost * 90,
+        p = ease(clamp01((ms - start) / 560)),
+        to = { x: float.x + (((id * 37) % 7) - 3) * 0.2, z: float.z };
+      lost++;
+      if (p >= 1) return;
+      chipsOf(amount)
+        .slice(0, STACK_MOST)
+        .forEach((value, k) => this.pile.put(value, at.x + (to.x - at.x) * p, FELT_Y + CHIP_H * (k + 0.5) + Math.sin(Math.PI * p) * 0.06, at.z + (to.z - at.z) * p, k * 0.9 + id, 0, 1 - 0.35 * p));
+    });
+    this.pile.end();
+    this.setDolly(number, ms / 320);
+  }
   protected animate(before: State, state: State) {
     if (state.spins !== before.spins + 1 || !state.result) return false;
     const spin = runSpin(state.result.seed),
       frames = spin.frames,
       run = spin.time * 1000,
-      total = TO_WHEEL + run + LOOK + BACK;
+      settleAt = TO_WHEEL + run + LOOK + BACK,
+      total = settleAt + SETTLE,
+      bets = before.bets,
+      won = new Set(state.result.won),
+      number = state.result.number,
+      anyLost = bets.some((amount, id) => amount > 0 && !won.has(id));
     this.spinning = true;
     this.spinFrom = { ...before, result: null };
     this.ghost.visible = this.cursor.visible = false;
+    this.dolly.visible = this.glow.visible = false;
+    for (const child of [...this.rings.children]) child.removeFromParent();
     this.renderer.domElement.dataset.phase = "spin";
-    let shown = 0;
+    let shown = 0,
+      swept = false,
+      counted = false;
     this.poseFrame(frames[0]);
     this.tween(0, total, (p) => {
       const ms = p * total;
-      this.focus = ms < TO_WHEEL ? ms / TO_WHEEL : ms < TO_WHEEL + run + LOOK ? 1 : 1 - (ms - TO_WHEEL - run - LOOK) / BACK;
+      this.focus = ms < TO_WHEEL ? ms / TO_WHEEL : ms < TO_WHEEL + run + LOOK ? 1 : clamp01(1 - (ms - TO_WHEEL - run - LOOK) / BACK);
+      // The camera drifts round the wheel while the ball runs, and leans in to its pocket once it lies there.
+      this.swing = -0.32 + 0.5 * clamp01((ms - TO_WHEEL) / Math.max(1, run + LOOK));
+      this.close = ms < TO_WHEEL + run ? 0 : ms < TO_WHEEL + run + LOOK ? clamp01((ms - TO_WHEEL - run) / 700) : clamp01(1 - (ms - TO_WHEEL - run - LOOK) / BACK);
       const t = Math.max(0, ms - TO_WHEEL) / 1000,
         index = Math.min(frames.length - 1, Math.floor(t * 60));
       for (; shown <= index; shown++) this.hear(frames[shown]);
@@ -610,11 +591,22 @@ export class RouletteView extends TableView<State> {
       const next = frames[Math.min(frames.length - 1, index + 1)],
         speed = Math.hypot(next.x - f.x, next.z - f.z) * 60;
       this.onKnock?.("roll", f.phase === "rest" || ms > TO_WHEEL + run ? 0 : Math.min(1, speed / 5));
+      if (ms >= settleAt) {
+        if (!swept && anyLost) this.onKnock?.("sweep", 1);
+        swept = true;
+        if (!counted && state.result!.paid > 0 && ms >= settleAt + 520) {
+          counted = true;
+          this.onKnock?.("pay", 1);
+        }
+        this.settle(ms - settleAt, bets, won, number);
+      }
       if (p >= 1) {
         this.spinning = false;
         this.spinFrom = null;
+        this.close = 0;
         this.onKnock?.("roll", 0);
         if (state.result!.paid > 0) this.onKnock?.("win", Math.min(1, state.result!.paid / 200));
+        this.place(state);
       }
       this.aimCamera();
     });
@@ -624,7 +616,8 @@ export class RouletteView extends TableView<State> {
   }
   private hear(f: Frame) {
     for (const e of f.events) {
-      if (e.kind === "diamond") this.onKnock?.("diamond", e.strength);
+      if (e.kind === "drop") this.onKnock?.("drop", 1);
+      else if (e.kind === "diamond") this.onKnock?.("diamond", e.strength);
       else if (e.kind === "fret") this.onKnock?.("fret", e.strength);
       else if (e.kind === "rotor") this.onKnock?.("fret", 0.5);
       else if (e.kind === "rest") this.onKnock?.("rest", 1);
