@@ -270,6 +270,32 @@ test("gold raid: on a touch screen the lever runs (the further the faster) and j
   expect(errors).toEqual([]);
 });
 
+test("gold raid: a blow throws the other up into the air (no stun), and it is struck on while it is up", async ({ page }) => {
+  test.setTimeout(240_000);
+  const errors = await sit(page, "local");
+  // The second walks to the middle, the first up to it (facing it).
+  await run(page, "ArrowLeft", -1, 6.5, 1);
+  const bx = (await men(page))[1][0];
+  await run(page, "KeyD", 1, bx - 0.95 - (await men(page))[0][0]);
+  const [a, b] = await men(page);
+  expect(b[0] - a[0]).toBeGreaterThan(0.2);
+  expect(b[0] - a[0]).toBeLessThan(1.2);
+  // Every number the canvas tells of the second's being flung, kept.
+  await page.evaluate(() => {
+    const el = document.querySelector<HTMLCanvasElement>("#board canvas")!;
+    const w = window as unknown as { flungMost: number };
+    w.flungMost = 0;
+    new MutationObserver(() => (w.flungMost = Math.max(w.flungMost, Number((el.dataset.flung ?? "0,0").split(",")[1])))).observe(el, { attributes: true, attributeFilter: ["data-flung"] });
+  });
+  // The first strikes again and again as fast as its sword allows.
+  for (let k = 0; k < 10; k++) await press(page, "KeyF");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { flungMost: number }).flungMost), { timeout: 20_000 }).toBeGreaterThanOrEqual(2);
+  await expect(canvas(page)).toHaveAttribute("data-stun", "0,0");
+  // It comes down again.
+  await expect(canvas(page)).toHaveAttribute("data-flung", "0,0", { timeout: 20_000 });
+  expect(errors).toEqual([]);
+});
+
 test("gold raid: two at one screen each move their own bandit with their own keys", async ({ page }, info) => {
   const errors = await sit(page, "local");
   await expect(canvas(page)).toHaveAttribute("data-two", "true");

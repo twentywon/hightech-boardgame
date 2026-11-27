@@ -2,7 +2,7 @@ import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { HOST_ONLY } from "../../net/match";
 import { TARGETS, TIMED, TIMED_SECONDS, goldRaid, type State } from "./rules";
-import { BOMB_SHARE, CAP, CART, KINDS, LOAD_SLOW, RAID } from "./sim";
+import { BOMB_SHARE, CAP, CART, KINDS, LOAD_SLOW, RAID, RISE } from "./sim";
 import { GOLD_RAID_COLORS, GoldRaidView } from "./view";
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
@@ -107,7 +107,7 @@ export const goldRaidConfig: PointConfig<State> = {
     part(
       "검",
       table(
-        ["상대를 치기", `가까이서 치면 상대가 잠깐 기절하고 자루의 금화를 모두 길에 흘립니다('강탈!'). 흘린 금화는 먼저 줍는 사람이 임자입니다. 쓰러져 있는 동안은 다시 맞지 않고 폭탄에도 휘말리지 않지만, 일어나면 곧바로 다시 맞을 수 있습니다. 대신 친 쪽은 검을 다시 휘두르기까지 상대가 일어나는 것보다 조금 더 걸립니다.`],
+        ["상대를 치기", `가까이서 치면 상대가 자루의 금화를 모두 길에 흘리고('강탈!') 공중으로 떠오릅니다. 떠 있는 동안은 아무것도 못 하고, 검이 준비되는 대로 또 칠 수 있습니다('2연타!', '3연타!'…). 칠 때마다 조금씩 낮게 떠서 결국 땅에 내려오고, 내려온 사람은 잠깐(${RISE}초) 다시 띄워지지 않습니다. 흘린 금화는 먼저 줍는 사람이 임자입니다. 폭탄에 기절한 상대도 칠 수 있습니다.`],
         ["대상의 수레", `가끔 방울 소리를 내며 소 수레가 길을 지나갑니다(알림 글은 뜨지 않으니 띠 지도를 보세요). 한 판 동안 수레는 늘 같은 쪽 끝에서 옵니다(어느 쪽인지는 판마다 정해짐). 금화 ${CART.gold}을 싣고 있고, ${CART.per[0]}~${CART.per[1]}번 칠 때마다 금화 ${CART.shed}이 떨어집니다. 마지막 금화가 떨어지면 수레가 부서집니다.`],
         ["상대의 성문", `상대 성문을 치면 금고에서 금화 ${RAID}을 꺼내 옵니다('성문 습격!'). 대신 성에서 불단지가 떨어지니 얼른 피하세요. 성문은 잠시 잠깁니다.`],
       ),

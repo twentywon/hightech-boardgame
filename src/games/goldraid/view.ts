@@ -982,7 +982,9 @@ export class GoldRaidView extends TableView<State> {
         this.sparkle(o.x, o.y + 0.9, 8, 3);
         this.fx.emit("star", o.x, o.y + 1.2, 0.8, 4, { speed: 2.2, up: 1.2, size: 0.5, life: 0.5 });
         this.fx.emit("dust", o.x, o.y + 0.1, 0.5, 4, { speed: 1.2, up: 0.4, size: 0.35, life: 0.6 });
-        if (e.dropped > 0) this.say("강탈!", SIDE_COLORS[e.by]);
+        // Struck on in the air: the blows are counted.
+        if (e.combo >= 2) this.say(`${e.combo}연타!`, SIDE_COLORS[e.by]);
+        else if (e.dropped > 0) this.say("강탈!", SIDE_COLORS[e.by]);
       } else if (e.kind === "boom") {
         c.booms++;
         knock("boom");
@@ -1083,6 +1085,8 @@ export class GoldRaidView extends TableView<State> {
   /** A bandit's figure where the valley has it: its run, its jump, its swing, its sack, its daze. */
   private poseBandit(f: Figure, b: Bandit, t: number, moving: boolean, depth: number) {
     const stunned = b.stun > 0,
+      // Thrown up by a blow: it tumbles back, arms and legs flung out, till it lands.
+      flung = b.flung > 0,
       running = b.ground && Math.abs(b.vx) > 0.4,
       phase = b.stride * 5.2;
     // Coming down it squashes a moment and kicks up dust; going up it stretches a little.
@@ -1096,14 +1100,15 @@ export class GoldRaidView extends TableView<State> {
       squash = since < 0.2 ? Math.sin((since / 0.2) * Math.PI) * 0.14 : 0,
       stretch = !b.ground && b.vy > 1 ? Math.min(0.07, b.vy * 0.012) : 0;
     f.group.position.set(b.x, b.y, depth);
+    f.group.rotation.z = flung ? -Math.sign(b.vx || -b.face) * (0.75 + 0.35 * Math.sin(t * 13)) : 0;
     f.group.scale.set(b.face * DRAWN * (1 + squash * 0.6 - stretch * 0.5), DRAWN * (1 - squash + stretch), DRAWN * (1 + squash * 0.6));
     // Running feet throw a little dust behind.
     if (moving && running && t - f.puffed > 0.24) {
       f.puffed = t;
       this.fx.emit("dust", b.x - b.face * 0.15, 0.06 + b.y, depth - 0.05, 1, { speed: 0.5, up: 0.25, size: 0.2, life: 0.45, way: -b.face * 0.4 });
     }
-    f.legs[0].rotation.z = !b.ground ? 0.55 : running ? Math.sin(phase) * 0.8 : 0;
-    f.legs[1].rotation.z = !b.ground ? -0.45 : running ? -Math.sin(phase) * 0.8 : 0;
+    f.legs[0].rotation.z = flung ? 1.0 + Math.sin(t * 17) * 0.3 : !b.ground ? 0.55 : running ? Math.sin(phase) * 0.8 : 0;
+    f.legs[1].rotation.z = flung ? -0.2 - Math.sin(t * 17) * 0.3 : !b.ground ? -0.45 : running ? -Math.sin(phase) * 0.8 : 0;
     f.lean.position.y = running ? Math.abs(Math.sin(phase)) * 0.05 : 0;
     // A heavy sack bows it forward (and slows it: `runOf`).
     f.lean.rotation.z = stunned ? 0.55 + Math.sin(t * 20) * 0.08 : (running ? -0.12 : 0) - 0.16 * (b.carry / CAP);
@@ -1111,7 +1116,7 @@ export class GoldRaidView extends TableView<State> {
     const p = b.swing < 0 ? -1 : b.swing / SWING;
     f.arm.rotation.z = p < 0 ? 0.85 + (running ? Math.sin(phase) * 0.25 : 0) : p < 0.3 ? lerp(0.85, 3.2, p / 0.3) : lerp(3.2, 1.0, (p - 0.3) / 0.7);
     // The other arm swings against the legs; in the air both are thrown up a little; dazed it hangs.
-    f.back.rotation.z = stunned ? -0.2 : !b.ground ? -1.1 : running ? -Math.sin(phase) * 0.9 : Math.sin(t * 1.7) * 0.05;
+    f.back.rotation.z = flung ? -2.2 + Math.sin(t * 15) * 0.4 : stunned ? -0.2 : !b.ground ? -1.1 : running ? -Math.sin(phase) * 0.9 : Math.sin(t * 1.7) * 0.05;
     // The cape streams back with speed and in the air, and flutters.
     const speed = Math.min(1, Math.abs(b.vx) / 2.8);
     f.cape.rotation.z = -(0.08 + speed * 0.5 + (b.ground ? 0 : 0.35) + Math.sin(t * (6 + speed * 8)) * (0.03 + speed * 0.06));
@@ -1278,6 +1283,7 @@ export class GoldRaidView extends TableView<State> {
     d.face = b.map((m) => m.face).join(",");
     d.carry = b.map((m) => m.carry).join(",");
     d.stun = b.map((m) => (m.stun > 0 ? 1 : 0)).join(",");
+    d.flung = b.map((m) => m.flung).join(",");
     d.gold = world.treasury.join(",");
     d.jumps = c.jumps.join(",");
     d.swings = c.swings.join(",");

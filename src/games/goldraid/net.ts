@@ -20,7 +20,7 @@ const EVENTS = ["jump", "swing", "pickup", "deposit", "hit", "boom", "drop", "ca
 export const KEPT_FOR = 0.6,
   KEPT_MOST = 10;
 const HEAD = 9,
-  MAN = 10,
+  MAN = 11,
   CART_N = 6,
   EVENT_N = 7,
   PIECE = 8;
@@ -51,7 +51,7 @@ const args = (e: Happening): number[] => {
     case "deposit":
       return [e.side, e.amount];
     case "hit":
-      return [e.by, e.on, e.dropped];
+      return [e.by, e.on, e.dropped, e.combo];
     case "boom":
       return [...pack([e.x, e.y], 2), e.stunned.reduce((m, s) => m | (1 << s), 0)];
     case "drop":
@@ -88,7 +88,7 @@ export function readEvent(d: number[]): { serial: number; happening: Happening }
         : kind === "deposit"
           ? { kind, side: side01(a), amount: b }
           : kind === "hit"
-            ? { kind, by: side01(a), on: side01(b), dropped: c }
+            ? { kind, by: side01(a), on: side01(b), dropped: c, combo: x }
             : kind === "boom"
               ? { kind, x: a, y: b, stunned: [0, 1].filter((s) => c & (1 << s)) }
               : kind === "drop"
@@ -106,7 +106,7 @@ export function readEvent(d: number[]): { serial: number; happening: Happening }
                           : { kind: "time" };
   return { serial, happening: h };
 }
-const man = (b: Bandit) => [...pack([b.x, b.y, b.vx, b.vy]), b.face, b.ground ? 1 : 0, b.carry, ...pack([b.stun, b.swing, b.stride])];
+const man = (b: Bandit) => [...pack([b.x, b.y, b.vx, b.vy]), b.face, b.ground ? 1 : 0, b.carry, ...pack([b.stun, b.swing, b.stride]), b.flung];
 /** The host's valley as numbers, with what happened lately (`log`). */
 export function snapOf(world: World, log: Log): number[] {
   const cart = world.cart,
@@ -143,6 +143,8 @@ const readMan = (d: number[]): Bandit => ({
   stun: d[7],
   swing: d[8],
   stride: d[9],
+  flung: d[10],
+  rise: 0,
   struck: false,
   cool: 0,
   coyote: 0,
