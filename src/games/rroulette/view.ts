@@ -6,16 +6,23 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
 import { CHAMBERS, PULL, SEATS, type State } from "./rules";
 import { RR } from "./layout";
+import { blink, buildPerson, feel, reachArm, type Look, type Person } from "./figure";
 
 /** The sides' colours (my party hat and the first other's), for the panel. */
 export const RR_COLORS: [string, string] = ["#e0453a", "#2f7fd8"];
 /** Each seat's party hat and shirt, as the seat sits round the table seen from my device (0 is me). */
 const HATS = ["#e0453a", "#2f7fd8", "#f2b81f", "#3fae5a"];
-const SHIRTS = ["#ff8a6b", "#7fb8ff", "#ffd769", "#8fd99b"];
-const SKINS = ["#f6cfae", "#e9b48e", "#f3d2b8", "#c98f6a"];
-const HAIRS = ["#3a2618", "#7a4a22", "#1c1c22", "#d9a441"];
+/** Each seat's own person: skin, hair and its style, eyes, a jacket in the seat's colour over a shirt, and the felt hat. */
+const LOOKS: Look[] = [
+  { skin: "#f0c4a0", hair: "#3b2618", style: 0, eyes: "#5a3a22", jacket: "#8e2a24", shirt: "#f2ede4", hat: HATS[0], neck: 0, trousers: "#2a2420" },
+  { skin: "#e2a982", hair: "#7a4524", style: 1, eyes: "#3f6f8a", jacket: "#24497e", shirt: "#e9eef5", hat: HATS[1], neck: 1, trousers: "#22242c" },
+  { skin: "#c98d64", hair: "#17141a", style: 2, eyes: "#3a2516", jacket: "#9c7414", shirt: "#f4efe2", hat: HATS[2], neck: 2, trousers: "#2b2620" },
+  { skin: "#9c6646", hair: "#d8ad5c", style: 3, eyes: "#5b6a3a", jacket: "#2d6b3c", shirt: "#efe8dc", hat: HATS[3], neck: 1, trousers: "#26261f" },
+];
 const PEOPLE = ["나", "왼쪽", "맞은편", "오른쪽"];
 const CONFETTI = 180;
+/** Where the felt hat sits on a head, and its tilt. */
+const HAT = { x: 0.03, y: 0.27, z: 0.02, tilt: -0.14 };
 const FONT = '"Inter", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 type Own = <R extends { dispose(): void }>(resource: R) => R;
 const smooth = (u: number) => u * u * (3 - 2 * u);
@@ -38,10 +45,10 @@ interface Guest {
   skin: T.Color;
   hat: T.Group;
   spikes: T.Group;
-  mouth: T.Mesh;
-  gasp: T.Mesh;
+  mouth: T.Group;
+  gasp: T.Group;
   stars: T.Group;
-  arms: { arm: T.Mesh; hand: T.Mesh; shoulder: T.Vector3 }[];
+  person: Person;
   tag: { canvas: HTMLCanvasElement; texture: T.CanvasTexture; sprite: T.Sprite; said: string };
   chair: T.Group;
 }
@@ -116,8 +123,24 @@ export class RRouletteView extends TableView<State> {
     disc.rotation.y = Math.PI / 2;
     disc.castShadow = false;
     this.begin();
+    // Now and then someone blinks (two frames drawn, no tween, so nothing waits on it).
+    this.blinker = setInterval(() => this.blinkSome(), 250);
     // The photographic look's reflected room is a bright one: in the dark back room it is only a hint.
     if (this.rich) this.scene.environmentIntensity = 0.08;
+  }
+  private blinker: ReturnType<typeof setInterval>;
+  private blinkSome() {
+    if (this.disposed || document.hidden || capturing()) return;
+    for (const g of this.guests) {
+      if (!g.body.visible || Math.random() > 0.065) continue;
+      blink(g.person, true);
+      this.redraw();
+      setTimeout(() => {
+        if (this.disposed) return;
+        blink(g.person, false);
+        this.redraw();
+      }, 110 + Math.random() * 60);
+    }
   }
   protected photographic() {
     return true;
@@ -372,80 +395,9 @@ export class RRouletteView extends TableView<State> {
     this.add(grainUV(block(1.1, 1.2, 0.08, 0.03), 0.9, 1), wood, 0, RR.FLOOR_Y + 1.8, 0.66, chair);
     const body = new T.Group();
     root.add(body);
-    const shirt = this.standard({ color: SHIRTS[seat], roughness: 0.75 });
-    this.add(new T.CapsuleGeometry(0.46, 0.5, 6, 16), shirt, 0, RR.BODY_Y, 0.2, body);
-    // A collar stripe.
-    this.add(new T.TorusGeometry(0.28, 0.05, 8, 24), this.standard({ color: "#ffffff", roughness: 0.6 }), 0, RR.BODY_Y + 0.6, 0.18, body).rotation.x = Math.PI / 2;
-    const head = new T.Group();
-    head.position.set(0, RR.HEAD_Y, 0.12);
-    body.add(head);
-    const skin = new T.Color(SKINS[seat]),
-      face = this.standard({ color: skin.clone(), roughness: 0.65 }) as T.MeshStandardMaterial;
-    this.add(new T.SphereGeometry(0.42, 28, 20), face, 0, 0, 0, head);
-    // Ears, eyes with a glint, rosy cheeks, a smile (or a round gasp).
-    for (const s of [-1, 1]) {
-      this.add(new T.SphereGeometry(0.09, 10, 8), face, s * 0.41, -0.02, 0.02, head);
-      this.add(new T.SphereGeometry(0.055, 12, 10), this.standard({ color: "#1b1b22", roughness: 0.3 }), s * 0.14, 0.06, -0.37, head);
-      this.add(new T.SphereGeometry(0.018, 8, 6), this.own(new T.MeshBasicMaterial({ color: "#ffffff" })), s * 0.14 + 0.015, 0.08, -0.42, head);
-      const cheek = this.add(new T.CircleGeometry(0.07, 16), this.own(new T.MeshBasicMaterial({ color: "#ff9aa2", transparent: true, opacity: 0.55 })), s * 0.24, -0.08, -0.35, head);
-      cheek.rotation.y = Math.PI + s * 0.5;
-      cheek.castShadow = false;
-    }
-    const mouth = this.add(new T.TorusGeometry(0.1, 0.02, 6, 16, Math.PI), this.standard({ color: "#8a2f2f" }), 0, -0.13, -0.385, head);
-    mouth.rotation.set(0, 0, Math.PI);
-    const gasp = this.add(new T.SphereGeometry(0.07, 12, 10), this.standard({ color: "#4a1f1f" }), 0, -0.15, -0.38, head);
-    gasp.scale.set(1, 1.2, 0.5);
-    gasp.visible = false;
-    // Hair: a cap over the back of the head, and spikes standing up after a 펑.
-    const hairMat = this.standard({ color: HAIRS[seat], roughness: 0.8 }),
-      cap = this.add(new T.SphereGeometry(0.44, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat, 0, 0.02, 0.03, head);
-    cap.rotation.x = 0.35;
-    const spikes = new T.Group();
-    head.add(spikes);
-    const spike = keep(new T.ConeGeometry(0.07, 0.38, 6));
-    for (let k = 0; k < 9; k++) {
-      const a = (k / 9) * Math.PI * 2,
-        m = new T.Mesh(spike, hairMat);
-      m.position.set(Math.cos(a) * 0.24, 0.38, Math.sin(a) * 0.24);
-      m.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
-      spikes.add(m);
-    }
-    spikes.visible = false;
-    // A felt hat in the seat's colour, a dark band round its crown, a little to one side.
-    const hat = new T.Group();
-    hat.position.set(0.06, 0.36, 0);
-    hat.rotation.z = -0.18;
-    head.add(hat);
-    const felt = this.standard({ color: HATS[seat], roughness: 0.85 });
-    this.add(new T.CylinderGeometry(0.4, 0.42, 0.03, 32), felt, 0, 0.0, 0, hat);
-    this.add(new T.CylinderGeometry(0.22, 0.26, 0.28, 28), felt, 0, 0.15, 0, hat);
-    this.add(new T.CylinderGeometry(0.265, 0.265, 0.07, 28), this.standard({ color: "#1a1416", roughness: 0.6 }), 0, 0.05, 0, hat);
-    const dent = this.add(new T.SphereGeometry(0.2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), felt, 0, 0.28, 0, hat);
-    dent.scale.set(1, 0.3, 1.2);
-    // Dizzy stars round the head after a 펑.
-    const stars = new T.Group();
-    stars.position.y = 0.62;
-    head.add(stars);
-    const star = keep(new T.OctahedronGeometry(0.07, 0)),
-      starMat = this.own(new T.MeshBasicMaterial({ color: "#ffe066" }));
-    for (let k = 0; k < 4; k++) {
-      const m = new T.Mesh(star, starMat),
-        a = (k / 4) * Math.PI * 2;
-      m.position.set(Math.cos(a) * 0.4, 0, Math.sin(a) * 0.4);
-      stars.add(m);
-    }
-    stars.visible = false;
-    // Arms: from the shoulders to the hands, resting on the table or holding the toy up.
-    const sleeve = this.standard({ color: SHIRTS[seat], roughness: 0.75 }),
-      armGeo = keep(new T.CylinderGeometry(0.1, 0.1, 1, 10).translate(0, 0.5, 0)),
-      handGeo = keep(new T.SphereGeometry(0.12, 14, 10));
-    const arms = [-1, 1].map((s) => {
-      const arm = new T.Mesh(armGeo, sleeve),
-        hand = new T.Mesh(handGeo, face);
-      arm.castShadow = hand.castShadow = true;
-      body.add(arm, hand);
-      return { arm, hand, shoulder: new T.Vector3(s * 0.52, RR.SHOULDER_Y, 0.15) };
-    });
+    const person = buildPerson(body, LOOKS[seat], seat * 37 + 11, keep, this.rich, RR.HEAD_Y, RR.SHOULDER_Y);
+    const { head, face, hat, spikes, mouth, gasp, stars } = person,
+      skin = new T.Color(LOOKS[seat].skin);
     // The name over the head.
     const { c: tagC, ctx: _tag } = canvasOf(512, 160),
       tagMap = keep(new T.CanvasTexture(tagC));
@@ -460,20 +412,11 @@ export class RRouletteView extends TableView<State> {
     }
     sprite.renderOrder = 10;
     this.scene.add(sprite);
-    return { root, body, head, face, skin, hat, spikes, mouth, gasp, stars, arms, tag: { canvas: tagC, texture: tagMap, sprite, said: "" }, chair };
+    return { root, body, head, face, skin, hat, spikes, mouth, gasp, stars, person, tag: { canvas: tagC, texture: tagMap, sprite, said: "" }, chair };
   }
-  /** Puts a guest's hands at `hands` (two places in the guest's own frame) and its arms between them and its shoulders. */
-  private reach(g: Guest, hands: [T.Vector3, T.Vector3]) {
-    const up = new T.Vector3(0, 1, 0);
-    g.arms.forEach(({ arm, hand, shoulder }, k) => {
-      const to = hands[k],
-        d = to.clone().sub(shoulder),
-        len = Math.max(0.05, d.length());
-      arm.position.copy(shoulder);
-      arm.scale.set(1, len, 1);
-      arm.quaternion.setFromUnitVectors(up, d.normalize());
-      hand.position.copy(to);
-    });
+  /** Puts a guest's hands at `hands` (two places in the guest's own frame), the arms bent at the elbows to reach; `grip` closes the right. */
+  private reach(g: Guest, hands: [T.Vector3, T.Vector3], grip = false) {
+    g.person.arms.forEach((arm, k) => reachArm(arm, hands[k], grip && k === 1));
   }
   /** Where a guest's hands rest on the table. */
   private resting(g: Guest) {
@@ -492,7 +435,7 @@ export class RRouletteView extends TableView<State> {
     this.toy.pivot.updateMatrixWorld(true);
     g.root.updateMatrixWorld(true);
     const at = g.root.worldToLocal(this.toy.grip.getWorldPosition(new T.Vector3()));
-    this.reach(g, [new T.Vector3(-0.5, 0.1, -1.05), at]);
+    this.reach(g, [new T.Vector3(-0.5, 0.1, -1.05), at], true);
   }
   /** A guest's look: in the game or out (sooty, hair on end), and its name tag. */
   private dress(g: Guest, seat: number, s: State) {
@@ -506,8 +449,9 @@ export class RRouletteView extends TableView<State> {
     g.stars.visible = out && s.last?.seat === seat && s.last.bang;
     g.mouth.visible = !out;
     g.gasp.visible = out;
-    g.hat.rotation.z = out ? -0.9 : -0.18;
-    g.hat.position.set(out ? 0.3 : 0.06, out ? 0.22 : 0.36, 0);
+    g.hat.rotation.z = out ? -1.15 : HAT.tilt;
+    g.hat.position.set(out ? 0.4 : HAT.x, out ? 0.08 : HAT.y, out ? 0.12 : HAT.z);
+    feel(g.person, out ? { shock: 0.6 } : {});
     g.head.rotation.set(0, 0, 0);
     g.body.position.set(0, 0, 0);
     if (s.seat === seat && s.winner === null) this.holdHands(g);
@@ -835,6 +779,7 @@ export class RRouletteView extends TableView<State> {
         this.toy.pivot.position.x += Math.sin(performance.now() * 0.05) * shake;
         this.toy.hammer.rotation.z = 0.75;
         g.head.rotation.x = -smooth(p) * 0.12;
+        feel(g.person, { tension: smooth(p) });
       });
       t += squeeze;
     }
@@ -847,6 +792,7 @@ export class RRouletteView extends TableView<State> {
       });
       this.tween(t + 60, 520, (p) => {
         g.head.rotation.x = -0.12 * (1 - p);
+        feel(g.person, { tension: 1 - smooth(Math.min(1, p * 2)), smile: Math.sin(p * Math.PI) });
         // A sigh of relief: a little bob.
         g.body.position.y = Math.sin(p * Math.PI) * 0.06;
       });
@@ -878,8 +824,9 @@ export class RRouletteView extends TableView<State> {
         g.stars.rotation.y = p * 7;
         g.body.position.y = Math.sin(Math.min(1, p * 2) * Math.PI) * 0.35;
         g.head.rotation.z = Math.sin(p * Math.PI * 4) * 0.12 * (1 - p);
-        g.hat.position.set(0.06 + 0.24 * p, 0.36 + Math.sin(p * Math.PI) * 0.6 - 0.14 * p, 0);
-        g.hat.rotation.z = -0.18 - 0.72 * p;
+        g.hat.position.set(HAT.x + 0.27 * p, HAT.y + Math.sin(p * Math.PI) * 0.6 - 0.11 * p, HAT.z);
+        g.hat.rotation.z = HAT.tilt - 0.76 * p;
+        if (p > 0.05) feel(g.person, { shock: Math.min(1, p * 3) * (1 - 0.4 * p) });
       });
       t += 1900;
       once(t - 10, () => this.settleConfetti());
@@ -992,6 +939,7 @@ export class RRouletteView extends TableView<State> {
   }
   dispose() {
     cancelAnimationFrame(this.holdFrame);
+    clearInterval(this.blinker);
     super.dispose();
   }
 }
