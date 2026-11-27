@@ -4185,15 +4185,6 @@ html[data-game="archer-duel"] .game-layout .board-area > .board-hint { display:n
 .ad-eye { fill:#ffffff38;stroke:#fff;stroke-width:1.2;vector-effect:non-scaling-stroke; }
 .ad-man { stroke:#fff;stroke-width:1;vector-effect:non-scaling-stroke; }
 .ad-dot { fill:#fff;stroke:#3a2a1c;stroke-width:1;vector-effect:non-scaling-stroke; }
-.ad-wind { display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:#17110cd9;font-size:12px;box-shadow:0 3px 10px rgba(0,0,0,.3); }
-.ad-wind[hidden] { display:none; }
-.ad-wind b { font-weight:900;font-variant-numeric:tabular-nums; }
-.ad-wind small { opacity:.75; }
-.ad-arrow { position:relative;width:calc(16px + 26px * var(--w, 0));height:10px; }
-.ad-arrow::before { content:"";position:absolute;left:0;right:6px;top:4px;height:2px;border-radius:1px;background:#ffe08a; }
-.ad-arrow::after { content:"";position:absolute;right:0;top:0;border:5px solid transparent;border-left:7px solid #ffe08a;border-right:0; }
-.ad-wind[data-way="left"] .ad-arrow { transform:scaleX(-1); }
-.ad-wind[data-way="none"] .ad-arrow { opacity:.3; }
 .ad-aim { position:absolute;left:50%;bottom:16px;translate:-50% 0;display:flex;align-items:baseline;gap:16px;padding:8px 18px;border-radius:14px;background:#17110cdd;box-shadow:0 5px 16px rgba(0,0,0,.35); }
 .ad-aim[hidden] { display:none; }
 .ad-aim span { display:flex;align-items:baseline;gap:6px; }

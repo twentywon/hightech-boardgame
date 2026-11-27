@@ -144,7 +144,7 @@ export class DuelView extends TableView<State> {
     this.hud.className = "ad-hud";
     this.hud.setAttribute("aria-hidden", "true");
     const bar = (k: number) => `<div class="ad-bar ad-${k ? "r" : "l"}"><b class="ad-name"></b><span class="ad-life"><i></i></span><em class="ad-hp"></em></div>`;
-    this.hud.innerHTML = `<div class="ad-top">${bar(0)}<div class="ad-mid"><svg class="ad-map" viewBox="0 0 300 40" preserveAspectRatio="none"><path class="ad-ground"></path><rect class="ad-eye" y="1" height="38"></rect><g class="ad-marks"></g><circle class="ad-man ad-m0" r="3.6"></circle><circle class="ad-man ad-m1" r="3.6"></circle><circle class="ad-dot" r="2.4"></circle></svg><div class="ad-wind"><span class="ad-arrow"></span><b>0.0</b><small>m/s</small></div></div>${bar(1)}</div><div class="ad-aim" hidden><span><small>각도</small><b class="ad-angle">0°</b></span><span><small>힘</small><b class="ad-power">0%</b></span><small class="ad-prev"></small></div><svg class="ad-pull" style="display:none"><line></line><circle r="7"></circle></svg>`;
+    this.hud.innerHTML = `<div class="ad-top">${bar(0)}<div class="ad-mid"><svg class="ad-map" viewBox="0 0 300 40" preserveAspectRatio="none"><path class="ad-ground"></path><rect class="ad-eye" y="1" height="38"></rect><g class="ad-marks"></g><circle class="ad-man ad-m0" r="3.6"></circle><circle class="ad-man ad-m1" r="3.6"></circle><circle class="ad-dot" r="2.4"></circle></svg></div>${bar(1)}</div><div class="ad-aim" hidden><span><small>각도</small><b class="ad-angle">0°</b></span><span><small>힘</small><b class="ad-power">0%</b></span><small class="ad-prev"></small></div><svg class="ad-pull" style="display:none"><line></line><circle r="7"></circle></svg>`;
     host.append(this.hud);
     this.floor = new T.Plane(new T.Vector3(0, 0, 1), 0);
     this.listen();
@@ -393,7 +393,6 @@ export class DuelView extends TableView<State> {
     this.writeHud(state);
     const el = this.renderer.domElement;
     el.dataset.health = `${state.health[0]},${state.health[1]}`;
-    el.dataset.wind = state.wind.toFixed(1);
     el.dataset.span = String(state.land.span);
     // The field itself, for readers of the page and the browser tests (which reckon a shot as the computer does).
     el.dataset.land = JSON.stringify(state.land);
@@ -415,7 +414,7 @@ export class DuelView extends TableView<State> {
     if (!shot || state.ply !== before.ply + 1) return false;
     const land = before.land,
       shooter = this.archers[shot.side],
-      way = flight(land, shot.side, shot.angle, shot.power, shot.wind, 3),
+      way = flight(land, shot.side, shot.angle, shot.power, 3),
       path = way.path,
       time = path[path.length - 1].t,
       flyMs = (time * 1000) / QUICKER,
@@ -559,12 +558,6 @@ export class DuelView extends TableView<State> {
         shot && !shot.lost ? `<path d="M${sx(shot.x).toFixed(1)},${(sy(shot.y) - 9).toFixed(1)} l-3,-5 h6 z" fill="${DUEL_COLOURS[side]}" stroke="#fff" stroke-width="0.8"></path>` : "",
       )
       .join("");
-    const wind = this.hud.querySelector<HTMLElement>(".ad-wind")!,
-      w = state.wind * this.mirror;
-    wind.hidden = state.variant === "calm";
-    wind.querySelector("b")!.textContent = Math.abs(state.wind).toFixed(1);
-    wind.dataset.way = w > 0.05 ? "right" : w < -0.05 ? "left" : "none";
-    wind.querySelector<HTMLElement>(".ad-arrow")!.style.setProperty("--w", String(Math.min(1, Math.abs(w) / 6)));
     this.hud.hidden = capturing();
     this.moveEye();
   }
@@ -633,15 +626,15 @@ export class DuelView extends TableView<State> {
     // The banners, the grass, the leaves and the archers' breath move only where a graphics card draws (each frame
     // costs the processor dearly).
     if (this.field && this.rich && !capturing()) {
-      const wind = (this.state?.wind ?? 0) * this.mirror;
-      this.field.tick(this.clock, wind, this.look.x, dt);
-      ([0, 1] as const).forEach((side) => this.archers[side].pose(this.clock, wind * this.screenFace(side)));
+      // No wind (the windy field was taken out): the cloth hangs, the grass and the leaves stir by themselves.
+      this.field.tick(this.clock, 0, this.look.x, dt);
+      ([0, 1] as const).forEach((side) => this.archers[side].pose(this.clock, 0));
       if (now - this.lastAmbient > 33 || more) {
         this.lastAmbient = now;
         this.redraw();
       }
       more = true;
-    } else if (this.field && this.clock < 0.2) this.field.tick(0.6, (this.state?.wind ?? 0) * this.mirror, this.look.x, 0);
+    } else if (this.field && this.clock < 0.2) this.field.tick(0.6, 0, this.look.x, 0);
     this.moveEye();
     if (more) this.redraw();
     if (more || this.rich) this.frame = requestAnimationFrame(this.tick);

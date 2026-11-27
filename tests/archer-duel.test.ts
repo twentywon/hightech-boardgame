@@ -8,24 +8,25 @@ function seeded(seed: number) {
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 /** The shot that brings an arrow down on the foe's middle (the computer's reckoning without its error). */
-const perfect = (s: R.State, angle = 45) => R.shotMove(angle, Math.round(R.powerFor(s.land, s.turn, angle, s.wind) * 10) / 10);
+const perfect = (s: R.State, angle = 45) => R.shotMove(angle, Math.round(R.powerFor(s.land, s.turn, angle) * 10) / 10);
 
 describe("archer duel (활잡이 결투)", () => {
-  it("lays a field: a gap and mounds within their bounds, full health, a wind only on a windy field", () => {
+  it("lays a field: a gap and mounds within their bounds, full health; the field is always calm", () => {
     const random = seeded(3);
     for (let k = 0; k < 40; k++) {
-      const s = R.createGame("wind", random);
+      const s = R.createGame("calm", random);
       expect(s.land.span).toBeGreaterThanOrEqual(R.SPAN.least);
       expect(s.land.span).toBeLessThanOrEqual(R.SPAN.most);
       expect(s.land.mounds.every((m) => m >= 0.6 && m <= 3)).toBe(true);
-      expect(Math.abs(s.wind)).toBeLessThanOrEqual(R.WIND_MOST);
       expect(s.health).toEqual([R.HEALTH, R.HEALTH]);
       expect(s.turn).toBe(0);
-      expect(R.createGame("calm", random).wind).toBe(0);
+      expect("wind" in s).toBe(false);
     }
     // Over Wi-Fi every device lays the same from the room's shared stream.
-    expect(R.bowDuel.create("wind", {}, seeded(9))).toEqual(R.bowDuel.create("wind", {}, seeded(9)));
-    expect(R.bowDuel.create("calm").variant).toBe("calm");
+    expect(R.bowDuel.create("calm", {}, seeded(9))).toEqual(R.bowDuel.create("calm", {}, seeded(9)));
+    // The windy field was taken out: a remembered (or an older room's) "wind" lays a calm field.
+    expect(R.bowDuel.create("wind").variant).toBe("calm");
+    expect(R.bowDuel.create("wind", {}, seeded(9))).toEqual(R.bowDuel.create("calm", {}, seeded(9)));
   });
   it("finds the head, the body and the legs where the figure has them, nothing beside them", () => {
     const land = R.createGame("calm", seeded(5)).land,
@@ -42,8 +43,8 @@ describe("archer duel (활잡이 결투)", () => {
     const random = seeded(11);
     let hits = 0;
     for (let k = 0; k < 30; k++) {
-      const s = R.createGame(k % 2 ? "calm" : "wind", random),
-        next = R.play(s, perfect(s), random)!;
+      const s = R.createGame("calm", random),
+        next = R.play(s, perfect(s))!;
       expect(next.ply).toBe(1);
       expect(next.turn).toBe(1);
       expect(next.shots).toEqual([1, 0]);
@@ -57,9 +58,9 @@ describe("archer duel (활잡이 결투)", () => {
     }
     expect(hits).toBeGreaterThanOrEqual(27);
   });
-  it("a short arrow stands in the ground where it came down, and the next archer meets a wind of its own", () => {
-    const s = R.createGame("wind", seeded(21)),
-      next = R.play(s, R.shotMove(45, R.POWER.least), seeded(4))!;
+  it("a short arrow stands in the ground where it came down; the same shot always flies the same", () => {
+    const s = R.createGame("calm", seeded(21)),
+      next = R.play(s, R.shotMove(45, R.POWER.least))!;
     expect(next.last!.target).toBeNull();
     expect(next.stuck).toHaveLength(1);
     const stuck = next.stuck[0];
@@ -67,40 +68,36 @@ describe("archer duel (활잡이 결투)", () => {
     expect(stuck.y).toBeCloseTo(R.ground(s.land, stuck.x), 2);
     expect(next.health).toEqual([R.HEALTH, R.HEALTH]);
     expect(next.prev[0]).toBe(next.last);
-    // An arrow loosed straight up in a wind blowing back comes down on its own archer.
-    let own = false;
-    for (let wind = -6; wind <= 6 && !own; wind += 0.05) {
-      const f = R.flight(s.land, 0, 89, 16, Math.round(wind * 100) / 100);
-      own = f.target === 0;
-    }
-    expect(own).toBe(true);
+    // No wind: the next archer's same shot lands as far out on its own side, and a shot played again flies the same.
+    expect(R.flight(s.land, 0, 45, R.POWER.least).x).toBeCloseTo(next.last!.x, 3);
+    expect(R.play(s, R.shotMove(45, R.POWER.least))!.last).toEqual(next.last);
   });
   it("the first brought to nothing loses; nothing more is played", () => {
     const random = seeded(31);
     let s = R.createGame("calm", random);
     while (s.winner === null) {
       // Side 0 shoots true; side 1 shoots short.
-      s = R.play(s, s.turn === 0 ? perfect(s) : R.shotMove(40, R.POWER.least), random)!;
+      s = R.play(s, s.turn === 0 ? perfect(s) : R.shotMove(40, R.POWER.least))!;
       expect(s.ply).toBeLessThan(40);
     }
     expect(s.winner).toBe(0);
     expect(s.health[1]).toBe(0);
-    expect(R.play(s, perfect(s), random)).toBeNull();
+    expect(R.play(s, perfect(s))).toBeNull();
     expect(R.bowDuel.moves(s)).toEqual([]);
     expect(R.bowDuel.reason(s)).toContain("승부가 났습니다");
   });
   it("refuses shots out of the bow's reach", () => {
     const s = R.createGame("calm", seeded(2));
-    expect(R.play(s, { from: -1, to: 900, extra: 200 }, seeded(1))).toBeNull();
-    expect(R.play(s, { from: -1, to: 450, extra: 50 }, seeded(1))).toBeNull();
-    expect(R.play(s, { from: -1, to: 450, extra: 400 }, seeded(1))).toBeNull();
-    expect(R.play(s, { from: 3, to: 450, extra: 200 }, seeded(1))).toBeNull();
+    expect(R.play(s, { from: -1, to: 900, extra: 200 })).toBeNull();
+    expect(R.play(s, { from: -1, to: 450, extra: 50 })).toBeNull();
+    expect(R.play(s, { from: -1, to: 450, extra: 400 })).toBeNull();
+    expect(R.play(s, { from: 3, to: 450, extra: 200 })).toBeNull();
     expect(R.readShot(R.shotMove(42.5, 19.3))).toEqual({ angle: 42.5, power: 19.3 });
   });
   it("keeps the arrows standing to a few, the oldest pulled out first", () => {
     const random = seeded(8);
     let s = R.createGame("calm", random);
-    for (let k = 0; k < R.KEEP + 6; k++) s = R.play(s, R.shotMove(45, R.POWER.least), random)!;
+    for (let k = 0; k < R.KEEP + 6; k++) s = R.play(s, R.shotMove(45, R.POWER.least))!;
     expect(s.stuck).toHaveLength(R.KEEP);
   });
   it("the computer closes in from where its arrows fall: the harder, the sooner it strikes", () => {
@@ -108,11 +105,11 @@ describe("archer duel (활잡이 결투)", () => {
       const random = seeded(level.length * 101),
         firsts: number[] = [];
       for (let g = 0; g < 40; g++) {
-        let s = R.createGame("wind", random),
+        let s = R.createGame("calm", random),
           at = 0;
         while (!at && s.ply < 60) {
           const side = s.turn,
-            next = R.play(s, side === 0 ? R.chooseShot(s, level, random)! : R.shotMove(45, R.POWER.least), random)!;
+            next = R.play(s, side === 0 ? R.chooseShot(s, level, random)! : R.shotMove(45, R.POWER.least))!;
           if (side === 0 && next.last!.target === 1) at = next.shots[0];
           s = next;
           if (s.winner !== null) break;

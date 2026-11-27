@@ -5,25 +5,21 @@ import type { Effect, Move, PointGame, Winner } from "../points/types";
  * 활잡이 결투 (Archer Duel): two archers on two mounds far apart take turns loosing one arrow at the other. A shot is
  * a move whose `to` is the angle the bow is raised above the level (tenths of a degree) and whose `extra` is how hard
  * the string is drawn, as the arrow's speed off the bow (tenths of a metre a second). There is no aiming line: the
- * arrow flies a true arc (gravity, and over a windy field the wind's push), and one learns from where the last arrow
+ * arrow flies a true arc under gravity (there is no wind: the user had the windy field taken out), and one learns from where the last arrow
  * came down. An arrow striking an archer hurts by where it strikes (the head the most, the legs the least); the first
- * brought to nothing loses (an arrow loosed straight up may come down on its own archer).
+ * brought to nothing loses (an arrow can still strike its own archer in the rules, but with no wind none of the bow's
+ * shots comes back down on it).
  *
  * The field is laid when the game is made, from the `random` passed in (over Wi-Fi the room's shared stream): the gap
- * between the archers, the rise of the two mounds and the roll of the ground between. With the wind the wind of each
- * shot is drawn when the shot before it is played (the first when the game is made); a calm field has none. Free of
- * Three.js: the view and the tests fly arrows with `flight`.
+ * between the archers, the rise of the two mounds and the roll of the ground between. Free of Three.js: the view and the tests fly arrows with `flight`.
  *
  * Coordinates are the rules' own, in metres: x along the field (side 0 stands at −span/2 and faces +x, side 1 at
  * +span/2 and faces −x), y up (0 the field's mean level). The view may show the field mirrored (a device whose own
  * archer is side 1 sees itself on the left).
  */
-export type Variant = "wind" | "calm";
-export const VARIANTS: { value: Variant; label: string }[] = [
-  { value: "wind", label: "바람 부는 들판" },
-  { value: "calm", label: "바람 없는 들판" },
-];
-export const variantOf = (v: string): Variant => (v === "calm" ? "calm" : "wind");
+/** The one field: calm (the windy one was taken out; a remembered or a room's old "wind" is read as calm). */
+export type Variant = "calm";
+export const variantOf = (_v: string): Variant => "calm";
 /** Gravity (m/s²), the field's span between the archers (m, drawn between these), each archer's health. */
 export const GRAVITY = 9.81,
   SPAN = { least: 30, most: 48 },
@@ -31,9 +27,6 @@ export const GRAVITY = 9.81,
 /** The bow: the arrow's speed off the string at the weakest and the fullest draw (m/s), and the angles allowed (degrees). */
 export const POWER = { least: 10, most: 30 },
   ANGLE = { least: 0, most: 89 };
-/** The wind's speed at most (m/s, along the field), and how hard it pushes an arrow (m/s² for each m/s of wind). */
-export const WIND_MOST = 6,
-  WIND_PUSH = 0.22;
 /**
  * An archer as the arrows find it, from the feet (m): the legs, the body and the head (a circle), the bow hand where
  * the arrow leaves (ahead of the feet toward the foe and up). The hurt of each: two arrows in the head end a duel.
@@ -64,12 +57,11 @@ export interface Stuck {
   in: -1 | 0 | 1;
   part?: Part;
 }
-/** A shot played: who, how, through what wind, and what it struck. */
+/** A shot played: who, how, and what it struck. */
 export interface Shot {
   side: 0 | 1;
   angle: number;
   power: number;
-  wind: number;
   /** Where it came to rest (rules' metres), its slope there, how long it flew (s). */
   x: number;
   y: number;
@@ -85,8 +77,6 @@ export interface Shot {
 export interface State {
   variant: Variant;
   land: Land;
-  /** The wind of the shot to come (m/s along +x; 0 on a calm field). */
-  wind: number;
   health: [number, number];
   turn: 0 | 1;
   /** Shots each side has loosed. */
@@ -125,14 +115,11 @@ export function drawLand(random: Random): Land {
     roll: [number, number, number][] = [0, 1].map((k) => [round((k ? 0.25 : 0.55) * (0.5 + random()), 100), round((k ? 0.37 : 0.13) * (0.8 + 0.4 * random()), 1000), round(random() * Math.PI * 2, 1000)]);
   return { span, mounds, roll };
 }
-/** A shot's wind: on a windy field anything up to `WIND_MOST` either way, gentle more often than strong (to a tenth). */
-export const drawWind = (variant: Variant, random: Random) => (variant === "calm" ? 0 : Math.round((random() * 2 - 1) * Math.abs(random() * 2 - 1) ** 0.4 * WIND_MOST * 10) / 10 || 0);
-export function createGame(variant: Variant = "wind", random: Random = cryptoRandom): State {
+export function createGame(variant: Variant = "calm", random: Random = cryptoRandom): State {
   const land = drawLand(random);
   return {
     variant,
     land,
-    wind: drawWind(variant, random),
     health: [HEALTH, HEALTH],
     turn: 0,
     shots: [0, 0],
@@ -173,15 +160,14 @@ export interface FlightPoint {
   t: number;
 }
 /**
- * Flies an arrow loosed by `side` at `angle` degrees with `power` m/s through `wind` until it strikes an archer, the
+ * Flies an arrow loosed by `side` at `angle` degrees with `power` m/s until it strikes an archer, the
  * ground, or flies out of the field. An arrow cannot strike its own archer until it has been in the air a little
  * (it leaves from the bow hand, in front of the body). `every` keeps a point of the way every so many steps.
  */
-export function flight(land: Land, side: 0 | 1, angle: number, power: number, wind: number, every = 0) {
+export function flight(land: Land, side: 0 | 1, angle: number, power: number, every = 0) {
   const from = hand(land, side),
     a = (angle * Math.PI) / 180,
     face = facing(side),
-    push = wind * WIND_PUSH,
     path: FlightPoint[] = [];
   let x = from.x,
     y = from.y,
@@ -195,11 +181,10 @@ export function flight(land: Land, side: 0 | 1, angle: number, power: number, wi
     return { x, y, t, slope: Math.atan2(vy, vx), target, part, lost, path };
   };
   while (t < LONGEST) {
-    // Exact for a constant pull (gravity and the wind's push): no error builds up over the flight.
+    // Exact for a constant pull (gravity): no error builds up over the flight.
     const h = STEP;
-    x += vx * h + 0.5 * push * h * h;
+    x += vx * h;
     y += vy * h - 0.5 * GRAVITY * h * h;
-    vx += push * h;
     vy -= GRAVITY * h;
     t += h;
     for (const s of [other(side), side] as (0 | 1)[]) {
@@ -229,21 +214,19 @@ export function flight(land: Land, side: 0 | 1, angle: number, power: number, wi
   return end(null, null, true);
 }
 /**
- * A shot: the arrow is flown, the archer it strikes is hurt, it stays where it stands; the next shot's wind is
- * drawn (from `random`, or a fixed draw from the count of shots when none is given) and the other side shoots.
+ * A shot: the arrow is flown, the archer it strikes is hurt, it stays where it stands, and the other side shoots.
  */
-export function play(state: State, move: Move, random?: Random): State | null {
+export function play(state: State, move: Move): State | null {
   if (state.winner !== null) return null;
   const read = readShot(move);
   if (!read) return null;
   const side = state.turn,
-    f = flight(state.land, side, read.angle, read.power, state.wind),
+    f = flight(state.land, side, read.angle, read.power),
     hurt = f.part ? HURT[f.part] : 0,
     shot: Shot = {
       side,
       angle: read.angle,
       power: read.power,
-      wind: state.wind,
       x: round(f.x),
       y: round(f.y),
       slope: round(f.slope),
@@ -269,8 +252,7 @@ export function play(state: State, move: Move, random?: Random): State | null {
   prev[side] = shot;
   const shots: [number, number] = [...state.shots];
   shots[side]++;
-  const fallen = health[0] <= 0 ? 0 : health[1] <= 0 ? 1 : null,
-    draws = random ?? fallback(state.ply + 1);
+  const fallen = health[0] <= 0 ? 0 : health[1] <= 0 ? 1 : null;
   return {
     ...state,
     health,
@@ -279,15 +261,9 @@ export function play(state: State, move: Move, random?: Random): State | null {
     shots,
     last: shot,
     turn: fallen === null ? other(side) : side,
-    wind: fallen === null ? drawWind(state.variant, draws) : state.wind,
     winner: fallen === null ? null : other(fallen),
     ply: state.ply + 1,
   };
-}
-/** The draws that give the next wind when `play` is given none: a fixed sequence from the count of shots. */
-function fallback(seed: number): Random {
-  let s = (seed * 7919 + 17) % 2147483646 || 1;
-  return () => ((s = (s * 48271) % 2147483647) - 1) / 2147483646;
 }
 /** A few shots that stand for all of them (any angle and draw may be loosed). */
 export function moves(state: State): Move[] {
@@ -299,13 +275,12 @@ export function moves(state: State): Move[] {
  * far it falls short (negative) or long (positive) of the foe, measured toward the foe. Free of the archers: the
  * computer reckons its shot as a person would, by the arc alone.
  */
-export function overshoot(land: Land, side: 0 | 1, angle: number, power: number, wind: number) {
+export function overshoot(land: Land, side: 0 | 1, angle: number, power: number) {
   const from = hand(land, side),
     foe = feet(land, other(side)),
     face = facing(side),
     aimY = foe.y + (FIGURE.body.low + FIGURE.body.high) / 2,
-    a = (angle * Math.PI) / 180,
-    push = wind * WIND_PUSH;
+    a = (angle * Math.PI) / 180;
   let x = from.x,
     y = from.y,
     vx = face * power * Math.cos(a),
@@ -315,9 +290,8 @@ export function overshoot(land: Land, side: 0 | 1, angle: number, power: number,
   while (t < LONGEST) {
     const px = x,
       py = y;
-    x += vx * h + 0.5 * push * h * h;
+    x += vx * h;
     y += vy * h - 0.5 * GRAVITY * h * h;
-    vx += push * h;
     vy -= GRAVITY * h;
     t += h;
     // Coming down through the foe's middle height, or into the ground.
@@ -330,15 +304,15 @@ export function overshoot(land: Land, side: 0 | 1, angle: number, power: number,
   }
   return (x - foe.x) * face;
 }
-/** The draw (m/s) that brings an arrow at `angle` down on the foe through `wind`, as near as the bow allows. */
-export function powerFor(land: Land, side: 0 | 1, angle: number, wind: number) {
+/** The draw (m/s) that brings an arrow at `angle` down on the foe, as near as the bow allows. */
+export function powerFor(land: Land, side: 0 | 1, angle: number) {
   let lo = POWER.least,
     hi = POWER.most;
-  if (overshoot(land, side, angle, hi, wind) < 0) return hi;
-  if (overshoot(land, side, angle, lo, wind) > 0) return lo;
+  if (overshoot(land, side, angle, hi) < 0) return hi;
+  if (overshoot(land, side, angle, lo) > 0) return lo;
   for (let k = 0; k < 30; k++) {
     const mid = (lo + hi) / 2;
-    if (overshoot(land, side, angle, mid, wind) < 0) lo = mid;
+    if (overshoot(land, side, angle, mid) < 0) lo = mid;
     else hi = mid;
   }
   return (lo + hi) / 2;
@@ -347,17 +321,16 @@ export type Level = "easy" | "normal" | "hard";
 /**
  * The computer's archers: how far off its first draw is (a share of the draw, one standard deviation), how much of
  * that is left after each shot as it learns from where its arrows fall (`learn`), the least it ever comes to (`steady`),
- * how far off its reading of the wind is (a share of it).
  */
-export const LEVELS: Record<Level, { label: string; first: number; learn: number; steady: number; read: number }> = {
-  easy: { label: "쉬움", first: 0.12, learn: 0.8, steady: 0.035, read: 0.6 },
-  normal: { label: "보통", first: 0.09, learn: 0.68, steady: 0.016, read: 0.3 },
-  hard: { label: "어려움", first: 0.06, learn: 0.55, steady: 0.008, read: 0.12 },
+export const LEVELS: Record<Level, { label: string; first: number; learn: number; steady: number }> = {
+  easy: { label: "쉬움", first: 0.12, learn: 0.8, steady: 0.035 },
+  normal: { label: "보통", first: 0.09, learn: 0.68, steady: 0.016 },
+  hard: { label: "어려움", first: 0.06, learn: 0.55, steady: 0.008 },
 };
 const gauss = (random: Random) => Math.sqrt(-2 * Math.log(Math.max(1e-12, random()))) * Math.cos(2 * Math.PI * random());
 /**
  * The computer's shot: it keeps the angle it began with (a person learns the draw for one angle), reckons the draw
- * for that angle through the wind as it reads it, and is off by a share that shrinks with every arrow it has loosed:
+ * for that angle, and is off by a share that shrinks with every arrow it has loosed:
  * it watches where they came down and closes in.
  */
 export function chooseShot(state: State, level: Level, random: Random = cryptoRandom): Move | null {
@@ -366,8 +339,7 @@ export function chooseShot(state: State, level: Level, random: Random = cryptoRa
     L = LEVELS[level] ?? LEVELS.normal,
     before = state.prev[side],
     angle = before ? before.angle : Math.round(38 + 14 * random()),
-    seen = state.wind * (1 + gauss(random) * L.read),
-    exact = powerFor(state.land, side, angle, seen),
+    exact = powerFor(state.land, side, angle),
     spread = Math.max(L.steady, L.first * L.learn ** state.shots[side]),
     power = Math.min(POWER.most, Math.max(POWER.least, exact * (1 + gauss(random) * spread)));
   return shotMove(angle, Math.round(power * 10) / 10);
@@ -375,7 +347,7 @@ export function chooseShot(state: State, level: Level, random: Random = cryptoRa
 const effect = (): Effect | null => null;
 export const PART_NAMES: Record<Part, string> = { head: "머리", body: "몸통", legs: "다리" };
 export const bowDuel: PointGame<State> = {
-  // Over Wi-Fi the field and the first wind come from the room's shared random, so every device lays the same.
+  // Over Wi-Fi the field comes from the room's shared random, so every device lays the same.
   create: (variant, _options, random) => createGame(variantOf(variant), random ?? cryptoRandom),
   moves,
   play,
@@ -389,7 +361,7 @@ export const bowDuel: PointGame<State> = {
   hint: (state) => {
     const k = state.shots[state.turn] + 1,
       how = state.ply < 2 ? " · 화면을 끌어 활을 당기고 놓으면 쏩니다" : "";
-    return `${k}번째 화살${state.variant === "wind" ? ` · 바람 ${Math.abs(state.wind).toFixed(1)} m/s` : ""}${how}`;
+    return `${k}번째 화살${how}`;
   },
   tally: (state) => [0, 1].map((side) => `체력 ${state.health[side]}`) as [string, string],
   reason: (state) => {
