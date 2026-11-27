@@ -19,8 +19,9 @@
  * bars are a section of their own (a groove, a hook, a lift; a verse, a chorus, a break), and their lines are
  * drawn from the chord's scale, so they never come round the same way twice either.
  *
- * Two places play a recording the user gave instead (src/engine/tracks/): the collection (`HOME`, soft, in place of
- * the medium swing, which is no longer heard) and 시대 전쟁 (`ERA_WAR`).
+ * Some places play a recording the user gave instead (src/engine/tracks/): the collection (`HOME`, soft, in place of
+ * the medium swing, which is no longer heard), 시대 전쟁 (`ERA_WAR`) and the Korean tables (`KOREAN`, in place of the
+ * made gugak).
  *
  * It begins only after the first touch or key (a page may not make a sound
  * before that), rests while the page is hidden, and can be switched off in
@@ -28,6 +29,7 @@
  */
 import eraWarTrack from "./tracks/era-war.mp3?inline";
 import homeTrack from "./tracks/home.mp3?inline";
+import koreaTrack from "./tracks/korea.mp3?inline";
 const C4 = 261.63,
   hertz = (semitones: number) => C4 * 2 ** (semitones / 12);
 const ROOTS: Record<string, number> = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
@@ -396,19 +398,21 @@ interface Track {
 const ERA_WAR: Track = { style: "track", url: eraWarTrack, gain: 0.17 };
 /** The collection's music (the user gave it, and asked for it soft): kept low, under the made music's level. */
 const HOME: Track = { style: "track", url: homeTrack, gain: 0.12 };
+/** The Korean tables' music (the user gave it in place of the made gugak, `KOREA`, which is no longer heard). */
+const KOREAN: Track = { style: "track", url: koreaTrack, gain: 0.28 };
 type Piece = Jazz | Gugak | Raga | Arcade | Rock | Track;
 const PIECES = { lobby: HOME, table: TABLE };
 /** Tables that have music of their own instead of the jazz: their country's, or the place's. */
 const OWN: Record<string, Piece> = {
-  gonu: KOREA,
-  "yut-nori": KOREA,
-  tuho: KOREA,
+  gonu: KOREAN,
+  "yut-nori": KOREAN,
+  tuho: KOREAN,
   mancala: INDIA,
   carrom: INDIA,
   "peg-solitaire": INDIA,
   "whack-a-mole": ARCADE,
-  // The lake is calm: the gayageum and the daegeum, not the arcade's pop.
-  fishing: KOREA,
+  // The lake is calm: the Korean tables' music, not the arcade's pop.
+  fishing: KOREAN,
   "claw-machine": ARCADE,
   "coin-pusher": ARCADE,
   "valet-parking": ARCADE,
