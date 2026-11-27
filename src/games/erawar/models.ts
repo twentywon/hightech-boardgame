@@ -173,7 +173,7 @@ export class Kit {
       };
       stuff(["green", "hood", "cloth", "white", "khaki", "webbing", "olive", "oliveDark"], "linen", 3);
       stuff(["hide", "leather", "leatherDark", "boot"], "leather", 2);
-      stuff(["iron", "steel", "dark", "black", "mail"], "metal", 2, 0.4);
+      stuff(["iron", "steel", "dark", "black", "mail"], "metal", 2, 0.2);
       for (const name of ["skin", "skin2", "skin3"]) {
         const m = this.m[name] as T.MeshStandardMaterial,
           pores = poreRelief(own, m.color, 4);

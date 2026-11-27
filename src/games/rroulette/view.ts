@@ -1,7 +1,7 @@
 import * as T from "three";
 import { grain, grainUV } from "../../engine/grain";
 import { block, glossy, planks, stuff } from "../../engine/scene-utils";
-import { lifelike, made, place, smooth as smoothed } from "../../engine/lifelike";
+import { lifelike, place, smooth as smoothed } from "../../engine/lifelike";
 import { capturing } from "../../ui/banner";
 import type { Marks } from "../points/view";
 import { TableView, type Spot, type TableSubject } from "../table/view";
@@ -534,7 +534,8 @@ export class RRouletteView extends TableView<State> {
     const rich = this.rich,
       fine = (n: number) => (rich ? n : Math.max(8, Math.round(n * 0.5))),
       // Blued steel, worn a little; the bore and the chambers' dark insides; brass and the lead of a round.
-      steel = rich ? this.own(new T.MeshStandardMaterial(made(keep, "metal", "#5b626e", 2, 2, { metalness: 0.95, roughness: 0.3, relief: 0.12, figure: false }))) : this.standard({ color: "#4a505a", metalness: 0.85, roughness: 0.35 }),
+      // (Smooth blued steel: the room's light gives it its sheen; a photographed plate's relief read as engraving.)
+      steel = this.standard({ color: rich ? "#5b626e" : "#4a505a", metalness: rich ? 0.95 : 0.85, roughness: rich ? 0.3 : 0.35 }),
       bright = this.standard({ color: "#8d939c", metalness: 1, roughness: 0.22 }),
       bore = this.standard({ color: "#050506", roughness: 0.9 }),
       brass = this.standard({ color: "#c9973a", metalness: 1, roughness: 0.28 }),
