@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { follow, hostWants, inputOf, laySlice, readInput, readSnap, snapOf } from "../src/games/territory/net";
+import { FieldSender, SLICES, follow, hostWants, inputOf, laySlice, readInput, readSnap, snapOf } from "../src/games/territory/net";
 import { END, OUT, createGame, createNet, packEnd, play as playMove, territory, unpackEnd } from "../src/games/territory/rules";
-import { CELLS, COUNTDOWN, DT, HOME, N, autopilot, cellOf, createWorld, ranking, shares, step, ticks, type Event, type Level, type World } from "../src/games/territory/sim";
+import { CELLS, COUNTDOWN, DT, G, N, PATCH, R as FINE, autopilot, cellOf, cellX, cellY, createWorld, ranking, shares, step, ticks, type Event, type Level, type World } from "../src/games/territory/sim";
 
 /** Runs the countdown off, so that the movers go. */
 function started(world: World) {
@@ -31,11 +31,14 @@ const R = 0,
   U = -Math.PI / 2;
 
 describe("territory (땅따먹기): the field", () => {
-  it("begins with a small patch for each mover, apart, and nothing else owned", () => {
+  it("begins with a small round patch for each mover, apart, and nothing else owned", () => {
     for (const n of [2, 3, 4]) {
       const world = createWorld(n, 180, 7);
       expect(world.movers).toHaveLength(n);
-      const patch = (2 * HOME + 1) ** 2 - 4;
+      const patch = PATCH;
+      // Round: about the area of a circle of 2.6 units, in cells of a quarter of a unit.
+      expect(patch).toBeGreaterThan(Math.PI * 2.4 ** 2 * FINE * FINE);
+      expect(patch).toBeLessThan(Math.PI * 2.8 ** 2 * FINE * FINE);
       world.movers.forEach((m, k) => {
         expect(m.land).toBe(patch);
         expect(world.owner[m.cell]).toBe(k + 1);
@@ -78,15 +81,38 @@ describe("territory (땅따먹기): the field", () => {
     expect(m.land).toBeGreaterThan(before + 20);
     // No hole in what it took: every cell inside its bounds that it surrounds is its own.
     const cells = [...world.owner.keys()].filter((c) => world.owner[c] === 1),
-      xs = cells.map((c) => c % N),
-      ys = cells.map((c) => Math.floor(c / N));
+      xs = cells.map((c) => c % G),
+      ys = cells.map((c) => Math.floor(c / G));
     let holes = 0;
     for (let y = Math.min(...ys) + 1; y < Math.max(...ys); y++)
       for (let x = Math.min(...xs) + 1; x < Math.max(...xs); x++) {
-        const c = y * N + x;
-        if (world.owner[c] !== 1 && [c - 1, c + 1, c - N, c + N].every((n) => world.owner[n] === 1)) holes++;
+        const c = y * G + x;
+        if (world.owner[c] !== 1 && [c - 1, c + 1, c - G, c + G].every((n) => world.owner[n] === 1)) holes++;
       }
     expect(holes).toBe(0);
+  });
+  it("takes the shape the way it went, not a box: a slanting loop leaves the corners of its box untaken", () => {
+    const world = started(createWorld(2, 180, 3)),
+      m = world.movers[0],
+      home = { x: m.x, y: m.y },
+      before = new Uint8Array(world.owner);
+    m.heading = R;
+    // Out on a slant down and right, then back up and left on a slant: a narrow diamond, not a rectangle.
+    drive(world, [
+      [Math.PI / 4, 1.8],
+      [(3 * Math.PI) / 4, 1.0],
+      [(-3 * Math.PI) / 4, 1.8],
+      [-Math.PI / 4, 1.2],
+    ]);
+    expect(m.alive).toBe(true);
+    const taken = [...world.owner.keys()].filter((c) => world.owner[c] === 1 && !before[c]);
+    expect(taken.length).toBeGreaterThan(40);
+    // The box round what was taken holds much that was not: the shape follows the slant.
+    const xs = taken.map(cellX),
+      ys = taken.map(cellY),
+      box = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys)) * FINE * FINE;
+    expect(taken.length).toBeLessThan(box * 0.75);
+    expect(Math.hypot(m.x - home.x, m.y - home.y)).toBeLessThan(N);
   });
   it("takes the others' land that its loop closes round", () => {
     const world = started(createWorld(2, 180, 3)),
@@ -96,9 +122,9 @@ describe("territory (땅따먹기): the field", () => {
     b.land = 0;
     const bx = Math.floor(a.x) + 5,
       by = Math.floor(a.y) + 3;
-    for (let y = by; y < by + 2; y++)
-      for (let x = bx; x < bx + 2; x++) {
-        world.owner[y * N + x] = 2;
+    for (let y = by; y < by + 2; y += 1 / FINE)
+      for (let x = bx; x < bx + 2; x += 1 / FINE) {
+        world.owner[cellOf(x, y)] = 2;
         b.land++;
       }
     b.x = 50.5;
@@ -123,8 +149,8 @@ describe("territory (땅따먹기): the field", () => {
     expect(a.trail.length).toBeGreaterThan(3);
     // Mover 1 is set down just beside the trail's middle and runs across it.
     const c = a.trail[Math.floor(a.trail.length / 2)];
-    b.x = (c % N) + 0.5;
-    b.y = Math.floor(c / N) - 1.5;
+    b.x = cellX(c);
+    b.y = cellY(c) - 2;
     b.cell = cellOf(b.x, b.y);
     b.heading = D;
     const events: Event[] = [];
@@ -139,7 +165,7 @@ describe("territory (땅따먹기): the field", () => {
     // It comes back a few seconds later with a new patch.
     for (let i = 0; i < ticks(3.2); i++) step(world, [null, null]);
     expect(a.alive).toBe(true);
-    expect(a.land).toBe((2 * HOME + 1) ** 2 - 4);
+    expect(a.land).toBe(PATCH);
   });
   it("is out when it crosses its own trail, but not on a tight turn beside the trail's newest cells", () => {
     const world = started(createWorld(2, 180, 9)),
@@ -248,17 +274,16 @@ describe("territory: the round as moves", () => {
 });
 
 describe("territory over Wi-Fi: the host's round as numbers", () => {
-  it("two states in a row hold the whole field, and a guest lays it exactly", () => {
+  it("the field's slices in turn hold the whole field, and a guest lays it exactly", () => {
     const world = started(createWorld(4, 180, 21));
     for (let i = 0; i < ticks(25); i++) step(world, world.movers.map((_, k) => autopilot(world, k, "normal")));
     const guest = createWorld(4, 180, 1);
     guest.owner.fill(0);
     const changed = new Set<number>();
-    const a = readSnap(snapOf(world, 0))!,
-      b = readSnap(snapOf(world, 1))!;
+    const snaps = Array.from({ length: SLICES }, (_, s) => readSnap(snapOf(world, s))!),
+      [a, b] = snaps.slice(-2);
     expect(snapOf(world, 0).length).toBeLessThanOrEqual(256);
-    laySlice(guest.owner, a, changed, 4);
-    laySlice(guest.owner, b, changed, 4);
+    for (const snap of snaps) laySlice(guest.owner, snap, changed, 4);
     expect([...guest.owner]).toEqual([...world.owner]);
     expect(changed.size).toBe([...world.owner].filter(Boolean).length);
     // The movers between two states, their counts as the later has them.
@@ -269,6 +294,16 @@ describe("territory over Wi-Fi: the host's round as numbers", () => {
       expect(guest.movers[k].trail.length).toBe(m.trail.length);
       expect(guest.movers[k].alive).toBe(m.alive);
     });
+  });
+  it("the host sends the slices where land changed first, and all of them in turn between", () => {
+    const sender = new FieldSender(),
+      sent: number[] = [];
+    sender.mark([CELLS - 1, CELLS - 2, 5]);
+    for (let i = 0; i < SLICES * 4 + 4; i++) sent.push(sender.next());
+    // The two slices that changed, at once (the first state is a changed one).
+    expect(sent.slice(0, 2).sort((x, y) => x - y)).toEqual([0, SLICES - 1].sort((x, y) => x - y));
+    // Every slice within a round of them.
+    for (let s = 0; s < SLICES; s++) expect(sent).toContain(s);
   });
   it("a guest's hand: a heading or straight on; the host steers each mover by whoever drives it", () => {
     expect(readInput(inputOf(1.234))).toBeCloseTo(1.234, 3);

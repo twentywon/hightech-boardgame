@@ -9,8 +9,10 @@ import { CELLS, autopilot, cellOf, type Level, type World } from "./sim";
  * The host's state: its round's tick, the tick it closed (-1 while it runs) and how many movers; then for each mover
  * its place, heading, whether it is in play, its seconds out, its trail's length, its land (cells), times out and
  * others put out; then a slice of the field's owners, `SLICE` numbers from `offset` on, each holding `PER` cells of
- * three bits (whose land, 0 nobody's). The slices take turns, so that two states in a row hold the whole field, and a
- * device that comes back has it all again within a fifteenth of a second. A guest's hand: whether it steers, and
+ * three bits (whose land, 0 nobody's). The field is fine (`sim.ts`: the land follows the way a mover went), so it
+ * takes `SLICES` slices: the host's `FieldSender` sends the slices where land changed first, and the others in turn
+ * between them (every fourth state at least), so that what a loop took is on every screen within a state or two and
+ * a device that comes back has the whole field again within about a second. A guest's hand: whether it steers, and
  * the heading it wants.
  */
 const HEAD = 4,
@@ -18,7 +20,10 @@ const HEAD = 4,
   /** Cells of three bits to a number (48 bits, well inside what a number holds exactly). */
   PER = 16,
   WORDS = Math.ceil(CELLS / PER),
-  SLICE = WORDS / 2;
+  /** Numbers of the field in one state, and how many such slices the field is. */
+  SLICE = 128,
+  SLICES = Math.ceil(WORDS / SLICE);
+export { SLICES };
 export interface MoverSnap {
   x: number;
   y: number;
@@ -37,12 +42,52 @@ export interface Snap {
   offset: number;
   words: number[];
 }
-/** The host's state, the field's slice by `turn` (0 or 1, alternating). */
-export function snapOf(world: World, turn: number): number[] {
-  const offset = (turn % 2) * SLICE,
+/**
+ * Which slice of the field the host sends next: one where land changed since it was last sent (the oldest first),
+ * and every fourth state (or with nothing changed) the next of all of them in turn.
+ */
+export class FieldSender {
+  private dirty: number[] = [];
+  private queued = new Uint8Array(SLICES);
+  private round = 0;
+  private count = 0;
+  /** Cells whose owner changed. */
+  mark(cells: Iterable<number>) {
+    for (const c of cells) {
+      const s = Math.floor(c / (PER * SLICE));
+      if (s < SLICES && !this.queued[s]) {
+        this.queued[s] = 1;
+        this.dirty.push(s);
+      }
+    }
+  }
+  /** The slice to send now. */
+  next() {
+    this.count++;
+    if (this.dirty.length && this.count % 4) {
+      const s = this.dirty.shift()!;
+      this.queued[s] = 0;
+      return s;
+    }
+    const s = this.round;
+    this.round = (this.round + 1) % SLICES;
+    if (this.queued[s]) {
+      this.queued[s] = 0;
+      this.dirty.splice(this.dirty.indexOf(s), 1);
+    }
+    return s;
+  }
+}
+/** The host's state with the field's slice `slice` (0 to `SLICES` - 1). */
+export function snapOf(world: World, slice: number): number[] {
+  const offset = (((slice % SLICES) + SLICES) % SLICES) * SLICE,
     out = [world.tick, world.closed ?? -1, world.movers.length, offset];
   for (const m of world.movers) out.push(...pack([m.x, m.y, m.heading]), m.alive ? 1 : 0, Math.round(m.wait * 10) / 10, m.trail.length, m.land, m.outs, m.kos);
   for (let w = offset; w < offset + SLICE; w++) {
+    if (w >= WORDS) {
+      out.push(0);
+      continue;
+    }
     let word = 0;
     for (let i = PER - 1; i >= 0; i--) {
       const c = w * PER + i;
@@ -61,7 +106,7 @@ export function readSnap(data: number[]): Snap | null {
     movers.push({ x, y, heading, alive: alive > 0, wait, trail, land, outs, kos });
   }
   const offset = data[3];
-  if (offset !== 0 && offset !== SLICE) return null;
+  if (!Number.isInteger(offset) || offset < 0 || offset % SLICE || offset >= WORDS) return null;
   return { tick: data[0], closed: data[1] >= 0 ? data[1] : null, movers, offset, words: data.slice(HEAD + MOVER * n) };
 }
 /** Lays a snapshot's slice of the field into `owner`; the cells that changed are added to `changed`. */

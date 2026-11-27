@@ -1,6 +1,7 @@
 /**
- * 땅따먹기 (the user asked, after a picture of a game where each player paints land of its own): a square field of
- * `N` × `N` cells and two to four movers, each always on the go. A mover's own land is safe; out of it, it leaves a
+ * 땅따먹기 (the user asked, after a picture of a game where each player paints land of its own): a square field `N`
+ * across and two to four movers, each always on the go. The land is kept in fine cells, `R` to a unit each way (`G` ×
+ * `G` of them), so that what a loop takes follows the way the mover went, any shape (the user asked: not squares). A mover's own land is safe; out of it, it leaves a
  * trail behind, and coming back onto its own land takes the trail and everything the trail closes round (whoever's
  * land it was) as its own. A mover whose trail is crossed — by anyone, itself too — is out: its trail and its land are
  * wiped, and after `RESPAWN` seconds it comes back somewhere free with a small patch. Two heads running into each other
@@ -10,18 +11,21 @@
  * Fixed slices of `DT`; free of Three.js and the page (the host's view runs it, the tests run it bare).
  */
 export const N = 64,
-  CELLS = N * N,
+  /** Cells to a unit, each way, and the cells across the field. */
+  R = 2,
+  G = N * R,
+  CELLS = G * G,
   DT = 1 / 60,
   /** Cells a second, and how fast a mover turns (radians a second): a U-turn is about three cells across. */
   SPEED = 5.2,
   TURN = 4.2,
-  /** A new home: the cells within this many of its middle, both ways (a five by five patch). */
-  HOME = 2,
+  /** A new home: a round patch, the cells whose middles lie within this many units of its middle. */
+  HOME = 2.6,
   RESPAWN = 3,
   COUNTDOWN = 3,
   WIN_SHARE = 0.5,
   /** The last few cells of a trail never cut it (a tight turn passes beside them). */
-  SAFE_TAIL = 3,
+  SAFE_TAIL = 3 * R,
   /** How near two heads are when they run into each other, in cells. */
   BUMP = 0.7;
 export type Level = "easy" | "normal" | "hard";
@@ -32,7 +36,22 @@ const wrap = (a: number) => {
   while (a < -Math.PI) a += Math.PI * 2;
   return a;
 };
-export const cellOf = (x: number, y: number) => clamp(Math.floor(y), 0, N - 1) * N + clamp(Math.floor(x), 0, N - 1);
+export const cellOf = (x: number, y: number) => clamp(Math.floor(y * R), 0, G - 1) * G + clamp(Math.floor(x * R), 0, G - 1);
+/** Where a cell's middle is, in units. */
+export const cellX = (c: number) => ((c % G) + 0.5) / R,
+  cellY = (c: number) => (Math.floor(c / G) + 0.5) / R;
+/** Each cell whose middle lies within `r` units of (`x`, `y`). */
+function disc(x: number, y: number, r: number, visit: (c: number) => void) {
+  for (let gy = Math.max(0, Math.floor((y - r) * R)); gy <= Math.min(G - 1, Math.floor((y + r) * R)); gy++)
+    for (let gx = Math.max(0, Math.floor((x - r) * R)); gx <= Math.min(G - 1, Math.floor((x + r) * R)); gx++)
+      if (Math.hypot((gx + 0.5) / R - x, (gy + 0.5) / R - y) <= r) visit(gy * G + gx);
+}
+/** How many cells a new home patch holds. */
+export const PATCH = (() => {
+  let n = 0;
+  disc(N / 2 + 0.5, N / 2 + 0.5, HOME, () => n++);
+  return n;
+})();
 
 /** What a computer mover has in mind: a loop of points to run through, or home, or someone's trail to cut. */
 export interface Plan {
@@ -40,7 +59,7 @@ export interface Plan {
   mode: "loop" | "home" | "hunt";
   /** The tick it next thinks again (an easy one is slow to see danger). */
   next: number;
-  /** Its distance to its own land, cell by cell (`Infinity` where it cannot go), and when that was reckoned. */
+  /** Its distance to its own land, unit by unit (`Infinity` where it cannot go), and when that was reckoned. */
   field: Float32Array | null;
   fieldAt: number;
   victim: number;
@@ -99,13 +118,10 @@ export const STARTS = [
   { x: 0.76, y: 0.24 },
   { x: 0.24, y: 0.76 },
 ];
+/** A new home for mover k: a round patch about the middle of unit (`cx`, `cy`). */
 function settle(world: World, k: number, cx: number, cy: number) {
   const m = world.movers[k];
-  for (let y = cy - HOME; y <= cy + HOME; y++)
-    for (let x = cx - HOME; x <= cx + HOME; x++) {
-      if (Math.abs(x - cx) === HOME && Math.abs(y - cy) === HOME) continue;
-      setOwner(world, y * N + x, k + 1);
-    }
+  disc(cx + 0.5, cy + 0.5, HOME, (c) => setOwner(world, c, k + 1));
   m.x = cx + 0.5;
   m.y = cy + 0.5;
   m.cell = cellOf(m.x, m.y);
@@ -160,23 +176,25 @@ function knockOut(world: World, k: number, by: number, how: "cut" | "self" | "bu
 function respawn(world: World, k: number, events: Event[]) {
   // A free place for a new patch, away from the others' heads: a few tries at random, then the emptiest of them.
   let best: { x: number; y: number; score: number } | null = null;
+  const edge = Math.ceil(HOME) + 2;
   for (let i = 0; i < 160; i++) {
-    const cx = HOME + 2 + Math.floor(random(world) * (N - 2 * HOME - 4)),
-      cy = HOME + 2 + Math.floor(random(world) * (N - 2 * HOME - 4));
+    const cx = edge + Math.floor(random(world) * (N - 2 * edge)),
+      cy = edge + Math.floor(random(world) * (N - 2 * edge));
     let score = 0;
-    for (let y = cy - HOME - 1; y <= cy + HOME + 1; y++) for (let x = cx - HOME - 1; x <= cx + HOME + 1; x++) if (world.owner[y * N + x] || world.trail[y * N + x]) score += 10;
+    // (Cells counted a quarter of a unit's worth each, as a unit was.)
+    disc(cx + 0.5, cy + 0.5, HOME + 1, (c) => {
+      if (world.owner[c] || world.trail[c]) score += 10 / (R * R);
+    });
     for (const [j, o] of world.movers.entries()) if (j !== k && o.alive && Math.hypot(o.x - cx, o.y - cy) < 8) score += 40;
     if (!best || score < best.score) best = { x: cx, y: cy, score };
     if (score === 0) break;
   }
   const at = best!;
-  for (let y = at.y - HOME; y <= at.y + HOME; y++)
-    for (let x = at.x - HOME; x <= at.x + HOME; x++) {
-      const c = y * N + x,
-        t = world.trail[c];
-      // A trail under the new patch is cut by it, as by a mover coming through.
-      if (t && t !== k + 1) knockOut(world, t - 1, k, "cut", events);
-    }
+  disc(at.x + 0.5, at.y + 0.5, HOME, (c) => {
+    const t = world.trail[c];
+    // A trail under the new patch is cut by it, as by a mover coming through.
+    if (t && t !== k + 1) knockOut(world, t - 1, k, "cut", events);
+  });
   settle(world, k, at.x, at.y);
   events.push({ kind: "back", who: k });
 }
@@ -200,20 +218,20 @@ function claim(world: World, k: number, events: Event[]) {
     out[c] = 1;
     queue[tail++] = c;
   };
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < G; i++) {
     visit(i);
-    visit((N - 1) * N + i);
-    visit(i * N);
-    visit(i * N + N - 1);
+    visit((G - 1) * G + i);
+    visit(i * G);
+    visit(i * G + G - 1);
   }
   while (head < tail) {
     const c = queue[head++],
-      x = c % N,
-      y = (c - x) / N;
+      x = c % G,
+      y = (c - x) / G;
     if (x > 0) visit(c - 1);
-    if (x < N - 1) visit(c + 1);
-    if (y > 0) visit(c - N);
-    if (y < N - 1) visit(c + N);
+    if (x < G - 1) visit(c + 1);
+    if (y > 0) visit(c - G);
+    if (y < G - 1) visit(c + G);
   }
   for (let c = 0; c < CELLS; c++) if (!out[c] && world.owner[c] !== mine) setOwner(world, c, mine);
   events.push({ kind: "claim", who: k, cells: m.land - before });
@@ -262,19 +280,19 @@ function move(world: World, k: number, want: number | null, events: Event[]) {
     m.heading = Math.cos(m.heading) >= 0 ? 0 : Math.PI;
     if (nx <= lo + 0.2 || nx >= hi - 0.2) m.heading = nx < N / 2 ? 0 : Math.PI;
   }
-  const ox = Math.floor(m.x),
-    oy = Math.floor(m.y),
-    cx = clamp(Math.floor(nx), 0, N - 1),
-    cy = clamp(Math.floor(ny), 0, N - 1);
+  const ox = clamp(Math.floor(m.x * R), 0, G - 1),
+    oy = clamp(Math.floor(m.y * R), 0, G - 1),
+    cx = clamp(Math.floor(nx * R), 0, G - 1),
+    cy = clamp(Math.floor(ny * R), 0, G - 1);
   m.x = nx;
   m.y = ny;
   if (cx === ox && cy === oy) return;
   // A diagonal step goes through the cell beside it first, so that a trail is always joined edge to edge.
   if (cx !== ox && cy !== oy) {
-    enter(world, k, oy * N + cx, events);
+    enter(world, k, oy * G + cx, events);
     if (!m.alive) return;
   }
-  enter(world, k, cy * N + cx, events);
+  enter(world, k, cy * G + cx, events);
 }
 /**
  * One slice of the round: `wants` is each mover's wanted heading (null: straight on). Returns what happened.
@@ -333,52 +351,63 @@ export const LEVELS: Record<Level, { out: [number, number]; side: [number, numbe
  * clear of the trail where it can be (a mover cannot turn on the spot), else only off the trail itself.
  */
 function homeField(world: World, k: number) {
+  // Reckoned a unit at a time (the fine cells are four to a unit: a quarter of the work, near enough to steer by): a
+  // unit is home where any of its cells is k's land, and in the way where any is k's older trail.
   const m = world.movers[k],
-    old = m.trail.slice(0, Math.max(0, m.trail.length - 1)),
-    hard = new Set(old),
-    soft = new Set<number>();
-  for (const c of old) {
-    const x = c % N;
-    for (const n of [x > 0 ? c - 1 : -1, x < N - 1 ? c + 1 : -1, c - N, c + N]) if (n >= 0 && n < CELLS && !hard.has(n)) soft.add(n);
+    mine = k + 1,
+    home = new Uint8Array(N * N),
+    hard = new Uint8Array(N * N),
+    soft = new Uint8Array(N * N),
+    unit = (c: number) => Math.floor(Math.floor(c / G) / R) * N + Math.floor((c % G) / R);
+  for (let c = 0; c < CELLS; c++) if (world.owner[c] === mine) home[unit(c)] = 1;
+  for (let i = 0; i < m.trail.length - 1; i++) hard[unit(m.trail[i])] = 1;
+  for (let u = 0; u < N * N; u++) {
+    if (!hard[u]) continue;
+    const x = u % N;
+    for (const n of [x > 0 ? u - 1 : -1, x < N - 1 ? u + 1 : -1, u - N, u + N]) if (n >= 0 && n < N * N && !hard[n]) soft[n] = 1;
   }
-  // The cells about the head itself are never kept clear: it has to set off from somewhere.
+  // The units about the head itself are never kept clear: it has to set off from somewhere.
   const hx = Math.floor(m.x),
-    hy = Math.floor(m.y);
-  for (const c of [...soft]) if (Math.abs((c % N) - hx) <= 1 && Math.abs(Math.floor(c / N) - hy) <= 1) soft.delete(c);
-  const run = (blocked: (c: number) => boolean) => {
-    const field = new Float32Array(CELLS).fill(Infinity),
-      queue = new Int32Array(CELLS);
+    hy = Math.floor(m.y),
+    at = Math.min(N - 1, Math.max(0, hy)) * N + Math.min(N - 1, Math.max(0, hx));
+  for (let y = hy - 1; y <= hy + 1; y++) for (let x = hx - 1; x <= hx + 1; x++) if (x >= 0 && y >= 0 && x < N && y < N) soft[y * N + x] = 0;
+  hard[at] = 0;
+  const run = (blocked: (u: number) => boolean) => {
+    const field = new Float32Array(N * N).fill(Infinity),
+      queue = new Int32Array(N * N);
     let head = 0,
       tail = 0;
-    for (let c = 0; c < CELLS; c++)
-      if (world.owner[c] === k + 1) {
-        field[c] = 0;
-        queue[tail++] = c;
+    for (let u = 0; u < N * N; u++)
+      if (home[u]) {
+        field[u] = 0;
+        queue[tail++] = u;
       }
     while (head < tail) {
-      const c = queue[head++],
-        x = c % N,
-        d = field[c] + 1;
-      for (const n of [x > 0 ? c - 1 : -1, x < N - 1 ? c + 1 : -1, c - N, c + N]) {
-        if (n < 0 || n >= CELLS || field[n] <= d || blocked(n)) continue;
+      const u = queue[head++],
+        x = u % N,
+        d = field[u] + 1;
+      for (const n of [x > 0 ? u - 1 : -1, x < N - 1 ? u + 1 : -1, u - N, u + N]) {
+        if (n < 0 || n >= N * N || field[n] <= d || blocked(n)) continue;
         field[n] = d;
         queue[tail++] = n;
       }
     }
     return field;
   };
-  const wide = run((c) => hard.has(c) || (soft.has(c) && world.owner[c] !== k + 1));
-  return Number.isFinite(wide[m.cell]) ? wide : run((c) => hard.has(c));
+  const wide = run((u) => !!hard[u] || (!!soft[u] && !home[u]));
+  return Number.isFinite(wide[at]) ? wide : run((u) => !!hard[u]);
 }
-/** The fewest steps any other mover needs to reach any cell of k's trail (Infinity with no trail). */
+/** The unit a mover stands in (the home field's index). */
+const unitOf = (m: Mover) => Math.min(N - 1, Math.max(0, Math.floor(m.y))) * N + Math.min(N - 1, Math.max(0, Math.floor(m.x)));
+/** The fewest units any other mover needs to reach any cell of k's trail (Infinity with no trail). */
 function threat(world: World, k: number) {
   const m = world.movers[k];
   let least = Infinity;
   world.movers.forEach((o, j) => {
     if (j === k || !o.alive) return;
-    for (let i = 0; i < m.trail.length; i += 2) {
+    for (let i = 0; i < m.trail.length; i += 2 * R) {
       const c = m.trail[i],
-        d = Math.abs((c % N) + 0.5 - o.x) + Math.abs(Math.floor(c / N) + 0.5 - o.y);
+        d = Math.abs(cellX(c) - o.x) + Math.abs(cellY(c) - o.y);
       if (d < least) least = d;
     }
   });
@@ -453,12 +482,22 @@ function planLoop(world: World, k: number, level: Level): Plan {
     ex += Math.cos(best.dir);
     ey += Math.sin(best.dir);
   }
+  // A rounded loop, as a hand draws one: out in a bow and back along a curve a little to the side (an egg, a bean,
+  // a petal by how far out and how far aside it reaches), its points a few units apart.
   const out = span(L.out),
     side = span(L.side) * (random(world) < 0.5 ? 1 : -1),
+    lean = (random(world) - 0.5) * 0.6,
     keep = (p: { x: number; y: number }) => ({ x: clamp(p.x, 1.5, N - 1.5), y: clamp(p.y, 1.5, N - 1.5) }),
-    a = keep({ x: ex + Math.cos(best.dir) * out, y: ey + Math.sin(best.dir) * out }),
-    b = keep({ x: a.x + Math.cos(best.dir + Math.PI / 2) * side, y: a.y + Math.sin(best.dir + Math.PI / 2) * side });
-  return { points: [a, b], mode: "loop", next: 0, field: null, fieldAt: -1, victim: -1 };
+    fx = Math.cos(best.dir),
+    fy = Math.sin(best.dir),
+    points: { x: number; y: number }[] = [];
+  for (const t of [0.22, 0.42, 0.6, 0.78, 0.94]) {
+    const a = t * Math.PI,
+      ahead = out * Math.sin(a) * (1 + lean * Math.cos(a)),
+      aside = (side * (1 - Math.cos(a))) / 2;
+    points.push(keep({ x: ex + fx * ahead - fy * aside, y: ey + fy * ahead + fx * aside }));
+  }
+  return { points, mode: "loop", next: 0, field: null, fieldAt: -1, victim: -1 };
 }
 /**
  * The heading a computer's mover wants now (null: straight on). It runs loops out of its land and back; it heads
@@ -479,23 +518,23 @@ export function autopilot(world: World, k: number, level: Level): number | null 
         plan.field = homeField(world, k);
         plan.fieldAt = world.tick;
       }
-      const toHome = plan.field[m.cell],
+      const toHome = plan.field[unitOf(m)],
         danger = threat(world, k);
-      if (plan.mode !== "home" && (danger < (toHome + 1) * L.margin || m.trail.length > L.most)) plan.mode = "home";
+      if (plan.mode !== "home" && (danger < (toHome + 1) * L.margin || m.trail.length > L.most * R)) plan.mode = "home";
     }
     // A trail of someone else's in reach, which I can cut before its owner is home: go for it.
-    if (L.hunt && plan.mode !== "home" && m.trail.length < L.most / 2) {
+    if (L.hunt && plan.mode !== "home" && m.trail.length < (L.most * R) / 2) {
       let target: { x: number; y: number; d: number; j: number } | null = null;
       world.movers.forEach((o, j) => {
-        if (j === k || !o.alive || o.trail.length < 3) return;
+        if (j === k || !o.alive || o.trail.length < 3 * R) return;
         for (const c of o.trail) {
-          const tx = (c % N) + 0.5,
-            ty = Math.floor(c / N) + 0.5,
+          const tx = cellX(c),
+            ty = cellY(c),
             d = Math.hypot(tx - m.x, ty - m.y);
           if (d > L.hunt || (target && d >= target.d)) continue;
           // Its owner's own way home, roughly: as the crow flies to the nearest of its land is not known here, so
           // the length of trail still to run back is taken as a guess.
-          if (d < o.trail.length * 0.5 + 2) target = { x: tx, y: ty, d, j };
+          if (d < (o.trail.length / R) * 0.5 + 2) target = { x: tx, y: ty, d, j };
         }
       });
       if (target) {
@@ -516,10 +555,11 @@ export function autopilot(world: World, k: number, level: Level): number | null 
       plan.field = homeField(world, k);
       plan.fieldAt = world.tick;
     }
-    // Downhill on the field: the neighbouring cell nearest home.
-    const x = m.cell % N,
-      y = Math.floor(m.cell / N);
-    let best = { c: m.cell, d: plan.field[m.cell] };
+    // Downhill on the field: the neighbouring unit nearest home.
+    const here = unitOf(m),
+      x = here % N,
+      y = Math.floor(here / N);
+    let best = { c: here, d: plan.field[here] };
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
       const nx = x + dx,
         ny = y + dy;
@@ -528,7 +568,7 @@ export function autopilot(world: World, k: number, level: Level): number | null 
         d = plan.field[c] + (dx && dy ? 0.4 : 0);
       if (d < best.d) best = { c, d };
     }
-    if (best.c === m.cell) return safeHeading(world, k, m.heading);
+    if (best.c === here) return safeHeading(world, k, m.heading);
     return safeHeading(world, k, towards(m, { x: (best.c % N) + 0.5, y: Math.floor(best.c / N) + 0.5 }));
   }
   // A loop's corners (or a trail to cut), one after another; then home.
