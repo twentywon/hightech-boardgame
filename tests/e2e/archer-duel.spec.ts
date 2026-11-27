@@ -6,7 +6,7 @@ import { powerFor, type Land } from "../../src/games/bowduel/rules";
 /*
  * 활잡이 결투: a pull back on the table draws the bow (the angle and draw shown in numbers, no line of flight), letting
  * go looses; the arrow flies its arc and strikes. Shots here are reckoned from the field the canvas tells
- * (`data-land`, `data-wind`) as the computer reckons its own, then made as a person's pull. The pages run on a fast
+ * (`data-land`) as the computer reckons its own, then made as a person's pull. The pages run on a fast
  * clock (`fastClock`) so that a whole duel's flights pass quickly.
  */
 const moves = async (page: Page) => Number(/(\d+)/.exec((await page.locator("#move-count").textContent()) ?? "")?.[1] ?? 0);
@@ -27,20 +27,20 @@ async function pull(page: Page, dx: number, dy: number, release = true) {
 async function reckoned(page: Page, side: 0 | 1, angle = 45) {
   const el = canvas(page),
     land = JSON.parse((await el.getAttribute("data-land"))!) as Land,
-    wind = Number(await el.getAttribute("data-wind")),
     face = Number(await el.getAttribute("data-face")) as 1 | -1,
-    power = Math.round(powerFor(land, side, angle, wind) * 10) / 10,
+    power = Math.round(powerFor(land, side, angle) * 10) / 10,
     box = (await el.boundingBox())!;
   return { power, ...pullFor(angle, power, box.width, box.height, face) };
 }
-async function sit(page: Page, mode: "ai" | "local", variant = "calm") {
+async function sit(page: Page, mode: "ai" | "local") {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await fastClock(page);
   await page.goto("/");
   await selectGame(page, "활잡이 결투");
   await page.getByLabel(mode === "ai" ? "컴퓨터 대전" : "로컬 2인", { exact: true }).check();
-  await page.locator("#pg-variant").selectOption(variant);
+  // One field only: the windy one was taken out, so there is nothing to choose.
+  await expect(page.locator("#pg-variant")).toHaveCount(0);
   if (mode === "ai") await page.locator("#pg-level").selectOption("easy");
   await page.locator(".game-stage button.primary").click();
   await expect(canvas(page)).toHaveAttribute("data-ready", "true", { timeout: 30000 });
@@ -56,8 +56,8 @@ test("archer duel: a pull draws and shows the numbers, a short one shoots nothin
   await expect(el).toHaveAttribute("data-face", "1");
   await expect(page.locator(".ad-bar.ad-l .ad-name")).toHaveText("나");
   await expect(page.locator(".ad-bar.ad-r .ad-name")).toHaveText("컴퓨터");
-  // A calm field shows no wind.
-  await expect(page.locator(".ad-wind")).toBeHidden();
+  // No wind on the field: nothing tells of one.
+  await expect(page.locator(".ad-wind")).toHaveCount(0);
   // Held, the pull shows the angle and the draw in numbers, and the archer draws; a pull too short looses nothing.
   await pull(page, -80, 80, false);
   await expect(el).toHaveAttribute("data-drawn", "true");
@@ -105,10 +105,9 @@ test("archer duel: a pull draws and shows the numbers, a short one shoots nothin
 
 test("archer duel at one screen: each archer draws by its own pull (the right one facing left) and the keys draw too", async ({ page }) => {
   test.setTimeout(240000);
-  const errors = await sit(page, "local", "wind");
+  const errors = await sit(page, "local");
   const el = canvas(page);
   await expect(page.locator(".ad-bar.ad-l .ad-name")).toHaveText("플레이어 1");
-  await expect(page.locator(".ad-wind")).toBeVisible();
   // Player 1 pulls down and to the left.
   let shot = await reckoned(page, 0);
   await pull(page, shot.dx, shot.dy);

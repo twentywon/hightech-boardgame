@@ -309,7 +309,7 @@ const pointGames: Record<string, { config: PointConfig<any>; options: PointOptio
   "gold-raid": { config: goldRaidConfig, options: { mode: "ai", variant: "100", level: "normal" } },
   "russian-roulette": { config: rRouletteConfig, options: { mode: "ai", variant: "", level: "normal" } },
   // 활잡이 결투: the variant is the field (windy or calm); the gap and the mounds are laid afresh each game.
-  "archer-duel": { config: bowDuelConfig, options: { mode: "ai", variant: "wind", level: "normal" } },
+  "archer-duel": { config: bowDuelConfig, options: { mode: "ai", variant: "calm", level: "normal" } },
   // 시대 전쟁: no setting (no time limit; a match ends when a base falls).
   "era-war": { config: eraWarConfig, options: { mode: "ai", variant: "", level: "normal" } },
   // 땅따먹기: the variant is the round's length (2, 3 or 5 minutes); the computers beside me are its setting.

@@ -1,6 +1,6 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { HURT, HEALTH, LEVELS, PART_NAMES, SPAN, VARIANTS, WIND_MOST, bowDuel, type State } from "./rules";
+import { HURT, HEALTH, LEVELS, PART_NAMES, SPAN, bowDuel, type State } from "./rules";
 import { DUEL_COLOURS, DuelView } from "./view";
 
 export const bowDuelConfig: PointConfig<State> = {
@@ -13,8 +13,6 @@ export const bowDuelConfig: PointConfig<State> = {
   cheerOnRest: true,
   view: (host, quality, _variant, mode) => new DuelView(host, quality, mode),
   colors: DUEL_COLOURS,
-  variants: VARIANTS.map((v) => ({ value: v.value, label: v.label })),
-  variantLabel: "들판",
   // The computer takes the string and draws before it looses (the view shows the draw).
   ponder: () => 500,
   cheer: (before, state) => {
@@ -44,7 +42,7 @@ export const bowDuelConfig: PointConfig<State> = {
   artClass: "hexa-art",
   artLabel: "활잡이 결투 미리보기",
   tableLabel: "THE HIGHLAND",
-  tableNote: (variant) => (variant === "calm" ? "바람 없는 들판" : "바람 부는 들판"),
+  tableNote: () => "억새 언덕",
   rulesTitle: "지난 화살을 보고 다음 화살을 고치세요",
   rules:
     part(
@@ -62,15 +60,14 @@ export const bowDuelConfig: PointConfig<State> = {
         ["머리", `체력 <b>${HURT.head}</b>을 깎습니다. 머리 두 발이면 끝납니다.`],
         ["몸통", `체력 <b>${HURT.body}</b>을 깎습니다.`],
         ["다리", `체력 <b>${HURT.legs}</b>을 깎습니다.`],
-        ["승리", `상대의 체력 ${HEALTH}을 먼저 0으로 만들면 이깁니다. 너무 높이 쏜 화살이 <b>내게 떨어지면</b> 나도 다칩니다.`],
+        ["승리", `상대의 체력 ${HEALTH}을 먼저 0으로 만들면 이깁니다.`],
       ),
     ) +
     part(
-      "바람",
+      "바람과 컴퓨터",
       table(
-        ["바람 부는 들판", `화살마다 바람이 새로 붑니다(최대 ${WIND_MOST} m/s). 위쪽 가운데 화살표가 바람이 부는 쪽이고, 양쪽 깃발도 바람에 날립니다. 바람 쪽으로 쏘면 더 멀리, 바람을 거슬러 쏘면 덜 갑니다.`],
-        ["바람 없는 들판", "바람이 없어 같은 각도와 힘이면 늘 같은 곳에 떨어집니다."],
-        ["컴퓨터", `처음에는 빗나가지만 화살이 떨어진 곳을 보고 점점 정확해집니다. 난이도가 높을수록 빨리 맞히고 바람도 잘 읽습니다(${Object.values(LEVELS)
+        ["바람", "바람이 없어 같은 언덕에서 같은 각도와 힘이면 늘 같은 곳에 떨어집니다."],
+        ["컴퓨터", `처음에는 빗나가지만 화살이 떨어진 곳을 보고 점점 정확해집니다. 난이도가 높을수록 빨리 맞힙니다(${Object.values(LEVELS)
           .map((l) => l.label)
           .join(" · ")}).`],
       ),

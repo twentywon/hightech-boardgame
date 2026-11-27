@@ -137,3 +137,59 @@ test("territory on a touch screen: the lever turns my mover the way it leans, an
   await expect.poll(async () => near((await list(page, "heading"))[0], -Math.PI / 2), { timeout: 30_000 }).toBeLessThan(0.15);
   expect(errors).toEqual([]);
 });
+
+test("territory's three rounds, and a deathmatch: no clock but who is still in, and my fall ends it as a loss", async ({ page }) => {
+  await page.goto("/");
+  await selectGame(page, "땅따먹기");
+  // The rounds offered: 3분판, 5분판, 데스매치 (the user asked).
+  await expect(page.locator("#pg-variant option")).toHaveText(["3분판", "5분판", "데스매치"]);
+  const errors = await sit(page, "1", "easy", "death");
+  await expect(canvas(page)).toHaveAttribute("data-mode", "death");
+  await expect(page.locator(".ld-clock b")).toHaveText("생존 2");
+  await expect(canvas(page)).toHaveAttribute("data-phase", "play", { timeout: 60_000 });
+  await expect(canvas(page)).toHaveAttribute("data-left", "");
+  // Out of my land, right, down, back left, then up across my own trail: out, and in a deathmatch for good.
+  const fall = await page.evaluate(
+    () =>
+      new Promise<{ outs: number; leg: number }>((done) => {
+        const el = document.querySelector<HTMLCanvasElement>("#board canvas")!,
+          read = () => {
+            const d = el.dataset,
+              [x, y] = d.pos!.split(";")[0].split(",").map(Number);
+            return { x, y, outs: Number(d.outs!.split(",")[0]), phase: d.phase };
+          },
+          key = (code: string, down: boolean) => document.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", { code, bubbles: true })),
+          from = read(),
+          legs: [string, (p: ReturnType<typeof read>) => boolean][] = [
+            ["ArrowRight", (p) => p.x > from.x + 5],
+            ["ArrowDown", (p) => p.y > from.y + 3],
+            ["ArrowLeft", (p) => p.x < from.x + 3.4],
+            ["ArrowUp", () => false],
+          ],
+          began = performance.now();
+        let leg = 0;
+        key(legs[0][0], true);
+        const tick = () => {
+          const p = read();
+          if (p.outs || p.phase === "over" || performance.now() - began > 150_000) {
+            key(legs[leg][0], false);
+            return done({ outs: p.outs, leg });
+          }
+          if (legs[leg][1](p)) {
+            key(legs[leg][0], false);
+            key(legs[++leg][0], true);
+          }
+          requestAnimationFrame(tick);
+        };
+        tick();
+      }),
+  );
+  expect(fall).toMatchObject({ outs: 1, leg: 3 });
+  // Against the computer my fall ends a deathmatch: a loss, the computer first.
+  await expect(page.locator(".board-finale")).toBeVisible({ timeout: 60_000 });
+  await expect(canvas(page)).toHaveAttribute("data-phase", "over");
+  await expect(page.locator("#pg-final")).toContainText("1위 컴퓨터 1");
+  await expect(page.locator("#pg-final")).toContainText("마지막까지 살아남은 쪽이 이깁니다");
+  expect((await list(page, "alive"))[0]).toBe(0);
+  expect(errors).toEqual([]);
+});

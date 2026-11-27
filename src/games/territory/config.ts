@@ -1,11 +1,12 @@
 import { HOST_ONLY } from "../../net/match";
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
-import { COLORS, COLOR_NAMES, DEFAULT_ROUND, ROUNDS, createNet, seatOfMover, territory, type State } from "./rules";
+import { COLORS, COLOR_NAMES, MODES, createNet, seatOfMover, territory, type State } from "./rules";
 import { RESPAWN, WIN_SHARE } from "./sim";
 import { TERRITORY_COLORS, TerritoryView } from "./view";
 
-const minutes = (s: number) => (s % 60 ? `${Math.floor(s / 60)}분 ${s % 60}초` : `${s / 60}분`);
+/** A round's name by its variant: 3분판, 5분판, 데스매치 (an older 1- or 2-minute choice is played as 3분판). */
+const modeName = (variant: string) => MODES.find((m) => m.value === variant)?.label ?? MODES[0].label;
 export const territoryConfig: PointConfig<State> = {
   game: territory,
   live: true,
@@ -18,7 +19,7 @@ export const territoryConfig: PointConfig<State> = {
   // Over Wi-Fi (와이파이 여럿이) two to four devices steer a mover each; a seat nobody takes is the host's computer's or
   // closed. The round is run by the host's view (`src/net/live.ts`, `net.ts`): each guest sends the heading it wants,
   // the host tells every mover and the field; who is put out and the end are the host's moves alone. A dropped
-  // person's mover is steered by the host's computer until they come back. The round's length is the host's.
+  // person's mover is steered by the host's computer until they come back. The round (3분판, 5분판, 데스매치) is the host's.
   net: {
     seats: () => COLOR_NAMES.map((label, k) => ({ label, color: COLORS[k], kinds: k < 2 ? ["computer"] : ["computer", "closed"] })),
     create: (variant, _options, seated) => createNet(variant, seated),
@@ -47,8 +48,8 @@ export const territoryConfig: PointConfig<State> = {
       sound.chips();
     } else if (kind === "back") sound.hop();
   },
-  variants: ROUNDS.map((s) => ({ value: String(s), label: `${minutes(s)} 판` })),
-  variantLabel: "시간",
+  variants: MODES,
+  variantLabel: "판",
   settings: [
     {
       id: "computers",
@@ -67,13 +68,13 @@ export const territoryConfig: PointConfig<State> = {
   name: "땅따먹기",
   english: "Territory",
   number: "NO. 115 — PAINT YOUR LAND",
-  intro: `<p>풀밭에 펼친 커다란 천 위에서 꼬마 페인터들이 땅을 넓힙니다.<br>내 땅 밖으로 나가면 꼬리가 남고, 꼬리를 끌고 내 땅으로 돌아오면 꼬리가 둘러싼 곳이 모두 내 땅이 됩니다. 꼬리를 밟히면 탈락! 시간이 끝났을 때 땅이 가장 넓으면 이깁니다.</p>`,
+  intro: `<p>풀밭에 펼친 커다란 천 위에서 꼬마 페인터들이 땅을 넓힙니다.<br>내 땅 밖으로 나가면 꼬리가 남고, 꼬리를 끌고 내 땅으로 돌아오면 꼬리가 둘러싼 곳이 모두 내 땅이 됩니다. 꼬리를 밟히면 탈락! 3분판·5분판은 시간이 끝났을 때 땅이 가장 넓으면, 데스매치는 마지막까지 살아남으면 이깁니다.</p>`,
   meta: "컴퓨터 대전 · 와이파이 여럿이 · 최대 4인 · 실시간",
   art: `<div class="pg-mini"><i></i><i></i><i></i></div><span>PAINT YOUR LAND</span>`,
   artClass: "foosball-art",
   artLabel: "땅따먹기 들판 미리보기",
   tableLabel: "THE PAINTED MEADOW",
-  tableNote: (variant) => `실시간 · ${minutes(Number(variant) || DEFAULT_ROUND)} 판`,
+  tableNote: (variant) => `실시간 · ${modeName(variant)}`,
   firstNote: "내 꼬마 페인터는 빨강입니다. 화면이 늘 나를 따라갑니다.",
   rulesTitle: "꼬리로 둘러싸 내 땅을 넓히세요",
   rules:
@@ -85,9 +86,20 @@ export const territoryConfig: PointConfig<State> = {
         "꼬리를 끌고 <b>내 땅으로 돌아오면</b> 꼬리와, 꼬리가 둘러싼 안쪽이 모두 내 땅이 됩니다. 남의 땅을 둘러싸면 그 땅도 내 것이 됩니다.",
         "누구든 내 꼬리를 밟으면 나는 <b>탈락</b>합니다. 내가 내 꼬리를 밟아도 탈락입니다. 내 땅 안에 있을 때는 꼬리가 없으니 안전합니다.",
         "머리끼리 부딪히면 자기 땅 밖에 있던 쪽이 탈락합니다(둘 다 밖이면 둘 다).",
-        `탈락하면 내 땅과 꼬리가 모두 사라지고, ${RESPAWN}초 뒤 빈 곳에 작은 땅을 받아 다시 시작합니다. 땅을 모두 빼앗겨도 탈락입니다.`,
-        `시간이 끝났을 때 땅이 가장 넓은 사람이 이깁니다. 들판의 ${Math.round(WIN_SHARE * 100)}%를 먼저 차지하면 그 자리에서 이깁니다.`,
+        `탈락하면 내 땅과 꼬리가 모두 사라지고(빈 땅이 됨), 3분판·5분판에서는 ${RESPAWN}초 뒤 빈 곳에 작은 땅을 받아 다시 시작합니다. 땅을 모두 빼앗겨도 탈락입니다.`,
+        `3분판·5분판은 시간이 끝났을 때 땅이 가장 넓은 사람이 이깁니다. 어느 판이든 들판의 ${Math.round(WIN_SHARE * 100)}%를 먼저 차지하면 그 자리에서 이깁니다.`,
         "들판 가장자리는 낮은 울타리입니다. 부딪히면 울타리를 따라 미끄러지듯 돕니다.",
+      ),
+    ) +
+    part(
+      "판",
+      table(
+        ["3분판", "3분 동안 겨룹니다. 탈락해도 다시 시작합니다. 시간이 끝났을 때 땅이 가장 넓으면 이깁니다."],
+        ["5분판", "5분 동안 겨룹니다. 나머지는 3분판과 같습니다."],
+        [
+          "데스매치",
+          "시간 제한이 없고, 탈락하면 다시 시작하지 못합니다(그 사람의 땅은 빈 땅이 됨). 마지막 한 명이 남으면 끝나고, 살아남은 사람이 이깁니다. 순위는 살아남은 사람이 먼저, 그다음은 늦게 탈락한 순서입니다. 컴퓨터 대전에서는 내가 탈락하면 그 자리에서 판이 끝납니다(패배). 와이파이 여럿이에서는 사람이 모두 탈락하면 끝나고, 탈락한 사람은 끝날 때까지 지켜봅니다.",
+        ],
       ),
     ) +
     part(
@@ -102,8 +114,8 @@ export const territoryConfig: PointConfig<State> = {
     part(
       "화면",
       table(
-        ["왼쪽 위", "남은 시간과 내 땅의 넓이(들판의 몇 %인지)."],
-        ["오른쪽 위", "모두의 땅 넓이 순위. 탈락해 기다리는 사람은 흐리게 나옵니다."],
+        ["왼쪽 위", "남은 시간(데스매치는 살아남은 사람 수)과 내 땅의 넓이(들판의 몇 %인지)."],
+        ["오른쪽 위", "모두의 땅 넓이 순위. 탈락한 사람은 흐리게 나옵니다."],
         ["오른쪽 아래", "들판 전체의 작은 지도: 저마다의 땅과 꼬리, 꼬마 페인터의 자리(내 것은 크게)."],
         ["땅의 무늬", "빨강은 빗금, 파랑은 비늘, 노랑은 물방울, 초록은 나뭇잎 무늬입니다."],
       ),
@@ -114,7 +126,7 @@ export const territoryConfig: PointConfig<State> = {
         ["컴퓨터 대전", "나는 빨강, 컴퓨터 1~3명과 겨룹니다. 1등을 해야 이깁니다."],
         [
           "와이파이 여럿이",
-          "같은 와이파이의 기기 2~4대가 저마다 꼬마 페인터 하나를 몹니다. 빈자리는 방장이 컴퓨터로 채우거나(3·4번은) 닫습니다. 시간은 방장이 고른 대로입니다. 한 사람이 일시정지하면 모두 멈추고, 연결이 끊긴 사람의 페인터는 다시 들어올 때까지 방장 기기의 컴퓨터가 몹니다.",
+          "같은 와이파이의 기기 2~4대가 저마다 꼬마 페인터 하나를 몹니다. 빈자리는 방장이 컴퓨터로 채우거나(3·4번은) 닫습니다. 판(3분판·5분판·데스매치)은 방장이 고른 대로입니다. 한 사람이 일시정지하면 모두 멈추고, 연결이 끊긴 사람의 페인터는 다시 들어올 때까지 방장 기기의 컴퓨터가 몹니다.",
         ],
         ["쉬움", "작게 돌고, 위험을 늦게 알아챕니다. 남의 꼬리를 노리지 않습니다."],
         ["보통", "알맞게 돌고, 가까이 있는 꼬리는 자르러 옵니다."],
