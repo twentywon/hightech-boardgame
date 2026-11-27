@@ -257,14 +257,15 @@ test("valet parking: each lot has its own setting: the mart by day, the burger r
 });
 
 test("valet parking: the lots are labelled 쉬움, 보통, 어려움 in their order, and a car kept waiting in the street sounds its horn, again and again", async ({ page }) => {
-  test.setTimeout(180000);
+  // (The software-drawn page runs the lot's clock slowly: the second customer comes a few real minutes in.)
+  test.setTimeout(600000);
   const errors = await sit(page);
   // The lot's level on the table's label.
   await expect(page.locator("main.game-layout")).toContainText("마트 주차장 (쉬움)");
   // Nobody takes the car at the entrance: the next customer waits in the street and honks, more than once.
-  await expect.poll(async () => Number(await canvas(page).getAttribute("data-honks")), { timeout: 90000 }).toBeGreaterThanOrEqual(1);
+  await expect.poll(async () => Number(await canvas(page).getAttribute("data-honks")), { timeout: 400000 }).toBeGreaterThanOrEqual(1);
   const first = Number(await canvas(page).getAttribute("data-honks"));
-  await expect.poll(async () => Number(await canvas(page).getAttribute("data-honks")), { timeout: 30000 }).toBeGreaterThan(first);
+  await expect.poll(async () => Number(await canvas(page).getAttribute("data-honks")), { timeout: 120000 }).toBeGreaterThan(first);
   // The lot picker names each lot with its level.
   await page.locator("#restart").click();
   const cards = page.locator("dialog[open] .stage-card");
