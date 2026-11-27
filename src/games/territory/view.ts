@@ -8,10 +8,10 @@ import type { LiveGuest, LiveHost, LiveSession } from "../../net/live";
 import { capturing, shout } from "../../ui/banner";
 import type { Level } from "../points/ai";
 import { TableView, type Spot, type TableSubject } from "../table/view";
-import { follow, hostWants, inputOf, laySlice, readSnap, snapOf } from "./net";
+import { FieldSender, follow, hostWants, inputOf, laySlice, readSnap, snapOf } from "./net";
 import { FieldPaint, grass, nameTag } from "./paint";
 import { COLORS, COLOR_NAMES, END, OUT, moverName, packEnd, seatOfMover, type State } from "./rules";
-import { CELLS, COUNTDOWN, DT, N, autopilot, createWorld, secondsLeft, step, ticks, type Event, type World } from "./sim";
+import { CELLS, COUNTDOWN, DT, G, N, R, autopilot, createWorld, secondsLeft, step, ticks, type Event, type World } from "./sim";
 
 export const TERRITORY_COLORS: [string, string] = [COLORS[0], COLORS[1]];
 type Own = <R extends { dispose(): void }>(resource: R) => R;
@@ -26,6 +26,10 @@ const WIDE = 20,
 const FIGURE = 1.3;
 /** The lever's dead middle (a lean under it steers nothing). */
 const DEAD = 0.25;
+/** Milliseconds a frame may spend drawing the field's land again. */
+const PAINT_BUDGET = 5;
+/** The map's pixels to a unit of the field (a pixel a cell). */
+const MAP = G / N;
 /** A trail's half width, and the most points a trail's line holds. */
 const HALF = 0.34,
   MOST = 1600;
@@ -101,7 +105,8 @@ export class TerritoryView extends TableView<State> {
   private last = performance.now();
   private left = 0;
   private ticker = 0;
-  private turn = 0;
+  /** The host's choice of which slice of the field each state carries. */
+  private sender = new FieldSender();
   /** What of the round a guest has seen so far (to sound and show what changed since). */
   private heard: { tick: number; alive: boolean[]; outs: number[]; kos: number[]; land: number[] } | null = null;
   private owner = new Uint8Array(CELLS);
@@ -136,7 +141,7 @@ export class TerritoryView extends TableView<State> {
     this.board.className = "ld-board";
     this.map = document.createElement("div");
     this.map.className = "ld-map";
-    this.mapCanvas.width = this.mapCanvas.height = N * 2;
+    this.mapCanvas.width = this.mapCanvas.height = G;
     this.pops = document.createElement("div");
     this.pops.className = "ld-pops";
     this.hud.append(this.clock, this.board, this.map, this.pops);
@@ -583,13 +588,16 @@ export class TerritoryView extends TableView<State> {
       }
       if (world.changed.size) {
         for (const c of world.changed) this.changed.add(c);
+        if (live?.host) this.sender.mark(world.changed);
         world.changed.clear();
         this.owner.set(world.owner);
       }
     } else this.left = 0;
-    if (live?.host && this.state) live.tick(() => snapOf(world, this.turn++), now);
-    if (this.changed.size && this.paint) {
-      this.paint.paint(this.owner, this.changed);
+    if (live?.host && this.state) live.tick(() => snapOf(world, this.sender.next()), now);
+    if (this.paint) {
+      // A big claim is drawn over a few frames, nearest my mover first, so that no frame waits long for it.
+      const me = this.mine !== null ? world.movers[this.mine] : null;
+      this.paint.paint(this.owner, this.changed, PAINT_BUDGET, me ? { x: me.x, y: me.y } : undefined);
       this.changed.clear();
     }
     this.pose(real, now);
@@ -622,7 +630,7 @@ export class TerritoryView extends TableView<State> {
       world.movers.forEach((m, k) => {
         if (heard.alive[k] && !m.alive) this.tell({ kind: "out", who: k, by: m.outs > heard.outs[k] ? this.cutter(heard.kos, world) : -1, how: "cut" }, true);
         if (!heard.alive[k] && m.alive) this.tell({ kind: "back", who: k }, true);
-        if (m.alive && heard.alive[k] && m.land - heard.land[k] > 2) this.tell({ kind: "claim", who: k, cells: m.land - heard.land[k] }, true);
+        if (m.alive && heard.alive[k] && m.land - heard.land[k] > 2 * R * R) this.tell({ kind: "claim", who: k, cells: m.land - heard.land[k] }, true);
       });
     }
     this.heard = { tick: world.tick, alive: world.movers.map((m) => m.alive), outs: world.movers.map((m) => m.outs), kos: world.movers.map((m) => m.kos), land: world.movers.map((m) => m.land) };
@@ -877,7 +885,7 @@ export class TerritoryView extends TableView<State> {
     const g = this.mapCanvas.getContext("2d");
     if (!g || !this.state) return;
     const world = this.world!,
-      image = g.createImageData(N * 2, N * 2),
+      image = g.createImageData(G, G),
       bare = [238, 234, 220],
       tones = world.movers.map((_, k) => new T.Color(COLORS[seatOfMover(this.state!, k)])),
       rgb = tones.map((c) => [Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255)]);
@@ -885,15 +893,11 @@ export class TerritoryView extends TableView<State> {
     for (let c = 0; c < CELLS; c++) {
       const who = this.owner[c],
         col = who ? rgb[who - 1] : bare,
-        x = (c % N) * 2,
-        y = Math.floor(c / N) * 2;
-      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-        const i = ((y + dy) * N * 2 + x + dx) * 4;
-        image.data[i] = col[0];
-        image.data[i + 1] = col[1];
-        image.data[i + 2] = col[2];
-        image.data[i + 3] = 235;
-      }
+        i = c * 4;
+      image.data[i] = col[0];
+      image.data[i + 1] = col[1];
+      image.data[i + 2] = col[2];
+      image.data[i + 3] = 235;
     }
     g.putImageData(image, 0, 0);
     world.movers.forEach((m, k) => {
@@ -903,15 +907,15 @@ export class TerritoryView extends TableView<State> {
         g.strokeStyle = `rgba(${rgb[k].join(",")},0.65)`;
         g.lineWidth = 1.5;
         g.beginPath();
-        f.path.forEach((p, i) => (i ? g.lineTo(p.x * 2, p.y * 2) : g.moveTo(p.x * 2, p.y * 2)));
-        g.lineTo(m.x * 2, m.y * 2);
+        f.path.forEach((p, i) => (i ? g.lineTo(p.x * MAP, p.y * MAP) : g.moveTo(p.x * MAP, p.y * MAP)));
+        g.lineTo(m.x * MAP, m.y * MAP);
         g.stroke();
       }
       g.fillStyle = `rgb(${rgb[k].join(",")})`;
       g.strokeStyle = "#ffffff";
       g.lineWidth = k === this.mine ? 2.5 : 1.5;
       g.beginPath();
-      g.arc(m.x * 2, m.y * 2, k === this.mine ? 4 : 3, 0, Math.PI * 2);
+      g.arc(m.x * MAP, m.y * MAP, k === this.mine ? 4 : 3, 0, Math.PI * 2);
       g.fill();
       g.stroke();
     });

@@ -947,17 +947,66 @@ const play = {
     await page.waitForFunction(() => Number(document.querySelector("#board canvas")?.dataset.time) > 24, null, { timeout: 280000 });
     await page.keyboard.press("p");
   },
-  // 땅따먹기: out of my patch to the right and down, the trail behind me and the computers' lands about, then paused
-  // mid-loop.
+  // 땅따먹기: my round patch (the land the shape a loop went, not squares), out of it on a curve with the trail
+  // behind me, paused mid-loop.
   territory: async () => {
     await page.locator("#board canvas").waitFor();
     await page.waitForFunction(() => document.querySelector("#board canvas")?.dataset.phase === "play", null, { timeout: 120000 });
     await wait(5000);
-    for (const [key, ms] of [["ArrowRight", 1600], ["ArrowDown", 1300], ["ArrowLeft", 700]]) {
-      await page.keyboard.down(key);
-      await wait(ms);
-      await page.keyboard.up(key);
+    // Steered by the keys (an eighth of a turn apart, two at once for the slants) from where the canvas says I am, a
+    // frame at a time: round a circle toward the field's middle until it is taken, then out round another, paused
+    // once its trail is long (or after a while). Put out, it begins again.
+    const canvas = page.locator("#board canvas"),
+      read = async () => {
+        const d = await canvas.evaluate((el) => ({ ...el.dataset }));
+        const [x, y] = d.pos.split(";")[0].split(",").map(Number);
+        return { x, y, trail: Number(d.trails.split(",")[0]), alive: d.alive.split(",")[0] === "1" };
+      },
+      ways = [["ArrowRight"], ["ArrowRight", "ArrowDown"], ["ArrowDown"], ["ArrowDown", "ArrowLeft"], ["ArrowLeft"], ["ArrowLeft", "ArrowUp"], ["ArrowUp"], ["ArrowUp", "ArrowRight"]],
+      inward = (p, r) => {
+        const d = Math.hypot(32 - p.x, 32 - p.y) || 1;
+        return { x: p.x + ((32 - p.x) / d) * r, y: p.y + ((32 - p.y) / d) * r };
+      };
+    let loop = 0,
+      left = false,
+      held = [],
+      p = await read(),
+      centre = inward(p, 5);
+    await canvas.focus();
+    const began = Date.now();
+    while (Date.now() - began < 150000) {
+      const was = p;
+      p = await read();
+      if (p.x === was.x && p.y === was.y && p.trail === was.trail) {
+        await wait(20);
+        continue;
+      }
+      if (!p.alive) {
+        loop = 0;
+        left = false;
+        await wait(300);
+        p = await read();
+        centre = inward(p, 5);
+        continue;
+      }
+      if (p.trail > 0) left = true;
+      if (loop === 0 && left && p.trail === 0) {
+        loop = 1;
+        left = false;
+        centre = inward(p, 6);
+      }
+      if (loop === 1 && p.trail > 45) break;
+      const r = loop ? 6 : 5,
+        a = Math.atan2(p.y - centre.y, p.x - centre.x) + 0.55,
+        heading = Math.atan2(centre.y + Math.sin(a) * r - p.y, centre.x + Math.cos(a) * r - p.x),
+        want = ways[((Math.round(heading / (Math.PI / 4)) % 8) + 8) % 8];
+      if (want.join() !== held.join()) {
+        for (const key of held) await page.keyboard.up(key);
+        for (const key of want) await page.keyboard.down(key);
+        held = want;
+      }
     }
+    for (const key of held) await page.keyboard.up(key);
     await page.keyboard.press("p");
   },
   // The snake (near the right fence by now) turned up, back left along the top and down, then paused there so that
