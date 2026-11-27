@@ -974,6 +974,10 @@ export class Sound {
     ])
       for (const f of [392, 494]) this.tone("square", f, f, at, length, 0.035);
   }
+  /** A driver kept waiting: 빵빵, two short blasts of a two-note horn (`pitch` 1 a car's; lower a bus's, higher a motorbike's). */
+  honk(pitch = 1) {
+    for (const at of [0, 0.19]) for (const f of [415, 523]) this.tone("square", f * pitch, f * pitch * 0.995, at, 0.12, 0.024);
+  }
   // ─────────────── 축구 ───────────────
   /** A football kicked (`strength` 0 to 1): the thump of the leather, a little higher than a basketball's. */
   kickBall(strength = 1) {

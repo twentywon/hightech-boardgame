@@ -53,6 +53,32 @@ export const BUMP_FROM = 0.7,
   BUMP_GAP = 0.6;
 /** The most cars waiting outside the entrance. */
 export const QUEUE_MOST = 2;
+/**
+ * What a customer leaves (the user asked for motorbikes at the second lot and buses and motorbikes at the third): a
+ * car, a motorbike or a bus, each with its own size and handling. A motorbike parks in a car's bay (anywhere in it,
+ * along it); a bus only in a bay marked for a bus.
+ */
+export const CAR = 0,
+  BIKE = 1,
+  BUS = 2;
+export interface Vehicle {
+  l: number;
+  w: number;
+  wheelbase: number;
+  maxSteer: number;
+  vMost: number;
+  vBack: number;
+  pull: number;
+}
+export const VEHICLES: Vehicle[] = [
+  { l: CAR_L, w: CAR_W, wheelbase: WHEELBASE, maxSteer: MAX_STEER, vMost: V_MOST, vBack: V_BACK, pull: PULL },
+  // Nimble and quick, but it is only walked backward.
+  { l: 2.15, w: 0.8, wheelbase: 1.42, maxSteer: 0.7, vMost: 7, vBack: 1.6, pull: 5.6 },
+  // Long and slow to answer: it swings wide.
+  { l: 7.4, w: 2.4, wheelbase: 4.3, maxSteer: 0.66, vMost: 5.2, vBack: 2.6, pull: 3.4 },
+];
+/** A vehicle's size and handling (a box with no kind is a car). */
+export const dims = (car: { kind?: number } | null | undefined) => VEHICLES[car?.kind ?? CAR] ?? VEHICLES[CAR];
 
 export interface Bay {
   x: number;
@@ -63,7 +89,11 @@ export interface Bay {
   l: number;
   /** The number painted on it. */
   n: number;
+  /** A bay for a bus (only a bus parks in it, and a bus nowhere else). */
+  bus?: boolean;
 }
+/** Whether a vehicle of `kind` may park in `bay`. */
+export const fits = (bay: Bay, kind: number) => (kind === BUS) === !!bay.bus;
 export interface Pillar {
   x: number;
   z: number;
@@ -92,8 +122,13 @@ export interface Lot {
   patience: number;
   returnPatience: number;
   stay: [number, number];
+  /** The share of customers who come on a motorbike, and by bus (one bus at a time, while its bay is free). */
+  bikes: number;
+  buses: number;
 }
 export const STAGE_NAMES = ["마트 주차장", "햄버거 가게 주차장", "지하 주차장"];
+/** How hard each lot is, by its order (the user asked for them named so). */
+export const LEVELS = ["쉬움", "보통", "어려움"];
 /**
  * The half width of every lot, the aisle's half width, a perpendicular bay's length, and where the rows of bays begin
  * (far enough from the entrance that a car backing out of the first bay clears the one waiting there).
@@ -125,6 +160,8 @@ export function lotOf(stage: number): Lot {
       patience: 60,
       returnPatience: 60,
       stay: [22, 48],
+      bikes: 0,
+      buses: 0,
     },
     add = (x: number, z: number, angle: number, w: number, l: number) => bays.push({ x, z, angle, w, l, n: bays.length + 1 });
   // The booth by the entrance (upper left) and a planter under it (lower left).
@@ -145,16 +182,21 @@ export function lotOf(stage: number): Lot {
       }
     blocks[0].z = lot.minZ + 2.2;
     blocks.push({ x: -HALF + 2.6, z: lot.maxZ - 1.6, hx: 2, hz: 1 });
-    Object.assign(lot, { gap: [14, 19], patience: 40, returnPatience: 44 });
+    // Customers come more often the harder the lot (the user asked), some on motorbikes.
+    Object.assign(lot, { gap: [11, 15], patience: 40, returnPatience: 44, bikes: 0.3 });
   } else if (stage === 3) {
     const w = 2.5;
     for (let k = 0; k < 8; k++) add(FIRST + w / 2 + k * w, -AISLE - BAY_L / 2, -Math.PI / 2, w, BAY_L);
     for (let k = 0; k <= 4; k++) pillars.push({ x: FIRST + k * 2 * w, z: -AISLE - 0.45, r: 0.3 });
-    // Along the lower wall: bays end to end (parallel parking).
+    // Along the lower wall: bays end to end (parallel parking), and at its left end, by the entrance, a long bay for a
+    // bus (backed into along the wall, driven out forward to the exit).
     lot.maxZ = AISLE + 2.7;
-    for (let k = 0; k < 3; k++) add(FIRST + 3.2 + k * 6.6, lot.maxZ - 1.45, 0, 2.4, 6);
-    pillars.push({ x: -1.5, z: 1.2, r: 0.4 }, { x: 6.5, z: -1.2, r: 0.4 });
-    Object.assign(lot, { gap: [13, 18], patience: 38, returnPatience: 42 });
+    for (let k = 0; k < 3; k++) add(FIRST + 4.8 + k * 6.6, lot.maxZ - 1.45, 0, 2.4, 6);
+    add(-HALF + 5.6, lot.maxZ - 1.55, 0, 2.9, 11);
+    lot.bays[lot.bays.length - 1].bus = true;
+    pillars.push({ x: 6.5, z: -1.2, r: 0.4 });
+    // Customers come most often here, on motorbikes and by bus too.
+    Object.assign(lot, { gap: [9, 13], patience: 38, returnPatience: 42, bikes: 0.25, buses: 0.2 });
   } else {
     const w = 2.9;
     for (const side of [-1, 1]) for (let k = 0; k < 7; k++) add(FIRST + w / 2 + k * w, side * (AISLE + BAY_L / 2), (side * Math.PI) / 2, w, BAY_L);
@@ -172,7 +214,8 @@ export interface Car {
   /** Speed along its heading (negative backing), and the front wheels' angle (positive to the right). */
   v: number;
   steer: number;
-  /** Its looks: a body style and a colour, by number. */
+  /** What it is (`CAR`, `BIKE`, `BUS`), and its looks: a body style and a colour, by number. */
+  kind: number;
   style: number;
   colour: number;
   state: CarState;
@@ -267,6 +310,10 @@ export function createWorld(stage: number, seed = 1): World {
     };
   return world;
 }
+/** Where a vehicle left at the entrance stands: a long one far enough in that its tail is inside the gate. */
+export const entryX = (lot: Lot, car: { kind?: number }) => Math.max(lot.entrance.x, lot.minX + dims(car).l / 2 + 0.7);
+/** Where a vehicle waits in the street just outside the gate (a long one further out, clear of the barrier). */
+export const gateX = (lot: Lot, car: { kind?: number }) => lot.minX - Math.max(4, dims(car).l / 2 + 0.7);
 export const carOf = (world: World, id: number) => world.cars.find((c) => c.id === id) ?? null;
 /** The four corners of a car (or any box `l` long and `w` wide) at a place and heading. */
 export function corners(x: number, z: number, heading: number, l = CAR_L, w = CAR_W) {
@@ -289,6 +336,8 @@ interface Box {
   l: number;
   w: number;
 }
+/** The box a car takes up. */
+const boxOf = (c: Car): Box => ({ x: c.x, z: c.z, heading: c.heading, l: dims(c).l, w: dims(c).w });
 /** Whether two turned boxes overlap (separating axes). */
 export function boxesTouch(a: Box, b: Box) {
   const pa = corners(a.x, a.z, a.heading, a.l, a.w),
@@ -329,14 +378,16 @@ function boxTouchesCircle(a: Box, p: Pillar) {
 /** Whether a car at (x, z, heading) is clear of the lot's walls, pillars, blocks and every other standing car. */
 export function clear(world: World, id: number, x: number, z: number, heading: number) {
   const lot = world.lot,
-    me: Box = { x, z, heading, l: CAR_L, w: CAR_W };
-  for (const [px, pz] of corners(x, z, heading)) if (px < lot.minX || px > lot.maxX || pz < lot.minZ || pz > lot.maxZ) return false;
+    size = dims(carOf(world, id)),
+    me: Box = { x, z, heading, l: size.l, w: size.w };
+  for (const [px, pz] of corners(x, z, heading, size.l, size.w)) if (px < lot.minX || px > lot.maxX || pz < lot.minZ || pz > lot.maxZ) return false;
   for (const p of lot.pillars) if (boxTouchesCircle(me, p)) return false;
   for (const b of lot.blocks) if (boxesTouch(me, { x: b.x, z: b.z, heading: 0, l: b.hx * 2, w: b.hz * 2 })) return false;
   for (const other of world.cars) {
     if (other.id === id || other.state === "gone" || other.state === "leaving" || other.state === "queue") continue;
-    if (Math.hypot(other.x - x, other.z - z) > CAR_L + 0.5) continue;
-    if (boxesTouch(me, { x: other.x, z: other.z, heading: other.heading, l: CAR_L, w: CAR_W })) return false;
+    const its = dims(other);
+    if (Math.hypot(other.x - x, other.z - z) > (Math.hypot(size.l, size.w) + Math.hypot(its.l, its.w)) / 2 + 0.1) continue;
+    if (boxesTouch(me, boxOf(other))) return false;
   }
   return true;
 }
@@ -344,7 +395,7 @@ export function clear(world: World, id: number, x: number, z: number, heading: n
  * How a car at (x, z, heading) stands in `bay`: its offsets across and along the bay and its angle from the bay's
  * direction (either way round), each as a share of what is allowed (1 the limit), and whether all are within.
  */
-export function standing(bay: Bay, x: number, z: number, heading: number) {
+export function standing(bay: Bay, x: number, z: number, heading: number, size: Vehicle = VEHICLES[CAR]) {
   const c = Math.cos(bay.angle),
     s = Math.sin(bay.angle),
     dx = x - bay.x,
@@ -353,17 +404,20 @@ export function standing(bay: Bay, x: number, z: number, heading: number) {
     across = -dx * s + dz * c,
     turned = Math.abs(wrap(heading - bay.angle)),
     angle = Math.min(turned, Math.PI - turned),
-    okAcross = (bay.w - CAR_W) / 2 + 0.12,
-    okAlong = (bay.l - CAR_L) / 2 + 0.25,
+    okAcross = (bay.w - size.w) / 2 + 0.12,
+    okAlong = (bay.l - size.l) / 2 + 0.25,
     worst = Math.max(Math.abs(across) / okAcross, Math.abs(along) / okAlong, angle / ANGLE_OK);
   return { across, along, angle, worst, inside: worst <= 1 };
 }
 /** The bay a car at (x, z, heading) stands rightly in, among those free (or its own), or -1. */
 export function bayAt(world: World, id: number, x: number, z: number, heading: number) {
-  return world.lot.bays.findIndex((bay, k) => standing(bay, x, z, heading).inside && !world.cars.some((c) => c.id !== id && c.bay === k && c.state !== "gone" && c.state !== "leaving"));
+  const car = carOf(world, id),
+    kind = car?.kind ?? CAR;
+  return world.lot.bays.findIndex((bay, k) => fits(bay, kind) && standing(bay, x, z, heading, dims(car)).inside && !world.cars.some((c) => c.id !== id && c.bay === k && c.state !== "gone" && c.state !== "leaving"));
 }
-/** The bays no car holds. */
-export const freeBays = (world: World) => world.lot.bays.flatMap((_, k) => (world.cars.some((c) => c.bay === k && (c.state === "parked" || c.state === "requested")) ? [] : [k]));
+/** The bays no car holds (of those a vehicle of `kind` may park in, if given). */
+export const freeBays = (world: World, kind?: number) =>
+  world.lot.bays.flatMap((bay, k) => ((kind !== undefined && !fits(bay, kind)) || world.cars.some((c) => c.bay === k && (c.state === "parked" || c.state === "requested")) ? [] : [k]));
 /** The cars that wait for the valet: left at the entrance, or asked for by their owners. */
 export const jobs = (world: World) => world.cars.filter((c) => c.state === "waiting" || c.state === "requested");
 /** What a quick job's tip is: the share of the customer's patience left, of `TIP`. */
@@ -417,7 +471,7 @@ function shove(world: World) {
       moved = true;
     }
     for (const b of lot.blocks) moved = outOfBox(v, { x: b.x, z: b.z, heading: 0, l: b.hx * 2, w: b.hz * 2 }) || moved;
-    for (const c of world.cars) if (solid(c) && c.id !== world.hand && Math.hypot(c.x - v.x, c.z - v.z) < CAR_L) moved = outOfBox(v, { x: c.x, z: c.z, heading: c.heading, l: CAR_L, w: CAR_W }) || moved;
+    for (const c of world.cars) if (solid(c) && c.id !== world.hand && Math.hypot(c.x - v.x, c.z - v.z) < dims(c).l) moved = outOfBox(v, boxOf(c)) || moved;
     if (!moved) break;
   }
 }
@@ -427,19 +481,22 @@ function room(world: World, x: number, z: number) {
   if (x < lot.minX + BODY || x > lot.maxX - BODY || z < lot.minZ + BODY || z > lot.maxZ - BODY) return false;
   if (lot.pillars.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + BODY)) return false;
   if (lot.blocks.some((b) => fromBox(x, z, { x: b.x, z: b.z, heading: 0, l: b.hx * 2, w: b.hz * 2 }) < BODY)) return false;
-  return !world.cars.some((c) => solid(c) && fromBox(x, z, { x: c.x, z: c.z, heading: c.heading, l: CAR_L, w: CAR_W }) < BODY + 0.02);
+  return !world.cars.some((c) => solid(c) && fromBox(x, z, boxOf(c)) < BODY + 0.02);
 }
 /** Where the valet stands as it gets out of `car`: by the driver's door (the left), else the other, else by the nose or the tail; the first with room. */
 function doorOf(world: World, car: Car) {
   const c = Math.cos(car.heading),
     s = Math.sin(car.heading),
-    side = CAR_W / 2 + BODY + 0.06,
-    end = CAR_L / 2 + BODY + 0.06,
+    size = dims(car),
+    side = size.w / 2 + BODY + 0.06,
+    end = size.l / 2 + BODY + 0.06,
+    // A bus's door is at the front, by the driver; a car's and a bike's by the middle.
+    at = car.kind === BUS ? size.l / 2 - 1.2 : 0.3,
     spots = [
-      [0.3, -side],
-      [0.3, side],
-      [-0.6, -side],
-      [-0.6, side],
+      [at, -side],
+      [at, side],
+      [at - 0.9, -side],
+      [at - 0.9, side],
       [end, 0],
       [-end, 0],
     ].map(([a, k]) => ({ x: car.x + a * c - k * s, z: car.z + a * s + k * c }));
@@ -463,20 +520,20 @@ export function reachable(world: World) {
     near = REACH;
   for (const c of world.cars) {
     if (!mayDrive(c)) continue;
-    const far = fromBox(v.x, v.z, { x: c.x, z: c.z, heading: c.heading, l: CAR_L, w: CAR_W });
+    const far = fromBox(v.x, v.z, boxOf(c));
     if (far <= near) [best, near] = [c, far];
   }
   return best;
 }
 /** Whether a car (its middle) stands within a bay's lines, at whatever angle. */
 const within = (bay: Bay, car: Car) => {
-  const how = standing(bay, car.x, car.z, car.heading);
+  const how = standing(bay, car.x, car.z, car.heading, dims(car));
   return Math.abs(how.across) < bay.w / 2 && Math.abs(how.along) < bay.l / 2;
 };
 /** The bay a customer names: one that is free, that no other customer has named, and that no car stands in. */
 function nameBay(world: World, car: Car) {
   const named = new Set(world.cars.filter((c) => c !== car && c.state === "waiting" && c.want >= 0).map((c) => c.want)),
-    open = freeBays(world).filter((k) => !named.has(k) && !world.cars.some((c) => c !== car && solid(c) && within(world.lot.bays[k], c)));
+    open = freeBays(world, car.kind).filter((k) => !named.has(k) && !world.cars.some((c) => c !== car && solid(c) && within(world.lot.bays[k], c)));
   return open.length ? open[Math.floor(draw(world) * open.length)] : -1;
 }
 /** 탑승: the valet gets into the car within its reach (a customer's car is handed over then, and its bay named). */
@@ -498,7 +555,8 @@ export const canAlight = (world: World) => {
 };
 /** The valet steps out of `car` (by its door, or where there is room) and is on foot again. */
 function stepOut(world: World, car: Car) {
-  const spot = doorOf(world, car) ?? { x: car.x - Math.sin(car.heading) * (CAR_W / 2 + BODY), z: car.z + Math.cos(car.heading) * (CAR_W / 2 + BODY) };
+  const side = dims(car).w / 2 + BODY,
+    spot = doorOf(world, car) ?? { x: car.x - Math.sin(car.heading) * side, z: car.z + Math.cos(car.heading) * side };
   world.hand = -1;
   Object.assign(world.valet, { x: spot.x, z: spot.z, heading: car.heading - Math.PI / 2, speed: 0 });
   shove(world);
@@ -515,7 +573,7 @@ export function alight(world: World): Happening[] {
   if (car.state === "waiting") {
     const k = bayAt(world, car.id, car.x, car.z, car.heading);
     if (k >= 0 && (car.want < 0 || k === car.want)) {
-      const how = standing(lot.bays[k], car.x, car.z, car.heading),
+      const how = standing(lot.bays[k], car.x, car.z, car.heading, dims(car)),
         tip = tipOf(car),
         tidy = car.bumped ? 0 : Math.min(TIDY, Math.round(TIDY * clamp(1 - how.worst, 0, 1) * 1.25)),
         pay = car.late ? LATE_PAY : PAY + tip + tidy;
@@ -533,30 +591,31 @@ export function alight(world: World): Happening[] {
 
 /** One slice of the car in hand: the engine, the brakes, the wheels, and what it meets. */
 function drive(world: World, car: Car, input: Input, out: Happening[]) {
-  const gas = clamp(input.gas, -1, 1);
+  const gas = clamp(input.gas, -1, 1),
+    { pull, vMost, vBack, maxSteer, wheelbase } = dims(car);
   let a = 0;
   if (input.handbrake) a = -Math.sign(car.v) * HANDBRAKE;
-  else if (gas > 0) a = car.v < -0.05 ? BRAKE : PULL * gas * (1 - Math.max(0, car.v) / V_MOST);
-  else if (gas < 0) a = car.v > 0.05 ? -BRAKE : PULL * 0.8 * gas * (1 - Math.max(0, -car.v) / V_BACK);
+  else if (gas > 0) a = car.v < -0.05 ? BRAKE : pull * gas * (1 - Math.max(0, car.v) / vMost);
+  else if (gas < 0) a = car.v > 0.05 ? -BRAKE : pull * 0.8 * gas * (1 - Math.max(0, -car.v) / vBack);
   else a = -Math.sign(car.v) * (ROLL + 0.25 * Math.abs(car.v));
   const before = car.v;
   car.v += a * DT;
   // Brakes and rolling stop the car; they do not send it the other way.
   if ((input.handbrake || gas === 0 || Math.sign(gas) !== Math.sign(before)) && before !== 0 && Math.sign(car.v) !== Math.sign(before)) car.v = 0;
-  car.v = clamp(car.v, -V_BACK, V_MOST);
+  car.v = clamp(car.v, -vBack, vMost);
   // The wheels are turned toward where the hands hold them, less far the faster the car goes.
-  const want = clamp(input.steer, -1, 1) * MAX_STEER * (1 - 0.3 * Math.min(1, Math.abs(car.v) / V_MOST)),
+  const want = clamp(input.steer, -1, 1) * maxSteer * (1 - 0.3 * Math.min(1, Math.abs(car.v) / vMost)),
     turn = STEER_RATE * DT;
   car.steer += clamp(want - car.steer, -turn, turn);
   if (car.v === 0) return;
   // The rear axle goes where the car points; the car turns about it by the front wheels' angle.
   const c = Math.cos(car.heading),
     s = Math.sin(car.heading),
-    rx = car.x - (WHEELBASE / 2) * c + car.v * c * DT,
-    rz = car.z - (WHEELBASE / 2) * s + car.v * s * DT,
-    heading = car.heading + ((car.v * Math.tan(car.steer)) / WHEELBASE) * DT,
-    x = rx + (WHEELBASE / 2) * Math.cos(heading),
-    z = rz + (WHEELBASE / 2) * Math.sin(heading);
+    rx = car.x - (wheelbase / 2) * c + car.v * c * DT,
+    rz = car.z - (wheelbase / 2) * s + car.v * s * DT,
+    heading = car.heading + ((car.v * Math.tan(car.steer)) / wheelbase) * DT,
+    x = rx + (wheelbase / 2) * Math.cos(heading),
+    z = rz + (wheelbase / 2) * Math.sin(heading);
   if (clear(world, car.id, x, z, heading)) {
     car.x = x;
     car.z = z;
@@ -573,7 +632,7 @@ function drive(world: World, car: Car, input: Input, out: Happening[]) {
       car.bumped = true;
       car.dents = Math.min(3, car.dents + 1);
     }
-    out.push({ kind: "bump", car: car.id, strength: clamp(speed / V_MOST, 0.15, 1), fined });
+    out.push({ kind: "bump", car: car.id, strength: clamp(speed / vMost, 0.15, 1), fined });
   }
 }
 
@@ -594,12 +653,20 @@ export function step(world: World, input: Input = IDLE): Happening[] {
     if (world.cars.filter((c) => c.state === "queue").length < QUEUE_MOST) {
       const style = Math.floor(draw(world) * STYLES),
         colour = Math.floor(draw(world) * COLOURS);
-      world.cars.push({ id: world.nextId++, x: lot.minX - 4, z: lot.entrance.z, heading: 0, v: 0, steer: 0, style, colour, state: "queue", bay: -1, want: -1, taken: false, patience: lot.patience, patience0: lot.patience, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
+      // (The first lot draws nothing more: it has cars only.)
+      let kind = CAR;
+      if (lot.bikes + lot.buses > 0) {
+        const r = draw(world),
+          bus = lot.buses > 0 && r < lot.buses && !world.cars.some((c) => c.kind === BUS && c.state !== "gone") && freeBays(world, BUS).length > 0;
+        kind = bus ? BUS : r >= lot.buses && r < lot.buses + lot.bikes ? BIKE : CAR;
+      }
+      world.cars.push({ id: world.nextId++, x: gateX(lot, { kind }), z: lot.entrance.z, heading: 0, v: 0, steer: 0, kind, style, colour, state: "queue", bay: -1, want: -1, taken: false, patience: lot.patience, patience0: lot.patience, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
     }
   }
-  // The first in the queue rolls in once the entrance is clear.
-  const first = world.cars.find((c) => c.state === "queue");
-  if (first && !world.cars.some((c) => c !== first && c.state !== "gone" && c.state !== "queue" && (c.state === "arriving" || Math.hypot(c.x - lot.entrance.x, c.z - lot.entrance.z) < CAR_L + 1.6))) {
+  // The first in the queue rolls in once the entrance is clear (of anything within 1.6 m of where it will stand).
+  const first = world.cars.find((c) => c.state === "queue"),
+    room = first && { x: entryX(lot, first), z: lot.entrance.z, heading: 0, l: dims(first).l + 3.2, w: dims(first).w + 1 };
+  if (first && room && !world.cars.some((c) => c !== first && c.state !== "gone" && c.state !== "queue" && (c.state === "arriving" || boxesTouch(room, boxOf(c))))) {
     first.state = "arriving";
     first.t = 0;
   }
@@ -607,7 +674,7 @@ export function step(world: World, input: Input = IDLE): Happening[] {
     if (car.state === "arriving") {
       car.t += DT;
       const p = Math.min(1, car.t / ROLL_IN);
-      car.x = lot.minX - 4 + (lot.entrance.x - (lot.minX - 4)) * p * (2 - p);
+      car.x = gateX(lot, car) + (entryX(lot, car) - gateX(lot, car)) * p * (2 - p);
       if (p >= 1) {
         car.state = "waiting";
         out.push({ kind: "arrive", car: car.id });
@@ -654,16 +721,18 @@ export function step(world: World, input: Input = IDLE): Happening[] {
     return out;
   }
   drive(world, car, input, out);
-  // At the wheel, the valet is where the driver's seat is.
-  v.x = car.x + Math.sin(car.heading) * 0.35;
-  v.z = car.z - Math.cos(car.heading) * 0.35;
+  // At the wheel, the valet is where the driver's seat is (on a motorbike, on its saddle; in a bus, at the front).
+  const ahead = car.kind === BUS ? dims(car).l / 2 - 1.3 : car.kind === BIKE ? -0.15 : 0,
+    left = car.kind === BIKE ? 0 : car.kind === BUS ? 0.75 : 0.35;
+  v.x = car.x + Math.cos(car.heading) * ahead + Math.sin(car.heading) * left;
+  v.z = car.z + Math.sin(car.heading) * ahead - Math.cos(car.heading) * left;
   if (car.state === "requested") {
     // Asked for: its bay is free again once it is out of it; handed over in the exit's zone.
     if (car.bay >= 0 && Math.hypot(car.x - lot.bays[car.bay].x, car.z - lot.bays[car.bay].z) > 3) car.bay = -1;
     if (Math.abs(car.x - lot.exit.x) <= lot.exit.hx && Math.abs(car.z - lot.exit.z) <= lot.exit.hz) {
       const tip = tipOf(car),
         pay = car.late ? LATE_PAY : PAY + tip;
-      const at = doorOf(world, car) ?? { x: car.x - Math.sin(car.heading) * 1.3, z: car.z + Math.cos(car.heading) * 1.3 };
+      const at = doorOf(world, car) ?? { x: car.x - Math.sin(car.heading) * (dims(car).w / 2 + 0.4), z: car.z + Math.cos(car.heading) * (dims(car).w / 2 + 0.4) };
       Object.assign(car, { state: "leaving", bay: -1, t: 0, v: Math.max(4, Math.abs(car.v)), heading: wrap(car.heading), steer: 0 });
       // The owner drives off; the valet is left standing where the door was.
       world.hand = -1;

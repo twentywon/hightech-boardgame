@@ -8,10 +8,10 @@ import type { Marks } from "../points/view";
 import { TableView, type Spot } from "../table/view";
 import { VALET_SUBJECT } from "./layout";
 import { dress, type Look } from "./scenery";
-import { carKit, makeCar, makeFigure, modelOf, paintOf, peopleKit, walk, type CarKit, type Figure, type PeopleKit } from "./models";
+import { carKit, makeBike, makeBus, makeCar, makeFigure, modelOf, paintOf, peopleKit, walk, type CarKit, type Figure, type PeopleKit } from "./models";
 import { WHEEL_LOCK, centred, fingerAngle, steerOf, turnWheel } from "./wheel";
 import { ANGRY, BUMP, END, parkedMove, returnedMove, type State } from "./rules";
-import { ANGRY_FINE, BUMP_FINE, CAR_L, CAR_W, DT, MAX_STEER, SHIFT, TIDY, V_MOST, alight, board, canAlight, createWorld, freeBays, jobs, reachable, standing, step, type Car, type Happening, type Input, type Lot, type World } from "./sim";
+import { ANGRY_FINE, BIKE, BUMP_FINE, BUS, CAR_L, CAR_W, DT, SHIFT, TIDY, alight, dims, board, canAlight, createWorld, freeBays, gateX, jobs, reachable, standing, step, type Car, type Happening, type Input, type Lot, type World } from "./sim";
 
 export const VALET_COLORS: [string, string] = ["#e8452e", "#2f62c0"];
 /**
@@ -44,6 +44,8 @@ interface CarModel {
   back: T.MeshStandardMaterial;
   dents: T.Mesh[];
   spin: number;
+  /** When it last sounded its horn (its lamps flash with it). */
+  honked: number;
 }
 /** A bubble drawn on a little canvas, over something in the lot. */
 interface Bubble {
@@ -124,6 +126,13 @@ export class ValetView extends TableView<State> {
   /** The reflection of the lot's surroundings in shiny things (night and underground, with a graphics card). */
   private room: T.Texture | null = null;
   private said = { jobs: "", money: "" };
+  /**
+   * The street backed up (the user asked): while a customer waits outside the gate, the cars there sound their horns —
+   * 빵빵, one after another — every second or two for as long as it lasts. `since` is when the wait began (-1 none),
+   * `next` the next blast, `car` the one that sounded last and `at` when (a 빵빵! over it for a moment), `count` how many.
+   */
+  private honk = { since: -1, next: 0, car: -1, at: -9, count: 0 };
+  private beep!: T.Sprite;
   /** The sounds of the lot (set by the screen from the game's `knock`). */
   onKnock: ((kind: string, strength: number) => void) | null = null;
   constructor(host: HTMLElement, quality: "high" | "low") {
@@ -288,6 +297,25 @@ export class ValetView extends TableView<State> {
     this.root.add(this.halo);
     this.bubble = this.sign(512, 200, 5.6, 2.2);
     this.badge = this.sign(128, 128, 1.7, 1.7);
+    // 빵빵! over a car sounding its horn in the street.
+    const beep = this.own(
+      this.painted(256, 112, (pen) => {
+        pen.font = "900 70px 'Noto Sans KR', Inter, sans-serif";
+        pen.textAlign = "center";
+        pen.textBaseline = "middle";
+        pen.lineJoin = "round";
+        pen.lineWidth = 12;
+        pen.strokeStyle = "#1c2430";
+        pen.strokeText("빵빵!", 128, 58);
+        pen.fillStyle = "#ffe14a";
+        pen.fillText("빵빵!", 128, 58);
+      }),
+    );
+    this.beep = new T.Sprite(this.own(new T.SpriteMaterial({ map: beep, depthTest: false, transparent: true })));
+    this.beep.scale.set(2.6, 1.14, 1);
+    this.beep.renderOrder = 6;
+    this.beep.visible = false;
+    this.root.add(this.beep);
   }
   /** A bubble (or a badge) on a canvas of its own, drawn when it has something new to say. */
   private sign(w: number, h: number, sw: number, sh: number): Bubble {
@@ -419,14 +447,16 @@ export class ValetView extends TableView<State> {
     this.reflect(look);
     flat(w, d, look.floor, 0, cz, 0).receiveShadow = true;
     // The bays: lines, a number at the aisle's end, and a glow shown while the bay is where to go.
-    const white = look.line;
+    const white = look.line,
+      // A bus's bay is lined in yellow and lettered BUS.
+      yellow = std({ color: "#f2c230", roughness: 0.7 });
     lot.bays.forEach((bay) => {
       const group = new T.Group();
       group.position.set(bay.x, 0, bay.z);
       group.rotation.y = -bay.angle;
       this.lot.add(group);
       const line = (len: number, x: number, z: number, turn: number) => {
-        const mesh = new T.Mesh(new T.PlaneGeometry(len, 0.12), white);
+        const mesh = new T.Mesh(new T.PlaneGeometry(len, bay.bus ? 0.16 : 0.12), bay.bus ? yellow : white);
         mesh.rotation.set(-Math.PI / 2, 0, turn);
         mesh.position.set(x, 0.014, z);
         mesh.receiveShadow = true;
@@ -452,6 +482,16 @@ export class ValetView extends TableView<State> {
       });
       const out = along ? 0 : -into * (bay.l / 2 - 0.75);
       flat(1.1, 1.1, new T.MeshBasicMaterial({ map: number, transparent: true, depthWrite: false, opacity: 0.85 }), bay.x + Math.cos(bay.angle) * out, bay.z + Math.sin(bay.angle) * out, 0.016);
+      if (bay.bus) {
+        const word = this.painted(256, 96, (pen) => {
+          pen.fillStyle = "#f2c230";
+          pen.font = "900 78px Inter, Arial, sans-serif";
+          pen.textAlign = "center";
+          pen.textBaseline = "middle";
+          pen.fillText("BUS", 128, 52);
+        });
+        for (const s of [-1, 1]) flat(2.6, 0.98, new T.MeshBasicMaterial({ map: word, transparent: true, depthWrite: false, opacity: 0.9 }), bay.x + s * 3, bay.z, 0.016);
+      }
     });
     // The entrance and the exit, written on the asphalt; the exit hatched in yellow.
     const sign = (text: string, colour: string, hatch: boolean) =>
@@ -663,12 +703,13 @@ export class ValetView extends TableView<State> {
       brake = this.standard({ color: "#7a1612", emissive: "#ff2a1a", emissiveIntensity: 0.15, roughness: 0.3 }),
       back = this.standard({ color: "#c9c9c4", emissive: "#ffffff", emissiveIntensity: 0, roughness: 0.3 }),
       head = this.standard({ color: "#fff6c8", emissive: "#ffe9a0", emissiveIntensity: 0.6, roughness: 0.2 }),
-      parts = makeCar(this.carParts, modelOf(car.style, car.colour), paintOf(this.carParts, (r) => this.own(r), PAINTS[car.colour % PAINTS.length]), { head, brake, back }),
+      paint = paintOf(this.carParts, (r) => this.own(r), PAINTS[car.colour % PAINTS.length]),
+      parts = car.kind === BIKE ? makeBike(this.carParts, paint, { head, brake, back }) : car.kind === BUS ? makeBus(this.carParts, paint, { head, brake, back }) : makeCar(this.carParts, modelOf(car.style, car.colour), paint, { head, brake, back }),
       root = parts.root,
       flares: T.Sprite[] = [];
-    for (const z of [-0.6, 0.6]) {
+    for (const z of parts.lampZ) {
       const flare = new T.Sprite(k.flare as T.SpriteMaterial);
-      flare.position.set(CAR_L / 2 + 0.12, parts.spec.lamp, z);
+      flare.position.set(parts.nose + 0.12, parts.lampY, z);
       flare.scale.setScalar(0.95);
       flare.renderOrder = 3;
       flare.visible = false;
@@ -677,12 +718,14 @@ export class ValetView extends TableView<State> {
     }
     const beam = new T.Mesh(k.beam as T.BufferGeometry, k.beamLight as T.Material);
     beam.rotation.x = -Math.PI / 2;
-    beam.position.set(CAR_L / 2 + 3.7, 0.05, 0);
+    beam.position.set(parts.nose + 3.7, 0.05, 0);
+    // (A motorbike's one lamp throws a narrower beam.)
+    if (car.kind === BIKE) beam.scale.set(1, 0.6, 1);
     beam.renderOrder = 1;
     beam.visible = false;
     root.add(beam);
     this.root.add(root);
-    return { root, head, beam, flares, front: parts.front, wheels: parts.wheels, radius: parts.spec.wheel, brake, back, dents: parts.dents, spin: 0 };
+    return { root, head, beam, flares, front: parts.front, wheels: parts.wheels, radius: parts.radius, brake, back, dents: parts.dents, spin: 0, honked: -9 };
   }
   private controls() {
     const el = this.renderer.domElement;
@@ -803,7 +846,7 @@ export class ValetView extends TableView<State> {
     this.knob.style.transform = driving ? "" : `translate(${(x * reach).toFixed(1)}px, ${(y * reach).toFixed(1)}px)`;
     // The wheel shows the finger's turn while it is held or coming back; else, steered by the keys, the car's own.
     const hand = driving ? this.world.cars.find((c) => c.id === this.world.hand) : null,
-      angle = this.wheel.finger >= 0 || this.wheel.angle !== 0 || !hand ? this.wheel.angle : (hand.steer / MAX_STEER) * WHEEL_LOCK;
+      angle = this.wheel.finger >= 0 || this.wheel.angle !== 0 || !hand ? this.wheel.angle : (hand.steer / dims(hand).maxSteer) * WHEEL_LOCK;
     if (Math.abs(angle - this.wheel.shown) > 0.002 || Number.isNaN(this.wheel.shown)) {
       this.wheel.shown = angle;
       this.wheelArt.style.transform = `rotate(${angle.toFixed(4)}rad)`;
@@ -955,24 +998,50 @@ export class ValetView extends TableView<State> {
         this.left -= DT;
         this.report(step(this.world, input));
       }
+      this.honking();
     } else this.left = 0;
     this.pose(now, this.running() ? real : 0);
     this.redraw();
   }
+  /** The cars backed up in the street sound their horns, one after another, while they wait (see `honk`). */
+  private honking() {
+    const queued = this.world.cars.filter((c) => c.state === "queue"),
+      h = this.honk;
+    if (!queued.length || this.world.over) {
+      h.since = -1;
+      return;
+    }
+    if (h.since < 0) {
+      h.since = this.clock;
+      h.next = this.clock + 1.1;
+    }
+    if (this.clock < h.next) return;
+    const car = queued[h.count % queued.length];
+    // A bus's horn is deeper, a motorbike's thinner.
+    this.onKnock?.("honk", car.kind === BUS ? 0.7 : car.kind === BIKE ? 1.5 : 1);
+    h.car = car.id;
+    h.at = this.clock;
+    h.count++;
+    const model = this.cars.get(car.id);
+    if (model) model.honked = this.clock;
+    // The longer the wait, the more often.
+    h.next = this.clock + Math.max(0.9, 2.2 - (this.clock - h.since) * 0.04) + Math.random() * 0.6;
+  }
   /** The place a queued car waits at, by its turn: just outside the barrier, then up the street. */
-  private queued(lot: Lot, turn: number) {
-    return turn === 0 ? { x: lot.minX - 4, z: lot.entrance.z, heading: 0 } : { x: lot.minX - 5.4, z: lot.entrance.z - 1.6 - turn * 5.4, heading: Math.PI / 2 };
+  private queued(lot: Lot, turn: number, car: Car) {
+    // (A bus up the street stands a little further up, its tail clear of the first in the queue.)
+    return turn === 0 ? { x: gateX(lot, car), z: lot.entrance.z, heading: 0 } : { x: lot.minX - 5.4, z: lot.entrance.z - 1.6 - turn * 5.4 - (car.kind === BUS ? 1.8 : 0), heading: Math.PI / 2 };
   }
   /** The bay the arrow shows for the car in hand: the one its customer named, else (none named) the one it stands rightly in or the nearest free one. */
   private goal(car: Car) {
     const w = this.world,
-      free = freeBays(w);
+      free = freeBays(w, car.kind);
     if (car.want >= 0) return car.want;
     let best = -1,
       near = Infinity;
     for (const k of free) {
       const bay = w.lot.bays[k],
-        far = standing(bay, car.x, car.z, car.heading).inside ? -1 : Math.hypot(bay.x - car.x, bay.z - car.z);
+        far = standing(bay, car.x, car.z, car.heading, dims(car)).inside ? -1 : Math.hypot(bay.x - car.x, bay.z - car.z);
       if (far < near) [best, near] = [k, far];
     }
     return best;
@@ -997,7 +1066,7 @@ export class ValetView extends TableView<State> {
       seen.add(car.id);
       let model = this.cars.get(car.id);
       if (!model) this.cars.set(car.id, (model = this.car(car)));
-      const at = car.state === "queue" ? this.queued(lot, turn++) : car;
+      const at = car.state === "queue" ? this.queued(lot, turn++, car) : car;
       model.root.position.set(at.x, 0, at.z);
       model.root.rotation.y = -at.heading;
       for (const pivot of model.front) pivot.rotation.y = -car.steer;
@@ -1006,14 +1075,25 @@ export class ValetView extends TableView<State> {
       const mine = car === hand,
         braking = mine && ((input.gas < 0 && car.v > 0.05) || (input.gas > 0 && car.v < -0.05) || input.handbrake);
       // In the dark a car that runs (rolling in, in hand, driving off) has its lights on; one left standing has them off.
-      const lit = !!this.look?.dark && (mine || car.state === "queue" || car.state === "arriving" || car.state === "leaving");
-      model.head.emissiveIntensity = lit ? 2.4 : this.look?.dark ? 0.04 : 0.6;
+      const lit = !!this.look?.dark && (mine || car.state === "queue" || car.state === "arriving" || car.state === "leaving"),
+        // A car sounding its horn flashes its lamps.
+        flash = this.clock - model.honked < 0.45 && Math.floor((this.clock - model.honked) / 0.11) % 2 === 0;
+      model.head.emissiveIntensity = flash ? 3.2 : lit ? 2.4 : this.look?.dark ? 0.04 : 0.6;
+      if (car.id === this.honk.car) {
+        const ago = this.clock - this.honk.at,
+          length = dims(car).l;
+        this.beep.visible = car.state === "queue" && ago < 0.8 && !capturing();
+        this.beep.position.set(at.x, 2.4 + (car.kind === BUS ? 1.2 : 0) + ago * 0.8, at.z);
+        this.beep.material.opacity = Math.min(1, (0.8 - ago) / 0.25);
+        this.beep.scale.set(2.6 * (0.85 + 0.15 * Math.min(1, ago / 0.12)) * (length > 6 ? 1.2 : 1), 1.14 * (length > 6 ? 1.2 : 1), 1);
+      }
       model.beam.visible = lit;
       for (const flare of model.flares) flare.visible = lit;
       model.brake.emissiveIntensity = braking ? 1.6 : lit ? 0.7 : 0.15;
       model.back.emissiveIntensity = mine && (car.v < -0.05 || (input.gas < 0 && car.v <= 0.05)) ? 1.2 : 0;
       model.dents.forEach((d, k) => (d.visible = k < car.dents));
     }
+    if (!w.cars.some((c) => c.id === this.honk.car && c.state === "queue")) this.beep.visible = false;
     for (const [id, model] of this.cars)
       if (!seen.has(id)) {
         model.root.removeFromParent();
@@ -1063,17 +1143,32 @@ export class ValetView extends TableView<State> {
     });
     // The valet on foot, facing the way it goes and bobbing as it runs (in a car, it is not seen).
     const near = !hand && this.running() ? reachable(w) : null;
-    this.valet.visible = !hand;
+    // On a motorbike the valet is seen astride it (life size), legs to the pegs and hands on the bars; in a car or a bus, not at all.
+    const riding = hand?.kind === BIKE ? hand : null;
+    this.valet.visible = !hand || !!riding;
     // Its legs and arms swing with its stride, faster and wider the faster it goes.
     const pace = Math.min(1, w.valet.speed / 4);
     this.walker.stride += dt * w.valet.speed * 2.4;
     walk(this.walker, pace);
-    this.valet.position.set(w.valet.x, pace > 0.02 ? Math.abs(Math.cos(this.walker.stride)) * 0.06 * pace : 0, w.valet.z);
-    this.valet.rotation.y = -w.valet.heading + Math.PI / 2;
-    this.feet.visible = !capturing();
+    if (riding) {
+      this.valet.scale.setScalar(1);
+      for (const leg of this.walker.legs) leg.rotation.x = -1.25;
+      for (const arm of this.walker.arms) arm.rotation.x = -1.05;
+      this.valet.position.set(w.valet.x, 0.06, w.valet.z);
+      this.valet.rotation.set(0, -riding.heading + Math.PI / 2, 0);
+      // Leaning into a turn.
+      this.valet.rotateZ(Math.max(-0.25, Math.min(0.25, -riding.steer * riding.v * 0.06)));
+    } else {
+      this.valet.scale.setScalar(1.2);
+      this.valet.position.set(w.valet.x, pace > 0.02 ? Math.abs(Math.cos(this.walker.stride)) * 0.06 * pace : 0, w.valet.z);
+      this.valet.rotation.set(0, -w.valet.heading + Math.PI / 2, 0);
+    }
+    this.feet.visible = !capturing() && !riding;
     // The car it may get into now glows round its feet.
     this.halo.visible = !!near;
     if (near) {
+      const size = dims(near);
+      this.halo.scale.set((size.l + 1.4) / (CAR_L + 1.4), (size.w + 1.2) / (CAR_W + 1.2), 1);
       this.halo.position.set(near.x, 0.03, near.z);
       this.halo.rotation.z = -near.heading;
       this.haloGlow.opacity = 0.75 + 0.25 * Math.sin(t * 6);
@@ -1085,9 +1180,9 @@ export class ValetView extends TableView<State> {
       leaving = !!hand && hand.state === "requested",
       goal = parking ? this.goal(hand!) : -1,
       pulse = 0.5 + 0.5 * Math.sin(t * 5),
-      free = parking ? (hand!.want >= 0 ? [hand!.want] : freeBays(w)) : [];
+      free = parking ? (hand!.want >= 0 ? [hand!.want] : freeBays(w, hand!.kind)) : [];
     this.glows.forEach((glow, k) => {
-      const inside = k === goal && standing(lot.bays[k], hand!.x, hand!.z, hand!.heading).inside;
+      const inside = k === goal && standing(lot.bays[k], hand!.x, hand!.z, hand!.heading, dims(hand)).inside;
       glow.opacity = !free.includes(k) ? 0 : inside ? 0.6 + 0.3 * pulse : k === goal ? 0.3 + 0.25 * pulse : 0.12;
       glow.color.set(inside ? "#ffe14a" : "#4be08a");
     });
@@ -1131,9 +1226,9 @@ export class ValetView extends TableView<State> {
     });
     // The engine by the car's speed, the tyres' chirp when it is thrown about.
     if (this.running()) {
-      const speed = hand ? Math.abs(hand.v) / V_MOST : 0;
+      const speed = hand ? Math.abs(hand.v) / dims(hand).vMost : 0;
       this.onKnock?.(!hand ? "off" : input.gas !== 0 ? "rev" : "coast", speed);
-      this.onKnock?.("chirp", hand && Math.abs(hand.v) > 3.2 ? (Math.abs(hand.steer) / MAX_STEER) * speed * (input.handbrake ? 1.6 : 1) : 0);
+      this.onKnock?.("chirp", hand && Math.abs(hand.v) > 3.2 ? (Math.abs(hand.steer) / dims(hand).maxSteer) * speed * (input.handbrake ? 1.6 : 1) : 0);
     }
     // The money, the clock, the gear, and the customers' row over the canvas.
     const money = `수입 ${won(this.state?.money ?? 0)}|${this.state?.parked ?? 0}|${this.state?.returned ?? 0}`;
@@ -1191,7 +1286,7 @@ export class ValetView extends TableView<State> {
         }),
     );
     // The bay the car in hand is to go in (its number, and for the driver its place), and whether the customer's word is over it.
-    const want = parking ? (hand!.want >= 0 ? hand!.want : (freeBays(w)[0] ?? -1)) : -1;
+    const want = parking ? (hand!.want >= 0 ? hand!.want : (freeBays(w, hand!.kind)[0] ?? -1)) : -1;
     d.bay = parking && hand!.want >= 0 ? String(lot.bays[hand!.want].n) : "";
     d.want = want >= 0 ? JSON.stringify([want, lot.bays[want].x, lot.bays[want].z, +lot.bays[want].angle.toFixed(4)]) : "";
     d.said = talking ? this.saying.text : "";
@@ -1206,6 +1301,9 @@ export class ValetView extends TableView<State> {
     d.exit = `${lot.exit.x},${lot.exit.z}`;
     d.scene = this.look?.name ?? "";
     d.cars = String(mod(seen.size, 1000));
+    // What stands in the lot (0 car, 1 motorbike, 2 bus) and how many horns the street has sounded.
+    d.kinds = w.cars.filter((c) => c.state !== "gone").map((c) => c.kind).join(",");
+    d.honks = String(this.honk.count);
   }
   protected place(state: State) {
     // A new shift, known by the count of moves going back to nothing (or another lot): everything from the start.
@@ -1219,6 +1317,7 @@ export class ValetView extends TableView<State> {
       this.wheel.angle = 0;
       this.saying = { car: -1, until: 0, text: "" };
       this.said = { jobs: "", money: "" };
+      this.honk = { since: -1, next: 0, car: -1, at: -9, count: 0 };
       this.word.classList.remove("vp-show");
     }
     if (state.winner !== null) this.hush();
