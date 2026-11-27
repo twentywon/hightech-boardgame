@@ -96,3 +96,10 @@ What each file is:
 
 Changes to all of these: cut, pitched, mixed, faded, levelled and converted
 to 22.05 kHz mono MP3 (src/engine/sounds/).
+
+Recorded music (src/engine/tracks/)
+
+- home.mp3 (the collection's music) and era-war.mp3 (시대 전쟁's music) are
+  recordings the app's owner supplied for these places; they are not CC0 and
+  not part of the packs above. Changes: re-encoded to 44.1 kHz stereo MP3
+  (112 and 128 kbit/s) without their tags.

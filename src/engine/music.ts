@@ -19,10 +19,15 @@
  * bars are a section of their own (a groove, a hook, a lift; a verse, a chorus, a break), and their lines are
  * drawn from the chord's scale, so they never come round the same way twice either.
  *
+ * Two places play a recording the user gave instead (src/engine/tracks/): the collection (`HOME`, soft, in place of
+ * the medium swing, which is no longer heard) and 시대 전쟁 (`ERA_WAR`).
+ *
  * It begins only after the first touch or key (a page may not make a sound
  * before that), rests while the page is hidden, and can be switched off in
  * the settings.
  */
+import eraWarTrack from "./tracks/era-war.mp3?inline";
+import homeTrack from "./tracks/home.mp3?inline";
 const C4 = 261.63,
   hertz = (semitones: number) => C4 * 2 ** (semitones / 12);
 const ROOTS: Record<string, number> = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
@@ -378,8 +383,21 @@ const ROCK: Rock = {
   lead: 0.019,
   bass: 0.06,
 };
-type Piece = Jazz | Gugak | Raga | Arcade | Rock;
-const PIECES = { lobby: LOBBY, table: TABLE };
+/**
+ * A recording the user gave for a table (시대 전쟁's music), looped as it is, at `gain` so that it sits as loud as the
+ * made music. It plays from a media element (decoded as it goes, not held whole in memory) through the piece's bus,
+ * so that it fades in and out as the made pieces do.
+ */
+interface Track {
+  style: "track";
+  url: string;
+  gain: number;
+}
+const ERA_WAR: Track = { style: "track", url: eraWarTrack, gain: 0.17 };
+/** The collection's music (the user gave it, and asked for it soft): kept low, under the made music's level. */
+const HOME: Track = { style: "track", url: homeTrack, gain: 0.12 };
+type Piece = Jazz | Gugak | Raga | Arcade | Rock | Track;
+const PIECES = { lobby: HOME, table: TABLE };
 /** Tables that have music of their own instead of the jazz: their country's, or the place's. */
 const OWN: Record<string, Piece> = {
   gonu: KOREA,
@@ -403,11 +421,12 @@ const OWN: Record<string, Piece> = {
   // A party: the arcade's upbeat pop.
   "russian-roulette": ARCADE,
   "archer-duel": ARCADE,
-  "era-war": ARCADE,
+  // The music the user gave for it.
+  "era-war": ERA_WAR,
   territory: ARCADE,
 };
 /** How long a bar of a piece lasts, in seconds. */
-const barLength = (piece: Piece) => ("tempo" in piece ? (60 / piece.tempo) * 4 : piece.beat * 4);
+const barLength = (piece: Piece) => ("tempo" in piece ? (60 / piece.tempo) * 4 : "beat" in piece ? piece.beat * 4 : 1);
 /** The four bars of a pop or rock piece now played: what they are and what they are made of, drawn at their first bar. */
 interface Phrase {
   section: "groove" | "hook" | "lift" | "verse" | "chorus" | "break";
@@ -458,7 +477,9 @@ class Music {
   private lanes: Partial<Record<"lead" | "bass" | "guitar", AudioNode>> = {};
   private chain: AudioNode[] = [];
   private noiseBuffer: AudioBuffer | null = null;
-  private piece: Piece = LOBBY;
+  /** The recordings of the recorded pieces, each made once: its media element and its way into the context. */
+  private tapes = new Map<string, { element: HTMLAudioElement; source: MediaElementAudioSourceNode }>();
+  private piece: Piece = HOME;
   private timer = 0;
   /** When the next bar begins, by the context's clock, and how many of this piece have been written. */
   private next = 0;
@@ -499,7 +520,7 @@ class Music {
     if ("rounds" in piece) this.coming = pick(piece.rounds);
     if (piece.style === "jazz") this.lineNote = Math.round((piece.lines.range[0] + piece.lines.range[1]) / 2);
     else if (piece.style === "arcade" || piece.style === "rock") this.lineNote = Math.round((piece.range[0] + piece.range[1]) / 2);
-    else this.lineNote = piece.style === "korea" ? 9 : piece.sa + 12;
+    else if (piece.style !== "track") this.lineNote = piece.style === "korea" ? 9 : piece.sa + 12;
     const c = this.context;
     if (!c) return;
     this.change();
@@ -530,6 +551,7 @@ class Music {
       void c.resume().catch(() => {});
       this.next = Math.max(this.next, c.currentTime + 0.3);
       this.timer = window.setInterval(() => this.write(), 400);
+      this.roll();
       // It comes in over a few seconds instead of starting at full.
       this.out!.gain.cancelScheduledValues(c.currentTime);
       this.out!.gain.setValueAtTime(Math.max(0.0001, this.out!.gain.value), c.currentTime);
@@ -543,6 +565,9 @@ class Music {
     if (!this.timer) return;
     clearInterval(this.timer);
     this.timer = 0;
+    window.setTimeout(() => {
+      if (!this.timer) for (const tape of this.tapes.values()) tape.element.pause();
+    }, 700);
     const c = this.context,
       out = this.out;
     if (!c || !out) return;
@@ -620,13 +645,15 @@ class Music {
       gain.linearRampToValueAtTime(1, c.currentTime + (old ? 3.5 : 0.05));
     }
     // The pop and the rock are played closer to the ear than the jazz, with less of the room.
-    wet.gain.value = this.piece.style === "arcade" ? 0.2 : this.piece.style === "rock" ? 0.16 : 0.32;
+    // A recording has its own room in it.
+    wet.gain.value = this.piece.style === "arcade" ? 0.2 : this.piece.style === "rock" ? 0.16 : this.piece.style === "track" ? 0 : 0.32;
     bus.connect(this.out!);
     bus.connect(wet);
     wet.connect(this.room!);
     dry.connect(this.out!);
     this.dry = dry;
     this.lay(this.piece, bus, dry);
+    this.record(bus);
     // The electric piano: a slow tremolo and the top taken off.
     tremolo.frequency.value = 4.2;
     depth.gain.value = 0.18;
@@ -755,10 +782,47 @@ class Music {
     source.stop(at + attack + length + 0.05);
     source.onended = () => g.disconnect();
   }
+  /**
+   * Starts the recording of a recorded piece from its beginning into `bus` (its own gain on the way, gone with the
+   * bus), or, for a made piece, lets the recording that played stop once its bus has faded.
+   */
+  private record(bus: GainNode) {
+    const c = this.context!,
+      piece = this.piece;
+    // The recordings that are not this piece stop once their bus has faded (unless one comes back meanwhile).
+    window.setTimeout(() => {
+      for (const [url, tape] of this.tapes) if (this.piece.style !== "track" || this.piece.url !== url) tape.element.pause();
+    }, 1600);
+    if (piece.style !== "track") return;
+    let tape = this.tapes.get(piece.url);
+    if (!tape) {
+      // A data address made a blob once: the media element reads it as it plays.
+      const text = atob(piece.url.slice(piece.url.indexOf(",") + 1)),
+        bytes = new Uint8Array(text.length);
+      for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+      const element = new Audio(URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" })));
+      element.loop = true;
+      element.preload = "auto";
+      tape = { element, source: c.createMediaElementSource(element) };
+      this.tapes.set(piece.url, tape);
+    }
+    const level = c.createGain();
+    level.gain.value = piece.gain;
+    tape.source.connect(level);
+    level.connect(bus);
+    this.chain.push(level);
+    tape.element.currentTime = 0;
+    if (this.timer) this.roll();
+  }
+  /** Lets the recording of the piece now playing (if it is one) go on. */
+  private roll() {
+    const piece = this.piece;
+    if (piece.style === "track") void this.tapes.get(piece.url)?.element.play().catch(() => {});
+  }
   /** Writes the bars that begin within the next second and a half. */
   private write() {
     const c = this.context;
-    if (!c) return;
+    if (!c || this.piece.style === "track") return;
     // A clock that fell behind (the page slept) starts again from now rather than hurrying to catch up.
     if (this.next < c.currentTime) this.next = c.currentTime + 0.2;
     while (this.next < c.currentTime + 1.5) {
@@ -773,6 +837,7 @@ class Music {
     if (piece.style === "india") return this.raga(at, piece);
     if (piece.style === "arcade") return this.arcade(at, piece);
     if (piece.style === "rock") return this.rock(at, piece);
+    if (piece.style === "track") return;
     this.jazz(at, piece);
   }
   /** A note drawn from `scale` (absolute semitones) by a step or two from the last one. */
