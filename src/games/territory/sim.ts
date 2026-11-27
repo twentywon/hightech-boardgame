@@ -451,7 +451,7 @@ function safeHeading(world: World, k: number, want: number) {
   return best.h;
 }
 const towards = (m: Mover, p: { x: number; y: number }) => Math.atan2(p.y - m.y, p.x - m.x);
-/** Plans a loop out of mover k's land: out one way, along, and back. */
+/** Plans a loop out of mover k's land: out one way in a bow, and back. */
 function planLoop(world: World, k: number, level: Level): Plan {
   const m = world.movers[k],
     L = LEVELS[level],
@@ -567,6 +567,19 @@ export function autopilot(world: World, k: number, level: Level): number | null 
       const c = ny * N + nx,
         d = plan.field[c] + (dx && dy ? 0.4 : 0);
       if (d < best.d) best = { c, d };
+    }
+    // Home is a unit or two away: straight for the nearest of my cells there (a unit may hold only a corner of my land).
+    if (plan.field[here] <= 1) {
+      let near: { x: number; y: number; d: number } | null = null;
+      for (let gy = Math.max(0, (y - 1) * R); gy < Math.min(G, (y + 2) * R); gy++)
+        for (let gx = Math.max(0, (x - 1) * R); gx < Math.min(G, (x + 2) * R); gx++) {
+          if (world.owner[gy * G + gx] !== k + 1) continue;
+          const px = (gx + 0.5) / R,
+            py = (gy + 0.5) / R,
+            d = Math.hypot(px - m.x, py - m.y);
+          if (!near || d < near.d) near = { x: px, y: py, d };
+        }
+      if (near) return safeHeading(world, k, towards(m, near));
     }
     if (best.c === here) return safeHeading(world, k, m.heading);
     return safeHeading(world, k, towards(m, { x: (best.c % N) + 0.5, y: Math.floor(best.c / N) + 0.5 }));

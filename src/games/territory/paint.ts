@@ -1,6 +1,6 @@
 import * as T from "three";
 import { COLORS } from "./rules";
-import { G } from "./sim";
+import { G, R } from "./sim";
 
 /**
  * The field of 땅따먹기 as one picture (a canvas texture over the ground): bare ground a pale cloth, and each mover's
@@ -15,7 +15,9 @@ import { G } from "./sim";
 /** Pixels to a cell, and cells to a block of the picture that is drawn again at once. */
 export const PX = 1024 / G;
 const BLOCK = 8,
-  BLOCKS = G / BLOCK;
+  BLOCKS = G / BLOCK,
+  /** How far the land's side shows below its edge, in pixels. */
+  LIFT = 4;
 const TILE = 64;
 function shade(hex: string, by: number) {
   const c = new T.Color(hex);
@@ -125,9 +127,14 @@ export class FieldPaint {
     this.texture.colorSpace = T.SRGBColorSpace;
     this.texture.anisotropy = 4;
   }
-  /** Draws again the blocks the cells in `changed` touch, as `owner` has them; true when anything was drawn. */
-  paint(owner: Uint8Array, changed: Iterable<number>) {
-    const todo = new Set<number>();
+  /** Blocks still to draw again (a big claim is drawn over a few frames, a few milliseconds' worth at a time). */
+  private todo = new Set<number>();
+  /**
+   * Draws again the blocks the cells in `changed` touch, as `owner` has them, for up to `budget` milliseconds (the
+   * rest on the next calls, nearest `near` first); true when anything was drawn.
+   */
+  paint(owner: Uint8Array, changed: Iterable<number>, budget = Infinity, near?: { x: number; y: number }) {
+    const todo = this.todo;
     for (const c of changed) {
       const x = c % G,
         y = (c - x) / G;
@@ -137,12 +144,25 @@ export class FieldPaint {
           if (bx >= 0 && by >= 0 && bx < BLOCKS && by < BLOCKS) todo.add(by * BLOCKS + bx);
     }
     if (!todo.size) return false;
-    for (const b of todo) this.block(owner, b % BLOCKS, Math.floor(b / BLOCKS));
+    let order = [...todo];
+    if (near && Number.isFinite(budget)) {
+      const bx = near.x / (BLOCK / R),
+        by = near.y / (BLOCK / R),
+        d = (b: number) => Math.hypot((b % BLOCKS) + 0.5 - bx, Math.floor(b / BLOCKS) + 0.5 - by);
+      order = order.sort((a, b) => d(a) - d(b));
+    }
+    const start = performance.now();
+    for (const b of order) {
+      this.block(owner, b % BLOCKS, Math.floor(b / BLOCKS));
+      todo.delete(b);
+      if (performance.now() - start > budget) break;
+    }
     this.texture.needsUpdate = true;
     return true;
   }
   /** Draws the whole field. */
   all(owner: Uint8Array) {
+    this.todo.clear();
     for (let by = 0; by < BLOCKS; by++) for (let bx = 0; bx < BLOCKS; bx++) this.block(owner, bx, by);
     this.texture.needsUpdate = true;
   }
@@ -192,7 +212,13 @@ export class FieldPaint {
       py = (j: number) => (y0 + j / S + 0.5) * PX,
       lo = (M - 2) * S,
       hi = (W - M + 1) * S;
-    for (let j = lo; j < hi; j++)
+    for (let j = lo; j < hi; j++) {
+      // Whole squares in a row are laid as one strip.
+      let run = -1;
+      const lay = (end: number) => {
+        if (run >= 0) fill.rect(px(run), py(j), px(end) - px(run), PX / S);
+        run = -1;
+      };
       for (let i = lo; i < hi; i++) {
         const corners: [number, number, number][] = [
           [i, j, value(i, j)],
@@ -202,11 +228,12 @@ export class FieldPaint {
         ];
         const inside = corners.map((c) => c[2] > 0.5);
         const n = inside.filter(Boolean).length;
-        if (!n) continue;
         if (n === 4) {
-          fill.rect(px(i), py(j), PX / S, PX / S);
+          if (run < 0) run = i;
           continue;
         }
+        lay(i);
+        if (!n) continue;
         const cross = (a: [number, number, number], b: [number, number, number]): Point => {
           const t = (0.5 - a[2]) / (b[2] - a[2]);
           return [px(a[0] + (b[0] - a[0]) * t), py(a[1] + (b[1] - a[1]) * t)];
@@ -247,6 +274,8 @@ export class FieldPaint {
         piece(poly);
         if (crossings.length === 2) line(crossings[0], crossings[1]);
       }
+      lay(hi);
+    }
     return { fill, edge };
   }
   private block(owner: Uint8Array, bx: number, by: number) {
@@ -272,36 +301,31 @@ export class FieldPaint {
       .sort()
       .map((k) => ({ k, shape: this.outline(owner, k, bx, by) }))
       .flatMap(({ k, shape }) => (shape ? [{ k, path: shape.fill, edge: shape.edge }] : []));
-    // The land's soft shadow on the cloth below it.
-    g.fillStyle = "#00000022";
-    g.setTransform(1, 0, 0, 1, 0, 4);
+    // The land stands a little off the cloth: its soft shadow, then its side below its edge (dark), then its top
+    // in its pattern, and a light line along its edge. Each land's side is drawn before any land's top, so a land
+    // shows no side where another's land meets it below.
+    g.fillStyle = "#00000024";
+    g.setTransform(1, 0, 0, 1, 0, LIFT + 3);
     for (const { path } of paths) g.fill(path);
+    g.setTransform(1, 0, 0, 1, 0, LIFT);
+    for (const { k, path } of paths) {
+      g.fillStyle = this.sides[k];
+      g.fill(path);
+    }
     g.setTransform(1, 0, 0, 1, 0, 0);
     for (const { k, path, edge } of paths) {
       const pattern = this.patterns[k] ?? this.patterns[0];
-      // A hair round the outline, so that two lands meeting leave no thread of cloth between them.
-      g.strokeStyle = pattern;
-      g.lineWidth = 1.6;
-      g.stroke(edge);
-      g.save();
-      g.clip(path);
-      // The top edge light, the side toward the viewer dark, the pattern between (clips of the outline moved).
-      g.fillStyle = this.tops[k];
-      g.fillRect(x0, y0, size, size);
-      g.setTransform(1, 0, 0, 1, 0, 2);
-      g.clip(path);
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.fillStyle = this.sides[k];
-      g.fillRect(x0, y0, size, size);
-      g.setTransform(1, 0, 0, 1, 0, -4);
-      g.clip(path);
-      g.setTransform(1, 0, 0, 1, 0, 0);
       g.fillStyle = pattern;
-      g.fillRect(x0, y0, size, size);
-      g.restore();
-      g.strokeStyle = "#00000024";
-      g.lineWidth = 1;
+      g.fill(path);
+      // A hair of the pattern round the outline, so that two lands meeting leave no thread of cloth between them.
+      g.strokeStyle = pattern;
+      g.lineWidth = 1.4;
       g.stroke(edge);
+      g.strokeStyle = this.tops[k];
+      g.lineWidth = 1.2;
+      g.globalAlpha = 0.7;
+      g.stroke(edge);
+      g.globalAlpha = 1;
     }
     g.restore();
   }
