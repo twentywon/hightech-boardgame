@@ -70,6 +70,8 @@ export const SWING = 0.28,
   REACH = 1.25,
   REACH_UP = 1.5,
   REACH_DOWN = 1.1,
+  /** How much further the sword's arc reaches a bandit thrown up in the air (so that a juggle need not chase). */
+  REACH_AIR = 0.35,
   COOL = 0.36;
 /**
  * A blow on a bandit (the user asked: no stun, it is thrown up into the air and may be struck on and on): it drops
@@ -79,7 +81,7 @@ export const SWING = 0.28,
  * back after a hit: it may swing again as soon as its sword is ready, whether the other is down, flung or dazed.
  */
 export const DROP_SHARE = 1,
-  LAUNCH = { up: 1.05, fade: 0.8, least: 0.22, pop: 0.12, push: 1.0 },
+  LAUNCH = { up: 1.05, fade: 0.8, least: 0.22, pop: 0.12, push: 0.9 },
   /**
    * Once a flung bandit is down again it has this long on its feet before the next blow can throw it up (it may run,
    * jump and strike in it), so that a juggle ends and two bandits are never caught in a lock.
@@ -333,7 +335,7 @@ function blow(world: World, side: number, out: Happening[]) {
     o = world.bandits[other],
     ahead = (x: number) => (x - b.x) * b.face;
   // Down, dazed or flung, the other may be struck all the same.
-  if (o.rise <= 0 && ahead(o.x) > -0.25 && ahead(o.x) < REACH && o.y - b.y < REACH_UP && b.y - o.y < REACH_DOWN) {
+  if (o.rise <= 0 && ahead(o.x) > -0.25 && ahead(o.x) < REACH + (o.flung > 0 ? REACH_AIR : 0) && o.y - b.y < REACH_UP && b.y - o.y < REACH_DOWN) {
     const dropped = Math.ceil(o.carry * DROP_SHARE);
     o.carry -= dropped;
     spill(world, dropped, o.x, o.y + 0.8, b.face);
@@ -675,7 +677,7 @@ export function think(world: World, side: number, level: Level = "normal"): Inpu
   // The club: what has stood within its reach long enough is struck.
   // A rival in reach is struck whether it stands, lies dazed or is in the air (a flung one again and again: a juggle).
   const ahead = (x: number) => (x - b.x) * b.face,
-    reach = ahead(o.x) > 0 && ahead(o.x) < REACH - 0.15 && o.y - b.y < REACH_UP - 0.2 && b.y - o.y < REACH_DOWN - 0.2,
+    reach = ahead(o.x) > 0 && ahead(o.x) < REACH + (o.flung > 0 ? REACH_AIR : 0) - 0.15 && o.y - b.y < REACH_UP - 0.2 && b.y - o.y < REACH_DOWN - 0.2,
     // (The easy one does not juggle: it strikes only a rival with gold.)
     rival = (o.carry >= L.strike || (o.flung > 0 && level !== "easy")) && o.rise <= 0 && reach,
     guard = goal.what === "defend" && reach,
