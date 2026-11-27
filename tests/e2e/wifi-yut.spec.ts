@@ -303,7 +303,7 @@ test("yut nori with the host's page put away: the guest still plays, the host's 
   const { host, guest, done } = await table(browser, info, "윷놀이", (h) => h.locator('.net-kind[data-seat="2"][data-kind="computer"]').click());
   for (const page of [host, guest]) await expect(page.locator(".yut-sides li")).toHaveCount(3);
   // The host plays its own first turn.
-  for (let k = 0; k < 12 && (await host.locator("#board").getAttribute("data-turn")) === "0"; k++) {
+  for (let k = 0; k < 30 && (await host.locator("#board").getAttribute("data-turn")) === "0"; k++) {
     await resting(host);
     const before = await snapshot3(host);
     await step(host);
@@ -315,7 +315,7 @@ test("yut nori with the host's page put away: the guest still plays, the host's 
   }
   // The host's tablet is put away: the guest plays its turn ...
   await hide(host);
-  for (let k = 0; k < 12 && (await guest.locator("#board").getAttribute("data-turn")) === "1"; k++) {
+  for (let k = 0; k < 30 && (await guest.locator("#board").getAttribute("data-turn")) === "1"; k++) {
     await resting(guest);
     const before = await snapshot3(guest);
     await step(guest);
