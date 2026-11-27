@@ -1,12 +1,16 @@
 import { part, steps, notes, table } from "../../ui/guide";
 import type { PointConfig } from "../../ui/point-game";
 import { valet, stageOf, type State } from "./rules";
-import { ANGRY_FINE, BUMP_FINE, LATE_PAY, PAY, SHIFT, STAGE_NAMES, TIDY, TIP, lotOf } from "./sim";
+import { ANGRY_FINE, BUMP_FINE, LATE_PAY, LEVELS, PAY, SHIFT, STAGE_NAMES, TIDY, TIP, lotOf } from "./sim";
 import { VALET_COLORS, ValetView } from "./view";
 
 const stat = (label: string, value: string | number) => `<span class="solo-stat"><small>${label}</small><b>${value}</b></span>`;
 const won = (units: number) => `${(units * 100).toLocaleString("ko-KR")}원`;
-const NOTES = ["낮 · 넓은 칸 · 처음이라면", "밤 · 비스듬한 칸", "지하 · 좁은 칸 · 기둥 · 평행 주차"];
+const NOTES = ["낮 · 넓은 칸 · 처음이라면", "밤 · 비스듬한 칸 · 오토바이도", "지하 · 좁은 칸 · 평행 주차 · 버스와 오토바이도"];
+/** Each lot's name with how hard it is (the user asked for them in order: 쉬움, 보통, 어려움). */
+const titled = (stage: number) => `${STAGE_NAMES[stage - 1]} (${LEVELS[stage - 1]})`;
+/** The colour of each level's tag on the little map. */
+const LEVEL_COLOURS = ["#3fb96a", "#f0a92e", "#e2432f"];
 /** The ground of each lot's little map: grass by day, the dark of night, the concrete under the ground. */
 const GROUNDS = ["#6a9550", "#141c30", "#2c3035"];
 /** A small map of a lot: its bays as they lie (square, slanted, along the wall), its pillars, the entrance and the exit. */
@@ -16,10 +20,10 @@ function lotArt(stage: number) {
     px = (x: number) => 70 + x * s,
     pz = (z: number) => 76 + z * s;
   const bays = lot.bays
-    .map((b) => `<rect x="${(-b.l / 2) * s}" y="${(-b.w / 2) * s}" width="${b.l * s}" height="${b.w * s}" fill="none" stroke="#f1efe6" stroke-width="1.2" transform="translate(${px(b.x)} ${pz(b.z)}) rotate(${(b.angle * 180) / Math.PI})"/>`)
+    .map((b) => `<rect x="${(-b.l / 2) * s}" y="${(-b.w / 2) * s}" width="${b.l * s}" height="${b.w * s}" fill="none" stroke="${b.bus ? "#f2c230" : "#f1efe6"}" stroke-width="${b.bus ? 1.8 : 1.2}" transform="translate(${px(b.x)} ${pz(b.z)}) rotate(${(b.angle * 180) / Math.PI})"/>`)
     .join("");
   const pillars = lot.pillars.map((p) => `<circle cx="${px(p.x)}" cy="${pz(p.z)}" r="2.4" fill="#f2c230"/>`).join("");
-  return `<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="132" height="132" rx="16" fill="${GROUNDS[stage - 1]}"/><text x="70" y="24" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="Helvetica, Arial, sans-serif">${STAGE_NAMES[stage - 1]}</text><rect x="${px(lot.minX)}" y="${pz(lot.minZ)}" width="${(lot.maxX - lot.minX) * s}" height="${(lot.maxZ - lot.minZ) * s}" rx="3" fill="#54585f"/>${bays}${pillars}<rect x="${px(-13.4)}" y="${pz(-0.6)}" width="10" height="5" rx="1.5" fill="#e8452e"/><path d="M${px(11)} ${pz(0)} h12 m-4 -4 l4 4 l-4 4" fill="none" stroke="#ffc42e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `<svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="132" height="132" rx="16" fill="${GROUNDS[stage - 1]}"/><text x="70" y="24" text-anchor="middle" font-size="13" font-weight="800" fill="#fff" font-family="Helvetica, Arial, sans-serif">${STAGE_NAMES[stage - 1]}</text><rect x="${px(lot.minX)}" y="${pz(lot.minZ)}" width="${(lot.maxX - lot.minX) * s}" height="${(lot.maxZ - lot.minZ) * s}" rx="3" fill="#54585f"/>${bays}${pillars}<rect x="${px(-13.4)}" y="${pz(-0.6)}" width="10" height="5" rx="1.5" fill="#e8452e"/><path d="M${px(11)} ${pz(0)} h12 m-4 -4 l4 4 l-4 4" fill="none" stroke="#ffc42e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect x="44" y="113" width="52" height="19" rx="9.5" fill="${LEVEL_COLOURS[stage - 1]}"/><text x="70" y="127" text-anchor="middle" font-size="12" font-weight="800" fill="#fff" font-family="'Noto Sans KR', Helvetica, Arial, sans-serif">${LEVELS[stage - 1]}</text></svg>`;
 }
 export const valetConfig: PointConfig<State> = {
   game: valet,
@@ -43,12 +47,13 @@ export const valetConfig: PointConfig<State> = {
       if (strength > 0.3) sound.crunch();
     } else if (kind === "pay") sound.cash();
     else if (kind === "horn") sound.horn();
+    else if (kind === "honk") sound.honk(strength);
     else if (kind === "ask") sound.ding(0.5);
     else if (kind === "arrive") sound.ding(0.3);
     else if (kind === "door") sound.clasp(0.6);
   }) as PointConfig<State>["knock"],
   // 새 게임 (주차장 선택) asks which car park.
-  stages: STAGE_NAMES.map((name, i) => ({ value: String(i + 1), name, note: NOTES[i], art: lotArt(i + 1) })),
+  stages: STAGE_NAMES.map((_, i) => ({ value: String(i + 1), name: titled(i + 1), note: NOTES[i], art: lotArt(i + 1) })),
   name: "주차 요원",
   english: "Valet Parking",
   number: "NO. 112 — PARK THEM ALL",
@@ -58,13 +63,13 @@ export const valetConfig: PointConfig<State> = {
   artClass: "hexa-art",
   artLabel: "주차 요원 미리보기",
   tableLabel: "THE CAR PARK",
-  tableNote: (variant) => STAGE_NAMES[stageOf(variant) - 1],
+  tableNote: (variant) => titled(stageOf(variant)),
   rulesTitle: "손님이 말한 칸에 반듯하게",
   rules:
     part(
       "기본 규칙",
       steps(
-        "손님 차가 왼쪽 <b>입구</b>로 한 대씩 들어옵니다. 입구가 차 있으면 다음 손님은 바깥 길에서 기다립니다.",
+        "손님 차가 왼쪽 <b>입구</b>로 한 대씩 들어옵니다. 입구가 차 있으면 다음 손님은 바깥 길에서 기다리며 <b>빵빵</b> 경적을 울립니다(밀려 있는 동안 계속).",
         "주차 요원(빨간 옷, 발밑에 노란 고리)은 내가 <b>레버나 방향키로 움직입니다</b>. 차·연석·기둥·부스는 뚫고 지나갈 수 없습니다.",
         "탈 수 있는 차 옆에 서면 차 둘레가 노랗게 빛나고 <b>탑승</b> 버튼이 켜집니다. 탈 수 있는 차는 손님이 맡긴 차(입구에 선 차, 내가 몰다 세워 둔 차)와 주인이 찾으러 온 차입니다. 주차된 다른 차는 탈 수 없습니다.",
         "차에 타면 손님이 <b>말풍선으로 칸 번호</b>를 말해 줍니다. 그 칸 하나만 초록빛으로 빛나고 위에 번호 표가 뜹니다. 화면 위쪽 손님 줄에도 그 번호가 남습니다.",
@@ -98,10 +103,17 @@ export const valetConfig: PointConfig<State> = {
     part(
       "주차장",
       table(
-        [STAGE_NAMES[0], "칸이 넓고 통로와 직각입니다. 위아래 두 줄, 14칸. 손님이 가장 느긋합니다."],
-        [STAGE_NAMES[1], "밤의 햄버거 가게 주차장입니다. 가로등 불빛 아래, 칸이 60°로 비스듬하고 조금 좁습니다. 들어오는 방향 그대로 비스듬히 꺾어 넣으면 쉽습니다. 12칸."],
-        [STAGE_NAMES[2], "땅속 주차장입니다. 칸이 좁고 칸 입구마다 기둥이 서 있으며, 통로 가운데에도 기둥이 있습니다. 아래쪽 벽에는 벽과 나란한 평행 주차 칸이 있습니다. 11칸, 손님도 더 자주 옵니다."],
+        [titled(1), "칸이 넓고 통로와 직각입니다. 위아래 두 줄, 14칸. 손님이 가장 느긋하고, 승용차만 옵니다."],
+        [titled(2), "밤의 햄버거 가게 주차장입니다. 가로등 불빛 아래, 칸이 60°로 비스듬하고 조금 좁습니다. 들어오는 방향 그대로 비스듬히 꺾어 넣으면 쉽습니다. 12칸. 손님이 더 자주 오고, <b>오토바이</b>도 옵니다."],
+        [titled(3), "땅속 주차장입니다. 칸이 좁고 칸 입구마다 기둥이 서 있으며, 통로에도 기둥이 있습니다. 아래쪽 벽에는 벽과 나란한 평행 주차 칸과, 입구 옆에 노란 <b>버스 칸</b>(BUS)이 있습니다. 11칸과 버스 칸 하나. 손님이 가장 자주 오고, <b>오토바이</b>와 <b>버스</b>도 옵니다."],
         ["고르기", "위쪽의 <b>주차장 선택</b>을 누르면 고를 수 있습니다."],
+      ),
+    ) +
+    part(
+      "오토바이와 버스",
+      table(
+        ["오토바이", "작고 빨라서 좁게 돕니다. 승용차 칸 어디에나 칸과 나란히 세우면 됩니다(버스 칸은 안 됩니다). 뒤로는 천천히 밀어서만 갑니다. 탄 요원이 보입니다."],
+        ["버스", "길고 느리며 크게 돕니다. <b>버스 칸</b>에만 댈 수 있습니다. 버스 칸을 조금 지나 앞으로 간 뒤, 후진하며 꼬리를 벽 쪽으로 돌려 넣고 반대로 꺾어 벽과 나란히 펴세요. 뺄 때는 앞으로 나와 통로 아래쪽으로 출구까지 가면 됩니다. 버스는 한 번에 한 대만 옵니다."],
       ),
     ) +
     part("처음이라면", notes("걸을 때는 노란 화살표가 가장 급한 손님의 차 위에 떠 있습니다. 막대가 짧아진 손님부터 맡으세요.", "칸 앞을 조금 지나치듯 크게 돌아 들어가면 한 번에 들어갑니다. 통로의 반대쪽으로 붙어서 가다가 꺾으세요.", "천천히 들어가서 칸이 노랗게 빛나면 멈추고 하차하세요.", "차를 뺄 때는 먼저 곧게 후진해 앞머리를 빼고, 핸들을 꺾어 출구 쪽을 보게 돌리세요.")),

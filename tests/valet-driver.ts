@@ -67,7 +67,8 @@ export function driver(
       // Along the aisle on its far side, slowing for the turn.
       follow(car.x, lane, 0, 0.7);
       hold(from - car.x > 7 ? 5 : from - car.x > 3 ? 3.4 : 2.4);
-      if (car.x >= from) mem.phase = 1;
+      // (Under way first: a bay whose turn begins behind the entrance is turned into from a roll, not from a stand.)
+      if (car.x >= from && car.v > 0.3) mem.phase = 1;
     }
     if (mem.phase === 1) {
       const left = (goal.x - car.x) * Math.cos(a) + (goal.z - car.z) * Math.sin(a);

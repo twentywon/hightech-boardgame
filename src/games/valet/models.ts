@@ -1,7 +1,7 @@
 import * as T from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { block } from "../../engine/scene-utils";
-import { CAR_L, CAR_W } from "./sim";
+import { BUS, CAR_L, CAR_W, VEHICLES } from "./sim";
 
 /**
  * The cars and the people of the car park, made in code: four kinds of car (a saloon, a hatchback, an SUV and a van)
@@ -221,9 +221,15 @@ export interface CarKit {
   trimMat: T.Material;
   plateMat: T.Material;
   scratchMat: T.Material;
+  /** Bright metal (a motorbike's forks and exhaust, a bus's trim), a bus's pale roof, and its lit route sign. */
+  chromeMat: T.Material;
+  creamMat: T.Material;
+  signMat: T.Material;
   paints: Map<string, T.Material>;
   /** Each kind's still parts merged by what they are made of (made the first time a car of the kind is). */
-  still: Record<Role, T.BufferGeometry>[];
+  still: Partial<Record<Role, T.BufferGeometry>>[];
+  /** The same for the motorbike (its frame, and the steered front) and the bus. */
+  others: Map<string, Partial<Record<Role, T.BufferGeometry>>>;
   /** Hands what is made later to the view, to be disposed with it. */
   keep: <R extends { dispose(): void }>(r: R) => R;
   rich: boolean;
@@ -315,8 +321,12 @@ export function carKit(own: <R extends { dispose(): void }>(r: R) => R, rich: bo
     trimMat: own(new T.MeshStandardMaterial({ color: "#1d1f23", roughness: 0.55 })),
     plateMat: own(new T.MeshStandardMaterial({ map: plateTex, roughness: 0.5 })),
     scratchMat: own(new T.MeshStandardMaterial({ color: "#2a2623", roughness: 1 })),
+    chromeMat: own(new T.MeshStandardMaterial({ color: "#d9dde3", roughness: 0.22, metalness: rich ? 0.9 : 0.55 })),
+    creamMat: own(new T.MeshStandardMaterial({ color: "#efece2", roughness: 0.45, metalness: 0.1 })),
+    signMat: own(new T.MeshStandardMaterial({ map: own(routeSign()), color: "#ffffff", emissive: "#ffb43a", emissiveIntensity: 0.55, emissiveMap: own(routeSign()), roughness: 0.4 })),
     paints: new Map(),
     still: [],
+    others: new Map(),
     keep: own,
     rich,
   };
@@ -335,6 +345,26 @@ export function paintOf(kit: CarKit, own: <R extends { dispose(): void }>(r: R) 
   return m;
 }
 
+/** A bus's route sign: a number and a destination in amber dots on black. */
+function routeSign() {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 48;
+  const pen = c.getContext("2d")!;
+  pen.fillStyle = "#14110c";
+  pen.fillRect(0, 0, 256, 48);
+  pen.fillStyle = "#ffb43a";
+  pen.font = "900 32px 'Noto Sans KR', Inter, Arial, sans-serif";
+  pen.textBaseline = "middle";
+  pen.fillText("707", 10, 26);
+  pen.font = "800 26px 'Noto Sans KR', Inter, Arial, sans-serif";
+  pen.textAlign = "right";
+  pen.fillText("시내 순환", 246, 26);
+  const t = new T.CanvasTexture(c);
+  t.colorSpace = T.SRGBColorSpace;
+  return t;
+}
+
 /** What the view moves of a car it has made. */
 export interface CarParts {
   root: T.Group;
@@ -342,28 +372,277 @@ export interface CarParts {
   front: T.Group[];
   wheels: T.Group[];
   dents: T.Mesh[];
-  /** Where on the car its lamps are (for the glare sprites), and the heights of its bonnet. */
-  spec: Spec;
+  /** Where its nose is, the height of its headlamps and how far each is from the middle (for the glare sprites), and its wheels' radius. */
+  nose: number;
+  lampY: number;
+  lampZ: number[];
+  radius: number;
 }
-/** What a car's still parts are made of: the body's colour, the black trim, the plates, the three kinds of lamp. */
-type Role = "paint" | "glass" | "trim" | "plate" | "head" | "brake" | "back";
-/**
- * The still parts of a car of kind `model`, each part in its place, by what it is made of. They are merged into one
- * shape for each (once for each kind of car), so that a car is drawn in few strokes: a drawing done by the processor
- * alone (as the browser tests are) pays for every separate thing on the screen.
- */
-function stillParts(kit: CarKit, model: number) {
-  const s = MODELS[model],
-    out: Record<Role, T.BufferGeometry[]> = { paint: [], glass: [], trim: [], plate: [], head: [], brake: [], back: [] },
-    put = (g: T.BufferGeometry, role: Role, x = 0, y = 0, z = 0, turn?: (o: T.Object3D) => void) => {
+/** What a car's still parts are made of: the body's colour, the black trim, the plates, the kinds of lamp, bright metal, a pale roof, a sign. */
+type Role = "paint" | "glass" | "trim" | "plate" | "head" | "brake" | "back" | "chrome" | "cream" | "sign";
+type Put = (g: T.BufferGeometry, role: Role, x?: number, y?: number, z?: number, turn?: (o: T.Object3D) => void) => void;
+/** Parts laid by `lay`, each in its place, merged into one shape by what they are made of. */
+function merged(kit: CarKit, lay: (put: Put) => void) {
+  const out: Partial<Record<Role, T.BufferGeometry[]>> = {},
+    put: Put = (g, role, x = 0, y = 0, z = 0, turn) => {
       const o = new T.Object3D();
       o.position.set(x, y, z);
       turn?.(o);
       o.updateMatrix();
       const copy = (g.index ? g.toNonIndexed() : g.clone()).applyMatrix4(o.matrix);
       for (const name of Object.keys(copy.attributes)) if (!["position", "normal", "uv"].includes(name)) copy.deleteAttribute(name);
-      out[role].push(copy);
+      (out[role] ??= []).push(copy);
     };
+  lay(put);
+  const done: Partial<Record<Role, T.BufferGeometry>> = {};
+  for (const role of Object.keys(out) as Role[]) {
+    done[role] = kit.keep(mergeGeometries(out[role]!, false)!);
+    for (const g of out[role]!) g.dispose();
+  }
+  return done;
+}
+/** The meshes of merged parts, in the materials of their roles (the lamps each vehicle's own). */
+function wear(parts: Partial<Record<Role, T.BufferGeometry>>, into: T.Object3D, kit: CarKit, paint: T.Material, lamps: { head: T.Material; brake: T.Material; back: T.Material }) {
+  const materials: Record<Role, T.Material> = { paint, glass: kit.glassMat, trim: kit.trimMat, plate: kit.plateMat, head: lamps.head, brake: lamps.brake, back: lamps.back, chrome: kit.chromeMat, cream: kit.creamMat, sign: kit.signMat };
+  for (const role of Object.keys(parts) as Role[]) {
+    const mesh = new T.Mesh(parts[role]!, materials[role]),
+      shadow = role === "paint" || role === "glass" || role === "cream" || role === "chrome";
+    mesh.castShadow = shadow;
+    mesh.receiveShadow = shadow;
+    into.add(mesh);
+  }
+}
+/** A wheel: a tyre `r` high and `width` wide with a rim on each face, on its own spinning group. */
+function wheel(kit: CarKit, r: number, width: number, faces: number[]) {
+  const spin = new T.Group(),
+    tyre = new T.Mesh(kit.tyre, kit.tyreMat);
+  tyre.scale.set(r, r, width / 0.26);
+  tyre.castShadow = true;
+  spin.add(tyre);
+  for (const side of faces) {
+    const face = new T.Mesh(kit.rimFace, kit.rimMat);
+    face.scale.setScalar(r * 0.92);
+    face.position.z = side * (width / 2 + 0.003);
+    if (side < 0) face.rotation.y = Math.PI;
+    spin.add(face);
+  }
+  return spin;
+}
+/** Dark scrapes, hidden until the vehicle is bumped. */
+function scrapes(kit: CarKit, into: T.Object3D, at: [number, number, number, number?][]) {
+  return at.map(([x, y, z, upright]) => {
+    const mesh = new T.Mesh(kit.dent, kit.scratchMat);
+    mesh.position.set(x, y, z);
+    if (upright) mesh.rotation.set(0, 0, Math.PI / 2);
+    else mesh.rotation.y = x * 0.4;
+    mesh.visible = false;
+    into.add(mesh);
+    return mesh;
+  });
+}
+/** A tube from (x0, y0) to (x1, y1) at `z`, `r` thick. */
+function tube(put: Put, role: Role, r: number, [x0, y0]: [number, number], [x1, y1]: [number, number], z: number, g: T.BufferGeometry) {
+  put(g, role, (x0 + x1) / 2, (y0 + y1) / 2, z, (o) => {
+    o.rotation.z = Math.atan2(y1 - y0, x1 - x0) - Math.PI / 2;
+    o.scale.set(r, Math.hypot(x1 - x0, y1 - y0), r);
+  });
+}
+
+/**
+ * A motorbike (the second and third lots): a teardrop tank and a tail in its paint, a black saddle, the engine and the
+ * exhaust in bright metal, a swingarm and a frame, and in front, on the pivot that steers, the forks, the handlebar
+ * with its mirrors, a round headlamp and the front mudguard. No one sits on it (the valet does, when it rides it).
+ */
+export function makeBike(kit: CarKit, paint: T.Material, lamps: { head: T.Material; brake: T.Material; back: T.Material }): CarParts {
+  const R = 0.31,
+    AX = VEHICLES[1].wheelbase / 2,
+    HEAD = 0.56,
+    rod = kit.keep(new T.CylinderGeometry(1, 1, 1, 10)),
+    root = new T.Group();
+  const still =
+    kit.others.get("bike") ??
+    merged(kit, (put) => {
+      // The tank: a long rounded drop over the frame.
+      put(kit.keep(new T.SphereGeometry(1, 18, 12)), "paint", 0.2, 0.9, 0, (o) => o.scale.set(0.36, 0.15, 0.17));
+      // The side covers under the saddle and the tail rising behind it.
+      put(block(0.42, 0.22, 0.26, 0.06), "paint", -0.42, 0.68, 0);
+      put(block(0.42, 0.12, 0.2, 0.05), "paint", -0.86, 0.8, 0, (o) => (o.rotation.z = 0.18));
+      // The rear mudguard over the back wheel.
+      put(kit.keep(new T.CylinderGeometry(R + 0.07, R + 0.07, 0.15, 16, 1, true, Math.PI * 0.05, Math.PI * 0.75)), "paint", -AX, R, 0, (o) => (o.rotation.x = Math.PI / 2));
+      // The saddle, black, a step up to the pillion.
+      put(block(0.5, 0.09, 0.28, 0.04), "trim", -0.3, 0.86, 0);
+      put(block(0.28, 0.1, 0.24, 0.04), "trim", -0.66, 0.92, 0);
+      // The engine: a block with its cylinder and fins, between the frame tubes.
+      put(block(0.42, 0.3, 0.3, 0.05), "trim", 0.02, 0.46, 0);
+      for (let k = 0; k < 4; k++) put(block(0.24, 0.025, 0.34, 0.01), "chrome", 0.16, 0.58 + k * 0.05, 0);
+      // The frame: the down tube from the steering head and the backbone under the tank; the swingarm to the rear axle.
+      tube(put, "trim", 0.035, [HEAD - 0.04, 0.92], [0.12, 0.34], 0, rod);
+      tube(put, "trim", 0.03, [HEAD - 0.04, 0.95], [-0.5, 0.74], 0, rod);
+      for (const z of [-0.09, 0.09]) {
+        tube(put, "trim", 0.025, [-0.08, 0.38], [-AX, R], z, rod);
+        // The rear shock absorbers.
+        tube(put, "chrome", 0.022, [-0.52, 0.42], [-0.4, 0.74], z * 1.3, rod);
+      }
+      // The exhaust along the right side, ending in a silencer by the back wheel.
+      tube(put, "chrome", 0.035, [0.2, 0.36], [-0.35, 0.3], 0.17, rod);
+      tube(put, "chrome", 0.065, [-0.35, 0.32], [-0.95, 0.42], 0.2, rod);
+      // Footpegs, the tail lamp and the number plate at the back.
+      put(block(0.06, 0.03, 0.62, 0.01), "trim", -0.1, 0.34, 0);
+      put(block(0.05, 0.07, 0.18, 0.02), "brake", -1.07, 0.84, 0);
+      put(kit.plate, "plate", -1.06, 0.66, 0, (o) => {
+        o.rotation.y = -Math.PI / 2;
+        o.scale.set(0.55, 1.1, 1);
+      });
+    });
+  kit.others.set("bike", still);
+  const steered =
+    kit.others.get("bike-front") ??
+    merged(kit, (put) => {
+      // (On the pivot at the steering head: the front axle is AX − HEAD ahead of it.)
+      const ax = AX - HEAD;
+      for (const z of [-0.08, 0.08]) tube(put, "chrome", 0.028, [ax, R], [-0.06, 1.0], z, rod);
+      // The handlebar with its grips, and the mirrors on their stalks.
+      put(rod, "trim", -0.12, 1.1, 0, (o) => {
+        o.rotation.x = Math.PI / 2;
+        o.scale.set(0.022, 0.7, 0.022);
+      });
+      for (const z of [-0.34, 0.34]) {
+        put(rod, "trim", -0.13, 1.1, z, (o) => {
+          o.rotation.x = Math.PI / 2;
+          o.scale.set(0.035, 0.13, 0.035);
+        });
+        tube(put, "chrome", 0.01, [-0.1, 1.1], [-0.06, 1.28], z * 0.75, rod);
+        put(block(0.03, 0.08, 0.12, 0.01), "chrome", -0.06, 1.3, z * 0.75);
+      }
+      // The round headlamp in its shell, and the front mudguard.
+      put(rod, "chrome", 0.06, 0.97, 0, (o) => {
+        o.rotation.z = Math.PI / 2;
+        o.scale.set(0.11, 0.12, 0.11);
+      });
+      put(kit.keep(new T.CircleGeometry(0.095, 18)), "head", 0.125, 0.97, 0, (o) => (o.rotation.y = Math.PI / 2));
+      put(kit.keep(new T.CylinderGeometry(R + 0.06, R + 0.06, 0.12, 14, 1, true, Math.PI * 1.05, Math.PI * 0.6)), "paint", ax, R, 0, (o) => (o.rotation.x = Math.PI / 2));
+    });
+  kit.others.set("bike-front", steered);
+  wear(still, root, kit, paint, lamps);
+  const pivot = new T.Group();
+  pivot.position.set(HEAD, 0, 0);
+  wear(steered, pivot, kit, paint, lamps);
+  const front = wheel(kit, R, 0.12, [-1, 1]),
+    back = wheel(kit, R, 0.14, [-1, 1]);
+  front.position.set(AX - HEAD, R, 0);
+  back.position.set(-AX, R, 0);
+  pivot.add(front);
+  root.add(pivot, back);
+  const dents = scrapes(kit, root, [
+    [0.24, 1.06, 0.06],
+    [-0.8, 0.88, 0.0],
+  ]);
+  dents.forEach((d) => d.scale.set(0.5, 1, 0.45));
+  return { root, front: [pivot], wheels: [front, back], dents, nose: AX + R + 0.1, lampY: 0.97, lampZ: [0], radius: R };
+}
+
+/**
+ * A city bus (the third lot): a long body in its paint with a pale roof and an air-conditioning pod, a band of dark
+ * windows down each side between pillars, a deep windscreen under a lit route sign, the passenger door at the front on
+ * the right, bumpers, lamps, big mirrors on arms, and four wheels (the front ones steer).
+ */
+export function makeBus(kit: CarKit, paint: T.Material, lamps: { head: T.Material; brake: T.Material; back: T.Material }): CarParts {
+  const v = VEHICLES[BUS],
+    half = v.l / 2,
+    W = v.w,
+    R = 0.5,
+    axles = [v.wheelbase / 2, -v.wheelbase / 2],
+    root = new T.Group();
+  const still =
+    kit.others.get("bus") ??
+    merged(kit, (put) => {
+      // The body's side outline: square at the back, the roof's corners rounded, the front a little raked; the wheel arches cut out.
+      const shape = new T.Shape(),
+        clear = 0.36,
+        arch = R + 0.08;
+      shape.moveTo(-half, clear);
+      shape.lineTo(-half, 2.86);
+      shape.quadraticCurveTo(-half, 3.04, -half + 0.2, 3.04);
+      shape.lineTo(half - 0.3, 3.04);
+      shape.quadraticCurveTo(half - 0.02, 3.02, half - 0.02, 2.78);
+      shape.lineTo(half, 0.5);
+      shape.lineTo(half - 0.04, clear);
+      const a0 = Math.asin(Math.min(0.95, (clear - R) / arch)),
+        reach = Math.cos(a0) * arch;
+      for (const ax of axles) {
+        shape.lineTo(ax + reach, clear);
+        shape.absarc(ax, R, arch, a0, Math.PI - a0, false);
+      }
+      shape.lineTo(-half, clear);
+      put(extrude(shape, W, 0.1), "paint");
+      // A pale roof and the air-conditioning pod on it.
+      put(block(v.l - 0.5, 0.05, W - 0.24, 0.02), "cream", 0, 3.05, 0);
+      put(block(1.9, 0.26, 1.5, 0.1), "cream", -0.6, 3.2, 0);
+      put(block(1.5, 0.03, 1.1, 0.01), "trim", -0.6, 3.34, 0);
+      // The windows down each side, between pillars; the passenger door at the front on the right (+z).
+      const top = 2.62,
+        low = 1.62;
+      for (const side of [-1, 1]) {
+        const z = side * (W / 2 + 0.004),
+          from = -half + 0.35,
+          to = side > 0 ? half - 1.45 : half - 0.35;
+        put(block(to - from, top - low, 0.03, 0.01), "glass", (from + to) / 2, (top + low) / 2, z);
+        for (let x = from; x <= to + 1e-6; x += (to - from) / Math.round((to - from) / 1.1)) put(block(0.09, top - low + 0.02, 0.04, 0.01), "paint", x, (top + low) / 2, z * 1.002);
+        // A dark skirt line under the windows.
+        put(block(v.l - 0.4, 0.06, 0.02, 0.01), "trim", 0, low - 0.12, side * (W / 2 + 0.006));
+      }
+      // The door: two tall glass leaves in a black frame.
+      put(block(0.98, 2.1, 0.03, 0.01), "trim", half - 0.85, 1.48, W / 2 + 0.006);
+      for (const x of [half - 1.1, half - 0.6]) put(block(0.42, 1.9, 0.03, 0.01), "glass", x, 1.5, W / 2 + 0.012);
+      // The windscreen, the route sign over it, the back window.
+      put(block(0.03, 1.55, W - 0.22, 0.01), "glass", half - 0.005, 1.95, 0, (o) => (o.rotation.z = -0.02));
+      put(kit.keep(new T.PlaneGeometry(1.5, 0.28)), "sign", half - 0.005, 2.86, 0, (o) => (o.rotation.y = Math.PI / 2));
+      put(block(0.03, 0.75, W - 0.5, 0.01), "glass", -half - 0.005, 2.25, 0);
+      // Bumpers, lamps and plates at each end.
+      for (const s of [-1, 1]) put(block(0.2, 0.32, W + 0.02, 0.06), "trim", s * (half - 0.02), 0.48, 0);
+      for (const z of [-0.82, 0.82]) {
+        put(block(0.06, 0.16, 0.44, 0.02), "head", half + 0.01, 0.82, z);
+        put(block(0.06, 0.52, 0.16, 0.02), "brake", -half - 0.01, 1.08, z * 1.28);
+        put(block(0.06, 0.12, 0.16, 0.02), "back", -half - 0.01, 0.74, z * 1.28);
+      }
+      put(kit.grille, "trim", half + 0.01, 0.62, 0, (o) => o.scale.set(1, 1, 2.2));
+      put(kit.plate, "plate", half + 0.13, 0.48, 0, (o) => (o.rotation.y = Math.PI / 2));
+      put(kit.plate, "plate", -half - 0.13, 0.6, 0, (o) => (o.rotation.y = -Math.PI / 2));
+      // The big mirrors, on arms reaching forward from the front corners.
+      for (const side of [-1, 1]) {
+        put(block(0.5, 0.05, 0.05, 0.02), "trim", half - 0.1, 2.55, side * (W / 2 + 0.12), (o) => (o.rotation.y = side * 0.5));
+        put(block(0.1, 0.42, 0.2, 0.03), "trim", half + 0.12, 2.32, side * (W / 2 + 0.28));
+      }
+    });
+  kit.others.set("bus", still);
+  wear(still, root, kit, paint, lamps);
+  const front: T.Group[] = [],
+    wheels: T.Group[] = [];
+  for (const x of axles)
+    for (const side of [-1, 1]) {
+      const pivot = new T.Group();
+      pivot.position.set(x, R, side * (W / 2 - 0.27));
+      const spin = wheel(kit, R, 0.34, [side]);
+      pivot.add(spin);
+      root.add(pivot);
+      wheels.push(spin);
+      if (x > 0) front.push(pivot);
+    }
+  const dents = scrapes(kit, root, [
+    [half + 0.04, 1.2, 0.7, 1],
+    [half + 0.04, 0.95, -0.6, 1],
+    [-half - 0.04, 1.3, 0.3, 1],
+  ]);
+  return { root, front, wheels, dents, nose: half, lampY: 0.82, lampZ: [-0.82, 0.82], radius: R };
+}
+/**
+ * The still parts of a car of kind `model`, each part in its place, by what it is made of. They are merged into one
+ * shape for each (once for each kind of car), so that a car is drawn in few strokes: a drawing done by the processor
+ * alone (as the browser tests are) pays for every separate thing on the screen.
+ */
+function stillParts(kit: CarKit, model: number) {
+  const s = MODELS[model];
+  return merged(kit, (put) => {
   put(kit.bodies[model], "paint");
   put(kit.glasses[model], "glass");
   put(kit.roofs[model], "paint");
@@ -395,12 +674,7 @@ function stillParts(kit: CarKit, model: number) {
     put(kit.mirror, "trim", s.mirror, s.waist + 0.06, Math.sign(z) * (CAR_W / 2 + 0.07));
     for (const x of [0.1 + s.pillars[0], s.pillars[0] - 0.6]) put(kit.handle, "trim", x, s.waist - 0.14, Math.sign(z) * (CAR_W / 2 + 0.005));
   }
-  const merged = {} as Record<Role, T.BufferGeometry>;
-  for (const role of Object.keys(out) as Role[]) {
-    merged[role] = kit.keep(mergeGeometries(out[role], false)!);
-    for (const g of out[role]) g.dispose();
-  }
-  return merged;
+  });
 }
 /** A car of kind `model` in `paint`; its lamps in the materials given (each car its own, to light them one by one). */
 export function makeCar(kit: CarKit, model: number, paint: T.Material, lamps: { head: T.Material; brake: T.Material; back: T.Material }): CarParts {
@@ -415,13 +689,13 @@ export function makeCar(kit: CarKit, model: number, paint: T.Material, lamps: { 
       root.add(mesh);
       return mesh;
     };
-  put(still.paint, paint);
-  put(still.glass, kit.glassMat);
-  put(still.trim, kit.trimMat, 0, 0, 0, false);
-  put(still.plate, kit.plateMat, 0, 0, 0, false);
-  put(still.head, lamps.head, 0, 0, 0, false);
-  put(still.brake, lamps.brake, 0, 0, 0, false);
-  put(still.back, lamps.back, 0, 0, 0, false);
+  put(still.paint!, paint);
+  put(still.glass!, kit.glassMat);
+  put(still.trim!, kit.trimMat, 0, 0, 0, false);
+  put(still.plate!, kit.plateMat, 0, 0, 0, false);
+  put(still.head!, lamps.head, 0, 0, 0, false);
+  put(still.brake!, lamps.brake, 0, 0, 0, false);
+  put(still.back!, lamps.back, 0, 0, 0, false);
   // Wheels: a tyre and the rim on its outer face, on a pivot that steers (at the front).
   const fronts: T.Group[] = [],
     wheels: T.Group[] = [];
@@ -454,7 +728,7 @@ export function makeCar(kit: CarKit, model: number, paint: T.Material, lamps: { 
     mesh.visible = false;
     return mesh;
   });
-  return { root, front: fronts, wheels, dents, spec: s };
+  return { root, front: fronts, wheels, dents, nose: CAR_L / 2, lampY: s.lamp, lampZ: [-0.6, 0.6], radius: s.wheel };
 }
 
 /** A person's parts that move: the legs and the arms on their pivots, and the shirt (coloured by the view). */

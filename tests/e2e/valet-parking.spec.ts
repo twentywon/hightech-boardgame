@@ -256,6 +256,23 @@ test("valet parking: each lot has its own setting: the mart by day, the burger r
   expect(errors).toEqual([]);
 });
 
+test("valet parking: the lots are labelled 쉬움, 보통, 어려움 in their order, and a car kept waiting in the street sounds its horn, again and again", async ({ page }) => {
+  test.setTimeout(180000);
+  const errors = await sit(page);
+  // The lot's level on the table's label.
+  await expect(page.locator("main.game-layout")).toContainText("마트 주차장 (쉬움)");
+  // Nobody takes the car at the entrance: the next customer waits in the street and honks, more than once.
+  await expect.poll(async () => Number(await canvas(page).getAttribute("data-honks")), { timeout: 90000 }).toBeGreaterThanOrEqual(1);
+  const first = Number(await canvas(page).getAttribute("data-honks"));
+  await expect.poll(async () => Number(await canvas(page).getAttribute("data-honks")), { timeout: 30000 }).toBeGreaterThan(first);
+  // The lot picker names each lot with its level.
+  await page.locator("#restart").click();
+  const cards = page.locator("dialog[open] .stage-card");
+  await expect(cards).toHaveCount(3);
+  for (const [k, text] of ["마트 주차장 (쉬움)", "햄버거 가게 주차장 (보통)", "지하 주차장 (어려움)"].entries()) await expect(cards.nth(k)).toContainText(text);
+  expect(errors).toEqual([]);
+});
+
 test("valet parking: a whole shift: cars parked, asked for again and driven out by the exit, and at the end of the three minutes the day's takings @alone", async ({ page }, info) => {
   // Three minutes of the shift's own clock (which a slowly drawn page stretches), once: in a small window, where the
   // page is drawn fastest.

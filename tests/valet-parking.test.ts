@@ -9,7 +9,7 @@ function holding(stage: number, x: number, z: number, heading: number, state: S.
   const w = S.createWorld(stage, 3),
     lot = w.lot;
   w.nextArrival = 1e9;
-  w.cars.push({ id: 1, x, z, heading, v: 0, steer: 0, style: 0, colour: 0, state, bay: -1, want, taken: true, patience: lot.patience, patience0: lot.patience, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
+  w.cars.push({ id: 1, x, z, heading, v: 0, steer: 0, kind: 0, style: 0, colour: 0, state, bay: -1, want, taken: true, patience: lot.patience, patience0: lot.patience, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
   w.nextId = 2;
   w.hand = 1;
   return w;
@@ -52,7 +52,14 @@ describe("valet parking: the lots", () => {
         expect(S.clear(w, 99, bay.x, bay.z, bay.angle), `${stage} bay ${k}`).toBe(true);
         expect(S.standing(bay, bay.x, bay.z, bay.angle).inside).toBe(true);
         expect(S.standing(bay, bay.x, bay.z, bay.angle + Math.PI).inside).toBe(true);
-        expect(S.bayAt(w, 99, bay.x, bay.z, bay.angle)).toBe(k);
+        if (bay.bus) {
+          // A bus's bay takes a bus (clear of everything there too), and no car.
+          const b = holding(stage, bay.x, bay.z, bay.angle);
+          S.carOf(b, 1)!.kind = S.BUS;
+          expect(S.clear(b, 1, bay.x, bay.z, bay.angle)).toBe(true);
+          expect(S.bayAt(b, 1, bay.x, bay.z, bay.angle)).toBe(k);
+          expect(S.bayAt(w, 99, bay.x, bay.z, bay.angle)).toBe(-1);
+        } else expect(S.bayAt(w, 99, bay.x, bay.z, bay.angle)).toBe(k);
       }
       // The entrance's place and the aisle to the exit are clear.
       expect(S.clear(w, 99, lot.entrance.x, lot.entrance.z, 0)).toBe(true);
@@ -169,9 +176,9 @@ describe("valet parking: walls, cars and bumps", () => {
     expect(S.carOf(w, 1)!.x + S.CAR_L / 2).toBeLessThanOrEqual(-S.CAR_W / 2 + 1e-6);
     expect(S.boxesTouch({ x: 0, z: 0, heading: 0, l: 4, w: 2 }, { x: 2.9, z: 0, heading: 0.3, l: 4, w: 2 })).toBe(true);
     expect(S.boxesTouch({ x: 0, z: 0, heading: 0, l: 4, w: 2 }, { x: 4.2, z: 0, heading: 0, l: 4, w: 2 })).toBe(false);
-    const pillared = holding(3, -10, 1.2, 0);
+    const pillared = holding(3, -10, -1.2, 0);
     run(pillared, 6, gas(1));
-    const p = pillared.lot.pillars.find((q) => q.z === 1.2)!;
+    const p = pillared.lot.pillars.find((q) => q.z === -1.2)!;
     expect(S.carOf(pillared, 1)!.x + S.CAR_L / 2).toBeLessThanOrEqual(p.x - p.r + 1e-6);
   });
 });
@@ -209,7 +216,7 @@ describe("valet parking: the valet on foot", () => {
     run(w, 6, walk(1, 0));
     expect(w.valet.x).toBeCloseTo(lot.maxX - S.BODY, 6);
     // A car standing across the way: stopped at its side, however hard it is walked into; pushed along it, it slides.
-    w.cars.push({ id: 5, x: 0, z: 0, heading: 0, v: 0, steer: 0, style: 0, colour: 0, state: "parked", bay: -1, want: -1, taken: true, patience: 1, patience0: 1, late: false, bumped: false, dents: 0, t: 0, backAt: 1e9 });
+    w.cars.push({ id: 5, x: 0, z: 0, heading: 0, v: 0, steer: 0, kind: 0, style: 0, colour: 0, state: "parked", bay: -1, want: -1, taken: true, patience: 1, patience0: 1, late: false, bumped: false, dents: 0, t: 0, backAt: 1e9 });
     Object.assign(w.valet, { x: -6, z: 0.2 });
     run(w, 3, walk(1, 0));
     expect(w.valet.x).toBeCloseTo(-S.CAR_L / 2 - S.BODY, 6);
@@ -223,7 +230,7 @@ describe("valet parking: the valet on foot", () => {
     expect(w.valet.z).toBeCloseTo(booth.z + booth.hz + S.BODY, 6);
     // A pillar in the underground lot's aisle.
     const deep = S.createWorld(3, 2),
-      p = deep.lot.pillars.find((q) => q.z === 1.2)!;
+      p = deep.lot.pillars.find((q) => q.z === -1.2)!;
     deep.nextArrival = 1e9;
     Object.assign(deep.valet, { x: p.x - 4, z: p.z });
     run(deep, 2, walk(1, 0));
@@ -280,9 +287,9 @@ describe("valet parking: getting in and out", () => {
         [1, 0],
         [2, 3],
       ])
-        w.cars.push({ id, x: -9, z, heading: 0, v: 0, steer: 0, style: 0, colour: 0, state: "waiting", bay: -1, want: -1, taken: false, patience: 50, patience0: 50, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
+        w.cars.push({ id, x: -9, z, heading: 0, v: 0, steer: 0, kind: 0, style: 0, colour: 0, state: "waiting", bay: -1, want: -1, taken: false, patience: 50, patience0: 50, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
       // Bays 0 to 11 are held by parked cars: two are left free.
-      for (let k = 0; k < 12; k++) w.cars.push({ id: 10 + k, x: lot.bays[k].x, z: lot.bays[k].z, heading: lot.bays[k].angle, v: 0, steer: 0, style: 0, colour: 0, state: "parked", bay: k, want: k, taken: true, patience: 50, patience0: 50, late: false, bumped: false, dents: 0, t: 0, backAt: 1e9 });
+      for (let k = 0; k < 12; k++) w.cars.push({ id: 10 + k, x: lot.bays[k].x, z: lot.bays[k].z, heading: lot.bays[k].angle, v: 0, steer: 0, kind: 0, style: 0, colour: 0, state: "parked", bay: k, want: k, taken: true, patience: 50, patience0: 50, late: false, bumped: false, dents: 0, t: 0, backAt: 1e9 });
       const wants: number[] = [];
       for (const z of [0, 3]) {
         w.hand = -1;
@@ -632,5 +639,143 @@ describe("valet parking: the steering wheel on the screen", () => {
     expect(W.fingerAngle(2, 1, 60)).toBeNull();
     expect(W.fingerAngle(0, -40, 60)).toBeCloseTo(-Math.PI / 2, 9);
     expect(W.fingerAngle(40, 0, 60)).toBeCloseTo(0, 9);
+  });
+});
+
+describe("valet parking: motorbikes and buses (the harder lots)", () => {
+  /** Every customer of a shift at `stage` on `seed`, a car left at the entrance being taken off at once (so that none is turned away). */
+  function arrivals(stage: number, seed: number) {
+    const w = S.createWorld(stage, seed),
+      seen = new Map<number, number>();
+    let buses = 0;
+    for (let k = 0; k < S.SHIFT / S.DT; k++) {
+      S.step(w);
+      for (const c of w.cars) {
+        seen.set(c.id, c.kind);
+        if (c.state === "waiting" && c.kind !== S.BUS) c.state = "gone";
+        // A bus is parked in its bay and is gone a while later.
+        if (c.state === "waiting" && c.kind === S.BUS) Object.assign(c, { state: "parked", bay: w.lot.bays.findIndex((b) => b.bus), backAt: w.time + 20 });
+        if (c.state === "requested") c.state = "gone";
+      }
+      buses = Math.max(buses, w.cars.filter((c) => c.kind === S.BUS && c.state !== "gone").length);
+    }
+    return { kinds: [...seen.values()], buses };
+  }
+  test("the lots in their order are 쉬움, 보통, 어려움: customers come more often the harder the lot, on motorbikes from the second and by bus at the third, one bus at a time", () => {
+    expect(S.LEVELS).toEqual(["쉬움", "보통", "어려움"]);
+    const lots = [1, 2, 3].map(S.lotOf),
+      mean = (l: S.Lot) => (l.gap[0] + l.gap[1]) / 2;
+    expect(mean(lots[0])).toBeGreaterThan(mean(lots[1]));
+    expect(mean(lots[1])).toBeGreaterThan(mean(lots[2]));
+    const count = (stage: number) => {
+      const kinds: number[] = [];
+      let buses = 0;
+      for (let seed = 1; seed <= 12; seed++) {
+        const a = arrivals(stage, seed * 7919);
+        kinds.push(...a.kinds);
+        buses = Math.max(buses, a.buses);
+      }
+      return { all: kinds.length, cars: kinds.filter((k) => k === S.CAR).length, bikes: kinds.filter((k) => k === S.BIKE).length, buses: kinds.filter((k) => k === S.BUS).length, most: buses };
+    };
+    const [easy, normal, hard] = [1, 2, 3].map(count);
+    expect(easy.bikes + easy.buses).toBe(0);
+    expect(normal.bikes).toBeGreaterThan(normal.all * 0.15);
+    expect(normal.buses).toBe(0);
+    expect(hard.bikes).toBeGreaterThan(hard.all * 0.1);
+    expect(hard.buses).toBeGreaterThan(3);
+    expect(hard.most).toBe(1);
+    // More customers in a shift, the harder the lot.
+    expect(normal.all).toBeGreaterThan(easy.all);
+    expect(hard.all).toBeGreaterThan(normal.all);
+    // Only the third lot has a bay for a bus: one, long, along the wall.
+    expect(lots.map((l) => l.bays.filter((b) => b.bus).length)).toEqual([0, 0, 1]);
+    const bay = lots[2].bays.find((b) => b.bus)!;
+    expect(bay.l).toBeGreaterThan(S.VEHICLES[S.BUS].l + 3);
+    expect(bay.angle).toBe(0);
+  });
+  test("a motorbike is small and turns tight; it parks in a car's bay, anywhere along it, and never in the bus's", () => {
+    const w = holding(2, -6, 0, 0);
+    S.carOf(w, 1)!.kind = S.BIKE;
+    run(w, 1.5, gas(1, 1));
+    const bike = S.carOf(w, 1)!,
+      car = holding(2, -6, 0, 0);
+    run(car, 1.5, gas(1, 1));
+    // In the same time, at full lock, it has turned further than a car.
+    expect(Math.abs(S.wrap(bike.heading))).toBeGreaterThan(Math.abs(S.wrap(S.carOf(car, 1)!.heading)));
+    expect(S.VEHICLES[S.BIKE].wheelbase / Math.tan(S.VEHICLES[S.BIKE].maxSteer)).toBeLessThan(S.WHEELBASE / Math.tan(S.MAX_STEER));
+    // Standing in a bay toward its end, along it, it is parked there.
+    const lot = S.lotOf(3),
+      k = lot.bays.findIndex((b) => !b.bus && b.angle !== 0),
+      bay = lot.bays[k],
+      at = (along: number) => ({ x: bay.x + Math.cos(bay.angle) * along, z: bay.z + Math.sin(bay.angle) * along }),
+      p = at(1.2),
+      parked = holding(3, p.x, p.z, bay.angle, "waiting", k);
+    S.carOf(parked, 1)!.kind = S.BIKE;
+    expect(parkIt(parked)?.bay).toBe(k);
+    // Not in the bus's bay.
+    const busBay = lot.bays.findIndex((b) => b.bus),
+      wrong = holding(3, lot.bays[busBay].x, lot.bays[busBay].z, 0);
+    S.carOf(wrong, 1)!.kind = S.BIKE;
+    expect(S.bayAt(wrong, 1, lot.bays[busBay].x, lot.bays[busBay].z, 0)).toBe(-1);
+  });
+  test("a bus at the third lot: it waits inside the gate, is backed into its long bay along the wall (forward past it, then back round) and parked; asked for, it is driven out forward to the exit", () => {
+    const w = S.createWorld(3, 3),
+      lot = w.lot,
+      k = lot.bays.findIndex((b) => b.bus),
+      bay = lot.bays[k];
+    w.nextArrival = 1e9;
+    const x = S.entryX(lot, { kind: S.BUS });
+    // Its tail is inside the gate where it stands, and it is clear there.
+    expect(x - S.VEHICLES[S.BUS].l / 2).toBeGreaterThan(lot.minX);
+    w.cars.push({ id: 1, x, z: 0, heading: 0, v: 0, steer: 0, kind: S.BUS, style: 0, colour: 0, state: "waiting", bay: -1, want: k, taken: true, patience: 99, patience0: 99, late: false, bumped: false, dents: 0, t: 0, backAt: 0 });
+    w.hand = 1;
+    w.nextId = 2;
+    expect(S.clear(w, 1, x, 0, 0)).toBe(true);
+    const bus = S.carOf(w, 1)!;
+    let phase = 0;
+    const seen: S.Happening[] = [],
+      hold = (speed: number, steer: number): S.Input => ({ gas: speed > 0 ? (bus.v < speed ? 1 : 0) : bus.v > speed ? -1 : 0, steer, handbrake: false });
+    for (let t = 0; t < 60 && phase < 5; t += S.DT) {
+      let input: S.Input = S.IDLE;
+      if (phase === 0) {
+        // Forward along the aisle's lower side, past the bay.
+        input = hold(3, Math.max(-1, Math.min(1, (-bus.heading - Math.atan2(0.8 * (bus.z - 1), 2)) / 0.6)));
+        if (bus.x >= -1) phase = 1;
+      } else if (phase === 1) {
+        input = { gas: 0, steer: 1, handbrake: true };
+        if (bus.v === 0) phase = 2;
+      } else if (phase === 2) {
+        // Back, the tail swinging toward the wall, then the other way to straighten along it.
+        input = hold(-1.5, 1);
+        if (bus.heading <= -0.85) phase = 3;
+      } else if (phase === 3) {
+        input = hold(-1.5, -1);
+        if (bus.heading >= -0.01) phase = 4;
+      } else {
+        input = { gas: 0, steer: 0, handbrake: true };
+        if (bus.v === 0) phase = 5;
+      }
+      seen.push(...S.step(w, input));
+    }
+    expect(seen.some((e) => e.kind === "bump")).toBe(false);
+    expect(S.standing(bay, bus.x, bus.z, bus.heading, S.VEHICLES[S.BUS]).inside).toBe(true);
+    expect(parkIt(w)?.bay).toBe(k);
+    // Asked for: out forward, up off the wall and along the aisle into the exit.
+    Object.assign(bus, { state: "requested", patience: 99, patience0: 99 });
+    w.hand = 1;
+    const out = run(
+      w,
+      30,
+      (world) => {
+        const c = S.carOf(world, 1)!,
+          // (On the aisle's lower side, clear of the pillar above.)
+          target = 1.2,
+          turn = -c.heading - Math.atan2(0.7 * (c.z - target), 2.5);
+        return { gas: c.v < 3 ? 1 : 0, steer: Math.max(-1, Math.min(1, turn / 0.6)), handbrake: false };
+      },
+      (e) => e.kind === "returned",
+    );
+    expect(out.some((e) => e.kind === "bump")).toBe(false);
+    expect(out.at(-1)?.kind).toBe("returned");
   });
 });
