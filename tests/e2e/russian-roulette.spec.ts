@@ -38,7 +38,7 @@ async function myTurn(page: Page) {
   return !(await page.locator("#pg-result").isVisible()) && !(await page.locator(".board-finale").count()) && !(await data(page, "champion"));
 }
 
-test("russian roulette: four round the party table, the toy held up before me; a pull clicks or pops and the toy goes round", async ({ page }) => {
+test("russian roulette: four round the party table, the toy at my temple; a pull clicks or pops with no words, and the toy goes round", async ({ page }) => {
   const errors = await sit(page);
   await expect(canvas(page)).toHaveAttribute("data-seat", "0");
   await expect(canvas(page)).toHaveAttribute("data-left", "6");
@@ -47,6 +47,11 @@ test("russian roulette: four round the party table, the toy held up before me; a
   await expect(tool(page, "그냥 당기기")).toBeVisible();
   await expect(tool(page, "원통 돌리기 (2)")).toBeVisible();
   await expect(page.locator("#turn")).toContainText("펑 확률 1/6");
+  // No words tell a pull (the user asked): every word shouted over the table is kept here, and there must be none.
+  await page.evaluate(() => {
+    const said: string[] = ((window as unknown as { said: string[] }).said = []);
+    new MutationObserver(() => document.querySelectorAll(".board-shout").forEach((el) => said.push(el.textContent ?? ""))).observe(document.body, { childList: true, subtree: true });
+  });
   await tool(page, "그냥 당기기").click();
   await expect.poll(async () => ((await data(page, "shots")) ?? "").length, { timeout: 60000 }).toBeGreaterThan(0);
   // The computers go on meanwhile: my pull is the first of the shots shown.
@@ -64,6 +69,7 @@ test("russian roulette: four round the party table, the toy held up before me; a
     await expect(canvas(page)).toHaveAttribute("data-out", /^1/);
     await expect(page.locator(".board-finale")).toBeVisible({ timeout: 30000 });
   }
+  expect(await page.evaluate(() => (window as unknown as { said: string[] }).said)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
