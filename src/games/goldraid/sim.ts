@@ -79,7 +79,7 @@ export const SWING = 0.28,
  * back after a hit: it may swing again as soon as its sword is ready, whether the other is down, flung or dazed.
  */
 export const DROP_SHARE = 1,
-  LAUNCH = { up: 1.05, fade: 0.8, least: 0.22, pop: 0.12, push: 0.7 },
+  LAUNCH = { up: 1.05, fade: 0.8, least: 0.22, pop: 0.12, push: 1.0 },
   /**
    * Once a flung bandit is down again it has this long on its feet before the next blow can throw it up (it may run,
    * jump and strike in it), so that a juggle ends and two bandits are never caught in a lock.
