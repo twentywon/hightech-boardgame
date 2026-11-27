@@ -3,6 +3,7 @@ import { canvas, glow, normalFrom, painted, puff, stream, texture, type Own } fr
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { compactStill } from "../badminton/merge";
 import { bark as barkSkin, grain, grainUV } from "../../engine/grain";
+import { Grove } from "../../engine/foliage";
 import { ground, standX, type Land } from "./rules";
 
 /**
@@ -273,31 +274,9 @@ export function buildField(scene: T.Scene, land: Land, mirror: number, colours: 
   // Trunks in real bark (furrowed, with relief where a graphics card draws), round each trunk once and up it twice.
   const barkParams = barkSkin(own, { around: 1, up: 2, tone: "#b9a894", rich }),
     bark = own(rich ? new T.MeshStandardMaterial({ ...barkParams, roughness: 0.95 }) : new T.MeshLambertMaterial({ color: barkParams.color, map: barkParams.map })),
-    needles = own(new T.MeshLambertMaterial({ color: "#35503a", side: T.DoubleSide })),
-    leaves = own(new T.MeshLambertMaterial({ color: "#b5662e" })),
     fruit = own(new T.MeshLambertMaterial({ color: "#f07a1c", emissive: "#3a1400" })),
     rock = own(rich ? new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }) : new T.MeshLambertMaterial({ vertexColors: true })),
     trunkG = own(new T.CylinderGeometry(0.12, 0.2, 1, 7).translate(0, 0.5, 0)),
-    // A pine's tier: a cone whose rim goes in and out like branch tips, its tips drooping a little.
-    coneG = own(
-      (() => {
-        const g = new T.ConeGeometry(1, 1.6, 14, 2, true).translate(0, 0.8, 0),
-          pos = g.attributes.position as T.BufferAttribute;
-        for (let i = 0; i < pos.count; i++) {
-          const x = pos.getX(i),
-            z = pos.getZ(i),
-            y = pos.getY(i),
-            a = Math.atan2(z, x),
-            rim = 1 - y / 1.6,
-            out = 1 + Math.cos(a * 7) * 0.22 * rim;
-          pos.setXYZ(i, x * out, y - (out - 1) * 0.5 * rim, z * out);
-        }
-        g.computeVertexNormals();
-        return g;
-      })(),
-    ),
-    needlesLight = own(new T.MeshLambertMaterial({ color: "#4d6b43", side: T.DoubleSide })),
-    blobG = own(new T.IcosahedronGeometry(1, rich ? 2 : 1)),
     fruitG = own(new T.SphereGeometry(0.09, 8, 6)),
     rockShapes = [0, 1, 2].map((seed) => {
       // A lumpy stone: an icosahedron pushed in and out, grey with lichen and moss on its top.
@@ -333,14 +312,10 @@ export function buildField(scene: T.Scene, land: Land, mirror: number, colours: 
     const trunk = new T.Mesh(trunkG, bark);
     trunk.scale.set(size, size * 2.2, size);
     t.add(trunk);
+    // Four skirts of needle sprays (painted leaf cards, `Grove`), widest at the foot, a darker and a lighter green by turns.
     for (let k = 0; k < 4; k++) {
-      const c = new T.Mesh(coneG, k % 2 ? needlesLight : needles),
-        s = size * (1.6 - k * 0.32);
-      c.rotation.y = k * 0.9 + x;
-      c.scale.set(s, size * 1.2, s);
-      c.position.y = size * (1.6 + k * 1.05);
-      c.castShadow = true;
-      t.add(c);
+      const s = size * (1.95 - k * 0.4);
+      (k === 3 ? grove : bare).tier([x, y + size * (1.6 + k * 1.05), z], [s, size * 1.55, s], k % 2 ? "#5d7d50" : "#45634a", k * 0.9 + x);
     }
     group.add(t);
   };
@@ -352,12 +327,10 @@ export function buildField(scene: T.Scene, land: Land, mirror: number, colours: 
     trunk.castShadow = true;
     t.add(trunk);
     const r = stream(Math.round(x * 13));
+    // An autumn crown of lobed leaves (leaf cards round a dark core), turning red and orange.
     for (let k = 0; k < 5; k++) {
-      const b = new T.Mesh(blobG, leaves);
-      b.scale.setScalar(size * (1 + r() * 0.5));
-      b.position.set((r() - 0.5) * size * 2.6, size * (3.2 + r() * 1.3), (r() - 0.5) * size * 1.4);
-      b.castShadow = true;
-      t.add(b);
+      const at = new T.Vector3((r() - 0.5) * size * 2.6, size * (3.2 + r() * 1.3), (r() - 0.5) * size * 1.4).add(t.position);
+      (k < 2 ? grove : bare).crown("oak", at, size * (1.05 + r() * 0.5), k % 2 ? "#c47436" : "#b05a2a", k * 1.7);
     }
     for (let k = 0; k < 26; k++) {
       const f = new T.Mesh(fruitG, fruit),
@@ -367,6 +340,12 @@ export function buildField(scene: T.Scene, land: Land, mirror: number, colours: 
     }
     group.add(t);
   };
+  // Crowns of painted leaves and needle sprays, laid as a few instanced meshes: far ones (well behind the line) with
+  // fewer cards. Where the processor draws, cut-out cards over one another cost it dear: there every crown has the
+  // fewer cards of a far one, and only those that make a tree's outline (a pine's top skirt, the persimmon's first two
+  // lumps) have cards at all; the rest are the painted cores alone (solid).
+  const grove = new Grove(group, own, { near: rich ? 26 : 0, centre: [0, -6], shadow: rich, receive: rich, bright: 1.3, lift: 1.1 }),
+    bare = rich ? grove : new Grove(group, own, { shadow: false, receive: false, bright: 1.3, lift: 1.1, cards: false });
   const forest = rich ? 46 : 24;
   for (let k = 0; k < forest; k++) {
     const z = -15 - random() * 48,
@@ -375,6 +354,8 @@ export function buildField(scene: T.Scene, land: Land, mirror: number, colours: 
   }
   persimmon(-land.span * 0.18 * mirror, -11, 0.8);
   persimmon(land.span * 0.32 * mirror, -18, 1.1);
+  grove.build();
+  if (bare !== grove) bare.build();
   for (let k = 0; k < (rich ? 40 : 18); k++) {
     const x = (random() * 2 - 1) * reach,
       z = -1.6 - random() * 20,

@@ -3,6 +3,7 @@ import { canvas, painted, puff, stream, normalFrom, texture, type Own } from "..
 import { compactStill } from "../badminton/merge";
 import { bakeAll } from "./bake";
 import { grained } from "../../engine/grain";
+import { Grove } from "../../engine/foliage";
 import { BASE_X, SLOTS, turretAt } from "./sim";
 import type { Kit } from "./models";
 
@@ -402,32 +403,39 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
   const spots: { x: number; z: number; s: number; pine: boolean }[] = [];
   for (let k = 0; k < (rich ? 90 : 66); k++) spots.push({ x: -50 + rnd() * 100, z: -4.5 - rnd() * 14, s: 0.8 + rnd() * 0.9, pine: rnd() < 0.55 });
   for (let k = 0; k < 12; k++) spots.push({ x: (rnd() < 0.5 ? -1 : 1) * (BASE_X + 4 + rnd() * 10), z: -2 + rnd() * 5, s: 0.8 + rnd() * 0.5, pine: rnd() < 0.5 });
+  // Crowns of painted leaves and needle sprays (`Grove`: leaf cards round a dark core, alpha-tested, a few instanced
+  // meshes in all): spruces in skirts of drooping sprays, round trees in lobed leaves. Where the processor draws, cut-out
+  // cards over one another cost it dear: there a spruce has two skirts, and only the crowns that make a tree's outline
+  // (a spruce's top skirt, a round tree's main crown) have cards; the rest are the painted cores alone (solid).
   const trunk = new T.InstancedMesh(g.cyl, kit.m.bark, spots.length),
-    pines = spots.filter((p) => p.pine),
-    rounds = spots.filter((p) => !p.pine),
     tiers = rich ? 3 : 2,
-    pine = new T.InstancedMesh(g.cone, std({ color: "#2f5a2c" }), pines.length * tiers),
-    crown = new T.InstancedMesh(g.ballLo, std({ color: "#4a7a2f" }), rounds.length * tiers);
+    grove = new Grove(scene, own, { near: rich ? undefined : 0, receive: rich, bright: 1.3, lift: 1.1 }),
+    bare = rich ? grove : new Grove(scene, own, { receive: false, bright: 1.3, lift: 1.1, cards: false }),
+    // A centred cone's middle, radius and height, given as a spruce skirt's foot and size.
+    skirt = (x: number, y: number, z: number, r: number, h: number, turn: number, tint: string, top = false) =>
+      (top ? grove : bare).tier([x, y - h / 2, z], [r * 1.15, h, r * 1.15], tint, turn);
   spots.forEach((p, i) => trunk.setMatrixAt(i, one(p.x, 0.6 * p.s, p.z, 0.12 * p.s, 1.2 * p.s, 0.12 * p.s)));
-  pines.forEach((p, i) => {
-    if (tiers === 3) {
-      pine.setMatrixAt(i * 3, one(p.x, 1.5 * p.s, p.z, 0.95 * p.s, 1.8 * p.s, 0.95 * p.s, rnd()));
-      pine.setMatrixAt(i * 3 + 1, one(p.x, 2.25 * p.s, p.z, 0.75 * p.s, 1.5 * p.s, 0.75 * p.s, rnd()));
-      pine.setMatrixAt(i * 3 + 2, one(p.x, 2.9 * p.s, p.z, 0.5 * p.s, 1.2 * p.s, 0.5 * p.s, rnd()));
+  spots.forEach((p, i) => {
+    if (p.pine) {
+      if (tiers === 3) {
+        skirt(p.x, 1.5 * p.s, p.z, 0.95 * p.s, 1.8 * p.s, rnd() * 6, "#2f5a2c");
+        skirt(p.x, 2.25 * p.s, p.z, 0.75 * p.s, 1.5 * p.s, rnd() * 6, "#3a6a34");
+        skirt(p.x, 2.9 * p.s, p.z, 0.5 * p.s, 1.2 * p.s, rnd() * 6, "#2f5a2c", true);
+      } else {
+        skirt(p.x, 1.7 * p.s, p.z, 0.9 * p.s, 2.2 * p.s, i, "#2f5a2c");
+        skirt(p.x, 2.6 * p.s, p.z, 0.65 * p.s, 1.6 * p.s, i + 2, "#3a6a34", true);
+      }
     } else {
-      pine.setMatrixAt(i * 2, one(p.x, 1.7 * p.s, p.z, 0.9 * p.s, 2.2 * p.s, 0.9 * p.s));
-      pine.setMatrixAt(i * 2 + 1, one(p.x, 2.6 * p.s, p.z, 0.65 * p.s, 1.6 * p.s, 0.65 * p.s));
+      const kind = i % 3 ? "broad" : "oak";
+      grove.crown(kind, [p.x, 1.9 * p.s, p.z], [1.1 * p.s, 0.95 * p.s, 1.1 * p.s], i % 2 ? "#4a7a2f" : "#557f33", i);
+      bare.crown(kind, [p.x + 0.45 * p.s, 1.7 * p.s, p.z + 0.2], [0.75 * p.s, 0.7 * p.s, 0.75 * p.s], "#456f2c", i + 1);
+      if (tiers === 3) grove.crown(kind, [p.x - 0.4 * p.s, 2.2 * p.s, p.z - 0.2], [0.7 * p.s, 0.65 * p.s, 0.7 * p.s], "#52813a", i + 2);
     }
   });
-  rounds.forEach((p, i) => {
-    crown.setMatrixAt(i * tiers, one(p.x, 1.9 * p.s, p.z, 1.1 * p.s, 0.95 * p.s, 1.1 * p.s));
-    crown.setMatrixAt(i * tiers + 1, one(p.x + 0.45 * p.s, 1.7 * p.s, p.z + 0.2, 0.75 * p.s, 0.7 * p.s, 0.75 * p.s));
-    if (tiers === 3) crown.setMatrixAt(i * 3 + 2, one(p.x - 0.4 * p.s, 2.2 * p.s, p.z - 0.2, 0.7 * p.s, 0.65 * p.s, 0.7 * p.s));
-  });
-  for (const m of [trunk, pine, crown]) {
-    m.castShadow = true;
-    scene.add(m);
-  }
+  trunk.castShadow = true;
+  scene.add(trunk);
+  grove.build();
+  if (bare !== grove) bare.build();
   const rockMat = std({ color: "#8d8a84", flatShading: true }),
     dodeca = own(new T.DodecahedronGeometry(1, 0)),
     pebbles = new T.InstancedMesh(dodeca, rockMat, 36);

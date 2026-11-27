@@ -495,6 +495,9 @@ export interface GroveOptions {
   lift?: number;
   /** Cards a crown has, as a share of its kind's own count (fewer for small or far crowns). Default 1. */
   leaves?: number;
+  /** Whether crowns get their leaf cards at all. Without (false), only the cores, painted with foliage laid thick and
+   *  drawn solid: a far wood where the processor draws, which cut-out cards over one another would slow. Default true. */
+  cards?: boolean;
 }
 interface Batch {
   geometry: T.BufferGeometry;
@@ -538,6 +541,7 @@ export class Grove {
       near = this.isNear(at),
       { shadow = true, receive = true, bright = 1.25, lift = 1 } = this.options;
     this.batch(`${kind}:core`, core, () => paint.core, shadow, receive).at.push({ m: new T.Matrix4().compose(at, q, size.clone().multiply(CORE)), c: tint.clone().multiplyScalar(lift) });
+    if (this.options.cards === false) return;
     this.batch(`${kind}:${near ? "near" : "far"}`, () => cards(near), () => paint.cards, false, false).at.push({
       m: new T.Matrix4().compose(at, q, size),
       c: tint.clone().multiplyScalar(bright),
