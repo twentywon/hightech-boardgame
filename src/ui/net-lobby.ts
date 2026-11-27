@@ -446,6 +446,9 @@ export function openLobby<S>(o: LobbyOptions<S>): Lobby {
         busy = false;
         if (closed) return link.close();
         pairNote = "";
+        // A drop later on is mended by dialling the same address again, with no tap.
+        const app = lan!;
+        g.redial = () => app.dial(address);
         g.connect(link as Link);
         render();
       },

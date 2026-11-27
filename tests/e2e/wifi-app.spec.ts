@@ -11,7 +11,7 @@ import { FAKE_PORT, FakeWifi, aimCamera, attachCamera } from "./fake-app";
  * 와이파이 여럿이 inside the Android app, with no QR code: each page is a phone whose `window.wtgNet` is a test-only
  * stand-in for the app (fake-app.ts), all joined by one simulated Wi-Fi. The host's room is announced and shows its
  * address; the guest sees the list (rooms of another version or game greyed), joins with one tap, plays, drops and
- * comes back to its seat by tapping the room again. A guest may instead read the host's room QR code with QR 찍기
+ * comes back to its seat by itself once its Wi-Fi is back. A guest may instead read the host's room QR code with QR 찍기
  * (the fake camera is shown the code as the host's page draws it).
  */
 test.setTimeout(300000);
@@ -111,20 +111,23 @@ test("tic-tac-toe in the app: the room is listed and joined with one tap, played
   await tap(guest, 0);
   await agree([host, guest], 2);
 
-  // The guest's Wi-Fi drops while the host is to move: both are told, the room stays announced.
-  wifi.drop(guest);
-  await expect(guest.locator("#turn")).toContainText("방장과의 연결이 끊겼습니다", { timeout: 15000 });
+  // The guest's Wi-Fi drops while the host is to move, for a while: both are told, the room stays announced, and
+  // the guest tries again by itself.
+  wifi.drop(guest, true);
+  await expect(guest.locator("#turn")).toContainText("방장과의 연결이 끊겼습니다. 다시 연결하는 중", { timeout: 15000 });
   await expect(host.locator("#turn")).toContainText("민수 님의 연결이 끊겼습니다", { timeout: 15000 });
 
-  // The room's window lists the room again, marked as mine; a tap brings the guest back to its seat.
+  // The room's window lists the room meanwhile, marked as mine (a tap there also brings the guest back).
   await guest.locator("#net-room").click();
   const mine = guest.locator(".net-room.mine");
   await expect(mine).toContainText("내가 있던 방", { timeout: 15000 });
   await expect(mine).toContainText("게임 중");
-  await mine.click();
-  await expect(guest.locator(".net-status")).toContainText("게임 중입니다", { timeout: 15000 });
   await guest.locator("#net-cancel").click();
-  await expect(guest.locator("#turn")).toContainText("방장 (X) 차례");
+
+  // The Wi-Fi is back: the guest is in its seat again with no tap.
+  wifi.restore(guest);
+  await expect(guest.locator("#turn")).toContainText("방장 (X) 차례", { timeout: 20000 });
+  await expect(host.locator("#turn")).not.toContainText("연결이 끊겼습니다", { timeout: 15000 });
   expect(await moves(guest)).toBe(2);
 
   await tap(host, 8);
@@ -207,10 +210,12 @@ test("QR 찍기: the guest reads the host's room code once and is in; a refused 
   await host.locator("#net-room").click();
   await expect(host.locator("#net-room-code svg")).toBeVisible();
   await host.locator("#net-cancel").click();
-  wifi.drop(guest);
+  // (Off the Wi-Fi a while, so that it does not come back by itself before it scans.)
+  wifi.drop(guest, true);
   await expect(guest.locator("#turn")).toContainText("방장과의 연결이 끊겼습니다", { timeout: 15000 });
   await guest.locator("#net-room").click();
   await guest.locator("#net-scan-room").click();
+  wifi.restore(guest);
   await expect(guest.locator(".net-status")).toContainText("게임 중입니다", { timeout: 20000 });
   await guest.locator("#net-cancel").click();
   // While the guest was away, the host's computer played its O (a guest who drops is stood in for); X is to move.
@@ -323,4 +328,55 @@ test("yut nori for four in the app: the host starts the game with three guests a
     for (const page of pages) await expect.poll(() => yard(page), { timeout: 30000 }).toBe(await yard(host));
   }
   for (const p of phones) expect(p.errors).toEqual([]);
+});
+
+test("yut nori in the app: a phone whose Wi-Fi drops comes back to its seat by itself, without a tap, once the Wi-Fi is back", async ({ browser }, info) => {
+  test.skip(info.project.name !== "mobile", "the app is the phone's");
+  const wifi = new FakeWifi();
+  const a = await phone(browser, info, wifi, "192.168.0.12"),
+    b = await phone(browser, info, wifi, "192.168.0.23"),
+    host = a.page,
+    guest = b.page;
+  await lobby(host, "윷놀이", "방장");
+  await host.locator("#net-host").click();
+  await lobby(guest, "윷놀이", "민수");
+  await guest.locator("#net-join").click();
+  await guest.locator(".net-room:not(.other)").first().click();
+  await expect(guest.locator(".net-seats")).toBeVisible({ timeout: 15000 });
+  await host.locator("#net-start").click({ noWaitAfter: true, timeout: 120000 });
+  for (const page of [host, guest]) await expect(page.locator("main.game-layout canvas")).toBeVisible({ timeout: 120000 });
+  const yard = (page: Page) => page.evaluate(() => [document.getElementById("board")!.dataset.turn, document.getElementById("yut-pending")?.textContent, document.getElementById("move-count")?.textContent].join(" | "));
+  const rest = (page: Page) => expect(page.locator("#board")).not.toHaveAttribute("data-animating", "true", { timeout: 60000 });
+  // The guest's Wi-Fi goes for a while: both are told, and the host's computer stands in for the guest meanwhile.
+  await rest(guest);
+  wifi.drop(guest, true);
+  await expect(guest.locator("#turn")).toContainText("방장과의 연결이 끊겼습니다", { timeout: 15000 });
+  await expect(guest.locator("#turn")).toContainText("다시 연결하는 중", { timeout: 15000 });
+  await expect(host.locator(".yut-sides")).toContainText("민수", { timeout: 15000 });
+  await guest.waitForTimeout(4000);
+  // The Wi-Fi is back: the guest returns to its own seat with no tap, and both yards agree.
+  wifi.restore(guest);
+  await expect(guest.locator("#turn")).not.toContainText("끊겼습니다", { timeout: 20000 });
+  await expect(guest.locator("#yut-side-1")).toContainText("나 (홍)");
+  await rest(host);
+  await rest(guest);
+  await expect.poll(async () => (await yard(guest)) === (await yard(host)), { timeout: 30000 }).toBe(true);
+  // And it plays on: the next of its turns is its own again.
+  for (let k = 0; k < 16 && (await host.locator("#board").getAttribute("data-turn")) !== "1"; k++) {
+    await rest(host);
+    const before = await yard(host),
+      choice = host.locator("#yut-moves button:not([disabled])");
+    if ((await host.locator("#board").getAttribute("data-turn")) !== "0") break;
+    if (await choice.count()) await choice.first().evaluate((el) => (el as HTMLButtonElement).click());
+    else await host.locator("#yut-throw").first().evaluate((el) => (el as HTMLElement).click());
+    await expect.poll(() => yard(host), { timeout: 60000 }).not.toBe(before);
+  }
+  await rest(guest);
+  await expect(guest.locator("#board")).toHaveAttribute("data-turn", "1", { timeout: 60000 });
+  await expect(guest.locator("#yut-throw")).toBeEnabled({ timeout: 30000 });
+  const before = await yard(guest);
+  await guest.locator("#yut-throw").first().evaluate((el) => (el as HTMLElement).click());
+  await expect.poll(() => yard(host), { timeout: 60000 }).not.toBe(before);
+  expect(a.errors).toEqual([]);
+  expect(b.errors).toEqual([]);
 });

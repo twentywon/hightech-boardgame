@@ -30,6 +30,8 @@ interface Phone {
   /** My peer id → the other end. */
   sockets: Map<string, { phone: Phone; peer: string; accepted: boolean }>;
   chain: Promise<unknown>;
+  /** Out of the Wi-Fi for now: its connections fail (`drop` with `cut`, until `restore`). */
+  cut?: boolean;
 }
 export const FAKE_PORT = 47297;
 
@@ -128,6 +130,7 @@ export class FakeWifi {
         return;
       case "connect": {
         const host = this.phones.find((p) => p.hosting && `${p.ip}:${FAKE_PORT}` === op.address);
+        if (phone.cut || host?.cut) return this.emit(phone, { e: "fail", peer: op.peer, text: "네트워크에 연결할 수 없습니다" });
         if (!host) return this.emit(phone, { e: "fail", peer: op.peer, text: "그 주소에 열린 방이 없습니다" });
         const theirs = `h${++this.serial}`;
         phone.sockets.set(op.peer, { phone: host, peer: theirs, accepted: false });
@@ -159,10 +162,20 @@ export class FakeWifi {
     s.phone.sockets.delete(s.peer);
     this.emit(s.phone, { e: "close", peer: s.peer });
   }
-  /** The Wi-Fi of a phone drops for a moment: every connection it holds ends, at both ends. */
-  drop(page: Page) {
+  /**
+   * The Wi-Fi of a phone drops: every connection it holds ends, at both ends. With `cut` it stays off the Wi-Fi (no
+   * connection to or from it opens) until `restore`.
+   */
+  drop(page: Page, cut = false) {
     const phone = this.phones.find((p) => p.page === page);
-    if (phone) for (const peer of [...phone.sockets.keys()]) this.end(phone, peer);
+    if (!phone) return;
+    phone.cut = cut;
+    for (const peer of [...phone.sockets.keys()]) this.end(phone, peer);
+  }
+  /** The phone is back on the Wi-Fi. */
+  restore(page: Page) {
+    const phone = this.phones.find((p) => p.page === page);
+    if (phone) phone.cut = false;
   }
 }
 
