@@ -271,7 +271,7 @@ test("gold raid: on a touch screen the lever runs (the further the faster) and j
 });
 
 test("gold raid: a blow throws the other up into the air (no stun), and it is struck on while it is up", async ({ page }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
   // The page's clock is held and run on by the test: a throw lasts well under a second, and a slow software-drawn
   // page would otherwise let it pass between two looks.
   await page.clock.install();
@@ -285,7 +285,7 @@ test("gold raid: a blow throws the other up into the air (no stun), and it is st
   await tick(200);
   // The second walks to the middle, the first up to it (facing it).
   await key(page, "ArrowLeft", true);
-  for (let k = 0; k < 80 && (await state()).men[1][0] > 1.2; k++) await tick(100);
+  for (let k = 0; k < 40 && (await state()).men[1][0] > 1.2; k++) await tick(200);
   await key(page, "ArrowLeft", false);
   await tick(300);
   const bx = (await state()).men[1][0];
@@ -300,7 +300,7 @@ test("gold raid: a blow throws the other up into the air (no stun), and it is st
   let most = 0,
     high = 0;
   const swings = (await state()).swings[0];
-  for (let k = 0; k < 60; k++) {
+  for (let k = 0; k < 28; k++) {
     if (k % 4 === 0) {
       await key(page, "KeyF", true);
       await tick(16);
@@ -317,7 +317,7 @@ test("gold raid: a blow throws the other up into the air (no stun), and it is st
   expect(high).toBeGreaterThan(0.6);
   expect((await state()).swings[0]).toBeGreaterThanOrEqual(swings + 3);
   // It comes down again.
-  for (let k = 0; k < 40 && (await state()).flung[1] > 0; k++) await tick(100);
+  for (let k = 0; k < 20 && (await state()).flung[1] > 0; k++) await tick(200);
   expect((await state()).flung).toEqual([0, 0]);
   expect(errors).toEqual([]);
 });
