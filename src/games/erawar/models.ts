@@ -4,6 +4,8 @@ import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
 import { bark, grain, grained } from "../../engine/grain";
 import type { Kind } from "./sim";
+import { caparison, cannonBarrel, cheeks, cupola, hoof, horseBody, horseHead, horseLower, horseMane, horseNeck, horseTail, horseUpper, hull, mammothBody, mammothHead, mammothTail, mantlet, pillarLower, pillarUpper, roadWheel, spokedWheel, sprocket, tankGun, trackLoop, trunk, turretShape, tusk, tyre, tyreTank } from "./beasts";
+import { boot, cuts, ellipsoid, garment, lathe, merge, rounded, slab, tube, fist, forearm, GROW, headGeometry, neck, noseGeometry, onFace, pelvis, shellGeometry, shin, thigh, torso, upperArm } from "./sculpt";
 
 /**
  * The soldiers of 시대 전쟁, built from simple shapes (all made here, no pictures): for each era a fighter, a shooter
@@ -44,6 +46,8 @@ export interface Figure {
   flaps: T.Object3D[];
   /** Where its weapon's shot leaves (null: it strikes). */
   muzzle: T.Object3D | null;
+  /** What a shooter holds (its gun or bow), kept level at the foe while it aims (null for the rest). */
+  weapon: T.Object3D | null;
   /** The flash at the muzzle (hidden but for a moment after a shot). */
   flash: T.Sprite | null;
   /** The tank's track paint (its own, so that its tracks run as it goes). */
@@ -70,10 +74,13 @@ export class Kit {
   readonly tinted: T.Material;
   readonly blob: T.Material;
   private templates = new Map<string, Figure>();
+  /** How finely sculpted shapes are cut: in full with a graphics card, about half where the processor draws. */
+  readonly fine: number;
   constructor(
     readonly own: Own,
     readonly rich: boolean,
   ) {
+    this.fine = rich ? 1 : 0.4;
     const mat = (color: string, o: T.MeshStandardMaterialParameters = {}) =>
       own(rich ? new T.MeshStandardMaterial({ color, roughness: 0.75, ...o }) : new T.MeshLambertMaterial({ color, map: o.map ?? null, emissive: (o.emissive as T.ColorRepresentation) ?? 0x000000, emissiveIntensity: o.emissiveIntensity ?? 1 }));
     const colors: Record<string, [string, T.MeshStandardMaterialParameters?]> = {
@@ -109,6 +116,7 @@ export class Kit {
       white: ["#eeeae0"],
       gold: ["#d9a72c", { metalness: 0.8, roughness: 0.3 }],
       brass: ["#c19a3e", { metalness: 0.75, roughness: 0.35 }],
+      bronze: ["#8a6634", { metalness: 0.8, roughness: 0.32 }],
       olive: ["#5d6a3c", { roughness: 0.8 }],
       oliveDark: ["#424c2a", { roughness: 0.85 }],
       khaki: ["#8c845c"],
@@ -123,6 +131,30 @@ export class Kit {
       rubber: ["#1d1e20", { roughness: 0.95 }],
     };
     for (const [name, [color, o]] of Object.entries(colors)) this.m[name] = mat(color, o);
+    this.m.shag = mat("#6e4b2c", { roughness: 1 });
+    // With a graphics card cloth, fur, mail and hide show their stuff: pale pictures the paints' colours tint (where
+    // the processor draws, the parts stay plain colours, baked together joint by joint).
+    if (rich) {
+      const dress = (names: string[], picture: HTMLCanvasElement, repeat: [number, number], bumpy = 0) => {
+        const map = texture(own, picture, { repeat });
+        for (const name of names) {
+          const m = this.m[name] as T.MeshStandardMaterial;
+          m.map = map;
+          if (bumpy) {
+            m.bumpMap = map;
+            m.bumpScale = bumpy;
+          }
+          m.needsUpdate = true;
+        }
+      };
+      dress(["fur", "furDark", "furLight"], pictures.fur(0), [3, 2], 1.2);
+      dress(["shag"], pictures.fur(1), [9, 4], 2);
+      dress(["hide", "leather", "leatherDark", "horse", "horseLight"], pictures.hide(), [2, 2], 0.4);
+      dress(["mail"], pictures.mail(), [10, 6], 1.5);
+      dress(["green", "hood", "cloth", "white", "khaki", "webbing"], pictures.weave(), [4, 3], 0.4);
+      dress(["olive", "oliveDark"], pictures.camo(), [2, 2], 0.3);
+      dress(["mane", "hair", "hairRed", "beard"], pictures.strands(), [4, 2], 0.6);
+    }
     // Wood is real wood (its photograph graded to the colour, with relief) where a graphics card draws; there each wooden
     // part gets its own shape with the picture laid along it (`mesh`). Where the processor draws, a figure's wood stays
     // a plain colour baked with its other plain parts (a picture would cost a draw of its own on every soldier); the
@@ -161,7 +193,7 @@ export class Kit {
     this.m.barBack = own(new T.MeshBasicMaterial({ color: "#151515", transparent: true, opacity: 0.75, depthTest: false }));
     this.m.star = own(new T.MeshBasicMaterial({ color: "#ffd84a", depthTest: false }));
     SIDE_COLORS.forEach((c, side) => {
-      this.m[`team${side}`] = mat(c, { roughness: 0.6 });
+      this.m[`team${side}`] = mat(c, { roughness: 0.6, ...(rich ? { map: texture(own, pictures.weave(), { repeat: [4, 3] }) } : {}) });
       this.m[`teamDark${side}`] = mat(new T.Color(c).multiplyScalar(0.62).getStyle(), { roughness: 0.7 });
       this.m[`teamGlow${side}`] = mat(c, { emissive: c, emissiveIntensity: 0.25 });
       this.m[`bar${side}`] = own(new T.MeshBasicMaterial({ color: side ? "#6fb0ff" : "#ff7a5a", depthTest: false }));
@@ -205,6 +237,11 @@ export class Kit {
       else star.moveTo(Math.cos(a) * r, Math.sin(a) * r);
     }
     g.star = own(new T.ShapeGeometry(star));
+  }
+  /** A sculpted shape by name, made once (at this kit's fineness) and shared by every figure. */
+  shape(name: string, make: (fine: number) => T.BufferGeometry) {
+    if (!this.g[name]) this.g[name] = this.own(make(this.fine));
+    return name;
   }
   mesh(geometry: string, material: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, parent: T.Object3D) {
     const paint = this.m[material],
@@ -258,21 +295,38 @@ interface Dress {
   beard?: boolean;
   scale?: number;
   sitting?: boolean;
+  /** The hair's style, a moustache, gloves, the forearms' own paint (bare or a cuff), the boots' height, a stouter build. */
+  style?: HairStyle;
+  tache?: boolean;
+  glove?: string;
+  cuff?: string;
+  high?: number;
+  fat?: number;
+  /** The shins' own paint (gaiters), if not the legs'. */
+  shin?: string;
 }
-/** A person: jointed legs and boots, hips and a chest, a head with a face, two jointed arms; `scale` for a rider. */
+/** Hair, beard and the like on a head: the style's shell. */
+type HairStyle = "crop" | "wild" | "none";
+/**
+ * A person, sculpted: legs with a thigh, a knee and a calf into boots, the hips, a torso narrowing to the waist and
+ * broad at the shoulders, a neck, a head shaped with a jaw, cheekbones, sockets and a brow, eyes with their whites and
+ * pupils, brows, a nose, lips, ears, hair (and a beard); arms with a shoulder, an elbow and a forearm into a closed
+ * hand. `scale` for a rider. The joints are where the old blocky figure had them, so poses and gear still fit.
+ */
 function person(k: Kit, parent: T.Object3D, o: Dress): Person {
   const body = pivot(parent, 0, 0, 0);
   body.scale.setScalar(o.scale ?? 1);
   const skin = o.skin ?? "skin",
+    one = (name: string, make: (fine: number) => T.BufferGeometry) => k.shape(name, make),
+    fat = o.fat ?? 1,
     legs: T.Group[] = [],
     knees: T.Group[] = [];
   for (const z of [-0.085, 0.085]) {
     const leg = pivot(body, 0, 0.56, z, "leg");
-    k.mesh("limb", o.legs, 0, 0, 0, 0.078, 0.29, 0.078, leg);
+    k.mesh(one(`thigh${fat}`, (f) => thigh(f, fat)), o.legs, 0, 0, 0, 1, 1, 1, leg);
     const knee = pivot(leg, 0, -0.28, 0, "knee");
-    k.mesh("limb", o.legs, 0, 0, 0, 0.064, 0.22, 0.064, knee);
-    k.mesh("limb", o.boot ?? "boot", 0, -0.17, 0, 0.068, 0.09, 0.068, knee);
-    k.mesh("box", o.boot ?? "boot", 0.045, -0.265, 0, 0.19, 0.06, 0.1, knee);
+    k.mesh(one(`shin${fat}`, (f) => shin(f, fat)), o.shin ?? o.legs, 0, 0, 0, 1, 1, 1, knee);
+    k.mesh(one(`boot${o.high ?? 0.11}`, (f) => boot(f, o.high ?? 0.11)), o.boot ?? "boot", 0, 0, 0, 1, 1, 1, knee);
     if (o.sitting) {
       leg.rotation.z = Math.PI / 2.3;
       knee.rotation.z = -Math.PI / 2.2;
@@ -280,40 +334,42 @@ function person(k: Kit, parent: T.Object3D, o: Dress): Person {
     legs.push(leg);
     knees.push(knee);
   }
-  // Hips, then the chest on its own pivot (it leans).
-  k.mesh("box", o.legs, 0, 0.6, 0, 0.21, 0.13, 0.3, body);
+  k.mesh(one("pelvis", pelvis), o.legs, 0, 0, 0, 1, 1, 1, body);
   const chest = pivot(body, 0, 0.62, 0, "chest");
-  k.mesh("box", o.cloth, 0, 0.17, 0, 0.21, 0.36, 0.3, chest);
-  k.mesh("ball", o.cloth, 0, 0.32, 0, 0.12, 0.08, 0.17, chest);
-  // Neck and head: skull, face (eyes and pupils, brows, nose, mouth), ears, hair.
-  k.mesh("cyl", skin, 0.005, 0.41, 0, 0.045, 0.08, 0.045, chest);
+  k.mesh(one(`torso${fat}`, (f) => torso(f, fat)), o.cloth, 0, 0, 0, 1, 1, 1, chest);
+  k.mesh(one("neck", neck), skin, 0, 0, 0, 1, 1, 1, chest);
   const head = pivot(chest, 0.01, 0.52, 0, "head");
-  k.mesh("ball", skin, 0, 0, 0, 0.112, 0.128, 0.108, head);
-  k.mesh("ball", skin, 0.045, -0.06, 0, 0.07, 0.055, 0.075, head);
-  for (const z of [-0.04, 0.04]) {
-    k.mesh("dot", "eye", 0.092, 0.018, z, 0.022, 0.02, 0.02, head);
-    k.mesh("dot", "pupil", 0.108, 0.018, z, 0.011, 0.012, 0.011, head);
-    k.mesh("box", o.hair ?? "hair", 0.1, 0.05, z, 0.012, 0.013, 0.036, head).rotation.x = z > 0 ? -0.15 : 0.15;
-    k.mesh("dot", skin, -0.005, 0.0, z * 2.7, 0.022, 0.034, 0.016, head);
+  k.mesh(one("head", headGeometry), skin, 0, 0, 0, 1, 1, 1, head);
+  const hair = o.hair ?? "hair";
+  for (const s of [-1, 1]) {
+    const e = onFace(s * 0.037, 0.014, -0.004),
+      p = onFace(s * 0.037, 0.013, 0.004),
+      b = onFace(s * 0.04, 0.043, 0.002);
+    k.mesh(one("eye", (f) => ellipsoid(0.008, 0.011, 0.015, cuts(f, 8, 5), cuts(f, 6, 4))), "eye", e.x, e.y, e.z, 1, 1, 1, head);
+    k.mesh(one("pupil", (f) => ellipsoid(0.004, 0.0085, 0.0075, cuts(f, 6, 4), cuts(f, 5, 3))), "pupil", p.x, p.y, p.z, 1, 1, 1, head);
+    // (The finer features only where a graphics card draws: at the lane's size the processor's picture cannot show them.)
+    if (!k.rich) continue;
+    k.mesh(one("brow", (f) => ellipsoid(0.006, 0.0065, 0.024, cuts(f, 8, 4), cuts(f, 5, 3))), hair, b.x, b.y, b.z, 1, 1, 1, head).rotation.x = s * -0.18;
+    k.mesh(one("ear", (f) => ellipsoid(0.024, 0.034, 0.011, cuts(f, 8, 5), cuts(f, 6, 4))), skin, -0.012, -0.004, s * 0.103, 1, 1, 1, head);
   }
-  k.mesh("cone4", skin, 0.118, -0.01, 0, 0.018, 0.045, 0.02, head).rotation.z = -Math.PI / 2;
-  k.mesh("box", "lip", 0.106, -0.058, 0, 0.008, 0.009, 0.038, head);
-  k.mesh("ball", o.hair ?? "hair", -0.02, 0.045, 0, 0.115, 0.095, 0.11, head);
-  if (o.beard) {
-    k.mesh("ball", "beard", 0.07, -0.08, 0, 0.055, 0.06, 0.08, head);
-    k.mesh("box", "beard", 0.1, -0.03, 0, 0.012, 0.014, 0.06, head);
-  }
+  const n = onFace(0, -0.018, -0.005),
+    m = onFace(0, -0.058, -0.002);
+  k.mesh(one("nose", noseGeometry), skin, n.x, n.y, n.z, 1, 1, 1, head);
+  if (k.rich) k.mesh(one("lips", (f) => ellipsoid(0.007, 0.0075, 0.026, cuts(f, 10, 5), cuts(f, 6, 4))), "lip", m.x, m.y, m.z, 1, 1, 1, head);
+  const style = o.style ?? "crop";
+  if (style !== "none") k.mesh(one(`hair-${style}`, (f) => (style === "wild" ? shellGeometry(f, GROW.wild, 0.016, (d) => 0.02 * smooth01(-d.y), 0.006) : shellGeometry(f, GROW.crop, 0.008))), hair, 0, 0, 0, 1, 1, 1, head);
+  if (o.beard) k.mesh(one("beard", (f) => shellGeometry(f, GROW.beard, 0.012, (d) => 0.012 * smooth01(-d.y - 0.4), 0.004)), "beard", 0, 0, 0, 1, 1, 1, head);
+  if (o.tache) k.mesh(one("tache", (f) => shellGeometry(f, GROW.tache, 0.006)), hair, 0, 0, 0, 1, 1, 1, head);
   const arms: T.Group[] = [],
     elbows: T.Group[] = [];
   let hand = pivot(chest, 0, 0, 0),
     off = hand;
   for (const z of [-0.19, 0.19]) {
     const arm = pivot(chest, 0, 0.34, z, "arm");
-    k.mesh("ball", o.sleeve ?? o.cloth, 0, 0, 0, 0.065, 0.065, 0.065, arm);
-    k.mesh("limb", o.sleeve ?? o.cloth, 0, 0, 0, 0.058, 0.22, 0.058, arm);
+    k.mesh(one(`upperArm${fat}`, (f) => upperArm(f, fat)), o.sleeve ?? o.cloth, 0, 0, 0, 1, 1, 1, arm);
     const elbow = pivot(arm, 0, -0.21, 0, "elbow");
-    k.mesh("limb", o.sleeve ?? o.cloth, 0, 0, 0, 0.05, 0.18, 0.05, elbow);
-    k.mesh("ball", skin, 0, -0.2, 0, 0.045, 0.05, 0.04, elbow);
+    k.mesh(one(`forearm${fat}`, (f) => forearm(f, fat)), o.cuff ?? o.sleeve ?? o.cloth, 0, 0, 0, 1, 1, 1, elbow);
+    k.mesh(one("fist", fist), o.glove ?? skin, 0, 0, 0, 1, 1, 1, elbow);
     arms.push(arm);
     elbows.push(elbow);
     const grip = pivot(elbow, 0, -0.2, z > 0 ? 0.02 : -0.02, "hand");
@@ -322,231 +378,406 @@ function person(k: Kit, parent: T.Object3D, o: Dress): Person {
   }
   return { body, chest, legs, knees, arms, elbows, head, hand, off };
 }
-/** A hat or helmet on a head. */
+/** 0 below 0, rising smoothly to 1 at 1. */
+const smooth01 = (v: number) => (v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v));
+/** A hat or helmet on a head (each era's, the side's colour on it). */
 function headgear(k: Kit, p: Person, era: number, kind: Kind, side: number) {
   const h = p.head,
-    team = `team${side}`;
+    team = `team${side}`,
+    one = (name: string, make: (fine: number) => T.BufferGeometry) => k.shape(name, make);
   if (era === 0) {
-    // Wild hair under a band in the side's colour; feathers; the slinger's hide cap; paint across the cheeks.
-    k.mesh("ball", "hair", -0.035, 0.03, 0, 0.125, 0.12, 0.12, h);
-    k.mesh("cyl", team, 0, 0.045, 0, 0.122, 0.035, 0.122, h);
-    k.mesh("box", team, 0.098, -0.02, 0.05, 0.006, 0.012, 0.03, h);
-    k.mesh("box", team, 0.098, -0.02, -0.05, 0.006, 0.012, 0.03, h);
-    if (kind === 1) k.mesh("cap", "hide", -0.01, 0.04, 0, 0.128, 0.1, 0.124, h);
+    // A band in the side's colour round the wild hair, a feather or two in it, stripes of paint on the cheeks; the
+    // slinger's cap of hide.
+    k.mesh(one("headband", (f) => new T.TorusGeometry(0.118, 0.012, cuts(f, 6, 4), cuts(f, 22, 10)).rotateX(Math.PI / 2).scale(1.05, 1, 0.94)), team, -0.004, 0.05, 0, 1, 1, 1, h).rotation.z = 0.12;
+    for (const s of [-1, 1]) {
+      const c = onFace(s * 0.055, -0.02, 0.001);
+      k.mesh(one("paint", (f) => ellipsoid(0.004, 0.006, 0.022, cuts(f, 6, 4), cuts(f, 4, 3))), team, c.x, c.y, c.z, 1, 1, 1, h).rotation.y = s * 0.5;
+    }
+    if (kind === 1) k.mesh(one("hidecap", (f) => shellGeometry(f, (d) => smooth01((d.y - 0.15) * 4), 0.02)), "hide", 0, 0, 0, 1, 1, 1, h);
     else {
-      const f = k.mesh("cone4", "feather", -0.06, 0.16, 0.06, 0.018, 0.16, 0.008, h);
-      f.rotation.z = 0.5;
-      k.mesh("cone4", team, -0.08, 0.14, 0.075, 0.014, 0.12, 0.006, h).rotation.z = 0.8;
+      const feather = one("feather", (f) => slab([[0, 0], [0.02, 0.06], [0.022, 0.13], [0.008, 0.19], [-0.008, 0.13], [-0.012, 0.06]], 0.006, 0.002, cuts(f, 2, 1)));
+      k.mesh(feather, "feather", -0.07, 0.07, 0.08, 1, 1, 1, h).rotation.set(0.3, 0, 0.5);
+      k.mesh(feather, team, -0.09, 0.06, 0.09, 0.8, 0.8, 1, h).rotation.set(0.45, 0, 0.85);
     }
   } else if (era === 1) {
     if (kind === 1) {
-      k.mesh("cap", "hood", -0.01, 0.0, 0, 0.142, 0.172, 0.137, h);
-      k.mesh("cone", "hood", -0.12, 0.05, 0, 0.05, 0.14, 0.05, h).rotation.z = Math.PI / 2.6;
-      k.mesh("box", "hood", -0.04, -0.12, 0, 0.14, 0.06, 0.24, h);
+      // The archer's hood with its long tail, the cape over the shoulders.
+      k.mesh(one("hood", (f) => shellGeometry(f, GROW.hood, 0.016, (d) => 0.012 * smooth01(d.z + 0.2))), "hood", 0, 0, 0, 1, 1, 1, h);
+      k.mesh(one("liripipe", (f) => tube([new T.Vector3(-0.1, 0.06, 0), new T.Vector3(-0.17, 0.0, 0), new T.Vector3(-0.21, -0.12, 0.01)], 0.03, 0.008, cuts(f, 8, 4), cuts(f, 6, 4))), "hood", 0, 0, 0, 1, 1, 1, h);
+      k.mesh(one("cape", (f) => garment(f, 0.25, 0.4, 0.03, 0.025, 0)), "hood", 0, -0.52, 0, 1, 1, 1, h);
     } else {
-      // A spangen helm with a nasal and a mail coif, a plume in the side's colour.
-      k.mesh("cyl", "iron", 0, 0.06, 0, 0.128, 0.12, 0.128, h);
-      k.mesh("cone", "iron", 0, 0.165, 0, 0.13, 0.12, 0.13, h);
-      k.mesh("box", "steel", 0.122, 0.0, 0, 0.018, 0.13, 0.026, h);
-      k.mesh("cyl", "mail", -0.01, -0.08, 0, 0.125, 0.12, 0.125, h);
-      k.mesh("cone", team, -0.02, 0.29, 0, 0.03, 0.12, 0.03, h);
-      k.mesh("ball", team, -0.05, 0.3, 0, 0.03, 0.05, 0.03, h);
+      // A conical helm with a nasal and a rim, over a mail coif; a plume in the side's colour.
+      k.mesh(one("coif", (f) => shellGeometry(f, GROW.hood, 0.012)), "mail", 0, 0, 0, 1, 1, 1, h);
+      k.mesh(
+        one("helm1", (f) =>
+          lathe(
+            [
+              [0.0, 0.015],
+              [0.124, 0.02],
+              [0.126, 0.06],
+              [0.118, 0.11],
+              [0.09, 0.165],
+              [0.05, 0.21],
+              [0.012, 0.236],
+              [0.0, 0.24],
+            ],
+            cuts(f, 20, 8),
+            1.02,
+            0.96,
+          ),
+        ),
+        "iron",
+        -0.005,
+        0,
+        0,
+        1,
+        1,
+        1,
+        h,
+      );
+      k.mesh(one("helmrim", (f) => new T.TorusGeometry(0.124, 0.008, cuts(f, 5, 3), cuts(f, 22, 10)).rotateX(Math.PI / 2).scale(1.02, 1, 0.96)), "brass", -0.005, 0.03, 0, 1, 1, 1, h);
+      k.mesh(one("nasal", (f) => rounded(0.012, 0.085, 0.022, 0.005, f)), "steel", 0.124, 0.0, 0, 1, 1, 1, h);
+      k.mesh(one("plume", (f) => tube([new T.Vector3(0, 0.23, 0), new T.Vector3(-0.05, 0.31, 0), new T.Vector3(-0.15, 0.33, 0), new T.Vector3(-0.22, 0.27, 0)], 0.024, 0.012, cuts(f, 10, 5), cuts(f, 7, 4))), team, 0, 0, 0, 1, 1, 1, h);
     }
   } else if (era === 2) {
     if (kind === 0) {
-      // A cocked hat with a cockade.
-      k.mesh("cyl6", "black", 0, 0.09, 0, 0.18, 0.035, 0.17, h).rotation.y = Math.PI / 6;
-      k.mesh("cap", "black", 0, 0.09, 0, 0.11, 0.1, 0.11, h);
-      k.mesh("disc", team, 0.02, 0.15, 0.13, 0.035, 0.01, 0.035, h).rotation.x = Math.PI / 2;
+      // A cocked hat: its brim turned up in three corners, a cockade in the side's colour.
+      k.mesh(one("tricorn", (f) => tricorn(f)), "black", -0.005, 0.07, 0, 1, 1, 1, h);
+      k.mesh(one("cockade", (f) => new T.CylinderGeometry(0.026, 0.026, 0.008, cuts(f, 12, 6)).rotateX(Math.PI / 2)), team, 0.06, 0.13, 0.1, 1, 1, 1, h).rotation.y = -0.5;
     } else {
-      // A tall shako with a peak, a plate and a plume in the side's colour.
-      k.mesh("cyl", "black", 0, 0.15, 0, 0.11, 0.2, 0.105, h);
-      k.mesh("box", "black", 0.1, 0.06, 0, 0.09, 0.012, 0.15, h);
-      k.mesh("box", "brass", 0.106, 0.15, 0, 0.006, 0.06, 0.05, h);
-      k.mesh("ball", team, 0.02, 0.3, 0, 0.035, 0.075, 0.035, h);
+      // A shako, a little wider at the top, with a peak, a brass plate, a cord and a plume.
+      k.mesh(
+        one("shako", (f) =>
+          lathe(
+            [
+              [0.0, 0.02],
+              [0.112, 0.02],
+              [0.112, 0.06],
+              [0.118, 0.2],
+              [0.124, 0.26],
+              [0.0, 0.262],
+            ],
+            cuts(f, 18, 8),
+          ),
+        ),
+        "black",
+        -0.005,
+        0.02,
+        0,
+        1,
+        1,
+        1,
+        h,
+      );
+      k.mesh(one("peak", (f) => new T.CylinderGeometry(0.12, 0.12, 0.008, cuts(f, 16, 8), 1, false, 0, Math.PI).rotateY(Math.PI / 2).scale(0.75, 1, 1)), "black", 0.04, 0.05, 0, 1, 1, 1, h).rotation.z = -0.15;
+      if (k.rich) k.mesh(one("plate", (f) => slab([[0, 0], [0.03, 0.02], [0.03, 0.06], [0, 0.08], [-0.03, 0.06], [-0.03, 0.02]], 0.006, 0.0015, cuts(f, 1, 1)).rotateY(Math.PI / 2)), "brass", 0.118, 0.12, 0, 1, 1, 1, h);
+      if (k.rich) k.mesh(one("shakocord", (f) => new T.TorusGeometry(0.118, 0.005, cuts(f, 4, 3), cuts(f, 18, 8)).rotateX(Math.PI / 2 - 0.2)), "white", -0.005, 0.2, 0, 1, 1, 1, h);
+      k.mesh(one("shakoplume", (f) => ellipsoid(0.03, 0.07, 0.03, cuts(f, 10, 5), cuts(f, 8, 4))), team, 0.03, 0.33, 0, 1, 1, 1, h);
     }
   } else {
-    // A helmet with a cover, a strap and goggles; the machine gunner's ear-cups.
-    k.mesh("cap", "oliveDark", 0, 0.02, 0, 0.148, 0.135, 0.148, h);
-    k.mesh("cyl", "oliveDark", 0, 0.02, 0, 0.158, 0.018, 0.158, h);
-    k.mesh("box", "webbing", 0.06, -0.06, 0, 0.012, 0.11, 0.18, h).rotation.z = -0.3;
-    k.mesh("cyl", "rubber", 0.06, 0.08, 0, 0.14, 0.028, 0.14, h).rotation.z = 0.25;
-    for (const z of [-0.045, 0.045]) k.mesh("disc", "glass", 0.12, 0.085, z, 0.028, 0.012, 0.028, h).rotation.z = Math.PI / 2 - 0.25;
-    k.mesh("box", `team${side}`, -0.02, 0.13, 0.14, 0.04, 0.03, 0.01, h);
-    if (kind === 1) for (const z of [-0.12, 0.12]) k.mesh("disc", "rubber", 0, -0.01, z, 0.04, 0.02, 0.04, h).rotation.x = Math.PI / 2;
+    // A helmet in a cloth cover, a chin strap, goggles on its brow; the gunner's ear-cups.
+    k.mesh(
+      one("helmet3", (f) =>
+        lathe(
+          [
+            [0.0, -0.005],
+            [0.15, -0.012],
+            [0.152, -0.004],
+            [0.136, 0.012],
+            [0.136, 0.06],
+            [0.124, 0.11],
+            [0.09, 0.155],
+            [0.045, 0.176],
+            [0.0, 0.18],
+          ],
+          cuts(f, 22, 9),
+          1.04,
+          0.98,
+        ),
+      ),
+      "oliveDark",
+      -0.01,
+      0.035,
+      0,
+      1,
+      1,
+      1,
+      h,
+    );
+    if (k.rich) k.mesh(one("strap", (f) => new T.TorusGeometry(0.1, 0.005, cuts(f, 4, 3), cuts(f, 14, 8), Math.PI).rotateY(Math.PI / 2).rotateX(Math.PI)), "webbing", -0.01, 0.01, 0, 1, 1.25, 1, h);
+    if (k.rich) k.mesh(one("goggleband", (f) => new T.TorusGeometry(0.14, 0.01, cuts(f, 4, 3), cuts(f, 20, 9)).rotateX(Math.PI / 2)), "rubber", -0.01, 0.075, 0, 1, 1, 1, h).rotation.z = 0.2;
+    if (k.rich) for (const z of [-0.04, 0.04]) k.mesh(one("goggle", (f) => new T.CylinderGeometry(0.026, 0.028, 0.022, cuts(f, 12, 6)).rotateZ(Math.PI / 2 - 0.3)), "glass", 0.13, 0.098, z, 1, 1, 1, h);
+    if (k.rich) k.mesh(one("helmpatch", (f) => rounded(0.05, 0.03, 0.008, 0.004, f)), `team${side}`, -0.02, 0.12, 0.145, 1, 1, 1, h).rotation.x = -0.25;
+    if (kind === 1) for (const z of [-0.11, 0.11]) k.mesh(one("earcup", (f) => new T.CylinderGeometry(0.03, 0.032, 0.026, cuts(f, 12, 6)).rotateX(Math.PI / 2)), "oliveDark", -0.012, -0.01, z, 1, 1, 1, h);
+  }
+}
+/** A cocked hat: a crown, and a brim turned up into three corners (one at the front). */
+function tricorn(fine: number) {
+  const n = cuts(fine, 36, 12),
+    brim = new T.CylinderGeometry(1, 1, 1, n, 1, true),
+    pos = brim.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i),
+      z = pos.getZ(i),
+      a = Math.atan2(z, x),
+      corner = Math.pow(Math.abs(Math.cos((a * 3) / 2)), 3),
+      r = 0.13 + 0.07 * corner,
+      y = pos.getY(i);
+    // The cylinder's lower ring is the brim's edge on the crown, its upper the turned-up edge.
+    const up = y > 0 ? 0.06 + 0.05 * corner : 0;
+    pos.setXYZ(i, Math.cos(a) * (y > 0 ? r : 0.115), up, Math.sin(a) * (y > 0 ? r : 0.115));
+  }
+  brim.computeVertexNormals();
+  const crown = lathe(
+    [
+      [0.0, 0.0],
+      [0.115, 0.0],
+      [0.112, 0.06],
+      [0.09, 0.11],
+      [0.0, 0.125],
+    ],
+    cuts(fine, 18, 8),
+  );
+  const double = brim.clone();
+  // The brim seen from inside too.
+  const idx = double.index!;
+  for (let t = 0; t < idx.count; t += 3) {
+    const a = idx.getX(t);
+    idx.setX(t, idx.getX(t + 1));
+    idx.setX(t + 1, a);
+  }
+  double.computeVertexNormals();
+  return merge([brim, double, crown]);
+}
+/** A soldier's gear over the body, each era's own; the side's colour on each. */
+function layers(k: Kit, p: Person, era: number, kind: Kind, side: number) {
+  const team = `team${side}`,
+    dark = `teamDark${side}`,
+    c = p.chest,
+    one = (name: string, make: (fine: number) => T.BufferGeometry) => k.shape(name, make),
+    ring = (name: string, r: number, tubeR: number) => one(name, (f) => new T.TorusGeometry(r, tubeR, cuts(f, 5, 3), cuts(f, 18, 8)).rotateX(Math.PI / 2).scale(0.74, 1, 1));
+  if (era === 0) {
+    // A fur tunic over one shoulder with a ragged hem, a sash in the side's colour, a necklace of teeth, bands on the
+    // arms and wraps on the shins.
+    k.mesh(one("tunic0", (f) => garment(f, -0.17, 0.3, 0.012, 0.045, 0.25)), kind === 1 ? "hide" : "fur", 0, 0, 0, 1, 1, 1, c);
+    k.mesh(one("furstrap", (f) => tube([new T.Vector3(0.09, 0.2, 0.08), new T.Vector3(0.05, 0.38, -0.08), new T.Vector3(-0.05, 0.38, -0.1), new T.Vector3(-0.09, 0.2, 0.08)], 0.03, 0.03, cuts(f, 10, 5), cuts(f, 6, 4))), kind === 1 ? "hide" : "furDark", 0, 0, 0, 1, 1, 1, c);
+    k.mesh(ring("sash0", 0.142, 0.016), team, 0, 0.02, 0, 1, 1, 1, c);
+    k.mesh(ring("necklace", 0.09, 0.004), "rope", 0.012, 0.36, 0, 1, 1, 1, c).rotation.z = -0.35;
+    if (k.rich) for (let i = 0; i < 5; i++) k.mesh(one("tooth", (f) => new T.ConeGeometry(0.008, 0.03, cuts(f, 5, 3)).rotateZ(Math.PI)), "bone", 0.085 - Math.abs(i - 2) * 0.006, 0.33 - Math.abs(i - 2) * 0.012, -0.05 + i * 0.025, 1, 1, 1, c);
+    for (const arm of p.arms) k.mesh(one("armband", (f) => new T.TorusGeometry(0.058, 0.009, cuts(f, 4, 3), cuts(f, 12, 6)).rotateX(Math.PI / 2)), team, 0, -0.1, 0, 1, 1, 1, arm);
+    if (k.rich) for (const knee of p.knees) for (const y of [-0.08, -0.13]) k.mesh(one("wrap", (f) => new T.TorusGeometry(0.05, 0.008, cuts(f, 4, 3), cuts(f, 12, 6)).rotateX(Math.PI / 2)), "hide", 0, y, 0, 1, 1, 1, knee);
+  } else if (era === 1) {
+    if (kind === 1) {
+      // The archer: a padded green jerkin to the thighs, a belt with a pouch, a quiver of fletched arrows on the back.
+      k.mesh(one("jerkin", (f) => garment(f, -0.2, 0.35, 0.01, 0, 0.2)), "green", 0, 0, 0, 1, 1, 1, c);
+      k.mesh(ring("belt1", 0.14, 0.013), team, 0, 0.0, 0, 1, 1, 1, c);
+      if (k.rich) k.mesh(one("pouch", (f) => rounded(0.05, 0.06, 0.03, 0.012, f)), "leather", 0.08, -0.04, 0.1, 1, 1, 1, c);
+      const quiver = pivot(c, -0.13, 0.2, -0.06);
+      quiver.rotation.z = 0.35;
+      k.mesh(one("quiver", (f) => lathe([[0.0, -0.17], [0.042, -0.165], [0.05, 0.0], [0.055, 0.15], [0.0, 0.152]], cuts(f, 12, 6))), "leather", 0, 0, 0, 1, 1, 1, quiver);
+      for (let i = 0; i < 4; i++) {
+        k.mesh("cyl", "wood", 0.015 * (i - 1.5), 0.2, 0.012 * (i % 2), 0.006, 0.14, 0.006, quiver);
+        if (k.rich) k.mesh(one("fletch", (f) => slab([[0, 0], [0.012, 0.012], [0.012, 0.05], [0, 0.06], [-0.012, 0.05], [-0.012, 0.012]], 0.004, 0.001, cuts(f, 1, 1))), "feather", 0.015 * (i - 1.5), 0.24, 0.012 * (i % 2), 1, 1, 1, quiver);
+      }
+    } else {
+      // A mail shirt to the knees, a tabard in the side's colour with a gold cross, a sword belt, round iron pauldrons.
+      k.mesh(one("hauberk", (f) => garment(f, -0.24, 0.36, 0.006, 0.012, 0.22)), "mail", 0, 0, 0, 1, 1, 1, c);
+      k.mesh(one("tabard", (f) => garment(f, -0.22, 0.32, 0.016, 0.0, 0.26, 0.92)), team, 0, 0, 0, 1, 1, 1, c);
+      k.mesh(one("cross-v", (f) => rounded(0.008, 0.16, 0.035, 0.003, f)), "gold", 0.103, 0.14, 0, 1, 1, 1, c);
+      k.mesh(one("cross-h", (f) => rounded(0.008, 0.035, 0.12, 0.003, f)), "gold", 0.105, 0.18, 0, 1, 1, 1, c);
+      k.mesh(ring("belt1k", 0.15, 0.014), "leatherDark", 0, 0.01, 0, 1, 1, 1, c);
+      if (k.rich) k.mesh(one("buckle", (f) => rounded(0.012, 0.035, 0.035, 0.004, f)), "brass", 0.112, 0.01, 0, 1, 1, 1, c);
+      for (const arm of p.arms) k.mesh(one("pauldron", (f) => new T.SphereGeometry(0.085, cuts(f, 12, 6), cuts(f, 8, 4), 0, Math.PI * 2, 0, Math.PI / 2.2)), "iron", 0, -0.005, 0, 1, 1, 1, arm);
+    }
+  } else if (era === 2) {
+    // A coat in the side's colour: its skirts to the thighs, tails behind, white facings and cuffs, brass buttons,
+    // white cross-belts, a dark collar; white breeches, black gaiters; a pack and a rolled blanket.
+    k.mesh(one("coat", (f) => garment(f, -0.16, 0.36, 0.008, 0, 0.12)), team, 0, 0, 0, 1, 1, 1, c);
+    for (const z of [-0.05, 0.05]) {
+      k.mesh(one("tail", (f) => slab([[0, 0], [0.06, 0], [0.05, -0.3], [0.0, -0.34]], 0.012, 0.004, cuts(f, 2, 1)).rotateY(Math.PI / 2)), dark, -0.095, 0.0, z, 1, 1, 1, c).rotation.x = z > 0 ? -0.12 : 0.12;
+      k.mesh(one("facing", (f) => rounded(0.012, 0.24, 0.05, 0.004, f)), "white", 0.1, 0.22, z > 0 ? 0.03 : -0.03, 1, 1, 1, c).rotation.z = -0.12;
+    }
+    if (k.rich) for (let i = 0; i < 4; i++) k.mesh(one("button", (f) => ellipsoid(0.006, 0.01, 0.01, cuts(f, 6, 4), cuts(f, 4, 3))), "brass", 0.105, 0.12 + i * 0.06, 0.07, 1, 1, 1, c);
+    for (const r of [0.62, -0.62]) k.mesh(one("crossbelt", (f) => new T.TorusGeometry(0.162, 0.011, cuts(f, 4, 3), cuts(f, 24, 10)).scale(0.74, 1, 1).rotateX(Math.PI / 2)), "white", 0, 0.2, 0, 1, 1, 1, c).rotation.x = r;
+    k.mesh(ring("collar2", 0.075, 0.016), dark, 0, 0.385, 0, 1, 1, 1, c);
+    k.mesh(one("pack", (f) => rounded(0.08, 0.2, 0.22, 0.025, f)), "leatherDark", -0.135, 0.19, 0, 1, 1, 1, c);
+    k.mesh(one("blanket", (f) => new T.CylinderGeometry(0.038, 0.038, 0.24, cuts(f, 10, 5)).rotateX(Math.PI / 2)), "cloth", -0.13, 0.32, 0, 1, 1, 1, c);
+    if (k.rich) for (const elbow of p.elbows) k.mesh(one("cuff", (f) => new T.TorusGeometry(0.04, 0.014, cuts(f, 4, 3), cuts(f, 12, 6)).rotateX(Math.PI / 2)), "white", 0, -0.15, 0, 1, 1, 1, elbow);
+  } else {
+    // A vest of pouches over camouflage fatigues, a belt and a canteen, the side's colour on the arm, a pack with a
+    // rolled mat, gloves; the gunner's radio with its aerial.
+    k.mesh(one("vest", (f) => garment(f, -0.02, 0.33, 0.02, 0, 0)), "oliveDark", 0, 0, 0, 1, 1, 1, c);
+    for (let i = 0; i < 3; i++) k.mesh(one("pouch3", (f) => rounded(0.035, 0.07, 0.06, 0.01, f)), "webbing", 0.118, 0.06, -0.08 + i * 0.08, 1, 1, 1, c);
+    if (k.rich) k.mesh(one("chestpouch", (f) => rounded(0.025, 0.05, 0.05, 0.008, f)), "webbing", 0.12, 0.22, 0.07, 1, 1, 1, c);
+    k.mesh(ring("belt3", 0.145, 0.015), "webbing", 0, -0.04, 0, 1, 1, 1, c);
+    if (k.rich) k.mesh(one("canteen", (f) => rounded(0.04, 0.08, 0.06, 0.02, f)), "olive", -0.04, -0.06, 0.15, 1, 1, 1, c);
+    k.mesh(one("pack3", (f) => rounded(0.1, 0.24, 0.24, 0.03, f)), "khaki", -0.15, 0.17, 0, 1, 1, 1, c);
+    k.mesh(one("mat", (f) => new T.CylinderGeometry(0.045, 0.045, 0.25, cuts(f, 10, 5)).rotateX(Math.PI / 2)), "oliveDark", -0.15, 0.31, 0, 1, 1, 1, c);
+    for (const arm of p.arms) k.mesh(one("armband3", (f) => new T.TorusGeometry(0.057, 0.014, cuts(f, 4, 3), cuts(f, 12, 6)).rotateX(Math.PI / 2)), team, 0, -0.07, 0, 1, 1, 1, arm);
+    if (kind === 1) {
+      k.mesh(one("radio", (f) => rounded(0.07, 0.16, 0.12, 0.012, f)), "dark", -0.21, 0.2, -0.06, 1, 1, 1, c);
+      k.mesh("cyl", "black", -0.21, 0.55, -0.1, 0.005, 0.5, 0.005, c);
+    }
   }
 }
 /** A person of an era and kind, gear and weapon on. Returns the person and its weapon's mouth. */
-function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: number, scale = 1, sitting = false): { p: Person; muzzle: T.Object3D | null } {
+function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: number, scale = 1, sitting = false): { p: Person; muzzle: T.Object3D | null; weapon: T.Object3D | null } {
   const team = `team${side}`,
-    dark = `teamDark${side}`,
+    one = (name: string, make: (fine: number) => T.BufferGeometry) => k.shape(name, make),
     dress: Dress =
       era === 0
-        ? { cloth: kind === 1 ? "hide" : "fur", legs: "skin2", sleeve: "skin2", skin: "skin2", boot: "leather", beard: kind !== 1, hair: kind === 1 ? "hairRed" : "hair" }
+        ? { cloth: "skin2", legs: "skin2", sleeve: "skin2", skin: "skin2", boot: "hide", beard: kind !== 1, hair: kind === 1 ? "hairRed" : "hair", style: "wild", high: 0.06, fat: 1.06 }
         : era === 1
-          ? { cloth: "mail", legs: kind === 1 ? "leather" : "mail", sleeve: kind === 1 ? "green" : "mail", boot: "leatherDark", hair: "hairRed" }
+          ? kind === 1
+            ? { cloth: "green", legs: "leather", sleeve: "green", boot: "leatherDark", hair: "hairRed", style: "none" }
+            : { cloth: "mail", legs: "mail", sleeve: "mail", cuff: "mail", boot: "leatherDark", hair: "hairRed", style: "none", tache: true, glove: "leatherDark" }
           : era === 2
-            ? { cloth: team, legs: "white", sleeve: team, boot: "black" }
-            : { cloth: "olive", legs: "olive", sleeve: "olive", boot: "black" };
+            ? { cloth: team, legs: "white", shin: "black", sleeve: team, boot: "black", style: "crop", tache: kind === 1 }
+            : { cloth: "olive", legs: "olive", sleeve: "olive", boot: "black", style: "none", glove: "rubber", high: 0.15 };
   const p = person(k, parent, { ...dress, scale, sitting });
   headgear(k, p, era, kind, side);
-  const c = p.chest,
-    hand = p.hand;
-  let muzzle: T.Object3D | null = null;
-  // The layers over the body, each era's own; the side's colour on each.
-  if (era === 0) {
-    // A fur tunic with a ragged hem, a hide belt, a necklace of teeth, paint on the arms.
-    for (let i = 0; i < 6; i++) k.mesh("cone4", kind === 1 ? "hide" : "furDark", 0.01, -0.06, -0.12 + i * 0.048, 0.03, 0.1, 0.03, c).rotation.z = Math.PI;
-    k.mesh("box", team, 0, 0.02, 0, 0.215, 0.05, 0.305, c);
-    for (let i = 0; i < 5; i++) k.mesh("cone4", "bone", 0.108, 0.27 - Math.abs(i - 2) * 0.02, -0.06 + i * 0.03, 0.01, 0.035, 0.01, c).rotation.z = Math.PI;
-    k.mesh("box", "furLight", -0.02, 0.33, -0.12, 0.18, 0.06, 0.1, c).rotation.x = 0.4;
-    for (const arm of p.arms) k.mesh("cyl", team, 0, -0.1, 0, 0.06, 0.02, 0.06, arm);
-  } else if (era === 1) {
-    if (kind === 1) {
-      // The archer: a green jerkin over mail, a belt with a pouch, a quiver of arrows on the back.
-      k.mesh("box", "green", 0.004, 0.14, 0, 0.215, 0.32, 0.305, c);
-      k.mesh("box", team, 0.006, 0.02, 0, 0.217, 0.06, 0.307, c);
-      const quiver = pivot(c, -0.13, 0.2, -0.06);
-      quiver.rotation.z = 0.35;
-      k.mesh("cyl", "leather", 0, 0, 0, 0.05, 0.32, 0.05, quiver);
-      for (let i = 0; i < 4; i++) {
-        k.mesh("cyl", "wood", 0.015 * (i - 1.5), 0.2, 0.012 * (i % 2), 0.006, 0.14, 0.006, quiver);
-        k.mesh("box", "feather", 0.015 * (i - 1.5), 0.27, 0.012 * (i % 2), 0.02, 0.05, 0.004, quiver);
-      }
-    } else {
-      // A tabard in the side's colour with a gold badge, a belt, pauldrons.
-      k.mesh("box", team, 0.005, 0.1, 0, 0.217, 0.42, 0.25, c);
-      k.mesh("box", "gold", 0.115, 0.17, 0, 0.004, 0.11, 0.025, c);
-      k.mesh("box", "gold", 0.115, 0.19, 0, 0.004, 0.025, 0.08, c);
-      k.mesh("box", "leatherDark", 0.005, 0.02, 0, 0.22, 0.04, 0.31, c);
-      k.mesh("box", "brass", 0.115, 0.02, 0, 0.006, 0.035, 0.04, c);
-      for (const arm of p.arms) k.mesh("cap", "iron", 0, 0.02, 0, 0.09, 0.07, 0.09, arm);
-    }
-  } else if (era === 2) {
-    // A coat in the side's colour with white lapels and cuffs, coat tails, cross-belts, brass buttons, gaiters, a pack.
-    k.mesh("box", "white", 0.106, 0.2, 0.06, 0.006, 0.26, 0.05, c);
-    k.mesh("box", "white", 0.106, 0.2, -0.06, 0.006, 0.26, 0.05, c);
-    for (let i = 0; i < 4; i++) k.mesh("dot", "brass", 0.112, 0.08 + i * 0.07, 0, 0.012, 0.012, 0.012, c);
-    for (const r of [0.6, -0.6]) k.mesh("box", "white", 0.004, 0.17, 0, 0.214, 0.045, 0.31, c).rotation.x = r;
-    k.mesh("box", dark, -0.04, -0.12, 0, 0.14, 0.2, 0.28, c).rotation.z = -0.15;
-    k.mesh("box", "leatherDark", -0.14, 0.18, 0, 0.08, 0.2, 0.22, c);
-    k.mesh("cyl", "white", -0.14, 0.3, 0, 0.04, 0.22, 0.04, c).rotation.x = Math.PI / 2;
-    for (const elbow of p.elbows) k.mesh("cyl", "white", 0, -0.15, 0, 0.055, 0.05, 0.055, elbow);
-    for (const knee of p.knees) k.mesh("limb", "black", 0, -0.04, 0, 0.068, 0.14, 0.068, knee);
-  } else {
-    // A vest of pouches over the fatigues, an armband in the side's colour, a pack with a roll, gloves.
-    k.mesh("box", "oliveDark", 0.01, 0.17, 0, 0.235, 0.3, 0.32, c);
-    for (let i = 0; i < 3; i++) k.mesh("box", "webbing", 0.128, 0.06 + (i % 2) * 0.02, -0.08 + i * 0.08, 0.03, 0.07, 0.06, c);
-    k.mesh("box", "webbing", 0.124, 0.22, 0.07, 0.02, 0.05, 0.05, c);
-    k.mesh("box", "khaki", -0.15, 0.17, 0, 0.1, 0.24, 0.24, c);
-    k.mesh("cyl", "oliveDark", -0.15, 0.31, 0, 0.045, 0.24, 0.045, c).rotation.x = Math.PI / 2;
-    k.mesh("cyl", team, 0, -0.06, 0, 0.062, 0.05, 0.062, p.arms[0]);
-    k.mesh("cyl", team, 0, -0.06, 0, 0.062, 0.05, 0.062, p.arms[1]);
-    for (const elbow of p.elbows) k.mesh("ball", "rubber", 0, -0.2, 0, 0.048, 0.052, 0.042, elbow);
-    if (kind === 1) {
-      // The radio's aerial on the gunner's pack.
-      k.mesh("cyl", "black", -0.2, 0.55, -0.08, 0.005, 0.5, 0.005, c);
-      k.mesh("box", "dark", -0.2, 0.2, -0.08, 0.06, 0.16, 0.12, c);
-    }
-  }
-  // The weapon.
+  layers(k, p, era, kind, side);
+  const hand = p.hand;
+  let muzzle: T.Object3D | null = null,
+    weapon: T.Object3D | null = null;
+  // The weapon (in the hand's frame a held thing's length runs along +y once turned).
   if (era === 0) {
     if (kind === 0) {
-      // A knotted club studded with flint.
+      // A club: a tapering shaft, a stone head bound on with thongs, flint chips set in it.
       const club = pivot(hand, 0, 0, 0);
       club.rotation.z = -Math.PI / 2.3;
-      k.mesh("cyl", "wood", 0, 0.18, 0, 0.026, 0.42, 0.026, club);
-      k.mesh("ball", "woodDark", 0, 0.42, 0, 0.075, 0.11, 0.075, club);
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2;
-        k.mesh("cone4", "flint", Math.cos(a) * 0.06, 0.43 + (i % 2) * 0.04, Math.sin(a) * 0.06, 0.02, 0.06, 0.02, club).rotation.set(Math.sin(a) * 1.2, 0, -Math.cos(a) * 1.2);
+      k.mesh(one("clubshaft", (f) => lathe([[0.0, -0.06], [0.022, -0.055], [0.026, 0.1], [0.034, 0.36], [0.0, 0.38]], cuts(f, 8, 5))), "wood", 0, 0, 0, 1, 1, 1, club);
+      k.mesh(one("clubstone", (f) => rock(f, 0.085, 0.1, 0.075)), "stone", 0, 0.42, 0, 1, 1, 1, club);
+      for (const y of [0.34, 0.37]) k.mesh(one("thong", (f) => new T.TorusGeometry(0.038, 0.008, cuts(f, 4, 3), cuts(f, 10, 6)).rotateX(Math.PI / 2)), "leather", 0, y, 0, 1, 1, 1, club);
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.4;
+        k.mesh(one("chip", (f) => new T.TetrahedronGeometry(0.03, 0)), "flint", Math.cos(a) * 0.07, 0.44 + (i % 2) * 0.03, Math.sin(a) * 0.06, 1, 1.6, 1, club).rotation.set(Math.sin(a), 0, -Math.cos(a));
       }
-      k.mesh("cyl", "leather", 0, 0.03, 0, 0.032, 0.08, 0.032, club);
     } else if (kind === 1) {
-      k.mesh("cyl", "rope", 0, -0.08, 0, 0.008, 0.18, 0.008, hand);
-      k.mesh("ball", "hide", 0, -0.17, 0, 0.04, 0.03, 0.04, hand);
-      k.mesh("ball", "stone", 0, -0.18, 0, 0.032, 0.03, 0.032, hand);
-      k.mesh("box", "hide", -0.06, 0.02, -0.17, 0.09, 0.11, 0.06, c);
-      for (let i = 0; i < 3; i++) k.mesh("ballLo", "stone", -0.06 + (i - 1) * 0.025, 0.09, -0.17, 0.02, 0.018, 0.02, c);
+      // A sling: two cords and a pouch with its stone; a bag of stones on the hip.
+      k.mesh(one("slingcord", (f) => tube([new T.Vector3(0, 0, 0), new T.Vector3(0.01, -0.09, 0.006), new T.Vector3(0, -0.17, 0)], 0.005, 0.005, cuts(f, 6, 3), 4)), "rope", 0, 0, 0, 1, 1, 1, hand);
+      k.mesh(one("slingpouch", (f) => ellipsoid(0.04, 0.026, 0.04, cuts(f, 8, 5), cuts(f, 6, 4))), "hide", 0, -0.18, 0, 1, 1, 1, hand);
+      k.mesh(one("slingstone", (f) => rock(f, 0.028, 0.026, 0.028)), "stone", 0, -0.165, 0, 1, 1, 1, hand);
+      k.mesh(one("stonebag", (f) => ellipsoid(0.05, 0.065, 0.045, cuts(f, 10, 5), cuts(f, 8, 4))), "hide", -0.06, -0.02, -0.17, 1, 1, 1, p.chest);
       muzzle = pivot(hand, 0, -0.18, 0, "muzzle");
     } else {
+      // The mammoth rider's spear: a long shaft, a leaf of flint lashed on, a strip of the side's colour.
       const spear = pivot(hand, 0, 0, 0);
       spear.rotation.z = -Math.PI / 2.1;
-      k.mesh("cyl", "wood", 0, 0.2, 0, 0.018, 0.9, 0.018, spear);
-      k.mesh("cone4", "flint", 0, 0.7, 0, 0.04, 0.14, 0.02, spear);
-      k.mesh("cyl", "leather", 0, 0.62, 0, 0.024, 0.04, 0.024, spear);
-      k.mesh("box", team, 0.03, 0.56, 0, 0.06, 0.05, 0.004, spear);
+      k.mesh(one("spearshaft", (f) => lathe([[0.0, -0.25], [0.016, -0.24], [0.019, 0.3], [0.016, 0.64], [0.0, 0.65]], cuts(f, 8, 5))), "wood", 0, 0, 0, 1, 1, 1, spear);
+      k.mesh(one("spearhead", (f) => slab([[-0.035, 0], [0, 0.17], [0.035, 0], [0, -0.03]], 0.018, 0.006, cuts(f, 2, 1)).rotateY(Math.PI / 2)), "flint", 0, 0.64, 0, 1, 1, 1, spear);
+      k.mesh(one("lash", (f) => lathe([[0.0, 0.0], [0.024, 0.0], [0.026, 0.05], [0.0, 0.052]], cuts(f, 8, 5))), "leather", 0, 0.6, 0, 1, 1, 1, spear);
+      k.mesh(one("streamer", (f) => slab([[0, 0], [0.09, -0.01], [0.08, -0.05], [0, -0.04]], 0.004, 0.001, 1)), team, 0.02, 0.56, 0, 1, 1, 1, spear);
     }
   } else if (era === 1) {
     if (kind === 0) {
+      // A sword: a wrapped grip, a round pommel, a cross-guard, a blade with its fuller and point.
       const sword = pivot(hand, 0, 0, 0);
       sword.rotation.z = -Math.PI / 2.2;
-      k.mesh("cyl", "leatherDark", 0, 0.0, 0, 0.018, 0.1, 0.018, sword);
-      k.mesh("dot", "brass", 0, -0.06, 0, 0.025, 0.025, 0.025, sword);
-      k.mesh("box", "brass", 0, 0.06, 0, 0.03, 0.025, 0.16, sword);
-      k.mesh("box", "steel", 0, 0.34, 0, 0.022, 0.52, 0.05, sword);
-      k.mesh("box", "iron", 0, 0.3, 0, 0.024, 0.4, 0.012, sword);
-      k.mesh("cone4", "steel", 0, 0.64, 0, 0.026, 0.08, 0.035, sword);
-      // A kite shield on the far arm, in the side's colour with a gold rim and a badge.
-      // (Held out before the body, toward the eye, so that it is seen.)
+      k.mesh(one("grip", (f) => lathe([[0.0, -0.05], [0.017, -0.05], [0.019, 0.0], [0.017, 0.05], [0.0, 0.05]], cuts(f, 8, 5))), "leatherDark", 0, 0, 0, 1, 1, 1, sword);
+      k.mesh(one("pommel", (f) => ellipsoid(0.026, 0.022, 0.026, cuts(f, 8, 5), cuts(f, 6, 4))), "brass", 0, -0.065, 0, 1, 1, 1, sword);
+      k.mesh(one("guard", (f) => rounded(0.026, 0.022, 0.18, 0.009, f)), "brass", 0, 0.06, 0, 1, 1, 1, sword);
+      k.mesh(one("blade", (f) => slab([[-0.024, 0], [0.024, 0], [0.019, 0.5], [0, 0.58], [-0.019, 0.5]], 0.008, 0.003, cuts(f, 2, 1)).rotateY(Math.PI / 2)), "steel", 0, 0.07, 0, 1, 1, 1, sword);
+      k.mesh(one("fuller", (f) => rounded(0.0095, 0.36, 0.01, 0.003, f)), "iron", 0, 0.28, 0, 1, 1, 1, sword);
+      // A kite shield on the far arm: the side's colour, a gold rim and cross, an iron boss.
       const shield = pivot(p.off, 0.08, 0.3, 0.36);
       shield.rotation.y = 0.35;
-      const face = k.mesh("kite", team, 0, 0, 0, 0.36, 0.42, 0.6, shield);
-      face.castShadow = true;
-      k.mesh("box", "gold", 0, 0.03, -0.03, 0.04, 0.3, 0.012, shield);
-      k.mesh("box", "gold", 0, 0.1, -0.03, 0.2, 0.04, 0.012, shield);
+      k.mesh(one("kite3", (f) => kiteShield(f)), team, 0, 0, 0, 1, 1, 1, shield);
+      k.mesh(one("kiterim", (f) => kiteRim(f)), "gold", 0, 0, 0, 1, 1, 1, shield);
+      k.mesh(one("boss", (f) => new T.SphereGeometry(0.05, cuts(f, 10, 6), cuts(f, 6, 4), 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2)), "iron", 0, 0.1, 0.03, 1, 1, 1, shield);
+      k.mesh(one("kitecross", (f) => merge([rounded(0.035, 0.38, 0.008, 0.004, f), rounded(0.22, 0.035, 0.008, 0.004, f).translate(0, 0.12, 0)])), "gold", 0, -0.02, 0.026, 1, 1, 1, shield);
     } else if (kind === 1) {
-      const bow = pivot(p.off, 0.05, 0.0, 0.02);
-      const arc = new T.Mesh(k.g.arc, k.m.wood);
-      arc.scale.set(0.22, 0.45, 0.5);
-      arc.rotation.z = -Math.PI / 2;
-      arc.castShadow = true;
-      bow.add(arc);
-      k.mesh("cyl", "rope", 0, 0, 0, 0.004, 0.88, 0.004, bow);
-      k.mesh("cyl", "leather", 0, 0, 0, 0.018, 0.08, 0.018, bow);
+      // A longbow: a curved stave, its string, a leather grip.
+      const bow = (weapon = pivot(p.off, 0.05, 0.0, 0.02, "weapon"));
+      k.mesh(one("bowstave", (f) => tube([new T.Vector3(-0.03, -0.46, 0), new T.Vector3(0.06, -0.36, 0), new T.Vector3(0.14, -0.18, 0), new T.Vector3(0.165, 0, 0), new T.Vector3(0.14, 0.18, 0), new T.Vector3(0.06, 0.36, 0), new T.Vector3(-0.03, 0.46, 0)], 0.016, 0.016, cuts(f, 18, 8), cuts(f, 6, 4))), "wood", 0, 0, 0, 1, 1, 1, bow);
+      k.mesh(one("bowstring", (f) => new T.CylinderGeometry(0.003, 0.003, 0.92, 3).translate(-0.03, 0, 0)), "rope", 0, 0, 0, 1, 1, 1, bow);
+      k.mesh(one("bowgrip", (f) => new T.CylinderGeometry(0.022, 0.022, 0.09, cuts(f, 8, 5)).translate(0.165, 0, 0)), "leather", 0, 0, 0, 1, 1, 1, bow);
       muzzle = pivot(bow, 0.2, 0, 0, "muzzle");
     } else {
+      // The knight's lance: a long tapering shaft, a vamplate in the side's colour, a steel point.
       const lance = pivot(hand, 0, 0, 0);
       lance.rotation.z = -Math.PI / 2;
-      k.mesh("cone", "wood", 0, 0.55, 0, 0.04, 1.6, 0.04, lance);
-      k.mesh("cone", team, 0, 0.05, 0, 0.08, 0.2, 0.08, lance).rotation.x = Math.PI;
-      k.mesh("cone4", "steel", 0, 1.38, 0, 0.03, 0.12, 0.03, lance);
+      k.mesh(one("lanceshaft", (f) => lathe([[0.0, -0.3], [0.03, -0.28], [0.045, -0.05], [0.04, 0.2], [0.016, 1.33], [0.0, 1.34]], cuts(f, 10, 6))), "wood", 0, 0, 0, 1, 1, 1, lance);
+      k.mesh(one("vamplate", (f) => lathe([[0.0, -0.02], [0.03, -0.02], [0.09, 0.1], [0.085, 0.11], [0.0, 0.11]], cuts(f, 12, 6))), team, 0, 0.05, 0, 1, 1, 1, lance);
+      k.mesh(one("lancetip", (f) => new T.ConeGeometry(0.026, 0.13, cuts(f, 6, 4))), "steel", 0, 1.39, 0, 1, 1, 1, lance);
     }
   } else if (era === 2) {
-    const gun = pivot(hand, 0, 0, 0);
+    // A musket (its side outline cut and pushed out): a stock with its butt and wrist, a long barrel bound with brass,
+    // a lock with its hammer, a ramrod beneath; the fusilier's bayonet.
+    const gun = (weapon = pivot(hand, 0, 0, 0, "weapon"));
     gun.rotation.z = -Math.PI / 2;
-    k.mesh("box", "wood", -0.005, 0.08, 0, 0.045, 0.32, 0.05, gun);
-    k.mesh("box", "wood", -0.03, -0.08, 0, 0.07, 0.1, 0.045, gun).rotation.z = 0.25;
-    k.mesh("cyl", "dark", 0.012, 0.45, 0, 0.014, 0.52, 0.014, gun);
-    k.mesh("box", "brass", 0.01, 0.12, 0, 0.05, 0.05, 0.052, gun);
-    for (const y of [0.3, 0.55]) k.mesh("cyl", "brass", 0.012, y, 0, 0.02, 0.015, 0.02, gun);
-    if (kind === 0) k.mesh("cone4", "steel", 0.012, 0.8, 0, 0.012, 0.2, 0.012, gun);
-    muzzle = pivot(gun, 0.012, 0.72, 0, "muzzle");
+    k.mesh(one("musketstock", (f) => slab([[-0.2, -0.075], [-0.2, 0.025], [-0.05, 0.012], [0.07, 0.014], [0.62, 0.008], [0.62, -0.012], [0.08, -0.02], [0.02, -0.035], [-0.06, -0.075]], 0.045, 0.01, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "wood", 0, 0, 0, 1, 1, 1, gun);
+    k.mesh(one("musketbarrel", (f) => lathe([[0.0, 0.0], [0.016, 0.0], [0.015, 0.4], [0.012, 0.82], [0.0, 0.822]], cuts(f, 8, 5))), "dark", -0.022, 0.0, 0, 1, 1, 1, gun);
+    if (k.rich) k.mesh(one("lock", (f) => rounded(0.03, 0.06, 0.01, 0.003, f)), "steel", -0.005, 0.07, 0.026, 1, 1, 1, gun);
+    if (k.rich) k.mesh(one("hammer", (f) => rounded(0.03, 0.012, 0.008, 0.003, f)), "dark", -0.03, 0.05, 0.026, 1, 1, 1, gun).rotation.z = 0.5;
+    if (k.rich) for (const y of [0.32, 0.5, 0.6]) k.mesh(one("band", (f) => new T.TorusGeometry(0.02, 0.004, 3, cuts(f, 10, 6)).rotateX(Math.PI / 2)), "brass", -0.014, y, 0, 1, 1, 1, gun);
+    k.mesh("cyl", "dark", 0.01, 0.42, 0, 0.004, 0.38, 0.004, gun);
+    if (kind === 0) k.mesh(one("bayonet", (f) => slab([[-0.006, 0], [0.006, 0], [0, 0.22]], 0.006, 0.002, 1).rotateY(Math.PI / 2)), "steel", -0.036, 0.8, 0, 1, 1, 1, gun);
+    muzzle = pivot(gun, -0.022, 0.83, 0, "muzzle");
   } else {
-    const gun = pivot(hand, 0, 0, 0);
+    const gun = (weapon = pivot(hand, 0, 0, 0, "weapon"));
     gun.rotation.z = -Math.PI / 2;
     if (kind === 0) {
-      // A carbine: stock, grip, magazine, a short barrel with its guard, a sight.
-      k.mesh("box", "black", 0, 0.14, 0, 0.055, 0.34, 0.05, gun);
-      k.mesh("box", "black", -0.05, -0.06, 0, 0.06, 0.14, 0.04, gun).rotation.z = 0.2;
-      k.mesh("box", "black", -0.06, 0.15, 0, 0.09, 0.04, 0.035, gun).rotation.z = -0.25;
-      k.mesh("box", "oliveDark", 0, 0.3, 0, 0.06, 0.12, 0.055, gun);
-      k.mesh("cyl", "black", 0, 0.44, 0, 0.012, 0.14, 0.012, gun);
-      k.mesh("box", "dark", 0.04, 0.16, 0, 0.02, 0.06, 0.02, gun);
-      muzzle = pivot(gun, 0, 0.52, 0, "muzzle");
+      // A rifle: stock, pistol grip, receiver with its sight rail, a curved magazine, a handguard and a muzzle device.
+      k.mesh(one("rifle", (f) => slab([[-0.2, -0.06], [-0.2, 0.02], [-0.02, 0.03], [0.24, 0.03], [0.24, -0.01], [0.05, -0.02], [0.02, -0.06], [-0.02, -0.02], [-0.1, -0.03]], 0.04, 0.008, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "black", 0, 0, 0, 1, 1, 1, gun);
+      k.mesh(one("handguard", (f) => rounded(0.045, 0.16, 0.045, 0.012, f)), "oliveDark", -0.008, 0.32, 0, 1, 1, 1, gun);
+      k.mesh(one("mag", (f) => slab([[0, 0], [0.05, 0], [0.065, -0.1], [0.02, -0.11]], 0.025, 0.004, 1).rotateZ(Math.PI / 2)), "black", 0.03, 0.12, 0, 1, 1, 1, gun);
+      k.mesh(one("riflebarrel", (f) => lathe([[0.0, 0.0], [0.009, 0.0], [0.009, 0.14], [0.013, 0.15], [0.013, 0.19], [0.0, 0.192]], cuts(f, 8, 5))), "dark", -0.01, 0.38, 0, 1, 1, 1, gun);
+      k.mesh(one("sight", (f) => rounded(0.025, 0.06, 0.02, 0.005, f)), "dark", -0.045, 0.12, 0, 1, 1, 1, gun);
+      muzzle = pivot(gun, -0.01, 0.58, 0, "muzzle");
     } else {
-      // A machine gun with its bipod, a belt of rounds and the ammunition box on the hip.
-      k.mesh("box", "black", 0, 0.2, 0, 0.07, 0.5, 0.08, gun);
-      k.mesh("cyl", "black", 0.01, 0.56, 0, 0.022, 0.32, 0.022, gun);
-      k.mesh("cyl", "dark", 0.01, 0.5, 0, 0.032, 0.16, 0.032, gun);
-      k.mesh("box", "dark", -0.06, 0.18, 0, 0.08, 0.12, 0.06, gun);
-      for (const z of [-0.04, 0.04]) k.mesh("cyl", "dark", -0.06, 0.62, z, 0.006, 0.16, 0.006, gun).rotation.z = z > 0 ? 0.3 : -0.3;
-      for (let i = 0; i < 6; i++) k.mesh("box", "brass", -0.04 - i * 0.015, 0.22 - i * 0.03, 0.05, 0.012, 0.012, 0.02, gun);
-      k.mesh("box", "olive", -0.07, 0.03, 0.17, 0.1, 0.1, 0.08, c);
-      muzzle = pivot(gun, 0.01, 0.73, 0, "muzzle");
+      // A machine gun: its receiver, a perforated barrel jacket, the barrel, a carrying handle, a bipod folded under,
+      // a belt of rounds and an ammunition box on the hip.
+      k.mesh(one("mgbody", (f) => slab([[-0.2, -0.05], [-0.2, 0.03], [0.3, 0.035], [0.3, -0.03], [0.05, -0.035], [0.02, -0.08], [-0.03, -0.035]], 0.06, 0.01, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "black", 0, 0, 0, 1, 1, 1, gun);
+      k.mesh(one("jacket", (f) => lathe([[0.0, 0.0], [0.03, 0.0], [0.03, 0.24], [0.024, 0.26], [0.0, 0.262]], cuts(f, 10, 6))), "dark", -0.005, 0.3, 0, 1, 1, 1, gun);
+      if (k.rich) for (let i = 0; i < 4; i++) k.mesh(one("vent", (f) => new T.TorusGeometry(0.03, 0.004, 3, cuts(f, 10, 6)).rotateX(Math.PI / 2)), "black", -0.005, 0.34 + i * 0.05, 0, 1, 1, 1, gun);
+      k.mesh(one("mgbarrel", (f) => lathe([[0.0, 0.0], [0.011, 0.0], [0.011, 0.18], [0.0, 0.182]], cuts(f, 8, 5))), "black", -0.005, 0.56, 0, 1, 1, 1, gun);
+      k.mesh(one("handle", (f) => new T.TorusGeometry(0.04, 0.006, 3, cuts(f, 10, 6), Math.PI)), "black", -0.045, 0.2, 0, 1, 1, 1, gun).rotation.z = Math.PI / 2;
+      for (const z of [-0.03, 0.03]) k.mesh("cyl", "dark", 0.04, 0.56, z, 0.006, 0.2, 0.006, gun).rotation.z = z > 0 ? 0.2 : -0.2;
+      if (k.rich) for (let i = 0; i < 6; i++) k.mesh(one("round", (f) => new T.CylinderGeometry(0.006, 0.007, 0.03, cuts(f, 6, 4)).rotateX(Math.PI / 2)), "brass", 0.04 + i * 0.012, 0.1 - i * 0.03, 0.04, 1, 1, 1, gun);
+      k.mesh(one("ammobox", (f) => rounded(0.1, 0.1, 0.08, 0.012, f)), "olive", -0.07, 0.03, 0.17, 1, 1, 1, p.chest);
+      muzzle = pivot(gun, -0.005, 0.75, 0, "muzzle");
     }
   }
-  return { p, muzzle };
+  return { p, muzzle, weapon };
+}
+/** A lumpy stone: a sphere pushed in and out. */
+function rock(fine: number, x: number, y: number, z: number) {
+  const g = new T.IcosahedronGeometry(1, fine > 0.7 ? 2 : 1),
+    pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i),
+      vy = pos.getY(i),
+      vz = pos.getZ(i),
+      r = 1 + 0.12 * Math.sin(vx * 7 + vy * 3) * Math.cos(vz * 5 - vy * 4);
+    pos.setXYZ(i, vx * x * r, vy * y * r, vz * z * r);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+/** A kite shield's face: a rounded top, a long point below, a little curved round the arm. */
+function kiteOutline(): [number, number][] {
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= 8; i++) {
+    const a = Math.PI - (i / 8) * Math.PI;
+    pts.push([Math.cos(a) * 0.15, 0.2 + Math.sin(a) * 0.1]);
+  }
+  pts.push([0.13, 0.02], [0.0, -0.34], [-0.13, 0.02]);
+  return pts;
+}
+function kiteShield(fine: number) {
+  const g = slab(kiteOutline(), 0.03, 0.008, cuts(fine, 2, 1)),
+    pos = g.attributes.position;
+  // Bent round the arm: its sides drawn back.
+  for (let i = 0; i < pos.count; i++) pos.setZ(i, pos.getZ(i) - 0.5 * pos.getX(i) * pos.getX(i));
+  g.computeVertexNormals();
+  return g;
+}
+function kiteRim(fine: number) {
+  const pts = kiteOutline().map(([x, y]) => new T.Vector3(x * 1.01, y * 1.01, 0.016 - 0.5 * x * x));
+  pts.push(pts[0].clone());
+  const curve = new T.CatmullRomCurve3(pts, false, "catmullrom", 0.2);
+  return new T.TubeGeometry(curve, cuts(fine, 40, 12), 0.012, cuts(fine, 5, 3), false);
 }
 /** The life bar over a figure (two flat strips that face the eye), and the star of a rank above it. */
 function lifeBar(k: Kit, root: T.Group, side: number, tall: number) {
@@ -579,6 +810,8 @@ function beastLeg(k: Kit, parent: T.Object3D, x: number, y: number, z: number, u
   f.knees.push(knee);
 }
 type Draft = Omit<Figure, "bar" | "barBack" | "star" | "tall" | "flash" | "track">;
+/** A sculpted shape by name for a kit (made once). */
+let one: (name: string, make: (fine: number) => T.BufferGeometry) => string = () => "";
 /** Builds a template of a figure for a soldier of an era, kind and side. */
 function build(k: Kit, era: number, kind: Kind, side: number): Figure {
   const root = new T.Group(),
@@ -586,49 +819,48 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     face = pivot(root, 0, 0, 0, "face"),
     body = pivot(face, 0, 0, 0, "body"),
     team = `team${side}`,
-    f: Draft = { root, body, chest: body, legs: [], knees: [], arms: [], elbows: [], strike: null, style: "swing", wheels: [], head: null, tail: null, flaps: [], muzzle: null, stride: 0.55, era, kind };
-  let tall = 1.48,
-    track: T.Mesh[] = [];
+    f: Draft = { root, body, chest: body, legs: [], knees: [], arms: [], elbows: [], strike: null, style: "swing", wheels: [], head: null, tail: null, flaps: [], muzzle: null, weapon: null, stride: 0.55, era, kind };
+  let tall = 1.48;
+  const track: T.Mesh[] = [];
+  one = (name, make) => k.shape(name, make);
   if (kind !== 2) {
-    const { p, muzzle } = soldier(k, body, era, kind, side);
-    Object.assign(f, { chest: p.chest, legs: p.legs, knees: p.knees, arms: p.arms, elbows: p.elbows, muzzle });
+    const { p, muzzle, weapon } = soldier(k, body, era, kind, side);
+    Object.assign(f, { chest: p.chest, legs: p.legs, knees: p.knees, arms: p.arms, elbows: p.elbows, muzzle, weapon: kind === 1 && era > 0 ? weapon : null });
     f.strike = p.arms[1];
     f.style = kind === 0 ? "swing" : era === 0 ? "throw" : "shoot";
     if (era === 1 && kind === 1) f.strike = p.arms[0];
   } else if (era === 0) {
-    // A woolly mammoth: a shaggy humped body, a domed head with flapping ears, curling tusks, a swinging trunk; its
-    // rider on a blanket in the side's colour.
+    // A woolly mammoth: a humped body hung with long shaggy hair, a domed head with flapping ears, curling tusks, a
+    // trunk that swings; its rider on a blanket in the side's colour.
     const beast = pivot(body, 0, 0, 0, "beast");
     f.chest = beast;
-    k.mesh("ball", "fur", 0, 1.15, 0, 0.84, 0.64, 0.52, beast);
-    k.mesh("ball", "furDark", -0.1, 1.42, 0, 0.62, 0.4, 0.46, beast);
-    for (let i = 0; i < 7; i++) k.mesh("cone4", "furDark", -0.6 + i * 0.2, 0.6, (i % 2 ? 1 : -1) * 0.42, 0.08, 0.3, 0.06, beast).rotation.x = Math.PI;
+    k.mesh(one("mammoth", mammothBody), "shag", 0, 0, 0, 1, 1, 1, beast);
     const head = pivot(beast, 0.74, 1.32, 0, "head");
     f.head = head;
-    k.mesh("ball", "fur", 0, 0, 0, 0.37, 0.38, 0.35, head);
-    k.mesh("ball", "furDark", -0.05, 0.25, 0, 0.27, 0.22, 0.27, head);
+    k.mesh(one("mammothHead", mammothHead), "shag", 0, 0, 0, 1, 1, 1, head);
     for (const z of [-1, 1]) {
-      const ear = pivot(head, -0.08, 0.04, z * 0.3, "flap");
-      k.mesh("ball", "furDark", 0, 0, z * 0.05, 0.1, 0.18, 0.06, ear);
+      const ear = pivot(head, -0.1, 0.06, z * 0.3, "flap");
+      k.mesh(one("mammothEar", (fine) => ellipsoid(0.09, 0.15, 0.04, cuts(fine, 10, 6), cuts(fine, 8, 5))), "furDark", 0, -0.04, z * 0.02, 1, 1, 1, ear);
       f.flaps.push(ear);
-      k.mesh("dot", "eye", 0.26, 0.09, z * 0.17, 0.035, 0.03, 0.03, head);
-      k.mesh("dot", "pupil", 0.29, 0.09, z * 0.17, 0.02, 0.02, 0.02, head);
-      const tusk = new T.Mesh(k.g.arc, k.m.tusk);
-      tusk.scale.set(0.32, 0.32, 1);
-      tusk.rotation.z = Math.PI;
-      tusk.position.set(0.32, -0.2, z * 0.15);
-      tusk.castShadow = true;
-      head.add(tusk);
+      k.mesh(one("beastEye", (fine) => ellipsoid(0.026, 0.024, 0.02, cuts(fine, 8, 5), cuts(fine, 6, 4))), "pupil", 0.27, 0.08, z * 0.19, 1, 1, 1, head);
+      k.mesh(one(`tusk${z}`, (fine) => tusk(fine, z)), "tusk", 0, 0, 0, 1, 1, 1, head);
     }
-    const trunk = pivot(head, 0.3, -0.06, 0, "strike");
-    for (let s = 0; s < 5; s++) k.mesh("cyl", "fur", 0.04 * s, -0.13 * s - 0.07, 0, 0.09 - s * 0.012, 0.16, 0.09 - s * 0.012, trunk).rotation.z = 0.14 * s;
-    f.strike = trunk;
-    for (const [x, z] of [[0.45, -0.26], [0.45, 0.26], [-0.45, -0.26], [-0.45, 0.26]] as const) beastLeg(k, beast, x, 0.95, z, [0.17, 0.5], [0.14, 0.4], "fur", "furDark", f);
-    k.mesh("box", team, -0.05, 1.76, 0, 0.62, 0.07, 0.64, beast);
-    for (const z of [-0.33, 0.33]) k.mesh("box", "gold", -0.05, 1.7, z, 0.62, 0.05, 0.02, beast);
-    const tail = pivot(beast, -0.82, 1.15, 0, "tail");
-    k.mesh("cyl", "furDark", -0.05, -0.18, 0, 0.04, 0.4, 0.04, tail).rotation.z = 0.3;
-    k.mesh("ball", "fur", -0.12, -0.38, 0, 0.06, 0.08, 0.06, tail);
+    const trunkPivot = pivot(head, 0.3, -0.06, 0, "strike");
+    k.mesh(one("trunk", trunk), "shag", 0, 0, 0, 1, 1, 1, trunkPivot);
+    f.strike = trunkPivot;
+    for (const [x, z] of [[0.45, -0.26], [0.45, 0.26], [-0.45, -0.26], [-0.45, 0.26]] as const) {
+      const hip = pivot(beast, x, 0.95, z, "leg");
+      k.mesh(one("pillarUpper", pillarUpper), "shag", 0, 0, 0, 1, 1, 1, hip);
+      const knee = pivot(hip, 0, -0.48, 0, "knee");
+      k.mesh(one("pillarLower", pillarLower), "furDark", 0, 0, 0, 1, 1, 1, knee);
+      if (k.rich) for (let t = 0; t < 3; t++) k.mesh(one("toenail", (fine) => ellipsoid(0.03, 0.03, 0.04, cuts(fine, 6, 4), cuts(fine, 5, 3))), "bone", 0.14, -0.41, (t - 1) * 0.07, 1, 1, 1, knee);
+      f.legs.push(hip);
+      f.knees.push(knee);
+    }
+    k.mesh(one("blanket0", (fine) => rounded(0.66, 0.06, 0.74, 0.03, fine)), team, -0.05, 1.74, 0, 1, 1, 1, beast);
+    for (const z of [-0.37, 0.37]) k.mesh(one("blanketHem", (fine) => rounded(0.66, 0.035, 0.02, 0.01, fine)), "gold", -0.05, 1.7, z, 1, 1, 1, beast);
+    const tail = pivot(beast, -0.84, 1.2, 0, "tail");
+    k.mesh(one("mammothTail", mammothTail), "furDark", 0, 0, 0, 1, 1, 1, tail);
     f.tail = tail;
     const rider = pivot(beast, -0.05, 1.12, 0);
     const { p } = soldier(k, rider, 0, 2, side, 0.82, true);
@@ -638,35 +870,43 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     f.stride = 1.1;
     tall = 2.6;
   } else if (era === 1) {
-    // A knight on a barded horse (a caparison of the side's colour with a gold trim), lance couched, a pennant on it.
+    // A knight on a barded horse: a caparison of the side's colour with a gold hem and badge, a saddle, an iron
+    // chanfron on its face, the lance couched with a pennant on it.
     const horse = pivot(body, 0, 0, 0, "beast");
     f.chest = horse;
-    k.mesh("ball", "horse", 0, 1.02, 0, 0.64, 0.3, 0.25, horse);
-    k.mesh("ball", "horseLight", 0.35, 1.05, 0, 0.3, 0.27, 0.24, horse);
-    k.mesh("box", team, -0.02, 0.95, 0, 1.04, 0.42, 0.53, horse);
-    for (const z of [-0.27, 0.27]) {
-      k.mesh("box", "gold", -0.02, 0.75, z, 1.05, 0.04, 0.01, horse);
-      k.mesh("disc", "gold", -0.02, 0.98, z * 1.01, 0.12, 0.012, 0.12, horse).rotation.x = Math.PI / 2;
+    k.mesh(one("horseBody", horseBody), "horse", 0, 1.02, 0, 1, 1, 1, horse);
+    k.mesh(one("caparison", caparison), team, 0, 0, 0, 1, 1, 1, horse);
+    for (const z of [-1, 1]) {
+      k.mesh(one("caparisonHem", (fine) => rounded(1.12, 0.04, 0.012, 0.01, fine)), "gold", 0, 0.56, z * 0.33, 1, 1, 1, horse);
+      k.mesh(one("caparisonBadge", (fine) => new T.CylinderGeometry(0.11, 0.11, 0.012, cuts(fine, 16, 8)).rotateX(Math.PI / 2)), "gold", -0.05, 0.86, z * 0.335, 1, 1, 1, horse);
     }
-    const neck = pivot(horse, 0.5, 1.14, 0, "head");
-    f.head = neck;
-    k.mesh("cyl", "horse", 0.1, 0.22, 0, 0.12, 0.52, 0.11, neck).rotation.z = -0.55;
-    k.mesh("box", "horse", 0.37, 0.42, 0, 0.38, 0.15, 0.15, neck).rotation.z = -0.35;
-    k.mesh("box", "iron", 0.37, 0.45, 0, 0.3, 0.16, 0.16, neck).rotation.z = -0.35;
-    k.mesh("box", "mane", 0.02, 0.33, 0, 0.34, 0.08, 0.05, neck).rotation.z = -0.55;
-    for (const z of [-0.06, 0.06]) k.mesh("cone", "horse", 0.2, 0.6, z, 0.035, 0.1, 0.035, neck);
-    k.mesh("dot", "pupil", 0.42, 0.5, 0.075, 0.018, 0.018, 0.018, neck);
-    f.strike = neck;
-    for (const [x, z] of [[0.38, -0.13], [0.38, 0.13], [-0.4, -0.13], [-0.4, 0.13]] as const) beastLeg(k, horse, x, 0.86, z, [0.065, 0.42], [0.05, 0.38], "horse", "black", f);
-    const tail = pivot(horse, -0.62, 1.02, 0, "tail");
-    k.mesh("cone", "mane", -0.08, -0.22, 0, 0.07, 0.5, 0.07, tail).rotation.z = 2.7;
+    k.mesh(one("saddle", (fine) => rounded(0.36, 0.08, 0.3, 0.035, fine)), "leatherDark", -0.05, 1.34, 0, 1, 1, 1, horse);
+    k.mesh(one("cantle", (fine) => rounded(0.04, 0.08, 0.22, 0.02, fine)), "leatherDark", -0.22, 1.38, 0, 1, 1, 1, horse);
+    const neckPivot = pivot(horse, 0.5, 1.14, 0, "head");
+    f.head = neckPivot;
+    k.mesh(one("horseNeck", horseNeck), "horse", 0, 0, 0, 1, 1, 1, neckPivot);
+    k.mesh(one("horseHead", horseHead), "horse", 0, 0, 0, 1, 1, 1, neckPivot);
+    k.mesh(one("horseMane", horseMane), "mane", -0.04, 0.0, 0, 1, 1, 1, neckPivot);
+    k.mesh(one("chanfron", (fine) => rounded(0.3, 0.05, 0.12, 0.02, fine).rotateZ(-0.85)), "iron", 0.36, 0.42, 0, 1, 1, 1, neckPivot);
+    k.mesh(one("bridle", (fine) => new T.TorusGeometry(0.075, 0.008, 3, cuts(fine, 12, 6)).rotateY(Math.PI / 2).rotateZ(-0.6)), "leatherDark", 0.42, 0.28, 0, 1, 1, 1, neckPivot);
+    for (const z of [-0.07, 0.07]) k.mesh(one("beastEye", (fine) => ellipsoid(0.026, 0.024, 0.02, cuts(fine, 8, 5), cuts(fine, 6, 4))), "pupil", 0.25, 0.45, z, 0.7, 0.7, 0.7, neckPivot);
+    f.strike = neckPivot;
+    for (const [x, z] of [[0.38, -0.13], [0.38, 0.13], [-0.4, -0.13], [-0.4, 0.13]] as const) {
+      const hip = pivot(horse, x, 0.86, z, "leg");
+      k.mesh(one("horseUpper", horseUpper), "horse", 0, 0, 0, 1, 1, 1, hip);
+      const knee = pivot(hip, 0, -0.4, 0, "knee");
+      k.mesh(one("horseLower", horseLower), "horse", 0, 0, 0, 1, 1, 1, knee);
+      k.mesh(one("hoof", hoof), "black", 0, 0, 0, 1, 1, 1, knee);
+      f.legs.push(hip);
+      f.knees.push(knee);
+    }
+    const tail = pivot(horse, -0.6, 1.1, 0, "tail");
+    k.mesh(one("horseTail", horseTail), "mane", 0, 0, 0, 1, 1, 1, tail);
     f.tail = tail;
     const rider = pivot(horse, -0.05, 0.78, 0);
     const { p } = soldier(k, rider, 1, 2, side, 0.9, true);
-    k.mesh("cone", team, -0.02, 0.29, 0, 0.04, 0.14, 0.04, p.head);
     const pennant = pivot(p.hand, 0.0, 0.0, 0.0, "flap");
-    pennant.position.set(0.0, 0, 0);
-    k.mesh("box", team, 0.55, 0.12, 0, 0.3, 0.12, 0.006, pennant);
+    k.mesh(one("pennant", (fine) => slab([[0, 0], [0.34, -0.04], [0.26, -0.08], [0.34, -0.13], [0, -0.13]], 0.006, 0.002, cuts(fine, 1, 1))), team, 1.0, -0.01, 0, 1, 1, 1, pennant);
     f.flaps.push(pennant);
     f.arms = p.arms;
     f.elbows = p.elbows;
@@ -674,34 +914,29 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     f.stride = 1.25;
     tall = 2.25;
   } else if (era === 2) {
-    // A field gun on a wooden trail carriage with two spoked wheels, its rammer and bucket; a gunner behind it.
+    // A field gun: a bronze barrel on a wooden trail carriage with two spoked wheels shod in iron, its rammer and
+    // bucket; a gunner behind it.
     const gun = pivot(body, 0, 0, 0, "beast");
-    k.mesh("box", "wood", -0.25, 0.42, 0, 1.15, 0.14, 0.3, gun).rotation.z = 0.2;
-    k.mesh("box", "woodDark", -0.82, 0.16, 0, 0.12, 0.2, 0.32, gun);
-    k.mesh("box", "iron", -0.1, 0.54, 0, 0.4, 0.04, 0.32, gun);
-    for (const z of [-0.36, 0.36]) {
+    k.mesh(one("cheeks", cheeks), "wood", -0.05, 0, 0, 1, 1, 1, gun);
+    k.mesh(one("trailEnd", (fine) => rounded(0.16, 0.14, 0.36, 0.03, fine)), "woodDark", -0.94, 0.09, 0, 1, 1, 1, gun);
+    k.mesh(one("axle", (fine) => new T.CylinderGeometry(0.035, 0.035, 0.84, cuts(fine, 8, 5)).rotateX(Math.PI / 2)), "dark", 0.1, 0.42, 0, 1, 1, 1, gun);
+    if (k.rich) for (const x of [-0.5, -0.2]) k.mesh(one("strap2", (fine) => rounded(0.05, 0.03, 0.38, 0.01, fine)), "iron", x, 0.18 + (x + 0.5) * 0.4, 0, 1, 1, 1, gun).rotation.z = 0.42;
+    if (k.rich) k.mesh(one("quoin", (fine) => rounded(0.2, 0.06, 0.2, 0.015, fine)), "woodDark", -0.25, 0.6, 0, 1, 1, 1, gun);
+    for (const z of [-0.37, 0.37]) {
       const wheel = pivot(gun, 0.1, 0.42, z, "wheel");
-      const rim = new T.Mesh(k.g.wheel, k.m.woodDark);
-      rim.scale.set(0.4, 0.4, 0.5);
-      rim.castShadow = true;
-      wheel.add(rim);
-      for (let s = 0; s < 6; s++) k.mesh("box", "wood", 0, 0, 0, 0.035, 0.78, 0.035, wheel).rotation.z = (s * Math.PI) / 6;
-      k.mesh("cyl", "dark", 0, 0, 0, 0.07, 0.12, 0.07, wheel).rotation.x = Math.PI / 2;
-      k.mesh("disc", "iron", 0, 0, 0, 0.42, 0.03, 0.42, wheel).rotation.x = Math.PI / 2;
+      k.mesh(one("spokedWheel", spokedWheel), "woodDark", 0, 0, 0, 1, 1, 1, wheel);
+      k.mesh(one("tyre", tyre), "iron", 0, 0, 0, 1, 1, 1, wheel);
       f.wheels.push(wheel);
     }
-    const barrel = pivot(gun, 0.1, 0.7, 0, "strike");
+    const barrel = pivot(gun, 0.1, 0.72, 0, "strike");
     barrel.rotation.z = 0.1;
-    k.mesh("cyl", "black", 0.3, 0, 0, 0.11, 1.15, 0.11, barrel).rotation.z = -Math.PI / 2;
-    k.mesh("cyl", "black", -0.05, 0, 0, 0.14, 0.4, 0.14, barrel).rotation.z = -Math.PI / 2;
-    k.mesh("ball", "black", -0.28, 0, 0, 0.14, 0.14, 0.14, barrel);
-    k.mesh("cyl", "black", 0.88, 0, 0, 0.13, 0.08, 0.13, barrel).rotation.z = -Math.PI / 2;
-    for (const x of [0.15, 0.55]) k.mesh("cyl", "brass", x, 0, 0, 0.12, 0.03, 0.12, barrel).rotation.z = -Math.PI / 2;
-    k.mesh("box", team, 0.1, 0.08, 0, 0.3, 0.04, 0.24, barrel);
-    f.muzzle = pivot(barrel, 0.95, 0, 0, "muzzle");
+    k.mesh(one("cannonBarrel", cannonBarrel), "bronze", 0, 0, 0, 1, 1, 1, barrel);
+    k.mesh(one("trunnions", (fine) => new T.CylinderGeometry(0.04, 0.04, 0.42, cuts(fine, 8, 5)).rotateX(Math.PI / 2)), "bronze", 0.0, 0, 0, 1, 1, 1, barrel);
+    if (k.rich) k.mesh(one("cannonBand", (fine) => new T.TorusGeometry(0.135, 0.012, 3, cuts(fine, 16, 8)).rotateY(Math.PI / 2)), team, 0.3, 0, 0, 1, 1, 1, barrel);
+    f.muzzle = pivot(barrel, 0.96, 0, 0, "muzzle");
     f.strike = barrel;
-    k.mesh("cyl", "wood", -0.6, 0.45, 0.25, 0.015, 0.9, 0.015, gun).rotation.z = 1.2;
-    k.mesh("cyl", "woodDark", -0.9, 0.12, 0.3, 0.07, 0.14, 0.07, gun);
+    k.mesh(one("rammer", (fine) => merge([new T.CylinderGeometry(0.012, 0.012, 1.0, cuts(fine, 6, 4)), new T.CylinderGeometry(0.05, 0.05, 0.1, cuts(fine, 10, 5)).translate(0, 0.5, 0)])), "wood", -0.55, 0.45, 0.26, 1, 1, 1, gun).rotation.z = 1.2;
+    k.mesh(one("bucket", (fine) => lathe([[0.0, 0.0], [0.07, 0.0], [0.08, 0.14], [0.0, 0.14]], cuts(fine, 10, 6))), "woodDark", -0.9, 0.05, 0.3, 1, 1, 1, gun);
     const gunner = pivot(body, -1.0, 0, 0.14);
     const { p } = soldier(k, gunner, 2, 1, side, 0.95);
     Object.assign(f, { legs: p.legs, knees: p.knees, arms: p.arms, elbows: p.elbows, chest: p.chest });
@@ -709,49 +944,50 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     f.stride = 0.5;
     tall = 1.7;
   } else {
-    // A tank: tracks running round road wheels and sprockets, side skirts, a sloped hull with hatches, a turret with
-    // the side's stripe and number, a long gun with a muzzle brake, a machine gun and an aerial.
+    // A tank: tracks running round road wheels and sprockets, fenders and side skirts, a hull with a sloped glacis,
+    // hatches, lights, spare links and exhausts, a cast turret with the side's band and number, a mantlet, a long gun
+    // with a fume extractor and a muzzle brake, a cupola with a machine gun, an aerial.
     const tank = pivot(body, 0, 0, 0, "beast");
     // (Nothing of a tank leans as a person's chest does.)
     f.chest = pivot(tank, 0, 0, 0, "still");
     for (const z of [-0.42, 0.42]) {
-      const tr = k.mesh("box", "track", 0, 0.27, z, 1.95, 0.4, 0.2, tank);
+      const tr = k.mesh(one("trackLoop", trackLoop), "track", 0, 0.27, z, 1, 1, 1, tank);
       track.push(tr);
       for (let s = 0; s < 5; s++) {
         const wheel = pivot(tank, -0.72 + s * 0.36, 0.22, z + Math.sign(z) * 0.105, "wheel");
-        k.mesh("cyl", "dark", 0, 0, 0, 0.15, 0.04, 0.15, wheel).rotation.x = Math.PI / 2;
-        k.mesh("box", "olive", 0, 0, 0.025 * Math.sign(z), 0.05, 0.22, 0.01, wheel);
-        k.mesh("box", "olive", 0, 0, 0.025 * Math.sign(z), 0.22, 0.05, 0.01, wheel);
+        k.mesh(one("tyreTank", tyreTank), "rubber", 0, 0, 0, 1, 1, 1, wheel);
+        k.mesh(one(`roadWheel${Math.sign(z)}`, (fine) => (z > 0 ? roadWheel(fine) : roadWheel(fine).rotateY(Math.PI))), "olive", 0, 0, 0.012 * Math.sign(z), 1, 1, 1, wheel);
         f.wheels.push(wheel);
       }
       for (const x of [-0.98, 0.98]) {
-        const sprocket = pivot(tank, x, 0.33, z + Math.sign(z) * 0.105, "wheel");
-        k.mesh("cyl6", "dark", 0, 0, 0, 0.12, 0.05, 0.12, sprocket).rotation.x = Math.PI / 2;
-        f.wheels.push(sprocket);
+        const sp = pivot(tank, x, 0.27, z + Math.sign(z) * 0.105, "wheel");
+        k.mesh(one("sprocket", sprocket), "dark", 0, 0, 0, 1, 1, 1, sp);
+        f.wheels.push(sp);
       }
-      k.mesh("box", "oliveDark", 0, 0.5, z * 1.08, 1.85, 0.08, 0.04, tank);
+      k.mesh(one("fender", (fine) => rounded(2.05, 0.03, 0.26, 0.012, fine)), "oliveDark", 0, 0.5, z * 1.1, 1, 1, 1, tank);
+      for (let s = 0; s < 4; s++) k.mesh(one("skirt", (fine) => rounded(0.46, 0.17, 0.02, 0.01, fine)), "oliveDark", -0.72 + s * 0.48, 0.41, z * 1.38, 1, 1, 1, tank);
     }
-    k.mesh("box", "olive", -0.05, 0.62, 0, 1.75, 0.32, 0.98, tank);
-    k.mesh("box", "olive", 0.86, 0.56, 0, 0.36, 0.2, 0.96, tank).rotation.z = -0.5;
-    k.mesh("box", "oliveDark", -0.82, 0.7, 0, 0.18, 0.2, 0.7, tank);
-    for (const z of [-0.25, 0.25]) k.mesh("cyl", "black", -0.92, 0.72, z, 0.05, 0.12, 0.05, tank).rotation.z = Math.PI / 2;
-    k.mesh("box", "khaki", -0.55, 0.82, 0.3, 0.3, 0.08, 0.2, tank);
-    const turret = pivot(tank, -0.1, 0.92, 0, "turret");
-    k.mesh("box", "olive", 0, 0.14, 0, 0.82, 0.3, 0.7, turret);
-    k.mesh("box", "olive", 0.48, 0.1, 0, 0.22, 0.22, 0.56, turret).rotation.z = -0.4;
-    k.mesh("box", team, -0.05, 0.14, 0, 0.84, 0.08, 0.72, turret);
-    k.mesh("box", "white", -0.05, 0.14, 0.365, 0.16, 0.06, 0.005, turret);
-    k.mesh("cyl", "oliveDark", -0.18, 0.33, 0.12, 0.13, 0.08, 0.13, turret);
-    k.mesh("cap", "oliveDark", -0.18, 0.37, 0.12, 0.11, 0.05, 0.11, turret);
-    k.mesh("cyl", "black", -0.1, 0.42, -0.15, 0.012, 0.14, 0.012, turret);
-    k.mesh("box", "black", -0.05, 0.47, -0.15, 0.22, 0.03, 0.03, turret);
-    k.mesh("cyl", "dark", -0.3, 0.6, -0.22, 0.007, 0.6, 0.007, turret);
-    const barrel = pivot(turret, 0.4, 0.15, 0, "strike");
-    k.mesh("cyl", "olive", 0.05, 0, 0, 0.1, 0.22, 0.1, barrel).rotation.z = -Math.PI / 2;
-    k.mesh("cyl", "oliveDark", 0.65, 0, 0, 0.055, 1.3, 0.055, barrel).rotation.z = -Math.PI / 2;
-    k.mesh("cyl", "oliveDark", 0.6, 0, 0, 0.07, 0.25, 0.07, barrel).rotation.z = -Math.PI / 2;
-    k.mesh("box", "dark", 1.3, 0, 0, 0.14, 0.1, 0.14, barrel);
-    f.muzzle = pivot(barrel, 1.4, 0, 0, "muzzle");
+    k.mesh(one("hull", hull), "olive", 0, 0, 0, 1, 1, 1, tank);
+    if (k.rich) for (let s = 0; s < 3; s++) k.mesh(one("spareLink", (fine) => rounded(0.08, 0.03, 0.2, 0.01, fine)), "dark", 0.92 - s * 0.05, 0.6 + s * 0.06, -0.2 + s * 0.2, 1, 1, 1, tank).rotation.z = 0.95;
+    for (const z of [-0.34, 0.34]) {
+      if (k.rich) k.mesh(one("headlight", (fine) => lathe([[0.0, 0.0], [0.04, 0.0], [0.05, 0.05], [0.0, 0.052]], cuts(fine, 10, 6)).rotateZ(-Math.PI / 2)), "dark", 0.92, 0.66, z, 1, 1, 1, tank);
+      k.mesh(one("exhaust", (fine) => new T.CylinderGeometry(0.05, 0.05, 0.16, cuts(fine, 10, 6)).rotateZ(Math.PI / 2)), "black", -1.06, 0.7, z * 0.7, 1, 1, 1, tank);
+    }
+    if (k.rich) k.mesh(one("hatchD", (fine) => lathe([[0.0, 0.0], [0.11, 0.0], [0.11, 0.025], [0.0, 0.03]], cuts(fine, 12, 6))), "oliveDark", 0.6, 0.8, 0.22, 1, 1, 1, tank);
+    k.mesh(one("toolbox", (fine) => rounded(0.3, 0.08, 0.2, 0.02, fine)), "khaki", -0.6, 0.86, 0.32, 1, 1, 1, tank);
+    if (k.rich) for (let r = 0; r < 8; r++) k.mesh(one("rivet", (fine) => ellipsoid(0.012, 0.012, 0.008, cuts(fine, 5, 3), cuts(fine, 4, 3))), "oliveDark", -0.8 + r * 0.22, 0.76, 0.5, 1, 1, 1, tank);
+    const turret = pivot(tank, -0.1, 0.84, 0, "turret");
+    k.mesh(one("turret", turretShape), "olive", 0, 0, 0, 1, 1, 1, turret);
+    k.mesh(one("turretBand", (fine) => new T.TorusGeometry(1, 0.036, cuts(fine, 4, 3), cuts(fine, 24, 10)).rotateX(Math.PI / 2).scale(0.47, 1, 0.385)), team, -0.03, 0.12, 0, 1, 1, 1, turret);
+    k.mesh(one("number", (fine) => rounded(0.16, 0.08, 0.01, 0.004, fine)), "white", -0.12, 0.2, 0.37, 1, 1, 1, turret).rotation.x = -0.35;
+    k.mesh(one("mantlet", mantlet), "oliveDark", 0.46, 0.13, 0, 1, 1, 1, turret);
+    k.mesh(one("cupola", cupola), "oliveDark", -0.2, 0.26, 0.12, 1, 1, 1, turret);
+    k.mesh(one("cupolaHatch", (fine) => lathe([[0.0, 0.0], [0.1, 0.0], [0.1, 0.02], [0.0, 0.03]], cuts(fine, 12, 6))), "olive", -0.2, 0.36, 0.12, 1, 1, 1, turret);
+    k.mesh(one("mg", (fine) => merge([rounded(0.18, 0.05, 0.04, 0.01, fine), new T.CylinderGeometry(0.01, 0.01, 0.24, cuts(fine, 6, 4)).rotateZ(Math.PI / 2).translate(0.2, 0.01, 0)])), "black", -0.12, 0.45, -0.15, 1, 1, 1, turret);
+    k.mesh("cyl", "dark", -0.32, 0.6, -0.22, 0.007, 0.6, 0.007, turret);
+    const barrel = pivot(turret, 0.46, 0.13, 0, "strike");
+    k.mesh(one("tankGun", tankGun), "oliveDark", 0, 0, 0, 1, 1, 1, barrel);
+    f.muzzle = pivot(barrel, 1.42, 0, 0, "muzzle");
     f.strike = barrel;
     f.style = "barrel";
     f.stride = 0.9;
@@ -814,6 +1050,7 @@ function cloneFigure(k: Kit, t: Figure): Figure {
     tail: find(t.tail),
     flaps: list(t.flaps),
     muzzle: find(t.muzzle),
+    weapon: find(t.weapon),
     bar: find(t.bar)!,
     barBack: find(t.barBack)!,
     star: find(t.star)!,
@@ -909,6 +1146,8 @@ export function poseFigure(f: Figure, dist: number, walking: boolean, since: num
         f.elbows[other].rotation.z = 0.55;
       }
       if (blow < 1) chest.rotation.z = 0.08 * (1 - blow);
+      // The gun (or the bow) kept level at the foe whatever the arm does: a gun's length along +x, a bow upright.
+      if (f.weapon) f.weapon.rotation.z = (f.era === 1 ? 0 : -Math.PI / 2) - f.strike.rotation.z - f.elbows[i].rotation.z - chest.rotation.z;
     } else if (f.style === "barrel" && f.strike) {
       f.strike.position.x = f.strike.userData.x ?? (f.strike.userData.x = f.strike.position.x);
       f.strike.position.x -= blow < 1 ? (1 - blow) * 0.24 : 0;
@@ -927,3 +1166,139 @@ export function poseFigure(f: Figure, dist: number, walking: boolean, since: num
   f.bar.visible = f.barBack.visible = life < 0.999;
   f.star.visible = rank > 0;
 }
+
+/** Pale pictures for cloth, fur, hide, mail, camouflage and hair, tinted by their paints' colours (a graphics card's look). */
+const pictures = {
+  /** Fur: tufts of strands, light and dark (`long` for the mammoth's shaggy coat). */
+  fur: (long: number) =>
+    canvas(128, 128, (ctx) => {
+      ctx.fillStyle = "#cfcfcf";
+      ctx.fillRect(0, 0, 128, 128);
+      let s = 7 + long;
+      const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 900; i++) {
+        const x = r() * 128,
+          y = r() * 128,
+          len = (long ? 14 : 6) + r() * (long ? 22 : 8),
+          v = 120 + r() * 135;
+        ctx.strokeStyle = `rgb(${v},${v},${v})`;
+        ctx.lineWidth = 0.8 + r() * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + (r() - 0.5) * 6, y + len * 0.5, x + (r() - 0.5) * 8, y + len);
+        ctx.stroke();
+      }
+    }),
+  /** Hide and leather: a mottled skin with creases. */
+  hide: () =>
+    canvas(128, 128, (ctx) => {
+      ctx.fillStyle = "#dcdcdc";
+      ctx.fillRect(0, 0, 128, 128);
+      let s = 11;
+      const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 260; i++) {
+        const v = 170 + r() * 85;
+        ctx.fillStyle = `rgba(${v},${v},${v},0.5)`;
+        ctx.beginPath();
+        ctx.ellipse(r() * 128, r() * 128, 3 + r() * 9, 2 + r() * 6, r() * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = "rgba(120,120,120,0.35)";
+      for (let i = 0; i < 30; i++) {
+        ctx.beginPath();
+        const x = r() * 128,
+          y = r() * 128;
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + (r() - 0.5) * 30, y + (r() - 0.5) * 10);
+        ctx.stroke();
+      }
+    }),
+  /** Mail: rows of interlinked rings. */
+  mail: () =>
+    canvas(64, 64, (ctx) => {
+      ctx.fillStyle = "#585858";
+      ctx.fillRect(0, 0, 64, 64);
+      for (let row = 0; row < 9; row++)
+        for (let col = 0; col < 9; col++) {
+          const x = col * 8 + (row % 2) * 4,
+            y = row * 7.2;
+          ctx.strokeStyle = "#f0f0f0";
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.ellipse(x, y, 3.4, 3.0, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = "#9a9a9a";
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.ellipse(x + 0.6, y + 0.6, 3.4, 3.0, 0, 0.2, 2);
+          ctx.stroke();
+        }
+    }),
+  /** Woven cloth: a fine weave and soft folds running down. */
+  weave: () =>
+    canvas(128, 128, (ctx) => {
+      ctx.fillStyle = "#ececec";
+      ctx.fillRect(0, 0, 128, 128);
+      for (let x = 0; x < 128; x += 2) {
+        ctx.fillStyle = `rgba(0,0,0,${x % 4 ? 0.05 : 0.09})`;
+        ctx.fillRect(x, 0, 1, 128);
+      }
+      for (let y = 0; y < 128; y += 2) {
+        ctx.fillStyle = `rgba(0,0,0,${y % 4 ? 0.04 : 0.08})`;
+        ctx.fillRect(0, y, 128, 1);
+      }
+      for (let i = 0; i < 6; i++) {
+        const x = 10 + i * 21,
+          g = ctx.createLinearGradient(x - 8, 0, x + 8, 0);
+        g.addColorStop(0, "rgba(0,0,0,0)");
+        g.addColorStop(0.5, "rgba(0,0,0,0.12)");
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(x - 8, 0, 16, 128);
+      }
+    }),
+  /** Camouflage: blotches in three shades over the weave. */
+  camo: () =>
+    canvas(128, 128, (ctx) => {
+      ctx.fillStyle = "#e6e6e6";
+      ctx.fillRect(0, 0, 128, 128);
+      let s = 5;
+      const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (const [shade, n] of [
+        ["#b3b39a", 18],
+        ["#8a8a78", 14],
+        ["#5a5a50", 10],
+      ] as const)
+        for (let i = 0; i < n; i++) {
+          ctx.fillStyle = shade;
+          ctx.beginPath();
+          const x = r() * 128,
+            y = r() * 128;
+          for (let k = 0; k < 7; k++) {
+            const a = (k / 7) * Math.PI * 2,
+              d = 6 + r() * 10;
+            if (k) ctx.lineTo(x + Math.cos(a) * d * 1.4, y + Math.sin(a) * d);
+            else ctx.moveTo(x + Math.cos(a) * d * 1.4, y + Math.sin(a) * d);
+          }
+          ctx.fill();
+        }
+    }),
+  /** Hair: fine strands. */
+  strands: () =>
+    canvas(64, 64, (ctx) => {
+      ctx.fillStyle = "#d0d0d0";
+      ctx.fillRect(0, 0, 64, 64);
+      let s = 3;
+      const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 260; i++) {
+        const v = 110 + r() * 145,
+          x = r() * 64;
+        ctx.strokeStyle = `rgb(${v},${v},${v})`;
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(x, r() * 64);
+        ctx.lineTo(x + (r() - 0.5) * 3, r() * 64);
+        ctx.stroke();
+      }
+    }),
+};
