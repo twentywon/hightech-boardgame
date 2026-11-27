@@ -947,16 +947,28 @@ const play = {
     await page.waitForFunction(() => Number(document.querySelector("#board canvas")?.dataset.time) > 24, null, { timeout: 280000 });
     await page.keyboard.press("p");
   },
-  // 땅따먹기: out of my patch to the right and down, the trail behind me and the computers' lands about, then paused
-  // mid-loop.
+  // 땅따먹기: a round loop out of my patch taken (the land the shape it went), then out again in a curve, the trail
+  // behind me and the computers' lands about, paused mid-loop.
   territory: async () => {
     await page.locator("#board canvas").waitFor();
     await page.waitForFunction(() => document.querySelector("#board canvas")?.dataset.phase === "play", null, { timeout: 120000 });
     await wait(5000);
-    for (const [key, ms] of [["ArrowRight", 1600], ["ArrowDown", 1300], ["ArrowLeft", 700]]) {
-      await page.keyboard.down(key);
+    const legs = [
+      [["ArrowRight"], 500],
+      [["ArrowRight", "ArrowDown"], 450],
+      [["ArrowDown"], 450],
+      [["ArrowDown", "ArrowLeft"], 450],
+      [["ArrowLeft"], 450],
+      [["ArrowLeft", "ArrowUp"], 450],
+      [["ArrowUp"], 650],
+      [["ArrowUp", "ArrowRight"], 900],
+      [["ArrowRight"], 500],
+      [["ArrowRight", "ArrowDown"], 500],
+    ];
+    for (const [held, ms] of legs) {
+      for (const key of held) await page.keyboard.down(key);
       await wait(ms);
-      await page.keyboard.up(key);
+      for (const key of held) await page.keyboard.up(key);
     }
     await page.keyboard.press("p");
   },
