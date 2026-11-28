@@ -2,7 +2,6 @@ import * as T from "three";
 import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
-import { Shade } from "./baked";
 import { partGeometry, sculptedModel, sculptedPerson, type Sculpted } from "./sculpted";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { bark, grain, grained } from "../../engine/grain";
@@ -83,9 +82,7 @@ export class Kit {
    * thirty soldiers, so not as fine as 러시안 룰렛's four), without it under half.
    */
   readonly fine: number;
-  /** Blender's baked shade for the units (`baked.ts`); `blender` false builds them from the code alone. */
-  readonly shade: Shade | null;
-  /** The people as Blender sculpted them (`sculpted.ts`), skinned on the joints; false: the code's own. */
+  /** The units as Blender sculpted them (`sculpted.ts`), skinned on the joints; `blender` false: the code's own. */
   readonly sculpt: boolean;
   /** Paints that take a vertex's baked light (the sculpted people's), one per paint. */
   private lit = new Map<string, T.Material>();
@@ -94,7 +91,6 @@ export class Kit {
     readonly rich: boolean,
     blender = true,
   ) {
-    this.shade = blender ? new Shade(own) : null;
     this.sculpt = blender;
     this.fine = rich ? 1.25 : 0.4;
     const mat = (color: string, o: T.MeshStandardMaterialParameters = {}) =>
@@ -1242,9 +1238,6 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     for (const c of held) o.add(c);
   }
   for (const t of track) t.name = `track#${named++}`;
-  // Blender's baked shade in the vertices of every part (`baked.ts`, tools/blender/erawar/ao.py); a sculpted person
-  // carries its own.
-  if (!keep.size || [...keep].every((o) => !(o instanceof T.SkinnedMesh))) k.shade?.apply(root, era, kind);
   // Where the processor draws, the figure casts no shadow of its own (a shadow pass costs every part a second draw):
   // a soft patch on the ground under it stands for it.
   if (!k.rich) {
