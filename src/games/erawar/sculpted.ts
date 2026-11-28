@@ -8,7 +8,7 @@ import type { Own } from "../goldraid/paint";
  * that a limb bends at the knee or the elbow without a gap, and paints each with its own paint (the side's colour on
  * the coat, the photographed stuffs on cloth, leather and steel).
  */
-const files = import.meta.glob<string>("../../assets/models/erawar/units/p*.glb", { query: "?inline", import: "default", eager: true });
+const files = import.meta.glob<string>("../../assets/models/erawar/units/*.glb", { query: "?inline", import: "default", eager: true });
 
 export interface SculptedPart {
   /** The game's paint ("team" and "teamDark" take the side's). */
@@ -121,8 +121,9 @@ export function readSculpted(data: Uint8Array): Sculpted {
 
 const cache = new Map<string, Sculpted | null>();
 /** The person Blender sculpted for an era and kind (null when there is none). */
-export function sculptedPerson(era: number, kind: number): Sculpted | null {
-  const key = `p${era}${kind}`;
+export const sculptedPerson = (era: number, kind: number) => sculptedModel(`p${era}${kind}`);
+/** A unit Blender sculpted, by its file's name: p<era><kind> a person, b0 the mammoth, b1 the horse. */
+export function sculptedModel(key: string): Sculpted | null {
   if (!cache.has(key)) {
     const url = Object.entries(files).find(([path]) => path.endsWith(`/${key}.glb`))?.[1];
     cache.set(key, url ? readSculpted(bytes(url)) : null);

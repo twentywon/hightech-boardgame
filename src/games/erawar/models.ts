@@ -3,7 +3,7 @@ import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
 import { Shade } from "./baked";
-import { partGeometry, sculptedPerson } from "./sculpted";
+import { partGeometry, sculptedModel, sculptedPerson, type Sculpted } from "./sculpted";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { bark, grain, grained } from "../../engine/grain";
 import { made, skin as poreRelief, smooth } from "../../engine/lifelike";
@@ -467,19 +467,31 @@ function sculptedBody(k: Kit, parent: T.Object3D, era: number, kind: number, sid
     if (z > 0) hand = grip;
     else off = grip;
   }
-  const joint: Record<string, T.Object3D> = { body, leg0: legs[0], knee0: knees[0], leg1: legs[1], knee1: knees[1], chest, head, arm0: arms[0], elbow0: elbows[0], arm1: arms[1], elbow1: elbows[1] },
-    bones = model.bones.map((b) => joint[b]) as unknown as T.Bone[],
+  const joint: Record<string, T.Object3D> = { body, leg0: legs[0], knee0: knees[0], leg1: legs[1], knee1: knees[1], chest, head, arm0: arms[0], elbow0: elbows[0], arm1: arms[1], elbow1: elbows[1] };
+  skinOn(k, model, `p${era}${kind}`, side, body, joint);
+  if (sitting)
+    for (let i = 0; i < 2; i++) {
+      legs[i].rotation.z = Math.PI / 2.3;
+      knees[i].rotation.z = -Math.PI / 2.2;
+    }
+  return { body, chest, legs, knees, arms, elbows, head, hand, off };
+}
+/**
+ * A sculpted model's skin, its paints the kit's (the side's colour where it says "team"), bound to the joints named
+ * as its bones are (where the processor draws, all its paints in its vertices, one draw).
+ */
+function skinOn(k: Kit, model: Sculpted, name: string, side: number, holder: T.Object3D, joint: Record<string, T.Object3D>) {
+  const bones = model.bones.map((b) => joint[b]) as unknown as T.Bone[],
     paintOf = (p: string) => (p === "team" || p === "teamDark" ? `${p}${side}` : p),
     meshes: T.SkinnedMesh[] = [];
   if (k.rich)
     for (const part of model.parts) {
-      const key = `sculpted${era}${kind}:${part.paint}`;
+      const key = `sculpted:${name}:${part.paint}`;
       if (!k.g[key]) k.g[key] = partGeometry(k.own, part);
       meshes.push(new T.SkinnedMesh(k.g[key], k.litPaint(paintOf(part.paint))));
     }
   else {
-    // Where the processor draws: every paint's colour in the vertices, one shape and one draw.
-    const key = `sculpted${era}${kind}${side}`;
+    const key = `sculpted:${name}:${side}`;
     if (!k.g[key]) {
       const parts = model.parts.map((part) => partGeometry((g) => g, part, (k.m[paintOf(part.paint)] as T.MeshLambertMaterial).color));
       k.g[key] = k.own(mergeGeometries(parts)!);
@@ -487,24 +499,61 @@ function sculptedBody(k: Kit, parent: T.Object3D, era: number, kind: number, sid
     }
     meshes.push(new T.SkinnedMesh(k.g[key], k.tinted));
   }
-  body.updateWorldMatrix(true, true);
+  holder.updateWorldMatrix(true, true);
   const skeleton = k.own(new T.Skeleton(bones));
   for (const m of meshes) {
     m.name = `skin#${named++}`;
     m.castShadow = k.rich;
-    body.add(m);
+    holder.add(m);
     m.updateWorldMatrix(false, false);
     m.bind(skeleton, m.matrixWorld);
     // (Its reach as it moves: the shape's own sphere and some, so that it is never culled while in sight.)
     m.boundingSphere = m.geometry.boundingSphere!.clone();
     m.boundingSphere.radius += 0.35;
   }
-  if (sitting)
-    for (let i = 0; i < 2; i++) {
-      legs[i].rotation.z = Math.PI / 2.3;
-      knees[i].rotation.z = -Math.PI / 2.2;
-    }
-  return { body, chest, legs, knees, arms, elbows, head, hand, off };
+}
+/**
+ * A mount as Blender sculpted it (b0 the mammoth, b1 the horse), on the same joints as the code's: the body, the
+ * head (the mammoth's trunk and ears too), four legs and their knees, the tail. Null when there is no such model.
+ */
+function sculptedBeast(k: Kit, body: T.Object3D, era: number, side: number, f: Draft): T.Group | null {
+  const model = sculptedModel(`b${era}`);
+  if (!model) return null;
+  const beast = pivot(body, 0, 0, 0, "beast"),
+    joint: Record<string, T.Object3D> = { beast };
+  f.chest = beast;
+  let legs: readonly (readonly [number, number])[], hipY: number, kneeDown: number;
+  if (era === 0) {
+    const head = pivot(beast, 0.74, 1.32, 0, "head");
+    f.head = joint.head = head;
+    [-1, 1].forEach((z, i) => {
+      const ear = pivot(head, -0.1, 0.06, z * 0.3, "flap");
+      f.flaps.push(ear);
+      joint[`flap${i}`] = ear;
+    });
+    f.strike = joint.strike = pivot(head, 0.3, -0.06, 0, "strike");
+    joint.tail = f.tail = pivot(beast, -0.84, 1.2, 0, "tail");
+    legs = [[0.45, -0.26], [0.45, 0.26], [-0.45, -0.26], [-0.45, 0.26]];
+    hipY = 0.95;
+    kneeDown = 0.48;
+  } else {
+    const neck = pivot(beast, 0.5, 1.14, 0, "head");
+    f.head = f.strike = joint.head = neck;
+    joint.tail = f.tail = pivot(beast, -0.6, 1.1, 0, "tail");
+    legs = [[0.38, -0.13], [0.38, 0.13], [-0.4, -0.13], [-0.4, 0.13]];
+    hipY = 0.86;
+    kneeDown = 0.4;
+  }
+  legs.forEach(([x, z], i) => {
+    const hip = pivot(beast, x, hipY, z, "leg"),
+      knee = pivot(hip, 0, -kneeDown, 0, "knee");
+    joint[`leg${i}`] = hip;
+    joint[`knee${i}`] = knee;
+    f.legs.push(hip);
+    f.knees.push(knee);
+  });
+  skinOn(k, model, `b${era}`, side, beast, joint);
+  return beast;
 }
 /** 0 below 0, rising smoothly to 1 at 1. */
 const smooth01 = (v: number) => (v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v));
@@ -960,6 +1009,21 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     f.strike = p.arms[1];
     f.style = kind === 0 ? "swing" : era === 0 ? "throw" : "shoot";
     if (era === 1 && kind === 1) f.strike = p.arms[0];
+  } else if (era < 2 && k.sculpt && sculptedModel(`b${era}`)) {
+    // The mount as Blender sculpted it, its rider (and the knight's pennant) as before.
+    const beast = sculptedBeast(k, body, era, side, f)!;
+    const rider = pivot(beast, -0.05, era === 0 ? 1.36 : 0.78, 0);
+    const { p } = soldier(k, rider, era, 2, side, era === 0 ? 0.82 : 0.9, true);
+    if (era === 1) {
+      const pennant = pivot(p.hand, 0.0, 0.0, 0.0, "flap");
+      k.mesh(one("pennant", (fine) => slab([[0, 0], [0.34, -0.04], [0.26, -0.08], [0.34, -0.13], [0, -0.13]], 0.006, 0.002, cuts(fine, 1, 1))), team, 1.0, -0.01, 0, 1, 1, 1, pennant);
+      f.flaps.push(pennant);
+    }
+    f.arms = p.arms;
+    f.elbows = p.elbows;
+    f.style = "trample";
+    f.stride = era === 0 ? 1.1 : 1.25;
+    tall = era === 0 ? 2.6 : 2.25;
   } else if (era === 0) {
     // A woolly mammoth: a humped body hung with long shaggy hair, a domed head with flapping ears, curling tusks, a
     // trunk that swings; its rider on a blanket in the side's colour.
