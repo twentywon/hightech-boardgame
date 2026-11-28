@@ -1108,6 +1108,42 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     f.style = "trample";
     f.stride = 1.25;
     tall = 2.25;
+  } else if (k.sculpt && sculptedModel(`m${era}`)) {
+    // The machine as Blender modelled it: each part on its pivot (the body, each wheel, the turret, the gun).
+    const model = sculptedModel(`m${era}`)!,
+      beast = pivot(body, 0, 0, 0, "beast"),
+      joint: Record<string, T.Object3D> = {};
+    if (era === 2) {
+      joint.gun = beast;
+      [-0.37, 0.37].forEach((z, i) => f.wheels.push((joint[`wheel${i}`] = pivot(beast, 0.1, 0.42, z, "wheel"))));
+      const barrel = (joint.strike = pivot(beast, 0.1, 0.72, 0, "strike"));
+      barrel.rotation.z = 0.1;
+      f.muzzle = pivot(barrel, 0.96, 0, 0, "muzzle");
+      f.strike = barrel;
+      skinOn(k, model, `m${era}`, side, beast, joint);
+      const gunner = pivot(body, -1.0, 0, 0.14);
+      const { p } = soldier(k, gunner, 2, 1, side, 0.95);
+      Object.assign(f, { legs: p.legs, knees: p.knees, arms: p.arms, elbows: p.elbows, chest: p.chest });
+      f.stride = 0.5;
+      tall = 1.7;
+    } else {
+      joint.tank = beast;
+      f.chest = pivot(beast, 0, 0, 0, "still");
+      for (const z of [-0.42, 0.42]) track.push(k.mesh(one("trackLoop", trackLoop), "track", 0, 0.27, z, 1, 1, 1, beast));
+      // (The wheels in the order the model names them: the road wheels of the far side and the near, then the sprockets.)
+      const at: [number, number, number][] = [];
+      for (const z of [-1, 1]) for (let s = 0; s < 5; s++) at.push([-0.72 + s * 0.36, 0.22, z * 0.525]);
+      for (const z of [-1, 1]) for (const x of [-0.98, 0.98]) at.push([x, 0.27, z * 0.525]);
+      at.forEach(([x, y, z], i) => f.wheels.push((joint[`w${i}`] = pivot(beast, x, y, z, "wheel"))));
+      const turret = (joint.turret = pivot(beast, -0.1, 0.84, 0, "turret")),
+        barrel = (joint.strike = pivot(turret, 0.46, 0.13, 0, "strike"));
+      f.muzzle = pivot(barrel, 1.42, 0, 0, "muzzle");
+      f.strike = barrel;
+      skinOn(k, model, `m${era}`, side, beast, joint);
+      f.stride = 0.9;
+      tall = 1.9;
+    }
+    f.style = "barrel";
   } else if (era === 2) {
     // A field gun: a bronze barrel on a wooden trail carriage with two spoked wheels shod in iron, its rammer and
     // bucket; a gunner behind it.
