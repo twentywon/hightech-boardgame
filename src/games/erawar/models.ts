@@ -3,6 +3,8 @@ import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
 import { Shade } from "./baked";
+import { partGeometry, sculptedPerson } from "./sculpted";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { bark, grain, grained } from "../../engine/grain";
 import { made, skin as poreRelief, smooth } from "../../engine/lifelike";
 import type { Kind } from "./sim";
@@ -83,12 +85,17 @@ export class Kit {
   readonly fine: number;
   /** Blender's baked shade for the units (`baked.ts`); `blender` false builds them from the code alone. */
   readonly shade: Shade | null;
+  /** The people as Blender sculpted them (`sculpted.ts`), skinned on the joints; false: the code's own. */
+  readonly sculpt: boolean;
+  /** Paints that take a vertex's baked light (the sculpted people's), one per paint. */
+  private lit = new Map<string, T.Material>();
   constructor(
     readonly own: Own,
     readonly rich: boolean,
     blender = true,
   ) {
     this.shade = blender ? new Shade(own) : null;
+    this.sculpt = blender;
     this.fine = rich ? 1.25 : 0.4;
     const mat = (color: string, o: T.MeshStandardMaterialParameters = {}) =>
       own(rich ? new T.MeshStandardMaterial({ color, roughness: 0.75, ...o }) : new T.MeshLambertMaterial({ color, map: o.map ?? null, emissive: (o.emissive as T.ColorRepresentation) ?? 0x000000, emissiveIntensity: o.emissiveIntensity ?? 1 }));
@@ -295,6 +302,16 @@ export class Kit {
     parent.add(m);
     return m;
   }
+  /** A paint (by name) that multiplies in the baked light of the vertices it is on. */
+  litPaint(name: string) {
+    let m = this.lit.get(name);
+    if (!m) {
+      m = this.own(this.m[name].clone());
+      (m as T.MeshStandardMaterial).vertexColors = true;
+      this.lit.set(name, m);
+    }
+    return m;
+  }
   /** A figure for a soldier of an era, kind and side: a clone of its kind's template. */
   figure(era: number, kind: Kind, side: number): Figure {
     const key = `${era}${kind}${side}`;
@@ -417,6 +434,76 @@ function person(k: Kit, parent: T.Object3D, o: Dress): Person {
     if (z > 0) hand = grip;
     else off = grip;
   }
+  return { body, chest, legs, knees, arms, elbows, head, hand, off };
+}
+/**
+ * A person as Blender sculpted it (`sculpted.ts`), clothes, hair and headgear and all, skinned on the same joints as
+ * `person` makes (so poses and the weapons in its hands are the same). Null when there is no such model.
+ */
+function sculptedBody(k: Kit, parent: T.Object3D, era: number, kind: number, side: number, scale: number, sitting: boolean): Person | null {
+  const model = sculptedPerson(era, kind);
+  if (!model) return null;
+  const body = pivot(parent, 0, 0, 0);
+  body.scale.setScalar(scale);
+  const legs: T.Group[] = [],
+    knees: T.Group[] = [],
+    arms: T.Group[] = [],
+    elbows: T.Group[] = [];
+  for (const z of [-0.085, 0.085]) {
+    const leg = pivot(body, 0, 0.56, z, "leg");
+    legs.push(leg);
+    knees.push(pivot(leg, 0, -0.28, 0, "knee"));
+  }
+  const chest = pivot(body, 0, 0.62, 0, "chest"),
+    head = pivot(chest, 0.01, 0.52, 0, "head");
+  let hand = chest,
+    off = chest;
+  for (const z of [-0.19, 0.19]) {
+    const arm = pivot(chest, 0, 0.34, z, "arm"),
+      elbow = pivot(arm, 0, -0.21, 0, "elbow"),
+      grip = pivot(elbow, 0, -0.2, z > 0 ? 0.02 : -0.02, "hand");
+    arms.push(arm);
+    elbows.push(elbow);
+    if (z > 0) hand = grip;
+    else off = grip;
+  }
+  const joint: Record<string, T.Object3D> = { body, leg0: legs[0], knee0: knees[0], leg1: legs[1], knee1: knees[1], chest, head, arm0: arms[0], elbow0: elbows[0], arm1: arms[1], elbow1: elbows[1] },
+    bones = model.bones.map((b) => joint[b]) as unknown as T.Bone[],
+    paintOf = (p: string) => (p === "team" || p === "teamDark" ? `${p}${side}` : p),
+    meshes: T.SkinnedMesh[] = [];
+  if (k.rich)
+    for (const part of model.parts) {
+      const key = `sculpted${era}${kind}:${part.paint}`;
+      if (!k.g[key]) k.g[key] = partGeometry(k.own, part);
+      meshes.push(new T.SkinnedMesh(k.g[key], k.litPaint(paintOf(part.paint))));
+    }
+  else {
+    // Where the processor draws: every paint's colour in the vertices, one shape and one draw.
+    const key = `sculpted${era}${kind}${side}`;
+    if (!k.g[key]) {
+      const parts = model.parts.map((part) => partGeometry((g) => g, part, (k.m[paintOf(part.paint)] as T.MeshLambertMaterial).color));
+      k.g[key] = k.own(mergeGeometries(parts)!);
+      for (const g of parts) g.dispose();
+    }
+    meshes.push(new T.SkinnedMesh(k.g[key], k.tinted));
+  }
+  body.updateWorldMatrix(true, true);
+  const skeleton = k.own(new T.Skeleton(bones));
+  for (const m of meshes) {
+    m.name = `skin#${named++}`;
+    m.castShadow = k.rich;
+    body.add(m);
+    m.updateWorldMatrix(false, false);
+    m.bind(skeleton, m.matrixWorld);
+    // (Its reach as it moves: the shape's own sphere and some, so that it is never culled while in sight.)
+    m.boundingSphere = m.geometry.boundingSphere!.clone();
+    m.boundingSphere.radius += 0.35;
+  }
+  if (sitting)
+    for (let i = 0; i < 2; i++) {
+      legs[i].rotation.z = Math.PI / 2.3;
+      knees[i].rotation.z = -Math.PI / 2.2;
+    }
   return { body, chest, legs, knees, arms, elbows, head, hand, off };
 }
 /** 0 below 0, rising smoothly to 1 at 1. */
@@ -675,9 +762,12 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
           : era === 2
             ? { cloth: team, legs: "white", shin: "black", sleeve: team, boot: "black", style: "crop", tache: kind === 1 }
             : { cloth: "olive", legs: "olive", sleeve: "olive", boot: "black", style: "none", glove: "rubber", high: 0.15 };
-  const p = person(k, parent, { ...dress, scale, sitting });
-  headgear(k, p, era, kind, side);
-  layers(k, p, era, kind, side);
+  const sculpted = k.sculpt ? sculptedBody(k, parent, era, kind === 2 ? 0 : kind, side, scale, sitting) : null,
+    p = sculpted ?? person(k, parent, { ...dress, scale, sitting });
+  if (!sculpted) {
+    headgear(k, p, era, kind, side);
+    layers(k, p, era, kind, side);
+  }
   const hand = p.hand;
   let muzzle: T.Object3D | null = null,
     weapon: T.Object3D | null = null;
@@ -1040,6 +1130,7 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     joints: T.Group[] = [];
   root.traverse((o) => {
     if (o instanceof T.Group) joints.push(o);
+    if (o instanceof T.SkinnedMesh) keep.add(o);
   });
   for (const o of joints) {
     const held = o.children.filter((c) => keep.has(c));
@@ -1051,8 +1142,9 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     for (const c of held) o.add(c);
   }
   for (const t of track) t.name = `track#${named++}`;
-  // Blender's baked shade in the vertices of every part (`baked.ts`, tools/blender/erawar/ao.py).
-  k.shade?.apply(root, era, kind);
+  // Blender's baked shade in the vertices of every part (`baked.ts`, tools/blender/erawar/ao.py); a sculpted person
+  // carries its own.
+  if (!keep.size || [...keep].every((o) => !(o instanceof T.SkinnedMesh))) k.shade?.apply(root, era, kind);
   // Where the processor draws, the figure casts no shadow of its own (a shadow pass costs every part a second draw):
   // a soft patch on the ground under it stands for it.
   if (!k.rich) {
@@ -1077,6 +1169,14 @@ function cloneFigure(k: Kit, t: Figure): Figure {
     if (o.name) byName.set(o.name, o);
   });
   const find = <O extends T.Object3D>(o: O | null) => (o ? (byName.get(o.name) as O) : null);
+  // A sculpted person's skin moves with this clone's own joints.
+  const skeletons = new Map<T.Skeleton, T.Skeleton>();
+  root.traverse((o) => {
+    if (!(o instanceof T.SkinnedMesh)) return;
+    let s = skeletons.get(o.skeleton);
+    if (!s) skeletons.set(o.skeleton, (s = k.own(new T.Skeleton(o.skeleton.bones.map((b) => byName.get(b.name) as T.Bone), o.skeleton.boneInverses))));
+    o.bind(s, o.bindMatrix);
+  });
   const list = (os: T.Object3D[]) => os.map((o) => byName.get(o.name)!);
   const f: Figure = {
     ...t,
