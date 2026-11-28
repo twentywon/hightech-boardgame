@@ -58,6 +58,15 @@ if (rich) place(renderer, scene, "sky", 0.55, { exposure: 0.95 });
 let frames = 0;
 const start = performance.now();
 (window as unknown as { fps: () => number }).fps = () => (frames * 1000) / (performance.now() - start);
+// What one frame costs: draws, triangles, and the vertices of every unit's meshes.
+(window as unknown as { stats: () => object }).stats = () => {
+  let vertices = 0;
+  for (const { f } of figures)
+    f.root.traverse((o) => {
+      if (o instanceof T.Mesh) vertices += o.geometry.getAttribute("position").count;
+    });
+  return { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, vertices, units: figures.length };
+};
 const loop = (t: number) => {
   requestAnimationFrame(loop);
   for (const { f, phase } of figures) poseFigure(f, walk ? t / 1000 + phase : phase, walk, 9, 1, t / 1000 + phase);

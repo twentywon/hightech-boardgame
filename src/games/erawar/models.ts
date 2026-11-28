@@ -2,7 +2,8 @@ import * as T from "three";
 import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
-import { Shade } from "./baked";
+import { partGeometry, rigidGeometry, sculptedModel, sculptedPerson, type Sculpted } from "./sculpted";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { bark, grain, grained } from "../../engine/grain";
 import { made, skin as poreRelief, smooth } from "../../engine/lifelike";
 import type { Kind } from "./sim";
@@ -81,14 +82,16 @@ export class Kit {
    * thirty soldiers, so not as fine as 러시안 룰렛's four), without it under half.
    */
   readonly fine: number;
-  /** Blender's baked shade for the units (`baked.ts`); `blender` false builds them from the code alone. */
-  readonly shade: Shade | null;
+  /** The units as Blender sculpted them (`sculpted.ts`), skinned on the joints; `blender` false: the code's own. */
+  readonly sculpt: boolean;
+  /** Paints that take a vertex's baked light (the sculpted people's), one per paint. */
+  private lit = new Map<string, T.Material>();
   constructor(
     readonly own: Own,
     readonly rich: boolean,
     blender = true,
   ) {
-    this.shade = blender ? new Shade(own) : null;
+    this.sculpt = blender;
     this.fine = rich ? 1.25 : 0.4;
     const mat = (color: string, o: T.MeshStandardMaterialParameters = {}) =>
       own(rich ? new T.MeshStandardMaterial({ color, roughness: 0.75, ...o }) : new T.MeshLambertMaterial({ color, map: o.map ?? null, emissive: (o.emissive as T.ColorRepresentation) ?? 0x000000, emissiveIntensity: o.emissiveIntensity ?? 1 }));
@@ -295,6 +298,16 @@ export class Kit {
     parent.add(m);
     return m;
   }
+  /** A paint (by name) that multiplies in the baked light of the vertices it is on. */
+  litPaint(name: string) {
+    let m = this.lit.get(name);
+    if (!m) {
+      m = this.own(this.m[name].clone());
+      (m as T.MeshStandardMaterial).vertexColors = true;
+      this.lit.set(name, m);
+    }
+    return m;
+  }
   /** A figure for a soldier of an era, kind and side: a clone of its kind's template. */
   figure(era: number, kind: Kind, side: number): Figure {
     const key = `${era}${kind}${side}`;
@@ -418,6 +431,150 @@ function person(k: Kit, parent: T.Object3D, o: Dress): Person {
     else off = grip;
   }
   return { body, chest, legs, knees, arms, elbows, head, hand, off };
+}
+/**
+ * A person as Blender sculpted it (`sculpted.ts`), clothes, hair and headgear and all, skinned on the same joints as
+ * `person` makes (so poses and the weapons in its hands are the same). Null when there is no such model.
+ */
+function sculptedBody(k: Kit, parent: T.Object3D, era: number, kind: number, side: number, scale: number, sitting: boolean): Person | null {
+  const model = sculptedPerson(era, kind);
+  if (!model) return null;
+  const body = pivot(parent, 0, 0, 0);
+  body.scale.setScalar(scale);
+  const legs: T.Group[] = [],
+    knees: T.Group[] = [],
+    arms: T.Group[] = [],
+    elbows: T.Group[] = [];
+  for (const z of [-0.085, 0.085]) {
+    const leg = pivot(body, 0, 0.56, z, "leg");
+    legs.push(leg);
+    knees.push(pivot(leg, 0, -0.28, 0, "knee"));
+  }
+  const chest = pivot(body, 0, 0.62, 0, "chest"),
+    head = pivot(chest, 0.01, 0.52, 0, "head");
+  let hand = chest,
+    off = chest;
+  for (const z of [-0.19, 0.19]) {
+    const arm = pivot(chest, 0, 0.34, z, "arm"),
+      elbow = pivot(arm, 0, -0.21, 0, "elbow"),
+      grip = pivot(elbow, 0, -0.2, z > 0 ? 0.02 : -0.02, "hand");
+    arms.push(arm);
+    elbows.push(elbow);
+    if (z > 0) hand = grip;
+    else off = grip;
+  }
+  const joint: Record<string, T.Object3D> = { body, leg0: legs[0], knee0: knees[0], leg1: legs[1], knee1: knees[1], chest, head, arm0: arms[0], elbow0: elbows[0], arm1: arms[1], elbow1: elbows[1] };
+  skinOn(k, model, `p${era}${kind}`, side, body, joint);
+  if (sitting)
+    for (let i = 0; i < 2; i++) {
+      legs[i].rotation.z = Math.PI / 2.3;
+      knees[i].rotation.z = -Math.PI / 2.2;
+    }
+  return { body, chest, legs, knees, arms, elbows, head, hand, off };
+}
+/**
+ * A sculpted model's skin, its paints the kit's (the side's colour where it says "team"), bound to the joints named
+ * as its bones are (where the processor draws, all its paints in its vertices, one draw).
+ */
+function skinOn(k: Kit, model: Sculpted, name: string, side: number, holder: T.Object3D, joint: Record<string, T.Object3D>) {
+  const bones = model.bones.map((b) => joint[b]) as unknown as T.Bone[],
+    paintOf = (p: string) => (p === "team" || p === "teamDark" ? `${p}${side}` : p),
+    meshes: T.SkinnedMesh[] = [];
+  if (k.rich)
+    for (const part of model.parts) {
+      const key = `sculpted:${name}:${part.paint}`;
+      if (!k.g[key]) k.g[key] = partGeometry(k.own, part);
+      meshes.push(new T.SkinnedMesh(k.g[key], k.litPaint(paintOf(part.paint))));
+    }
+  else {
+    const key = `sculpted:${name}:${side}`;
+    if (!k.g[key]) {
+      const parts = model.parts.map((part) => partGeometry((g) => g, part, (k.m[paintOf(part.paint)] as T.MeshLambertMaterial).color));
+      k.g[key] = k.own(mergeGeometries(parts)!);
+      for (const g of parts) g.dispose();
+    }
+    meshes.push(new T.SkinnedMesh(k.g[key], k.tinted));
+  }
+  holder.updateWorldMatrix(true, true);
+  const skeleton = k.own(new T.Skeleton(bones));
+  for (const m of meshes) {
+    m.name = `skin#${named++}`;
+    m.castShadow = k.rich;
+    holder.add(m);
+    m.updateWorldMatrix(false, false);
+    m.bind(skeleton, m.matrixWorld);
+    // (Its reach as it moves: the shape's own sphere and some, so that it is never culled while in sight.)
+    m.boundingSphere = m.geometry.boundingSphere!.clone();
+    m.boundingSphere.radius += 0.35;
+  }
+}
+/**
+ * A weapon (a shield, a sling) as Blender modelled it (w<era><kind>), each piece on the pivot named for it, in that
+ * pivot's own frame. False when there is none (the code's own is made instead).
+ */
+function sculptedWeapon(k: Kit, key: string, side: number, on: Record<string, T.Object3D>) {
+  const model = k.sculpt ? sculptedModel(key) : null;
+  if (!model) return false;
+  const paintOf = (p: string) => (p === "team" || p === "teamDark" ? `${p}${side}` : p);
+  for (const part of model.parts)
+    model.bones.forEach((name, bone) => {
+      const holder = on[name],
+        gkey = `sculpted:${key}:${part.paint}:${bone}`;
+      if (!holder) return;
+      if (!(gkey in k.g)) {
+        const g = rigidGeometry(k.own, part, bone);
+        if (!g) return;
+        k.g[gkey] = g;
+      }
+      // (Where the processor draws, the plain paint: the joint's parts are baked together by colour anyway.)
+      const m = new T.Mesh(k.g[gkey], k.rich ? k.litPaint(paintOf(part.paint)) : k.m[paintOf(part.paint)]);
+      m.castShadow = true;
+      holder.add(m);
+    });
+  return true;
+}
+/**
+ * A mount as Blender sculpted it (b0 the mammoth, b1 the horse), on the same joints as the code's: the body, the
+ * head (the mammoth's trunk and ears too), four legs and their knees, the tail. Null when there is no such model.
+ */
+function sculptedBeast(k: Kit, body: T.Object3D, era: number, side: number, f: Draft): T.Group | null {
+  const model = sculptedModel(`b${era}`);
+  if (!model) return null;
+  const beast = pivot(body, 0, 0, 0, "beast"),
+    joint: Record<string, T.Object3D> = { beast };
+  f.chest = beast;
+  let legs: readonly (readonly [number, number])[], hipY: number, kneeDown: number;
+  if (era === 0) {
+    const head = pivot(beast, 0.74, 1.32, 0, "head");
+    f.head = joint.head = head;
+    [-1, 1].forEach((z, i) => {
+      const ear = pivot(head, -0.1, 0.06, z * 0.3, "flap");
+      f.flaps.push(ear);
+      joint[`flap${i}`] = ear;
+    });
+    f.strike = joint.strike = pivot(head, 0.3, -0.06, 0, "strike");
+    joint.tail = f.tail = pivot(beast, -0.84, 1.2, 0, "tail");
+    legs = [[0.45, -0.26], [0.45, 0.26], [-0.45, -0.26], [-0.45, 0.26]];
+    hipY = 0.95;
+    kneeDown = 0.48;
+  } else {
+    const neck = pivot(beast, 0.5, 1.14, 0, "head");
+    f.head = f.strike = joint.head = neck;
+    joint.tail = f.tail = pivot(beast, -0.6, 1.1, 0, "tail");
+    legs = [[0.38, -0.13], [0.38, 0.13], [-0.4, -0.13], [-0.4, 0.13]];
+    hipY = 0.86;
+    kneeDown = 0.4;
+  }
+  legs.forEach(([x, z], i) => {
+    const hip = pivot(beast, x, hipY, z, "leg"),
+      knee = pivot(hip, 0, -kneeDown, 0, "knee");
+    joint[`leg${i}`] = hip;
+    joint[`knee${i}`] = knee;
+    f.legs.push(hip);
+    f.knees.push(knee);
+  });
+  skinOn(k, model, `b${era}`, side, beast, joint);
+  return beast;
 }
 /** 0 below 0, rising smoothly to 1 at 1. */
 const smooth01 = (v: number) => (v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v));
@@ -675,9 +832,12 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
           : era === 2
             ? { cloth: team, legs: "white", shin: "black", sleeve: team, boot: "black", style: "crop", tache: kind === 1 }
             : { cloth: "olive", legs: "olive", sleeve: "olive", boot: "black", style: "none", glove: "rubber", high: 0.15 };
-  const p = person(k, parent, { ...dress, scale, sitting });
-  headgear(k, p, era, kind, side);
-  layers(k, p, era, kind, side);
+  const sculpted = k.sculpt ? sculptedBody(k, parent, era, kind === 2 ? 0 : kind, side, scale, sitting) : null,
+    p = sculpted ?? person(k, parent, { ...dress, scale, sitting });
+  if (!sculpted) {
+    headgear(k, p, era, kind, side);
+    layers(k, p, era, kind, side);
+  }
   const hand = p.hand;
   let muzzle: T.Object3D | null = null,
     weapon: T.Object3D | null = null;
@@ -687,95 +847,113 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
       // A club: a tapering shaft, a stone head bound on with thongs, flint chips set in it.
       const club = pivot(hand, 0, 0, 0);
       club.rotation.z = -Math.PI / 2.3;
-      k.mesh(one("clubshaft", (f) => lathe([[0.0, -0.06], [0.022, -0.055], [0.026, 0.1], [0.034, 0.36], [0.0, 0.38]], cuts(f, 8, 5))), "wood", 0, 0, 0, 1, 1, 1, club);
-      k.mesh(one("clubstone", (f) => rock(f, 0.085, 0.1, 0.075)), "stone", 0, 0.42, 0, 1, 1, 1, club);
-      for (const y of [0.34, 0.37]) k.mesh(one("thong", (f) => new T.TorusGeometry(0.038, 0.008, cuts(f, 4, 3), cuts(f, 10, 6)).rotateX(Math.PI / 2)), "leather", 0, y, 0, 1, 1, 1, club);
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2 + 0.4;
-        k.mesh(one("chip", (f) => new T.TetrahedronGeometry(0.03, 0)), "flint", Math.cos(a) * 0.07, 0.44 + (i % 2) * 0.03, Math.sin(a) * 0.06, 1, 1.6, 1, club).rotation.set(Math.sin(a), 0, -Math.cos(a));
+      if (!sculptedWeapon(k, "w00", side, { club })) {
+        k.mesh(one("clubshaft", (f) => lathe([[0.0, -0.06], [0.022, -0.055], [0.026, 0.1], [0.034, 0.36], [0.0, 0.38]], cuts(f, 8, 5))), "wood", 0, 0, 0, 1, 1, 1, club);
+        k.mesh(one("clubstone", (f) => rock(f, 0.085, 0.1, 0.075)), "stone", 0, 0.42, 0, 1, 1, 1, club);
+        for (const y of [0.34, 0.37]) k.mesh(one("thong", (f) => new T.TorusGeometry(0.038, 0.008, cuts(f, 4, 3), cuts(f, 10, 6)).rotateX(Math.PI / 2)), "leather", 0, y, 0, 1, 1, 1, club);
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + 0.4;
+          k.mesh(one("chip", (f) => new T.TetrahedronGeometry(0.03, 0)), "flint", Math.cos(a) * 0.07, 0.44 + (i % 2) * 0.03, Math.sin(a) * 0.06, 1, 1.6, 1, club).rotation.set(Math.sin(a), 0, -Math.cos(a));
+        }
       }
     } else if (kind === 1) {
       // A sling: two cords and a pouch with its stone; a bag of stones on the hip.
-      k.mesh(one("slingcord", (f) => tube([new T.Vector3(0, 0, 0), new T.Vector3(0.01, -0.09, 0.006), new T.Vector3(0, -0.17, 0)], 0.005, 0.005, cuts(f, 6, 3), 4)), "rope", 0, 0, 0, 1, 1, 1, hand);
-      k.mesh(one("slingpouch", (f) => ellipsoid(0.04, 0.026, 0.04, cuts(f, 8, 5), cuts(f, 6, 4))), "hide", 0, -0.18, 0, 1, 1, 1, hand);
-      k.mesh(one("slingstone", (f) => rock(f, 0.028, 0.026, 0.028)), "stone", 0, -0.165, 0, 1, 1, 1, hand);
+      if (!sculptedWeapon(k, "w01", side, { hand })) {
+        k.mesh(one("slingcord", (f) => tube([new T.Vector3(0, 0, 0), new T.Vector3(0.01, -0.09, 0.006), new T.Vector3(0, -0.17, 0)], 0.005, 0.005, cuts(f, 6, 3), 4)), "rope", 0, 0, 0, 1, 1, 1, hand);
+        k.mesh(one("slingpouch", (f) => ellipsoid(0.04, 0.026, 0.04, cuts(f, 8, 5), cuts(f, 6, 4))), "hide", 0, -0.18, 0, 1, 1, 1, hand);
+        k.mesh(one("slingstone", (f) => rock(f, 0.028, 0.026, 0.028)), "stone", 0, -0.165, 0, 1, 1, 1, hand);
+      }
       k.mesh(one("stonebag", (f) => ellipsoid(0.05, 0.065, 0.045, cuts(f, 10, 5), cuts(f, 8, 4))), "hide", -0.06, -0.02, -0.17, 1, 1, 1, p.chest);
       muzzle = pivot(hand, 0, -0.18, 0, "muzzle");
     } else {
       // The mammoth rider's spear: a long shaft, a leaf of flint lashed on, a strip of the side's colour.
       const spear = pivot(hand, 0, 0, 0);
       spear.rotation.z = -Math.PI / 2.1;
-      k.mesh(one("spearshaft", (f) => lathe([[0.0, -0.25], [0.016, -0.24], [0.019, 0.3], [0.016, 0.64], [0.0, 0.65]], cuts(f, 8, 5))), "wood", 0, 0, 0, 1, 1, 1, spear);
-      k.mesh(one("spearhead", (f) => slab([[-0.035, 0], [0, 0.17], [0.035, 0], [0, -0.03]], 0.018, 0.006, cuts(f, 2, 1)).rotateY(Math.PI / 2)), "flint", 0, 0.64, 0, 1, 1, 1, spear);
-      k.mesh(one("lash", (f) => lathe([[0.0, 0.0], [0.024, 0.0], [0.026, 0.05], [0.0, 0.052]], cuts(f, 8, 5))), "leather", 0, 0.6, 0, 1, 1, 1, spear);
-      k.mesh(one("streamer", (f) => slab([[0, 0], [0.09, -0.01], [0.08, -0.05], [0, -0.04]], 0.004, 0.001, 1)), team, 0.02, 0.56, 0, 1, 1, 1, spear);
+      if (!sculptedWeapon(k, "w02", side, { spear })) {
+        k.mesh(one("spearshaft", (f) => lathe([[0.0, -0.25], [0.016, -0.24], [0.019, 0.3], [0.016, 0.64], [0.0, 0.65]], cuts(f, 8, 5))), "wood", 0, 0, 0, 1, 1, 1, spear);
+        k.mesh(one("spearhead", (f) => slab([[-0.035, 0], [0, 0.17], [0.035, 0], [0, -0.03]], 0.018, 0.006, cuts(f, 2, 1)).rotateY(Math.PI / 2)), "flint", 0, 0.64, 0, 1, 1, 1, spear);
+        k.mesh(one("lash", (f) => lathe([[0.0, 0.0], [0.024, 0.0], [0.026, 0.05], [0.0, 0.052]], cuts(f, 8, 5))), "leather", 0, 0.6, 0, 1, 1, 1, spear);
+        k.mesh(one("streamer", (f) => slab([[0, 0], [0.09, -0.01], [0.08, -0.05], [0, -0.04]], 0.004, 0.001, 1)), team, 0.02, 0.56, 0, 1, 1, 1, spear);
+      }
     }
   } else if (era === 1) {
     if (kind === 0) {
       // A sword: a wrapped grip, a round pommel, a cross-guard, a blade with its fuller and point.
       const sword = pivot(hand, 0, 0, 0);
       sword.rotation.z = -Math.PI / 2.2;
-      k.mesh(one("grip", (f) => lathe([[0.0, -0.05], [0.017, -0.05], [0.019, 0.0], [0.017, 0.05], [0.0, 0.05]], cuts(f, 8, 5))), "leatherDark", 0, 0, 0, 1, 1, 1, sword);
-      k.mesh(one("pommel", (f) => ellipsoid(0.026, 0.022, 0.026, cuts(f, 8, 5), cuts(f, 6, 4))), "brass", 0, -0.065, 0, 1, 1, 1, sword);
-      k.mesh(one("guard", (f) => rounded(0.026, 0.022, 0.18, 0.009, f)), "brass", 0, 0.06, 0, 1, 1, 1, sword);
-      k.mesh(one("blade", (f) => slab([[-0.024, 0], [0.024, 0], [0.019, 0.5], [0, 0.58], [-0.019, 0.5]], 0.008, 0.003, cuts(f, 2, 1)).rotateY(Math.PI / 2)), "steel", 0, 0.07, 0, 1, 1, 1, sword);
-      k.mesh(one("fuller", (f) => rounded(0.0095, 0.36, 0.01, 0.003, f)), "iron", 0, 0.28, 0, 1, 1, 1, sword);
-      // A kite shield on the far arm: the side's colour, a gold rim and cross, an iron boss.
       const shield = pivot(p.off, 0.08, 0.3, 0.36);
       shield.rotation.y = 0.35;
-      k.mesh(one("kite3", (f) => kiteShield(f)), team, 0, 0, 0, 1, 1, 1, shield);
-      k.mesh(one("kiterim", (f) => kiteRim(f)), "gold", 0, 0, 0, 1, 1, 1, shield);
-      k.mesh(one("boss", (f) => new T.SphereGeometry(0.05, cuts(f, 10, 6), cuts(f, 6, 4), 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2)), "iron", 0, 0.1, 0.03, 1, 1, 1, shield);
-      k.mesh(one("kitecross", (f) => merge([rounded(0.035, 0.38, 0.008, 0.004, f), rounded(0.22, 0.035, 0.008, 0.004, f).translate(0, 0.12, 0)])), "gold", 0, -0.02, 0.026, 1, 1, 1, shield);
+      if (!sculptedWeapon(k, "w10", side, { sword, shield })) {
+        k.mesh(one("grip", (f) => lathe([[0.0, -0.05], [0.017, -0.05], [0.019, 0.0], [0.017, 0.05], [0.0, 0.05]], cuts(f, 8, 5))), "leatherDark", 0, 0, 0, 1, 1, 1, sword);
+        k.mesh(one("pommel", (f) => ellipsoid(0.026, 0.022, 0.026, cuts(f, 8, 5), cuts(f, 6, 4))), "brass", 0, -0.065, 0, 1, 1, 1, sword);
+        k.mesh(one("guard", (f) => rounded(0.026, 0.022, 0.18, 0.009, f)), "brass", 0, 0.06, 0, 1, 1, 1, sword);
+        k.mesh(one("blade", (f) => slab([[-0.024, 0], [0.024, 0], [0.019, 0.5], [0, 0.58], [-0.019, 0.5]], 0.008, 0.003, cuts(f, 2, 1)).rotateY(Math.PI / 2)), "steel", 0, 0.07, 0, 1, 1, 1, sword);
+        k.mesh(one("fuller", (f) => rounded(0.0095, 0.36, 0.01, 0.003, f)), "iron", 0, 0.28, 0, 1, 1, 1, sword);
+        // A kite shield on the far arm: the side's colour, a gold rim and cross, an iron boss.
+        k.mesh(one("kite3", (f) => kiteShield(f)), team, 0, 0, 0, 1, 1, 1, shield);
+        k.mesh(one("kiterim", (f) => kiteRim(f)), "gold", 0, 0, 0, 1, 1, 1, shield);
+        k.mesh(one("boss", (f) => new T.SphereGeometry(0.05, cuts(f, 10, 6), cuts(f, 6, 4), 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2)), "iron", 0, 0.1, 0.03, 1, 1, 1, shield);
+        k.mesh(one("kitecross", (f) => merge([rounded(0.035, 0.38, 0.008, 0.004, f), rounded(0.22, 0.035, 0.008, 0.004, f).translate(0, 0.12, 0)])), "gold", 0, -0.02, 0.026, 1, 1, 1, shield);
+      }
     } else if (kind === 1) {
       // A longbow: a curved stave, its string, a leather grip.
       const bow = (weapon = pivot(p.off, 0.05, 0.0, 0.02, "weapon"));
-      k.mesh(one("bowstave", (f) => tube([new T.Vector3(-0.03, -0.46, 0), new T.Vector3(0.06, -0.36, 0), new T.Vector3(0.14, -0.18, 0), new T.Vector3(0.165, 0, 0), new T.Vector3(0.14, 0.18, 0), new T.Vector3(0.06, 0.36, 0), new T.Vector3(-0.03, 0.46, 0)], 0.016, 0.016, cuts(f, 18, 8), cuts(f, 6, 4))), "wood", 0, 0, 0, 1, 1, 1, bow);
-      k.mesh(one("bowstring", (f) => new T.CylinderGeometry(0.003, 0.003, 0.92, 3).translate(-0.03, 0, 0)), "rope", 0, 0, 0, 1, 1, 1, bow);
-      k.mesh(one("bowgrip", (f) => new T.CylinderGeometry(0.022, 0.022, 0.09, cuts(f, 8, 5)).translate(0.165, 0, 0)), "leather", 0, 0, 0, 1, 1, 1, bow);
+      if (!sculptedWeapon(k, "w11", side, { bow })) {
+        k.mesh(one("bowstave", (f) => tube([new T.Vector3(-0.03, -0.46, 0), new T.Vector3(0.06, -0.36, 0), new T.Vector3(0.14, -0.18, 0), new T.Vector3(0.165, 0, 0), new T.Vector3(0.14, 0.18, 0), new T.Vector3(0.06, 0.36, 0), new T.Vector3(-0.03, 0.46, 0)], 0.016, 0.016, cuts(f, 18, 8), cuts(f, 6, 4))), "wood", 0, 0, 0, 1, 1, 1, bow);
+        k.mesh(one("bowstring", (f) => new T.CylinderGeometry(0.003, 0.003, 0.92, 3).translate(-0.03, 0, 0)), "rope", 0, 0, 0, 1, 1, 1, bow);
+        k.mesh(one("bowgrip", (f) => new T.CylinderGeometry(0.022, 0.022, 0.09, cuts(f, 8, 5)).translate(0.165, 0, 0)), "leather", 0, 0, 0, 1, 1, 1, bow);
+      }
       muzzle = pivot(bow, 0.2, 0, 0, "muzzle");
     } else {
       // The knight's lance: a long tapering shaft, a vamplate in the side's colour, a steel point.
       const lance = pivot(hand, 0, 0, 0);
       lance.rotation.z = -Math.PI / 2;
-      k.mesh(one("lanceshaft", (f) => lathe([[0.0, -0.3], [0.03, -0.28], [0.045, -0.05], [0.04, 0.2], [0.016, 1.33], [0.0, 1.34]], cuts(f, 10, 6))), "wood", 0, 0, 0, 1, 1, 1, lance);
-      k.mesh(one("vamplate", (f) => lathe([[0.0, -0.02], [0.03, -0.02], [0.09, 0.1], [0.085, 0.11], [0.0, 0.11]], cuts(f, 12, 6))), team, 0, 0.05, 0, 1, 1, 1, lance);
-      k.mesh(one("lancetip", (f) => new T.ConeGeometry(0.026, 0.13, cuts(f, 6, 4))), "steel", 0, 1.39, 0, 1, 1, 1, lance);
+      if (!sculptedWeapon(k, "w12", side, { lance })) {
+        k.mesh(one("lanceshaft", (f) => lathe([[0.0, -0.3], [0.03, -0.28], [0.045, -0.05], [0.04, 0.2], [0.016, 1.33], [0.0, 1.34]], cuts(f, 10, 6))), "wood", 0, 0, 0, 1, 1, 1, lance);
+        k.mesh(one("vamplate", (f) => lathe([[0.0, -0.02], [0.03, -0.02], [0.09, 0.1], [0.085, 0.11], [0.0, 0.11]], cuts(f, 12, 6))), team, 0, 0.05, 0, 1, 1, 1, lance);
+        k.mesh(one("lancetip", (f) => new T.ConeGeometry(0.026, 0.13, cuts(f, 6, 4))), "steel", 0, 1.39, 0, 1, 1, 1, lance);
+      }
     }
   } else if (era === 2) {
     // A musket (its side outline cut and pushed out): a stock with its butt and wrist, a long barrel bound with brass,
     // a lock with its hammer, a ramrod beneath; the fusilier's bayonet.
     const gun = (weapon = pivot(hand, 0, 0, 0, "weapon"));
     gun.rotation.z = -Math.PI / 2;
-    k.mesh(one("musketstock", (f) => slab([[-0.2, -0.075], [-0.2, 0.025], [-0.05, 0.012], [0.07, 0.014], [0.62, 0.008], [0.62, -0.012], [0.08, -0.02], [0.02, -0.035], [-0.06, -0.075]], 0.045, 0.01, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "wood", 0, 0, 0, 1, 1, 1, gun);
-    k.mesh(one("musketbarrel", (f) => lathe([[0.0, 0.0], [0.016, 0.0], [0.015, 0.4], [0.012, 0.82], [0.0, 0.822]], cuts(f, 8, 5))), "dark", -0.022, 0.0, 0, 1, 1, 1, gun);
-    if (k.rich) k.mesh(one("lock", (f) => rounded(0.03, 0.06, 0.01, 0.003, f)), "steel", -0.005, 0.07, 0.026, 1, 1, 1, gun);
-    if (k.rich) k.mesh(one("hammer", (f) => rounded(0.03, 0.012, 0.008, 0.003, f)), "dark", -0.03, 0.05, 0.026, 1, 1, 1, gun).rotation.z = 0.5;
-    if (k.rich) for (const y of [0.32, 0.5, 0.6]) k.mesh(one("band", (f) => new T.TorusGeometry(0.02, 0.004, 3, cuts(f, 10, 6)).rotateX(Math.PI / 2)), "brass", -0.014, y, 0, 1, 1, 1, gun);
-    k.mesh("cyl", "dark", 0.01, 0.42, 0, 0.004, 0.38, 0.004, gun);
-    if (kind === 0) k.mesh(one("bayonet", (f) => slab([[-0.006, 0], [0.006, 0], [0, 0.22]], 0.006, 0.002, 1).rotateY(Math.PI / 2)), "steel", -0.036, 0.8, 0, 1, 1, 1, gun);
+    if (!sculptedWeapon(k, `w2${kind === 0 ? 0 : 1}`, side, { gun })) {
+      k.mesh(one("musketstock", (f) => slab([[-0.2, -0.075], [-0.2, 0.025], [-0.05, 0.012], [0.07, 0.014], [0.62, 0.008], [0.62, -0.012], [0.08, -0.02], [0.02, -0.035], [-0.06, -0.075]], 0.045, 0.01, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "wood", 0, 0, 0, 1, 1, 1, gun);
+      k.mesh(one("musketbarrel", (f) => lathe([[0.0, 0.0], [0.016, 0.0], [0.015, 0.4], [0.012, 0.82], [0.0, 0.822]], cuts(f, 8, 5))), "dark", -0.022, 0.0, 0, 1, 1, 1, gun);
+      if (k.rich) k.mesh(one("lock", (f) => rounded(0.03, 0.06, 0.01, 0.003, f)), "steel", -0.005, 0.07, 0.026, 1, 1, 1, gun);
+      if (k.rich) k.mesh(one("hammer", (f) => rounded(0.03, 0.012, 0.008, 0.003, f)), "dark", -0.03, 0.05, 0.026, 1, 1, 1, gun).rotation.z = 0.5;
+      if (k.rich) for (const y of [0.32, 0.5, 0.6]) k.mesh(one("band", (f) => new T.TorusGeometry(0.02, 0.004, 3, cuts(f, 10, 6)).rotateX(Math.PI / 2)), "brass", -0.014, y, 0, 1, 1, 1, gun);
+      k.mesh("cyl", "dark", 0.01, 0.42, 0, 0.004, 0.38, 0.004, gun);
+      if (kind === 0) k.mesh(one("bayonet", (f) => slab([[-0.006, 0], [0.006, 0], [0, 0.22]], 0.006, 0.002, 1).rotateY(Math.PI / 2)), "steel", -0.036, 0.8, 0, 1, 1, 1, gun);
+    }
     muzzle = pivot(gun, -0.022, 0.83, 0, "muzzle");
   } else {
     const gun = (weapon = pivot(hand, 0, 0, 0, "weapon"));
     gun.rotation.z = -Math.PI / 2;
     if (kind === 0) {
       // A rifle: stock, pistol grip, receiver with its sight rail, a curved magazine, a handguard and a muzzle device.
-      k.mesh(one("rifle", (f) => slab([[-0.2, -0.06], [-0.2, 0.02], [-0.02, 0.03], [0.24, 0.03], [0.24, -0.01], [0.05, -0.02], [0.02, -0.06], [-0.02, -0.02], [-0.1, -0.03]], 0.04, 0.008, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "black", 0, 0, 0, 1, 1, 1, gun);
-      k.mesh(one("handguard", (f) => rounded(0.045, 0.16, 0.045, 0.012, f)), "oliveDark", -0.008, 0.32, 0, 1, 1, 1, gun);
-      k.mesh(one("mag", (f) => slab([[0, 0], [0.05, 0], [0.065, -0.1], [0.02, -0.11]], 0.025, 0.004, 1).rotateZ(Math.PI / 2)), "black", 0.03, 0.12, 0, 1, 1, 1, gun);
-      k.mesh(one("riflebarrel", (f) => lathe([[0.0, 0.0], [0.009, 0.0], [0.009, 0.14], [0.013, 0.15], [0.013, 0.19], [0.0, 0.192]], cuts(f, 8, 5))), "dark", -0.01, 0.38, 0, 1, 1, 1, gun);
-      k.mesh(one("sight", (f) => rounded(0.025, 0.06, 0.02, 0.005, f)), "dark", -0.045, 0.12, 0, 1, 1, 1, gun);
+      if (!sculptedWeapon(k, "w30", side, { gun })) {
+        k.mesh(one("rifle", (f) => slab([[-0.2, -0.06], [-0.2, 0.02], [-0.02, 0.03], [0.24, 0.03], [0.24, -0.01], [0.05, -0.02], [0.02, -0.06], [-0.02, -0.02], [-0.1, -0.03]], 0.04, 0.008, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "black", 0, 0, 0, 1, 1, 1, gun);
+        k.mesh(one("handguard", (f) => rounded(0.045, 0.16, 0.045, 0.012, f)), "oliveDark", -0.008, 0.32, 0, 1, 1, 1, gun);
+        k.mesh(one("mag", (f) => slab([[0, 0], [0.05, 0], [0.065, -0.1], [0.02, -0.11]], 0.025, 0.004, 1).rotateZ(Math.PI / 2)), "black", 0.03, 0.12, 0, 1, 1, 1, gun);
+        k.mesh(one("riflebarrel", (f) => lathe([[0.0, 0.0], [0.009, 0.0], [0.009, 0.14], [0.013, 0.15], [0.013, 0.19], [0.0, 0.192]], cuts(f, 8, 5))), "dark", -0.01, 0.38, 0, 1, 1, 1, gun);
+        k.mesh(one("sight", (f) => rounded(0.025, 0.06, 0.02, 0.005, f)), "dark", -0.045, 0.12, 0, 1, 1, 1, gun);
+      }
       muzzle = pivot(gun, -0.01, 0.58, 0, "muzzle");
     } else {
       // A machine gun: its receiver, a perforated barrel jacket, the barrel, a carrying handle, a bipod folded under,
       // a belt of rounds and an ammunition box on the hip.
-      k.mesh(one("mgbody", (f) => slab([[-0.2, -0.05], [-0.2, 0.03], [0.3, 0.035], [0.3, -0.03], [0.05, -0.035], [0.02, -0.08], [-0.03, -0.035]], 0.06, 0.01, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "black", 0, 0, 0, 1, 1, 1, gun);
-      k.mesh(one("jacket", (f) => lathe([[0.0, 0.0], [0.03, 0.0], [0.03, 0.24], [0.024, 0.26], [0.0, 0.262]], cuts(f, 10, 6))), "dark", -0.005, 0.3, 0, 1, 1, 1, gun);
-      if (k.rich) for (let i = 0; i < 4; i++) k.mesh(one("vent", (f) => new T.TorusGeometry(0.03, 0.004, 3, cuts(f, 10, 6)).rotateX(Math.PI / 2)), "black", -0.005, 0.34 + i * 0.05, 0, 1, 1, 1, gun);
-      k.mesh(one("mgbarrel", (f) => lathe([[0.0, 0.0], [0.011, 0.0], [0.011, 0.18], [0.0, 0.182]], cuts(f, 8, 5))), "black", -0.005, 0.56, 0, 1, 1, 1, gun);
-      k.mesh(one("handle", (f) => new T.TorusGeometry(0.04, 0.006, 3, cuts(f, 10, 6), Math.PI)), "black", -0.045, 0.2, 0, 1, 1, 1, gun).rotation.z = Math.PI / 2;
-      for (const z of [-0.03, 0.03]) k.mesh("cyl", "dark", 0.04, 0.56, z, 0.006, 0.2, 0.006, gun).rotation.z = z > 0 ? 0.2 : -0.2;
-      if (k.rich) for (let i = 0; i < 6; i++) k.mesh(one("round", (f) => new T.CylinderGeometry(0.006, 0.007, 0.03, cuts(f, 6, 4)).rotateX(Math.PI / 2)), "brass", 0.04 + i * 0.012, 0.1 - i * 0.03, 0.04, 1, 1, 1, gun);
+      if (!sculptedWeapon(k, "w31", side, { gun })) {
+        k.mesh(one("mgbody", (f) => slab([[-0.2, -0.05], [-0.2, 0.03], [0.3, 0.035], [0.3, -0.03], [0.05, -0.035], [0.02, -0.08], [-0.03, -0.035]], 0.06, 0.01, cuts(f, 2, 1)).rotateZ(Math.PI / 2)), "black", 0, 0, 0, 1, 1, 1, gun);
+        k.mesh(one("jacket", (f) => lathe([[0.0, 0.0], [0.03, 0.0], [0.03, 0.24], [0.024, 0.26], [0.0, 0.262]], cuts(f, 10, 6))), "dark", -0.005, 0.3, 0, 1, 1, 1, gun);
+        if (k.rich) for (let i = 0; i < 4; i++) k.mesh(one("vent", (f) => new T.TorusGeometry(0.03, 0.004, 3, cuts(f, 10, 6)).rotateX(Math.PI / 2)), "black", -0.005, 0.34 + i * 0.05, 0, 1, 1, 1, gun);
+        k.mesh(one("mgbarrel", (f) => lathe([[0.0, 0.0], [0.011, 0.0], [0.011, 0.18], [0.0, 0.182]], cuts(f, 8, 5))), "black", -0.005, 0.56, 0, 1, 1, 1, gun);
+        k.mesh(one("handle", (f) => new T.TorusGeometry(0.04, 0.006, 3, cuts(f, 10, 6), Math.PI)), "black", -0.045, 0.2, 0, 1, 1, 1, gun).rotation.z = Math.PI / 2;
+        for (const z of [-0.03, 0.03]) k.mesh("cyl", "dark", 0.04, 0.56, z, 0.006, 0.2, 0.006, gun).rotation.z = z > 0 ? 0.2 : -0.2;
+        if (k.rich) for (let i = 0; i < 6; i++) k.mesh(one("round", (f) => new T.CylinderGeometry(0.006, 0.007, 0.03, cuts(f, 6, 4)).rotateX(Math.PI / 2)), "brass", 0.04 + i * 0.012, 0.1 - i * 0.03, 0.04, 1, 1, 1, gun);
+      }
       k.mesh(one("ammobox", (f) => rounded(0.1, 0.1, 0.08, 0.012, f)), "olive", -0.07, 0.03, 0.17, 1, 1, 1, p.chest);
       muzzle = pivot(gun, -0.005, 0.75, 0, "muzzle");
     }
@@ -870,6 +1048,21 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     f.strike = p.arms[1];
     f.style = kind === 0 ? "swing" : era === 0 ? "throw" : "shoot";
     if (era === 1 && kind === 1) f.strike = p.arms[0];
+  } else if (era < 2 && k.sculpt && sculptedModel(`b${era}`)) {
+    // The mount as Blender sculpted it, its rider (and the knight's pennant) as before.
+    const beast = sculptedBeast(k, body, era, side, f)!;
+    const rider = pivot(beast, -0.05, era === 0 ? 1.36 : 0.78, 0);
+    const { p } = soldier(k, rider, era, 2, side, era === 0 ? 0.82 : 0.9, true);
+    if (era === 1) {
+      const pennant = pivot(p.hand, 0.0, 0.0, 0.0, "flap");
+      k.mesh(one("pennant", (fine) => slab([[0, 0], [0.34, -0.04], [0.26, -0.08], [0.34, -0.13], [0, -0.13]], 0.006, 0.002, cuts(fine, 1, 1))), team, 1.0, -0.01, 0, 1, 1, 1, pennant);
+      f.flaps.push(pennant);
+    }
+    f.arms = p.arms;
+    f.elbows = p.elbows;
+    f.style = "trample";
+    f.stride = era === 0 ? 1.1 : 1.25;
+    tall = era === 0 ? 2.6 : 2.25;
   } else if (era === 0) {
     // A woolly mammoth: a humped body hung with long shaggy hair, a domed head with flapping ears, curling tusks, a
     // trunk that swings; its rider on a blanket in the side's colour.
@@ -954,6 +1147,42 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     f.style = "trample";
     f.stride = 1.25;
     tall = 2.25;
+  } else if (k.sculpt && sculptedModel(`m${era}`)) {
+    // The machine as Blender modelled it: each part on its pivot (the body, each wheel, the turret, the gun).
+    const model = sculptedModel(`m${era}`)!,
+      beast = pivot(body, 0, 0, 0, "beast"),
+      joint: Record<string, T.Object3D> = {};
+    if (era === 2) {
+      joint.gun = beast;
+      [-0.37, 0.37].forEach((z, i) => f.wheels.push((joint[`wheel${i}`] = pivot(beast, 0.1, 0.42, z, "wheel"))));
+      const barrel = (joint.strike = pivot(beast, 0.1, 0.72, 0, "strike"));
+      barrel.rotation.z = 0.1;
+      f.muzzle = pivot(barrel, 0.96, 0, 0, "muzzle");
+      f.strike = barrel;
+      skinOn(k, model, `m${era}`, side, beast, joint);
+      const gunner = pivot(body, -1.0, 0, 0.14);
+      const { p } = soldier(k, gunner, 2, 1, side, 0.95);
+      Object.assign(f, { legs: p.legs, knees: p.knees, arms: p.arms, elbows: p.elbows, chest: p.chest });
+      f.stride = 0.5;
+      tall = 1.7;
+    } else {
+      joint.tank = beast;
+      f.chest = pivot(beast, 0, 0, 0, "still");
+      for (const z of [-0.42, 0.42]) track.push(k.mesh(one("trackLoop", trackLoop), "track", 0, 0.27, z, 1, 1, 1, beast));
+      // (The wheels in the order the model names them: the road wheels of the far side and the near, then the sprockets.)
+      const at: [number, number, number][] = [];
+      for (const z of [-1, 1]) for (let s = 0; s < 5; s++) at.push([-0.72 + s * 0.36, 0.22, z * 0.525]);
+      for (const z of [-1, 1]) for (const x of [-0.98, 0.98]) at.push([x, 0.27, z * 0.525]);
+      at.forEach(([x, y, z], i) => f.wheels.push((joint[`w${i}`] = pivot(beast, x, y, z, "wheel"))));
+      const turret = (joint.turret = pivot(beast, -0.1, 0.84, 0, "turret")),
+        barrel = (joint.strike = pivot(turret, 0.46, 0.13, 0, "strike"));
+      f.muzzle = pivot(barrel, 1.42, 0, 0, "muzzle");
+      f.strike = barrel;
+      skinOn(k, model, `m${era}`, side, beast, joint);
+      f.stride = 0.9;
+      tall = 1.9;
+    }
+    f.style = "barrel";
   } else if (era === 2) {
     // A field gun: a bronze barrel on a wooden trail carriage with two spoked wheels shod in iron, its rammer and
     // bucket; a gunner behind it.
@@ -1040,6 +1269,7 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     joints: T.Group[] = [];
   root.traverse((o) => {
     if (o instanceof T.Group) joints.push(o);
+    if (o instanceof T.SkinnedMesh) keep.add(o);
   });
   for (const o of joints) {
     const held = o.children.filter((c) => keep.has(c));
@@ -1051,8 +1281,6 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     for (const c of held) o.add(c);
   }
   for (const t of track) t.name = `track#${named++}`;
-  // Blender's baked shade in the vertices of every part (`baked.ts`, tools/blender/erawar/ao.py).
-  k.shade?.apply(root, era, kind);
   // Where the processor draws, the figure casts no shadow of its own (a shadow pass costs every part a second draw):
   // a soft patch on the ground under it stands for it.
   if (!k.rich) {
@@ -1077,6 +1305,14 @@ function cloneFigure(k: Kit, t: Figure): Figure {
     if (o.name) byName.set(o.name, o);
   });
   const find = <O extends T.Object3D>(o: O | null) => (o ? (byName.get(o.name) as O) : null);
+  // A sculpted person's skin moves with this clone's own joints.
+  const skeletons = new Map<T.Skeleton, T.Skeleton>();
+  root.traverse((o) => {
+    if (!(o instanceof T.SkinnedMesh)) return;
+    let s = skeletons.get(o.skeleton);
+    if (!s) skeletons.set(o.skeleton, (s = k.own(new T.Skeleton(o.skeleton.bones.map((b) => byName.get(b.name) as T.Bone), o.skeleton.boneInverses))));
+    o.bind(s, o.bindMatrix);
+  });
   const list = (os: T.Object3D[]) => os.map((o) => byName.get(o.name)!);
   const f: Figure = {
     ...t,
