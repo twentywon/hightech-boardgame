@@ -7,12 +7,15 @@ import { BASE_X } from "./sim";
  * between the bases (`EDGE`: the farthest a view reaches, just past a base's back). The ground lies `road` of the way
  * down the canvas: higher on a touch screen, whose command bar covers the bottom.
  */
-export const LEAST = 12.5,
-  MOST = 24,
-  /** World height a view shows for a screen of shape 1:1 … at least this much is always in view, so a base fits. */
-  TALL = 9.6,
+export const LEAST = 10.5,
+  MOST = 22,
+  /**
+   * World height a view shows for a screen of shape 1:1 … at least this much is always in view, so a base fits. (Closer
+   * than it was, 9.6, since the soldiers are artist-made: they read at this size.)
+   */
+  TALL = 7.8,
   /** A touch screen (its command bar over the bottom) looks a little closer. */
-  TALL_TOUCH = 8.4,
+  TALL_TOUCH = 7.0,
   TILT = 0.11,
   EDGE = BASE_X + 3;
 export interface Frame {

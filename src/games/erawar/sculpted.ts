@@ -2,11 +2,12 @@ import * as T from "three";
 import type { Own } from "../goldraid/paint";
 
 /**
- * 시대 전쟁's people as Blender sculpted them (tools/blender/erawar/units, README.md there): for each era and kind one
- * GLB with a primitive per paint, every vertex carrying the two joints that move it (the body, a leg and its knee, the
- * chest, the head, an arm and its elbow) and Cycles' baked light. The game skins them on its own jointed pivots, so
- * that a limb bends at the knee or the elbow without a gap, and paints each with its own paint (the side's colour on
- * the coat, the photographed stuffs on cloth, leather and steel).
+ * 시대 전쟁's units as Blender made them. The mounts, machines and weapons Blender sculpted (tools/blender/erawar/units,
+ * README.md there): one GLB per unit with a primitive per game paint, every vertex carrying the two joints that move
+ * it and Cycles' baked light; the game skins them on its own jointed pivots and paints each with its own paint. The
+ * people are artist-made (tools/blender/erawar/assets: Quaternius' CC0 base characters and outfits, see
+ * public/models-license.txt): the same kind of GLB, but each part wears the pack's own picture (or a game paint for
+ * what Blender added), and its vertices carry that picture's colour for each side as well, for the processor's draw.
  */
 const files = import.meta.glob<string>("../../assets/models/erawar/units/*.glb", { query: "?inline", import: "default", eager: true });
 
@@ -21,15 +22,22 @@ export interface SculptedPart {
   weights: Float32Array;
   light: Uint8Array;
   index: Uint16Array | Uint32Array;
+  /** An artist-made person's: its picture's colour at each vertex, for side 0 and side 1 (RGBA, sRGB). */
+  colors?: [Uint8Array, Uint8Array];
+  /** Its picture takes the side's colour (a variant per side), and a tint over the picture (the hair's). */
+  team?: boolean;
+  tint?: number[];
 }
 export interface Sculpted {
   bones: string[];
   parts: SculptedPart[];
+  /** An artist-made person's joints (where its bones' heads are, in the figure's frame). */
+  joints?: Record<string, [number, number, number]>;
 }
 
 interface Doc {
-  asset: { extras?: { bones?: string[] } };
-  nodes: { name: string; mesh: number; extras: { lo: number[]; hi: number[] } }[];
+  asset: { extras?: { bones?: string[]; joints?: Record<string, [number, number, number]> } };
+  nodes: { name: string; mesh: number; extras: { lo: number[]; hi: number[]; team?: boolean; tint?: number[] } }[];
   meshes: { primitives: { attributes: Record<string, number>; indices: number }[] }[];
   accessors: { bufferView: number; componentType: number; count: number; type: string }[];
   bufferViews: { byteOffset?: number; byteLength: number; byteStride?: number }[];
@@ -113,16 +121,78 @@ export function readSculpted(data: Uint8Array): Sculpted {
       light[i * 3] = light[i * 3 + 1] = light[i * 3 + 2] = s[i * 4 + 3];
     }
     const ix = read(p.indices),
-      index = n > 65535 ? new Uint32Array(ix.out) : new Uint16Array(ix.out);
-    return { paint: node.name, position, normal, uv, joints, weights, light, index };
+      index = n > 65535 ? new Uint32Array(ix.out) : new Uint16Array(ix.out),
+      c0 = p.attributes.COLOR_0,
+      c1 = p.attributes.COLOR_1 ?? c0,
+      colors = c0 === undefined ? undefined : ([new Uint8Array(read(c0).out), new Uint8Array(read(c1).out)] as [Uint8Array, Uint8Array]);
+    return { paint: node.name, position, normal, uv, joints, weights, light, index, colors, team: node.extras.team, tint: node.extras.tint };
   });
-  return { bones: doc.asset.extras?.bones ?? [], parts };
+  return { bones: doc.asset.extras?.bones ?? [], parts, joints: doc.asset.extras?.joints };
 }
 
+const people = import.meta.glob<string>("../../assets/models/erawar/people/*.glb", { query: "?inline", import: "default", eager: true }),
+  pictures = import.meta.glob<string>("../../assets/models/erawar/people/tex/*.webp", { query: "?inline", import: "default", eager: true });
 const cache = new Map<string, Sculpted | null>();
-/** The person Blender sculpted for an era and kind (null when there is none). */
-export const sculptedPerson = (era: number, kind: number) => sculptedModel(`p${era}${kind}`);
-/** A unit Blender sculpted, by its file's name: p<era><kind> a person, b0 the mammoth, b1 the horse. */
+/**
+ * A person made from artist-made models (tools/blender/erawar/assets/people.py: Quaternius' CC0 base characters and
+ * outfits), lit (`lo` false) or thinned for the processor's drawing. Null when there is none.
+ */
+export function artistPerson(era: number, kind: number, lo: boolean): Sculpted | null {
+  const key = `a${era}${kind}${lo ? "l" : ""}`;
+  if (!cache.has(key)) {
+    const url = Object.entries(people).find(([path]) => path.endsWith(`/${key}.glb`))?.[1];
+    cache.set(key, url ? readSculpted(bytes(url)) : null);
+  }
+  return cache.get(key)!;
+}
+const images = new Map<string, HTMLImageElement>();
+/** One of the people's pictures (sRGB), loaded once (the texture updates itself when its picture has come). */
+export function personPicture(own: Own, name: string): T.Texture {
+  const url = Object.entries(pictures).find(([path]) => path.endsWith(`/${name}.webp`))?.[1];
+  const map = own(new T.Texture());
+  map.colorSpace = T.SRGBColorSpace;
+  map.flipY = false;
+  map.anisotropy = 4;
+  if (!url || typeof Image === "undefined") return map;
+  let image = images.get(name);
+  if (!image) {
+    image = new Image();
+    image.src = url;
+    images.set(name, image);
+  }
+  map.image = image;
+  if (image.complete && image.naturalWidth) map.needsUpdate = true;
+  else image.addEventListener("load", () => (map.needsUpdate = true), { once: true });
+  return map;
+}
+/**
+ * An artist-made part's shape: with `side` its picture's colour (that side's) times the baked light in its vertices,
+ * for one merged vertex-coloured draw; without, the light alone (its picture does the rest).
+ */
+export function personGeometry(own: Own, p: SculptedPart, side?: number, paint?: T.Color) {
+  const g = new T.BufferGeometry();
+  g.setAttribute("position", new T.BufferAttribute(p.position, 3));
+  g.setAttribute("normal", new T.BufferAttribute(p.normal, 3));
+  g.setAttribute("uv", new T.BufferAttribute(p.uv, 2));
+  g.setAttribute("skinIndex", new T.BufferAttribute(p.joints, 4));
+  g.setAttribute("skinWeight", new T.BufferAttribute(p.weights, 4));
+  const n = p.light.length / 3;
+  if (side === undefined) g.setAttribute("color", new T.BufferAttribute(p.light, 3, true));
+  else {
+    const rgb = new Float32Array(n * 3),
+      c = p.colors?.[side],
+      lin = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    for (let i = 0; i < n; i++) {
+      const l = p.light[i * 3] / 255;
+      for (let k = 0; k < 3; k++) rgb[i * 3 + k] = (c && !paint ? lin(c[i * 4 + k] / 255) * (p.tint?.[k] ?? 1) : (paint ? [paint.r, paint.g, paint.b][k] : 1)) * l;
+    }
+    g.setAttribute("color", new T.BufferAttribute(rgb, 3));
+  }
+  g.setIndex(new T.BufferAttribute(p.index, 1));
+  g.computeBoundingSphere();
+  return own(g);
+}
+/** A unit Blender sculpted, by its file's name: b0 the mammoth, b1 the horse, m2 the gun, m3 the tank, w<era><kind> a weapon. */
 export function sculptedModel(key: string): Sculpted | null {
   if (!cache.has(key)) {
     const url = Object.entries(files).find(([path]) => path.endsWith(`/${key}.glb`))?.[1];

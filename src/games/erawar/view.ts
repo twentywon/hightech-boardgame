@@ -847,7 +847,21 @@ export class EraWarView extends TableView<State> {
       [a, b] = fronts,
       mine = this.mine ?? 0,
       // In my own picture (mirrored for seat 1).
-      focus = a !== null && b !== null ? (a + b) / 2 : a !== null ? a + 2 : b !== null ? b - 2 : (mine === 0 ? -1 : 1) * (BASE_X - 6),
+      wide = this.frame.wide,
+      // (The two fronts' middle; but while they are still far apart, wider than the view, my own front and the way
+      // ahead of it — the closer view would otherwise show only the empty lane between them.)
+      focus =
+        a !== null && b !== null
+          ? b - a > wide * 0.7
+            ? mine === 0
+              ? a + wide * 0.3
+              : b - wide * 0.3
+            : (a + b) / 2
+          : a !== null
+            ? a + 2
+            : b !== null
+              ? b - 2
+              : (mine === 0 ? -1 : 1) * (BASE_X - 6),
       want = clamp(focus * this.flip, -this.reach(), this.reach());
     if (this.keysHeld.size) {
       const way = [...this.keysHeld].reduce((n, k) => n + (k === "KeyA" || k === "ArrowLeft" ? -1 : 1), 0);

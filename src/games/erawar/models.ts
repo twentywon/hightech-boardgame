@@ -2,7 +2,7 @@ import * as T from "three";
 import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
-import { partGeometry, rigidGeometry, sculptedModel, sculptedPerson, type Sculpted } from "./sculpted";
+import { artistPerson, partGeometry, personGeometry, personPicture, rigidGeometry, sculptedModel, type Sculpted } from "./sculpted";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { bark, grain, grained } from "../../engine/grain";
 import { made, skin as poreRelief, smooth } from "../../engine/lifelike";
@@ -433,44 +433,98 @@ function person(k: Kit, parent: T.Object3D, o: Dress): Person {
   return { body, chest, legs, knees, arms, elbows, head, hand, off };
 }
 /**
- * A person as Blender sculpted it (`sculpted.ts`), clothes, hair and headgear and all, skinned on the same joints as
- * `person` makes (so poses and the weapons in its hands are the same). Null when there is no such model.
+ * A person made from artist-made models (`artistPerson`: Quaternius' CC0 base characters and outfits, its pictures
+ * and all), skinned on joints placed where its own bones are (so its arms hang and bend where its shoulders and elbows
+ * are). A rider's seat is kept where the code's hips were. Null when there is no such model.
  */
-function sculptedBody(k: Kit, parent: T.Object3D, era: number, kind: number, side: number, scale: number, sitting: boolean): Person | null {
-  const model = sculptedPerson(era, kind);
-  if (!model) return null;
+function artistBody(k: Kit, parent: T.Object3D, era: number, kind: number, side: number, scale: number, sitting: boolean): Person | null {
+  const model = artistPerson(era, kind, !k.rich),
+    j = model?.joints;
+  if (!model || !j) return null;
   const body = pivot(parent, 0, 0, 0);
   body.scale.setScalar(scale);
+  // (Seated, its hips where the code's figure had them, 0.56 m up.)
+  if (sitting) body.position.y = (0.56 - j.leg0[1]) * scale;
+  const rel = (a: [number, number, number], b: [number, number, number] = [0, 0, 0]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]] as const;
   const legs: T.Group[] = [],
     knees: T.Group[] = [],
     arms: T.Group[] = [],
     elbows: T.Group[] = [];
-  for (const z of [-0.085, 0.085]) {
-    const leg = pivot(body, 0, 0.56, z, "leg");
+  for (const i of [0, 1]) {
+    const leg = pivot(body, ...rel(j[`leg${i}`]), "leg");
     legs.push(leg);
-    knees.push(pivot(leg, 0, -0.28, 0, "knee"));
+    knees.push(pivot(leg, ...rel(j[`knee${i}`], j[`leg${i}`]), "knee"));
   }
-  const chest = pivot(body, 0, 0.62, 0, "chest"),
-    head = pivot(chest, 0.01, 0.52, 0, "head");
+  const chest = pivot(body, ...rel(j.chest), "chest"),
+    head = pivot(chest, ...rel(j.head, j.chest), "head");
   let hand = chest,
     off = chest;
-  for (const z of [-0.19, 0.19]) {
-    const arm = pivot(chest, 0, 0.34, z, "arm"),
-      elbow = pivot(arm, 0, -0.21, 0, "elbow"),
-      grip = pivot(elbow, 0, -0.2, z > 0 ? 0.02 : -0.02, "hand");
+  for (const i of [0, 1]) {
+    const arm = pivot(chest, ...rel(j[`arm${i}`], j.chest), "arm"),
+      elbow = pivot(arm, ...rel(j[`elbow${i}`], j[`arm${i}`]), "elbow"),
+      grip = pivot(elbow, ...rel(j[`hand${i}`], j[`elbow${i}`]), "hand");
     arms.push(arm);
     elbows.push(elbow);
-    if (z > 0) hand = grip;
+    if (i === 1) hand = grip;
     else off = grip;
   }
   const joint: Record<string, T.Object3D> = { body, leg0: legs[0], knee0: knees[0], leg1: legs[1], knee1: knees[1], chest, head, arm0: arms[0], elbow0: elbows[0], arm1: arms[1], elbow1: elbows[1] };
-  skinOn(k, model, `p${era}${kind}`, side, body, joint);
+  skinArtist(k, model, `a${era}${kind}`, side, body, joint);
   if (sitting)
     for (let i = 0; i < 2; i++) {
       legs[i].rotation.z = Math.PI / 2.3;
       knees[i].rotation.z = -Math.PI / 2.2;
     }
   return { body, chest, legs, knees, arms, elbows, head, hand, off };
+}
+/** The people's picture paints (one per picture, side and tint), lit by the vertices' baked light. */
+const pictured = new WeakMap<Kit, Map<string, T.Material>>();
+function picturePaint(k: Kit, name: string, tint?: number[]) {
+  let byKit = pictured.get(k);
+  if (!byKit) pictured.set(k, (byKit = new Map()));
+  const key = `${name}:${tint?.join(",") ?? ""}`;
+  let m = byKit.get(key);
+  if (!m) {
+    m = k.own(new T.MeshStandardMaterial({ map: personPicture(k.own, name), vertexColors: true, roughness: name.startsWith("hair") ? 0.6 : 0.82, metalness: 0, color: tint ? new T.Color(...(tint as [number, number, number])) : 0xffffff }));
+    byKit.set(key, m);
+  }
+  return m;
+}
+/**
+ * An artist-made person's skin: with a graphics card a skinned mesh per picture or paint (the side's picture where its
+ * clothes take the side's colour); where the processor draws, its pictures' colours in its vertices, one draw.
+ */
+function skinArtist(k: Kit, model: Sculpted, name: string, side: number, holder: T.Object3D, joint: Record<string, T.Object3D>) {
+  const bones = model.bones.map((b) => joint[b]) as unknown as T.Bone[],
+    paintOf = (p: string) => (p === "team" || p === "teamDark" ? `${p}${side}` : p),
+    meshes: T.SkinnedMesh[] = [];
+  if (k.rich)
+    for (const part of model.parts) {
+      const key = `artist:${name}:${part.paint}`;
+      if (!k.g[key]) k.g[key] = personGeometry(k.own, part);
+      const picture = part.paint.startsWith("tex:") ? part.paint.slice(4) + (part.team ? side : "") : null;
+      meshes.push(new T.SkinnedMesh(k.g[key], picture ? picturePaint(k, picture, part.tint) : k.litPaint(paintOf(part.paint))));
+    }
+  else {
+    const key = `artist:${name}:${side}`;
+    if (!k.g[key]) {
+      const parts = model.parts.map((part) => personGeometry((g) => g, part, side, part.paint.startsWith("tex:") ? undefined : (k.m[paintOf(part.paint)] as T.MeshLambertMaterial).color));
+      k.g[key] = k.own(mergeGeometries(parts)!);
+      for (const g of parts) g.dispose();
+    }
+    meshes.push(new T.SkinnedMesh(k.g[key], k.tinted));
+  }
+  holder.updateWorldMatrix(true, true);
+  const skeleton = k.own(new T.Skeleton(bones));
+  for (const m of meshes) {
+    m.name = `skin#${named++}`;
+    m.castShadow = k.rich;
+    holder.add(m);
+    m.updateWorldMatrix(false, false);
+    m.bind(skeleton, m.matrixWorld);
+    m.boundingSphere = m.geometry.boundingSphere!.clone();
+    m.boundingSphere.radius += 0.35;
+  }
 }
 /**
  * A sculpted model's skin, its paints the kit's (the side's colour where it says "team"), bound to the joints named
@@ -832,7 +886,7 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
           : era === 2
             ? { cloth: team, legs: "white", shin: "black", sleeve: team, boot: "black", style: "crop", tache: kind === 1 }
             : { cloth: "olive", legs: "olive", sleeve: "olive", boot: "black", style: "none", glove: "rubber", high: 0.15 };
-  const sculpted = k.sculpt ? sculptedBody(k, parent, era, kind === 2 ? 0 : kind, side, scale, sitting) : null,
+  const sculpted = k.sculpt ? artistBody(k, parent, era, kind === 2 ? 0 : kind, side, scale, sitting) : null,
     p = sculpted ?? person(k, parent, { ...dress, scale, sitting });
   if (!sculpted) {
     headgear(k, p, era, kind, side);
