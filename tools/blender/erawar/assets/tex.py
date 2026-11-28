@@ -1,6 +1,6 @@
 """
 The pictures 시대 전쟁's people wear (see ../README.md, "Artist-made people"): the packs' own colour maps, cut down to
-1024 px, and the variants the game needs — the peasant's shirt in each side's colour and in olive drab, the ranger's
+1024 px, and the variants the game needs — the peasant's shirt in each side's colour, the ranger's
 greens in each side's colour. Plain Python with Pillow and NumPy (not inside Blender):
 
     python3 tex.py <packs dir> <work dir> <game texture dir>
@@ -95,22 +95,6 @@ def regreen(a, colour):
     return a * (1 - mask[..., None]) + out * mask[..., None]
 
 
-def olive(a):
-    """Linen to olive drab, browns to a darker olive and khaki: a soldier's field dress."""
-    lum = a.mean(-1, keepdims=True)
-    sl = sleeves()[..., None]
-    a = a * (1 - sl) + np.array([0.4, 0.42, 0.26]) * np.clip(lum / 0.26, 0, 1.3) * sl
-    h, s, v = hsv(a)
-    pale = step(0.42, 0.34, s) * step(0.38, 0.48, v) * step(0.08, 0.1, h) * step(0.2, 0.17, h)
-    lum = a.mean(-1, keepdims=True)
-    drab = np.array([0.42, 0.44, 0.27]) * np.clip(lum / 0.55, 0, 1.25)
-    a = a * (1 - pale[..., None]) + drab * pale[..., None]
-    h, s, v = hsv(a)
-    brown = step(0.0, 0.03, h) * step(0.16, 0.12, h) * step(0.18, 0.3, s)
-    out = rgb(np.full_like(h, 0.17), s * 0.75, np.clip(v * 1.05, 0, 1))
-    return a * (1 - brown[..., None]) + out * brown[..., None]
-
-
 def hide(a):
     """The base body's black shorts to a hide wrap's browns (for the stone age)."""
     h, s, v = hsv(a)
@@ -136,5 +120,4 @@ ranger = load(os.path.join(OUT, "T_Ranger_BaseColor.png"))
 for i, c in enumerate(SIDES):
     save(f"peasant{i}", shirt(peasant, hexrgb(c)))
     save(f"ranger{i}", regreen(ranger, hexrgb(c)))
-save("peasantOlive", olive(peasant))
 print("done")

@@ -31,11 +31,27 @@ the people start from free (CC0) artist-made models, the rest from nothing.
 - **The people** (`assets/` → `src/assets/models/erawar/people/a<era><kind>.glb`, `a<era><kind>l.glb` and `tex/*.webp`,
   read by `artistPerson` in `sculpted.ts`, skinned by `artistBody`/`skinArtist` in `models.ts`): Quaternius' CC0
   Universal Base Characters (the body, head, eyes, brows, hair, beard) in his Modular Character Outfits - Fantasy
-  (the peasant's and the ranger's), credited in `public/models-license.txt`.
+  (the peasant's and the ranger's) or, in the gunpowder and modern eras, in uniforms made from that body (`uniform.py`), credited in `public/models-license.txt`.
   - `tex.py` (plain Python, Pillow): the packs' colour maps at 1024 px, the peasant's dark browns lifted a little,
     his pale shirt and his sleeves (`masks.py` finds where the sleeves are on the picture) dyed in each side's colour
     (`peasant0`/`peasant1`) and in olive drab (`peasantOlive`), the ranger's greens turned to each side's colour, the
     base body's black shorts to hide browns (`skinHide`).
+  - `uniform.py` (Blender): the gunpowder era's long coat and the modern era's combat uniform, both original, made
+    from the base body itself: a copy with its head (and, under the coat, its hands) cut away, its surface smoothed
+    where cloth hangs loose (so no muscle shows through) and its toes run together into shoes and boots, then every
+    vertex pushed out along its normal by what covers it (`STANDOFF`: coat, breeches, gaiters and shoes, turned-back
+    cuffs; jacket, trousers bloused over the boot tops, boots, gloves). It keeps the body's skin weights (so it bends
+    with him at every joint) and his uvs, squeezed into the lower four fifths of one 1024 px picture; the coat's
+    skirts (`tails`: open at the front, flaring, lined, swinging with the thighs) take the top fifth. Run alone it
+    paints the pictures: the copy's triangles rasterised in uv space into a map of where each texel lies on the body
+    (its position, normal and bones), and the paint worked out from that, so seams, pockets, buttons, cuffs and
+    camouflage blotches fall where they belong and run on across the uv islands: `coat0`/`coat1` (each side's coat
+    with the other side's colour on its cuffs, collar and lapels, a cream waistcoat, white breeches, black gaiters
+    with buttons, shoes with buckles; turnbacks, pocket flaps and the back vent on the skirts; `coat0p`/`coat1p`, the
+    broad areas alone, are what the processor's figure's vertex colours are sampled from) and `combat` (an original
+    four-colour woodland camouflage of warped noise blotches, a buttoned placket, chest, sleeve and cargo pockets with
+    flaps, seams, a webbing belt, laced boots, gloves). The cross-belts, the plate vest and the armband are sized to
+    the cloth's girth where they sit (`girth`).
   - `people.py` (Blender): per era and kind (`DRESS`) the body, hair and outfit on one armature; the arms posed down
     from the packs' T and applied; under clothes only the head and neck of the body kept; what the packs lack added
     (a hide wrap and band, a sash; a nasal helm with a plume; a tricorn with lace and white cross-belts; a modern

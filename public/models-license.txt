@@ -4,7 +4,8 @@
 The soldiers of 시대 전쟁 are built from these artist-made models, all by Quaternius (https://quaternius.com),
 dedicated to the public domain under CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/).
 Blender poses, trims, recolours and thins them, and adds the helms, hats, vests, belts and side bands
-(tools/blender/erawar/assets in the source).
+(tools/blender/erawar/assets in the source). The gunpowder era's coats and the modern era's combat uniforms are
+made in Blender from the Universal Base Characters body itself (original designs, painted by script).
 
 - Universal Base Characters (Standard, free) — the male base body, head, eyes, eyebrows, hairstyles
   (Hair_Long, Hair_Buzzed, Hair_SimpleParted, Hair_Beard) and their pictures.

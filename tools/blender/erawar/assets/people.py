@@ -16,6 +16,9 @@ import numpy as np
 import bpy, bmesh
 from mathutils import Vector, Matrix
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import uniform as U
+
 argv = sys.argv[sys.argv.index("--") + 1 :]
 SRC, WORK, OUT = argv[:3]
 ONLY = [(int(argv[i]), int(argv[i + 1])) for i in range(3, len(argv) - 1, 2)]
@@ -58,16 +61,17 @@ def bone_joint(name):
 
 # What each era and kind wears (kind 2's rider reuses kind 0, the gunner kind 1), and its hands (left, right): a fist
 # round what it holds (a weapon, a shield, the reins), or at rest, a little curled. The swordsman's left arm carries
-# the shield ("shield": the forearm across its back, the hand at its grip).
+# the shield ("shield": the forearm across its back, the hand at its grip). The gunpowder and modern eras wear uniforms
+# made from the base body itself (uniform.py): a long coat ("coat") or a combat uniform ("combat").
 DRESS = {
     (0, 0): dict(hands=("rest", "fist"), body=True, skin="skinHide", hair="Hair_Long+Hair_Buzzed", hairTint=(0.23, 0.15, 0.09), beard=True, extras=["wrap", "band"]),
     (0, 1): dict(hands=("rest", "fist"), body=True, skin="skinHide", hair="Hair_Buzzed", hairTint=(0.33, 0.17, 0.08), beard=True, extras=["wrap", "band", "sash"]),
     (1, 0): dict(hands=("fist", "fist"), pose="shield", outfit="Male_Peasant", tex="peasant", hair="Hair_Buzzed", hairTint=(0.33, 0.17, 0.08), beard=True, extras=["helm"]),
     (1, 1): dict(hands=("fist", "fist"), outfit="Male_Ranger", tex="ranger", hair="Hair_SimpleParted", hairTint=(0.3, 0.2, 0.1), beard=False, extras=[]),
-    (2, 0): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasant", hair="Hair_SimpleParted", hairTint=(0.18, 0.12, 0.08), beard=False, extras=["tricorn", "belts"]),
-    (2, 1): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasant", hair="Hair_SimpleParted", hairTint=(0.35, 0.25, 0.14), beard=True, extras=["tricorn", "belts"]),
-    (3, 0): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasantOlive", team=False, hair="Hair_Buzzed", hairTint=(0.2, 0.14, 0.09), beard=False, extras=["helmet", "vest", "armband"]),
-    (3, 1): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasantOlive", team=False, hair="Hair_Buzzed", hairTint=(0.12, 0.09, 0.07), beard=True, extras=["helmet", "vest", "armband"]),
+    (2, 0): dict(hands=("fist", "fist"), uniform="coat", hair="Hair_SimpleParted", hairTint=(0.18, 0.12, 0.08), beard=False, extras=["tricorn", "belts", "tails"]),
+    (2, 1): dict(hands=("fist", "fist"), uniform="coat", hair="Hair_SimpleParted", hairTint=(0.35, 0.25, 0.14), beard=True, extras=["tricorn", "belts", "tails"]),
+    (3, 0): dict(hands=("fist", "fist"), uniform="combat", team=False, hair="Hair_Buzzed", hairTint=(0.2, 0.14, 0.09), beard=False, extras=["helmet", "vest", "armband"]),
+    (3, 1): dict(hands=("fist", "fist"), uniform="combat", team=False, hair="Hair_Buzzed", hairTint=(0.12, 0.09, 0.07), beard=True, extras=["helmet", "vest", "armband"]),
 }
 
 
@@ -218,13 +222,14 @@ def apply_pose(meshes):
                 bpy.ops.object.modifier_apply(modifier=m.name)
 
 
-def keep_head(o):
-    """Of the body under clothes, only what the head and neck move (the rest is hidden)."""
+def keep_head(o, hands=False):
+    """Of the body under clothes, only what the head and neck move (the rest is hidden); with `hands`, the hands too."""
     groups = {g.index: g.name for g in o.vertex_groups}
     keep = np.zeros(len(o.data.vertices), dtype=bool)
     for v in o.data.vertices:
         w = sum(g.weight for g in v.groups if groups.get(g.group) in ("Head", "neck_01"))
-        keep[v.index] = w > 0.3 and v.co.z > 1.4
+        h = sum(g.weight for g in v.groups if U.group_of(groups.get(g.group, "")) == "hand") if hands else 0
+        keep[v.index] = (w > 0.3 and v.co.z > 1.4) or h > 0.3
     bm = bmesh.new()
     bm.from_mesh(o.data)
     bm.verts.ensure_lookup_table()
@@ -237,7 +242,7 @@ def keep_head(o):
 # ─────────────── what the packs lack ───────────────
 
 
-def new_mesh(name, verts, faces, group_of, paint):
+def new_mesh(name, verts, faces, group_of, paint, recalc=True):
     """A mesh with its vertices given to the armature's bones (`group_of(co)` → [(bone, weight)])."""
     me = bpy.data.meshes.new(name)
     me.from_pydata([tuple(v) for v in verts], [], [tuple(f) for f in faces])
@@ -250,11 +255,12 @@ def new_mesh(name, verts, faces, group_of, paint):
         for bone, w in group_of(v.co):
             g = o.vertex_groups.get(bone) or o.vertex_groups.new(name=bone)
             g.add([i], w, "REPLACE")
-    bm = bmesh.new()
-    bm.from_mesh(me)
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    bm.to_mesh(me)
-    bm.free()
+    if recalc:
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(me)
+        bm.free()
     for p in me.polygons:
         p.use_smooth = True
     return o
@@ -300,8 +306,10 @@ def head_frame(arm):
     return h  # the head bone's root (top of the neck)
 
 
-def extras_for(arm, dress, era, kind):
+def extras_for(arm, dress, era, kind, garm=None):
+    """What the packs lack; on a uniform (`garm`), sized to the cloth's girth where it sits."""
     out = []
+    fit = (lambda z: U.girth([garm], z)) if garm is not None else None
     hb = head_frame(arm)
     hx, hy, hz = hb.x, hb.y, hb.z
     on_head = lambda co: [("Head", 1.0)]
@@ -384,14 +392,20 @@ def extras_for(arm, dress, era, kind):
                 for i in range(n + 1):
                     t = i / n
                     a = math.pi * 2 * t
-                    x = (0.165 + 0.01 * math.sin(a * 2)) * math.cos(a)
-                    y = 0.135 * math.sin(a) - 0.005
                     z = 1.43 - 0.0 + s * 0.2 * math.cos(a) - 0.2
+                    if fit:
+                        (cx, cy), (rx, ry) = fit(z)
+                        x, y = cx + (rx + 0.007) * math.cos(a), cy + (ry + 0.007) * math.sin(a)
+                    else:
+                        x = (0.165 + 0.01 * math.sin(a * 2)) * math.cos(a)
+                        y = 0.135 * math.sin(a) - 0.005
                     for w in (-0.022, 0.022):
                         V.append((x, y, z + w))
                 for i in range(n):
                     F.append((2 * i, 2 * i + 1, 2 * i + 3, 2 * i + 2))
                 out.append(new_mesh(f"belt{s}", V, F, lambda co: [("spine_02", 1.0)], "white"))
+        elif e == "tails" and garm is not None:
+            out.append(U.tails(garm, new_mesh))
         elif e == "helmet":
             prof = [(0.155, hz + 0.09), (0.152, hz + 0.105), (0.135, hz + 0.115), (0.135, hz + 0.16), (0.122, hz + 0.21), (0.09, hz + 0.25), (0.045, hz + 0.27), (0.0, hz + 0.276)]
             V, F = lathe_shape(prof, 30, hx, hy + 0.012, 1.0, 1.1)
@@ -401,6 +415,12 @@ def extras_for(arm, dress, era, kind):
         elif e == "vest":
             # A plate carrier: front and back plates over the shirt, pouches at the front.
             rings = [(1.47, 0, 0.0, 0.2, 0.162, 0), (1.36, 0, 0.0, 0.21, 0.17, 0), (1.22, 0, 0.0, 0.2, 0.162, 0), (1.12, 0, 0.0, 0.195, 0.155, 0)]
+            if fit:
+                # (Over the jacket: a hand's breadth clear of it all round.)
+                rings = []
+                for z in (1.47, 1.36, 1.22, 1.12):
+                    (cx, cy), (rx, ry) = fit(z if z < 1.4 else 1.38)
+                    rings.append((z, cx, cy, rx + 0.022, ry + 0.022, 0))
             V, F = ring_shape(rings, 28)
             out.append(new_mesh("vest", V, F, lambda co: [("spine_02", 1.0)], "olive"))
             for i, x in enumerate((-0.09, 0.0, 0.09)):
@@ -415,7 +435,18 @@ def extras_for(arm, dress, era, kind):
             ua = arm.matrix_world @ arm.pose.bones["upperarm_r"].head
             la = arm.matrix_world @ arm.pose.bones["lowerarm_r"].head
             c = ua.lerp(la, 0.35)
-            V, F = ring_shape([(c.z - 0.03, c.x, c.y, 0.058, 0.058, 0), (c.z + 0.03, c.x, c.y, 0.06, 0.06, 0)], 18)
+            r = 0.058
+            if garm is not None:
+                # (Round the sleeve: the cloth's farthest point from the arm's line there, and a little.)
+                d = (la - ua).normalized()
+                far = 0.0
+                for v in garm.data.vertices:
+                    q = garm.matrix_world @ v.co - c
+                    radial = (q - d * q.dot(d)).length
+                    if abs(q.dot(d)) < 0.02 and radial < 0.11:
+                        far = max(far, radial)
+                r = far + 0.004
+            V, F = ring_shape([(c.z - 0.03, c.x, c.y, r, r, 0), (c.z + 0.03, c.x, c.y, r + 0.002, r + 0.002, 0)], 18)
             out.append(new_mesh("armband", V, F, lambda co: [("upperarm_r", 1.0)], "team"))
     for o in out:
         o.parent = arm
@@ -527,7 +558,7 @@ def to_game(P):
     return np.stack([-P[:, 1], P[:, 2], -P[:, 0]], axis=1) * SCALE
 
 
-def collect(meshes, arm, dress, ao):
+def collect(meshes, arm, dress, ao, lod=""):
     """Per picture or paint: positions, normals, uvs, joints, light and colours, and triangles."""
     out = {}
     team = dress.get("team", True)
@@ -575,6 +606,9 @@ def collect(meshes, arm, dress, ao):
                 continue
             if mat.name.startswith("paint:"):
                 key, tex = mat.name[6:], None
+            elif mat.name.startswith("tex:"):
+                # (A uniform's own picture.)
+                key, tex = mat.name.split(".")[0], mat.name.split(".")[0][4:]
             else:
                 tex = tex_key(picture(mat), dress)
                 if tex is None:
@@ -607,9 +641,11 @@ def collect(meshes, arm, dress, ao):
             d["W"].append(wf[vi])
             d["A"].append(light[vi])
             if tex:
-                if tex in ("peasant", "ranger"):
-                    c0 = sample(tex + "0", uv)
-                    c1 = sample(tex + "1", uv)
+                if tex in TEAM:
+                    # (For the processor's figure, the picture's broad areas where it has them.)
+                    pl = "p" if lod == "l" and os.path.exists(os.path.join(WORK, tex + "0p.png")) else ""
+                    c0 = sample(tex + "0" + pl, uv)
+                    c1 = sample(tex + "1" + pl, uv)
                 else:
                     c0 = c1 = sample(tex, uv)
                 tint = tint_of(tex, dress)
@@ -626,9 +662,13 @@ def collect(meshes, arm, dress, ao):
         d["N"] = to_game(d["N"]) / SCALE
     # The side's variant for team pictures: "tex:peasant" (both sides) rather than "tex:peasant0".
     for key, d in out.items():
-        if key in ("tex:peasant", "tex:ranger"):
+        if key[4:] in TEAM and key.startswith("tex:"):
             d["team"] = True
     return out
+
+
+# Pictures with a variant per side (<name>0, <name>1).
+TEAM = ("peasant", "ranger", "coat")
 
 
 def tint_of(tex, dress):
@@ -772,15 +812,19 @@ def one(era, kind):
     reset()
     dress = DRESS[(era, kind)]
     arm, meshes = gather_model(dress)
+    if dress.get("uniform"):
+        body = next(o for o in meshes if o.name.startswith("SuperHero"))
+        meshes.append(U.garment(body, dress["uniform"]))
     curl_hands(arm, dress["hands"])
     pose_arms(arm, dress.get("pose"))
     apply_pose(meshes)
     if not dress.get("body"):
         for o in meshes:
             if o.name.startswith("SuperHero"):
-                keep_head(o)
+                keep_head(o, hands=dress.get("uniform") == "coat")
     meshes = [o for o in meshes if len(o.data.polygons)]
-    meshes += extras_for(arm, dress, era, kind)
+    garm = next((o for o in meshes if o.name.startswith("Uniform_")), None)
+    meshes += extras_for(arm, dress, era, kind, garm)
     joints = joints_of(arm, dress.get("pose"))
     sizes = {}
     for lod, budget in (("", RICH), ("l", LO)):
@@ -797,7 +841,7 @@ def one(era, kind):
                 bpy.data.objects.remove(c)
         ratio = decimate(objs, budget)
         ao = bake_ao(objs)
-        prims = collect(objs, arm, dress, ao)
+        prims = collect(objs, arm, dress, ao, lod)
         tris = sum(len(d["T"]) for d in prims.values())
         sizes[lod or "rich"] = (tris, write_glb(os.path.join(OUT, f"a{era}{kind}{lod}.glb"), prims, {"bones": BONES, "joints": joints, "era": era, "kind": kind, "hairTint": list(dress.get("hairTint", (0.25, 0.17, 0.1)))}))
         for c in objs:
