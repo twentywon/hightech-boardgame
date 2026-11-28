@@ -335,7 +335,7 @@ def material(name):
 class Part:
     """A Blender object made from a Shape, with how it moves (`rig`: a joint's name, or a function of positions)."""
 
-    def __init__(self, name, shape, rig, subdiv=1, smooth=True, sharp=None, crease=None):
+    def __init__(self, name, shape, rig, subdiv=1, smooth=True, sharp=None, crease=None, outward=None):
         self.name = name
         self.rig = rig
         me = bpy.data.meshes.new(name)
@@ -352,6 +352,16 @@ class Part:
         bm.from_mesh(me)
         bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
         bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        if outward is not None:
+            # An open shell (hair, a hood, a skirt) faces away from a point, or from the upright axis through it.
+            o = g2b(np.asarray(outward[1], dtype=np.float64))
+            for f in bm.faces:
+                c = np.asarray(f.calc_center_median())
+                d = c - o
+                if outward[0] == "axis":
+                    d[2] = 0
+                if np.dot(np.asarray(f.normal), d) < 0:
+                    f.normal_flip()
         if crease is not None:
             # Hard edges kept through subdivision (a box stays a box with rounded corners).
             layer = bm.edges.layers.float.get("crease_edge") or bm.edges.layers.float.new("crease_edge")

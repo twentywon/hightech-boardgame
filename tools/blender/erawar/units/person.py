@@ -379,18 +379,19 @@ def body_parts(dress):
     for i, z in enumerate((-0.19, 0.19)):
         parts.append(Part(f"arm{i}", arm(z, dress["sleeve"], fat, dress.get("armcut")), arm_rig(i), subdiv=1))
         parts.append(Part(f"hand{i}", hand(z, dress.get("glove", dress["skin"])), rigid(B[f"elbow{i}"]), subdiv=0))
+    H = ("point", HEADP)
     parts.append(Part("head", head_shape(dress["skin"]), rigid(B["head"]), subdiv=0))
     parts.append(Part("face", Shape.join(face_parts(dress["skin"], dress.get("hair", "hair"), True)), rigid(B["head"]), subdiv=0))
     style = dress.get("style", "crop")
     hair = dress.get("hair", "hair")
     if style == "wild":
-        parts.append(Part("hair", shell(GROW["wild"], 0.02, hair, swell=lambda d: 0.022 * smoothstep(0, 1, -d[:, 1]), strands=0.006), rigid(B["head"]), subdiv=0))
+        parts.append(Part("hair", shell(GROW["wild"], 0.02, hair, swell=lambda d: 0.022 * smoothstep(0, 1, -d[:, 1]), strands=0.006), rigid(B["head"]), subdiv=0, outward=H))
     elif style == "crop":
-        parts.append(Part("hair", shell(GROW["crop"], 0.008, hair, strands=0.0015), rigid(B["head"]), subdiv=0))
+        parts.append(Part("hair", shell(GROW["crop"], 0.008, hair, strands=0.0015), rigid(B["head"]), subdiv=0, outward=H))
     if dress.get("beard"):
-        parts.append(Part("beard", shell(GROW["beard"], 0.013, "beard", swell=lambda d: 0.014 * smoothstep(0, 1, -d[:, 1] - 0.4), strands=0.004), rigid(B["head"]), subdiv=0))
+        parts.append(Part("beard", shell(GROW["beard"], 0.013, "beard", swell=lambda d: 0.014 * smoothstep(0, 1, -d[:, 1] - 0.4), strands=0.004), rigid(B["head"]), subdiv=0, outward=H))
     if dress.get("tache"):
-        parts.append(Part("tache", shell(GROW["tache"], 0.007, hair, strands=0.001), rigid(B["head"]), subdiv=0))
+        parts.append(Part("tache", shell(GROW["tache"], 0.007, hair, strands=0.001), rigid(B["head"]), subdiv=0, outward=H))
     return parts
 
 
@@ -546,9 +547,11 @@ def gear(era, kind):
     team = "team"
     P = []
 
-    def add(name, shape, rig, subdiv=0, sharp=None, crease=None):
+    def add(name, shape, rig, subdiv=0, sharp=None, crease=None, outward=None):
         # (Small parts as they are; boxes rounded by one subdivision, their edges creased.)
-        P.append(Part(name, shape, rig, subdiv=max(subdiv, 1 if crease is not None else 0), sharp=sharp, crease=crease))
+        P.append(Part(name, shape, rig, subdiv=max(subdiv, 1 if crease is not None else 0), sharp=sharp, crease=crease, outward=outward))
+
+    H, AX = ("point", HEADP), ("axis", (0, 0, 0))
 
     if era == 0:
         fat = 1.06
@@ -561,8 +564,8 @@ def gear(era, kind):
                 continue
             keep.append(f)
         tunic.f, tunic.paint = keep, [tunic.paint[0]] * len(keep)
-        add("tunic", tunic, chain([B["body"], B["chest"]], [((0, 0.64, 0), (0, 1, 0), 0.045)]), subdiv=1)
-        add("tunicskirt", skirt(0.42, 0.62, 0.016, "hide" if kind == 1 else "fur", jag=0.045, flare=0.05, fat=fat, open_sides=8), skirt_rig(0.65, 0.56, 0.4), subdiv=1)
+        add("tunic", tunic, chain([B["body"], B["chest"]], [((0, 0.64, 0), (0, 1, 0), 0.045)]), subdiv=1, outward=AX)
+        add("tunicskirt", skirt(0.42, 0.62, 0.016, "hide" if kind == 1 else "fur", jag=0.045, flare=0.05, fat=fat, open_sides=8), skirt_rig(0.65, 0.56, 0.4), subdiv=1, outward=AX)
         add("furstrap", tube([(0.1, 0.84, 0.07), (0.07, 0.99, -0.06), (-0.04, 1.0, -0.09), (-0.1, 0.84, 0.06)], 0.03, 0.026, n=10, paint="hide" if kind == 1 else "furDark"), rigid(B["chest"]))
         add("sash", band(lambda a: 0.635 + 0.012 * math.cos(a), 0.016, 0.02, 0.006, team, fat), rigid(B["body"]))
         add("necklace", Shape.join([loop_strap(0.985, 0.06, 0.07, 0.003, 0.003, "rope", cx=0.01, tilt=-0.02)] + [ellipsoid((0.005, 0.016, 0.005), (0.072 - abs(i - 2) * 0.006, 0.955 - abs(i - 2) * 0.008, -0.04 + i * 0.02), "bone", 6, 5) for i in range(5)]), rigid(B["chest"]), subdiv=0)
@@ -575,27 +578,27 @@ def gear(era, kind):
             c = on_face(s * 0.055, -0.02, 0.0005)
             add(f"paint{s}", ellipsoid((0.003, 0.006, 0.022), c, team, 8, 5).moved(at(*c) @ rot("y", s * 0.5) @ at(*-c)), rigid(B["head"]), subdiv=0)
         if kind == 1:
-            add("hidecap", shell(GROW["cap"], 0.032, "hide"), rigid(B["head"]), subdiv=0)
+            add("hidecap", shell(GROW["cap"], 0.032, "hide"), rigid(B["head"]), subdiv=0, outward=H)
         else:
             feather = slab([(0, 0), (0.02, 0.06), (0.022, 0.13), (0.008, 0.19), (-0.008, 0.13), (-0.012, 0.06)], 0.004, "feather")
             add("feather1", feather.moved(at(HEADP[0] - 0.07, HEADP[1] + 0.07, 0.08) @ rot("x", -0.3) @ rot("z", 0.5)), rigid(B["head"]), subdiv=1)
             f2 = feather.moved(at(HEADP[0] - 0.09, HEADP[1] + 0.06, 0.09) @ rot("x", -0.45) @ rot("z", 0.85) @ scale(0.8, 0.8, 1))
             add("feather2", Shape(f2.v, f2.f, team), rigid(B["head"]), subdiv=1)
     elif era == 1 and kind == 1:
-        add("jerkinskirt", skirt(0.4, 0.66, 0.012, "green", flare=0.06, open_sides=7), skirt_rig(0.7, 0.58, 0.42), subdiv=1)
+        add("jerkinskirt", skirt(0.4, 0.66, 0.012, "green", flare=0.06, open_sides=7), skirt_rig(0.7, 0.58, 0.42), subdiv=1, outward=AX)
         add("belt", band(lambda a: 0.645, 0.013, 0.014, 0.006, team), rigid(B["body"]))
         add("pouch", rounded_box((0.03, 0.06, 0.05), (0.07, 0.6, 0.11), "leather"), rigid(B["body"]), crease=60)
-        add("hood", shell(GROW["hood"], 0.018, "hood", swell=lambda d: 0.012 * smoothstep(0, 1, d[:, 2] + 0.2)), rigid(B["head"]), subdiv=0)
+        add("hood", shell(GROW["hood"], 0.018, "hood", swell=lambda d: 0.012 * smoothstep(0, 1, d[:, 2] + 0.2)), rigid(B["head"]), subdiv=0, outward=H)
         add("liripipe", tube([HEADP + (-0.1, 0.06, 0), HEADP + (-0.17, 0.0, 0), HEADP + (-0.21, -0.12, 0.01), HEADP + (-0.2, -0.22, 0.02)], 0.032, 0.008, n=10, paint="hood"), rigid(B["head"]))
         cape = shell_body(0.83, 1.02, 0.03, "hood", n=30)
         cape.v[:, 0] -= 0.004
         lowest = cape.v[:, 1] < 0.84
         a = np.arctan2(cape.v[:, 2], cape.v[:, 0])
         cape.v[lowest, 1] -= 0.012 * (1 + np.sin(a[lowest] * 7))
-        add("cape", cape, rigid(B["chest"]), subdiv=1)
+        add("cape", cape, rigid(B["chest"]), subdiv=1, outward=AX)
         add("quiver", quiver(), rigid(B["chest"]))
     elif era == 1:
-        add("hauberk", skirt(0.37, 0.66, 0.01, "mail", flare=0.05, open_front=10), skirt_rig(0.75, 0.58, 0.38), subdiv=1)
+        add("hauberk", skirt(0.37, 0.66, 0.01, "mail", flare=0.05, open_front=10), skirt_rig(0.75, 0.58, 0.38), subdiv=1, outward=AX)
         tab_top = shell_body(0.62, 0.985, 0.018, team)
         # A tabard: sleeveless, open under the arms.
         keep = []
@@ -606,16 +609,16 @@ def gear(era, kind):
                 continue
             keep.append(f)
         tab_top.f, tab_top.paint = keep, [team] * len(keep)
-        add("tabard", tab_top, chain([B["body"], B["chest"]], [((0, 0.64, 0), (0, 1, 0), 0.045)]), subdiv=1)
+        add("tabard", tab_top, chain([B["body"], B["chest"]], [((0, 0.64, 0), (0, 1, 0), 0.045)]), subdiv=1, outward=AX)
         panels = skirt(0.4, 0.635, 0.024, team, flare=0.03, open_sides=40)
-        add("tabardskirt", panels, skirt_rig(0.7, 0.6, 0.42), subdiv=1)
-        add("cross", Shape.join([rounded_box((0.008, 0.17, 0.034), (0.117, 0.8, 0), "gold"), rounded_box((0.008, 0.034, 0.12), (0.118, 0.84, 0), "gold")]), rigid(B["chest"]), crease=60)
+        add("tabardskirt", panels, skirt_rig(0.7, 0.6, 0.42), subdiv=1, outward=AX)
+        add("cross", Shape.join([rounded_box((0.008, 0.17, 0.034), (0.141, 0.8, 0), "gold"), rounded_box((0.008, 0.034, 0.12), (0.142, 0.84, 0), "gold")]), rigid(B["chest"]), crease=60)
         add("belt", band(lambda a: 0.645, 0.02, 0.015, 0.006, "leatherDark"), rigid(B["body"]))
         add("buckle", rounded_box((0.012, 0.034, 0.034), (0.117, 0.645, 0), "brass"), rigid(B["body"]), crease=60)
         for i, z in enumerate((-0.19, 0.19)):
             pd = lathe([(0.0, 0.07), (0.035, 0.066), (0.06, 0.045), (0.072, 0.012), (0.074, -0.03), (0.071, -0.032), (0.06, 0.01), (0.05, 0.04), (0.03, 0.058), (0.0, 0.062)], 16, "iron")
             add(f"pauldron{i}", pd.moved(at(0, 0.965, z) @ rot("x", (1 if z > 0 else -1) * 0.25)), rigid(B[f"arm{i}"]), subdiv=1, sharp=50)
-        add("coif", shell(GROW["hood"], 0.013, "mail"), rigid(B["head"]), subdiv=0)
+        add("coif", shell(GROW["hood"], 0.013, "mail"), rigid(B["head"]), subdiv=0, outward=H)
         helm = lathe([(0.0, 0.015), (0.126, 0.018), (0.128, 0.06), (0.12, 0.11), (0.092, 0.165), (0.05, 0.21), (0.012, 0.236), (0.0, 0.24)], 28, "iron", 1.02, 0.96)
         add("helm", helm.moved(at(HEADP[0] - 0.005, HEADP[1], 0)), rigid(B["head"]), subdiv=1)
         add("helmrim", loop_strap(HEADP[1] + 0.03, 0.13 * 1.02, 0.13 * 0.96, 0.012, 0.006, "brass", cx=HEADP[0] - 0.005), rigid(B["head"]))
@@ -623,7 +626,7 @@ def gear(era, kind):
         add("plume", tube([HEADP + (0, 0.23, 0), HEADP + (-0.05, 0.31, 0), HEADP + (-0.15, 0.33, 0), HEADP + (-0.22, 0.27, 0)], 0.026, 0.01, n=10, paint=team), rigid(B["head"]))
     elif era == 2:
         coat = skirt(0.42, 0.65, 0.012, team, flare=0.05, open_front=38)
-        add("coatskirt", coat, skirt_rig(0.6, 0.58, 0.44), subdiv=1)
+        add("coatskirt", coat, skirt_rig(0.6, 0.58, 0.44), subdiv=1, outward=AX)
         for s in (-1, 1):
             tail = slab([(0, 0), (0.06, 0), (0.05, -0.3), (0.0, -0.34)], 0.012, "teamDark")
             add(f"tail{s}", tail.moved(at(-0.105, 0.63, s * 0.05) @ rot("y", math.pi / 2) @ rot("x", 0)), skirt_rig(0.55, 0.6, 0.34), crease=70)
@@ -659,7 +662,7 @@ def gear(era, kind):
                 continue
             keep.append(f)
         vest.f, vest.paint = keep, ["oliveDark"] * len(keep)
-        add("vest", vest, chain([B["body"], B["chest"]], [((0, 0.64, 0), (0, 1, 0), 0.045)]), subdiv=1)
+        add("vest", vest, chain([B["body"], B["chest"]], [((0, 0.64, 0), (0, 1, 0), 0.045)]), subdiv=1, outward=AX)
         for i in range(3):
             add(f"pouch{i}", rounded_box((0.036, 0.075, 0.062), (0.122, 0.68, -0.08 + i * 0.08), "webbing"), rigid(B["chest"]), crease=55)
         add("chestpouch", rounded_box((0.028, 0.055, 0.055), (0.127, 0.85, 0.065), "webbing"), rigid(B["chest"]), crease=55)
