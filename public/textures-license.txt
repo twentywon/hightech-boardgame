@@ -1,0 +1,100 @@
+Photographed textures
+
+The table top of the meat grill is the diffuse map of "Wood Table" by
+Dimitrios Savva (Poly Haven, https://polyhaven.com/a/wood_table), released
+under Creative Commons Zero (CC0),
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Changes: reduced to 768 x 768 and stored as WebP (src/games/grill/table.webp).
+
+The raw flesh of four of its cuts is cut out of three photographs from the
+WordPress Photo Directory (https://wordpress.org/photos/), all released
+under Creative Commons Zero (CC0):
+
+- pork belly: photograph by Yam B Chhetri,
+  https://wordpress.org/photos/photo/5306a119c9/
+- marinated rib: photograph by Yam B Chhetri,
+  https://wordpress.org/photos/photo/3076a11a25/
+- brisket and neck: photograph by Vishnu Chandra,
+  https://wordpress.org/photos/photo/9496a09869/
+
+Changes: a square of flesh taken from each, reduced to 320 x 320 and stored
+as WebP (src/games/grill/belly.webp, rib.webp, brisket.webp, neck.webp); the
+neck made paler; the colour of cooking is laid over them by the game.
+
+The lettuce and the four relishes are cut out of two more photographs from
+the WordPress Photo Directory, both CC0:
+
+- kimchi, bean paste, garlic with green chilli, salt in oil: photograph by
+  Yam B Chhetri, https://wordpress.org/photos/photo/3226a9519c/
+- lettuce (the basket and the leaf of a wrap): photograph by Bigul Malayi,
+  https://wordpress.org/photos/photo/326901e913/
+
+Changes: a square taken from each, reduced and stored as WebP
+(src/games/grill/kimchi.webp, paste.webp, garlic.webp, oil.webp,
+lettuce.webp, leaf.webp); the oil and the lettuce made lighter.
+
+Wood, veneer and cloth of the other tables are Poly Haven textures
+(https://polyhaven.com), all released under Creative Commons Zero (CC0),
+https://creativecommons.org/publicdomain/zero/1.0/
+
+- "Dark Wood" by Dario Barresi, Dimitrios Savva and Rico Cilliers
+  (https://polyhaven.com/a/dark_wood): colour, normal and roughness maps
+  (src/assets/tex/wood-dark.webp, wood-normal.webp, wood-rough.webp)
+- "Oak Veneer 01" by Jenelle van Heerden
+  (https://polyhaven.com/a/oak_veneer_01): colour (wood-light.webp)
+- "White Maple Veneer" by Jenelle van Heerden
+  (https://polyhaven.com/a/white_maple_veneer): colour (maple.webp)
+- "Black Walnut Veneer 01" by Jenelle van Heerden
+  (https://polyhaven.com/a/black_walnut_veneer_01): colour (walnut.webp)
+- "Caban" by colormass and Rico Cilliers
+  (https://polyhaven.com/a/caban): normal map (cloth-normal.webp)
+
+Changes: reduced to 512 or 768 pixels and stored as WebP; the two woods
+graded to the colours the tables were painted in, the oak turned a quarter
+round; the veneers are tinted by the game.
+
+Grounds and walls round the tables, also Poly Haven textures under CC0:
+
+- "Dirt Floor" by eye-candy.xyz (https://polyhaven.com/a/dirt_floor):
+  colour and normal map (src/assets/tex/earth.webp, earth-normal.webp)
+- "Leafy Grass" by Charlotte Baglioni (https://polyhaven.com/a/leafy_grass):
+  colour and normal map (grass.webp, grass-normal.webp)
+- "Large Red Bricks" by Rob Tuytel
+  (https://polyhaven.com/a/large_red_bricks): colour and normal map
+  (brick.webp, brick-normal.webp)
+- "Concrete Floor 02" by Rob Tuytel
+  (https://polyhaven.com/a/concrete_floor_02): colour (stone.webp)
+- "Gravel Floor 02" by Jenelle van Heerden and Dimitrios Savva
+  (https://polyhaven.com/a/gravel_floor_02): colour and normal map
+  (gravel.webp, gravel-normal.webp)
+- "Laminate Floor 02" by Dario Barresi and Charlotte Baglioni
+  (https://polyhaven.com/a/laminate_floor_02): colour (boards.webp)
+
+Changes: reduced and stored as WebP; each colour picture brought to a
+middling grey so that the game lays its figure over its own colour.
+
+The lifelike look (src/engine/lifelike.ts), also Poly Haven assets under CC0:
+
+- "Poly Wool Herringbone" by colormass, Rico Cilliers
+  (https://polyhaven.com/a/poly_wool_herringbone): colour, normal and
+  roughness (src/assets/tex/wool.webp, wool-normal.webp, wool-rough.webp)
+- "Rough Linen" by colormass, Rico Cilliers
+  (https://polyhaven.com/a/rough_linen): colour, normal and roughness
+  (linen.webp, linen-normal.webp, linen-rough.webp)
+- "Brown Leather" by Rob Tuytel (https://polyhaven.com/a/brown_leather):
+  colour, normal and roughness (leather.webp, leather-normal.webp,
+  leather-rough.webp)
+- "Metal Plate" by Rob Tuytel (https://polyhaven.com/a/metal_plate):
+  colour, normal and roughness (metal.webp, metal-normal.webp,
+  metal-rough.webp)
+- "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal, Jarod Guest
+  (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky): HDRI
+  (src/assets/env/sky.hdr)
+- "Cowboy Town Saloon" by Dimitrios Savva, Jarod Guest
+  (https://polyhaven.com/a/cowboy_town_saloon): HDRI
+  (src/assets/env/saloon.hdr)
+
+Changes: the 1k sets reduced to 512×512 WebP (the OpenGL normal map), the
+colour maps made grey, evened and levelled to 0.78 so the game tints them;
+the HDRIs reduced from 1k to 512×256 Radiance files with values capped at 48.

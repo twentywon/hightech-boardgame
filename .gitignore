@@ -1,0 +1,15 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+*.log
+.env*
+dist-student/
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/app/src/main/assets/
+android/pages/
+*.keystore
+*.jks

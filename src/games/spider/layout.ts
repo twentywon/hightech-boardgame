@@ -1,0 +1,36 @@
+import type { Subject } from "../../engine/camera";
+import type { Card } from "./rules";
+
+/** Where the cards of spider solitaire lie; shared by the view and the browser tests. */
+// Wide and shallow, so the ten columns fill a wide canvas and the cards come out large.
+export const SPIDER_SUBJECT: Subject & { tilt: number } = { half: 6.2, halfZ: 3.6, height: 0.3, lookY: 0, tilt: 1.25 };
+export const PITCH = 1.22,
+  PILES_Z = 2.85;
+const TOP = -3.1,
+  /** How far each card of a column lies below the one before: face down, face up. */
+  DOWN = 0.2,
+  UP = 0.52,
+  /** The column may not run past this z; longer columns are squeezed. */
+  FLOOR = 1.55;
+/** Where the cards of a column lie, top to bottom. */
+export function columnSpots(cards: Card[], column: number) {
+  let length = 0;
+  for (const card of cards.slice(0, -1)) length += card.up ? UP : DOWN;
+  const squeeze = Math.min(1, (FLOOR - TOP) / Math.max(length, 0.001)),
+    x = (column - 4.5) * PITCH;
+  let z = TOP;
+  return cards.map((card, i) => {
+    const spot = { x, y: 0.02 + i * 0.004, z };
+    z += (card.up ? UP : DOWN) * squeeze;
+    return spot;
+  });
+}
+export const stockSpot = { x: 4.5 * PITCH, z: PILES_Z };
+/** Where the eight completed runs are laid, fanned to the right along the near edge between the panel and the stock. */
+export const HOME_X = -2.1,
+  HOME_STEP = 0.62;
+export const homeSpot = (pile: number) => ({ x: HOME_X + pile * HOME_STEP, z: PILES_Z });
+/** How far apart the piles of the stock lie, the last dealt from first, fanned to the left. */
+export const STOCK_STEP = 0.22;
+/** The half sizes of the felt: just clear of the cards. */
+export const FELT = { x: 6.55, z: 4.15 };

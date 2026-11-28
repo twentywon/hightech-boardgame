@@ -1,0 +1,21 @@
+3D models in 시대 전쟁 (era war) — the people
+=============================================
+
+The soldiers of 시대 전쟁 are built from these artist-made models, all by Quaternius (https://quaternius.com),
+dedicated to the public domain under CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/).
+Blender poses, trims, recolours and thins them, and adds the helms, hats, vests, belts and side bands
+(tools/blender/erawar/assets in the source). The gunpowder era's coats and the modern era's combat uniforms are
+made in Blender from the Universal Base Characters body itself (original designs, painted by script).
+
+- Universal Base Characters (Standard, free) — the male base body, head, eyes, eyebrows, hairstyles
+  (Hair_Long, Hair_Buzzed, Hair_SimpleParted, Hair_Beard) and their pictures.
+  https://quaternius.itch.io/universal-base-characters — CC0 1.0
+- Modular Character Outfits - Fantasy (Standard, free) — the male peasant and ranger outfits and their pictures
+  (the peasant's shirt and sleeves and the ranger's greens dyed in each side's colour, the peasant also in olive drab).
+  https://quaternius.itch.io/modular-character-outfits-fantasy — CC0 1.0
+
+The packs' licence text (License_Standard.txt in each):
+
+  License: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication
+  https://creativecommons.org/publicdomain/zero/1.0/
+  Models by @Quaternius

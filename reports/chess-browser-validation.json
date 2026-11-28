@@ -1,0 +1,563 @@
+{
+  "method": "Latest outcome per distinct project/file/title. Initial full run was interrupted to repair a mobile layout bug, followed by complete chess rechecks and legacy mobile regression. Not one uninterrupted 52/52 execution.",
+  "latestDistinctCases": 52,
+  "runs": [
+    {
+      "name": "initial interrupted full run",
+      "stats": {
+        "startTime": "2026-11-10T15:13:07.678Z",
+        "duration": 592269.191,
+        "expected": 25,
+        "skipped": 25,
+        "unexpected": 2,
+        "flaky": 0
+      },
+      "failures": [
+        {
+          "project": "mobile",
+          "title": "chess inline setup, actual mouse/touch capture, orientation, restart and other games",
+          "status": "timedOut",
+          "error": "Test timeout of 120000ms exceeded."
+        },
+        {
+          "project": "mobile",
+          "title": "chess AI stays responsive, cancels old work and applies settings only to a new game",
+          "status": "interrupted",
+          "error": "Error: locator.click: Test ended.\nCall log:\n  - waiting for locator('#confirm')\n    - locator resolved to <button id=\"confirm\" class=\"primary\">E2 → E4 이동 확정</button>\n  - attempting click action\n    - waiting for element to be visible, enabled and stable\n    - element is visible, enabled and stable\n    - scrolling into view if needed"
+        },
+        {
+          "project": "desktop",
+          "title": "chess underpromotion can be cancelled; reload has no saved game or preferences",
+          "status": "failed",
+          "error": "Error: expect(locator).toHaveAttribute(expected) failed\n\nLocator:  locator('canvas')\nExpected: \"true\"\nReceived: \"\"\nTimeout:  20000ms\n\nCall log:"
+        }
+      ]
+    },
+    {
+      "name": "chess after fixes",
+      "stats": {
+        "startTime": "2026-11-10T15:24:04.360Z",
+        "duration": 228416.68099999998,
+        "expected": 8,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "failures": []
+    },
+    {
+      "name": "legacy mobile regression",
+      "stats": {
+        "startTime": "2026-11-10T15:28:35.342Z",
+        "duration": 287912.634,
+        "expected": 22,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "failures": []
+    },
+    {
+      "name": "final legal-mobility evaluation AI check",
+      "stats": {
+        "startTime": "2026-11-10T15:41:06.818Z",
+        "duration": 74217.899,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "failures": []
+    }
+  ],
+  "cases": [
+    {
+      "file": "chess.spec.ts",
+      "title": "chess inline setup, actual mouse/touch capture, orientation, restart and other games",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 31950,
+      "source": "chess after fixes",
+      "attachments": []
+    },
+    {
+      "file": "chess.spec.ts",
+      "title": "chess inline setup, actual mouse/touch capture, orientation, restart and other games",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 42794,
+      "source": "chess after fixes",
+      "attachments": []
+    },
+    {
+      "file": "chess.spec.ts",
+      "title": "chess AI stays responsive, cancels old work and applies settings only to a new game",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 35809,
+      "source": "final legal-mobility evaluation AI check",
+      "attachments": [
+        {
+          "name": "chess-worker-frames",
+          "frames": 58,
+          "maxGap": 38.100000000000364
+        },
+        {
+          "name": "chess-search-time",
+          "ms": "3002.3000000044703"
+        }
+      ]
+    },
+    {
+      "file": "chess.spec.ts",
+      "title": "chess AI stays responsive, cancels old work and applies settings only to a new game",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 30974,
+      "source": "final legal-mobility evaluation AI check",
+      "attachments": [
+        {
+          "name": "chess-worker-frames",
+          "frames": 61,
+          "maxGap": 16.700000000000728
+        },
+        {
+          "name": "chess-search-time",
+          "ms": "3000.6999999955297"
+        }
+      ]
+    },
+    {
+      "file": "chess.spec.ts",
+      "title": "chess underpromotion can be cancelled; reload has no saved game or preferences",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 20757,
+      "source": "chess after fixes",
+      "attachments": []
+    },
+    {
+      "file": "chess.spec.ts",
+      "title": "chess underpromotion can be cancelled; reload has no saved game or preferences",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 24673,
+      "source": "chess after fixes",
+      "attachments": []
+    },
+    {
+      "file": "chess.spec.ts",
+      "title": "chess planned-move repetition claim ends the game without executing the declared move",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 16826,
+      "source": "chess after fixes",
+      "attachments": []
+    },
+    {
+      "file": "chess.spec.ts",
+      "title": "chess planned-move repetition claim ends the game without executing the declared move",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 23376,
+      "source": "chess after fixes",
+      "attachments": []
+    },
+    {
+      "file": "collection.spec.ts",
+      "title": "collection starts collapsed and switches game details inline without navigation",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 3452,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "collection.spec.ts",
+      "title": "collection starts collapsed and switches game details inline without navigation",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 4292,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "collection.spec.ts",
+      "title": "collection preserves filters, supports keyboard/touch and resets on home or reload",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 1708,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "collection.spec.ts",
+      "title": "collection preserves filters, supports keyboard/touch and resets on home or reload",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 2327,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "collection.spec.ts",
+      "title": "inline game selections keep independent preferences when storage writes are blocked",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 1804,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "collection.spec.ts",
+      "title": "inline game selections keep independent preferences when storage writes are blocked",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 2262,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "menu, actual WebGL moves, persistence, camera and restart",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 18187,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "menu, actual WebGL moves, persistence, camera and restart",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 18889,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "AI responds and settings persist",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 9700,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "AI responds and settings persist",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 8722,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "five difficulties, white opening, next-game policy and persisted preferences",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 16959,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "five difficulties, white opening, next-game policy and persisted preferences",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 20622,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 28515,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "expert Worker keeps animation frames alive; menu and restart discard old work",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 36221,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "random color is resolved once and retained when resuming",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 9613,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "random color is resolved once and retained when resuming",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 13387,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "AI selection remains usable when storage writes are blocked",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 6360,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "game.spec.ts",
+      "title": "AI selection remains usable when storage writes are blocked",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 6273,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: secondary buttons and cancelled gestures never place a stone",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 5376,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: secondary buttons and cancelled gestures never place a stone",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 6317,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: leaving the playable board clears the pending selection",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 5330,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: leaving the playable board clears the pending selection",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 5537,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: Worker failure stays visible through camera changes and retry recovers",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 6782,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: Worker failure stays visible through camera changes and retry recovers",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 8038,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: game result waits for open settings instead of discarding edits",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 10806,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "gomoku: game result waits for open settings instead of discarding edits",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 10585,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: secondary buttons and cancelled gestures never place a stone",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 6293,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: secondary buttons and cancelled gestures never place a stone",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 5940,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: leaving the playable board clears the pending selection",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 5160,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: leaving the playable board clears the pending selection",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 5275,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: Worker failure stays visible through camera changes and retry recovers",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 11739,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: Worker failure stays visible through camera changes and retry recovers",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 8387,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: game result waits for open settings instead of discarding edits",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 13954,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "recovery.spec.ts",
+      "title": "reversi: game result waits for open settings instead of discarding edits",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 8566,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi actual WebGL mouse/touch flips, save, camera, restart and game selection",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 26502,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi actual WebGL mouse/touch flips, save, camera, restart and game selection",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 39798,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi difficulty/color persist independently; changes apply next match",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 17556,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi difficulty/color persist independently; changes apply next match",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 17536,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi auto-pass announcement and validated saved history",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 8363,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi auto-pass announcement and validated saved history",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 5732,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "actual Workers stay responsive and are cancelled when switching both games",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 24583,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "actual Workers stay responsive and are cancelled when switching both games",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 28508,
+      "source": "legacy mobile regression",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi random color stays resolved across resume and storage failure is safe",
+      "project": "desktop",
+      "status": "passed",
+      "durationMs": 17462,
+      "source": "initial interrupted full run",
+      "attachments": []
+    },
+    {
+      "file": "reversi.spec.ts",
+      "title": "Reversi random color stays resolved across resume and storage failure is safe",
+      "project": "mobile",
+      "status": "passed",
+      "durationMs": 18484,
+      "source": "legacy mobile regression",
+      "attachments": []
+    }
+  ]
+}

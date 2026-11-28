@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The full edition's name (the student edition's is in main). -->
+    <string name="app_name">월드 테이블 게임</string>
+</resources>
