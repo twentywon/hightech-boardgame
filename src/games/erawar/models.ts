@@ -338,6 +338,10 @@ interface Person {
   /** The near arm's hand (where a weapon is held), the far one's. */
   hand: T.Group;
   off: T.Group;
+  /** Where an artist-made swordsman's shield is strapped, on his far forearm (its face its +z, its length +y). */
+  shield?: T.Group;
+  /** Artist-made: its hand pivots are the middles of its fists. */
+  artist?: boolean;
 }
 interface Dress {
   cloth: string;
@@ -470,12 +474,18 @@ function artistBody(k: Kit, parent: T.Object3D, era: number, kind: number, side:
   }
   const joint: Record<string, T.Object3D> = { body, leg0: legs[0], knee0: knees[0], leg1: legs[1], knee1: knees[1], chest, head, arm0: arms[0], elbow0: elbows[0], arm1: arms[1], elbow1: elbows[1] };
   skinArtist(k, model, `a${era}${kind}`, side, body, joint);
+  let shield: T.Group | undefined;
+  if (j.shield && model.joints?.shieldBasis) {
+    const b = model.joints.shieldBasis as unknown as number[];
+    shield = pivot(elbows[0], ...rel(j.shield, j.elbow0), "shield");
+    shield.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(new T.Vector3(b[0], b[1], b[2]), new T.Vector3(b[3], b[4], b[5]), new T.Vector3(b[6], b[7], b[8])));
+  }
   if (sitting)
     for (let i = 0; i < 2; i++) {
       legs[i].rotation.z = Math.PI / 2.3;
       knees[i].rotation.z = -Math.PI / 2.2;
     }
-  return { body, chest, legs, knees, arms, elbows, head, hand, off };
+  return { body, chest, legs, knees, arms, elbows, head, hand, off, shield, artist: true };
 }
 /** The people's picture paints (one per picture, side and tint), lit by the vertices' baked light. */
 const pictured = new WeakMap<Kit, Map<string, T.Material>>();
@@ -937,8 +947,9 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
       // A sword: a wrapped grip, a round pommel, a cross-guard, a blade with its fuller and point.
       const sword = pivot(hand, 0, 0, 0);
       sword.rotation.z = -Math.PI / 2.2;
-      const shield = pivot(p.off, 0.08, 0.3, 0.36);
-      shield.rotation.y = 0.35;
+      // (On the artist-made swordsman, strapped to his forearm; else held out on the far arm.)
+      const shield = p.shield ?? pivot(p.off, 0.08, 0.3, 0.36);
+      if (!p.shield) shield.rotation.y = 0.35;
       if (!sculptedWeapon(k, "w10", side, { sword, shield })) {
         k.mesh(one("grip", (f) => lathe([[0.0, -0.05], [0.017, -0.05], [0.019, 0.0], [0.017, 0.05], [0.0, 0.05]], cuts(f, 8, 5))), "leatherDark", 0, 0, 0, 1, 1, 1, sword);
         k.mesh(one("pommel", (f) => ellipsoid(0.026, 0.022, 0.026, cuts(f, 8, 5), cuts(f, 6, 4))), "brass", 0, -0.065, 0, 1, 1, 1, sword);
@@ -953,7 +964,9 @@ function soldier(k: Kit, parent: T.Object3D, era: number, kind: Kind, side: numb
       }
     } else if (kind === 1) {
       // A longbow: a curved stave, its string, a leather grip.
-      const bow = (weapon = pivot(p.off, 0.05, 0.0, 0.02, "weapon"));
+      const held = (weapon = pivot(p.off, p.artist ? 0 : 0.05, 0.0, p.artist ? 0 : 0.02, "weapon")),
+        // (In an artist-made fist the stave's leather grip, 0.165 m ahead of the bow's own middle, sits in the fist.)
+        bow = p.artist ? pivot(held, -0.165, 0, 0) : held;
       if (!sculptedWeapon(k, "w11", side, { bow })) {
         k.mesh(one("bowstave", (f) => tube([new T.Vector3(-0.03, -0.46, 0), new T.Vector3(0.06, -0.36, 0), new T.Vector3(0.14, -0.18, 0), new T.Vector3(0.165, 0, 0), new T.Vector3(0.14, 0.18, 0), new T.Vector3(0.06, 0.36, 0), new T.Vector3(-0.03, 0.46, 0)], 0.016, 0.016, cuts(f, 18, 8), cuts(f, 6, 4))), "wood", 0, 0, 0, 1, 1, 1, bow);
         k.mesh(one("bowstring", (f) => new T.CylinderGeometry(0.003, 0.003, 0.92, 3).translate(-0.03, 0, 0)), "rope", 0, 0, 0, 1, 1, 1, bow);
@@ -1445,8 +1458,10 @@ export function poseFigure(f: Figure, dist: number, walking: boolean, since: num
     if (f.strike && f.strike !== f.head) f.strike.rotation.z = (walking ? Math.sin(phase + 1) * 0.15 : Math.sin(t * 1.7) * 0.12) - hit * 0.6;
     if (f.tail) f.tail.rotation.z = Math.sin(t * 3.1 + phase) * 0.25;
     f.flaps.forEach((p, i) => (p.rotation.y = Math.sin(t * 5 + i) * (walking ? 0.35 : 0.15)));
-    f.arms.forEach((arm, i) => (arm.rotation.z = (i ? 1.2 : 0.4) + swing * 0.1));
-    f.elbows.forEach((e) => (e.rotation.z = 0.5));
+    // (The knight's far hand, raised already to carry a shield on foot, kept low at the reins.)
+    const reins = f.era === 1;
+    f.arms.forEach((arm, i) => (arm.rotation.z = (i ? 1.2 : reins ? -0.45 : 0.4) + swing * 0.1));
+    f.elbows.forEach((e, i) => (e.rotation.z = reins && !i ? 0 : 0.5));
   } else {
     // Legs: thighs swing, knees bend as a foot passes under the body.
     f.legs.forEach((leg, i) => {
@@ -1454,8 +1469,10 @@ export function poseFigure(f: Figure, dist: number, walking: boolean, since: num
       leg.rotation.z = walking ? Math.sin(a) * 0.5 : 0;
       f.knees[i].rotation.z = walking ? -Math.max(0, Math.sin(a - Math.PI / 2)) * 0.8 : 0;
     });
-    f.arms.forEach((arm, i) => (arm.rotation.z = swing * 0.42 * (i ? 1 : -1)));
-    f.elbows.forEach((e) => (e.rotation.z = walking ? 0.35 : 0.2));
+    // (A swordsman's shield arm barely swings: it holds the shield up.)
+    const shielded = f.era === 1 && f.kind === 0;
+    f.arms.forEach((arm, i) => (arm.rotation.z = swing * (shielded && !i ? 0.08 : 0.42) * (i ? 1 : -1)));
+    f.elbows.forEach((e, i) => (e.rotation.z = shielded && !i ? 0 : walking ? 0.35 : 0.2));
     f.body.position.y = walking ? Math.abs(Math.cos(phase)) * 0.035 : Math.sin(t * 2.2) * 0.004;
     const chest = f.chest;
     chest.rotation.z = walking ? -0.06 : -0.02 + Math.sin(t * 2.2) * 0.01;
@@ -1477,8 +1494,10 @@ export function poseFigure(f: Figure, dist: number, walking: boolean, since: num
       f.strike.rotation.z = Math.PI / 2 - (blow < 1 ? (1 - blow) * 0.25 : 0);
       f.elbows[i].rotation.z = 0;
       if (f.arms[other]) {
-        f.arms[other].rotation.z = Math.PI / 2.4;
-        f.elbows[other].rotation.z = 0.55;
+        // (The archer's other hand drawn back to his chin, flung a little further back as he looses; a gun's under the barrel.)
+        const draw = f.era === 1 && f.kind === 1;
+        f.arms[other].rotation.z = draw ? Math.PI / 2.05 : Math.PI / 2.4;
+        f.elbows[other].rotation.z = draw ? 2.45 + (blow < 1 ? (1 - blow) * 0.35 : 0) : 0.55;
       }
       if (blow < 1) chest.rotation.z = 0.08 * (1 - blow);
       // The gun (or the bow) kept level at the foe whatever the arm does: a gun's length along +x, a bow upright.

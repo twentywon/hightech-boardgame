@@ -41,9 +41,13 @@ the people start from free (CC0) artist-made models, the rest from nothing.
     (a hide wrap and band, a sash; a nasal helm with a plume; a tricorn with lace and white cross-belts; a modern
     helmet, a plate vest with pouches and an armband); thinned by decimation to ~10k triangles (`a…glb`, drawn with
     the pictures) and ~3.5k (`a…l.glb`, for the processor's draw: the pictures' colours in the vertices); Cycles' AO
-    baked into the vertices. Its bones are mapped onto the game's joints (`JOINT`: pelvis → body, thighs → legs, calves
-    and feet → knees, spine and clavicles → chest, neck and head → head, upper arms → arms, forearms, hands and
-    fingers → elbows); each vertex keeps the two strongest. The joints' places (the posed bones' heads, in the game's
+    baked into the vertices. Before the arms come down each hand is closed (`curl_hands`, `DRESS[...]["hands"]`): a fist
+    round what it holds, or at rest a little curled; the swordsman's left arm is raised (`SHIELD_ARM`), its forearm
+    across the front, and the shield's place and axes on that forearm go into the GLB (`shield`, `shieldBasis`), where
+    `artistBody` straps it. The hand pivots are the fists' middles (the four fingers' loops).
+    Its bones are mapped onto the game's joints (`JOINT`, `bone_joint`: pelvis → body, thighs → legs, calves, feet and
+    toes (`ball_leaf` too) → knees, spine and clavicles → chest, neck and head → head, upper arms → arms, forearms,
+    hands and fingers → elbows); each vertex keeps the two strongest. The joints' places (the posed bones' heads, in the game's
     frame, scaled 0.707 so the 1.81 m body stands 1.28 m) go in the GLB, and `artistBody` puts its pivots there.
 
 ## Making them again

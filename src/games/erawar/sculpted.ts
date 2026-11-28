@@ -32,7 +32,7 @@ export interface Sculpted {
   bones: string[];
   parts: SculptedPart[];
   /** An artist-made person's joints (where its bones' heads are, in the figure's frame). */
-  joints?: Record<string, [number, number, number]>;
+  joints?: Record<string, [number, number, number]> & { shieldBasis?: number[] };
 }
 
 interface Doc {

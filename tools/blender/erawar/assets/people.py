@@ -39,25 +39,35 @@ JOINT = {
 
 
 def bone_joint(name):
+    """The game joint a pack bone's vertices follow (by name: the legs' and feet's to the leg and knee, the hands'
+    and fingers' to the forearm; anything else to the body)."""
     if name in JOINT:
         return JOINT[name]
-    if name.endswith("_l") or name.endswith("_leaf_l"):
-        return "elbow0"  # hand and fingers
-    if name.endswith("_r") or name.endswith("_leaf_r"):
-        return "elbow1"
+    side = "0" if name.endswith("_l") else "1" if name.endswith("_r") else None
+    if side is not None:
+        if any(k in name for k in ("ball", "foot", "toe", "calf")):
+            return "knee" + side
+        if "thigh" in name:
+            return "leg" + side
+        if any(k in name for k in ("hand", "thumb", "index", "middle", "ring", "pinky", "lowerarm")):
+            return "elbow" + side
+        if "upperarm" in name:
+            return "arm" + side
     return "body"
 
 
-# What each era and kind wears (kind 2's rider reuses kind 0, the gunner kind 1).
+# What each era and kind wears (kind 2's rider reuses kind 0, the gunner kind 1), and its hands (left, right): a fist
+# round what it holds (a weapon, a shield, the reins), or at rest, a little curled. The swordsman's left arm carries
+# the shield ("shield": the forearm across its back, the hand at its grip).
 DRESS = {
-    (0, 0): dict(body=True, skin="skinHide", hair="Hair_Long+Hair_Buzzed", hairTint=(0.23, 0.15, 0.09), beard=True, extras=["wrap", "band"]),
-    (0, 1): dict(body=True, skin="skinHide", hair="Hair_Buzzed", hairTint=(0.33, 0.17, 0.08), beard=True, extras=["wrap", "band", "sash"]),
-    (1, 0): dict(outfit="Male_Peasant", tex="peasant", hair="Hair_Buzzed", hairTint=(0.33, 0.17, 0.08), beard=True, extras=["helm"]),
-    (1, 1): dict(outfit="Male_Ranger", tex="ranger", hair="Hair_SimpleParted", hairTint=(0.3, 0.2, 0.1), beard=False, extras=[]),
-    (2, 0): dict(outfit="Male_Peasant", tex="peasant", hair="Hair_SimpleParted", hairTint=(0.18, 0.12, 0.08), beard=False, extras=["tricorn", "belts"]),
-    (2, 1): dict(outfit="Male_Peasant", tex="peasant", hair="Hair_SimpleParted", hairTint=(0.35, 0.25, 0.14), beard=True, extras=["tricorn", "belts"]),
-    (3, 0): dict(outfit="Male_Peasant", tex="peasantOlive", team=False, hair="Hair_Buzzed", hairTint=(0.2, 0.14, 0.09), beard=False, extras=["helmet", "vest", "armband"]),
-    (3, 1): dict(outfit="Male_Peasant", tex="peasantOlive", team=False, hair="Hair_Buzzed", hairTint=(0.12, 0.09, 0.07), beard=True, extras=["helmet", "vest", "armband"]),
+    (0, 0): dict(hands=("rest", "fist"), body=True, skin="skinHide", hair="Hair_Long+Hair_Buzzed", hairTint=(0.23, 0.15, 0.09), beard=True, extras=["wrap", "band"]),
+    (0, 1): dict(hands=("rest", "fist"), body=True, skin="skinHide", hair="Hair_Buzzed", hairTint=(0.33, 0.17, 0.08), beard=True, extras=["wrap", "band", "sash"]),
+    (1, 0): dict(hands=("fist", "fist"), pose="shield", outfit="Male_Peasant", tex="peasant", hair="Hair_Buzzed", hairTint=(0.33, 0.17, 0.08), beard=True, extras=["helm"]),
+    (1, 1): dict(hands=("fist", "fist"), outfit="Male_Ranger", tex="ranger", hair="Hair_SimpleParted", hairTint=(0.3, 0.2, 0.1), beard=False, extras=[]),
+    (2, 0): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasant", hair="Hair_SimpleParted", hairTint=(0.18, 0.12, 0.08), beard=False, extras=["tricorn", "belts"]),
+    (2, 1): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasant", hair="Hair_SimpleParted", hairTint=(0.35, 0.25, 0.14), beard=True, extras=["tricorn", "belts"]),
+    (3, 0): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasantOlive", team=False, hair="Hair_Buzzed", hairTint=(0.2, 0.14, 0.09), beard=False, extras=["helmet", "vest", "armband"]),
+    (3, 1): dict(hands=("fist", "fist"), outfit="Male_Peasant", tex="peasantOlive", team=False, hair="Hair_Buzzed", hairTint=(0.12, 0.09, 0.07), beard=True, extras=["helmet", "vest", "armband"]),
 }
 
 
@@ -129,8 +139,50 @@ def gather_model(dress):
     return arm, meshes
 
 
-def pose_arms(arm):
-    """Arms from the T down by the sides, a little out and the forearms a touch forward (the game's rest)."""
+FINGERS = ("index", "middle", "ring", "pinky")
+# How far each joint of a finger bends (degrees): a fist round a grip, or a hand at rest.
+CURL = {"fist": (78, 96, 62), "rest": (18, 26, 16)}
+THUMB = {"fist": (32, 38, 40), "rest": (8, 10, 10)}
+# The shield arm (pack frame: faces -y, +x the left): the upper arm forward and a little down (the elbow out in front
+# of the chest, where the game's side view sees it), the forearm across the front toward the right, the fist at the
+# shield's grip.
+SHIELD_ARM = {"upperarm_l": (0.22, -0.78, -0.58), "lowerarm_l": (-0.66, -0.73, 0.16), "hand_l": (-0.6, -0.76, 0.24)}
+
+
+def turn_bone(arm, name, axis, degrees):
+    """A pose bone turned about a world axis through its head (its children follow)."""
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones[name]
+    inv = arm.matrix_world.inverted().to_3x3()
+    M = pb.matrix.copy()
+    head = M.translation.copy()
+    R = Matrix.Rotation(math.radians(degrees), 4, (inv @ Vector(axis)).normalized())
+    pb.matrix = Matrix.Translation(head) @ R @ Matrix.Translation(-head) @ M
+    bpy.context.view_layer.update()
+
+
+def curl_hands(arm, hands):
+    """In the packs' T (palms down, fingers along ±x), each hand closed as `hands` says: the fingers bent down under
+    the palm joint by joint, the thumb turned under and across them."""
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="POSE")
+    for (l, s), how in zip((("l", 1), ("r", -1)), hands):
+        a, b, c = CURL[how]
+        for f in FINGERS:
+            for j, deg in ((1, a), (2, b), (3, c)):
+                turn_bone(arm, f"{f}_0{j}_{l}", (0, s, 0), deg)
+        t1, t2, t3 = THUMB[how]
+        # (The thumb: its root swung under the palm toward the fingers, its joints bent across them.)
+        turn_bone(arm, f"thumb_01_{l}", (s, 0, 0), -t1)
+        turn_bone(arm, f"thumb_01_{l}", (0, 0, 1), s * t1 * 0.6)
+        turn_bone(arm, f"thumb_02_{l}", (0, s, 0), t2)
+        turn_bone(arm, f"thumb_03_{l}", (0, s, 0), t3)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def pose_arms(arm, pose=None):
+    """Arms from the T down by the sides, a little out and the forearms a touch forward (the game's rest); with
+    `pose` "shield", the left arm raised to carry a shield."""
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="POSE")
     inv = arm.matrix_world.inverted()
@@ -148,6 +200,10 @@ def pose_arms(arm):
 
     for s, l in ((1, "l"), (-1, "r")):
         aim(f"clavicle_{l}", (s * 1.0, 0.02, -0.12))
+        if pose == "shield" and l == "l":
+            for name, d in SHIELD_ARM.items():
+                aim(name, d)
+            continue
         aim(f"upperarm_{l}", (s * 0.16, -0.02, -1.0))
         aim(f"lowerarm_{l}", (s * 0.08, -0.22, -1.0))
         aim(f"hand_{l}", (s * 0.04, -0.2, -1.0))
@@ -665,27 +721,59 @@ def write_glb(path, prims, extras):
     return total
 
 
-def joints_of(arm):
+SHIELD_OUT = 0.075  # the shield's back off the forearm's line (pack metres)
+SHIELD_ON = 0.0  # its middle further on along the forearm than the forearm's own middle
+
+
+def joints_of(arm, pose=None):
     """The game's joints where the posed armature has them (game frame, the body's own space)."""
     def at(bone, frac=0.0):
         pb = arm.pose.bones[bone]
         p = arm.matrix_world @ (pb.head.lerp(pb.tail, frac))
         return to_game(np.array([tuple(p)]))[0].round(4).tolist()
 
-    return {
+    def grip(l):
+        """Where a held shaft passes through the fist: the middle of the loops the four fingers make."""
+        pts = []
+        for f in FINGERS:
+            for j in ("01", "02", "03", "04_leaf"):
+                pts.append(tuple(arm.matrix_world @ arm.pose.bones[f"{f}_{j}_{l}"].head))
+        return to_game(np.array([np.mean(pts, axis=0)]))[0].round(4).tolist()
+
+    out = {
         "leg0": at("thigh_l"), "knee0": at("calf_l"), "leg1": at("thigh_r"), "knee1": at("calf_r"),
         "chest": at("spine_01"), "head": at("neck_01"),
-        "arm0": at("upperarm_l"), "elbow0": at("lowerarm_l"), "hand0": at("hand_l", 0.9),
-        "arm1": at("upperarm_r"), "elbow1": at("lowerarm_r"), "hand1": at("hand_r", 0.9),
+        "arm0": at("upperarm_l"), "elbow0": at("lowerarm_l"), "hand0": grip("l"),
+        "arm1": at("upperarm_r"), "elbow1": at("lowerarm_r"), "hand1": grip("r"),
         "top": to_game(np.array([[0, 0, 1.81]]))[0].round(4).tolist(),
     }
+    if pose == "shield":
+        # The shield strapped on the left forearm: its middle just out from the forearm's, its face turned away from
+        # the arm (its back on the forearm), its length upright. Its frame's axes (x across, y up, z its face) go with it.
+        e = np.array(tuple(arm.matrix_world @ arm.pose.bones["lowerarm_l"].head))
+        h = np.array(tuple(arm.matrix_world @ arm.pose.bones["lowerarm_l"].tail))
+        d = (h - e) / np.linalg.norm(h - e)
+        up = np.array([0.0, 0.0, 1.0])
+        face = np.cross(d, up)
+        face /= np.linalg.norm(face)
+        if face[1] > 0:  # (its face forward, away from the body; the forearm across its back)
+            face = -face
+        yv = up - face * np.dot(up, face)
+        yv /= np.linalg.norm(yv)
+        xv = np.cross(yv, face)
+        centre = e + (h - e) * 0.62 + d * SHIELD_ON + face * SHIELD_OUT
+        g = lambda v: to_game(np.array([v]))[0] / SCALE
+        out["shield"] = to_game(np.array([centre]))[0].round(4).tolist()
+        out["shieldBasis"] = np.concatenate([g(xv), g(yv), g(face)]).round(4).tolist()
+    return out
 
 
 def one(era, kind):
     reset()
     dress = DRESS[(era, kind)]
     arm, meshes = gather_model(dress)
-    pose_arms(arm)
+    curl_hands(arm, dress["hands"])
+    pose_arms(arm, dress.get("pose"))
     apply_pose(meshes)
     if not dress.get("body"):
         for o in meshes:
@@ -693,7 +781,7 @@ def one(era, kind):
                 keep_head(o)
     meshes = [o for o in meshes if len(o.data.polygons)]
     meshes += extras_for(arm, dress, era, kind)
-    joints = joints_of(arm)
+    joints = joints_of(arm, dress.get("pose"))
     sizes = {}
     for lod, budget in (("", RICH), ("l", LO)):
         objs = []
@@ -717,6 +805,7 @@ def one(era, kind):
     print("DONE", era, kind, sizes, flush=True)
 
 
-os.makedirs(OUT, exist_ok=True)
-for era, kind in ONLY or sorted(DRESS):
-    one(era, kind)
+if __name__ == "__main__":
+    os.makedirs(OUT, exist_ok=True)
+    for era, kind in ONLY or sorted(DRESS):
+        one(era, kind)
