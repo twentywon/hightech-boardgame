@@ -522,6 +522,7 @@ function skinArtist(k: Kit, model: Sculpted, name: string, side: number, holder:
     holder.add(m);
     m.updateWorldMatrix(false, false);
     m.bind(skeleton, m.matrixWorld);
+    if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
     m.boundingSphere = m.geometry.boundingSphere!.clone();
     m.boundingSphere.radius += 0.35;
   }
@@ -558,6 +559,7 @@ function skinOn(k: Kit, model: Sculpted, name: string, side: number, holder: T.O
     m.updateWorldMatrix(false, false);
     m.bind(skeleton, m.matrixWorld);
     // (Its reach as it moves: the shape's own sphere and some, so that it is never culled while in sight.)
+    if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
     m.boundingSphere = m.geometry.boundingSphere!.clone();
     m.boundingSphere.radius += 0.35;
   }

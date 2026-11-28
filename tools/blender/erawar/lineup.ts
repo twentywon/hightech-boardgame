@@ -1,7 +1,8 @@
 /**
  * Dev-only page: every unit of an era (or all eras) in a row, lit as in the game, walking in place, to compare the
  * code-made look (`?blender=0`) with the Blender-baked one (`?blender=1`, the default) and to count frames.
- * `?era=0..3` (all when absent), `?close=1` for a close look at the fighter, `?walk=0` to stand still.
+ * `?era=0..3` (all when absent), `?close=1` for a close look at the fighter, `?walk=0` to stand still, `?plain=1` for
+ * the processor's look (the thinned people, their pictures' colours in the vertices).
  */
 import * as T from "three";
 import { Kit, poseFigure } from "../../../src/games/erawar/models";
@@ -20,7 +21,7 @@ document.body.append(renderer.domElement);
 const scene = new T.Scene();
 scene.background = new T.Color("#a9cdea");
 const camera = new T.PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 200);
-const rich = lifelike();
+const rich = q.get("plain") === "1" ? false : lifelike();
 const kit = new Kit(((r: unknown) => r) as never, rich, blender);
 scene.add(new T.HemisphereLight("#dcecff", "#5a6a3a", 1.7));
 const sun = new T.DirectionalLight("#fff1d6", 2.6);
