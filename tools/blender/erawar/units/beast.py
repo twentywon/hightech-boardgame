@@ -32,7 +32,7 @@ def barrel_at(x):
 
 def horse():
     P = []
-    body = loft([{"c": (x, cy, 0), "a": a, "b": b, "p": 2.2, "u": (0, 1, 0)} for x, cy, a, b in BARREL], n=24, paint="horse", up=(0, 1, 0))
+    body = loft([{"c": (x, cy, 0), "a": a, "b": b, "p": 2.2, "u": (0, 1, 0)} for x, cy, a, b in BARREL], n=18, paint="horse", up=(0, 1, 0))
 
     def body_shape(Pt, N, paints):
         d = np.zeros(len(Pt))
@@ -47,10 +47,10 @@ def horse():
     # The neck, arched, from the withers to the poll, and the head down to the muzzle.
     neck_pts = catmull(np.array([(0.36, 1.1, 0), (0.5, 1.3, 0), (0.63, 1.47, 0), (0.73, 1.59, 0)]), 8)
     radii = np.linspace(0, 1, len(neck_pts))
-    neck = loft([{"c": c, "a": 0.17 - 0.085 * t, "b": 0.135 - 0.065 * t, "u": (-1, 1, 0)} for c, t in zip(neck_pts, radii)], n=16, paint="horse", up=(-1, 1, 0))
+    neck = loft([{"c": c, "a": 0.17 - 0.085 * t, "b": 0.135 - 0.065 * t, "u": (-1, 1, 0)} for c, t in zip(neck_pts, radii)], n=12, paint="horse", up=(-1, 1, 0))
     head_pts = catmull(np.array([(0.7, 1.63, 0), (0.78, 1.55, 0), (0.88, 1.43, 0), (0.96, 1.33, 0), (1.0, 1.27, 0)]), 8)
     hr = [(0.075, 0.07), (0.1, 0.092), (0.092, 0.08), (0.075, 0.066), (0.065, 0.058), (0.06, 0.056), (0.056, 0.054), (0.05, 0.05)]
-    head = loft([{"c": c, "a": a, "b": b, "u": (1, 1, 0)} for c, (a, b) in zip(head_pts, hr)], n=16, paint="horse", up=(1, 1, 0), cap_len=0.03)
+    head = loft([{"c": c, "a": a, "b": b, "u": (1, 1, 0)} for c, (a, b) in zip(head_pts, hr)], n=12, paint="horse", up=(1, 1, 0), cap_len=0.03)
 
     def head_shape(Pt, N, paints):
         d = np.zeros(len(Pt))
@@ -80,7 +80,7 @@ def horse():
     hind = [(1.02, 0.0, 0.15, 0.11), (0.86, 0.01, 0.14, 0.1), (0.72, 0.025, 0.09, 0.07), (0.6, -0.02, 0.062, 0.055), (0.5, -0.03, 0.055, 0.05), (0.41, -0.01, 0.043, 0.039), (0.26, -0.005, 0.039, 0.035), (0.16, -0.012, 0.05, 0.045), (0.1, 0.006, 0.04, 0.038), (0.07, 0.012, 0.042, 0.04)]
     for i, (x, z) in enumerate(HORSE_LEGS):
         rows = fore if i < 2 else hind
-        leg = loft([{"c": (x + dx, y, z), "a": a, "b": b} for y, dx, a, b in rows], n=12, paint="horse", up=(1, 0, 0))
+        leg = loft([{"c": (x + dx, y, z), "a": a, "b": b} for y, dx, a, b in rows], n=9, paint="horse", up=(1, 0, 0))
         rig = chain([HB["beast"], HB[f"leg{i}"], HB[f"knee{i}"]], [((x, 0.85, z), (0, -1, 0), 0.07), ((x, 0.46, z), (0, -1, 0), 0.04)])
         P.append(Part(f"leg{i}", leg, rig, subdiv=1))
         hoof = lathe([(0.0, 0.0), (0.062, 0.0), (0.058, 0.04), (0.047, 0.08), (0.0, 0.08)], 14, "black", 1.1, 1.0)
@@ -89,19 +89,19 @@ def horse():
     tail = tube([(-0.6, 1.16, 0), (-0.7, 1.12, 0), (-0.77, 0.95, 0), (-0.79, 0.75, 0), (-0.77, 0.6, 0)], 0.05, 0.03, n=10, paint="mane")
     P.append(Part("tail", tail, chain([HB["beast"], HB["tail"]], [((-0.6, 1.12, 0), (-1, 0, 0), 0.03)]), subdiv=1))
     # The barding: a caparison over the back and down both flanks to above the knees, hemmed and badged in gold.
-    xs = np.linspace(-0.6, 0.58, 22)
+    xs = np.linspace(-0.6, 0.58, 16)
     cols = []
-    angs = np.linspace(-np.pi / 2, np.pi / 2, 15)
+    angs = np.linspace(-np.pi / 2, np.pi / 2, 11)
     for x in xs:
         cy, a, b = barrel_at(x)
         col = []
-        for drop in np.linspace(0.6, 0.0, 5):
+        for drop in np.linspace(0.6, 0.0, 4):
             col.append((x, cy - (cy - 0.6) * drop / 0.6 * 1.0 if drop > 0 else cy, -(b + 0.035 + 0.04 * drop)))
         for t in angs[1:-1]:
             e = 2 / 2.2
             c, s = math.cos(t), math.sin(t)
             col.append((x, cy + (a + 0.03) * math.copysign(abs(c) ** e, c), (b + 0.035) * math.copysign(abs(s) ** e, s)))
-        for drop in np.linspace(0.0, 0.6, 5):
+        for drop in np.linspace(0.0, 0.6, 4):
             col.append((x, cy - (cy - 0.6) * drop / 0.6 if drop > 0 else cy, b + 0.035 + 0.04 * drop))
         cols.append(col)
     V = np.array(cols).reshape(-1, 3)
@@ -162,7 +162,7 @@ def shaggy(amount, seed=0, fringe=0.0):
 
 def mammoth():
     P = []
-    body = loft([{"c": (x, cy, 0), "a": a, "b": b, "p": 2.0, "u": (0, 1, 0)} for x, cy, a, b in HUMP], n=26, paint="shag", up=(0, 1, 0))
+    body = loft([{"c": (x, cy, 0), "a": a, "b": b, "p": 2.0, "u": (0, 1, 0)} for x, cy, a, b in HUMP], n=18, paint="shag", up=(0, 1, 0))
     part = Part("body", body, rigid(MB["beast"]), subdiv=1)
     # The fringe: the lower body's hair hangs down past the belly, ragged.
     Pt = part.points()
@@ -173,7 +173,7 @@ def mammoth():
     part.set_points(Pt)
     part.push(shaggy(0.03, 1))
     P.append(part)
-    head = ellipsoid((0.36, 0.38, 0.34), (0, 0, 0), "shag", 22, 16)
+    head = ellipsoid((0.36, 0.38, 0.34), (0, 0, 0), "shag", 16, 11)
     hv = head.v
     d = norm(hv)
     crown = np.exp(-(((d[:, 0] + 0.2) / 0.5) ** 2)) * smoothstep(0.2, 1, d[:, 1])
@@ -181,12 +181,12 @@ def mammoth():
     head.v = np.stack([d[:, 0] * (0.36 - 0.04 * front), d[:, 1] * 0.38 + crown * 0.16, d[:, 2] * (0.34 - 0.06 * front)], axis=1) + MHEAD
     P.append(Part("head", head, chain([MB["beast"], MB["head"]], [((0.5, 1.3, 0), (1, 0, 0), 0.08)]), subdiv=1).push(shaggy(0.018, 2)))
     for s, bone in ((-1, "flap0"), (1, "flap1")):
-        ear = ellipsoid((0.09, 0.15, 0.035), (0, -0.04, s * 0.02), "furDark", 14, 10)
-        P.append(Part(f"ear{s}", ear.moved(at(*(MHEAD + (-0.1, 0.06, s * 0.3)))), rigid(MB[bone]), subdiv=1).push(shaggy(0.008, 5)))
+        ear = ellipsoid((0.09, 0.15, 0.035), (0, -0.04, s * 0.02), "furDark", 10, 7)
+        P.append(Part(f"ear{s}", ear.moved(at(*(MHEAD + (-0.1, 0.06, s * 0.3)))), rigid(MB[bone])).push(shaggy(0.008, 5)))
         P.append(Part(f"eye{s}", ellipsoid((0.026, 0.024, 0.02), MHEAD + (0.27, 0.08, s * 0.19), "pupil", 8, 6), rigid(MB["head"])))
-        tusk = tube([MHEAD + (0.22, -0.18, s * 0.14), MHEAD + (0.42, -0.4, s * 0.2), MHEAD + (0.72, -0.4, s * 0.24), MHEAD + (0.86, -0.18, s * 0.2), MHEAD + (0.84, 0.0, s * 0.12)], 0.055, 0.012, n=12, paint="tusk", samples=18)
+        tusk = tube([MHEAD + (0.22, -0.18, s * 0.14), MHEAD + (0.42, -0.4, s * 0.2), MHEAD + (0.72, -0.4, s * 0.24), MHEAD + (0.86, -0.18, s * 0.2), MHEAD + (0.84, 0.0, s * 0.12)], 0.055, 0.012, n=8, paint="tusk", samples=12)
         P.append(Part(f"tusk{s}", tusk, rigid(MB["head"]), subdiv=1))
-    trunk = tube([TRUNK + (0, 0.05, 0), TRUNK + (0.12, -0.3, 0), TRUNK + (0.1, -0.62, 0), TRUNK + (0.18, -0.82, 0), TRUNK + (0.28, -0.8, 0)], 0.12, 0.035, n=14, paint="shag", samples=20)
+    trunk = tube([TRUNK + (0, 0.05, 0), TRUNK + (0.12, -0.3, 0), TRUNK + (0.1, -0.62, 0), TRUNK + (0.18, -0.82, 0), TRUNK + (0.28, -0.8, 0)], 0.12, 0.035, n=10, paint="shag", samples=14)
     tr = Part("trunk", trunk, chain([MB["head"], MB["strike"]], [(TRUNK, (1, -1, 0), 0.05)]), subdiv=1)
 
     def wrinkles(Pt, N, paints):
@@ -196,14 +196,14 @@ def mammoth():
     P.append(tr)
     for i, (x, z) in enumerate(MAMMOTH_LEGS):
         rows = [(1.05, 0.21), (0.9, 0.21), (0.7, 0.19), (0.5, 0.165), (0.42, 0.155), (0.25, 0.15), (0.1, 0.16), (0.03, 0.175)]
-        leg = loft([{"c": (x, y, z), "a": r, "b": r * 0.95} for y, r in rows], n=16, paint="shag", up=(1, 0, 0), cap_len=0.03)
+        leg = loft([{"c": (x, y, z), "a": r, "b": r * 0.95} for y, r in rows], n=11, paint="shag", up=(1, 0, 0), cap_len=0.03)
         lp = Part(f"leg{i}", leg, chain([MB["beast"], MB[f"leg{i}"], MB[f"knee{i}"]], [((x, 0.92, z), (0, -1, 0), 0.08), ((x, 0.47, z), (0, -1, 0), 0.05)]), subdiv=1)
         lp.push(shaggy(0.016, 10 + i))
         P.append(lp)
         nails = [ellipsoid((0.03, 0.03, 0.04), (x + 0.15, 0.04, z + (t - 1) * 0.07), "bone", 8, 6) for t in range(3)]
         P.append(Part(f"nails{i}", Shape.join(nails), rigid(MB[f"knee{i}"])))
     tail = Shape.join([tube([(-0.84, 1.2, 0), (-0.92, 1.05, 0), (-0.94, 0.85, 0)], 0.035, 0.02, n=8, paint="furDark"), ellipsoid((0.05, 0.08, 0.05), (-0.94, 0.8, 0), "furDark", 10, 8)])
-    P.append(Part("tail", tail, chain([MB["beast"], MB["tail"]], [((-0.84, 1.2, 0), (-1, 0, 0), 0.03)]), subdiv=1))
+    P.append(Part("tail", tail, chain([MB["beast"], MB["tail"]], [((-0.84, 1.2, 0), (-1, 0, 0), 0.03)])))
     # The blanket over the back, hemmed in gold.
     xs = np.linspace(-0.38, 0.28, 12)
     cols = []

@@ -70,7 +70,7 @@ def sphere_dirs(n=40, m=28):
 
 
 def head_shape(paint):
-    d, f = sphere_dirs(30, 22)
+    d, f = sphere_dirs(26, 18)
     return Shape(turn(shape_head(d)) + HEADP, f, paint)
 
 
@@ -89,7 +89,7 @@ GROW = {
 }
 
 
-def shell(grow, lift, paint, swell=None, strands=0.0, n=30, m=22, seed=1):
+def shell(grow, lift, paint, swell=None, strands=0.0, n=26, m=18, seed=1):
     """A shell over the head where `grow` says (hair, a beard, a hood, a coif), `lift` off the skin, locks by `strands`."""
     d, f = sphere_dirs(n, m)
     k = grow(d)
@@ -154,7 +154,7 @@ def torso(paint, fat=1.0, cut=None):
     for y, x, a, b, p in TORSO + [(1.09, 0.016, 0.043, 0.042, 2.0)]:
         k = fat if y < 1.0 else 1.0
         secs.append({"c": (x, y, 0.0), "a": a * k, "b": b * k, "p": p})
-    s = loft(secs, n=16, paint=paint, up=(1, 0, 0), caps=(True, True))
+    s = loft(secs, n=14, paint=paint, up=(1, 0, 0), caps=(True, True), cap_rings=2)
     if cut:
         s.paint = [cut(np.mean(s.v[list(f)], axis=0)) or paint for f in s.f]
     return s

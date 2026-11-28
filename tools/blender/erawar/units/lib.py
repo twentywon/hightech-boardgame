@@ -335,7 +335,10 @@ def material(name):
 class Part:
     """A Blender object made from a Shape, with how it moves (`rig`: a joint's name, or a function of positions)."""
 
-    def __init__(self, name, shape, rig, subdiv=1, smooth=True, sharp=None, crease=None, outward=None):
+    def __init__(self, name, shape, rig, subdiv=None, smooth=True, sharp=None, crease=None, outward=None):
+        # (Not subdivided unless asked, but for a creased box, which one subdivision rounds.)
+        if subdiv is None:
+            subdiv = 1 if crease is not None else 0
         self.name = name
         self.rig = rig
         me = bpy.data.meshes.new(name)
@@ -378,6 +381,9 @@ class Part:
             self.apply()
         self.obj.data.polygons.foreach_set("use_smooth", [smooth] * len(self.obj.data.polygons))
         self.sharp = sharp
+        # Subdivided parts are thinned again by Blender's decimation once shaped (`finish`): the smooth shape kept,
+        # far fewer triangles to skin (a lane holds thirty of them).
+        self.decimate = float(os.environ.get("DECIMATE", "0.5")) if subdiv else None
         self.obj.data.update()
 
     def apply(self):
@@ -425,7 +431,14 @@ class Part:
         return self
 
     def finish(self):
-        """Hard edges split (so a helmet's rim or a box's corner stays crisp)."""
+        """Thinned (if subdivided), hard edges split (so a helmet's rim or a box's corner stays crisp)."""
+        if self.decimate and self.decimate < 1:
+            mod = self.obj.modifiers.new("thin", "DECIMATE")
+            mod.decimate_type = "COLLAPSE"
+            mod.ratio = self.decimate
+            mod.use_collapse_triangulate = True
+            self.apply()
+            self.obj.data.polygons.foreach_set("use_smooth", [True] * len(self.obj.data.polygons))
         if self.sharp is not None:
             bm = bmesh.new()
             bm.from_mesh(self.obj.data)
