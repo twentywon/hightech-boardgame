@@ -7,6 +7,7 @@ import { grained } from "../../engine/grain";
 import { Grove } from "../../engine/foliage";
 import { BASE_X, SLOTS, turretAt } from "./sim";
 import type { Kit } from "./models";
+import { bakedLand } from "./baked";
 
 /**
  * Where 시대 전쟁 is fought, all painted in code. A wide plain under a big sky, a worn dirt lane between the two bases
@@ -422,7 +423,11 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     hills.setMatrixAt(k, one(-48 + k * 19 + rnd() * 5, -0.8, -14 - rnd() * 4, 10 + rnd() * 9, 2.8 + rnd() * 3, 5 + rnd() * 2));
     if (rich) hillsFar.setMatrixAt(k, one(-54 + k * 21 + rnd() * 6, -1, -24 - rnd() * 4, 14 + rnd() * 10, 4.5 + rnd() * 4, 6));
   }
-  scene.add(hills, hillsFar);
+  // The land behind as Blender made it (hills rising into a snowy range, its shade baked in), in place of the
+  // instanced hills and peaks when it is there.
+  const blenderLand = bakedLand(own);
+  if (blenderLand) scene.add(blenderLand);
+  else scene.add(hills, hillsFar);
   // (The far range only with a graphics card: where the processor draws, every layer of sky-filling shapes costs.)
   // With the lifelike look a mountain is a rugged peak (ridges, gullies, snow lying on its upper slopes, shaded smooth)
   // instead of a faceted cone with a snow cone on it.
@@ -443,7 +448,7 @@ export function buildField(scene: T.Scene, own: Own, kit: Kit, rich: boolean): F
     const tall = 18 + rnd() * 14;
     peaksFar.setMatrixAt(k, one(-70 + k * 18 + rnd() * 8, tall / 2 - 1, -78 - rnd() * 8, tall * 1.2, tall, tall * 0.6, rnd()));
   }
-  scene.add(peaks, peaksFar, caps);
+  if (!blenderLand) scene.add(peaks, peaksFar, caps);
   // Woods: instanced trunks and crowns (conifers in tiers and round trees) behind the lane and past the bases.
   const spots: { x: number; z: number; s: number; pine: boolean }[] = [];
   for (let k = 0; k < (rich ? 90 : 66); k++) spots.push({ x: -50 + rnd() * 100, z: -4.5 - rnd() * 14, s: 0.8 + rnd() * 0.9, pine: rnd() < 0.55 });

@@ -2,6 +2,7 @@ import * as T from "three";
 import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
+import { Shade } from "./baked";
 import { bark, grain, grained } from "../../engine/grain";
 import { made, skin as poreRelief, smooth } from "../../engine/lifelike";
 import type { Kind } from "./sim";
@@ -80,10 +81,14 @@ export class Kit {
    * thirty soldiers, so not as fine as 러시안 룰렛's four), without it under half.
    */
   readonly fine: number;
+  /** Blender's baked shade for the units (`baked.ts`); `blender` false builds them from the code alone. */
+  readonly shade: Shade | null;
   constructor(
     readonly own: Own,
     readonly rich: boolean,
+    blender = true,
   ) {
+    this.shade = blender ? new Shade(own) : null;
     this.fine = rich ? 1.25 : 0.4;
     const mat = (color: string, o: T.MeshStandardMaterialParameters = {}) =>
       own(rich ? new T.MeshStandardMaterial({ color, roughness: 0.75, ...o }) : new T.MeshLambertMaterial({ color, map: o.map ?? null, emissive: (o.emissive as T.ColorRepresentation) ?? 0x000000, emissiveIntensity: o.emissiveIntensity ?? 1 }));
@@ -1046,6 +1051,8 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     for (const c of held) o.add(c);
   }
   for (const t of track) t.name = `track#${named++}`;
+  // Blender's baked shade in the vertices of every part (`baked.ts`, tools/blender/erawar/ao.py).
+  k.shade?.apply(root, era, kind);
   // Where the processor draws, the figure casts no shadow of its own (a shadow pass costs every part a second draw):
   // a soft patch on the ground under it stands for it.
   if (!k.rich) {
