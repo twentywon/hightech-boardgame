@@ -154,3 +154,51 @@ export function partGeometry(own: Own, p: SculptedPart, tint?: T.Color) {
   g.computeBoundingSphere();
   return own(g);
 }
+
+/**
+ * The triangles of a part that sit on one joint (a weapon's, a shield's), as a plain shape in that joint's own frame,
+ * its baked light as its colour (or, with `tint`, that colour times the light). Null when none do.
+ */
+export function rigidGeometry(own: Own, p: SculptedPart, bone: number, tint?: T.Color) {
+  const n = p.position.length / 3,
+    remap = new Int32Array(n).fill(-1),
+    tri: number[] = [];
+  let count = 0;
+  for (let t = 0; t < p.index.length; t += 3) {
+    const a = p.index[t],
+      b = p.index[t + 1],
+      c = p.index[t + 2];
+    if (p.joints[a * 4] !== bone) continue;
+    for (const v of [a, b, c]) {
+      if (remap[v] < 0) remap[v] = count++;
+      tri.push(remap[v]);
+    }
+  }
+  if (!tri.length) return null;
+  const position = new Float32Array(count * 3),
+    normal = new Float32Array(count * 3),
+    uv = new Float32Array(count * 2),
+    color = new Float32Array(count * 3);
+  for (let v = 0; v < n; v++) {
+    const i = remap[v];
+    if (i < 0) continue;
+    for (let c = 0; c < 3; c++) {
+      position[i * 3 + c] = p.position[v * 3 + c];
+      normal[i * 3 + c] = p.normal[v * 3 + c];
+    }
+    uv[i * 2] = p.uv[v * 2];
+    uv[i * 2 + 1] = p.uv[v * 2 + 1];
+    const l = p.light[v * 3] / 255;
+    color[i * 3] = (tint?.r ?? 1) * l;
+    color[i * 3 + 1] = (tint?.g ?? 1) * l;
+    color[i * 3 + 2] = (tint?.b ?? 1) * l;
+  }
+  const g = new T.BufferGeometry();
+  g.setAttribute("position", new T.BufferAttribute(position, 3));
+  g.setAttribute("normal", new T.BufferAttribute(normal, 3));
+  g.setAttribute("uv", new T.BufferAttribute(uv, 2));
+  g.setAttribute("color", new T.BufferAttribute(color, 3));
+  g.setIndex(tri);
+  g.computeBoundingSphere();
+  return own(g);
+}

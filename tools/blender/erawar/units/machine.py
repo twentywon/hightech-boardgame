@@ -21,20 +21,6 @@ import bpy
 from lib import *  # noqa
 
 
-def bevelled(name, shape, bone, width=0.012, segments=2, sharp=35):
-    """A hard part: its edges bevelled by Blender, its faces flat-shaded across sharp turns."""
-    p = Part(name, shape, rigid(bone), subdiv=0)
-    mod = p.obj.modifiers.new("bevel", "BEVEL")
-    mod.width = width
-    mod.segments = segments
-    mod.limit_method = "ANGLE"
-    mod.angle_limit = math.radians(30)
-    p.apply()
-    p.obj.data.polygons.foreach_set("use_smooth", [True] * len(p.obj.data.polygons))
-    p.sharp = sharp
-    return p
-
-
 def turned(outline, n, paint, m):
     return lathe(outline, n, paint).moved(m)
 

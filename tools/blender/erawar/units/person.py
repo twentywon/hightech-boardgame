@@ -745,6 +745,12 @@ if __name__ == "__main__":
         reset()
         parts = build(era, kind)
         bake_ao(parts, samples=int(os.environ.get("BAKE_SAMPLES", "48")))
+        # (A leg inside its boot is never seen, but the boot's rim shades a ragged band just above it: lifted.)
+        top = 0.075 + dress_of(era, kind).get("high", 0.11) + 0.035
+        for p in parts:
+            if p.name in ("leg0", "leg1"):
+                y = p.points()[:, 1]
+                p.ao = np.where(y < top, np.maximum(p.ao, 0.92), p.ao)
         prims = gather(parts, BONES)
         size = write_glb(os.path.join(out, f"p{era}{kind}.glb"), prims, {"bones": BONES, "era": era, "kind": kind})
         if os.environ.get("COUNT"):

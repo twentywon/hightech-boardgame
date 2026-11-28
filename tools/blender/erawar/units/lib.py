@@ -450,6 +450,21 @@ class Part:
         return self
 
 
+def bevelled(name, shape, bone, width=0.012, segments=2, sharp=35):
+    """A hard part: its edges bevelled by Blender, its faces flat-shaded across sharp turns."""
+    p = Part(name, shape, rigid(bone) if isinstance(bone, (int, np.integer)) else bone, subdiv=0)
+    mod = p.obj.modifiers.new("bevel", "BEVEL")
+    mod.width = width
+    mod.segments = segments
+    mod.limit_method = "ANGLE"
+    mod.angle_limit = math.radians(30)
+    p.apply()
+    p.obj.data.polygons.foreach_set("use_smooth", [True] * len(p.obj.data.polygons))
+    p.sharp = sharp
+    return p
+
+
+
 # ─────────────── joints ───────────────
 
 
