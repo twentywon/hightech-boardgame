@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Rebuilds what Blender makes for 시대 전쟁 (see README.md here):
 #   tools/blender/erawar/bake-all.sh <blender> <work dir> [<packs dir>]
-# 1. units/beast.py, machine.py, weapon.py: the mounts, machines and weapons, sculpted and skinned, with Cycles'
-#    baked light -> src/assets/models/erawar/units/b0/b1.glb, m2/m3.glb, w<era><kind>.glb;
+# 1. units/beast.py, machine.py, weapon.py: the horse, machines and weapons, sculpted and skinned, with Cycles'
+#    baked light -> src/assets/models/erawar/units/b1.glb, m2/m3.glb, w<era><kind>.glb; units/mammoth.py (and
+#    webp.py): the woolly mammoth, its hair baked into pictures -> units/b0.glb and units/tex/mammoth(_n).webp;
 # 2. terrain.py: the land behind the lane -> src/assets/models/erawar/terrain.glb and terrain.webp;
 # 3. with <packs dir> (Quaternius' two CC0 packs unzipped, see README.md): assets/masks.py, tex.py, uniform.py,
 #    people.py: the people -> src/assets/models/erawar/people/a<era><kind>(l).glb and tex/*.webp.
@@ -13,6 +14,8 @@ mkdir -p "$WORK/units" "$WORK/land" "$ASSETS/units"
 for script in beast machine weapon; do
   "$BLENDER" -b --python "$HERE/units/$script.py" -- "$WORK/units" 2>&1 | grep -E "DONE|Error|Traceback" || true
 done
+"$BLENDER" -b --python "$HERE/units/mammoth.py" -- "$WORK/units" "$WORK/mammoth" 2>&1 | grep -E "SHELL|DONE|Error|Traceback" || true
+python3 "$HERE/units/webp.py" "$WORK/mammoth/tex" "$ASSETS/units/tex"
 cp "$WORK/units/"*.glb "$ASSETS/units/"
 TERRAIN_KEEP="${TERRAIN_KEEP:-0.25}" "$BLENDER" -b --python "$HERE/terrain.py" -- "$WORK/land" 2048 2>&1 | grep -E "TRIANGLES|DONE|Error|Traceback" || true
 cp "$WORK/land/terrain.glb" "$ASSETS/terrain.glb"

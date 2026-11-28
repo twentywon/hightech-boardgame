@@ -131,7 +131,7 @@ export function readSculpted(data: Uint8Array): Sculpted {
 }
 
 const people = import.meta.glob<string>("../../assets/models/erawar/people/*.glb", { query: "?inline", import: "default", eager: true }),
-  pictures = import.meta.glob<string>("../../assets/models/erawar/people/tex/*.webp", { query: "?inline", import: "default", eager: true });
+  pictures = import.meta.glob<string>(["../../assets/models/erawar/people/tex/*.webp", "../../assets/models/erawar/units/tex/*.webp"], { query: "?inline", import: "default", eager: true });
 const cache = new Map<string, Sculpted | null>();
 /**
  * A person made from artist-made models (tools/blender/erawar/assets/people.py: Quaternius' CC0 base characters and
@@ -146,11 +146,18 @@ export function artistPerson(era: number, kind: number, lo: boolean): Sculpted |
   return cache.get(key)!;
 }
 const images = new Map<string, HTMLImageElement>();
-/** One of the people's pictures (sRGB), loaded once (the texture updates itself when its picture has come). */
-export function personPicture(own: Own, name: string): T.Texture {
+/** Whether there is a picture of that name (the mammoth's relief, `mammoth_n`). */
+export function hasPicture(name: string) {
+  return Object.keys(pictures).some((path) => path.endsWith(`/${name}.webp`));
+}
+/**
+ * One of the people's pictures (sRGB; with `data`, a normal map's raw numbers), loaded once (the texture updates
+ * itself when its picture has come).
+ */
+export function personPicture(own: Own, name: string, data = false): T.Texture {
   const url = Object.entries(pictures).find(([path]) => path.endsWith(`/${name}.webp`))?.[1];
   const map = own(new T.Texture());
-  map.colorSpace = T.SRGBColorSpace;
+  map.colorSpace = data ? T.NoColorSpace : T.SRGBColorSpace;
   map.flipY = false;
   map.anisotropy = 4;
   if (!url || typeof Image === "undefined") return map;
@@ -192,7 +199,7 @@ export function personGeometry(own: Own, p: SculptedPart, side?: number, paint?:
   g.computeBoundingSphere();
   return own(g);
 }
-/** A unit Blender sculpted, by its file's name: b0 the mammoth, b1 the horse, m2 the gun, m3 the tank, w<era><kind> a weapon. */
+/** A unit Blender sculpted, by its file's name (b0 the mammoth: its skin wears a picture, as the people's do, see mammoth.py), b1 the horse, m2 the gun, m3 the tank, w<era><kind> a weapon. */
 export function sculptedModel(key: string): Sculpted | null {
   if (!cache.has(key)) {
     const url = Object.entries(files).find(([path]) => path.endsWith(`/${key}.glb`))?.[1];

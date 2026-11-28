@@ -18,8 +18,24 @@ the people start from free (CC0) artist-made models, the rest from nothing.
   bakes ambient occlusion into the vertices; `write_glb` writes one primitive per game paint (quantised positions,
   normals, box-projected uvs, and per vertex two joints, the first one's weight and the baked light).
   - `beast.py` → `b1.glb` the horse (barrel, arched neck and mane, head, eight-part legs, tail, caparison with gold
-    hem and badge, saddle, chanfron, bridle) and `b0.glb` the mammoth (humped shaggy body with a hanging fringe,
-    domed head, ears, tusks, wrinkled trunk, pillar legs with toenails, tail, blanket).
+    hem and badge, saddle, chanfron, bridle).
+  - `mammoth.py` → `b0.glb` and `tex/mammoth.webp`, `mammoth_n.webp` (`webp.py` makes the WebPs from its PNGs): the
+    woolly mammoth, made the way a game artist would. Its skin is one body melted from Blender's metaballs (a high
+    domed skull, a hump over the shoulders, a back sloping to the rump, pillar legs on flat round soles, a trunk
+    narrowing to its two-fingered tip, small ears, a short tail), ringed along the trunk and wrinkled at the knees,
+    with spiral tusks and toenails. On it grow ~6000 locks (~80,000 strands, ~1M triangles), each a clump of fine
+    ribbons spread at the root and drawn together at the tip, bending under their weight, kept out of the skin:
+    longest on the flanks, the throat (a beard) and the belly where they hang to a ragged fringe a little above the
+    knees, shorter on the legs (the soles bare), a tuft on the crown and at the tail, a little on the upper trunk;
+    each lock between a dark brown and a ginger, dark at the root and paler at the tip. The game draws a shell
+    instead: the skin swollen by its short hair and a tube round every long lock, melted together (voxel remesh),
+    thinned to ~9000 triangles, laid out flat on a much smoothed copy (so its pieces are big), and Cycles bakes the
+    hair's colour, its relief (tangent normal map) and the shade the locks throw on one another (AO) from the strands
+    onto it, at twice the size and halved. The eyes, a blanket of the side's colour hemmed in gold draped over the
+    hair, and the joints' places (where the rider sits too) go in the GLB; the game skins it as the people
+    (`skinArtist`), with the relief where a graphics card draws and the picture's colours in the vertices where the
+    processor does. No free (CC0) mammoth could be had (Quaternius' animal packs have none, OpenGameArt's one elephant
+    is a crude block).
   - `machine.py` → `m2.glb` the field gun and `m3.glb` the tank (bevelled hard surfaces; each wheel, the turret and
     the gun on their own pivots; the tank's running tracks stay the game's own).
   - `weapon.py` → `w<era><kind>.glb`: club, sling, spear, sword and kite shield, longbow, lance, musket (with the
@@ -83,6 +99,6 @@ still the code's own shapes; the mounts, machines and weapons are still Blender-
 Drive could not be fetched: its quota refused every file). Subdivided parts are thinned by Blender's decimation (`DECIMATE`, 0.5 by default) so
 that a full lane draws as fast as the code's units did.
 
-`lineup.html` (`?era=0..3`, `?blender=0` for the look without Blender, `?close=1`, `?walk=0`) shows every unit of an
+`lineup.html` (`?era=0..3`, `?blender=0` for the look without Blender, `?close=1`, `?walk=0`, `?kind=2&cam=head|profile|near` for the mammoth close) shows every unit of an
 era side by side, lit as in the game, and `window.fps()` counts its frames; `shoot.cjs <port> <query> <out.png>`
 takes its picture.
