@@ -16,7 +16,7 @@ import numpy as np
 
 argv = sys.argv[sys.argv.index("--") + 1 :]
 SRC, OUT = argv[0], argv[1]
-REACH = float(argv[2]) if len(argv) > 2 else 0.22
+REACH = float(argv[2]) if len(argv) > 2 else 0.16
 SAMPLES = int(os.environ.get("BAKE_SAMPLES", "96"))
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -109,8 +109,9 @@ result = {}
 missing = 0
 for o in meshes:
     light = np.maximum(front[o.name], back[o.name])
-    # A little light always reaches in (sky bounces off cloth): the deepest shade is a third.
-    light = 0.34 + 0.66 * np.clip(light, 0, 1)
+    # Light always reaches in (sky bounces off cloth and skin): the deepest shade is a little over half, so that a
+    # joint tucked into a sleeve or a shoulder into a tunic darkens without going black.
+    light = 0.56 + 0.44 * np.clip(light, 0, 1)
     index = np.array(where[o.name])
     missing += int((index < 0).sum())
     mine = np.where(index >= 0, light[np.maximum(index, 0)], 1.0)
