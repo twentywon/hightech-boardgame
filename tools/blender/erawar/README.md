@@ -30,6 +30,9 @@ any time.
     domed head, ears, tusks, wrinkled trunk, pillar legs with toenails, tail, blanket).
   - `machine.py` → `m2.glb` the field gun and `m3.glb` the tank (bevelled hard surfaces; each wheel, the turret and
     the gun on their own pivots; the tank's running tracks stay the game's own).
+  - `weapon.py` → `w<era><kind>.glb`: club, sling, spear, sword and kite shield, longbow, lance, musket (with the
+    fusilier's bayonet), rifle and machine gun, each modelled in the frame of the pivot that holds it and drawn there
+    as plain (unskinned) meshes (`sculptedWeapon` in `models.ts`).
   The game skins each on its own jointed pivots (`skinOn` in `models.ts`), so poses, weapons in the hands, the rider
   and every animation are as before; `Kit(own, rich, false)` (and `lineup.html?blender=0`) builds the code's own.
 
@@ -42,8 +45,9 @@ any time.
    Cycles; `COUNT=1` lists each part's vertices).
 
 The joints' names and places are the game's (`sculptedBody`, `sculptedBeast` and the machines' branch in
-`models.ts`): change them together. Weapons, shields, the stone bag, the ammunition box, the knight's pennant and the
-tank's tracks are still the code's own shapes.
+`models.ts`): change them together. The stone bag, the ammunition box, the knight's pennant and the tank's tracks are
+still the code's own shapes. Subdivided parts are thinned by Blender's decimation (`DECIMATE`, 0.5 by default) so
+that a full lane draws as fast as the code's units did.
 
 `lineup.html` (`?era=0..3`, `?blender=0` for the look without Blender, `?close=1`, `?walk=0`) shows every unit of an
 era side by side, lit as in the game, and `window.fps()` counts its frames; `shoot.cjs <port> <query> <out.png>`
