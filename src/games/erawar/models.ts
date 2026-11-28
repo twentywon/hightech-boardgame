@@ -495,7 +495,7 @@ function picturePaint(k: Kit, name: string, tint?: number[]) {
   const key = `${name}:${tint?.join(",") ?? ""}`;
   let m = byKit.get(key);
   if (!m) {
-    const paint = k.own(new T.MeshStandardMaterial({ map: personPicture(k.own, name), vertexColors: true, roughness: name.startsWith("hair") ? 0.6 : 0.82, metalness: 0, color: tint ? new T.Color(...(tint as [number, number, number])) : 0xffffff }));
+    const paint = k.own(new T.MeshStandardMaterial({ map: personPicture(k.own, name), vertexColors: true, roughness: name.startsWith("hair") ? 0.6 : name === "horse" ? 0.5 : 0.82, metalness: 0, color: tint ? new T.Color(...(tint as [number, number, number])) : 0xffffff }));
     m = paint;
     // (A picture's relief where Blender baked one: the mammoth's locks. Its y is turned over: the pictures' rows run
     // down the uvs, and three works the directions out from the uvs themselves.)
@@ -618,17 +618,18 @@ function sculptedBeast(k: Kit, body: T.Object3D, era: number, side: number, f: D
   f.chest = beast;
   let legs: readonly (readonly [number, number])[], hipY: number, kneeDown: number;
   const at = model.joints;
-  if (era === 0 && at) {
-    // The mammoth as mammoth.py made it: its joints where it says, its skin wearing its picture.
+  if (at) {
+    // The mammoth (mammoth.py) or the horse (horse.py): its joints where it says, its skin wearing its picture.
     const off = (name: string, from: [number, number, number] = [0, 0, 0]) => at[name].map((v, i) => v - from[i]) as [number, number, number];
     const head = pivot(beast, ...off("head"), "head");
     f.head = joint.head = head;
-    [0, 1].forEach((i) => {
-      const ear = pivot(head, ...off(`flap${i}`, at.head), "flap");
-      f.flaps.push(ear);
-      joint[`flap${i}`] = ear;
-    });
-    f.strike = joint.strike = pivot(head, ...off("strike", at.head), "strike");
+    if (at.flap0)
+      [0, 1].forEach((i) => {
+        const ear = pivot(head, ...off(`flap${i}`, at.head), "flap");
+        f.flaps.push(ear);
+        joint[`flap${i}`] = ear;
+      });
+    f.strike = joint.strike = at.strike ? pivot(head, ...off("strike", at.head), "strike") : head;
     joint.tail = f.tail = pivot(beast, ...off("tail"), "tail");
     [0, 1, 2, 3].forEach((i) => {
       const hip = pivot(beast, ...off(`leg${i}`), "leg"),
@@ -672,6 +673,46 @@ function sculptedBeast(k: Kit, body: T.Object3D, era: number, side: number, f: D
   });
   skinOn(k, model, `b${era}`, side, beast, joint);
   return beast;
+}
+/**
+ * Reins: two thin leather straps from the bits, sagging a little, to the rider's fist; skinned to the horse's head at
+ * the bits and to the fist at the other end, so they follow both as the head nods and the arm moves.
+ */
+function reins(k: Kit, beast: T.Object3D, head: T.Object3D, hand: T.Object3D, bits: number[][]) {
+  beast.updateWorldMatrix(true, true);
+  const fist = beast.worldToLocal(hand.getWorldPosition(new T.Vector3())),
+    steps = 18,
+    sides = 5;
+  const parts = bits.map((b) => {
+    const a = new T.Vector3(...b),
+      mid = a.clone().lerp(fist, 0.5);
+    mid.y -= 0.08;
+    const g = new T.TubeGeometry(new T.QuadraticBezierCurve3(a, mid, fist), steps, 0.0055, sides, false),
+      n = g.getAttribute("position").count,
+      index = new Uint16Array(n * 4),
+      weight = new Float32Array(n * 4);
+    for (let v = 0; v < n; v++) {
+      const t = smooth01(Math.floor(v / (sides + 1)) / steps);
+      index[v * 4 + 1] = 1;
+      weight[v * 4] = 1 - t;
+      weight[v * 4 + 1] = t;
+    }
+    g.setAttribute("skinIndex", new T.BufferAttribute(index, 4));
+    g.setAttribute("skinWeight", new T.BufferAttribute(weight, 4));
+    g.setAttribute("color", new T.BufferAttribute(new Float32Array(n * 3).fill(0.9), 3));
+    return g;
+  });
+  const g = k.own(mergeGeometries(parts)!);
+  for (const part of parts) part.dispose();
+  const m = new T.SkinnedMesh(g, k.rich ? k.litPaint("leatherDark") : k.m.leatherDark);
+  m.name = `skin#${named++}`;
+  m.castShadow = k.rich;
+  beast.add(m);
+  m.updateWorldMatrix(false, false);
+  m.bind(k.own(new T.Skeleton([head as T.Bone, hand as T.Bone])), m.matrixWorld);
+  g.computeBoundingSphere();
+  m.boundingSphere = g.boundingSphere!.clone();
+  m.boundingSphere.radius += 0.6;
 }
 /** 0 below 0, rising smoothly to 1 at 1. */
 const smooth01 = (v: number) => (v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v));
@@ -1152,9 +1193,12 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
     // The mount as Blender sculpted it, its rider (and the knight's pennant) as before.
     const beast = sculptedBeast(k, body, era, side, f)!;
     // (The rider sits where the model says, his hips on its back: the seat less his seated hips' height.)
-    const seat = sculptedModel(`b${era}`)!.joints?.seat,
-      rider = seat ? pivot(beast, seat[0], seat[1] + 0.06 - 0.56 * 0.82, 0) : pivot(beast, -0.05, era === 0 ? 1.36 : 0.78, 0);
-    const { p } = soldier(k, rider, era, 2, side, era === 0 ? 0.82 : 0.9, true);
+    const at = sculptedModel(`b${era}`)!.joints,
+      scale = era === 0 ? 0.82 : 0.9,
+      rider = at?.seat ? pivot(beast, at.seat[0], at.seat[1] + (era === 0 ? 0.06 : 0.0) - 0.56 * scale, 0) : pivot(beast, -0.05, era === 0 ? 1.36 : 0.78, 0);
+    const { p } = soldier(k, rider, era, 2, side, scale, true);
+    // The horse's reins, from its bits to the knight's other fist.
+    if (at?.bit0 && at.bit1 && f.head) reins(k, beast, f.head, p.off, [at.bit0, at.bit1]);
     if (era === 1) {
       const pennant = pivot(p.hand, 0.0, 0.0, 0.0, "flap");
       k.mesh(one("pennant", (fine) => slab([[0, 0], [0.34, -0.04], [0.26, -0.08], [0.34, -0.13], [0, -0.13]], 0.006, 0.002, cuts(fine, 1, 1))), team, 1.0, -0.01, 0, 1, 1, 1, pennant);

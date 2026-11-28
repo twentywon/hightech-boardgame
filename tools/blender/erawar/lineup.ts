@@ -3,7 +3,7 @@
  * code-made look (`?blender=0`) with the Blender-baked one (`?blender=1`, the default) and to count frames.
  * `?era=0..3` (all when absent), `?close=1` for a close look at the fighter, `?walk=0` to stand still, `?plain=1` for
  * the processor's look (the thinned people, their pictures' colours in the vertices), `?kind=0..2` with `close=1` for
- * a close look at that kind (2: the mount or the gun and its crew; `only=1` shows that kind alone, `cam=side` from the side as the game does, `cam=near` with kind 2 the rider close, `cam=head` its head, `cam=profile` its side), `?blow=0..0.45` to hold the moment of a blow.
+ * a close look at that kind (2: the mount or the gun and its crew; `only=1` shows that kind alone, `cam=side` from the side as the game does, `cam=near` with kind 2 the rider close, `cam=head` its head, `cam=profile` its side, `cam=saddle` its back), `?blow=0..0.45` to hold the moment of a blow.
  */
 import * as T from "three";
 import { Kit, poseFigure } from "../../../src/games/erawar/models";
@@ -57,6 +57,10 @@ if (close) {
     // (The near mount's head, close: its eyes, tusks and trunk.)
     camera.position.set(cx + 2.6, 1.7, 1.6);
     camera.lookAt(cx + 0.4, 1.2, -0.3);
+  } else if (kindQ === 2 && q.get("cam") === "saddle") {
+    // (The near mount's back and its rider's seat, close.)
+    camera.position.set(cx - 0.6, 1.9, 2.2);
+    camera.lookAt(cx - 0.7, 1.3, 0);
   } else if (kindQ === 2 && q.get("cam") === "profile") {
     // (The near mount from its side, level, as the lane shows it.)
     camera.position.set(cx - 0.2, 1.3, 6.0);

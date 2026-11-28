@@ -17,8 +17,18 @@ the people start from free (CC0) artist-made models, the rest from nothing.
   fur, mail), hard parts bevelled by Blender's bevel modifier, open shells turned outward, hard edges split; Cycles
   bakes ambient occlusion into the vertices; `write_glb` writes one primitive per game paint (quantised positions,
   normals, box-projected uvs, and per vertex two joints, the first one's weight and the baked light).
-  - `beast.py` → `b1.glb` the horse (barrel, arched neck and mane, head, eight-part legs, tail, caparison with gold
-    hem and badge, saddle, chanfron, bridle).
+  - `horse.py` → `b1.glb` and `tex/horse.webp`, `horse_n.webp`: the knight's horse, made as the mammoth is (it uses
+    `mammoth.py`'s helpers). Its skin is melted from metaballs along a horse's lines (a long head with jowls, eyes,
+    deep nostrils and the line of the lips, cupped ears, an arched neck rising from the withers, a deep chest and a
+    sloping shoulder, a dipped back and a rounded croup, slim legs with knees, hocks, fetlocks and pasterns on horn
+    hooves), muscled where a horse is (crest, shoulder and arm, forearm, quarters, gaskin, the tendons down the
+    cannons), coloured a bay (darker along the top, black from the knees and hocks down, a dark muzzle, a white blaze).
+    The mane (falling to the near side), the forelock and the tail grow as ~900 locks of black strands. The shell
+    (skin and hair melted, ~16k triangles) wears the baked colour, relief and shade at 2048 px. The tack is the
+    game's to paint: a caparison of the side's colour draped over the back and hanging in folds, gold-hemmed with a
+    gold boss on each flank; a saddle with pommel and cantle; a bridle (noseband, browband, crownpiece,
+    throatlatch, cheekpieces) with iron bits. The bits' places go in the GLB; the game draws the reins itself, from
+    the bits to the knight's other fist (`reins` in `models.ts`), skinned to the head and the fist.
   - `mammoth.py` → `b0.glb` and `tex/mammoth.webp`, `mammoth_n.webp` (`webp.py` makes the WebPs from its PNGs): the
     woolly mammoth, made the way a game artist would. Its skin is one body melted from Blender's metaballs (a high
     domed skull, a hump over the shoulders, a back sloping to the rump, pillar legs on flat round soles, a trunk
@@ -89,16 +99,16 @@ the people start from free (CC0) artist-made models, the rest from nothing.
    `modular-character-outfits-fantasy`), unzipped side by side in one folder (`<packs dir>`).
 2. `tools/blender/erawar/bake-all.sh <path to blender> <work dir> [<packs dir>]` (`BAKE_SAMPLES` sets Cycles' samples for the
    units' light, 48 by default; `TERRAIN_KEEP` the share of the land's triangles kept). One unit alone:
-   `blender -b --python tools/blender/erawar/units/beast.py -- <out dir>`; one person:
+   `blender -b --python tools/blender/erawar/units/horse.py -- <out dir> <work dir>` (then `webp.py`); one person:
    `blender -b --python tools/blender/erawar/assets/people.py -- <packs dir> <work dir> <out dir> 3 0` (after
    `masks.py` and `tex.py`; `AO_SAMPLES` sets Cycles' samples, 48 by default).
 
-The joints' names and places are the game's (`sculptedBeast` and the machines' branch in `models.ts`; the people's
-come with them): change them together. The stone bag, the ammunition box, the knight's pennant and the tank's tracks are
-still the code's own shapes; the mounts, machines and weapons are still Blender-sculpted (the CC0 packs on Google
+The joints' names and places are the game's (the machines' branch in `models.ts`; the people's, the mammoth's and the
+horse's come with them in their GLBs): change them together. The stone bag, the ammunition box, the knight's pennant and the tank's tracks are
+still the code's own shapes; the machines and weapons are still Blender-sculpted (the CC0 packs on Google
 Drive could not be fetched: its quota refused every file). Subdivided parts are thinned by Blender's decimation (`DECIMATE`, 0.5 by default) so
 that a full lane draws as fast as the code's units did.
 
-`lineup.html` (`?era=0..3`, `?blender=0` for the look without Blender, `?close=1`, `?walk=0`, `?kind=2&cam=head|profile|near` for the mammoth close) shows every unit of an
+`lineup.html` (`?era=0..3`, `?blender=0` for the look without Blender, `?close=1`, `?walk=0`, `?kind=2&cam=head|profile|near|saddle` for the mount close) shows every unit of an
 era side by side, lit as in the game, and `window.fps()` counts its frames; `shoot.cjs <port> <query> <out.png>`
 takes its picture.
