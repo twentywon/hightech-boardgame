@@ -116,6 +116,10 @@ let landImage: HTMLImageElement | null = null;
  * The land behind the lane as Blender made it (tools/blender/erawar/terrain.py): rolling hills rising into a snowy
  * range, its paint and self-shade baked into one picture; drawn with one plain paint. Null when it is not there.
  */
+/** How much of the era's fog lies over the far range (1: all of it). */
+export const LAND_HAZE = 0.35;
+/** How tall the range stands against Blender's own (lower, so the sky and its snowy tops show over the lane). */
+export const LAND_TALL = 0.72;
 export function bakedLand(own: Own): T.Mesh | null {
   const glb = Object.entries(land).find(([p]) => p.endsWith(".glb"))?.[1],
     pic = Object.entries(land).find(([p]) => p.endsWith(".webp"))?.[1];
@@ -134,7 +138,18 @@ export function bakedLand(own: Own): T.Mesh | null {
   if (image.complete && image.naturalWidth) map.needsUpdate = true;
   else image.addEventListener("load", () => (map.needsUpdate = true), { once: true });
   // (A sheen-less standard paint, so that the sky's own light fills its shaded sides as it does the rest.)
-  const mesh = new T.Mesh(own(shape), own(new T.MeshStandardMaterial({ map, roughness: 1, metalness: 0 })));
+  const paint = own(new T.MeshStandardMaterial({ map, roughness: 1, metalness: 0 }));
+  // The haze takes only part of the far range: its peaks stand where the era's fog is already thick, and with the whole
+  // of it they faded into a grey wall in the brighter eras' light (중세, 화약), hiding their snow and rock.
+  paint.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <fog_fragment>",
+      T.ShaderChunk.fog_fragment.replace("fogColor, fogFactor", `fogColor, fogFactor * ${LAND_HAZE.toFixed(2)}`),
+    );
+  };
+  paint.customProgramCacheKey = () => "erawar-land-haze";
+  const mesh = new T.Mesh(own(shape), paint);
+  mesh.scale.y = LAND_TALL;
   mesh.receiveShadow = false;
   return mesh;
 }
