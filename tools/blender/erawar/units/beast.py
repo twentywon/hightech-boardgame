@@ -2,14 +2,12 @@
 The mounts of 시대 전쟁, sculpted in Blender (see ../README.md): the knight's horse — a deep chest, the withers, a
 dipped back and round quarters, muscled forearms and gaskins over slim cannons, fetlocks and hooves, an arched neck
 with its mane, a long head with jowls, ears, eyes and nostrils, a flowing tail — barded in a caparison of the side's
-colour hemmed in gold, with a saddle, an iron chanfron and a bridle; and the woolly mammoth — a hump over the
-shoulders, a back sloping to the rump, long shaggy hair hanging in a fringe, a domed head with flapping ears, curling
-tusks and a wrinkled trunk, pillar legs with toenails — under a blanket of the side's colour. Skinned on the game's
-joints: the body, the head (and the trunk and ears), four legs with their knees, the tail.
+colour hemmed in gold, with a saddle, an iron chanfron and a bridle. Skinned on the game's joints: the body, the head,
+four legs with their knees, the tail. (The woolly mammoth is mammoth.py's.)
 
-    blender -b --python beast.py -- <out dir> [horse|mammoth ...]
+    blender -b --python beast.py -- <out dir>
 
-writes b1.glb (the horse) and b0.glb (the mammoth).
+writes b1.glb (the horse).
 """
 import math, os, sys
 
@@ -134,108 +132,20 @@ def horse():
     return P
 
 
-# ─────────────── the mammoth ───────────────
-MAMMOTH_BONES = ["beast", "head", "strike", "flap0", "flap1", "leg0", "knee0", "leg1", "knee1", "leg2", "knee2", "leg3", "knee3", "tail"]
-MB = {n: i for i, n in enumerate(MAMMOTH_BONES)}
-MAMMOTH_LEGS = [(0.45, -0.26), (0.45, 0.26), (-0.45, -0.26), (-0.45, 0.26)]
-MHEAD = np.array([0.74, 1.32, 0.0])
-TRUNK = MHEAD + (0.3, -0.06, 0)
-HUMP = [(-0.9, 1.15, 0.2, 0.2), (-0.78, 1.12, 0.42, 0.42), (-0.45, 1.12, 0.56, 0.5), (0.0, 1.15, 0.6, 0.53), (0.3, 1.18, 0.68, 0.53), (0.47, 1.2, 0.72, 0.5), (0.68, 1.22, 0.56, 0.42), (0.86, 1.25, 0.26, 0.28)]
-
-
-def hump_at(x):
-    xs = [r[0] for r in HUMP]
-    return [float(np.interp(x, xs, [r[k] for r in HUMP])) for k in range(1, 4)]
-
-
-def shaggy(amount, seed=0, fringe=0.0):
-    """Long hair: tufts and locks pushed out, the lower parts hanging in a ragged fringe."""
-
-    def fn(Pt, N, paints):
-        a = np.arctan2(Pt[:, 2], Pt[:, 0])
-        locks = 0.5 + 0.5 * np.sin(a * 30 + Pt[:, 1] * 14 + 5 * fbm(Pt * 4, 3, seed))
-        d = amount * (0.6 * locks + 0.6 * fbm(Pt * 14, 3, seed + 3))
-        return d
-
-    return fn
-
-
-def mammoth():
-    P = []
-    body = loft([{"c": (x, cy, 0), "a": a, "b": b, "p": 2.0, "u": (0, 1, 0)} for x, cy, a, b in HUMP], n=18, paint="shag", up=(0, 1, 0))
-    part = Part("body", body, rigid(MB["beast"]), subdiv=1)
-    # The fringe: the lower body's hair hangs down past the belly, ragged.
-    Pt = part.points()
-    cy = np.array([hump_at(x)[0] for x in Pt[:, 0]])
-    below = smoothstep(0.0, -0.5, Pt[:, 1] - cy)
-    drop = below * (0.12 + 0.08 * fbm(Pt * np.array([9, 2, 9]), 3, 4))
-    Pt[:, 1] -= drop
-    part.set_points(Pt)
-    part.push(shaggy(0.03, 1))
-    P.append(part)
-    head = ellipsoid((0.36, 0.38, 0.34), (0, 0, 0), "shag", 16, 11)
-    hv = head.v
-    d = norm(hv)
-    crown = np.exp(-(((d[:, 0] + 0.2) / 0.5) ** 2)) * smoothstep(0.2, 1, d[:, 1])
-    front = smoothstep(0, 1, d[:, 0])
-    head.v = np.stack([d[:, 0] * (0.36 - 0.04 * front), d[:, 1] * 0.38 + crown * 0.16, d[:, 2] * (0.34 - 0.06 * front)], axis=1) + MHEAD
-    P.append(Part("head", head, chain([MB["beast"], MB["head"]], [((0.5, 1.3, 0), (1, 0, 0), 0.08)]), subdiv=1).push(shaggy(0.018, 2)))
-    for s, bone in ((-1, "flap0"), (1, "flap1")):
-        ear = ellipsoid((0.09, 0.15, 0.035), (0, -0.04, s * 0.02), "furDark", 10, 7)
-        P.append(Part(f"ear{s}", ear.moved(at(*(MHEAD + (-0.1, 0.06, s * 0.3)))), rigid(MB[bone])).push(shaggy(0.008, 5)))
-        P.append(Part(f"eye{s}", ellipsoid((0.026, 0.024, 0.02), MHEAD + (0.27, 0.08, s * 0.19), "pupil", 8, 6), rigid(MB["head"])))
-        tusk = tube([MHEAD + (0.22, -0.18, s * 0.14), MHEAD + (0.42, -0.4, s * 0.2), MHEAD + (0.72, -0.4, s * 0.24), MHEAD + (0.86, -0.18, s * 0.2), MHEAD + (0.84, 0.0, s * 0.12)], 0.055, 0.012, n=8, paint="tusk", samples=12)
-        P.append(Part(f"tusk{s}", tusk, rigid(MB["head"]), subdiv=1))
-    trunk = tube([TRUNK + (0, 0.05, 0), TRUNK + (0.12, -0.3, 0), TRUNK + (0.1, -0.62, 0), TRUNK + (0.18, -0.82, 0), TRUNK + (0.28, -0.8, 0)], 0.12, 0.035, n=10, paint="shag", samples=14)
-    tr = Part("trunk", trunk, chain([MB["head"], MB["strike"]], [(TRUNK, (1, -1, 0), 0.05)]), subdiv=1)
-
-    def wrinkles(Pt, N, paints):
-        return 0.006 * np.sin(np.linalg.norm(Pt - TRUNK, axis=1) * 120) + 0.004 * fbm(Pt * 20, 2, 9)
-
-    tr.push(wrinkles)
-    P.append(tr)
-    for i, (x, z) in enumerate(MAMMOTH_LEGS):
-        rows = [(1.05, 0.21), (0.9, 0.21), (0.7, 0.19), (0.5, 0.165), (0.42, 0.155), (0.25, 0.15), (0.1, 0.16), (0.03, 0.175)]
-        leg = loft([{"c": (x, y, z), "a": r, "b": r * 0.95} for y, r in rows], n=11, paint="shag", up=(1, 0, 0), cap_len=0.03)
-        lp = Part(f"leg{i}", leg, chain([MB["beast"], MB[f"leg{i}"], MB[f"knee{i}"]], [((x, 0.92, z), (0, -1, 0), 0.08), ((x, 0.47, z), (0, -1, 0), 0.05)]), subdiv=1)
-        lp.push(shaggy(0.016, 10 + i))
-        P.append(lp)
-        nails = [ellipsoid((0.03, 0.03, 0.04), (x + 0.15, 0.04, z + (t - 1) * 0.07), "bone", 8, 6) for t in range(3)]
-        P.append(Part(f"nails{i}", Shape.join(nails), rigid(MB[f"knee{i}"])))
-    tail = Shape.join([tube([(-0.84, 1.2, 0), (-0.92, 1.05, 0), (-0.94, 0.85, 0)], 0.035, 0.02, n=8, paint="furDark"), ellipsoid((0.05, 0.08, 0.05), (-0.94, 0.8, 0), "furDark", 10, 8)])
-    P.append(Part("tail", tail, chain([MB["beast"], MB["tail"]], [((-0.84, 1.2, 0), (-1, 0, 0), 0.03)])))
-    # The blanket over the back, hemmed in gold.
-    xs = np.linspace(-0.38, 0.28, 12)
-    cols = []
-    for x in xs:
-        cy, a, b = hump_at(x)
-        col = []
-        for t in np.linspace(-1.0, 1.0, 13):
-            c, s = math.cos(t), math.sin(t)
-            col.append((x, cy + (a + 0.035) * c, (b + 0.035) * s))
-        cols.append(col)
-    V = np.array(cols).reshape(-1, 3)
-    m = len(cols[0])
-    F = [(i * m + j, i * m + j + 1, (i + 1) * m + j + 1, (i + 1) * m + j) for i in range(len(xs) - 1) for j in range(m - 1)]
-    paint = ["gold" if (i in (0, len(xs) - 2) or j in (0, m - 2)) else "team" for i in range(len(xs) - 1) for j in range(m - 1)]
-    P.append(Part("blanket", Shape(V, F, paint), rigid(MB["beast"]), subdiv=1, outward=("axis", (0, 0, 0))))
-    return P
-
-
 if __name__ == "__main__":
     argv = sys.argv[sys.argv.index("--") + 1 :]
     out = argv[0]
-    which = argv[1:] or ["horse", "mammoth"]
+    which = argv[1:] or ["horse"]
     os.makedirs(out, exist_ok=True)
     for name in which:
         reset()
-        parts = horse() if name == "horse" else mammoth()
-        bones = HORSE_BONES if name == "horse" else MAMMOTH_BONES
+        parts = horse()
+        bones = HORSE_BONES
         for i, p in enumerate(parts):
             p.finish()
         bake_ao(parts, samples=int(os.environ.get("BAKE_SAMPLES", "48")), reach=0.3)
         prims = gather(parts, bones)
-        file = "b1.glb" if name == "horse" else "b0.glb"
+        file = "b1.glb"
         size = write_glb(os.path.join(out, file), prims, {"bones": bones})
         nv = sum(len(d["P"]) for d in prims.values())
         print(f"DONE {file}: {len(prims)} paints, {nv} vertices, {size} bytes")

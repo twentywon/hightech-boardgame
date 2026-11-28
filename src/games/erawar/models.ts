@@ -2,7 +2,7 @@ import * as T from "three";
 import { canvas, glow, texture, type Own } from "../goldraid/paint";
 import { compactGroup } from "../badminton/merge";
 import { bakeColours } from "./bake";
-import { artistPerson, partGeometry, personGeometry, personPicture, rigidGeometry, sculptedModel, type Sculpted } from "./sculpted";
+import { artistPerson, hasPicture, partGeometry, personGeometry, personPicture, rigidGeometry, sculptedModel, type Sculpted } from "./sculpted";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { bark, grain, grained } from "../../engine/grain";
 import { made, skin as poreRelief, smooth } from "../../engine/lifelike";
@@ -495,7 +495,14 @@ function picturePaint(k: Kit, name: string, tint?: number[]) {
   const key = `${name}:${tint?.join(",") ?? ""}`;
   let m = byKit.get(key);
   if (!m) {
-    m = k.own(new T.MeshStandardMaterial({ map: personPicture(k.own, name), vertexColors: true, roughness: name.startsWith("hair") ? 0.6 : 0.82, metalness: 0, color: tint ? new T.Color(...(tint as [number, number, number])) : 0xffffff }));
+    const paint = k.own(new T.MeshStandardMaterial({ map: personPicture(k.own, name), vertexColors: true, roughness: name.startsWith("hair") ? 0.6 : 0.82, metalness: 0, color: tint ? new T.Color(...(tint as [number, number, number])) : 0xffffff }));
+    m = paint;
+    // (A picture's relief where Blender baked one: the mammoth's locks. Its y is turned over: the pictures' rows run
+    // down the uvs, and three works the directions out from the uvs themselves.)
+    if (hasPicture(`${name}_n`)) {
+      paint.normalMap = personPicture(k.own, `${name}_n`, true);
+      paint.normalScale = new T.Vector2(1, -1);
+    }
     byKit.set(key, m);
   }
   return m;
@@ -610,6 +617,30 @@ function sculptedBeast(k: Kit, body: T.Object3D, era: number, side: number, f: D
     joint: Record<string, T.Object3D> = { beast };
   f.chest = beast;
   let legs: readonly (readonly [number, number])[], hipY: number, kneeDown: number;
+  const at = model.joints;
+  if (era === 0 && at) {
+    // The mammoth as mammoth.py made it: its joints where it says, its skin wearing its picture.
+    const off = (name: string, from: [number, number, number] = [0, 0, 0]) => at[name].map((v, i) => v - from[i]) as [number, number, number];
+    const head = pivot(beast, ...off("head"), "head");
+    f.head = joint.head = head;
+    [0, 1].forEach((i) => {
+      const ear = pivot(head, ...off(`flap${i}`, at.head), "flap");
+      f.flaps.push(ear);
+      joint[`flap${i}`] = ear;
+    });
+    f.strike = joint.strike = pivot(head, ...off("strike", at.head), "strike");
+    joint.tail = f.tail = pivot(beast, ...off("tail"), "tail");
+    [0, 1, 2, 3].forEach((i) => {
+      const hip = pivot(beast, ...off(`leg${i}`), "leg"),
+        knee = pivot(hip, ...off(`knee${i}`, at[`leg${i}`]), "knee");
+      joint[`leg${i}`] = hip;
+      joint[`knee${i}`] = knee;
+      f.legs.push(hip);
+      f.knees.push(knee);
+    });
+    skinArtist(k, model, `b${era}`, side, beast, joint);
+    return beast;
+  }
   if (era === 0) {
     const head = pivot(beast, 0.74, 1.32, 0, "head");
     f.head = joint.head = head;
@@ -1120,7 +1151,9 @@ function build(k: Kit, era: number, kind: Kind, side: number): Figure {
   } else if (era < 2 && k.sculpt && sculptedModel(`b${era}`)) {
     // The mount as Blender sculpted it, its rider (and the knight's pennant) as before.
     const beast = sculptedBeast(k, body, era, side, f)!;
-    const rider = pivot(beast, -0.05, era === 0 ? 1.36 : 0.78, 0);
+    // (The rider sits where the model says, his hips on its back: the seat less his seated hips' height.)
+    const seat = sculptedModel(`b${era}`)!.joints?.seat,
+      rider = seat ? pivot(beast, seat[0], seat[1] + 0.06 - 0.56 * 0.82, 0) : pivot(beast, -0.05, era === 0 ? 1.36 : 0.78, 0);
     const { p } = soldier(k, rider, era, 2, side, era === 0 ? 0.82 : 0.9, true);
     if (era === 1) {
       const pennant = pivot(p.hand, 0.0, 0.0, 0.0, "flap");
